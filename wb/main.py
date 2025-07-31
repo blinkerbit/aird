@@ -4,8 +4,8 @@ import argparse
 import json
 from typing import TYPE_CHECKING
  
- if TYPE_CHECKING:
-     from typing import Optional
+if TYPE_CHECKING:
+    from typing import Optional
 
 import tornado.ioloop
 import tornado.web
