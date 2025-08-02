@@ -94,3 +94,21 @@ This section tracks known security vulnerabilities that should be addressed.
 - [ ] **Missing CSRF Protection:** The application does not use Cross-Site Request Forgery (CSRF) protection. This makes `POST` endpoints, like file uploads, vulnerable. An attacker could trick a logged-in user into visiting a malicious site that forges a request to upload a file to the server without the user's consent. Tornado's built-in `xsrf_cookies=True` setting should be enabled.
 - [ ] **Access Token Exposed in Logs:** The master access token is printed to the console on startup, which is a security risk if logs are not properly secured. The token should not be logged.
 - [ ] **Disabled WebSocket Origin Check:** The `FileStreamHandler` allows WebSocket connections from any origin (`check_origin` always returns `True`). This should be restricted to only allow connections from the application's own domain to prevent cross-site WebSocket hijacking attacks.
+
+## Future Enhancements
+
+### UI/UX Improvements
+- [ ] **Modern UI:** Enhance the interface with a lightweight CSS framework like Bootstrap or Tailwind CSS.
+- [ ] **File Previews:** Add support for in-browser previews for common file types (images, PDFs, Markdown).
+- [ ] **Search and Sort:** Add a search bar and make the directory listing sortable by name, size, or modification date.
+
+### Core Functionality
+- [ ] **Multi-File Operations:** Allow users to select multiple files/folders for batch actions (e.g., delete, download as zip).
+- [ ] **In-Browser File Editor:** Embed a code editor like CodeMirror or Monaco to allow for in-browser text file editing.
+- [ ] **User Management:** Expand to a full user management system with different roles and permissions.
+- [ ] **Advanced Permissions:** Implement a role-based permission system (e.g., read-only users, upload-only users).
+- [ ] **Create Files and Folders:** Add UI elements to create new empty files and folders.
+
+### Performance
+- [ ] **Asynchronous File I/O:** Use `aiofiles` to perform file operations asynchronously.
+- [ ] **Pagination for Large Directories:** Implement pagination for directories with a large number of files.
