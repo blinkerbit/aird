@@ -28,7 +28,7 @@
 </head>
 <body>
     <h2>{{ filename }}</h2>
-    <a href="/{{ path }}?download=1" class="download-btn">Download</a>
+    <a href="/{{ path }}?download=1" class="download-btn" data-feature="file_download">Download</a>
     <button id="stream-btn">Stream</button>
     <button id="stop-stream-btn" style="display:none;">Stop Streaming</button>
     <hr>
@@ -39,6 +39,23 @@
     const pre = document.getElementById('file-content');
     let ws = null;
     let originalContent = pre.textContent;
+    const featureSocket = new WebSocket(`ws://${window.location.host}/features`);
+
+    featureSocket.onmessage = function(event) {
+        const features = JSON.parse(event.data);
+        updateFeatureVisibility(features);
+    };
+
+    function updateFeatureVisibility(features) {
+        document.querySelectorAll('[data-feature]').forEach(el => {
+            const feature = el.dataset.feature;
+            if (features[feature]) {
+                el.style.display = '';
+            } else {
+                el.style.display = 'none';
+            }
+        });
+    }
 
     streamBtn.onclick = function() {
         ws = new WebSocket(`ws://${window.location.host}/stream/{{ path }}`);
@@ -72,4 +89,4 @@
     });
     </script>
 </body>
-</html> 
+</html>

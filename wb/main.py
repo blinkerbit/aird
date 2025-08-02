@@ -2,10 +2,10 @@ import os
 import secrets
 import argparse
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Set
 
 if TYPE_CHECKING:
-    from typing import Optional
+    pass
 
 import tornado.ioloop
 import tornado.web
@@ -28,7 +28,27 @@ FEATURE_FLAGS = {
     "file_upload": True,
     "file_delete": True,
     "file_rename": True,
+    "file_download": True,
 }
+
+class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):
+    connections: Set['FeatureFlagSocketHandler'] = set()
+
+    def open(self):
+        FeatureFlagSocketHandler.connections.add(self)
+        self.write_message(json.dumps(FEATURE_FLAGS))
+
+    def on_close(self):
+        FeatureFlagSocketHandler.connections.remove(self)
+
+    def check_origin(self, origin):
+        return True
+
+    @classmethod
+    def send_updates(cls):
+        for connection in cls.connections:
+            connection.write_message(json.dumps(FEATURE_FLAGS))
+
 
 class BaseHandler(tornado.web.RequestHandler):
     def get_current_user(self) -> str | None:
@@ -42,7 +62,7 @@ class LDAPLoginHandler(BaseHandler):
         if self.current_user:
             self.redirect("/")
             return
-        self.render("login.html", error=None)
+        self.render("login.html", error=None, settings=self.settings)
 
     def post(self):
         username = self.get_argument("username", "")
@@ -55,16 +75,16 @@ class LDAPLoginHandler(BaseHandler):
                 self.set_secure_cookie("user", username)
                 self.redirect("/")
             else:
-                self.render("login.html", error="Invalid username or password.")
+                self.render("login.html", error="Invalid username or password.", settings=self.settings)
         except Exception as e:
-            self.render("login.html", error=f"LDAP connection failed: {e}")
+            self.render("login.html", error=f"LDAP connection failed: {e}", settings=self.settings)
 
 class LoginHandler(BaseHandler):
     def get(self):
         if self.current_user:
             self.redirect("/")
             return
-        self.render("login.html", error=None)
+        self.render("login.html", error=None, settings=self.settings)
 
     def post(self):
         token = self.get_argument("token", "")
@@ -72,7 +92,7 @@ class LoginHandler(BaseHandler):
             self.set_secure_cookie("user", "authenticated")
             self.redirect("/")
         else:
-            self.render("login.html", error="Invalid token. Try again.")
+            self.render("login.html", error="Invalid token. Try again.", settings=self.settings)
 
 class AdminLoginHandler(BaseHandler):
     def get(self):
@@ -107,7 +127,9 @@ class AdminHandler(BaseHandler):
         FEATURE_FLAGS["file_upload"] = self.get_argument("file_upload", "off") == "on"
         FEATURE_FLAGS["file_delete"] = self.get_argument("file_delete", "off") == "on"
         FEATURE_FLAGS["file_rename"] = self.get_argument("file_rename", "off") == "on"
+        FEATURE_FLAGS["file_download"] = self.get_argument("file_download", "off") == "on"
         
+        FeatureFlagSocketHandler.send_updates()
         self.redirect("/admin")
 
 class MainHandler(BaseHandler):
@@ -129,10 +151,14 @@ class MainHandler(BaseHandler):
                     'name': f_name,
                     'is_dir': os.path.isdir(os.path.join(abspath, f_name))
                 })
-            self.render("directory.html", path=path, files=file_data)
+            self.render("directory.html", path=path, files=file_data, features=FEATURE_FLAGS)
         elif os.path.isfile(abspath):
             filename = os.path.basename(abspath)
             if self.get_argument('download', None):
+                if not FEATURE_FLAGS["file_download"]:
+                    self.set_status(403)
+                    self.write("File download is disabled.")
+                    return
                 self.set_header('Content-Type', 'application/octet-stream')
                 self.set_header('Content-Disposition', f'attachment; filename="{filename}"')
                 with open(abspath, 'rb') as f:
@@ -141,7 +167,7 @@ class MainHandler(BaseHandler):
                 with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
                     file_content = f.read()
                 start_streaming = self.get_argument('stream', None) is not None
-                self.render("file.html", filename=filename, path=path, file_content=file_content, start_streaming=start_streaming)
+                self.render("file.html", filename=filename, path=path, file_content=file_content, start_streaming=start_streaming, features=FEATURE_FLAGS)
         else:
             self.set_status(404)
             self.write("File not found")
@@ -157,7 +183,7 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
         if not self.current_user:
             self.close()
             return
-
+            
         self.file_path = os.path.abspath(os.path.join(ROOT_DIR, path))
         self.running = True
         if not os.path.isfile(self.file_path):
@@ -212,7 +238,7 @@ class UploadHandler(BaseHandler):
 
         directory = self.get_argument("directory", "")
         file_infos = self.request.files.get('files', [])
-
+        
         if not file_infos:
             file_info = self.request.files.get('file', [])[0]
             filename = file_info['filename']
@@ -230,9 +256,7 @@ class UploadHandler(BaseHandler):
         for file_info in file_infos:
             relative_path = file_info['filename']
             file_body = file_info['body']
-
-            # Sanitize the relative path to prevent directory traversal
-            # and ensure it's a safe path
+            
             final_path = os.path.join(ROOT_DIR, directory, relative_path)
             final_path_abs = os.path.abspath(final_path)
 
@@ -242,10 +266,10 @@ class UploadHandler(BaseHandler):
                 return
 
             os.makedirs(os.path.dirname(final_path_abs), exist_ok=True)
-
+            
             with open(final_path_abs, 'wb') as f:
                 f.write(file_body)
-
+        
         self.set_status(200)
         self.write("Upload successful")
 
@@ -307,11 +331,13 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
         (r"/admin/login", AdminLoginHandler),
         (r"/admin", AdminHandler),
         (r"/stream/(.*)", FileStreamHandler),
+        (r"/features", FeatureFlagSocketHandler),
         (r"/upload", UploadHandler),
         (r"/delete", DeleteHandler),
         (r"/rename", RenameHandler),
         (r"/(.*)", MainHandler),
     ], **settings)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Run Filey")
@@ -367,6 +393,6 @@ def main():
             break
         except OSError:
             port += 1
-
+    
 if __name__ == "__main__":
     main()

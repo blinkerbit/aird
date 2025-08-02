@@ -70,7 +70,6 @@
     <form action="/upload" method="post" enctype="multipart/form-data" id="upload-form" style="margin-bottom: 10px;">
         <input type="hidden" name="directory" value="{{ path }}">
         <input type="file" name="file" id="file-input" style="display: none;" onchange="document.getElementById('upload-form').submit()">
-        <!-- <button type="button" onclick="document.getElementById('file-input').click()">Upload File</button> -->
     </form>
 
     <div id="drop-zone">
@@ -84,14 +83,14 @@
         {% for f in files %}
             {% set full = (path + '/' + f['name']) if path else f['name'] %}
             <li>
-                <a href="/{{ full }}" class="file-link">{{ f['name'] + '/' if f['is_dir'] else f['name'] }}</a>
+                <a href="/{{ full }}" class.file-link">{{ f['name'] + '/' if f['is_dir'] else f['name'] }}</a>
                 <div class="file-actions">
                     {% if not f['is_dir'] %}
                         <a href="/{{ full }}?stream=1" class="stream-btn">Stream</a>
-                        <a href="/{{ full }}?download=1" class="download-btn">&#8595; Download</a>
+                        <a href="/{{ full }}?download=1" class="download-btn" data-feature="file_download">&#8595; Download</a>
                     {% end %}
-                    <button class="rename-btn" onclick="renameItem('{{ full }}')">Rename</button>
-                    <button class="delete-btn" onclick="deleteItem('{{ full }}')">Delete</button>
+                    <button class="rename-btn" onclick="renameItem('{{ full }}')" data-feature="file_rename">Rename</button>
+                    <button class="delete-btn" onclick="deleteItem('{{ full }}')" data-feature="file_delete">Delete</button>
                 </div>
             </li>
         {% end %}
@@ -99,6 +98,28 @@
     <script>
         const dropZone = document.getElementById('drop-zone');
         const currentPath = "{{ path }}";
+        const featureSocket = new WebSocket(`ws://${window.location.host}/features`);
+
+        featureSocket.onmessage = function(event) {
+            const features = JSON.parse(event.data);
+            updateFeatureVisibility(features);
+        };
+
+        function updateFeatureVisibility(features) {
+            document.querySelectorAll('[data-feature]').forEach(el => {
+                const feature = el.dataset.feature;
+                if (features[feature]) {
+                    el.style.display = '';
+                } else {
+                    el.style.display = 'none';
+                }
+            });
+            if (features['file_upload']) {
+                dropZone.style.display = '';
+            } else {
+                dropZone.style.display = 'none';
+            }
+        }
 
         dropZone.addEventListener('dragenter', (event) => {
             event.preventDefault();
@@ -190,7 +211,7 @@
                         dirReader.readEntries((entries) => {
                             if (entries.length > 0) {
                                 allEntries.push(...entries);
-                                readEntries(); // Read more entries if available
+                                readEntries();
                             } else {
                                 const promises = [];
                                 for (let i = 0; i < allEntries.length; i++) {
@@ -210,4 +231,4 @@
         }
     </script>
 </body>
-</html> 
+</html>
