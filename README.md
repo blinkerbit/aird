@@ -8,6 +8,7 @@ Filey is a lightweight, web-based file browser built with Python and Tornado. It
 - **Drag-and-Drop Uploads:** Easily upload files and entire folder structures by dragging them into the browser window.
 - **Real-Time File Streaming:** Open any file in streaming mode to see new lines appended in real-time, perfect for monitoring logs or other active files. The stream will also show the last 100 lines for immediate context.
 - **Secure Access:** The entire application is protected by a token-based authentication system.
+- **Admin Panel:** A separate admin panel to enable/disable features like file upload, delete, and rename.
 - **Rename & Delete:** Quickly rename or remove files and folders directly from the directory listing.
 - **Configurable:** Specify the root directory, port, and token via a JSON config file or command-line options.
 
@@ -20,9 +21,9 @@ Filey is a lightweight, web-based file browser built with Python and Tornado. It
 
 2.  **Run the Application:**
     ```bash
-    python -m wb --root /path/to/serve --port 8000 --token YOUR_TOKEN
+    python -m wb --root /path/to/serve --port 8000 --token YOUR_TOKEN --admin-token YOUR_ADMIN_TOKEN
     ```
-    You can also create a JSON file with `root`, `port`, and `token` keys and pass it using `--config config.json`.
+    You can also create a JSON file with `root`, `port`, `token`, and `admin_token` keys and pass it using `--config config.json`.
     If no token is provided, a random one will be generated and printed to the console.
 
 ## Endpoints
@@ -47,6 +48,22 @@ All endpoints (except the login page itself) require a valid authentication toke
 - **Body:** `token=<your_access_token>`
 - **On Success:** Sets a secure cookie and redirects to `/`.
 - **On Failure:** Reloads the login page with an error message.
+
+### `GET /admin/login`
+- **Description:** Displays the admin login page.
+
+### `POST /admin/login`
+- **Description:** Handles admin authentication.
+- **Body:** `token=<your_admin_token>`
+- **On Success:** Sets a secure admin cookie and redirects to `/admin`.
+- **On Failure:** Reloads the admin login page with an error message.
+
+### `GET /admin`
+- **Description:** Displays the admin panel with feature flags.
+
+### `POST /admin`
+- **Description:** Updates the feature flags.
+- **Body:** `file_upload=on/off&file_delete=on/off&file_rename=on/off`
 
 ### `POST /upload`
 - **Description:** Handles file and folder uploads. This endpoint is used by the drag-and-drop interface.

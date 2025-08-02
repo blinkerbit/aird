@@ -3,7 +3,7 @@ import secrets
 import argparse
 import json
 from typing import TYPE_CHECKING
- 
+
 if TYPE_CHECKING:
     from typing import Optional
 
@@ -14,24 +14,57 @@ import tornado.websocket
 import asyncio
 import shutil
 from collections import deque
+from ldap3 import Server, Connection, ALL
 
 # Add this import for template path
 from tornado.web import RequestHandler, Application
 
 # Will be set in main() after parsing configuration
 ACCESS_TOKEN = None
+ADMIN_TOKEN = None
 ROOT_DIR = os.getcwd()
+
+FEATURE_FLAGS = {
+    "file_upload": True,
+    "file_delete": True,
+    "file_rename": True,
+}
 
 class BaseHandler(tornado.web.RequestHandler):
     def get_current_user(self) -> str | None:
         return self.get_secure_cookie("user")
+
+    def get_current_admin(self) -> str | None:
+        return self.get_secure_cookie("admin")
+
+class LDAPLoginHandler(BaseHandler):
+    def get(self):
+        if self.current_user:
+            self.redirect("/")
+            return
+        self.render("login.html", error=None)
+
+    def post(self):
+        username = self.get_argument("username", "")
+        password = self.get_argument("password", "")
+        
+        try:
+            server = Server(self.settings['ldap_server'], get_info=ALL)
+            conn = Connection(server, user=f"uid={username},{self.settings['ldap_base_dn']}", password=password, auto_bind=True)
+            if conn.bind():
+                self.set_secure_cookie("user", username)
+                self.redirect("/")
+            else:
+                self.render("login.html", error="Invalid username or password.")
+        except Exception as e:
+            self.render("login.html", error=f"LDAP connection failed: {e}")
 
 class LoginHandler(BaseHandler):
     def get(self):
         if self.current_user:
             self.redirect("/")
             return
-        self.render("login.html", error=None)  # Always provide 'error'
+        self.render("login.html", error=None)
 
     def post(self):
         token = self.get_argument("token", "")
@@ -40,6 +73,42 @@ class LoginHandler(BaseHandler):
             self.redirect("/")
         else:
             self.render("login.html", error="Invalid token. Try again.")
+
+class AdminLoginHandler(BaseHandler):
+    def get(self):
+        if self.get_current_admin():
+            self.redirect("/admin")
+            return
+        self.render("admin_login.html", error=None)
+
+    def post(self):
+        token = self.get_argument("token", "")
+        if token == ADMIN_TOKEN:
+            self.set_secure_cookie("admin", "authenticated")
+            self.redirect("/admin")
+        else:
+            self.render("admin_login.html", error="Invalid admin token.")
+
+class AdminHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        if not self.get_current_admin():
+            self.redirect("/admin/login")
+            return
+        self.render("admin.html", features=FEATURE_FLAGS)
+
+    @tornado.web.authenticated
+    def post(self):
+        if not self.get_current_admin():
+            self.set_status(403)
+            self.write("Forbidden")
+            return
+        
+        FEATURE_FLAGS["file_upload"] = self.get_argument("file_upload", "off") == "on"
+        FEATURE_FLAGS["file_delete"] = self.get_argument("file_delete", "off") == "on"
+        FEATURE_FLAGS["file_rename"] = self.get_argument("file_rename", "off") == "on"
+        
+        self.redirect("/admin")
 
 class MainHandler(BaseHandler):
     @tornado.web.authenticated
@@ -82,7 +151,7 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
         return self.get_secure_cookie("user")
 
     def check_origin(self, origin):
-        return True  # Allow all origins for now
+        return True
 
     async def open(self, path):
         if not self.current_user:
@@ -96,7 +165,6 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
             self.close()
             return
 
-        # Send last 100 lines first
         try:
             with open(self.file_path, 'r', encoding='utf-8', errors='replace') as f:
                 last_100_lines = deque(f, 100)
@@ -107,7 +175,7 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
 
         try:
             self.file = open(self.file_path, 'r', encoding='utf-8', errors='replace')
-            self.file.seek(0, os.SEEK_END)  # Start at end of file for new lines
+            self.file.seek(0, os.SEEK_END)
         except Exception as e:
             await self.write_message(f"Error opening file for streaming: {e}")
             self.close()
@@ -137,10 +205,14 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
 class UploadHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self):
+        if not FEATURE_FLAGS["file_upload"]:
+            self.set_status(403)
+            self.write("File upload is disabled.")
+            return
+
         directory = self.get_argument("directory", "")
         file_infos = self.request.files.get('files', [])
         
-        # This handles the single-file upload from the button
         if not file_infos:
             file_info = self.request.files.get('file', [])[0]
             filename = file_info['filename']
@@ -155,13 +227,10 @@ class UploadHandler(BaseHandler):
             self.redirect("/" + directory)
             return
 
-        # This handles the drag-and-drop upload
         for file_info in file_infos:
             relative_path = file_info['filename']
             file_body = file_info['body']
             
-            # Sanitize the relative path to prevent directory traversal
-            # and ensure it's a safe path
             final_path = os.path.join(ROOT_DIR, directory, relative_path)
             final_path_abs = os.path.abspath(final_path)
 
@@ -181,6 +250,11 @@ class UploadHandler(BaseHandler):
 class DeleteHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self):
+        if not FEATURE_FLAGS["file_delete"]:
+            self.set_status(403)
+            self.write("File delete is disabled.")
+            return
+
         path = self.get_argument("path", "")
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
         root = ROOT_DIR
@@ -198,6 +272,11 @@ class DeleteHandler(BaseHandler):
 class RenameHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self):
+        if not FEATURE_FLAGS["file_rename"]:
+            self.set_status(403)
+            self.write("File rename is disabled.")
+            return
+
         path = self.get_argument("path", "")
         new_name = self.get_argument("new_name", "")
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
@@ -211,11 +290,20 @@ class RenameHandler(BaseHandler):
         parent = os.path.dirname(path)
         self.redirect("/" + parent if parent else "/")
 
-def make_app(settings):
-    # Add template_path to settings
+def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
     settings["template_path"] = os.path.join(os.path.dirname(__file__), "templates")
+    
+    if ldap_enabled:
+        settings["ldap_server"] = ldap_server
+        settings["ldap_base_dn"] = ldap_base_dn
+        login_handler = LDAPLoginHandler
+    else:
+        login_handler = LoginHandler
+
     return tornado.web.Application([
-        (r"/login", LoginHandler),
+        (r"/login", login_handler),
+        (r"/admin/login", AdminLoginHandler),
+        (r"/admin", AdminHandler),
         (r"/stream/(.*)", FileStreamHandler),
         (r"/upload", UploadHandler),
         (r"/delete", DeleteHandler),
@@ -230,6 +318,10 @@ def main():
     parser.add_argument("--root", help="Root directory to serve")
     parser.add_argument("--port", type=int, help="Port to listen on")
     parser.add_argument("--token", help="Access token for login")
+    parser.add_argument("--admin-token", help="Access token for admin login")
+    parser.add_argument("--ldap", action="store_true", help="Enable LDAP authentication")
+    parser.add_argument("--ldap-server", help="LDAP server address")
+    parser.add_argument("--ldap-base-dn", help="LDAP base DN for user search")
     args = parser.parse_args()
 
     config = {}
@@ -240,18 +332,30 @@ def main():
     root = args.root or config.get("root") or os.getcwd()
     port = args.port or config.get("port") or 8000
     token = args.token or config.get("token") or os.environ.get("WB_ACCESS_TOKEN") or secrets.token_urlsafe(32)
+    admin_token = args.admin_token or config.get("admin_token") or secrets.token_urlsafe(32)
 
-    global ACCESS_TOKEN, ROOT_DIR
+    ldap_enabled = args.ldap or config.get("ldap", False)
+    ldap_server = args.ldap_server or config.get("ldap_server")
+    ldap_base_dn = args.ldap_base_dn or config.get("ldap_base_dn")
+
+    if ldap_enabled and not (ldap_server and ldap_base_dn):
+        print("Error: LDAP is enabled, but --ldap-server and --ldap-base-dn are not configured.")
+        return
+
+    global ACCESS_TOKEN, ADMIN_TOKEN, ROOT_DIR
     ACCESS_TOKEN = token
+    ADMIN_TOKEN = admin_token
     ROOT_DIR = os.path.abspath(root)
 
     print(f"Access token: {ACCESS_TOKEN}")
+    print(f"Admin token: {ADMIN_TOKEN}")
 
     settings = {
         "cookie_secret": ACCESS_TOKEN,
         "login_url": "/login",
+        "admin_login_url": "/admin/login",
     }
-    app = make_app(settings)
+    app = make_app(settings, ldap_enabled, ldap_server, ldap_base_dn)
     while True:
         try:
             app.listen(port)

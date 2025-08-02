@@ -21,8 +21,14 @@
         <div style="color: red;">{{ error }}</div>
     {% end %}
     <form method="POST">
-        <input type="password" name="token" placeholder="Enter access token">
+        {% if settings.get("ldap_server") %}
+            <input type="text" name="username" placeholder="Enter username"><br><br>
+            <input type="password" name="password" placeholder="Enter password">
+        {% else %}
+            <input type="password" name="token" placeholder="Enter access token">
+        {% end %}
+        <br><br>
         <input type="submit" value="Login">
     </form>
 </body>
-</html> 
+</html>
