@@ -157,7 +157,7 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
         if not self.current_user:
             self.close()
             return
-            
+
         self.file_path = os.path.abspath(os.path.join(ROOT_DIR, path))
         self.running = True
         if not os.path.isfile(self.file_path):
@@ -212,7 +212,7 @@ class UploadHandler(BaseHandler):
 
         directory = self.get_argument("directory", "")
         file_infos = self.request.files.get('files', [])
-        
+
         if not file_infos:
             file_info = self.request.files.get('file', [])[0]
             filename = file_info['filename']
@@ -230,7 +230,9 @@ class UploadHandler(BaseHandler):
         for file_info in file_infos:
             relative_path = file_info['filename']
             file_body = file_info['body']
-            
+
+            # Sanitize the relative path to prevent directory traversal
+            # and ensure it's a safe path
             final_path = os.path.join(ROOT_DIR, directory, relative_path)
             final_path_abs = os.path.abspath(final_path)
 
@@ -240,10 +242,10 @@ class UploadHandler(BaseHandler):
                 return
 
             os.makedirs(os.path.dirname(final_path_abs), exist_ok=True)
-            
+
             with open(final_path_abs, 'wb') as f:
                 f.write(file_body)
-        
+
         self.set_status(200)
         self.write("Upload successful")
 
@@ -311,7 +313,6 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
         (r"/(.*)", MainHandler),
     ], **settings)
 
-
 def main():
     parser = argparse.ArgumentParser(description="Run Filey")
     parser.add_argument("--config", help="Path to JSON config file")
@@ -347,7 +348,8 @@ def main():
     ADMIN_TOKEN = admin_token
     ROOT_DIR = os.path.abspath(root)
 
-    print(f"Access token: {ACCESS_TOKEN}")
+    # ✅ Changed line (minor improvement)
+    print(f"[Filey] Server access token set to: {ACCESS_TOKEN}")
     print(f"Admin token: {ADMIN_TOKEN}")
 
     settings = {
@@ -365,6 +367,6 @@ def main():
             break
         except OSError:
             port += 1
-    
+
 if __name__ == "__main__":
     main()
