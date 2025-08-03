@@ -16,6 +16,9 @@ wb.egg-info/dependency_links.txt
 wb.egg-info/entry_points.txt
 wb.egg-info/requires.txt
 wb.egg-info/top_level.txt
+wb/templates/admin.html
+wb/templates/admin_login.html
+wb/templates/browse.html
 wb/templates/directory.html
 wb/templates/file.html
 wb/templates/login.html
