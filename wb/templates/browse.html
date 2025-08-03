@@ -1,341 +1,385 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Filey - {{ current_path or "/" }}</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Browse</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Courier New', monospace;
-            background: white;
-            color: black;
-            line-height: 1.4;
-        }
-        
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Courier New", monospace;
+        background: white;
+        color: black;
+        line-height: 1.4;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      .header {
+        border-bottom: 2px solid black;
+        padding-bottom: 15px;
+        margin-bottom: 20px;
+      }
+
+      .header h1 {
+        font-size: 24px;
+        font-weight: bold;
+      }
+
+      .breadcrumb {
+        margin-top: 10px;
+        font-size: 14px;
+        color: #666;
+      }
+
+      .breadcrumb a {
+        color: black;
+        text-decoration: none;
+      }
+
+      .breadcrumb a:hover {
+        text-decoration: underline;
+      }
+
+      .upload-zone {
+        border: 2px dashed #ccc;
+        padding: 20px;
+        text-align: center;
+        margin-bottom: 20px;
+        background: #f9f9f9;
+      }
+
+      .upload-zone.dragover {
+        border-color: black;
+        background: #f0f0f0;
+      }
+
+      .file-table {
+        width: 100%;
+        border-collapse: collapse;
+        border: 1px solid black;
+        background: white;
+      }
+
+      .file-table th {
+        background: black;
+        color: white;
+        padding: 10px 12px;
+        text-align: left;
+        font-weight: bold;
+        border-bottom: 2px solid black;
+      }
+
+      .file-table td {
+        padding: 8px 12px;
+        border-bottom: 1px solid #ddd;
+      }
+
+      .file-table tbody tr:hover {
+        background: #f5f5f5;
+      }
+
+      .name-col {
+        width: 50%;
+      }
+      .size-col {
+        width: 15%;
+        text-align: right;
+        cursor: pointer;
+      }
+      .modified-col {
+        width: 20%;
+        cursor: pointer;
+      }
+      .actions-col {
+        width: 15%;
+      }
+
+      .size-cell {
+        text-align: right;
+        font-family: monospace;
+        font-size: 12px;
+      }
+
+      .modified-cell {
+        font-family: monospace;
+        font-size: 12px;
+        color: #666;
+      }
+
+      .file-link {
+        color: black;
+        text-decoration: none;
+        display: block;
+      }
+
+      .file-link:hover {
+        text-decoration: underline;
+      }
+
+      .file-icon {
+        margin-right: 8px;
+      }
+
+      .action-link {
+        color: black;
+        text-decoration: none;
+        margin-right: 10px;
+        font-size: 11px;
+        padding: 2px 6px;
+        border: 1px solid #ccc;
+        background: #f9f9f9;
+      }
+
+      .action-link:hover {
+        background: #e9e9e9;
+        text-decoration: none;
+      }
+
+      .sort-header {
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .sort-header:hover {
+        background: #333;
+      }
+
+      /* Responsive design */
+      @media (max-width: 768px) {
         .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
+          padding: 10px;
         }
-        
-        .header {
-            border-bottom: 2px solid black;
-            padding-bottom: 15px;
-            margin-bottom: 20px;
-        }
-        
-        .header h1 {
-            font-size: 24px;
-            font-weight: bold;
-        }
-        
-        .breadcrumb {
-            margin-top: 10px;
-            font-size: 14px;
-            color: #666;
-        }
-        
-        .breadcrumb a {
-            color: black;
-            text-decoration: none;
-        }
-        
-        .breadcrumb a:hover {
-            text-decoration: underline;
-        }
-        
-        .upload-zone {
-            border: 2px dashed #ccc;
-            padding: 20px;
-            text-align: center;
-            margin-bottom: 20px;
-            background: #f9f9f9;
-        }
-        
-        .upload-zone.dragover {
-            border-color: black;
-            background: #f0f0f0;
-        }
-        
         .file-table {
-            width: 100%;
-            border-collapse: collapse;
-            border: 1px solid black;
-            background: white;
+          font-size: 14px;
         }
-        
-        .file-table th {
-            background: black;
-            color: white;
-            padding: 10px 12px;
-            text-align: left;
-            font-weight: bold;
-            border-bottom: 2px solid black;
+        .size-col,
+        .actions-col {
+          display: none;
         }
-        
-        .file-table td {
-            padding: 8px 12px;
-            border-bottom: 1px solid #ddd;
+        .name-col {
+          width: 70%;
         }
-        
-        .file-table tbody tr:hover {
-            background: #f5f5f5;
+        .modified-col {
+          width: 30%;
         }
-        
-        .name-col { width: 50%; }
-        .size-col { width: 15%; text-align: right; cursor: pointer; }
-        .modified-col { width: 20%; cursor: pointer; }
-        .actions-col { width: 15%; }
-        
-        .size-cell { 
-            text-align: right; 
-            font-family: monospace;
-            font-size: 12px;
+      }
+
+      @media (max-width: 480px) {
+        .modified-col {
+          display: none;
         }
-        
-        .modified-cell { 
-            font-family: monospace;
-            font-size: 12px;
-            color: #666;
+        .name-col {
+          width: 100%;
         }
-        
-        .file-link {
-            color: black;
-            text-decoration: none;
-            display: block;
-        }
-        
-        .file-link:hover {
-            text-decoration: underline;
-        }
-        
-        .file-icon {
-            margin-right: 8px;
-        }
-        
-        .action-link {
-            color: black;
-            text-decoration: none;
-            margin-right: 10px;
-            font-size: 11px;
-            padding: 2px 6px;
-            border: 1px solid #ccc;
-            background: #f9f9f9;
-        }
-        
-        .action-link:hover {
-            background: #e9e9e9;
-            text-decoration: none;
-        }
-        
-        .sort-header {
-            cursor: pointer;
-            user-select: none;
-        }
-        
-        .sort-header:hover {
-            background: #333;
-        }
-        
-        /* Responsive design */
-        @media (max-width: 768px) {
-            .container { padding: 10px; }
-            .file-table { font-size: 14px; }
-            .size-col, .actions-col { display: none; }
-            .name-col { width: 70%; }
-            .modified-col { width: 30%; }
-        }
-        
-        @media (max-width: 480px) {
-            .modified-col { display: none; }
-            .name-col { width: 100%; }
-        }
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div class="container">
-        <div class="header">
-            <h1>Filey</h1>
-            <div class="breadcrumb">
-                <a href="/">🏠 Home</a>
-                {% if current_path and current_path != "/" %}
-                    {% set path_parts = current_path.strip('/').split('/') %}
-                    {% for i, part in enumerate(path_parts) %}
-                        {% set partial_path = '/' + '/'.join(path_parts[:i+1]) %}
-                        / <a href="{{ partial_path }}">{{ part }}</a>
-                    {% end %}
-                {% end %}
-            </div>
+      <div class="header">
+        <h1>Filey</h1>
+        <div class="breadcrumb">
+          <a href="/">🏠 Home</a>
+          {% if current_user and current_path != "/" %} {% set path_parts = current_path.strip('/').split('/') %}
+          {% for i, part in enumerate(path_parts) %} 
+          {% set partial_path = '/' + '/'.join(path_parts[:i+1]) %} /
+          <a href="{{ partial_path }}">{{ part }}</a>
+          {% end %} {% end %}
         </div>
-        
-        <!-- Upload Zone -->
-        <div class="upload-zone" id="uploadZone">
-            <p><strong>📁 Drop files here to upload</strong></p>
-            <p>Or click to select files</p>
-            <input type="file" id="fileInput" multiple style="display: none;">
-        </div>
-        
-        <!-- File Listing Table -->
-        <table class="file-table" id="fileTable">
-            <thead>
-                <tr>
-                    <th class="name-col sort-header" onclick="sortTable(0)">📁 Name</th>
-                    <th class="size-col sort-header" onclick="sortTable(1)">📏 Size</th>
-                    <th class="modified-col sort-header" onclick="sortTable(2)">🕒 Modified</th>
-                    <th class="actions-col">⚡ Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                <!-- Parent Directory Link -->
-                {% if current_path and current_path != "/" %}
-                <tr>
-                    <td class="name-cell">
-                        <a href="{{ parent_path or '/' }}" class="file-link">
-                            <span class="file-icon">📁</span>..
-                        </a>
-                    </td>
-                    <td class="size-cell">-</td>
-                    <td class="modified-cell">-</td>
-                    <td class="actions-cell">-</td>
-                </tr>
-                {% end %}
-                
-                <!-- File and Directory Listings -->
-                {% for file in files %}
-                <tr class="file-row">
-                    <td class="name-cell">
-                        {% if file.is_dir %}
-                            <a href="{{ escape(join_path(current_path or '/', file.name)) }}" class="file-link">
-                                <span class="file-icon">📁</span>{{ escape(file.name) }}
-                            </a>
-                        {% else %}
-                            <a href="{{ escape(join_path(current_path or '/', file.name)) }}" class="file-link">
-                                <span class="file-icon">{{ get_file_icon(file.name) }}</span>{{ escape(file.name) }}
-                            </a>
-                        {% end %}
-                    </td>
-                    <td class="size-cell" data-bytes="{{ file.get('size_bytes', 0) }}">
-                        {{ file.get('size_str', '-') }}
-                    </td>
-                    <td class="modified-cell" data-timestamp="{{ file.get('modified_timestamp', 0) }}">
-                        {{ file.get('modified', '-') }}
-                    </td>
-                    <td class="actions-cell">
-                        {% if not file.is_dir %}
-                            <a href="{{ escape(join_path(current_path or '/', file.name)) }}?download=1" 
-                               class="action-link">Download</a>
-                            <a href="#" onclick="streamFile('{{ escape(join_path(current_path or '/', file.name)) }}')" 
-                               class="action-link">Stream</a>
-                        {% end %}
-                    </td>
-                </tr>
-                {% end %}
-                
-                <!-- Empty Directory Message -->
-                {% if not files %}
-                <tr>
-                    <td colspan="4" style="text-align: center; padding: 40px; color: #666;">
-                        📭 This directory is empty
-                    </td>
-                </tr>
-                {% end %}
-            </tbody>
-        </table>
+      </div>
+
+      <!-- Upload Zone -->
+      <div class="upload-zone" id="uploadZone">
+        <p><strong>📁 Drop files here to upload</strong></p>
+        <p>Or click to select files</p>
+        <input type="file" id="fileInput" multiple style="display: none" />
+      </div>
+
+      <!-- File Listing Table -->
+      <table class="file-table" id="fileTable">
+        <thead>
+          <tr>
+            <th class="name-col sort-header" onclick="sortTable(0)">📁 Name</th>
+            <th class="size-col sort-header" onclick="sortTable(1)">📏 Size</th>
+            <th class="modified-col sort-header" onclick="sortTable(2)">
+              🕒 Modified
+            </th>
+            <th class="actions-col">⚡ Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Parent Directory Link -->
+          {% if current_path and current_path != "/" %}
+          <tr>
+            <td class="name-cell">
+              <a href="{{ parent_path or '/' }}" class="file-link">
+                <span class="file-icon">📁</span>..
+              </a>
+            </td>
+            <td class="size-cell">-</td>
+            <td class="modified-cell">-</td>
+            <td class="actions-cell">-</td>
+          </tr>
+          {% end %}
+
+          <!-- File and Directory Listings -->
+          {% for file in files %}
+          <tr class="file-row">
+            <td class="name-cell">
+              {% if file['is_dir'] %}
+              <a
+                href="{{ escape(join_path(current_path or '/', file['name'])) }}"
+                class="file-link"
+              >
+                <span class="file-icon">📁</span>{{ escape(file['name']) }}
+              </a>
+              {% else %}
+              <a
+                href="{{ escape(join_path(current_path or '/', file['name'])) }}"
+                class="file-link"
+              >
+                <span class="file-icon">{{ get_file_icon(file["name"]) }}</span>{{
+                escape(file['name']) }}
+              </a>
+              {% end %}
+            </td>
+            <td class="size-cell" data-bytes="{{ file.get('size_bytes', 0) }}">
+              {{ file.get('size_str', '-') }}
+            </td>
+            <td
+              class="modified-cell"
+              data-timestamp="{{ file.get('modified_timestamp', 0) }}"
+            >
+              {{ file.get('modified', '-') }}
+            </td>
+            <td class="actions-cell">
+              {% if not file["is_dir"] %}
+              <a
+                href="{{ escape(join_path(current_path or '/', file['name'])) }}?download=1"
+                class="action-link"
+                >Download</a
+              >
+              <a
+                href="#"
+                onclick="streamFile('{{ escape(join_path(current_path or '/', file['name'])) }}')"
+                class="action-link"
+                >Stream</a
+              >
+              {% end %}
+            </td>
+          </tr>
+          {% end %}
+
+          <!-- Empty Directory Message -->
+          {% if not files %}
+          <tr>
+            <td
+              colspan="4"
+              style="text-align: center; padding: 40px; color: #666"
+            >
+              📭 This directory is empty
+            </td>
+          </tr>
+          {% end %}
+        </tbody>
+      </table>
     </div>
 
     <script>
-        // File upload functionality
-        const uploadZone = document.getElementById('uploadZone');
-        const fileInput = document.getElementById('fileInput');
-        
-        uploadZone.addEventListener('click', () => fileInput.click());
-        uploadZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadZone.classList.add('dragover');
-        });
-        uploadZone.addEventListener('dragleave', () => {
-            uploadZone.classList.remove('dragover');
-        });
-        uploadZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadZone.classList.remove('dragover');
-            handleFiles(e.dataTransfer.files);
-        });
-        
-        fileInput.addEventListener('change', (e) => {
-            handleFiles(e.target.files);
-        });
-        
-        function handleFiles(files) {
-            const formData = new FormData();
-            formData.append('target_dir', '{{ current_path or "/" }}');
-            
-            for (let file of files) {
-                formData.append('files', file);
-            }
-            
-            fetch('/upload', {
-                method: 'POST',
-                body: formData
-            }).then(() => {
-                location.reload();
-            }).catch(err => {
-                alert('Upload failed: ' + err.message);
-            });
+      // File upload functionality
+      const uploadZone = document.getElementById("uploadZone");
+      const fileInput = document.getElementById("fileInput");
+
+      uploadZone.addEventListener("click", () => fileInput.click());
+      uploadZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        uploadZone.classList.add("dragover");
+      });
+      uploadZone.addEventListener("dragleave", () => {
+        uploadZone.classList.remove("dragover");
+      });
+      uploadZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        uploadZone.classList.remove("dragover");
+        handleFiles(e.dataTransfer.files);
+      });
+
+      fileInput.addEventListener("change", (e) => {
+        handleFiles(e.target.files);
+      });
+
+      function handleFiles(files) {
+        const formData = new FormData();
+        formData.append("target_dir", '{{ current_path or "/" }}');
+
+        for (let file of files) {
+          formData.append("files", file);
         }
-        
-        // File streaming functionality
-        function streamFile(filepath) {
-            const streamUrl = `/stream?file=${encodeURIComponent(filepath)}`;
-            window.open(streamUrl, '_blank');
-        }
-        
-        // Table sorting functionality
-        function sortTable(columnIndex) {
-            const table = document.getElementById('fileTable');
-            const tbody = table.querySelector('tbody');
-            const rows = Array.from(tbody.querySelectorAll('tr')).slice({{ 1 if current_path and current_path != "/" else 0 }});
-            
-            rows.sort((a, b) => {
-                let aVal = a.children[columnIndex].textContent.trim();
-                let bVal = b.children[columnIndex].textContent.trim();
-                
-                if (columnIndex === 1) { // Size column
-                    aVal = parseInt(a.children[columnIndex].dataset.bytes) || -1;
-                    bVal = parseInt(b.children[columnIndex].dataset.bytes) || -1;
-                    return bVal - aVal; // Descending
-                } else if (columnIndex === 2) { // Modified column
-                    aVal = parseInt(a.children[columnIndex].dataset.timestamp) || 0;
-                    bVal = parseInt(b.children[columnIndex].dataset.timestamp) || 0;
-                    return bVal - aVal; // Descending (newest first)
-                }
-                
-                // Name column - directories first, then alphabetical
-                const aIsDir = a.children[0].querySelector('.file-icon').textContent === '📁';
-                const bIsDir = b.children[0].querySelector('.file-icon').textContent === '📁';
-                
-                if (aIsDir !== bIsDir) {
-                    return bIsDir ? 1 : -1;
-                }
-                
-                return aVal.localeCompare(bVal);
-            });
-            
-            rows.forEach(row => tbody.appendChild(row));
-        }
-        
-        // Helper functions for the template (to be added to Python backend)
-        {% comment %}
-        These functions should be implemented in the Python backend:
-        - join_path(path1, path2): safely join paths
-        - get_file_icon(filename): return emoji based on file extension
-        {% end %}
+
+        fetch("/upload", {
+          method: "POST",
+          body: formData,
+        })
+          .then(() => {
+            location.reload();
+          })
+          .catch((err) => {
+            alert("Upload failed: " + err.message);
+          });
+      }
+
+      // File streaming functionality
+      function streamFile(filepath) {
+        const streamUrl = `/stream?file=${encodeURIComponent(filepath)}`;
+        window.open(streamUrl, "_blank");
+      }
+
+      // Table sorting functionality
+      function sortTable(columnIndex) {
+        const table = document.getElementById("fileTable");
+        const tbody = table.querySelector("tbody");
+        const rows = Array.from(tbody.querySelectorAll("tr")).slice(skipRows);
+
+        rows.sort((a, b) => {
+          let aVal = a.children[columnIndex].textContent.trim();
+          let bVal = b.children[columnIndex].textContent.trim();
+
+          if (columnIndex === 1) {
+            // Size column
+            aVal = parseInt(a.children[columnIndex].dataset.bytes) || -1;
+            bVal = parseInt(b.children[columnIndex].dataset.bytes) || -1;
+            return bVal - aVal;
+          } else if (columnIndex === 2) {
+            // Modified column
+            aVal = parseInt(a.children[columnIndex].dataset.timestamp) || 0;
+            bVal = parseInt(b.children[columnIndex].dataset.timestamp) || 0;
+            return bVal - aVal;
+          }
+
+          const aIsDir =
+            a.children[0].querySelector(".file-icon").textContent === "📁";
+          const bIsDir =
+            b.children[0].querySelector(".file-icon").textContent === "📁";
+
+          if (aIsDir !== bIsDir) {
+            return bIsDir ? 1 : -1;
+          }
+
+          return aVal.localeCompare(bVal);
+        });
+
+        rows.forEach((row) => tbody.appendChild(row));
+      }
     </script>
-</body>
+  </body>
 </html>

@@ -78,7 +78,7 @@
 
     <ul>
         {% if path %}
-            <li><a href="/{{ path.rsplit('/', 1)[0] }}" class="file-link">..</a></li>
+            <li><a href="/{{ parent_path }}" class="file-link">..</a></li>
         {% end %}
         {% for f in files %}
             {% set full = (path + '/' + f['name']) if path else f['name'] %}

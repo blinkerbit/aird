@@ -3,6 +3,7 @@ import secrets
 import argparse
 import json
 from typing import TYPE_CHECKING, Optional, Set
+from webbrowser import get
 
 if TYPE_CHECKING:
     pass
@@ -15,6 +16,13 @@ import asyncio
 import shutil
 from collections import deque
 from ldap3 import Server, Connection, ALL
+import time
+from datetime import datetime
+
+import os
+
+def join_path(*parts):
+    return os.path.join(*parts).replace("\\", "/")
 
 # Add this import for template path
 from tornado.web import RequestHandler, Application
@@ -30,6 +38,34 @@ FEATURE_FLAGS = {
     "file_rename": True,
     "file_download": True,
 }
+
+def get_files_in_directory(path="."):
+    files = []
+    for entry in os.scandir(path):
+        stat = entry.stat()
+        files.append({
+            "name": entry.name,
+            "is_dir": entry.is_dir(),
+            "size_bytes": stat.st_size,
+            "size_str": f"{stat.st_size / 1024:.2f} KB" if not entry.is_dir() else "-",
+            "modified": datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+            "modified_timestamp": int(stat.st_mtime)
+        })
+    return files
+
+def get_file_icon(filename):
+    ext = os.path.splitext(filename)[1].lower()
+    if ext in [".txt", ".md"]:
+        return "📄"
+    elif ext in [".jpg", ".jpeg", ".png", ".gif"]:
+        return "🖼️"
+    elif ext in [".py", ".js", ".java", ".cpp"]:
+        return "💻"
+    elif ext in [".zip", ".rar"]:
+        return "🗜️"
+    else:
+        return "📦"
+
 
 class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):
     connections: Set['FeatureFlagSocketHandler'] = set()
@@ -135,13 +171,12 @@ class AdminHandler(BaseHandler):
 class MainHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self, path):
-        abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
+        abspath = os.path.abspath(path)
         root = ROOT_DIR
         if not abspath.startswith(root):
             self.set_status(403)
             self.write("Forbidden")
             return
-
         if os.path.isdir(abspath):
             files = os.listdir(abspath)
             files.sort()
@@ -151,7 +186,14 @@ class MainHandler(BaseHandler):
                     'name': f_name,
                     'is_dir': os.path.isdir(os.path.join(abspath, f_name))
                 })
-            self.render("directory.html", path=path, files=file_data, features=FEATURE_FLAGS)
+            if not path or "/" not in path:
+                parent_path = "browse"
+            else: 
+                splits = path.rsplit('/', 1)[0]
+                if len(splits) > 1:
+                    parent_path = f"{path.rsplit('/', 1)[0]}"
+                else: parent_path = "browse"
+            self.render("directory.html", path=path, files=file_data, parent_path=parent_path, features=FEATURE_FLAGS)
         elif os.path.isfile(abspath):
             filename = os.path.basename(abspath)
             if self.get_argument('download', None):
@@ -316,6 +358,18 @@ class RenameHandler(BaseHandler):
         parent = os.path.dirname(path)
         self.redirect("/" + parent if parent else "/")
 
+class BrowseHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        if not self.get_secure_cookie("user"):
+            self.set_status(401)
+            self.write("Unauthorized")
+            return
+        path = self.get_argument("path", "")
+        parent = os.path.dirname(path)
+        files = get_files_in_directory()
+        self.render("browse.html", current_path=path, parent_path=parent, files=files, join_path=join_path, get_file_icon=get_file_icon)
+
 def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
     settings["template_path"] = os.path.join(os.path.dirname(__file__), "templates")
     
@@ -335,6 +389,7 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
         (r"/upload", UploadHandler),
         (r"/delete", DeleteHandler),
         (r"/rename", RenameHandler),
+        (r"/browse", BrowseHandler),
         (r"/(.*)", MainHandler),
     ], **settings)
 
