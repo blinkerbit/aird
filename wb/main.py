@@ -162,32 +162,34 @@ class AdminHandler(BaseHandler):
         FeatureFlagSocketHandler.send_updates()
         self.redirect("/admin")
 
+def get_relative_path(path, root):
+    if path.startswith(root):
+        return os.path.relpath(path, root)
+    return path
+
 class MainHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self, path):
-        abspath = os.path.abspath(path)
-        root = ROOT_DIR
-        if not abspath.startswith(root):
+        abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
+        
+        if not abspath.startswith(ROOT_DIR):
             self.set_status(403)
             self.write("Forbidden")
             return
+
         if os.path.isdir(abspath):
-            files = os.listdir(abspath)
-            files.sort()
-            file_data = []
-            for f_name in files:
-                file_data.append({
-                    'name': f_name,
-                    'is_dir': os.path.isdir(os.path.join(abspath, f_name))
-                })
-            if not path or "/" not in path:
-                parent_path = "browse"
-            else: 
-                splits = path.rsplit('/', 1)[0]
-                if len(splits) > 1:
-                    parent_path = f"{path.rsplit('/', 1)[0]}"
-                else: parent_path = "browse"
-            self.render("directory.html", path=path, files=file_data, parent_path=parent_path, features=FEATURE_FLAGS)
+            files = get_files_in_directory(abspath)
+            parent_path = os.path.dirname(path) if path else None
+            
+            # Use the new helper function to get the correct relative path
+            self.render(
+                "browse.html", 
+                current_path=path, 
+                parent_path=parent_path, 
+                files=files, 
+                join_path=join_path, 
+                get_file_icon=get_file_icon
+            )
         elif os.path.isfile(abspath):
             filename = os.path.basename(abspath)
             if self.get_argument('download', None):
@@ -200,9 +202,12 @@ class MainHandler(BaseHandler):
                 with open(abspath, 'rb') as f:
                     self.write(f.read())
             else:
-                with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
-                    file_content = f.read()
                 start_streaming = self.get_argument('stream', None) is not None
+                if start_streaming:
+                    file_content = "Initializing stream..."
+                else:
+                    with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+                        file_content = f.read()
                 self.render("file.html", filename=filename, path=path, file_content=file_content, start_streaming=start_streaming, features=FEATURE_FLAGS)
         else:
             self.set_status(404)
@@ -219,7 +224,8 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
         if not self.current_user:
             self.close()
             return
-            
+
+        path = path.lstrip('/')
         self.file_path = os.path.abspath(os.path.join(ROOT_DIR, path))
         self.running = True
         if not os.path.isfile(self.file_path):
@@ -352,17 +358,7 @@ class RenameHandler(BaseHandler):
         parent = os.path.dirname(path)
         self.redirect("/" + parent if parent else "/")
 
-class BrowseHandler(BaseHandler):
-    @tornado.web.authenticated
-    def get(self):
-        if not self.get_secure_cookie("user"):
-            self.set_status(401)
-            self.write("Unauthorized")
-            return
-        path = self.get_argument("path", "")
-        parent = os.path.dirname(path)
-        files = get_files_in_directory()
-        self.render("browse.html", current_path=path, parent_path=parent, files=files, join_path=join_path, get_file_icon=get_file_icon)
+
 
 def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
     settings["template_path"] = os.path.join(os.path.dirname(__file__), "templates")
@@ -383,7 +379,6 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
         (r"/upload", UploadHandler),
         (r"/delete", DeleteHandler),
         (r"/rename", RenameHandler),
-        (r"/browse", BrowseHandler),
         (r"/(.*)", MainHandler),
     ], **settings)
 

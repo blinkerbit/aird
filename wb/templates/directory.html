@@ -1,234 +1,144 @@
 <!DOCTYPE html>
-<html>
-<head>
-    <title>Directory listing</title>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Directory Listing</title>
     <style>
-        body {
-            background-color: white;
-            color: black;
-            font-family: monospace;
-        }
-        ul {
-            list-style: none;
-            padding: 0;
-        }
-        li {
-            padding: 5px 0;
-            display: flex;
-            align-items: center;
-        }
-        li a {
-            text-decoration: none;
-            color: black;
-        }
-        li a:hover {
-            text-decoration: underline;
-        }
-        .file-link {
-            flex-grow: 1;
-        }
-        .file-actions {
-            margin-left: auto;
-            display: flex;
-        }
-        .download-btn, .stream-btn, .rename-btn, .delete-btn {
-            display: inline-flex;
-            align-items: center;
-            padding: 3px 8px;
-            background-color: white;
-            color: black;
-            text-decoration: none;
-            border-radius: 4px;
-            font-size: 12px;
-            border: 1px solid black;
-            margin-left: 5px;
-        }
-        .download-btn:hover, .stream-btn:hover, .rename-btn:hover, .delete-btn:hover {
-            background-color: #f0f0f0;
-        }
-        .stream-btn {
-            opacity: 0.5;
-        }
-        .stream-btn:hover {
-            opacity: 1;
-        }
-        #drop-zone {
-            border: 2px dashed #ccc;
-            padding: 20px;
-            text-align: center;
-            margin-top: 20px;
-            transition: background-color 0.2s, border-color 0.2s;
-        }
-        #drop-zone.dragover {
-            border-color: black;
-            background-color: #f0f0f0;
-        }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Courier New", monospace;
+        background: white;
+        color: black;
+        line-height: 1.4;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      .header {
+        border-bottom: 2px solid black;
+        padding-bottom: 15px;
+        margin-bottom: 20px;
+      }
+
+      .header h1 {
+        font-size: 24px;
+        font-weight: bold;
+      }
+
+      .breadcrumb {
+        margin-top: 10px;
+        font-size: 14px;
+        color: #666;
+      }
+
+      .breadcrumb a {
+        color: black;
+        text-decoration: none;
+      }
+
+      .breadcrumb a:hover {
+        text-decoration: underline;
+      }
+
+      .file-table {
+        width: 100%;
+        border-collapse: collapse;
+        border: 1px solid black;
+        background: white;
+      }
+
+      .file-table th {
+        background: black;
+        color: white;
+        padding: 10px 12px;
+        text-align: left;
+        font-weight: bold;
+        border-bottom: 2px solid black;
+      }
+
+      .file-table td {
+        padding: 8px 12px;
+        border-bottom: 1px solid #ddd;
+      }
+
+      .file-table tbody tr:hover {
+        background: #f5f5f5;
+      }
+
+      .name-col {
+        width: 100%;
+      }
+      
+      .file-link {
+        color: black;
+        text-decoration: none;
+        display: block;
+      }
+
+      .file-link:hover {
+        text-decoration: underline;
+      }
+
+      .file-icon {
+        margin-right: 8px;
+      }
+
     </style>
-</head>
-<body>
-    <h2>Directory listing for {{ path or '/' }}</h2>
-    <form action="/upload" method="post" enctype="multipart/form-data" id="upload-form" style="margin-bottom: 10px;">
-        <input type="hidden" name="directory" value="{{ path }}">
-        <input type="file" name="file" id="file-input" style="display: none;" onchange="document.getElementById('upload-form').submit()">
-    </form>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>Filey - All Directories</h1>
+        <div class="breadcrumb">
+          <a href="/">🏠 Home</a>
+        </div>
+      </div>
 
-    <div id="drop-zone">
-        <p>Drag & Drop files and folders here to upload</p>
+      <!-- Directory Listing Table -->
+      <table class="file-table" id="fileTable">
+        <thead>
+          <tr>
+            <th class="name-col">📁 Name</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Directory Listings -->
+          {% for dir in dirs %}
+          <tr class="file-row">
+            <td class="name-cell">
+              <a
+                href="{{ escape(dir.path) }}"
+                class="file-link"
+              >
+                <span class="file-icon">📁</span>{{ escape(dir.name) }}
+              </a>
+            </td>
+          </tr>
+          {% end %}
+
+          <!-- Empty Directory Message -->
+          {% if not dirs %}
+          <tr>
+            <td
+              colspan="1"
+              style="text-align: center; padding: 40px; color: #666"
+            >
+              📭 No directories found.
+            </td>
+          </tr>
+          {% end %}
+        </tbody>
+      </table>
     </div>
-
-    <ul>
-        {% if path %}
-            <li><a href="/{{ parent_path }}" class="file-link">..</a></li>
-        {% end %}
-        {% for f in files %}
-            {% set full = (path + '/' + f['name']) if path else f['name'] %}
-            <li>
-                <a href="/{{ full }}" class.file-link">{{ f['name'] + '/' if f['is_dir'] else f['name'] }}</a>
-                <div class="file-actions">
-                    {% if not f['is_dir'] %}
-                        <a href="/{{ full }}?stream=1" class="stream-btn">Stream</a>
-                        <a href="/{{ full }}?download=1" class="download-btn" data-feature="file_download">&#8595; Download</a>
-                    {% end %}
-                    <button class="rename-btn" onclick="renameItem('{{ full }}')" data-feature="file_rename">Rename</button>
-                    <button class="delete-btn" onclick="deleteItem('{{ full }}')" data-feature="file_delete">Delete</button>
-                </div>
-            </li>
-        {% end %}
-    </ul>
-    <script>
-        const dropZone = document.getElementById('drop-zone');
-        const currentPath = "{{ path }}";
-        const featureSocket = new WebSocket(`ws://${window.location.host}/features`);
-
-        featureSocket.onmessage = function(event) {
-            const features = JSON.parse(event.data);
-            updateFeatureVisibility(features);
-        };
-
-        function updateFeatureVisibility(features) {
-            document.querySelectorAll('[data-feature]').forEach(el => {
-                const feature = el.dataset.feature;
-                if (features[feature]) {
-                    el.style.display = '';
-                } else {
-                    el.style.display = 'none';
-                }
-            });
-            if (features['file_upload']) {
-                dropZone.style.display = '';
-            } else {
-                dropZone.style.display = 'none';
-            }
-        }
-
-        dropZone.addEventListener('dragenter', (event) => {
-            event.preventDefault();
-            dropZone.classList.add('dragover');
-        });
-
-        dropZone.addEventListener('dragover', (event) => {
-            event.preventDefault();
-            dropZone.classList.add('dragover');
-        });
-
-        dropZone.addEventListener('dragleave', (event) => {
-            event.preventDefault();
-            dropZone.classList.remove('dragover');
-        });
-
-        dropZone.addEventListener('drop', (event) => {
-            event.preventDefault();
-            dropZone.classList.remove('dragover');
-            const items = event.dataTransfer.items;
-            const formData = new FormData();
-            formData.append('directory', currentPath);
-
-            const promises = [];
-            for (let i = 0; i < items.length; i++) {
-                const item = items[i].webkitGetAsEntry();
-                if (item) {
-                    promises.push(traverseFileTree(item, ''));
-                }
-            }
-
-            Promise.all(promises).then((allFiles) => {
-                const fileEntries = [].concat.apply([], allFiles); // flatten array
-                if (fileEntries.length === 0) return;
-                
-                for (const fileEntry of fileEntries) {
-                    formData.append('files', fileEntry.file, fileEntry.path);
-                }
-
-                dropZone.textContent = `Uploading ${fileEntries.length} files...`;
-
-                fetch('/upload', {
-                    method: 'POST',
-                    body: formData
-                }).then(response => {
-                    if (response.ok) {
-                        window.location.reload();
-                    } else {
-                        alert('Upload failed.');
-                        dropZone.textContent = 'Drag & Drop files and folders here to upload';
-                    }
-                }).catch(error => {
-                    console.error('Error:', error);
-                    alert('Upload failed.');
-                    dropZone.textContent = 'Drag & Drop files and folders here to upload';
-                });
-            });
-        });
-
-        function deleteItem(path) {
-            if (!confirm('Delete ' + path + '?')) return;
-            const formData = new FormData();
-            formData.append('path', path);
-            fetch('/delete', { method: 'POST', body: formData })
-                .then(() => window.location.reload());
-        }
-
-        function renameItem(path) {
-            const newName = prompt('Rename ' + path.split('/').pop() + ' to:');
-            if (!newName) return;
-            const formData = new FormData();
-            formData.append('path', path);
-            formData.append('new_name', newName);
-            fetch('/rename', { method: 'POST', body: formData })
-                .then(() => window.location.reload());
-        }
-
-        function traverseFileTree(item, path) {
-            return new Promise((resolve) => {
-                path = path || '';
-                if (item.isFile) {
-                    item.file((file) => {
-                        resolve([{ file: file, path: path + file.name }]);
-                    });
-                } else if (item.isDirectory) {
-                    const dirReader = item.createReader();
-                    const allEntries = [];
-                    const readEntries = () => {
-                        dirReader.readEntries((entries) => {
-                            if (entries.length > 0) {
-                                allEntries.push(...entries);
-                                readEntries();
-                            } else {
-                                const promises = [];
-                                for (let i = 0; i < allEntries.length; i++) {
-                                    promises.push(traverseFileTree(allEntries[i], path + item.name + '/'));
-                                }
-                                Promise.all(promises).then((allFiles) => {
-                                    resolve([].concat.apply([], allFiles));
-                                });
-                            }
-                        });
-                    };
-                    readEntries();
-                } else {
-                    resolve([]);
-                }
-            });
-        }
-    </script>
-</body>
+  </body>
 </html>

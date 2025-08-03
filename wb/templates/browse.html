@@ -222,7 +222,7 @@
           {% if current_path and current_path != "/" %}
           <tr>
             <td class="name-cell">
-              <a href="{{ parent_path or '/' }}" class="file-link">
+              <a href="/{{ parent_path or '' }}" class="file-link">
                 <span class="file-icon">📁</span>..
               </a>
             </td>
@@ -238,14 +238,14 @@
             <td class="name-cell">
               {% if file['is_dir'] %}
               <a
-                href="{{ escape(join_path(current_path or '/', file['name'])) }}"
+                href="/{{ escape(join_path(current_path, file['name'])) }}"
                 class="file-link"
               >
                 <span class="file-icon">📁</span>{{ escape(file['name']) }}
               </a>
               {% else %}
               <a
-                href="{{ escape(join_path(current_path or '/', file['name'])) }}"
+                href="/{{ escape(join_path(current_path, file['name'])) }}"
                 class="file-link"
               >
                 <span class="file-icon">{{ get_file_icon(file["name"]) }}</span>{{
@@ -265,13 +265,13 @@
             <td class="actions-cell">
               {% if not file["is_dir"] %}
               <a
-                href="{{ escape(join_path(current_path or '/', file['name'])) }}?download=1"
+                href="/{{ escape(join_path(current_path, file['name'])) }}?download=1"
                 class="action-link"
                 >Download</a
               >
               <a
                 href="#"
-                onclick="streamFile('{{ escape(join_path(current_path or '/', file['name'])) }}')"
+                onclick="streamFile('/{{ escape(join_path(current_path, file['name'])) }}')"
                 class="action-link"
                 >Stream</a
               >
@@ -340,7 +340,7 @@
 
       // File streaming functionality
       function streamFile(filepath) {
-        const streamUrl = `/stream?file=${encodeURIComponent(filepath)}`;
+        const streamUrl = `${filepath}?stream=1`;
         window.open(streamUrl, "_blank");
       }
 
