@@ -24,6 +24,20 @@
         .download-btn:hover, button:hover {
             background-color: #f0f0f0;
         }
+        .line-numbers {
+            text-align: right;
+            padding-right: 10px;
+            border-right: 1px solid #ccc;
+            user-select: none;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        td pre {
+            margin: 0;
+            padding: 0;
+        }
     </style>
 </head>
 <body>
@@ -32,13 +46,24 @@
     <button id="stream-btn">Stream</button>
     <button id="stop-stream-btn" style="display:none;">Stop Streaming</button>
     <hr>
-    <pre id="file-content">{{ file_content }}</pre>
+    <table id="file-content">
+        <tbody>
+            {% for i, line in enumerate(file_content.split('\n')) %}
+            <tr>
+                <td class="line-numbers">{{ i + 1 }}</td>
+                <td><pre>{{ line }}</pre></td>
+            </tr>
+            {% end %}
+        </tbody>
+    </table>
     <script>
     const streamBtn = document.getElementById('stream-btn');
     const stopStreamBtn = document.getElementById('stop-stream-btn');
-    const pre = document.getElementById('file-content');
+    const tableBody = document.querySelector('#file-content tbody');
     let ws = null;
-    let originalContent = pre.textContent;
+    let originalContent = tableBody.innerHTML;
+    let lineCount = tableBody.rows.length;
+
     const featureSocket = new WebSocket(`ws://${window.location.host}/features`);
 
     featureSocket.onmessage = function(event) {
@@ -59,18 +84,29 @@
 
     streamBtn.onclick = function() {
         ws = new WebSocket(`ws://${window.location.host}/stream/{{ path }}`);
-        pre.textContent = '';
+        tableBody.innerHTML = '';
+        lineCount = 0;
         streamBtn.style.display = 'none';
         stopStreamBtn.style.display = '';
         ws.onmessage = function(event) {
-            pre.textContent += event.data;
-            pre.scrollTop = pre.scrollHeight;
+            const lines = event.data.split('\n');
+            lines.forEach(line => {
+                lineCount++;
+                const row = tableBody.insertRow();
+                const lineNumCell = row.insertCell(0);
+                const lineContentCell = row.insertCell(1);
+                lineNumCell.className = 'line-numbers';
+                lineNumCell.textContent = lineCount;
+                lineContentCell.innerHTML = `<pre>${line}</pre>`;
+            });
+            window.scrollTo(0, document.body.scrollHeight);
         };
         ws.onclose = function() {
             stopStreamBtn.style.display = 'none';
             streamBtn.style.display = '';
         };
     };
+
     stopStreamBtn.onclick = function() {
         if (ws) {
             ws.close();
