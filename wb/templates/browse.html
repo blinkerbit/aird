@@ -19,9 +19,9 @@
       }
 
       .container {
-        max-width: 1200px;
+        max-width: 100%;
         margin: 0 auto;
-        padding: 20px;
+        padding: 20px 10px;
       }
 
       .header {
@@ -89,11 +89,11 @@
       }
 
       .name-col {
-        width: 50%;
+        width: 45%;
       }
       .size-col {
         width: 15%;
-        text-align: right;
+        text-align: left;
         cursor: pointer;
       }
       .modified-col {
@@ -101,13 +101,17 @@
         cursor: pointer;
       }
       .actions-col {
-        width: 15%;
+        width: 20%;
+        text-align: right;
       }
 
       .size-cell {
-        text-align: right;
+        text-align: left;
         font-family: monospace;
         font-size: 12px;
+      }
+      .actions-cell {
+        text-align: right;
       }
 
       .modified-cell {
@@ -133,7 +137,7 @@
       .action-link {
         color: black;
         text-decoration: none;
-        margin-right: 10px;
+        margin-right: 1px;
         font-size: 11px;
         padding: 2px 6px;
         border: 1px solid #ccc;
@@ -199,11 +203,13 @@
       </div>
 
       <!-- Upload Zone -->
+      {% if features['file_upload'] %}
       <div class="upload-zone" id="uploadZone">
         <p><strong>📁 Drop files here to upload</strong></p>
         <p>Or click to select files</p>
         <input type="file" id="fileInput" multiple style="display: none" />
       </div>
+      {% end %}
 
       <!-- File Listing Table -->
       <table class="file-table" id="fileTable">
@@ -264,17 +270,33 @@
             </td>
             <td class="actions-cell">
               {% if not file["is_dir"] %}
-              <a
-                href="/{{ escape(join_path(current_path, file['name'])) }}?download=1"
-                class="action-link"
-                >Download</a
-              >
+                {% if features['file_download'] %}
+                <a
+                  href="/{{ escape(join_path(current_path, file['name'])) }}?download=1"
+                  class="action-link"
+                  >Download</a
+                >
+                {% end %}
+                <a
+                  href="#"
+                  onclick="streamFile('/{{ escape(join_path(current_path, file['name'])) }}')"
+                  class="action-link"
+                  >Stream</a
+                >
+              {% end %}
+              {% if features['file_rename'] %}
               <a
                 href="#"
-                onclick="streamFile('/{{ escape(join_path(current_path, file['name'])) }}')"
+                onclick="renameItem('/{{ escape(join_path(current_path, file['name'])) }}')"
                 class="action-link"
-                >Stream</a
-              >
+                >Rename</a>
+              {% end %}
+              {% if features['file_delete'] %}
+              <a
+                href="#"
+                onclick="deleteItem('/{{ escape(join_path(current_path, file['name'])) }}')"
+                class="action-link"
+                >Delete</a>
               {% end %}
             </td>
           </tr>
@@ -336,6 +358,52 @@
           .catch((err) => {
             alert("Upload failed: " + err.message);
           });
+      }
+
+      // Rename functionality
+      function renameItem(filepath) {
+        const newName = prompt("Enter new name:");
+        if (!newName) return;
+        const formData = new URLSearchParams();
+        formData.append("path", filepath.replace(/^\//, ""));
+        formData.append("new_name", newName);
+        fetch("/rename", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: formData.toString(),
+        })
+          .then((res) => {
+            if (res.ok) {
+              location.reload();
+            } else {
+              res.text().then((t) => alert("Rename failed: " + t));
+            }
+          })
+          .catch((err) => alert("Rename failed: " + err.message));
+      }
+
+      // Delete functionality
+      function deleteItem(filepath) {
+        if (!confirm("Are you sure you want to delete this item?")) return;
+        const formData = new URLSearchParams();
+        formData.append("path", filepath.replace(/^\//, ""));
+        fetch("/delete", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: formData.toString(),
+        })
+          .then((res) => {
+            if (res.ok) {
+              location.reload();
+            } else {
+              res.text().then((t) => alert("Delete failed: " + t));
+            }
+          })
+          .catch((err) => alert("Delete failed: " + err.message));
       }
 
       // File streaming functionality

@@ -188,7 +188,8 @@ class MainHandler(BaseHandler):
                 parent_path=parent_path, 
                 files=files, 
                 join_path=join_path, 
-                get_file_icon=get_file_icon
+                get_file_icon=get_file_icon,
+                features=FEATURE_FLAGS
             )
         elif os.path.isfile(abspath):
             filename = os.path.basename(abspath)
