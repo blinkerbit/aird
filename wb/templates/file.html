@@ -45,6 +45,7 @@
     <a href="/{{ path }}?download=1" class="download-btn" data-feature="file_download">Download</a>
     <button id="stream-btn">Stream</button>
     <button id="stop-stream-btn" style="display:none;">Stop Streaming</button>
+    <button id="copy-btn">Copy Content</button>
     <hr>
     <table id="file-content">
         <tbody>
@@ -59,6 +60,7 @@
     <script>
     const streamBtn = document.getElementById('stream-btn');
     const stopStreamBtn = document.getElementById('stop-stream-btn');
+    const copyBtn = document.getElementById('copy-btn');
     const tableBody = document.querySelector('#file-content tbody');
     let ws = null;
     let originalContent = tableBody.innerHTML;
@@ -114,6 +116,30 @@
         }
         stopStreamBtn.style.display = 'none';
         streamBtn.style.display = '';
+    };
+
+    copyBtn.onclick = function () {
+        const content = Array.from(tableBody.rows).map(row => row.cells[1].textContent).join('\n');
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(content).then(() => {
+                alert('Content copied to clipboard!');
+            }).catch(err => {
+                console.error('Failed to copy content: ', err);
+            });
+        } else {
+            // Fallback for unsupported browsers
+            const textarea = document.createElement('textarea');
+            textarea.value = content;
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                alert('Content copied to clipboard!');
+            } catch (err) {
+                alert('Failed to copy content');
+            }
+            document.body.removeChild(textarea);
+        }
     };
 
     document.addEventListener('DOMContentLoaded', function() {
