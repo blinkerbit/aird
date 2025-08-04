@@ -8,6 +8,25 @@
             color: black;
             font-family: monospace;
         }
+        .search-container {
+            margin: 10px 0;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .search-input {
+            padding: 5px;
+            font-family: monospace;
+            border: 1px solid black;
+            border-radius: 4px;
+            width: 200px;
+        }
+        .highlight {
+            background-color: yellow;
+        }
+        .hidden-row {
+            display: none;
+        }
         .download-btn, button {
             display: inline-flex;
             align-items: center;
@@ -46,6 +65,10 @@
     <button id="stream-btn">Stream</button>
     <button id="stop-stream-btn" style="display:none;">Stop Streaming</button>
     <button id="copy-btn">Copy Content</button>
+    <div class="search-container">
+        <input type="text" id="line-filter" class="search-input" placeholder="Filter lines..." title="Type to filter lines">
+        <span id="match-count"></span>
+    </div>
     <hr>
     <table id="file-content">
         <tbody>
@@ -66,7 +89,26 @@
     let originalContent = tableBody.innerHTML;
     let lineCount = tableBody.rows.length;
 
-    const featureSocket = new WebSocket(`ws://${window.location.host}/features`);
+    // Get XSRF token from cookie
+    function getXSRFToken() {
+        const name = "_xsrf=";
+        const decodedCookie = decodeURIComponent(document.cookie);
+        const cookies = decodedCookie.split(';');
+        for(let i = 0; i < cookies.length; i++) {
+            let c = cookies[i].trim();
+            if (c.indexOf(name) == 0) {
+                return c.substring(name.length, c.length);
+            }
+        }
+        return "";
+    }
+
+    // Create WebSocket URL with XSRF token
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const featureSocket = new WebSocket(
+        `${wsProtocol}//${window.location.host}/features`,
+        [`xsrf_token=${getXSRFToken()}`]
+    );
 
     featureSocket.onmessage = function(event) {
         const features = JSON.parse(event.data);
@@ -85,7 +127,11 @@
     }
 
     streamBtn.onclick = function() {
-        ws = new WebSocket(`ws://${window.location.host}/stream/{{ path }}`);
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(
+            `${wsProtocol}//${window.location.host}/stream/{{ path }}`,
+            [`xsrf_token=${getXSRFToken()}`]
+        );
         tableBody.innerHTML = '';
         lineCount = 0;
         streamBtn.style.display = 'none';
@@ -118,13 +164,64 @@
         streamBtn.style.display = '';
     };
 
+    const lineFilter = document.getElementById('line-filter');
+    const matchCount = document.getElementById('match-count');
+
+    lineFilter.addEventListener('input', function() {
+        const searchText = this.value.toLowerCase();
+        let matches = 0;
+        
+        Array.from(tableBody.rows).forEach(row => {
+            const lineContent = row.cells[1].textContent.toLowerCase();
+            const lineMatch = searchText === '' || lineContent.includes(searchText);
+            
+            // Toggle row visibility
+            row.classList.toggle('hidden-row', !lineMatch);
+            
+            // Handle highlighting
+            const preElement = row.cells[1].querySelector('pre');
+            if (lineMatch && searchText !== '') {
+                matches++;
+                const regex = new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+                const highlightedContent = preElement.textContent.replace(regex, match => `<span class="highlight">${match}</span>`);
+                preElement.innerHTML = highlightedContent;
+            } else {
+                preElement.textContent = preElement.textContent; // Reset highlighting
+            }
+        });
+        
+        // Update match count
+        matchCount.textContent = searchText ? `${matches} matches` : '';
+    });
+
     copyBtn.onclick = function () {
-        const content = Array.from(tableBody.rows).map(row => row.cells[1].textContent).join('\n');
+        // Create a temporary container to handle HTML cleanup
+        const tempDiv = document.createElement('div');
+        
+        // Get visible rows and their original content
+        const content = Array.from(tableBody.rows)
+            .filter(row => !row.classList.contains('hidden-row'))
+            .map(row => {
+                // Get the pre element's content
+                const preElement = row.cells[1].querySelector('pre');
+                tempDiv.innerHTML = preElement.innerHTML;
+                // This will give us the text content with HTML tags removed
+                return tempDiv.textContent;
+            })
+            .join('\n');
+
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(content).then(() => {
-                alert('Content copied to clipboard!');
+                copyBtn.textContent = 'Copied!';
+                setTimeout(() => {
+                    copyBtn.textContent = 'Copy Content';
+                }, 2000);
             }).catch(err => {
                 console.error('Failed to copy content: ', err);
+                copyBtn.textContent = 'Copy failed';
+                setTimeout(() => {
+                    copyBtn.textContent = 'Copy Content';
+                }, 2000);
             });
         } else {
             // Fallback for unsupported browsers
@@ -134,9 +231,15 @@
             textarea.select();
             try {
                 document.execCommand('copy');
-                alert('Content copied to clipboard!');
+                copyBtn.textContent = 'Copied!';
+                setTimeout(() => {
+                    copyBtn.textContent = 'Copy Content';
+                }, 2000);
             } catch (err) {
-                alert('Failed to copy content');
+                copyBtn.textContent = 'Copy failed';
+                setTimeout(() => {
+                    copyBtn.textContent = 'Copy Content';
+                }, 2000);
             }
             document.body.removeChild(textarea);
         }

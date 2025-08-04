@@ -2,7 +2,9 @@ import os
 import secrets
 import argparse
 import json
+import time
 from typing import Set
+from urllib.parse import urlparse
 
 import tornado.ioloop
 import tornado.web
@@ -72,12 +74,23 @@ class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):
         FeatureFlagSocketHandler.connections.remove(self)
 
     def check_origin(self, origin):
-        return True
+        # Only allow connections from the same origin or allowed domains
+        allowed_origins = self.settings.get('allowed_origins', ['localhost', '127.0.0.1'])
+        parsed_origin = urlparse(origin).netloc.split(':')[0]
+        return parsed_origin in allowed_origins
+
+    def get_compression_options(self):
+        # Enable compression for WebSocket traffic
+        return {'compression_level': 6, 'mem_level': 9}
 
     @classmethod
     def send_updates(cls):
         for connection in cls.connections:
-            connection.write_message(json.dumps(FEATURE_FLAGS))
+            try:
+                connection.write_message(json.dumps(FEATURE_FLAGS))
+            except Exception:
+                # Remove dead connections
+                cls.connections.remove(connection)
 
 
 class BaseHandler(tornado.web.RequestHandler):
@@ -362,7 +375,15 @@ class RenameHandler(BaseHandler):
 
 
 def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
-    settings["template_path"] = os.path.join(os.path.dirname(__file__), "templates")
+    settings.update({
+        "template_path": os.path.join(os.path.dirname(__file__), "templates"),
+        "cookie_secret": os.environ.get("COOKIE_SECRET", secrets.token_hex(32)),
+        "xsrf_cookies": True,
+        "allowed_origins": os.environ.get("ALLOWED_ORIGINS", "localhost,127.0.0.1").split(","),
+        "websocket_max_message_size": 10 * 1024 * 1024,  # 10MB max message size
+        "websocket_ping_interval": 30,
+        "websocket_ping_timeout": 120,
+    })
     
     if ldap_enabled:
         settings["ldap_server"] = ldap_server
