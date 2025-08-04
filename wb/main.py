@@ -419,10 +419,6 @@ def main():
     ADMIN_TOKEN = admin_token
     ROOT_DIR = os.path.abspath(root)
 
-    # ✅ Changed line (minor improvement)
-    print(f"[Filey] Server access token set to: {ACCESS_TOKEN}")
-    print(f"Admin token: {ADMIN_TOKEN}")
-
     settings = {
         "cookie_secret": ACCESS_TOKEN,
         "login_url": "/login",
