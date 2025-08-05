@@ -203,13 +203,25 @@ class MainHandler(BaseHandler):
                 with open(abspath, 'rb') as f:
                     self.write(f.read())
             else:
-                start_streaming = self.get_argument('stream', None) is not None
-                if start_streaming:
-                    file_content = "Initializing stream..."
+                # --- Filter lines by substring if provided ---
+                filter_substring = self.get_argument('filter', None)
+                file_content = ""
+                if filter_substring:
+                    with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+                        file_content = ''.join([line for line in f if filter_substring in line])
                 else:
                     with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
                         file_content = f.read()
-                self.render("file.html", filename=filename, path=path, file_content=file_content, start_streaming=start_streaming, features=FEATURE_FLAGS)
+                # Add filter input to the top of the file view
+                filter_html = f'''
+                <form method="get" style="margin-bottom:10px;">
+                    <input type="hidden" name="path" value="{path}">
+                    <input type="text" name="filter" placeholder="Filter lines..." value="{filter_substring or ''}" style="width:200px;">
+                    <button type="submit">Apply Filter</button>
+                </form>
+                '''
+                # Render file.html with filter_html and filtered content
+                self.render("file.html", filename=filename, path=path, file_content=file_content, filter_html=filter_html, features=FEATURE_FLAGS)
         else:
             self.set_status(404)
             self.write("File not found")

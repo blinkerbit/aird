@@ -38,6 +38,18 @@
             margin: 0;
             padding: 0;
         }
+        /* Hide line numbers when toggled */
+        .line-numbers.hidden {
+            display: none;
+        }
+        /* Ensure content takes full width when line numbers are hidden */
+        .line-numbers.hidden + td {
+            padding-left: 0;
+        }
+        /* Ensure empty lines are visible */
+        td pre {
+            min-height: 1.2em;
+        }
     </style>
 </head>
 <body>
@@ -46,13 +58,14 @@
     <button id="stream-btn">Stream</button>
     <button id="stop-stream-btn" style="display:none;">Stop Streaming</button>
     <button id="copy-btn">Copy Content</button>
+    <button id="toggle-lines-btn">Hide Line Numbers</button>
     <hr>
     <table id="file-content">
         <tbody>
             {% for i, line in enumerate(file_content.split('\n')) %}
             <tr>
                 <td class="line-numbers">{{ i + 1 }}</td>
-                <td><pre>{{ line }}</pre></td>
+                <td><pre>{{ line or '\u00A0' }}</pre></td>
             </tr>
             {% end %}
         </tbody>
@@ -61,10 +74,12 @@
     const streamBtn = document.getElementById('stream-btn');
     const stopStreamBtn = document.getElementById('stop-stream-btn');
     const copyBtn = document.getElementById('copy-btn');
+    const toggleLinesBtn = document.getElementById('toggle-lines-btn');
     const tableBody = document.querySelector('#file-content tbody');
     let ws = null;
     let originalContent = tableBody.innerHTML;
     let lineCount = tableBody.rows.length;
+    let lineNumbersVisible = true;
 
     const featureSocket = new WebSocket(`ws://${window.location.host}/features`);
 
@@ -95,11 +110,28 @@
             lines.forEach(line => {
                 lineCount++;
                 const row = tableBody.insertRow();
+                
+                // Always create both cells to maintain structure
                 const lineNumCell = row.insertCell(0);
                 const lineContentCell = row.insertCell(1);
+                
                 lineNumCell.className = 'line-numbers';
                 lineNumCell.textContent = lineCount;
-                lineContentCell.innerHTML = `<pre>${line}</pre>`;
+                // Ensure empty lines are preserved by using non-breaking space if line is empty
+                lineContentCell.innerHTML = `<pre>${line || '\u00A0'}</pre>`;
+                
+                // Apply line number visibility state to new rows
+                if (!lineNumbersVisible) {
+                    lineNumCell.classList.add('hidden');
+                }
+                
+                // Apply alternating row styling for dynamically added rows
+                if (lineCount % 2 === 1) {
+                    row.style.backgroundColor = '#f8f8f8';
+                }
+                
+                // Debug: Log row creation
+                console.log(`Created row ${lineCount} with ${row.cells.length} cells, line numbers visible: ${lineNumbersVisible}, line content: "${line}"`);
             });
             window.scrollTo(0, document.body.scrollHeight);
         };
@@ -118,8 +150,41 @@
         streamBtn.style.display = '';
     };
 
+    toggleLinesBtn.onclick = function() {
+        const lineNumberCells = document.querySelectorAll('.line-numbers');
+        lineNumbersVisible = !lineNumbersVisible;
+        
+        lineNumberCells.forEach(cell => {
+            if (lineNumbersVisible) {
+                cell.classList.remove('hidden');
+            } else {
+                cell.classList.add('hidden');
+            }
+        });
+        
+        // Reapply alternating row highlighting after toggling line numbers
+        const rows = tableBody.querySelectorAll('tr');
+        rows.forEach((row, index) => {
+            if (index % 2 === 0) {
+                row.style.backgroundColor = '';
+            } else {
+                row.style.backgroundColor = '#f8f8f8';
+            }
+        });
+        
+        // Debug: Log the current state
+        console.log('Line numbers visible:', lineNumbersVisible);
+        console.log('Total rows:', rows.length);
+        
+        toggleLinesBtn.textContent = lineNumbersVisible ? 'Hide Line Numbers' : 'Show Line Numbers';
+    };
+
     copyBtn.onclick = function () {
-        const content = Array.from(tableBody.rows).map(row => row.cells[1].textContent).join('\n');
+        const content = Array.from(tableBody.rows).map(row => {
+            // Get the content cell - it's either cells[1] (with line numbers) or cells[0] (without line numbers)
+            const contentCell = lineNumbersVisible ? row.cells[1] : row.cells[0];
+            return contentCell.textContent;
+        }).join('\n');
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(content).then(() => {
                 alert('Content copied to clipboard!');
@@ -143,6 +208,14 @@
     };
 
     document.addEventListener('DOMContentLoaded', function() {
+        // Apply alternating row highlighting on page load
+        const rows = tableBody.querySelectorAll('tr');
+        rows.forEach((row, index) => {
+            if (index % 2 === 1) {
+                row.style.backgroundColor = '#f8f8f8';
+            }
+        });
+        
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('stream')) {
             streamBtn.click();
