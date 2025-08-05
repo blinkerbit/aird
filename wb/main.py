@@ -12,6 +12,8 @@ import shutil
 from collections import deque
 from ldap3 import Server, Connection, ALL
 from datetime import datetime
+import asyncio
+
 
 import os
 
@@ -32,6 +34,10 @@ FEATURE_FLAGS = {
     "file_rename": True,
     "file_download": True,
 }
+
+MAX_FILE_SIZE = 10 * 1024 * 1024
+MAX_READABLE_FILE_SIZE = 10 * 1024 * 1024
+CHUNK_SIZE = 1024 * 64
 
 def get_files_in_directory(path="."):
     files = []
@@ -169,7 +175,7 @@ def get_relative_path(path, root):
 
 class MainHandler(BaseHandler):
     @tornado.web.authenticated
-    def get(self, path):
+    async def get(self, path):
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
         
         if not abspath.startswith(ROOT_DIR):
@@ -201,15 +207,34 @@ class MainHandler(BaseHandler):
                 self.set_header('Content-Type', 'application/octet-stream')
                 self.set_header('Content-Disposition', f'attachment; filename="{filename}"')
                 with open(abspath, 'rb') as f:
-                    self.write(f.read())
+                    while True:
+                        chunk = f.read(CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        self.write(chunk)
+                        await self.flush()  # Ensure the chunk is sent
+                return  # Exit after sending file
             else:
                 start_streaming = self.get_argument('stream', None) is not None
                 if start_streaming:
-                    file_content = "Initializing stream..."
+                    self.set_header('Content-Type', 'text/plain; charset=utf-8')
+                    self.write(f"Streaming file: {filename}\n\n")
+                    await self.flush()
+
+                    with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+                        while True:
+                            chunk = f.read(CHUNK_SIZE)
+                            if not chunk:
+                                break
+                            self.write(chunk)
+                            await self.flush()
+                            await asyncio.sleep(0.1)  # Optional: control speed
+                    return  # Avoid rendering template after streaming
                 else:
                     with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
                         file_content = f.read()
-                self.render("file.html", filename=filename, path=path, file_content=file_content, start_streaming=start_streaming, features=FEATURE_FLAGS)
+                    self.render("file.html", filename=filename, path=path, file_content=file_content, start_streaming=False, features=FEATURE_FLAGS)
+
         else:
             self.set_status(404)
             self.write("File not found")
@@ -297,6 +322,11 @@ class UploadHandler(BaseHandler):
             return
 
         for file_info in file_infos:
+            if len(file_info['body']) > MAX_FILE_SIZE:
+                print("MAXXX")
+                self.set_status(413)
+                self.write(f"File {file_info['filename']} is too large.")
+                return
             relative_path = file_info['filename']
             file_body = file_info['body']
             
