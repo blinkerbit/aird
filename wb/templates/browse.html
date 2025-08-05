@@ -209,6 +209,7 @@
         <p>Or click to select files</p>
         <input type="file" id="fileInput" multiple style="display: none" />
       </div>
+      <progress min="0" max="100" value="0" style="display: none;border-radius: 10px;background: green;width: 100%;" id="progress"></progress>
       {% end %}
 
       <!-- File Listing Table -->
@@ -321,6 +322,7 @@
       // File upload functionality
       const uploadZone = document.getElementById("uploadZone");
       const fileInput = document.getElementById("fileInput");
+      const progress = document.getElementById("progress");
 
       uploadZone.addEventListener("click", () => fileInput.click());
       uploadZone.addEventListener("dragover", (e) => {
@@ -340,24 +342,30 @@
         handleFiles(e.target.files);
       });
 
-      function handleFiles(files) {
-        const formData = new FormData();
-        formData.append("target_dir", '{{ current_path or "/" }}');
-
+      async function handleFiles(files) {
+        let counter = 1
+        let total = files.length
+        progress.style.display = "inline-block"
+        
         for (let file of files) {
+          const formData = new FormData();
+          formData.append("target_dir", '{{ current_path or "/" }}');
           formData.append("files", file);
-        }
-
-        fetch("/upload", {
-          method: "POST",
-          body: formData,
-        })
-          .then(() => {
-            location.reload();
+          await fetch("/upload", {
+            method: "POST",
+            body: formData,
           })
-          .catch((err) => {
-            alert("Upload failed: " + err.message);
-          });
+            .then(() => {
+              counter++
+              progress.value = (counter/total) * 100;
+              if (counter === total) {
+                location.reload()
+              }
+            })
+            .catch((err) => {
+              alert("Upload failed: " + err.message);
+            });
+          }
       }
 
       // Rename functionality
