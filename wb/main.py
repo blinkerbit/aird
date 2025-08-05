@@ -215,12 +215,13 @@ class MainHandler(BaseHandler):
                         await self.flush()  # Ensure the chunk is sent
                 return  # Exit after sending file
             else:
+                # Handle streaming
                 start_streaming = self.get_argument('stream', None) is not None
                 if start_streaming:
                     self.set_header('Content-Type', 'text/plain; charset=utf-8')
                     self.write(f"Streaming file: {filename}\n\n")
                     await self.flush()
-
+                    
                     with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
                         while True:
                             chunk = f.read(CHUNK_SIZE)
@@ -228,13 +229,29 @@ class MainHandler(BaseHandler):
                                 break
                             self.write(chunk)
                             await self.flush()
-                            await asyncio.sleep(0.1)  # Optional: control speed
-                    return  # Avoid rendering template after streaming
+                            await asyncio.sleep(0.1)
+                    return
+                
+                # Handle filtering
+                filter_substring = self.get_argument('filter', None)
+                file_content = ""
+                if filter_substring:
+                    with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+                        file_content = ''.join([line for line in f if filter_substring in line])
                 else:
                     with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
                         file_content = f.read()
-                    self.render("file.html", filename=filename, path=path, file_content=file_content, start_streaming=False, features=FEATURE_FLAGS)
-
+                
+                # Add filter form HTML
+                filter_html = f'''
+                <form method="get" style="margin-bottom:10px;">
+                    <input type="hidden" name="path" value="{path}">
+                    <input type="text" name="filter" placeholder="Filter lines..." value="{filter_substring or ''}" style="width:200px;">
+                    <button type="submit">Apply Filter</button>
+                </form>
+                '''
+                
+                self.render("file.html", filename=filename, path=path, file_content=file_content, filter_html=filter_html, features=FEATURE_FLAGS)
         else:
             self.set_status(404)
             self.write("File not found")
