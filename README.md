@@ -1,4 +1,4 @@
-# Aird - A Web-Based File Browser and Streamer
+# Aird - A Web-Based File Browser and Streamer (formerly Filey)
 
 Aird is a lightweight, web-based file browser built with Python and Tornado. It provides a simple and secure interface for browsing local directories, uploading files (including nested folders via drag-and-drop), and streaming file content in real-time, similar to `tail -f`.
 
