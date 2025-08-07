@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login</title>
+    <style>
+        body {
+            background-color: white;
+            color: black;
+            font-family: monospace;
+        }
+        input {
+            font-family: monospace;
+            border: 1px solid black;
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h2>Login</h2>
+    {% if error %}
+        <div style="color: red;">{{ error }}</div>
+    {% end %}
+    <form method="POST">
+        {% if settings.get("ldap_server") %}
+            <input type="text" name="username" placeholder="Enter username"><br><br>
+            <input type="password" name="password" placeholder="Enter password">
+        {% else %}
+            <input type="password" name="token" placeholder="Enter access token">
+        {% end %}
+        <br><br>
+        <input type="submit" value="Login">
+    </form>
+</body>
+</html>

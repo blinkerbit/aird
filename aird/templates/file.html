@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ filename }}</title>
+    <style>
+        body {
+            background-color: white;
+            color: black;
+            font-family: monospace;
+        }
+        .download-btn, button {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 8px;
+            background-color: white;
+            color: black;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 5px;
+            border: 1px solid black;
+            font-family: monospace;
+        }
+        .download-btn:hover, button:hover {
+            background-color: #f0f0f0;
+        }
+        .line-numbers {
+            text-align: right;
+            padding-right: 10px;
+            border-right: 1px solid #ccc;
+            user-select: none;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        td pre {
+            margin: 0;
+            padding: 0;
+        }
+        /* Hide line numbers when toggled */
+        .line-numbers.hidden {
+            display: none;
+        }
+        /* Ensure content takes full width when line numbers are hidden */
+        .line-numbers.hidden + td {
+            padding-left: 0;
+        }
+        /* Ensure empty lines are visible */
+        td pre {
+            min-height: 1.2em;
+        }
+    </style>
+</head>
+<body>
+    <h2>{{ filename }}</h2>
+    <a href="/{{ path }}?download=1" class="download-btn" data-feature="file_download">Download</a>
+    <button id="stream-btn">Stream</button>
+    <button id="stop-stream-btn" style="display:none;">Stop Streaming</button>
+    <button id="copy-btn">Copy Content</button>
+    <button id="toggle-lines-btn">Hide Line Numbers</button>
+    <hr>
+    <table id="file-content">
+        <tbody>
+            {% for i, line in enumerate(file_content.split('\n')) %}
+            <tr>
+                <td class="line-numbers">{{ i + 1 }}</td>
+                <td><pre>{{ line or '\u00A0' }}</pre></td>
+            </tr>
+            {% end %}
+        </tbody>
+    </table>
+    <script>
+    const streamBtn = document.getElementById('stream-btn');
+    const stopStreamBtn = document.getElementById('stop-stream-btn');
+    const copyBtn = document.getElementById('copy-btn');
+    const toggleLinesBtn = document.getElementById('toggle-lines-btn');
+    const tableBody = document.querySelector('#file-content tbody');
+    let ws = null;
+    let originalContent = tableBody.innerHTML;
+    let lineCount = tableBody.rows.length;
+    let lineNumbersVisible = true;
+
+    const featureSocket = new WebSocket(`ws://${window.location.host}/features`);
+
+    featureSocket.onmessage = function(event) {
+        const features = JSON.parse(event.data);
+        updateFeatureVisibility(features);
+    };
+
+    function updateFeatureVisibility(features) {
+        document.querySelectorAll('[data-feature]').forEach(el => {
+            const feature = el.dataset.feature;
+            if (features[feature]) {
+                el.style.display = '';
+            } else {
+                el.style.display = 'none';
+            }
+        });
+    }
+
+    streamBtn.onclick = function() {
+        ws = new WebSocket(`ws://${window.location.host}/stream/{{ path }}`);
+        tableBody.innerHTML = '';
+        lineCount = 0;
+        streamBtn.style.display = 'none';
+        stopStreamBtn.style.display = '';
+        ws.onmessage = function(event) {
+            const lines = event.data.split('\n');
+            lines.forEach(line => {
+                lineCount++;
+                const row = tableBody.insertRow();
+                
+                // Always create both cells to maintain structure
+                const lineNumCell = row.insertCell(0);
+                const lineContentCell = row.insertCell(1);
+                
+                lineNumCell.className = 'line-numbers';
+                lineNumCell.textContent = lineCount;
+                // Ensure empty lines are preserved by using non-breaking space if line is empty
+                lineContentCell.innerHTML = `<pre>${line || '\u00A0'}</pre>`;
+                
+                // Apply line number visibility state to new rows
+                if (!lineNumbersVisible) {
+                    lineNumCell.classList.add('hidden');
+                }
+                
+                // Apply alternating row styling for dynamically added rows
+                if (lineCount % 2 === 1) {
+                    row.style.backgroundColor = '#f8f8f8';
+                }
+                
+                // Debug: Log row creation
+                console.log(`Created row ${lineCount} with ${row.cells.length} cells, line numbers visible: ${lineNumbersVisible}, line content: "${line}"`);
+            });
+            window.scrollTo(0, document.body.scrollHeight);
+        };
+        ws.onclose = function() {
+            stopStreamBtn.style.display = 'none';
+            streamBtn.style.display = '';
+        };
+    };
+
+    stopStreamBtn.onclick = function() {
+        if (ws) {
+            ws.close();
+            ws = null;
+        }
+        stopStreamBtn.style.display = 'none';
+        streamBtn.style.display = '';
+    };
+
+    toggleLinesBtn.onclick = function() {
+        const lineNumberCells = document.querySelectorAll('.line-numbers');
+        lineNumbersVisible = !lineNumbersVisible;
+        
+        lineNumberCells.forEach(cell => {
+            if (lineNumbersVisible) {
+                cell.classList.remove('hidden');
+            } else {
+                cell.classList.add('hidden');
+            }
+        });
+        
+        // Reapply alternating row highlighting after toggling line numbers
+        const rows = tableBody.querySelectorAll('tr');
+        rows.forEach((row, index) => {
+            if (index % 2 === 0) {
+                row.style.backgroundColor = '';
+            } else {
+                row.style.backgroundColor = '#f8f8f8';
+            }
+        });
+        
+        // Debug: Log the current state
+        console.log('Line numbers visible:', lineNumbersVisible);
+        console.log('Total rows:', rows.length);
+        
+        toggleLinesBtn.textContent = lineNumbersVisible ? 'Hide Line Numbers' : 'Show Line Numbers';
+    };
+
+    copyBtn.onclick = function () {
+        const content = Array.from(tableBody.rows).map(row => {
+            // Get the content cell - it's either cells[1] (with line numbers) or cells[0] (without line numbers)
+            const contentCell = lineNumbersVisible ? row.cells[1] : row.cells[0];
+            return contentCell.textContent;
+        }).join('\n');
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(content).then(() => {
+                alert('Content copied to clipboard!');
+            }).catch(err => {
+                console.error('Failed to copy content: ', err);
+            });
+        } else {
+            // Fallback for unsupported browsers
+            const textarea = document.createElement('textarea');
+            textarea.value = content;
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                alert('Content copied to clipboard!');
+            } catch (err) {
+                alert('Failed to copy content');
+            }
+            document.body.removeChild(textarea);
+        }
+    };
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Apply alternating row highlighting on page load
+        const rows = tableBody.querySelectorAll('tr');
+        rows.forEach((row, index) => {
+            if (index % 2 === 1) {
+                row.style.backgroundColor = '#f8f8f8';
+            }
+        });
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('stream')) {
+            streamBtn.click();
+        }
+    });
+    </script>
+</body>
+</html>

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Directory Listing</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Courier New", monospace;
+        background: white;
+        color: black;
+        line-height: 1.4;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      .header {
+        border-bottom: 2px solid black;
+        padding-bottom: 15px;
+        margin-bottom: 20px;
+      }
+
+      .header h1 {
+        font-size: 24px;
+        font-weight: bold;
+      }
+
+      .breadcrumb {
+        margin-top: 10px;
+        font-size: 14px;
+        color: #666;
+      }
+
+      .breadcrumb a {
+        color: black;
+        text-decoration: none;
+      }
+
+      .breadcrumb a:hover {
+        text-decoration: underline;
+      }
+
+      .file-table {
+        width: 100%;
+        border-collapse: collapse;
+        border: 1px solid black;
+        background: white;
+      }
+
+      .file-table th {
+        background: black;
+        color: white;
+        padding: 10px 12px;
+        text-align: left;
+        font-weight: bold;
+        border-bottom: 2px solid black;
+      }
+
+      .file-table td {
+        padding: 8px 12px;
+        border-bottom: 1px solid #ddd;
+      }
+
+      .file-table tbody tr:hover {
+        background: #f5f5f5;
+      }
+
+      .name-col {
+        width: 100%;
+      }
+      
+      .file-link {
+        color: black;
+        text-decoration: none;
+        display: block;
+      }
+
+      .file-link:hover {
+        text-decoration: underline;
+      }
+
+      .file-icon {
+        margin-right: 8px;
+      }
+
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>Aird - All Directories</h1>
+        <div class="breadcrumb">
+          <a href="/">🏠 Home</a>
+        </div>
+      </div>
+
+      <!-- Directory Listing Table -->
+      <table class="file-table" id="fileTable">
+        <thead>
+          <tr>
+            <th class="name-col">📁 Name</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Directory Listings -->
+          {% for dir in dirs %}
+          <tr class="file-row">
+            <td class="name-cell">
+              <a
+                href="{{ escape(dir.path) }}"
+                class="file-link"
+              >
+                <span class="file-icon">📁</span>{{ escape(dir.name) }}
+              </a>
+            </td>
+          </tr>
+          {% end %}
+
+          <!-- Empty Directory Message -->
+          {% if not dirs %}
+          <tr>
+            <td
+              colspan="1"
+              style="text-align: center; padding: 40px; color: #666"
+            >
+              📭 No directories found.
+            </td>
+          </tr>
+          {% end %}
+        </tbody>
+      </table>
+    </div>
+  </body>
+</html>

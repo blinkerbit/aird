@@ -1,0 +1,2 @@
+[console_scripts]
+aird = aird.main:main

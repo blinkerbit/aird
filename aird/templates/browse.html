@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Browse</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Courier New", monospace;
+        background: white;
+        color: black;
+        line-height: 1.4;
+      }
+
+      .container {
+        max-width: 100%;
+        margin: 0 auto;
+        padding: 20px 10px;
+      }
+
+      .header {
+        border-bottom: 2px solid black;
+        padding-bottom: 15px;
+        margin-bottom: 20px;
+      }
+
+      .header h1 {
+        font-size: 24px;
+        font-weight: bold;
+      }
+
+      .breadcrumb {
+        margin-top: 10px;
+        font-size: 14px;
+        color: #666;
+      }
+
+      .breadcrumb a {
+        color: black;
+        text-decoration: none;
+      }
+
+      .breadcrumb a:hover {
+        text-decoration: underline;
+      }
+
+      .upload-zone {
+        border: 2px dashed #ccc;
+        padding: 20px;
+        text-align: center;
+        margin-bottom: 20px;
+        background: #f9f9f9;
+      }
+
+      .upload-zone.dragover {
+        border-color: black;
+        background: #f0f0f0;
+      }
+
+      .file-table {
+        width: 100%;
+        border-collapse: collapse;
+        border: 1px solid black;
+        background: white;
+      }
+
+      .file-table th {
+        background: black;
+        color: white;
+        padding: 10px 12px;
+        text-align: left;
+        font-weight: bold;
+        border-bottom: 2px solid black;
+      }
+
+      .file-table td {
+        padding: 8px 12px;
+        border-bottom: 1px solid #ddd;
+      }
+
+      .file-table tbody tr:hover {
+        background: #f5f5f5;
+      }
+
+      .name-col {
+        width: 45%;
+      }
+      .size-col {
+        width: 15%;
+        text-align: left;
+        cursor: pointer;
+      }
+      .modified-col {
+        width: 20%;
+        cursor: pointer;
+      }
+      .actions-col {
+        width: 20%;
+        text-align: right;
+      }
+
+      .size-cell {
+        text-align: left;
+        font-family: monospace;
+        font-size: 12px;
+      }
+      .actions-cell {
+        text-align: right;
+      }
+
+      .modified-cell {
+        font-family: monospace;
+        font-size: 12px;
+        color: #666;
+      }
+
+      .file-link {
+        color: black;
+        text-decoration: none;
+        display: block;
+      }
+
+      .file-link:hover {
+        text-decoration: underline;
+      }
+
+      .file-icon {
+        margin-right: 8px;
+      }
+
+      .action-link {
+        color: black;
+        text-decoration: none;
+        margin-right: 1px;
+        font-size: 11px;
+        padding: 2px 6px;
+        border: 1px solid #ccc;
+        background: #f9f9f9;
+      }
+
+      .action-link:hover {
+        background: #e9e9e9;
+        text-decoration: none;
+      }
+
+      .sort-header {
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .sort-header:hover {
+        background: #333;
+      }
+
+      /* Responsive design */
+      @media (max-width: 768px) {
+        .container {
+          padding: 10px;
+        }
+        .file-table {
+          font-size: 14px;
+        }
+        .size-col,
+        .actions-col {
+          display: none;
+        }
+        .name-col {
+          width: 70%;
+        }
+        .modified-col {
+          width: 30%;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .modified-col {
+          display: none;
+        }
+        .name-col {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>Aird</h1>
+        <div class="breadcrumb">
+          <a href="/">🏠 Home</a>
+          {% if current_user and current_path != "/" %} {% set path_parts = current_path.strip('/').split('/') %}
+          {% for i, part in enumerate(path_parts) %} 
+          {% set partial_path = '/' + '/'.join(path_parts[:i+1]) %} /
+          <a href="{{ partial_path }}">{{ part }}</a>
+          {% end %} {% end %}
+        </div>
+      </div>
+
+      <!-- Upload Zone -->
+      {% if features['file_upload'] %}
+      <div class="upload-zone" id="uploadZone">
+        <p><strong>📁 Drop files here to upload</strong></p>
+        <p>Or click to select files</p>
+        <input type="file" id="fileInput" multiple style="display: none" />
+      </div>
+      <progress min="0" max="100" value="0" style="display: none;border-radius: 10px;background: green;width: 100%;" id="progress"></progress>
+      {% end %}
+
+      <!-- File Listing Table -->
+      <table class="file-table" id="fileTable">
+        <thead>
+          <tr>
+            <th class="name-col sort-header" onclick="sortTable(0)">📁 Name</th>
+            <th class="size-col sort-header" onclick="sortTable(1)">📏 Size</th>
+            <th class="modified-col sort-header" onclick="sortTable(2)">
+              🕒 Modified
+            </th>
+            <th class="actions-col">⚡ Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Parent Directory Link -->
+          {% if current_path and current_path != "/" %}
+          <tr>
+            <td class="name-cell">
+              <a href="/{{ parent_path or '' }}" class="file-link">
+                <span class="file-icon">📁</span>..
+              </a>
+            </td>
+            <td class="size-cell">-</td>
+            <td class="modified-cell">-</td>
+            <td class="actions-cell">-</td>
+          </tr>
+          {% end %}
+
+          <!-- File and Directory Listings -->
+          {% for file in files %}
+          <tr class="file-row">
+            <td class="name-cell">
+              {% if file['is_dir'] %}
+              <a
+                href="/{{ escape(join_path(current_path, file['name'])) }}"
+                class="file-link"
+              >
+                <span class="file-icon">📁</span>{{ escape(file['name']) }}
+              </a>
+              {% else %}
+              <a
+                href="/{{ escape(join_path(current_path, file['name'])) }}"
+                class="file-link"
+              >
+                <span class="file-icon">{{ get_file_icon(file["name"]) }}</span>{{
+                escape(file['name']) }}
+              </a>
+              {% end %}
+            </td>
+            <td class="size-cell" data-bytes="{{ file.get('size_bytes', 0) }}">
+              {{ file.get('size_str', '-') }}
+            </td>
+            <td
+              class="modified-cell"
+              data-timestamp="{{ file.get('modified_timestamp', 0) }}"
+            >
+              {{ file.get('modified', '-') }}
+            </td>
+            <td class="actions-cell">
+              {% if not file["is_dir"] %}
+                {% if features['file_download'] %}
+                <a
+                  href="/{{ escape(join_path(current_path, file['name'])) }}?download=1"
+                  class="action-link"
+                  >Download</a
+                >
+                {% end %}
+                <a
+                  href="#"
+                  onclick="streamFile('/{{ escape(join_path(current_path, file['name'])) }}')"
+                  class="action-link"
+                  >Stream</a
+                >
+              {% end %}
+              {% if features['file_rename'] %}
+              <a
+                href="#"
+                onclick="renameItem('/{{ escape(join_path(current_path, file['name'])) }}')"
+                class="action-link"
+                >Rename</a>
+              {% end %}
+              {% if features['file_delete'] %}
+              <a
+                href="#"
+                onclick="deleteItem('/{{ escape(join_path(current_path, file['name'])) }}')"
+                class="action-link"
+                >Delete</a>
+              {% end %}
+            </td>
+          </tr>
+          {% end %}
+
+          <!-- Empty Directory Message -->
+          {% if not files %}
+          <tr>
+            <td
+              colspan="4"
+              style="text-align: center; padding: 40px; color: #666"
+            >
+              📭 This directory is empty
+            </td>
+          </tr>
+          {% end %}
+        </tbody>
+      </table>
+    </div>
+
+    <script>
+      // File upload functionality
+      const uploadZone = document.getElementById("uploadZone");
+      const fileInput = document.getElementById("fileInput");
+      const progress = document.getElementById("progress");
+
+      uploadZone.addEventListener("click", () => fileInput.click());
+      uploadZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        uploadZone.classList.add("dragover");
+      });
+      uploadZone.addEventListener("dragleave", () => {
+        uploadZone.classList.remove("dragover");
+      });
+      uploadZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        uploadZone.classList.remove("dragover");
+        handleFiles(e.dataTransfer.files);
+      });
+
+      fileInput.addEventListener("change", (e) => {
+        handleFiles(e.target.files);
+      });
+
+      async function handleFiles(files) {
+        let counter = 1
+        let total = files.length
+        progress.style.display = "inline-block"
+        
+        for (let file of files) {
+          const formData = new FormData();
+          formData.append("target_dir", '{{ current_path or "/" }}');
+          formData.append("files", file);
+          await fetch("/upload", {
+            method: "POST",
+            body: formData,
+          })
+            .then(() => {
+              counter++
+              progress.value = (counter/total) * 100;
+              if (counter === total) {
+                location.reload()
+              }
+            })
+            .catch((err) => {
+              alert("Upload failed: " + err.message);
+            });
+          }
+      }
+
+      // Rename functionality
+      function renameItem(filepath) {
+        const newName = prompt("Enter new name:");
+        if (!newName) return;
+        const formData = new URLSearchParams();
+        formData.append("path", filepath.replace(/^\//, ""));
+        formData.append("new_name", newName);
+        fetch("/rename", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: formData.toString(),
+        })
+          .then((res) => {
+            if (res.ok) {
+              location.reload();
+            } else {
+              res.text().then((t) => alert("Rename failed: " + t));
+            }
+          })
+          .catch((err) => alert("Rename failed: " + err.message));
+      }
+
+      // Delete functionality
+      function deleteItem(filepath) {
+        if (!confirm("Are you sure you want to delete this item?")) return;
+        const formData = new URLSearchParams();
+        formData.append("path", filepath.replace(/^\//, ""));
+        fetch("/delete", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: formData.toString(),
+        })
+          .then((res) => {
+            if (res.ok) {
+              location.reload();
+            } else {
+              res.text().then((t) => alert("Delete failed: " + t));
+            }
+          })
+          .catch((err) => alert("Delete failed: " + err.message));
+      }
+
+      // File streaming functionality
+      function streamFile(filepath) {
+        const streamUrl = `${filepath}?stream=1`;
+        window.open(streamUrl, "_blank");
+      }
+
+      // Table sorting functionality
+      function sortTable(columnIndex) {
+        const table = document.getElementById("fileTable");
+        const tbody = table.querySelector("tbody");
+        const rows = Array.from(tbody.querySelectorAll("tr")).slice(skipRows);
+
+        rows.sort((a, b) => {
+          let aVal = a.children[columnIndex].textContent.trim();
+          let bVal = b.children[columnIndex].textContent.trim();
+
+          if (columnIndex === 1) {
+            // Size column
+            aVal = parseInt(a.children[columnIndex].dataset.bytes) || -1;
+            bVal = parseInt(b.children[columnIndex].dataset.bytes) || -1;
+            return bVal - aVal;
+          } else if (columnIndex === 2) {
+            // Modified column
+            aVal = parseInt(a.children[columnIndex].dataset.timestamp) || 0;
+            bVal = parseInt(b.children[columnIndex].dataset.timestamp) || 0;
+            return bVal - aVal;
+          }
+
+          const aIsDir =
+            a.children[0].querySelector(".file-icon").textContent === "📁";
+          const bIsDir =
+            b.children[0].querySelector(".file-icon").textContent === "📁";
+
+          if (aIsDir !== bIsDir) {
+            return bIsDir ? 1 : -1;
+          }
+
+          return aVal.localeCompare(bVal);
+        });
+
+        rows.forEach((row) => tbody.appendChild(row));
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Login</title>
+    <style>
+        body {
+            background-color: white;
+            color: black;
+            font-family: monospace;
+        }
+        input {
+            font-family: monospace;
+            border: 1px solid black;
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h2>Admin Login</h2>
+    {% if error %}
+        <div style="color: red;">{{ error }}</div>
+    {% end %}
+    <form method="POST">
+        <input type="password" name="token" placeholder="Enter admin token">
+        <br><br>
+        <input type="submit" value="Login">
+    </form>
+</body>
+</html>
