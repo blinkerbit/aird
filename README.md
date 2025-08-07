@@ -1,6 +1,7 @@
 # Aird - A Lightweight Web-Based File Browser
 
 Aird is a simple, lightweight, and fast web-based file browser and streamer built with Python and Tornado. It allows you to browse, download, upload, rename, and delete files on your server through a clean and modern web interface.
+<img width="1696" height="715" alt="image" src="https://github.com/user-attachments/assets/95a9569d-5d0c-4d96-aab9-69e0b4cd98bf" />
 
 ## Features
 
