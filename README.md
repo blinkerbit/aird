@@ -1,6 +1,6 @@
-# Filey - A Web-Based File Browser and Streamer
+# Aird - A Web-Based File Browser and Streamer
 
-Filey is a lightweight, web-based file browser built with Python and Tornado. It provides a simple and secure interface for browsing local directories, uploading files (including nested folders via drag-and-drop), and streaming file content in real-time, similar to `tail -f`.
+Aird is a lightweight, web-based file browser built with Python and Tornado. It provides a simple and secure interface for browsing local directories, uploading files (including nested folders via drag-and-drop), and streaming file content in real-time, similar to `tail -f`.
 
 ## Features
 
@@ -21,7 +21,7 @@ Filey is a lightweight, web-based file browser built with Python and Tornado. It
 
 2.  **Run the Application:**
     ```bash
-    python -m wb --root /path/to/serve --port 8000 --token YOUR_TOKEN --admin-token YOUR_ADMIN_TOKEN
+    python -m aird --root /path/to/serve --port 8000 --token YOUR_TOKEN --admin-token YOUR_ADMIN_TOKEN
     ```
     You can also create a JSON file with `root`, `port`, `token`, and `admin_token` keys and pass it using `--config config.json`.
     If no token is provided, a random one will be generated and printed to the console.

@@ -11,19 +11,19 @@ def parse_requirements(filename):
     return requirements
 
 setup(
-    name='wb',
+    name='aird',
     version='0.1',
     packages=find_packages(),
-    package_data={'wb': ['templates/*.html']},
+    package_data={'aird': ['templates/*.html']},
     entry_points={
         'console_scripts': [
-            'wb=wb.main:main',
+            'aird=aird.main:main',
         ],
     },
     install_requires=parse_requirements('requirements.txt'),
     author='Viswantha Srinivas P',
     author_email='',
-    description='A simple directory listing application',
+    description='Aird - A lightweight web-based file browser and streamer',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
     classifiers=[

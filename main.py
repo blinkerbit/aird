@@ -235,7 +235,7 @@ def make_app(settings):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run Filey")
+    parser = argparse.ArgumentParser(description="Run Aird")
     parser.add_argument("--config", help="Path to JSON config file")
     parser.add_argument("--root", help="Root directory to serve")
     parser.add_argument("--port", type=int, help="Port to listen on")
@@ -249,7 +249,7 @@ def main():
 
     root = args.root or config.get("root") or os.getcwd()
     port = args.port or config.get("port") or 8000
-    token = args.token or config.get("token") or os.environ.get("WB_ACCESS_TOKEN") or secrets.token_urlsafe(32)
+    token = args.token or config.get("token") or os.environ.get("AIRD_ACCESS_TOKEN") or secrets.token_urlsafe(32)
 
     global ACCESS_TOKEN, ROOT_DIR
     ACCESS_TOKEN = token
