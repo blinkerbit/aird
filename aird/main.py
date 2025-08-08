@@ -33,6 +33,7 @@ FEATURE_FLAGS = {
     "file_rename": True,
     "file_download": True,
     "file_edit": True,
+    "file_history": True,
 }
 
 USERS = {}
@@ -62,6 +63,22 @@ MAX_READABLE_FILE_SIZE = 10 * 1024 * 1024
 CHUNK_SIZE = 1024 * 64
 
 SHARES = {}
+
+HISTORY_DIR_NAME = ".aird_history"
+
+def backup_file(path: str) -> None:
+    if not FEATURE_FLAGS.get("file_history"):
+        return
+    history_root = os.path.join(ROOT_DIR, HISTORY_DIR_NAME)
+    abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
+    if not os.path.exists(abspath):
+        return
+    rel_dir = os.path.dirname(path)
+    history_dir = os.path.join(history_root, rel_dir)
+    os.makedirs(history_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    backup_name = f"{os.path.basename(path)}.{timestamp}"
+    shutil.copy2(abspath, os.path.join(history_dir, backup_name))
 
 def get_files_in_directory(path="."):
     files = []
@@ -208,6 +225,7 @@ class AdminHandler(BaseHandler):
         FEATURE_FLAGS["file_rename"] = self.get_argument("file_rename", "off") == "on"
         FEATURE_FLAGS["file_download"] = self.get_argument("file_download", "off") == "on"
         FEATURE_FLAGS["file_edit"] = self.get_argument("file_edit", "off") == "on"
+        FEATURE_FLAGS["file_history"] = self.get_argument("file_history", "off") == "on"
         
         FeatureFlagSocketHandler.send_updates()
         self.redirect("/admin")
@@ -495,6 +513,7 @@ class EditHandler(BaseHandler):
             return
 
         try:
+            backup_file(path)
             with open(abspath, 'w', encoding='utf-8') as f:
                 f.write(content)
             self.set_status(200)
