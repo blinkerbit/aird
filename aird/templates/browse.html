@@ -78,6 +78,17 @@
         text-align: left;
         font-weight: bold;
         border-bottom: 2px solid black;
+        position: relative;
+      }
+
+      .resizer {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 5px;
+        cursor: col-resize;
+        user-select: none;
+        height: 100%;
       }
 
       .file-table td {
@@ -265,10 +276,10 @@
       <table class="file-table" id="fileTable">
         <thead>
           <tr>
-            <th class="name-col sort-header" onclick="sortTable(0)">📁 Name</th>
-            <th class="size-col sort-header" onclick="sortTable(1)">📏 Size</th>
+            <th class="name-col sort-header" onclick="sortTable(0)">📁 Name<div class="resizer"></div></th>
+            <th class="size-col sort-header" onclick="sortTable(1)">📏 Size<div class="resizer"></div></th>
             <th class="modified-col sort-header" onclick="sortTable(2)">
-              🕒 Modified
+              🕒 Modified<div class="resizer"></div>
             </th>
             <th class="actions-col">⚡ Actions</th>
           </tr>
@@ -506,6 +517,42 @@
 
         rows.forEach((row) => tbody.appendChild(row));
       }
+
+      document.addEventListener('DOMContentLoaded', function () {
+        const table = document.getElementById('fileTable');
+        const resizers = table.querySelectorAll('.resizer');
+        let th = null;
+        let startX, startWidth;
+
+        resizers.forEach(resizer => {
+          resizer.addEventListener('mousedown', function (e) {
+            e.preventDefault();
+            th = e.target.parentElement;
+            startX = e.pageX;
+            startWidth = th.offsetWidth;
+            
+            const headerCells = table.querySelectorAll('th');
+            headerCells.forEach(cell => {
+                cell.style.width = `${cell.offsetWidth}px`;
+            });
+
+            document.addEventListener('mousemove', mouseMove);
+            document.addEventListener('mouseup', mouseUp);
+          });
+        });
+
+        function mouseMove(e) {
+          const width = startWidth + (e.pageX - startX);
+          if (width > 50) { // Minimum width
+            th.style.width = width + 'px';
+          }
+        }
+
+        function mouseUp() {
+          document.removeEventListener('mousemove', mouseMove);
+          document.removeEventListener('mouseup', mouseUp);
+        }
+      });
     </script>
   </body>
 </html>
