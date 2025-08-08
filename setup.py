@@ -12,7 +12,7 @@ def parse_requirements(filename):
 
 setup(
     name='aird',
-    version='0.1',
+    version='0.2.0',
     packages=find_packages(),
     package_data={'aird': ['templates/*.html']},
     entry_points={
@@ -22,13 +22,15 @@ setup(
     },
     install_requires=parse_requirements('requirements.txt'),
     author='Viswantha Srinivas P',
-    author_email='',
+    author_email='psviswanatha@gmail.com',  # Please fill this in
     description='Aird - A lightweight web-based file browser and streamer',
+    url='https://github.com/blinkerbit/aird',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
+    license='Custom',
     classifiers=[
         'Programming Language :: Python :: 3',
-        'License :: OSI Approved :: MIT License',
+        'License :: Other/Proprietary License',
         'Operating System :: OS Independent',
     ],
     python_requires='>=3.10',
