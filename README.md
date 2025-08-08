@@ -31,6 +31,7 @@ Aird is a modern, lightweight, and fast web-based file browser, editor, and stre
 - **Token-based Authentication:** Secure access with customizable access tokens
 - **LDAP/Active Directory Integration:** Enterprise-grade authentication support
 - **Path Traversal Protection:** Built-in security measures to prevent unauthorized access
+- **Role-based Permissions:** Assign tokens to viewer, editor, or admin roles for granular control
 
 ### ⚙️ Administration
 - **Admin Panel:** Dedicated admin interface to toggle features on the fly
@@ -118,6 +119,10 @@ For advanced setups, use a JSON configuration file to define all settings:
   "root_dir": "/path/to/your/files",
   "access_token": "your-secret-token",
   "admin_token": "your-admin-secret-token",
+  "users": {
+    "viewer-token": "viewer",
+    "editor-token": "editor"
+  },
   "enable_ldap": false,
   "ldap_server": null,
   "ldap_base_dn": null,
@@ -320,7 +325,6 @@ This project is licensed under a **Custom License** that prohibits commercial us
 - **Theme Support:** Dark mode and customizable themes
 
 ### 🚀 Advanced Features (Planned)
-- **User Management:** Role-based permissions system
 - **File History:** Version tracking and backup features
 - **API Integration:** RESTful API for external integrations
 - **Plugin System:** Extensible architecture for custom features
