@@ -33,6 +33,10 @@
             <input type="checkbox" name="file_download" {% if features.get('file_download') %}checked{% end %}>
             Enable File Download
         </label><br>
+        <label>
+            <input type="checkbox" name="file_edit" {% if features.get('file_edit') %}checked{% end %}>
+            Enable File Edit
+        </label><br>
         <br>
         <input type="submit" value="Save">
     </form>

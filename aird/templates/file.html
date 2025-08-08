@@ -50,6 +50,51 @@
         td pre {
             min-height: 1.2em;
         }
+        #editor-container {
+            display: flex;
+            height: 60vh;
+        }
+        #line-numbers-editor {
+            width: 40px;
+            padding: 5px 5px 5px 2px; /* top, right, bottom, left */
+            text-align: right;
+            background-color: #f0f0f0;
+            color: #999;
+            border: 1px solid #ccc;
+            border-right: none;
+            overflow-y: hidden;
+            resize: none;
+            font-family: monospace;
+            font-size: 1em;
+            line-height: 1.2em;
+        }
+        #editor {
+            width: calc(100% - 40px);
+            height: 100%; /* Fill the container */
+            border: 1px solid #ccc;
+            resize: none;
+            font-family: monospace;
+            font-size: 1em;
+            line-height: 1.2em;
+            padding: 5px;
+        }
+        .streaming-indicator span {
+            animation: blink 1.4s infinite both;
+        }
+        .streaming-indicator span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        .streaming-indicator span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        @keyframes blink {
+            0%, 80%, 100% {
+                opacity: 0;
+            }
+            40% {
+                opacity: 1;
+            }
+        }
     </style>
 </head>
 <body>
@@ -59,7 +104,13 @@
     <button id="stop-stream-btn" style="display:none;">Stop Streaming</button>
     <button id="copy-btn">Copy Content</button>
     <button id="toggle-lines-btn">Hide Line Numbers</button>
+    <button id="edit-btn" data-feature="file_edit">Edit</button>
+    <button id="save-btn" style="display:none;">Save</button>
     <hr>
+    <div id="editor-container" style="display:none;">
+        <textarea id="line-numbers-editor" readonly></textarea>
+        <textarea id="editor"></textarea>
+    </div>
     <table id="file-content">
         <tbody>
             {% for i, line in enumerate(file_content.split('\n')) %}
@@ -69,13 +120,27 @@
             </tr>
             {% end %}
         </tbody>
+        <tfoot id="streaming-indicator" style="display:none;">
+            <tr>
+                <td class="line-numbers streaming-indicator">
+                    <span>.</span><span>.</span><span>.</span>
+                </td>
+                <td></td>
+            </tr>
+        </tfoot>
     </table>
     <script>
     const streamBtn = document.getElementById('stream-btn');
     const stopStreamBtn = document.getElementById('stop-stream-btn');
     const copyBtn = document.getElementById('copy-btn');
     const toggleLinesBtn = document.getElementById('toggle-lines-btn');
+    const editBtn = document.getElementById('edit-btn');
+    const saveBtn = document.getElementById('save-btn');
+    const editorContainer = document.getElementById('editor-container');
+    const editor = document.getElementById('editor');
+    const lineNumbersEditor = document.getElementById('line-numbers-editor');
     const tableBody = document.querySelector('#file-content tbody');
+    const streamingIndicator = document.getElementById('streaming-indicator');
     let ws = null;
     let originalContent = tableBody.innerHTML;
     let lineCount = tableBody.rows.length;
@@ -99,12 +164,64 @@
         });
     }
 
+    function updateLineNumbers() {
+        const lineCount = editor.value.split('\n').length;
+        const lines = Array.from({ length: lineCount }, (_, i) => i + 1).join('\n');
+        lineNumbersEditor.value = lines;
+        lineNumbersEditor.scrollTop = editor.scrollTop;
+    }
+
+    editor.addEventListener('scroll', () => {
+        lineNumbersEditor.scrollTop = editor.scrollTop;
+    });
+
+    editor.addEventListener('input', updateLineNumbers);
+
+
+    editBtn.onclick = function() {
+        const content = Array.from(tableBody.rows).map(row => {
+            // Always get the content from the second cell (index 1)
+            const contentCell = row.cells[1];
+            return contentCell.textContent.replace('\u00A0', '');
+        }).join('\n');
+        
+        editor.value = content;
+        updateLineNumbers();
+        document.getElementById('file-content').style.display = 'none';
+        editorContainer.style.display = 'flex';
+        editBtn.style.display = 'none';
+        saveBtn.style.display = '';
+    };
+
+    saveBtn.onclick = function() {
+        const content = editor.value;
+        fetch('/edit', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `path={{ path }}&content=${encodeURIComponent(content)}`
+        })
+        .then(response => response.text())
+        .then(data => {
+            alert(data);
+            if (data === "File saved successfully.") {
+                window.location.reload();
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while saving the file.');
+        });
+    };
+
     streamBtn.onclick = function() {
         ws = new WebSocket(`ws://${window.location.host}/stream/{{ path }}`);
         tableBody.innerHTML = '';
         lineCount = 0;
         streamBtn.style.display = 'none';
         stopStreamBtn.style.display = '';
+        streamingIndicator.style.display = '';
         ws.onmessage = function(event) {
             const lines = event.data.split('\n');
             lines.forEach(line => {
@@ -138,16 +255,15 @@
         ws.onclose = function() {
             stopStreamBtn.style.display = 'none';
             streamBtn.style.display = '';
+            streamingIndicator.style.display = 'none';
+            ws = null;
         };
     };
 
     stopStreamBtn.onclick = function() {
         if (ws) {
             ws.close();
-            ws = null;
         }
-        stopStreamBtn.style.display = 'none';
-        streamBtn.style.display = '';
     };
 
     toggleLinesBtn.onclick = function() {

@@ -33,6 +33,7 @@ FEATURE_FLAGS = {
     "file_delete": True,
     "file_rename": True,
     "file_download": True,
+    "file_edit": True,
 }
 
 MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -164,6 +165,7 @@ class AdminHandler(BaseHandler):
         FEATURE_FLAGS["file_delete"] = self.get_argument("file_delete", "off") == "on"
         FEATURE_FLAGS["file_rename"] = self.get_argument("file_rename", "off") == "on"
         FEATURE_FLAGS["file_download"] = self.get_argument("file_download", "off") == "on"
+        FEATURE_FLAGS["file_edit"] = self.get_argument("file_edit", "off") == "on"
         
         FeatureFlagSocketHandler.send_updates()
         self.redirect("/admin")
@@ -407,6 +409,38 @@ class RenameHandler(BaseHandler):
         self.redirect("/" + parent if parent else "/")
 
 
+class EditHandler(BaseHandler):
+    @tornado.web.authenticated
+    def post(self):
+        if not FEATURE_FLAGS.get("file_edit"):
+            self.set_status(403)
+            self.write("File editing is disabled.")
+            return
+
+        path = self.get_argument("path", "")
+        content = self.get_argument("content", "")
+        
+        abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
+        
+        if not abspath.startswith(ROOT_DIR):
+            self.set_status(403)
+            self.write("Forbidden")
+            return
+            
+        if not os.path.isfile(abspath):
+            self.set_status(404)
+            self.write("File not found")
+            return
+
+        try:
+            with open(abspath, 'w', encoding='utf-8') as f:
+                f.write(content)
+            self.set_status(200)
+            self.write("File saved successfully.")
+        except Exception as e:
+            self.set_status(500)
+            self.write(f"Error saving file: {e}")
+
 
 def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
     settings["template_path"] = os.path.join(os.path.dirname(__file__), "templates")
@@ -427,6 +461,7 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
         (r"/upload", UploadHandler),
         (r"/delete", DeleteHandler),
         (r"/rename", RenameHandler),
+        (r"/edit", EditHandler),
         (r"/(.*)", MainHandler),
     ], **settings)
 
