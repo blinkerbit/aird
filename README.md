@@ -16,6 +16,7 @@ Aird is a modern, lightweight, and fast web-based file browser, editor, and stre
   - Delete files and directories (can be disabled)
   - Rename files and directories (can be disabled)
   - **NEW:** In-browser file editing with syntax highlighting and line numbers
+  - Automatic file history with timestamped backups
 - **File Sharing:** Create secure, temporary public links for files and directories
   - Select multiple files and folders to share together
   - Generate unique, time-limited shareable URLs
@@ -325,7 +326,6 @@ This project is licensed under a **Custom License** that prohibits commercial us
 - **Theme Support:** Dark mode and customizable themes
 
 ### 🚀 Advanced Features (Planned)
-- **File History:** Version tracking and backup features
 - **API Integration:** RESTful API for external integrations
 - **Plugin System:** Extensible architecture for custom features
 
