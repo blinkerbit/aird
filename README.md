@@ -14,6 +14,11 @@ Aird is a modern, lightweight, and fast web-based file browser, editor, and stre
   - Delete files and directories (can be disabled)
   - Rename files and directories (can be disabled)
   - **NEW:** In-browser file editing with syntax highlighting and line numbers
+- **File Sharing:** Create secure, temporary public links for files and directories
+  - Select multiple files and folders to share together
+  - Generate unique, time-limited shareable URLs
+  - No login required for shared link access
+  - Manage active shares with easy revocation
 
 ### 📡 Real-time Streaming
 - **WebSocket-based File Streaming:** Stream large files with animated progress indicators
@@ -145,6 +150,33 @@ aird --enable-ldap \
 
 Users can authenticate with their LDAP credentials, with token authentication as fallback.
 
+### 🔗 File Sharing
+
+The file sharing feature allows you to create public, temporary links for files and directories:
+
+1. **Access the Share Page:**
+   - Navigate to `/share` after logging in
+   - Or click the "Share Files" button in the main file browser
+
+2. **Select Files to Share:**
+   - Browse directories and select files using checkboxes
+   - Navigate between folders to select files from different locations
+   - Use "Select All (Current Dir)" to quickly select all visible files
+
+3. **Generate Share Links:**
+   - Click "Generate Share Link" after selecting files
+   - Copy the generated URL using the "Copy Link" button
+   - Share the URL with others for public access (no login required)
+
+4. **Manage Active Shares:**
+   - View all active shares in the bottom panel
+   - Copy existing share links or open them in a new tab
+   - Revoke shares instantly when no longer needed
+
+**Example URLs:**
+- Share page: `http://localhost:8888/share`
+- Public shared files: `http://localhost:8888/shared/abc123def456`
+
 ## 👑 Admin Panel
 
 The admin panel provides real-time control over server features and capabilities.
@@ -183,6 +215,15 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **Drag-and-drop upload** with visual feedback
 - **Real-time file streaming** with progress animations
 - **Keyboard navigation** support
+
+### 🔗 File Sharing System
+- **Multi-file selection:** Choose multiple files and directories to share in a single link
+- **On-the-fly browsing:** Navigate directories dynamically without pre-loading all files
+- **Secure URL generation:** Each share gets a unique, hard-to-guess identifier
+- **Public access:** Shared files can be viewed without authentication
+- **Active share management:** View, copy, and revoke existing shares in real-time
+- **One-click copy:** Copy shareable URLs to clipboard with visual feedback
+- **Temporary access:** All shares are session-based and can be easily revoked
 
 ### 🚀 Performance Features
 - **Chunked file operations** for large files
