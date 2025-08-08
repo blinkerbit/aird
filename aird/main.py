@@ -94,10 +94,14 @@ class BaseHandler(tornado.web.RequestHandler):
     def get_current_admin(self) -> str | None:
         return self.get_secure_cookie("admin")
 
+class RootHandler(BaseHandler):
+    def get(self):
+        self.redirect("/files/")
+
 class LDAPLoginHandler(BaseHandler):
     def get(self):
         if self.current_user:
-            self.redirect("/")
+            self.redirect("/files/")
             return
         self.render("login.html", error=None, settings=self.settings)
 
@@ -110,7 +114,7 @@ class LDAPLoginHandler(BaseHandler):
             conn = Connection(server, user=f"uid={username},{self.settings['ldap_base_dn']}", password=password, auto_bind=True)
             if conn.bind():
                 self.set_secure_cookie("user", username)
-                self.redirect("/")
+                self.redirect("/files/")
             else:
                 self.render("login.html", error="Invalid username or password.", settings=self.settings)
         except Exception as e:
@@ -119,7 +123,7 @@ class LDAPLoginHandler(BaseHandler):
 class LoginHandler(BaseHandler):
     def get(self):
         if self.current_user:
-            self.redirect("/")
+            self.redirect("/files/")
             return
         self.render("login.html", error=None, settings=self.settings)
 
@@ -127,7 +131,7 @@ class LoginHandler(BaseHandler):
         token = self.get_argument("token", "")
         if token == ACCESS_TOKEN:
             self.set_secure_cookie("user", "authenticated")
-            self.redirect("/")
+            self.redirect("/files/")
         else:
             self.render("login.html", error="Invalid token. Try again.", settings=self.settings)
 
@@ -337,7 +341,7 @@ class UploadHandler(BaseHandler):
             os.makedirs(upload_path, exist_ok=True)
             with open(os.path.join(upload_path, filename), 'wb') as f:
                 f.write(file_info['body'])
-            self.redirect("/" + directory)
+            self.redirect("/files/" + directory)
             return
 
         for file_info in file_infos:
@@ -385,7 +389,7 @@ class DeleteHandler(BaseHandler):
         elif os.path.isfile(abspath):
             os.remove(abspath)
         parent = os.path.dirname(path)
-        self.redirect("/" + parent if parent else "/")
+        self.redirect("/files/" + parent if parent else "/files/")
 
 class RenameHandler(BaseHandler):
     @tornado.web.authenticated
@@ -406,7 +410,7 @@ class RenameHandler(BaseHandler):
             return
         os.rename(abspath, new_abspath)
         parent = os.path.dirname(path)
-        self.redirect("/" + parent if parent else "/")
+        self.redirect("/files/" + parent if parent else "/files/")
 
 
 class EditHandler(BaseHandler):
@@ -453,6 +457,7 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
         login_handler = LoginHandler
 
     return tornado.web.Application([
+        (r"/", RootHandler),
         (r"/login", login_handler),
         (r"/admin/login", AdminLoginHandler),
         (r"/admin", AdminHandler),
@@ -462,7 +467,7 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
         (r"/delete", DeleteHandler),
         (r"/rename", RenameHandler),
         (r"/edit", EditHandler),
-        (r"/(.*)", MainHandler),
+        (r"/files/(.*)", MainHandler),
     ], **settings)
 
 

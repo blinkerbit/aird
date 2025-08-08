@@ -253,10 +253,10 @@
       <div class="header">
         <h1>Aird</h1>
         <div class="breadcrumb">
-          <a href="/">🏠 Home</a>
+          <a href="/files/">🏠 Home</a>
           {% if current_user and current_path != "/" %} {% set path_parts = current_path.strip('/').split('/') %}
           {% for i, part in enumerate(path_parts) %} 
-          {% set partial_path = '/' + '/'.join(path_parts[:i+1]) %} /
+          {% set partial_path = '/files/' + '/'.join(path_parts[:i+1]) %} /
           <a href="{{ partial_path }}">{{ part }}</a>
           {% end %} {% end %}
         </div>
@@ -289,7 +289,7 @@
           {% if current_path and current_path != "/" %}
           <tr>
             <td class="name-cell" data-label="Name">
-              <a href="/{{ parent_path or '' }}" class="file-link">
+              <a href="/files/{{ parent_path or '' }}" class="file-link">
                 <span class="file-icon">📁</span>..
               </a>
             </td>
@@ -305,14 +305,14 @@
             <td class="name-cell" data-label="Name">
               {% if file['is_dir'] %}
               <a
-                href="/{{ escape(join_path(current_path, file['name'])) }}"
+                href="/files/{{ escape(join_path(current_path, file['name'])) }}"
                 class="file-link"
               >
                 <span class="file-icon">📁</span>{{ escape(file['name']) }}
               </a>
               {% else %}
               <a
-                href="/{{ escape(join_path(current_path, file['name'])) }}"
+                href="/files/{{ escape(join_path(current_path, file['name'])) }}"
                 class="file-link"
               >
                 <span class="file-icon">{{ get_file_icon(file["name"]) }}</span>{{
@@ -334,14 +334,14 @@
               {% if not file["is_dir"] %}
                 {% if features['file_download'] %}
                 <a
-                  href="/{{ escape(join_path(current_path, file['name'])) }}?download=1"
+                  href="/files/{{ escape(join_path(current_path, file['name'])) }}?download=1"
                   class="action-link"
                   >Download</a
                 >
                 {% end %}
                 <a
                   href="#"
-                  onclick="streamFile('/{{ escape(join_path(current_path, file['name'])) }}')"
+                  onclick="streamFile('/files/{{ escape(join_path(current_path, file['name'])) }}')"
                   class="action-link"
                   >Stream</a
                 >
@@ -349,14 +349,14 @@
               {% if features['file_rename'] %}
               <a
                 href="#"
-                onclick="renameItem('/{{ escape(join_path(current_path, file['name'])) }}')"
+                onclick="renameItem('{{ escape(join_path(current_path, file['name'])) }}')"
                 class="action-link"
                 >Rename</a>
               {% end %}
               {% if features['file_delete'] %}
               <a
                 href="#"
-                onclick="deleteItem('/{{ escape(join_path(current_path, file['name'])) }}')"
+                onclick="deleteItem('{{ escape(join_path(current_path, file['name'])) }}')"
                 class="action-link"
                 >Delete</a>
               {% end %}
@@ -434,7 +434,7 @@
         const newName = prompt("Enter new name:");
         if (!newName) return;
         const formData = new URLSearchParams();
-        formData.append("path", filepath.replace(/^\//, ""));
+        formData.append("path", filepath);
         formData.append("new_name", newName);
         fetch("/rename", {
           method: "POST",
@@ -457,7 +457,7 @@
       function deleteItem(filepath) {
         if (!confirm("Are you sure you want to delete this item?")) return;
         const formData = new URLSearchParams();
-        formData.append("path", filepath.replace(/^\//, ""));
+        formData.append("path", filepath);
         fetch("/delete", {
           method: "POST",
           headers: {
