@@ -3,6 +3,8 @@ import secrets
 import argparse
 import json
 from typing import Set
+import logging
+import asyncio
 
 import tornado.ioloop
 import tornado.web
@@ -12,10 +14,7 @@ import shutil
 from collections import deque
 from ldap3 import Server, Connection, ALL
 from datetime import datetime
-import asyncio
 
-
-import os
 
 def join_path(*parts):
     return os.path.join(*parts).replace("\\", "/")
@@ -39,6 +38,8 @@ FEATURE_FLAGS = {
 MAX_FILE_SIZE = 10 * 1024 * 1024
 MAX_READABLE_FILE_SIZE = 10 * 1024 * 1024
 CHUNK_SIZE = 1024 * 64
+
+SHARES = {}
 
 def get_files_in_directory(path="."):
     files = []
@@ -445,6 +446,123 @@ class EditHandler(BaseHandler):
             self.set_status(500)
             self.write(f"Error saving file: {e}")
 
+class FileListAPIHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self, path):
+        print(f"DEBUG: FileListAPIHandler called with path: '{path}'")
+        self.set_header("Content-Type", "application/json")
+        
+        # Normalize path
+        path = path.strip('/')
+        abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
+        print(f"DEBUG: Normalized path: '{path}', abspath: '{abspath}'")
+        
+        if not abspath.startswith(ROOT_DIR):
+            print(f"DEBUG: Forbidden - abspath doesn't start with ROOT_DIR")
+            self.set_status(403)
+            self.write({"error": "Forbidden"})
+            return
+
+        if not os.path.isdir(abspath):
+            print(f"DEBUG: Directory not found: {abspath}")
+            self.set_status(404)
+            self.write({"error": "Directory not found"})
+            return
+
+        try:
+            files = get_files_in_directory(abspath)
+            print(f"DEBUG: Found {len(files)} files")
+            result = {
+                "path": path,
+                "files": [
+                    {
+                        "name": f["name"],
+                        "is_dir": f["is_dir"],
+                        "size_str": f.get("size_str", "-"),
+                        "modified": f.get("modified", "-")
+                    }
+                    for f in files
+                ]
+            }
+            self.write(result)
+        except Exception as e:
+            print(f"DEBUG: Exception: {e}")
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+class ShareFilesHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        # Just render the template - files will be loaded on-the-fly via JavaScript
+        self.render("share.html", shares=SHARES)
+
+class ShareCreateHandler(BaseHandler):
+    @tornado.web.authenticated
+    def post(self):
+        try:
+            data = json.loads(self.request.body or b'{}')
+            paths = data.get('paths', [])
+            valid_paths = []
+            for p in paths:
+                ap = os.path.abspath(os.path.join(ROOT_DIR, p))
+                if ap.startswith(ROOT_DIR) and os.path.isfile(ap):
+                    valid_paths.append(p)
+            if not valid_paths:
+                self.set_status(400)
+                self.write({"error": "No valid files"})
+                return
+            sid = secrets.token_urlsafe(8)
+            SHARES[sid] = {"paths": valid_paths, "created": datetime.utcnow().isoformat()}
+            self.write({"id": sid, "url": f"/shared/{sid}"})
+        except Exception as e:
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+class ShareRevokeHandler(BaseHandler):
+    @tornado.web.authenticated
+    def post(self):
+        sid = self.get_argument('id', '')
+        if sid in SHARES:
+            del SHARES[sid]
+        if self.request.headers.get('Accept') == 'application/json':
+            self.write({'ok': True})
+            return
+        self.redirect('/share')
+
+class ShareListAPIHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        self.write({"shares": SHARES})
+
+class SharedListHandler(tornado.web.RequestHandler):
+    def get(self, sid):
+        share = SHARES.get(sid)
+        if not share:
+            self.set_status(404)
+            self.write("Invalid share link")
+            return
+        self.render("shared_list.html", share_id=sid, files=share['paths'])
+
+class SharedFileHandler(tornado.web.RequestHandler):
+    def get(self, sid, path):
+        share = SHARES.get(sid)
+        if not share:
+            self.set_status(404)
+            self.write("Invalid share link")
+            return
+        if path not in share['paths']:
+            self.set_status(403)
+            self.write("File not in share")
+            return
+        abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
+        if not (abspath.startswith(ROOT_DIR) and os.path.isfile(abspath)):
+            self.set_status(404)
+            self.write("File not found")
+            return
+        self.set_header('Content-Type', 'text/plain; charset=utf-8')
+        with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+            self.write(f.read())
+
 
 def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
     settings["template_path"] = os.path.join(os.path.dirname(__file__), "templates")
@@ -467,6 +585,13 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
         (r"/delete", DeleteHandler),
         (r"/rename", RenameHandler),
         (r"/edit", EditHandler),
+        (r"/api/files/(.*)", FileListAPIHandler),
+        (r"/share", ShareFilesHandler),
+        (r"/share/create", ShareCreateHandler),
+        (r"/share/revoke", ShareRevokeHandler),
+        (r"/share/list", ShareListAPIHandler),
+        (r"/shared/([A-Za-z0-9_\-]+)", SharedListHandler),
+        (r"/shared/([A-Za-z0-9_\-]+)/file/(.*)", SharedFileHandler),
         (r"/files/(.*)", MainHandler),
     ], **settings)
 
@@ -482,6 +607,8 @@ def main():
     parser.add_argument("--ldap-server", help="LDAP server address")
     parser.add_argument("--ldap-base-dn", help="LDAP base DN for user search")
     args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
 
     config = {}
     if args.config:

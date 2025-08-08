@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Shared Files</title>
+  <style>
+    body { font-family:monospace; background:#fff; color:#000; }
+    ul { list-style:none; padding:0; }
+    li { padding:4px 6px; border-bottom:1px solid #eee; }
+    a { color:#000; text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    pre { white-space:pre-wrap; }
+    .file-list { max-width:600px; margin:20px auto; }
+  </style>
+</head>
+<body>
+  <div class="file-list">
+    <h1>Shared Files</h1>
+    <ul>
+      {% for f in files %}
+      <li><a href="/shared/{{ share_id }}/file/{{ f }}" target="_blank">{{ f }}</a></li>
+      {% end %}
+    </ul>
+    {% if not files %}<p>No files.</p>{% end %}
+  </div>
+</body>
+</html>

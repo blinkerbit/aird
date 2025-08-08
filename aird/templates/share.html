@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Share Files</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: "Courier New", monospace;
+      background: white;
+      color: black;
+      line-height: 1.4;
+    }
+
+    .container {
+      max-width: 100%;
+      margin: 0 auto;
+      padding: 20px 10px;
+    }
+
+    .header {
+      border-bottom: 2px solid black;
+      padding-bottom: 15px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header h1 {
+      font-size: 24px;
+      font-weight: bold;
+    }
+
+    .breadcrumb {
+      font-size: 14px;
+      color: #666;
+    }
+
+    .breadcrumb a {
+      color: black;
+      text-decoration: none;
+    }
+
+    .breadcrumb a:hover {
+      text-decoration: underline;
+    }
+
+    .selection-panel {
+      background: #f9f9f9;
+      border: 1px solid #ccc;
+      padding: 15px;
+      margin-bottom: 20px;
+      border-radius: 4px;
+    }
+
+    .selected-files {
+      margin-bottom: 10px;
+      min-height: 20px;
+    }
+
+    .selected-file {
+      display: inline-block;
+      background: black;
+      color: white;
+      padding: 2px 8px;
+      margin: 2px;
+      border-radius: 3px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .selected-file:hover {
+      background: #333;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      font-family: "Courier New", monospace;
+      border: 1px solid black;
+      background: white;
+      color: black;
+      padding: 8px 12px;
+      cursor: pointer;
+      text-decoration: none;
+      font-size: 12px;
+      border-radius: 3px;
+    }
+
+    .btn:hover {
+      background: #f0f0f0;
+    }
+
+    .btn:disabled {
+      background: #eee;
+      color: #999;
+      cursor: not-allowed;
+    }
+
+    .btn.primary {
+      background: black;
+      color: white;
+    }
+
+    .btn.primary:hover {
+      background: #333;
+    }
+
+    .file-table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid black;
+      background: white;
+      table-layout: fixed;
+    }
+
+    .file-table th {
+      background: black;
+      color: white;
+      padding: 10px 12px;
+      text-align: left;
+      font-weight: bold;
+      border-bottom: 2px solid black;
+    }
+
+    .file-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid #ddd;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .file-table tbody tr:hover {
+      background: #f5f5f5;
+    }
+
+    .file-table tbody tr.selected {
+      background: #e6f3ff;
+    }
+
+    .select-col { width: 40px; }
+    .name-col { width: 50%; }
+    .size-col { width: 15%; }
+    .modified-col { width: 20%; }
+    .actions-col { width: 15%; }
+
+    .file-link {
+      color: black;
+      text-decoration: none;
+      display: inline-block;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .file-link:hover {
+      text-decoration: underline;
+    }
+
+    .file-icon {
+      margin-right: 8px;
+      display: inline-block;
+      vertical-align: middle;
+    }
+
+    .share-result {
+      background: #e8f5e8;
+      border: 1px solid #4a934a;
+      padding: 10px;
+      margin-top: 15px;
+      border-radius: 4px;
+      display: none;
+    }
+
+    .active-shares {
+      margin-top: 30px;
+      border-top: 2px solid #ccc;
+      padding-top: 20px;
+    }
+
+    .shares-table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid #ccc;
+      margin-top: 10px;
+    }
+
+    .shares-table th,
+    .shares-table td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: left;
+    }
+
+    .shares-table th {
+      background: #f0f0f0;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>Share Files</h1>
+        <div class="breadcrumb">
+          <a href="/files/">🏠 Home</a> / 
+          <span id="currentPath">Browse & Select Files</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Selection Panel -->
+    <div class="selection-panel">
+      <div>
+        <strong>Selected Files (<span id="selectedCount">0</span>):</strong>
+      </div>
+      <div class="selected-files" id="selectedFiles">
+        <em style="color: #666;">No files selected</em>
+      </div>
+      <div class="action-buttons">
+        <button class="btn primary" id="generateLink" disabled>Generate Share Link</button>
+        <button class="btn" id="clearSelection">Clear Selection</button>
+        <button class="btn" id="selectAllVisible">Select All (Current Dir)</button>
+      </div>
+      <div class="share-result" id="shareResult"></div>
+    </div>
+
+    <!-- File Browser -->
+    <table class="file-table" id="fileTable">
+      <thead>
+        <tr>
+          <th class="select-col">✓</th>
+          <th class="name-col">📁 Name</th>
+          <th class="size-col">📏 Size</th>
+          <th class="modified-col">🕒 Modified</th>
+          <th class="actions-col">⚡ Actions</th>
+        </tr>
+      </thead>
+      <tbody id="fileTableBody">
+        <tr>
+          <td colspan="5" class="loading">Loading files...</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Active Shares -->
+    <div class="active-shares">
+      <h2>Active Shares (<span id="activeSharesCount">0</span>)</h2>
+      <table class="shares-table" id="sharesTable">
+        <thead>
+          <tr>
+            <th>Share ID</th>
+            <th>Files Count</th>
+            <th>Created</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="sharesTableBody">
+          <tr>
+            <td colspan="4" class="loading">Loading active shares...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    let currentPath = '';
+    let selectedFiles = new Set();
+    let allFiles = [];
+
+    const elements = {
+      currentPath: document.getElementById('currentPath'),
+      selectedCount: document.getElementById('selectedCount'),
+      selectedFilesDiv: document.getElementById('selectedFiles'),
+      generateLink: document.getElementById('generateLink'),
+      clearSelection: document.getElementById('clearSelection'),
+      selectAllVisible: document.getElementById('selectAllVisible'),
+      shareResult: document.getElementById('shareResult'),
+      fileTableBody: document.getElementById('fileTableBody'),
+      sharesTableBody: document.getElementById('sharesTableBody'),
+      activeSharesCount: document.getElementById('activeSharesCount')
+    };
+
+    function getFileIcon(filename) {
+      const ext = filename.toLowerCase().split('.').pop();
+      const iconMap = {
+        'txt': '📄', 'md': '📄', 'doc': '📄', 'docx': '📄', 'rtf': '📄',
+        'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'svg': '🖼️', 'bmp': '🖼️', 'webp': '🖼️',
+        'py': '💻', 'js': '💻', 'html': '💻', 'css': '💻', 'java': '💻', 'cpp': '💻', 'c': '💻', 'php': '💻',
+        'zip': '🗜️', 'rar': '🗜️', 'tar': '🗜️', 'gz': '🗜️', '7z': '🗜️',
+        'pdf': '📕', 'mp4': '🎬', 'avi': '🎬', 'mkv': '🎬', 'mp3': '🎵', 'wav': '🎵', 'flac': '🎵'
+      };
+      return iconMap[ext] || '📦';
+    }
+
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function updateSelectedDisplay() {
+      elements.selectedCount.textContent = selectedFiles.size;
+      elements.generateLink.disabled = selectedFiles.size === 0;
+
+      if (selectedFiles.size === 0) {
+        elements.selectedFilesDiv.innerHTML = '<em style="color: #666;">No files selected</em>';
+      } else {
+        elements.selectedFilesDiv.innerHTML = Array.from(selectedFiles)
+          .map(file => `<span class="selected-file" onclick="removeFromSelection('${file}')">${file.split('/').pop()} ×</span>`)
+          .join('');
+      }
+
+      // Update row highlighting
+      document.querySelectorAll('#fileTableBody tr').forEach(row => {
+        const checkbox = row.querySelector('input[type="checkbox"]');
+        if (checkbox) {
+          row.classList.toggle('selected', checkbox.checked);
+        }
+      });
+    }
+
+    function addToSelection(filePath) {
+      selectedFiles.add(filePath);
+      updateSelectedDisplay();
+    }
+
+    function removeFromSelection(filePath) {
+      selectedFiles.delete(filePath);
+      const checkbox = document.querySelector(`input[value="${filePath}"]`);
+      if (checkbox) checkbox.checked = false;
+      updateSelectedDisplay();
+    }
+
+    function clearSelection() {
+      selectedFiles.clear();
+      document.querySelectorAll('#fileTableBody input[type="checkbox"]').forEach(cb => cb.checked = false);
+      updateSelectedDisplay();
+    }
+
+    function selectAllVisible() {
+      const visibleFiles = document.querySelectorAll('#fileTableBody input[type="checkbox"]');
+      visibleFiles.forEach(checkbox => {
+        checkbox.checked = true;
+        selectedFiles.add(checkbox.value);
+      });
+      updateSelectedDisplay();
+    }
+
+    async function loadDirectory(path = '') {
+      try {
+        currentPath = path;
+        elements.currentPath.textContent = path || 'Root Directory';
+        elements.fileTableBody.innerHTML = '<tr><td colspan="5" class="loading">Loading...</td></tr>';
+
+        console.log('Loading directory:', path);
+        
+        // Use the API endpoint instead of parsing HTML
+        const response = await fetch(`/api/files/${path}`);
+        
+        console.log('API response status:', response.status);
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log('API data:', data);
+          allFiles = data.files;
+          renderFiles();
+        } else {
+          const errorText = await response.text();
+          console.error('API error:', errorText);
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+      } catch (error) {
+        console.error('Error loading directory:', error);
+        elements.fileTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: red;">Error loading files</td></tr>';
+      }
+    }
+
+    function renderFiles() {
+      if (allFiles.length === 0) {
+        elements.fileTableBody.innerHTML = '<tr><td colspan="5" class="loading">No files in this directory</td></tr>';
+        return;
+      }
+
+      elements.fileTableBody.innerHTML = '';
+
+      // Parent directory link
+      if (currentPath) {
+        const parentPath = currentPath.split('/').filter(p => p).slice(0, -1).join('/');
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td></td>
+          <td><a href="#" onclick="loadDirectory('${parentPath}')" class="file-link"><span class="file-icon">📁</span>..</a></td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+        `;
+        elements.fileTableBody.appendChild(row);
+      }
+
+      allFiles.forEach(file => {
+        const row = document.createElement('tr');
+        const filePath = currentPath ? `${currentPath}/${file.name}` : file.name;
+        const isSelected = selectedFiles.has(filePath);
+
+        if (file.is_dir) {
+          const newPath = currentPath ? `${currentPath}/${file.name}` : file.name;
+          row.innerHTML = `
+            <td></td>
+            <td>
+              <a href="#" onclick="loadDirectory('${newPath}')" class="file-link">
+                <span class="file-icon">📁</span>${file.name}
+              </a>
+            </td>
+            <td>-</td>
+            <td>${file.modified || '-'}</td>
+            <td>-</td>
+          `;
+        } else {
+          row.innerHTML = `
+            <td style="text-align: center;">
+              <input type="checkbox" value="${filePath}" ${isSelected ? 'checked' : ''} 
+                     onchange="this.checked ? addToSelection('${filePath}') : removeFromSelection('${filePath}')">
+            </td>
+            <td>
+              <span class="file-link">
+                <span class="file-icon">${getFileIcon(file.name)}</span>${file.name}
+              </span>
+            </td>
+            <td>${file.size_str || '-'}</td>
+            <td>${file.modified || '-'}</td>
+            <td>
+              <button class="btn" onclick="previewFile('${filePath}')">View</button>
+            </td>
+          `;
+        }
+
+        if (isSelected) row.classList.add('selected');
+        elements.fileTableBody.appendChild(row);
+      });
+    }
+
+    async function generateShareLink() {
+      if (selectedFiles.size === 0) return;
+
+      elements.generateLink.disabled = true;
+      elements.generateLink.textContent = 'Generating...';
+
+      try {
+        const response = await fetch('/share/create', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({paths: Array.from(selectedFiles)})
+        });
+
+        const data = await response.json();
+        
+        if (data.error) {
+          alert('Error: ' + data.error);
+        } else {
+          const fullUrl = `${window.location.origin}${data.url}`;
+          elements.shareResult.style.display = 'block';
+          elements.shareResult.innerHTML = `
+            <strong>Share link created:</strong><br>
+            <a href="${data.url}" target="_blank">${data.url}</a>
+            <button class="btn" onclick="copyToClipboard('${fullUrl}', this)" style="margin-left: 10px;">Copy Link</button>
+          `;
+          
+          // Clear selection after successful share creation
+          clearSelection();
+          
+          // Reload active shares
+          loadActiveShares();
+        }
+      } catch (error) {
+        console.error('Error generating share link:', error);
+        alert('Failed to generate share link');
+      } finally {
+        elements.generateLink.disabled = false;
+        elements.generateLink.textContent = 'Generate Share Link';
+      }
+    }
+
+    async function loadActiveShares() {
+      try {
+        const response = await fetch('/share/list');
+        const data = await response.json();
+        
+        console.log('Share list data:', data); // Debug log
+        
+        // Convert shares object to array
+        const sharesArray = data.shares ? Object.keys(data.shares).map(id => ({
+          id: id,
+          ...data.shares[id],
+          count: data.shares[id].paths ? data.shares[id].paths.length : 0
+        })) : [];
+        
+        elements.activeSharesCount.textContent = sharesArray.length;
+        
+        if (sharesArray.length === 0) {
+          elements.sharesTableBody.innerHTML = '<tr><td colspan="4" class="loading">No active shares</td></tr>';
+          return;
+        }
+
+        elements.sharesTableBody.innerHTML = '';
+        sharesArray.forEach(share => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td><code>${share.id}</code></td>
+            <td>${share.count} file${share.count !== 1 ? 's' : ''}</td>
+            <td>Just now</td>
+            <td>
+              <button class="btn" onclick="copyToClipboard('${window.location.origin}/shared/${share.id}', this)">Copy Link</button>
+              <button class="btn" onclick="openShare('/shared/${share.id}')">Open</button>
+              <button class="btn" onclick="revokeShare('${share.id}')">Revoke</button>
+            </td>
+          `;
+          elements.sharesTableBody.appendChild(row);
+        });
+      } catch (error) {
+        console.error('Error loading active shares:', error);
+        elements.sharesTableBody.innerHTML = '<tr><td colspan="4" class="loading">Error loading shares</td></tr>';
+      }
+    }
+
+    function copyToClipboard(text, btn) {
+      // Check if the modern clipboard API is available
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          // Visual feedback
+          if (btn) {
+            const originalText = btn.textContent;
+            btn.textContent = 'Copied!';
+            setTimeout(() => btn.textContent = originalText, 1500);
+          }
+        }).catch(err => {
+          console.error('Clipboard API failed: ', err);
+          // Fall back to the old method
+          fallbackCopyTextToClipboard(text, btn);
+        });
+      } else {
+        // Fallback for older browsers or non-HTTPS contexts
+        fallbackCopyTextToClipboard(text, btn);
+      }
+    }
+
+    function fallbackCopyTextToClipboard(text, btn) {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.top = '-9999px';
+      textArea.style.left = '-9999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      try {
+        const successful = document.execCommand('copy');
+        if (successful && btn) {
+          const originalText = btn.textContent;
+          btn.textContent = 'Copied!';
+          setTimeout(() => btn.textContent = originalText, 1500);
+        } else if (!successful) {
+          console.error('Fallback copy command failed');
+          alert('Failed to copy to clipboard');
+        }
+      } catch (err) {
+        console.error('Fallback copy failed: ', err);
+        alert('Failed to copy to clipboard');
+      } finally {
+        document.body.removeChild(textArea);
+      }
+    }
+
+    function openShare(url) {
+      window.open(url, '_blank');
+    }
+
+    async function revokeShare(shareId) {
+      if (!confirm('Are you sure you want to revoke this share?')) return;
+
+      try {
+        const formData = new URLSearchParams();
+        formData.append('id', shareId);
+        await fetch('/share/revoke', {
+          method: 'POST',
+          body: formData
+        });
+        
+        loadActiveShares();
+      } catch (error) {
+        console.error('Error revoking share:', error);
+        alert('Failed to revoke share');
+      }
+    }
+
+    function previewFile(filePath) {
+      window.open(`/files/${filePath}`, '_blank');
+    }
+
+    // Event listeners
+    elements.generateLink.onclick = generateShareLink;
+    elements.clearSelection.onclick = clearSelection;
+    elements.selectAllVisible.onclick = selectAllVisible;
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      loadDirectory();
+      loadActiveShares();
+      
+      // Refresh active shares every 30 seconds
+      setInterval(loadActiveShares, 30000);
+    });
+  </script>
+</body>
+</html>

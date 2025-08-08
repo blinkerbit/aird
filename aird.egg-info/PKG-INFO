@@ -29,78 +29,110 @@ Dynamic: requires-dist
 Dynamic: requires-python
 Dynamic: summary
 
-# Aird - A Lightweight Web-Based File Browser
+# Aird - A Lightweight Web-Based File Browser & Editor
 
-Aird is a simple, lightweight, and fast web-based file browser and streamer built with Python and Tornado. It allows you to browse, download, upload, rename, and delete files on your server through a clean and modern web interface.
+Aird is a modern, lightweight, and fast web-based file browser, editor, and streamer built with Python and Tornado. It provides a comprehensive file management solution with real-time streaming, in-browser editing, and mobile-responsive design through a clean and intuitive web interface.
+
 <img width="1696" height="715" alt="image" src="https://github.com/user-attachments/assets/95a9569d-5d0c-4d96-aab9-69e0b4cd98bf" />
 
-## Features
+## ✨ Features
 
-- **File Browser:** Navigate through your server's directory structure.
+### 🗂️ File Management
+- **Smart File Browser:** Navigate through your server's directory structure with resizable columns and mobile-friendly design
 - **File Operations:**
-  - Download files.
-  - Upload files (can be disabled).
-  - Delete files and directories (can be disabled).
-  - Rename files and directories (can be disabled).
-- **Authentication:**
-  - Secure access with a simple access token.
-  - LDAP/Active Directory integration for enterprise environments.
-- **Admin Panel:** A dedicated admin area to toggle features like file uploads, deletions, and renames on the fly.
-- **Real-time Updates:** Feature changes in the admin panel are reflected instantly for all connected users without needing a page refresh, thanks to WebSockets.
-- **Configurable:** Easily configure the server through command-line arguments or a JSON configuration file.
+  - Download files with progress indicators
+  - Upload files with drag-and-drop support (can be disabled)
+  - Delete files and directories (can be disabled)
+  - Rename files and directories (can be disabled)
+  - **NEW:** In-browser file editing with syntax highlighting and line numbers
 
-## Installation
+### 📡 Real-time Streaming
+- **WebSocket-based File Streaming:** Stream large files with animated progress indicators
+- **Live Updates:** Feature changes in the admin panel are reflected instantly for all connected users
+- **Performance Optimized:** Chunked file operations with configurable buffer sizes
 
+### 🔐 Security & Authentication
+- **Token-based Authentication:** Secure access with customizable access tokens
+- **LDAP/Active Directory Integration:** Enterprise-grade authentication support
+- **Path Traversal Protection:** Built-in security measures to prevent unauthorized access
+
+### ⚙️ Administration
+- **Admin Panel:** Dedicated admin interface to toggle features on the fly
+- **Feature Flags:** Granular control over file operations (upload, delete, rename, edit, download)
+- **Real-time Configuration:** Changes apply instantly without server restart
+
+### 📱 Modern UI/UX
+- **Mobile-Responsive Design:** Optimized for smartphones and tablets
+- **Resizable Columns:** Customize the file browser layout to your preference
+- **Animated Indicators:** Visual feedback for streaming and loading operations
+- **Intuitive Interface:** Clean, minimalist design with keyboard shortcuts
+
+## 🚀 Installation
+
+### Option 1: Install from PyPI (Recommended)
+```bash
+pip install aird
+```
+
+### Option 2: Install from Source
 1.  **Clone the repository:**
     ```bash
     git clone https://github.com/blinkerbit/aird.git
     cd aird
     ```
 
-2.  **Install dependencies:**
-    It is recommended to use a virtual environment.
+2.  **Create a virtual environment (recommended):**
     ```bash
     python -m venv venv
-    source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
+    source venv/bin/activate  # On Windows: venv\Scripts\activate
+    ```
+
+3.  **Install dependencies:**
+    ```bash
     pip install -r requirements.txt
     ```
 
-3.  **Install the package:**
+4.  **Install the package:**
     ```bash
     pip install .
     ```
 
-## Usage
+## 📖 Usage
 
-You can run Aird using the `aird` command.
+### Quick Start
 
-### Basic Usage
-
-To start the server with a simple access token, run:
+After installation, you can run Aird using the `aird` command:
 
 ```bash
+# Basic usage with access token
 aird --port 8888 --access-token "your-secret-token"
+
+# With admin capabilities
+aird --port 8888 --access-token "user-token" --admin-token "admin-token"
+
+# Serve from specific directory
+aird --root-dir "/path/to/files" --access-token "your-token"
 ```
 
-This will start the server on port 8888. You can access it by navigating to `http://localhost:8888` in your web browser. You will be prompted to enter the access token to log in.
+Navigate to `http://localhost:8888` and enter your access token to start browsing files.
 
-### Command-Line Arguments
+### 🎮 Command-Line Arguments
 
 | Argument          | Description                                                              | Default                |
 | ----------------- | ------------------------------------------------------------------------ | ---------------------- |
-| `--host`          | The host address to bind to.                                             | `0.0.0.0`              |
-| `--port`          | The port to listen on.                                                   | `8888`                 |
-| `--root-dir`      | The root directory to serve files from.                                  | Current directory      |
-| `--access-token`  | The token required for user login.                                       | `None`                 |
-| `--admin-token`   | The token required for admin login.                                      | `None`                 |
-| `--config`        | Path to a JSON configuration file.                                       | `None`                 |
-| `--enable-ldap`   | Enable LDAP authentication.                                              | `False`                |
-| `--ldap-server`   | The LDAP server address.                                                 | `None`                 |
-| `--ldap-base-dn`  | The base DN for LDAP searches.                                           | `None`                 |
+| `--host`          | The host address to bind to                                              | `0.0.0.0`              |
+| `--port`          | The port to listen on                                                    | `8888`                 |
+| `--root-dir`      | The root directory to serve files from                                   | Current directory      |
+| `--access-token`  | The token required for user login                                        | `None`                 |
+| `--admin-token`   | The token required for admin login                                       | `None`                 |
+| `--config`        | Path to a JSON configuration file                                        | `None`                 |
+| `--enable-ldap`   | Enable LDAP authentication                                               | `False`                |
+| `--ldap-server`   | The LDAP server address                                                  | `None`                 |
+| `--ldap-base-dn`  | The base DN for LDAP searches                                            | `None`                 |
 
-### Configuration File
+### ⚙️ Configuration File
 
-You can also use a JSON file to configure Aird.
+For advanced setups, use a JSON configuration file to define all settings:
 
 **Example `config.json`:**
 ```json
@@ -115,56 +147,174 @@ You can also use a JSON file to configure Aird.
   "ldap_base_dn": null,
   "feature_flags": {
     "file_upload": true,
-    "file_delete": false,
+    "file_delete": true,
     "file_rename": true,
-    "file_download": true
-  }
+    "file_download": true,
+    "file_edit": true
+  },
+  "max_file_size": 10485760,
+  "max_readable_file_size": 10485760,
+  "chunk_size": 65536
 }
 ```
 
-To run with a configuration file:
+Run with configuration file:
 ```bash
 aird --config /path/to/config.json
 ```
 
-### LDAP Authentication
+### 🔐 LDAP Authentication
 
-To use LDAP authentication, you need to provide the LDAP server and base DN.
+For enterprise environments, enable LDAP authentication:
 
 ```bash
-aird --enable-ldap --ldap-server "ldap://your.ldap.server" --ldap-base-dn "ou=users,dc=example,dc=com"
+aird --enable-ldap \
+     --ldap-server "ldap://your.ldap.server" \
+     --ldap-base-dn "ou=users,dc=example,dc=com" \
+     --access-token "fallback-token"
 ```
 
-Users can then log in with their LDAP credentials.
+Users can authenticate with their LDAP credentials, with token authentication as fallback.
 
-## Admin Panel
+## 👑 Admin Panel
 
-The admin panel allows you to enable or disable features in real-time.
+The admin panel provides real-time control over server features and capabilities.
 
-1.  **Start the server with an admin token:**
+### Access the Admin Panel
+
+1.  **Start server with admin token:**
     ```bash
     aird --admin-token "your-admin-secret-token"
     ```
 
-2.  **Access the admin panel:**
-    Navigate to `http://localhost:8888/admin` and log in with the admin token.
+2.  **Navigate to admin interface:**
+    Visit `http://localhost:8888/admin` and authenticate with your admin token
 
-3.  **Manage Features:**
-    You can toggle file uploads, deletions, and renames. The changes will be applied to all active user sessions immediately.
+3.  **Feature Management:**
+    - **File Upload:** Toggle file upload capability
+    - **File Delete:** Enable/disable file and directory deletion
+    - **File Rename:** Control rename functionality
+    - **File Edit:** Toggle in-browser file editing
+    - **File Download:** Control file download access
 
-## License
+All changes apply immediately to all connected users via WebSocket updates.
 
-This project is licensed under the MIT License. See the `LICENSE` file for details.
-- [ ] **File Previews:** Add support for in-browser previews for common file types (images, PDFs, Markdown).
-- [ ] **Search and Sort:** Add a search bar and make the directory listing sortable by name, size, or modification date.
+## 🎯 Key Features in Detail
 
-### Core Functionality
-- [ ] **Multi-File Operations:** Allow users to select multiple files/folders for batch actions (e.g., delete, download as zip).
-- [ ] **In-Browser File Editor:** Embed a code editor like CodeMirror or Monaco to allow for in-browser text file editing.
-- [ ] **User Management:** Expand to a full user management system with different roles and permissions.
-- [ ] **Advanced Permissions:** Implement a role-based permission system (e.g., read-only users, upload-only users).
-- [ ] **Create Files and Folders:** Add UI elements to create new empty files and folders.
+### 📝 In-Browser File Editing
+- **Real-time editing** with syntax highlighting
+- **Line numbers** with toggle capability
+- **Auto-save functionality** with keyboard shortcuts
+- **Large file support** with efficient loading
+- **Responsive design** for mobile editing
 
-### Performance
-- [ ] **Asynchronous File I/O:** Use `aiofiles` to perform file operations asynchronously.
-- [ ] **Pagination for Large Directories:** Implement pagination for directories with a large number of files.
+### 📊 File Browser Enhancements
+- **Resizable columns** for Name, Size, and Modified date
+- **Mobile-optimized** responsive layout
+- **Drag-and-drop upload** with visual feedback
+- **Real-time file streaming** with progress animations
+- **Keyboard navigation** support
+
+### 🚀 Performance Features
+- **Chunked file operations** for large files
+- **Async WebSocket streaming** for real-time updates
+- **Configurable buffer sizes** for optimal performance
+- **Memory-efficient** file handling
+
+## 📋 Requirements
+
+- **Python:** 3.10 or higher
+- **Dependencies:** Tornado, ldap3 (automatically installed)
+- **Storage:** Minimal disk space for the application
+- **Network:** HTTP/HTTPS and WebSocket support
+
+## 🤝 Contributing
+
+We welcome contributions! Here's how you can help:
+
+1. **Fork the repository**
+2. **Create a feature branch:** `git checkout -b feature/amazing-feature`
+3. **Make your changes** and test thoroughly
+4. **Commit your changes:** `git commit -m 'Add amazing feature'`
+5. **Push to the branch:** `git push origin feature/amazing-feature`
+6. **Open a Pull Request**
+
+### Development Setup
+
+```bash
+git clone https://github.com/blinkerbit/aird.git
+cd aird
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+pip install -e .  # Install in development mode
+```
+
+## � Contributors & Thanks
+
+We extend our heartfelt gratitude to all contributors who have helped make aird better:
+
+
+### 💡 Community Contributors
+A special thanks to everyone who has contributed through:
+- **Bug reports and feature requests**
+- **Code contributions and pull requests** 
+- **Documentation improvements**
+- **Testing and feedback**
+- **Spreading the word about aird**
+
+### 🔧 Feature Contributors
+Thanks to all contributors who helped implement key features:
+- **File editing capabilities** with syntax highlighting
+- **Mobile-responsive design** and resizable columns
+- **Real-time streaming** with WebSocket support
+- **Admin panel** with live feature toggling
+- **Security enhancements** and path traversal protection
+
+*Want to see your name here? Check out our [Contributing Guidelines](#-contributing) and join our community!*
+
+---
+
+**🎉 Thank you to all our stars, forks, and users who make this project worthwhile!**
+
+If you've benefited from aird, consider:
+- ⭐ **Starring the repository**
+- 🍴 **Forking and contributing**
+- 🐛 **Reporting issues**
+- 💝 **Sharing with others**
+
+## �📄 License
+
+This project is licensed under a **Custom License** that prohibits commercial use without explicit written consent from the author. See the `LICENSE` file for complete details.
+
+### Key License Points:
+- ✅ **Free for personal and non-commercial use**
+- ✅ **Open source for educational purposes**
+- ❌ **Commercial use requires written permission**
+- ❌ **No warranty or liability coverage**
+
+## 🔗 Links
+
+- **GitHub Repository:** [https://github.com/blinkerbit/aird](https://github.com/blinkerbit/aird)
+- **PyPI Package:** [https://pypi.org/project/aird/](https://pypi.org/project/aird/)
+- **Issue Tracker:** [https://github.com/blinkerbit/aird/issues](https://github.com/blinkerbit/aird/issues)
+
+## 🎯 Roadmap & Future Plans
+
+### 🔜 Upcoming Features
+- **File Previews:** In-browser previews for images, PDFs, and Markdown
+- **Search & Sort:** Advanced search functionality and sortable columns
+- **Multi-File Operations:** Batch actions for multiple files
+- **Theme Support:** Dark mode and customizable themes
+
+### 🚀 Advanced Features (Planned)
+- **User Management:** Role-based permissions system
+- **File History:** Version tracking and backup features
+- **API Integration:** RESTful API for external integrations
+- **Plugin System:** Extensible architecture for custom features
+
+---
+
+**Made with ❤️ by Viswantha Srinivas P**
+
+*Star ⭐ this repo if you find it useful!*
