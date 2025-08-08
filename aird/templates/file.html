@@ -11,13 +11,70 @@
         .download-btn, button {
             display: inline-flex;
             align-items: center;
-            padding: 3px 8px;
+            justify-content: center;
+            padding: 6px;
             background-color: white;
             color: black;
             text-decoration: none;
             border-radius: 4px;
             font-size: 12px;
             margin-left: 5px;
+            min-width: 32px;
+            min-height: 32px;
+            border: 1px solid #ccc;
+            transition: all 0.2s ease;
+            position: relative;
+            outline: none;
+        }
+
+        .download-btn:hover, button:hover {
+            background: #f0f0f0;
+            border-color: #999;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .download-btn:active, button:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+
+        .download-btn:focus-visible, button:focus-visible {
+            box-shadow: 0 0 0 2px rgba(0,0,0,0.1);
+            border-color: #666;
+        }
+
+        .download-btn span, button span {
+            transition: transform 0.2s ease;
+        }
+
+        .download-btn:hover span, button:hover span {
+            transform: scale(1.1);
+        }
+
+        /* Tooltip styles */
+        .download-btn::after, button[title]::after {
+            content: attr(title);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%) translateY(8px);
+            padding: 4px 8px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            font-size: 11px;
+            border-radius: 3px;
+            white-space: nowrap;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s ease;
+        }
+
+        .download-btn:hover::after, button[title]:hover::after {
+            opacity: 1;
+            visibility: visible;
+            transform: translateX(-50%) translateY(-4px);
+        }
             border: 1px solid black;
             font-family: monospace;
         }
@@ -99,8 +156,8 @@
 </head>
 <body>
     <h2>{{ filename }}</h2>
-    <a href="/files/{{ path }}?download=1" class="download-btn" data-feature="file_download">Download</a>
-    <button id="stream-btn">Stream</button>
+    <a href="/files/{{ path }}?download=1" class="download-btn" data-feature="file_download" title="Download"><span aria-label="Download" role="img">⬇️</span></a>
+    <button id="stream-btn" title="Stream"><span aria-label="Stream" role="img">🎬</span></button>
     <button id="stop-stream-btn" style="display:none;">Stop Streaming</button>
     <button id="copy-btn">Copy Content</button>
     <button id="toggle-lines-btn">Hide Line Numbers</button>
