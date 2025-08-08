@@ -219,7 +219,40 @@ pip install -r requirements.txt
 pip install -e .  # Install in development mode
 ```
 
-## 📄 License
+## � Contributors & Thanks
+
+We extend our heartfelt gratitude to all contributors who have helped make aird better:
+
+
+### 💡 Community Contributors
+A special thanks to everyone who has contributed through:
+- **Bug reports and feature requests**
+- **Code contributions and pull requests** 
+- **Documentation improvements**
+- **Testing and feedback**
+- **Spreading the word about aird**
+
+### 🔧 Feature Contributors
+Thanks to all contributors who helped implement key features:
+- **File editing capabilities** with syntax highlighting
+- **Mobile-responsive design** and resizable columns
+- **Real-time streaming** with WebSocket support
+- **Admin panel** with live feature toggling
+- **Security enhancements** and path traversal protection
+
+*Want to see your name here? Check out our [Contributing Guidelines](#-contributing) and join our community!*
+
+---
+
+**🎉 Thank you to all our stars, forks, and users who make this project worthwhile!**
+
+If you've benefited from aird, consider:
+- ⭐ **Starring the repository**
+- 🍴 **Forking and contributing**
+- 🐛 **Reporting issues**
+- 💝 **Sharing with others**
+
+## �📄 License
 
 This project is licensed under a **Custom License** that prohibits commercial use without explicit written consent from the author. See the `LICENSE` file for complete details.
 
