@@ -35,6 +35,28 @@ FEATURE_FLAGS = {
     "file_edit": True,
 }
 
+USERS = {}
+
+ROLE_PERMISSIONS = {
+    "viewer": {
+        "download": True,
+    },
+    "editor": {
+        "download": True,
+        "upload": True,
+        "delete": True,
+        "rename": True,
+        "edit": True,
+    },
+    "admin": {
+        "download": True,
+        "upload": True,
+        "delete": True,
+        "rename": True,
+        "edit": True,
+    },
+}
+
 MAX_FILE_SIZE = 10 * 1024 * 1024
 MAX_READABLE_FILE_SIZE = 10 * 1024 * 1024
 CHUNK_SIZE = 1024 * 64
@@ -95,6 +117,18 @@ class BaseHandler(tornado.web.RequestHandler):
     def get_current_admin(self) -> str | None:
         return self.get_secure_cookie("admin")
 
+    def get_current_role(self) -> str | None:
+        role = self.get_secure_cookie("role")
+        if role:
+            return role.decode() if isinstance(role, bytes) else role
+        return None
+
+    def has_permission(self, action: str) -> bool:
+        role = self.get_current_role()
+        if not role:
+            return False
+        return ROLE_PERMISSIONS.get(role, {}).get(action, False)
+
 class RootHandler(BaseHandler):
     def get(self):
         self.redirect("/files/")
@@ -130,8 +164,10 @@ class LoginHandler(BaseHandler):
 
     def post(self):
         token = self.get_argument("token", "")
-        if token == ACCESS_TOKEN:
-            self.set_secure_cookie("user", "authenticated")
+        role = USERS.get(token)
+        if role:
+            self.set_secure_cookie("user", token)
+            self.set_secure_cookie("role", role)
             self.redirect("/files/")
         else:
             self.render("login.html", error="Invalid token. Try again.", settings=self.settings)
@@ -147,6 +183,7 @@ class AdminLoginHandler(BaseHandler):
         token = self.get_argument("token", "")
         if token == ADMIN_TOKEN:
             self.set_secure_cookie("admin", "authenticated")
+            self.set_secure_cookie("role", "admin")
             self.redirect("/admin")
         else:
             self.render("admin_login.html", error="Invalid admin token.")
@@ -210,6 +247,10 @@ class MainHandler(BaseHandler):
                 if not FEATURE_FLAGS["file_download"]:
                     self.set_status(403)
                     self.write("File download is disabled.")
+                    return
+                if not self.has_permission("download"):
+                    self.set_status(403)
+                    self.write("Permission denied.")
                     return
                 self.set_header('Content-Type', 'application/octet-stream')
                 self.set_header('Content-Disposition', f'attachment; filename="{filename}"')
@@ -327,6 +368,10 @@ class UploadHandler(BaseHandler):
             self.set_status(403)
             self.write("File upload is disabled.")
             return
+        if not self.has_permission("upload"):
+            self.set_status(403)
+            self.write("Permission denied.")
+            return
 
         directory = self.get_argument("directory", "")
         file_infos = self.request.files.get('files', [])
@@ -377,6 +422,10 @@ class DeleteHandler(BaseHandler):
             self.set_status(403)
             self.write("File delete is disabled.")
             return
+        if not self.has_permission("delete"):
+            self.set_status(403)
+            self.write("Permission denied.")
+            return
 
         path = self.get_argument("path", "")
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
@@ -399,6 +448,10 @@ class RenameHandler(BaseHandler):
             self.set_status(403)
             self.write("File rename is disabled.")
             return
+        if not self.has_permission("rename"):
+            self.set_status(403)
+            self.write("Permission denied.")
+            return
 
         path = self.get_argument("path", "")
         new_name = self.get_argument("new_name", "")
@@ -420,6 +473,10 @@ class EditHandler(BaseHandler):
         if not FEATURE_FLAGS.get("file_edit"):
             self.set_status(403)
             self.write("File editing is disabled.")
+            return
+        if not self.has_permission("edit"):
+            self.set_status(403)
+            self.write("Permission denied.")
             return
 
         path = self.get_argument("path", "")
@@ -619,6 +676,9 @@ def main():
     port = args.port or config.get("port") or 8000
     token = args.token or config.get("token") or os.environ.get("AIRD_ACCESS_TOKEN") or secrets.token_urlsafe(32)
     admin_token = args.admin_token or config.get("admin_token") or secrets.token_urlsafe(32)
+    users = config.get("users", {})
+    if token and token not in users:
+        users[token] = "editor"
 
     ldap_enabled = args.ldap or config.get("ldap", False)
     ldap_server = args.ldap_server or config.get("ldap_server")
@@ -628,9 +688,10 @@ def main():
         print("Error: LDAP is enabled, but --ldap-server and --ldap-base-dn are not configured.")
         return
 
-    global ACCESS_TOKEN, ADMIN_TOKEN, ROOT_DIR
+    global ACCESS_TOKEN, ADMIN_TOKEN, ROOT_DIR, USERS
     ACCESS_TOKEN = token
     ADMIN_TOKEN = admin_token
+    USERS = users
     ROOT_DIR = os.path.abspath(root)
 
     settings = {
