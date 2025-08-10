@@ -12,7 +12,7 @@ def parse_requirements(filename):
 
 setup(
     name='aird',
-    version='0.2.0',
+    version="0.2.1",
     packages=find_packages(),
     package_data={'aird': ['templates/*.html']},
     entry_points={
