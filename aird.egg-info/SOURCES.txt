@@ -17,6 +17,7 @@ aird/templates/directory.html
 aird/templates/file.html
 aird/templates/login.html
 aird/templates/share.html
+aird/templates/share_new.html
 aird/templates/share_old.html
 aird/templates/shared_list.html
 tests/test_dos_large_file.py
