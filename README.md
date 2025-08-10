@@ -4,6 +4,8 @@ Aird is a modern, lightweight, and fast web-based file browser, editor, and stre
 
 <img width="1696" height="715" alt="image" src="https://github.com/user-attachments/assets/95a9569d-5d0c-4d96-aab9-69e0b4cd98bf" />
 
+<img width="1599" height="1126" alt="image" src="https://github.com/user-attachments/assets/1551cafc-1d6e-4668-86fb-b1acb5fdb7b2" />
+
 ## ✨ Features
 
 ### 🗂️ File Management
