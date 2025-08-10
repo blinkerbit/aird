@@ -33,6 +33,7 @@ FEATURE_FLAGS = {
     "file_rename": True,
     "file_download": True,
     "file_edit": True,
+    "file_share": True,
 }
 
 MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -171,6 +172,7 @@ class AdminHandler(BaseHandler):
         FEATURE_FLAGS["file_rename"] = self.get_argument("file_rename", "off") == "on"
         FEATURE_FLAGS["file_download"] = self.get_argument("file_download", "off") == "on"
         FEATURE_FLAGS["file_edit"] = self.get_argument("file_edit", "off") == "on"
+        FEATURE_FLAGS["file_share"] = self.get_argument("file_share", "off") == "on"
         
         FeatureFlagSocketHandler.send_updates()
         self.redirect("/admin")
@@ -493,12 +495,20 @@ class FileListAPIHandler(BaseHandler):
 class ShareFilesHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
+        if not FEATURE_FLAGS.get("file_share"):
+            self.set_status(403)
+            self.write("File sharing is disabled")
+            return
         # Just render the template - files will be loaded on-the-fly via JavaScript
         self.render("share.html", shares=SHARES)
 
 class ShareCreateHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self):
+        if not FEATURE_FLAGS.get("file_share"):
+            self.set_status(403)
+            self.write({"error": "File sharing is disabled"})
+            return
         try:
             data = json.loads(self.request.body or b'{}')
             paths = data.get('paths', [])
@@ -521,6 +531,10 @@ class ShareCreateHandler(BaseHandler):
 class ShareRevokeHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self):
+        if not FEATURE_FLAGS.get("file_share"):
+            self.set_status(403)
+            self.write({"error": "File sharing is disabled"})
+            return
         sid = self.get_argument('id', '')
         if sid in SHARES:
             del SHARES[sid]
@@ -532,6 +546,10 @@ class ShareRevokeHandler(BaseHandler):
 class ShareListAPIHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
+        if not FEATURE_FLAGS.get("file_share"):
+            self.set_status(403)
+            self.write({"error": "File sharing is disabled"})
+            return
         self.write({"shares": SHARES})
 
 class SharedListHandler(tornado.web.RequestHandler):

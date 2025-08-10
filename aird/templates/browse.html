@@ -379,7 +379,9 @@
       </table>
 
       <div style="margin-top:10px;">
+        {% if features.get('file_share') %}
         <a href="/share" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;">🔗 Share Files</a>
+        {% end %}
       </div>
     </div>
 
