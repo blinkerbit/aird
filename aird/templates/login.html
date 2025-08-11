@@ -22,9 +22,11 @@
     {% end %}
     <form method="POST">
         {% if settings.get("ldap_server") %}
+            <div style="margin-bottom:8px; color:#333;">LDAP is enabled. Sign in with your username and password.</div>
             <input type="text" name="username" placeholder="Enter username"><br><br>
             <input type="password" name="password" placeholder="Enter password">
         {% else %}
+            <div style="margin-bottom:8px; color:#333;">Enter the access token provided by your administrator.</div>
             <input type="password" name="token" placeholder="Enter access token">
         {% end %}
         <br><br>
