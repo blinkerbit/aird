@@ -1,4 +1,4 @@
-# Aird - A Lightweight Web-Based File Browser & Editor
+# Aird - A Lightweight Web-Based File Browser, Editor and Share.
 
 Aird is a modern, lightweight, and fast web-based file browser, editor, and streamer built with Python and Tornado. It provides a comprehensive file management solution with real-time streaming, in-browser editing, and mobile-responsive design through a clean and intuitive web interface.
 
