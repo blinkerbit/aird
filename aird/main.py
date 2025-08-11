@@ -14,7 +14,9 @@ import shutil
 from collections import deque
 from ldap3 import Server, Connection, ALL
 from datetime import datetime
-
+import gzip
+import mimetypes
+from io import BytesIO
 
 def join_path(*parts):
     return os.path.join(*parts).replace("\\", "/")
