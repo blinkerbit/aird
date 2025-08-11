@@ -14,7 +14,9 @@ import shutil
 from collections import deque
 from ldap3 import Server, Connection, ALL
 from datetime import datetime
-
+import gzip
+import mimetypes
+from io import BytesIO
 
 def join_path(*parts):
     return os.path.join(*parts).replace("\\", "/")
@@ -34,7 +36,9 @@ FEATURE_FLAGS = {
     "file_download": True,
     "file_edit": True,
     "file_share": True,
+    "compression": True,  # ✅ NEW: Enable gzip compression
 }
+
 
 MAX_FILE_SIZE = 10 * 1024 * 1024
 MAX_READABLE_FILE_SIZE = 10 * 1024 * 1024
@@ -162,6 +166,7 @@ class AdminHandler(BaseHandler):
 
     @tornado.web.authenticated
     def post(self):
+        FEATURE_FLAGS["compression"] = self.get_argument("compression", "off") == "on"
         if not self.get_current_admin():
             self.set_status(403)
             self.write("Forbidden")
@@ -186,7 +191,7 @@ class MainHandler(BaseHandler):
     @tornado.web.authenticated
     async def get(self, path):
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
-        
+
         if not abspath.startswith(ROOT_DIR):
             self.set_status(403)
             self.write("Forbidden")
@@ -195,8 +200,6 @@ class MainHandler(BaseHandler):
         if os.path.isdir(abspath):
             files = get_files_in_directory(abspath)
             parent_path = os.path.dirname(path) if path else None
-            
-            # Use the new helper function to get the correct relative path
             self.render(
                 "browse.html", 
                 current_path=path, 
@@ -209,61 +212,80 @@ class MainHandler(BaseHandler):
         elif os.path.isfile(abspath):
             filename = os.path.basename(abspath)
             if self.get_argument('download', None):
-                if not FEATURE_FLAGS["file_download"]:
+                if not FEATURE_FLAGS.get("file_download", True):
                     self.set_status(403)
                     self.write("File download is disabled.")
                     return
-                self.set_header('Content-Type', 'application/octet-stream')
+
                 self.set_header('Content-Disposition', f'attachment; filename="{filename}"')
+
+                # Guess MIME type
+                mime_type, _ = mimetypes.guess_type(abspath)
+                mime_type = mime_type or "application/octet-stream"
+                self.set_header('Content-Type', mime_type)
+
+                # Check for compressible types
+                if FEATURE_FLAGS.get("compression", True):
+                    compressible_types = ['text/', 'application/json', 'application/javascript', 'application/xml']
+                    if any(mime_type.startswith(prefix) for prefix in compressible_types):
+                        self.set_header("Content-Encoding", "gzip")
+
+                        buffer = BytesIO()
+                        with open(abspath, 'rb') as f_in, gzip.GzipFile(fileobj=buffer, mode='wb') as f_out:
+                            shutil.copyfileobj(f_in, f_out)
+
+                        self.write(buffer.getvalue())
+                        await self.flush()
+                        return
+
+                # Raw fallback
                 with open(abspath, 'rb') as f:
                     while True:
                         chunk = f.read(CHUNK_SIZE)
                         if not chunk:
                             break
                         self.write(chunk)
-                        await self.flush()  # Ensure the chunk is sent
-                return  # Exit after sending file
+                        await self.flush()
+                return
+
+            # File viewing (stream/filter/text)
+            start_streaming = self.get_argument('stream', None) is not None
+            if start_streaming:
+                self.set_header('Content-Type', 'text/plain; charset=utf-8')
+                self.write(f"Streaming file: {filename}\n\n")
+                await self.flush()
+
+                with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+                    while True:
+                        chunk = f.read(CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        self.write(chunk)
+                        await self.flush()
+                        await asyncio.sleep(0.1)
+                return
+
+            filter_substring = self.get_argument('filter', None)
+            file_content = ""
+            if filter_substring:
+                with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+                    file_content = ''.join([line for line in f if filter_substring in line])
             else:
-                # Handle streaming
-                start_streaming = self.get_argument('stream', None) is not None
-                if start_streaming:
-                    self.set_header('Content-Type', 'text/plain; charset=utf-8')
-                    self.write(f"Streaming file: {filename}\n\n")
-                    await self.flush()
-                    
-                    with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
-                        while True:
-                            chunk = f.read(CHUNK_SIZE)
-                            if not chunk:
-                                break
-                            self.write(chunk)
-                            await self.flush()
-                            await asyncio.sleep(0.1)
-                    return
-                
-                # Handle filtering
-                filter_substring = self.get_argument('filter', None)
-                file_content = ""
-                if filter_substring:
-                    with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
-                        file_content = ''.join([line for line in f if filter_substring in line])
-                else:
-                    with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
-                        file_content = f.read()
-                
-                # Add filter form HTML
-                filter_html = f'''
-                <form method="get" style="margin-bottom:10px;">
-                    <input type="hidden" name="path" value="{path}">
-                    <input type="text" name="filter" placeholder="Filter lines..." value="{filter_substring or ''}" style="width:200px;">
-                    <button type="submit">Apply Filter</button>
-                </form>
-                '''
-                
-                self.render("file.html", filename=filename, path=path, file_content=file_content, filter_html=filter_html, features=FEATURE_FLAGS)
+                with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+                    file_content = f.read()
+
+            filter_html = f'''
+            <form method="get" style="margin-bottom:10px;">
+                <input type="hidden" name="path" value="{path}">
+                <input type="text" name="filter" placeholder="Filter lines..." value="{filter_substring or ''}" style="width:200px;">
+                <button type="submit">Apply Filter</button>
+            </form>
+            '''
+            self.render("file.html", filename=filename, path=path, file_content=file_content, filter_html=filter_html, features=FEATURE_FLAGS)
         else:
             self.set_status(404)
             self.write("File not found")
+
 
 class FileStreamHandler(tornado.websocket.WebSocketHandler):
     def get_current_user(self) -> str | None:
