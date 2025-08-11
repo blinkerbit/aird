@@ -36,7 +36,9 @@ FEATURE_FLAGS = {
     "file_download": True,
     "file_edit": True,
     "file_share": True,
+    "compression": True,  # ✅ NEW: Enable gzip compression
 }
+
 
 MAX_FILE_SIZE = 10 * 1024 * 1024
 MAX_READABLE_FILE_SIZE = 10 * 1024 * 1024
