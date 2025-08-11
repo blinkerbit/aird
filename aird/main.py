@@ -166,6 +166,7 @@ class AdminHandler(BaseHandler):
 
     @tornado.web.authenticated
     def post(self):
+        FEATURE_FLAGS["compression"] = self.get_argument("compression", "off") == "on"
         if not self.get_current_admin():
             self.set_status(403)
             self.write("Forbidden")
