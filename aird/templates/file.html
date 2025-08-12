@@ -2,25 +2,23 @@
 <html>
 <head>
     <title>{{ filename }}</title>
-    <a href="/files/" class="button">Back to Home</a>
-    <style>
-        .button {
-            display: inline-block;
-            padding: 10px 20px;
-            font-size: 16px;
-            text-align: center;
-            text-decoration: none;
-            background-color: #4CAF50;
-            color: white;
-            border-radius: 5px;
-            margin-bottom: 10px;
-        }
-    </style>
     <style>
         body {
             background-color: white;
             color: black;
             font-family: monospace;
+        }
+        .header {
+            border-bottom: 2px solid black;
+            padding: 10px 0;
+            margin-bottom: 10px;
+        }
+        .breadcrumb a {
+            color: black;
+            text-decoration: none;
+        }
+        .breadcrumb a:hover {
+            text-decoration: underline;
         }
         .download-btn, button {
             display: inline-flex;
@@ -40,7 +38,7 @@
         }
         .line-numbers {
             text-align: right;
-            padding-right: 10px;
+            
             border-right: 1px solid #ccc;
             user-select: none;
         }
@@ -112,6 +110,11 @@
     </style>
 </head>
 <body>
+    <div class="header">
+        <div class="breadcrumb">
+            <a href="/files/">🏠 Home</a>
+        </div>
+    </div>
     <h2>{{ filename }}</h2>
     <a href="/files/{{ path }}?download=1" class="download-btn" data-feature="file_download">Download</a>
     <button id="stream-btn">Stream</button>

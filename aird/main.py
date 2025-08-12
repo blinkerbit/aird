@@ -198,7 +198,19 @@ class MainHandler(BaseHandler):
             return
 
         if os.path.isdir(abspath):
+            # Collect all shared paths for efficient lookup
+            all_shared_paths = set()
+            for share in SHARES.values():
+                for p in share.get('paths', []):
+                    all_shared_paths.add(p)
+
             files = get_files_in_directory(abspath)
+            
+            # Augment file data with shared status
+            for file_info in files:
+                full_path = join_path(path, file_info['name'])
+                file_info['is_shared'] = full_path in all_shared_paths
+
             parent_path = os.path.dirname(path) if path else None
             self.render(
                 "browse.html", 
@@ -356,34 +368,26 @@ class UploadHandler(BaseHandler):
         file_infos = self.request.files.get('files', [])
         
         if not file_infos:
-            file_info = self.request.files.get('file', [])[0]
-            filename = file_info['filename']
-            upload_path = os.path.join(ROOT_DIR, directory)
-            if not os.path.abspath(upload_path).startswith(ROOT_DIR):
-                self.set_status(403)
-                self.write("Forbidden")
-                return
-            os.makedirs(upload_path, exist_ok=True)
-            with open(os.path.join(upload_path, filename), 'wb') as f:
-                f.write(file_info['body'])
-            self.redirect("/files/" + directory)
+            self.set_status(400)
+            self.write("No files provided in the 'files' field.")
             return
 
         for file_info in file_infos:
             if len(file_info['body']) > MAX_FILE_SIZE:
-                print("MAXXX")
                 self.set_status(413)
                 self.write(f"File {file_info['filename']} is too large.")
                 return
-            relative_path = file_info['filename']
+            
+            # Use the filename from the multipart header
+            filename = file_info['filename']
             file_body = file_info['body']
             
-            final_path = os.path.join(ROOT_DIR, directory, relative_path)
+            final_path = os.path.join(ROOT_DIR, directory, filename)
             final_path_abs = os.path.abspath(final_path)
 
             if not final_path_abs.startswith(os.path.abspath(os.path.join(ROOT_DIR, directory))):
                 self.set_status(403)
-                self.write(f"Forbidden path: {relative_path}")
+                self.write(f"Forbidden path: {filename}")
                 return
 
             os.makedirs(os.path.dirname(final_path_abs), exist_ok=True)

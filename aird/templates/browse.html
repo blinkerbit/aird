@@ -25,9 +25,17 @@
       }
 
       .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
         border-bottom: 2px solid black;
         padding-bottom: 15px;
         margin-bottom: 20px;
+      }
+
+      .header-left {
+        display: flex;
+        flex-direction: column;
       }
 
       .header h1 {
@@ -251,15 +259,20 @@
   <body>
     <div class="container">
       <div class="header">
-        <h1>Aird</h1>
-        <div class="breadcrumb">
-          <a href="/files/">🏠 Home</a>
-          {% if current_user and current_path != "/" %} {% set path_parts = current_path.strip('/').split('/') %}
-          {% for i, part in enumerate(path_parts) %} 
-          {% set partial_path = '/files/' + '/'.join(path_parts[:i+1]) %} /
-          <a href="{{ partial_path }}">{{ part }}</a>
-          {% end %} {% end %}
+        <div class="header-left">
+          <h1>Aird</h1>
+          <div class="breadcrumb">
+            <a href="/files/">🏠 Home</a>
+            {% if current_user and current_path != "/" %} {% set path_parts = current_path.strip('/').split('/') %}
+            {% for i, part in enumerate(path_parts) %} 
+            {% set partial_path = '/files/' + '/'.join(path_parts[:i+1]) %} /
+            <a href="{{ partial_path }}">{{ part }}</a>
+            {% end %} {% end %}
+          </div>
         </div>
+        {% if features.get('file_share') %}
+        <a href="/share" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;">🔗 Share Files</a>
+        {% end %}
       </div>
 
       <!-- Upload Zone -->
@@ -309,6 +322,9 @@
                 class="file-link"
               >
                 <span class="file-icon">📁</span>{{ escape(file['name']) }}
+                {% if file.get('is_shared') %}
+                <span class="shared-icon" title="This file is shared">🔗</span>
+                {% end %}
               </a>
               {% else %}
               <a
@@ -317,6 +333,9 @@
               >
                 <span class="file-icon">{{ get_file_icon(file["name"]) }}</span>{{
                 escape(file['name']) }}
+                {% if file.get('is_shared') %}
+                <span class="shared-icon" title="This file is shared">🔗</span>
+                {% end %}
               </a>
               {% end %}
             </td>
@@ -378,11 +397,6 @@
         </tbody>
       </table>
 
-      <div style="margin-top:10px;">
-        {% if features.get('file_share') %}
-        <a href="/share" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;">🔗 Share Files</a>
-        {% end %}
-      </div>
     </div>
 
     <script>
@@ -410,29 +424,42 @@
       });
 
       async function handleFiles(files) {
-        let counter = 1
-        let total = files.length
-        progress.style.display = "inline-block"
-        
-        for (let file of files) {
-          const formData = new FormData();
-          formData.append("target_dir", '{{ current_path or "/" }}');
-          formData.append("files", file);
-          await fetch("/upload", {
-            method: "POST",
-            body: formData,
-          })
-            .then(() => {
-              counter++
-              progress.value = (counter/total) * 100;
-              if (counter === total) {
-                location.reload()
-              }
-            })
-            .catch((err) => {
-              alert("Upload failed: " + err.message);
-            });
-          }
+        if (files.length === 0) return;
+
+        progress.style.display = "block";
+        progress.value = 0;
+
+        const total = files.length;
+        let uploaded = 0;
+
+        for (const file of files) {
+            const formData = new FormData();
+            formData.append("directory", '{{ current_path or "" }}');
+            formData.append("files", file, file.name);
+
+            try {
+                const response = await fetch("/upload", {
+                    method: "POST",
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Upload of ${file.name} failed: ${errorText || response.statusText}`);
+                }
+                
+                uploaded++;
+                progress.value = (uploaded / total) * 100;
+
+            } catch (err) {
+                alert(err.message);
+                progress.style.display = "none"; // Hide progress on error
+                return; // Stop on first error
+            }
+        }
+
+        // All files uploaded successfully, now reload
+        location.reload();
       }
 
       // Rename functionality

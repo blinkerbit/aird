@@ -1,4 +1,13 @@
 # Aird - A Lightweight Web-Based File Browser, Editor and Share.
+Aird uses the [All Contributors](https://allcontributors.org/) bot to recognize everyone who helps! To add yourself, comment on an issue or PR with:
+```
+@all-contributors add <username> <contribution-type>
+```
+
+## ✨ Contributors
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- ALL-CONTRIBUTORS-LIST:END -->
 
 Aird is a modern, lightweight, and fast web-based file browser, editor, and streamer built with Python and Tornado. It provides a comprehensive file management solution with real-time streaming, in-browser editing, and mobile-responsive design through a clean and intuitive web interface.
 
