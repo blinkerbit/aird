@@ -123,6 +123,19 @@
     <button id="toggle-lines-btn">Hide Line Numbers</button>
     <button id="edit-btn" data-feature="file_edit">Edit</button>
     <button id="save-btn" style="display:none;">Save</button>
+    
+    <div style="margin: 10px 0; padding: 10px; border: 1px solid #ccc; background-color: #f9f9f9;">
+        <label for="start">Start:</label>
+        <input type="text" id="start" value="{{ start_line or 1 }}" style="width: 80px; margin-right: 10px;" title="Press Enter to submit">
+        <label for="end">End:</label>
+        <input type="text" id="end" value="{{ end_line or 100 }}" style="width: 80px; margin-right: 10px;" title="Press Enter to submit">
+        <button id="submit-btn">Submit</button>
+        <button id="show-all-btn">Show All</button>
+        <span style="margin-left: 10px; color: #666;">Total Lines: {{ total_lines }}</span>
+        {% if start_line and end_line and (start_line != 1 or end_line != total_lines) %}
+        <span style="margin-left: 10px; color: #0066cc;">Showing lines {{ start_line }} to {{ end_line }}</span>
+        {% end %}
+    </div>
     <hr>
     <div id="editor-container" style="display:none;">
         <textarea id="line-numbers-editor" readonly></textarea>
@@ -130,10 +143,10 @@
     </div>
     <table id="file-content">
         <tbody>
-            {% for i, line in enumerate(file_content.split('\n')) %}
+            {% for item in lines %}
             <tr>
-                <td class="line-numbers">{{ i + 1 }}</td>
-                <td><pre>{{ line or '\u00A0' }}</pre></td>
+                <td class="line-numbers">{{ item['n'] }}</td>
+                <td><pre>{{ item['text'] or '\u00A0' }}</pre></td>
             </tr>
             {% end %}
         </tbody>
@@ -147,12 +160,17 @@
         </tfoot>
     </table>
     <script>
+    const totalLines = parseInt('{{ total_lines }}');
     const streamBtn = document.getElementById('stream-btn');
     const stopStreamBtn = document.getElementById('stop-stream-btn');
     const copyBtn = document.getElementById('copy-btn');
     const toggleLinesBtn = document.getElementById('toggle-lines-btn');
     const editBtn = document.getElementById('edit-btn');
     const saveBtn = document.getElementById('save-btn');
+    const submitBtn = document.getElementById('submit-btn');
+    const showAllBtn = document.getElementById('show-all-btn');
+    const startLineInput = document.getElementById('start');
+    const endLineInput = document.getElementById('end');
     const editorContainer = document.getElementById('editor-container');
     const editor = document.getElementById('editor');
     const lineNumbersEditor = document.getElementById('line-numbers-editor');
@@ -193,6 +211,59 @@
     });
 
     editor.addEventListener('input', updateLineNumbers);
+
+    // Handle line range functionality
+    function applyLineRange() {
+        const startLine = parseInt(startLineInput.value);
+        const endLine = parseInt(endLineInput.value);
+        
+        if (!Number.isFinite(startLine) || !Number.isFinite(endLine) || startLine < 1) {
+            alert('Please enter valid numeric start and end values (start >= 1).');
+            return;
+        }
+        if (startLine > endLine) {
+            alert('Start line cannot be greater than end line');
+            return;
+        }
+        
+        const currentUrl = new URL(window.location);
+        currentUrl.searchParams.set('start_line', startLine);
+        currentUrl.searchParams.set('end_line', endLine);
+        window.location.href = currentUrl.toString();
+    }
+
+    submitBtn.onclick = applyLineRange;
+
+    // Allow Enter key to apply range
+    startLineInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            applyLineRange();
+        }
+    });
+
+    endLineInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            applyLineRange();
+        }
+    });
+
+    showAllBtn.onclick = function() {
+        const currentUrl = new URL(window.location);
+        currentUrl.searchParams.delete('start_line');
+        currentUrl.searchParams.delete('end_line');
+        window.location.href = currentUrl.toString();
+    };
+
+    // Update end line input when start line changes
+    // Keep fields sane locally but let server clamp to file length
+    startLineInput.addEventListener('input', function() {
+        const v = parseInt(this.value);
+        if (!Number.isFinite(v) || v < 1) this.value = 1;
+    });
+    endLineInput.addEventListener('input', function() {
+        const v = parseInt(this.value);
+        if (!Number.isFinite(v) || v < 1) this.value = 1;
+    });
 
 
     editBtn.onclick = function() {
@@ -235,7 +306,7 @@
     streamBtn.onclick = function() {
         ws = new WebSocket(`ws://${window.location.host}/stream/{{ path }}`);
         tableBody.innerHTML = '';
-        lineCount = 0;
+    lineCount = (parseInt('{{ start_line or 1 }}') - 1) || 0;
         streamBtn.style.display = 'none';
         stopStreamBtn.style.display = '';
         streamingIndicator.style.display = '';

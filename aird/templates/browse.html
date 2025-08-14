@@ -328,7 +328,7 @@
               </a>
               {% else %}
               <a
-                href="/files/{{ escape(join_path(current_path, file['name'])) }}"
+                href="/files/{{ escape(join_path(current_path, file['name'])) }}?start_line=1&end_line=100"
                 class="file-link"
               >
                 <span class="file-icon">{{ get_file_icon(file["name"]) }}</span>{{
@@ -360,7 +360,7 @@
                 {% end %}
                 <a
                   href="#"
-                  onclick="streamFile('/files/{{ escape(join_path(current_path, file['name'])) }}')"
+                  onclick="streamFile('/files/{{ escape(join_path(current_path, file['name'])) }}?start_line=1&end_line=100')"
                   class="action-link"
                   >Stream</a
                 >

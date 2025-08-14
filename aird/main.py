@@ -129,17 +129,20 @@ class LDAPLoginHandler(BaseHandler):
 class LoginHandler(BaseHandler):
     def get(self):
         if self.current_user:
-            self.redirect("/files/")
+            next_url = self.get_argument("next", "/files/")
+            self.redirect(next_url)
             return
-        self.render("login.html", error=None, settings=self.settings)
+        next_url = self.get_argument("next", None)
+        self.render("login.html", error=None, settings=self.settings, next_url=next_url)
 
     def post(self):
         token = self.get_argument("token", "")
+        next_url = self.get_argument("next", "/files/")
         if token == ACCESS_TOKEN:
             self.set_secure_cookie("user", "authenticated")
-            self.redirect("/files/")
+            self.redirect(next_url)
         else:
-            self.render("login.html", error="Invalid token. Try again.", settings=self.settings)
+            self.render("login.html", error="Invalid token. Try again.", settings=self.settings, next_url=next_url)
 
 class AdminLoginHandler(BaseHandler):
     def get(self):
@@ -278,13 +281,63 @@ class MainHandler(BaseHandler):
                 return
 
             filter_substring = self.get_argument('filter', None)
+            start_line = self.get_argument('start_line', None)
+            end_line = self.get_argument('end_line', None)
+            
+            # Read the full file to count total lines and get content
+            with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+                all_lines = f.readlines()
+            
+            total_lines = len(all_lines)
+
+            # Parse line range parameters with defaults and clamping
+            try:
+                start_line = int(start_line) if start_line is not None else 1
+            except ValueError:
+                start_line = 1
+            if start_line < 1:
+                start_line = 1
+
+            try:
+                end_line = int(end_line) if end_line is not None else 100
+            except ValueError:
+                end_line = 100
+            if end_line > total_lines:
+                end_line = total_lines
+            
+            # Ensure start_line <= end_line
+            if start_line > end_line:
+                start_line = end_line
+            
+            # Extract the requested line range (convert to 0-based indexing)
+            lines_to_show = all_lines[start_line-1:end_line]
+            
             file_content = ""
+            lines_items: list[dict] = []
             if filter_substring:
-                with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
-                    file_content = ''.join([line for line in f if filter_substring in line])
+                # Apply filter to the selected range
+                filtered_lines = []
+                for i, line in enumerate(lines_to_show):
+                    if filter_substring in line:
+                        filtered_lines.append(line)
+                file_content = ''.join(filtered_lines)
+                # When filtering, restart numbering from 1 in the rendered view
+                start_line = 1
+                # Build numbered items starting from 1
+                for idx, line in enumerate(filtered_lines, start=1):
+                    # Strip only trailing newlines for display, keep other whitespace
+                    lines_items.append({
+                        "n": idx,
+                        "text": line.rstrip('\n')
+                    })
             else:
-                with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
-                    file_content = f.read()
+                file_content = ''.join(lines_to_show)
+                # Build numbered items using actual file line numbers
+                for idx, line in enumerate(lines_to_show, start=start_line):
+                    lines_items.append({
+                        "n": idx,
+                        "text": line.rstrip('\n')
+                    })
 
             filter_html = f'''
             <form method="get" style="margin-bottom:10px;">
@@ -293,7 +346,16 @@ class MainHandler(BaseHandler):
                 <button type="submit">Apply Filter</button>
             </form>
             '''
-            self.render("file.html", filename=filename, path=path, file_content=file_content, filter_html=filter_html, features=FEATURE_FLAGS)
+            self.render("file.html", 
+                      filename=filename, 
+                      path=path, 
+                      file_content=file_content, 
+                      filter_html=filter_html, 
+                      features=FEATURE_FLAGS,
+                      start_line=start_line,
+                      end_line=end_line,
+                      total_lines=len(all_lines),  # Always show the original total lines
+                      lines=lines_items)
         else:
             self.set_status(404)
             self.write("File not found")
