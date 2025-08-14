@@ -19,22 +19,32 @@ Aird is a modern, lightweight, and fast web-based file browser, editor, and stre
 
 ### 🗂️ File Management
 - **Smart File Browser:** Navigate through your server's directory structure with resizable columns and mobile-friendly design
-- **File Operations:**
-  - Download files with progress indicators
+- **Advanced File Operations:**
+  - Download files with progress indicators and compression support
   - Upload files with drag-and-drop support (can be disabled)
   - Delete files and directories (can be disabled)
   - Rename files and directories (can be disabled)
-  - **NEW:** In-browser file editing with syntax highlighting and line numbers
+  - **In-browser File Editing:** Full-featured editor with syntax highlighting, line numbers, and memory safety
+  - **Range-based Viewing:** View specific line ranges (start/end) without loading entire files
+  - **Line-by-line Streaming:** Real-time file streaming for monitoring logs and large files
 - **File Sharing:** Create secure, temporary public links for files and directories
   - Select multiple files and folders to share together
   - Generate unique, time-limited shareable URLs
   - No login required for shared link access
   - Manage active shares with easy revocation
 
-### 📡 Real-time Streaming
+### 📡 Real-time Streaming & Editing
 - **WebSocket-based File Streaming:** Stream large files with animated progress indicators
-- **Live Updates:** Feature changes in the admin panel are reflected instantly for all connected users
-- **Performance Optimized:** Chunked file operations with configurable buffer sizes
+- **Configurable Tail Lines:** Control how many recent lines to display when streaming (customizable Last N parameter)
+- **Live File Monitoring:** Real-time updates as files change, perfect for log monitoring
+- **Range-based File Viewing:** View specific line ranges without loading entire files
+- **Dedicated Edit Mode:** Full-featured in-browser editor with:
+  - Syntax highlighting and line numbers
+  - Memory-safe editing (prevents loading huge files)
+  - Save/Cancel operations with confirmation
+  - Separate edit view for focused editing experience
+- **Performance Optimized:** Stream line-by-line without loading entire files into memory
+- **Memory Efficient:** Handles large files gracefully with size limits and streaming
 
 ### 🔐 Security & Authentication
 - **Token-based Authentication:** Secure access with customizable access tokens
@@ -47,10 +57,13 @@ Aird is a modern, lightweight, and fast web-based file browser, editor, and stre
 - **Real-time Configuration:** Changes apply instantly without server restart
 
 ### 📱 Modern UI/UX
-- **Mobile-Responsive Design:** Optimized for smartphones and tablets
+- **Mobile-Responsive Design:** Optimized for smartphones and tablets with touch-friendly controls
 - **Resizable Columns:** Customize the file browser layout to your preference
 - **Animated Indicators:** Visual feedback for streaming and loading operations
-- **Intuitive Interface:** Clean, minimalist design with keyboard shortcuts
+- **Intuitive Interface:** Clean, minimalist design with well-organized toolbars
+- **Streaming Controls:** Dedicated streaming toolbar with configurable options (Last N lines, play/stop controls)
+- **Keyboard Shortcuts:** Efficient navigation and operations via keyboard
+- **Clean Layout:** Left-aligned file actions, right-aligned streaming controls for better organization
 
 ## 🚀 Installation
 
