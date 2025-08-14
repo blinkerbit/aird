@@ -269,26 +269,20 @@ class MainHandler(BaseHandler):
                 self.set_header('Content-Type', 'text/plain; charset=utf-8')
                 self.write(f"Streaming file: {filename}\n\n")
                 await self.flush()
-
+                # Stream line-by-line as soon as it's read
                 with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
-                    while True:
-                        chunk = f.read(CHUNK_SIZE)
-                        if not chunk:
-                            break
-                        self.write(chunk)
+                    for raw in f:
+                        # Avoid double spacing: strip one trailing newline and let browser render line breaks
+                        line = raw[:-1] if raw.endswith('\n') else raw
+                        self.write(line + '\n')
                         await self.flush()
-                        await asyncio.sleep(0.1)
                 return
 
             filter_substring = self.get_argument('filter', None)
+            # Legacy param no longer used for inline editing, kept for compatibility
+            _ = self.get_argument('edit', None)
             start_line = self.get_argument('start_line', None)
             end_line = self.get_argument('end_line', None)
-            
-            # Read the full file to count total lines and get content
-            with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
-                all_lines = f.readlines()
-            
-            total_lines = len(all_lines)
 
             # Parse line range parameters with defaults and clamping
             try:
@@ -302,42 +296,45 @@ class MainHandler(BaseHandler):
                 end_line = int(end_line) if end_line is not None else 100
             except ValueError:
                 end_line = 100
-            if end_line > total_lines:
-                end_line = total_lines
             
             # Ensure start_line <= end_line
             if start_line > end_line:
                 start_line = end_line
             
-            # Extract the requested line range (convert to 0-based indexing)
-            lines_to_show = all_lines[start_line-1:end_line]
-            
-            file_content = ""
+            # Stream through file once: build range slice without scanning the rest
+            file_content_parts: list[str] = []
             lines_items: list[dict] = []
+            total_lines = 0
+            display_index = 0  # used when filtering; numbering restarts at 1
+            reached_EOF =  False
+            with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+                for line in f:
+                    total_lines += 1
+                    if total_lines < start_line:
+                        continue
+                    if total_lines > end_line:
+                        # don't continue scanning; we don't need total file length for view
+                        break
+                    if filter_substring:
+                        if filter_substring in line:
+                            display_index += 1
+                            file_content_parts.append(line)
+                            lines_items.append({
+                                "n": display_index,
+                                "text": line.rstrip('\n')
+                            })
+                    else:
+                        file_content_parts.append(line)
+                        lines_items.append({
+                            "n": total_lines,
+                            "text": line.rstrip('\n')
+                        })
+                else:
+                    reached_EOF = True
+            # When filtering, restart numbering from 1 in the rendered view
             if filter_substring:
-                # Apply filter to the selected range
-                filtered_lines = []
-                for i, line in enumerate(lines_to_show):
-                    if filter_substring in line:
-                        filtered_lines.append(line)
-                file_content = ''.join(filtered_lines)
-                # When filtering, restart numbering from 1 in the rendered view
                 start_line = 1
-                # Build numbered items starting from 1
-                for idx, line in enumerate(filtered_lines, start=1):
-                    # Strip only trailing newlines for display, keep other whitespace
-                    lines_items.append({
-                        "n": idx,
-                        "text": line.rstrip('\n')
-                    })
-            else:
-                file_content = ''.join(lines_to_show)
-                # Build numbered items using actual file line numbers
-                for idx, line in enumerate(lines_to_show, start=start_line):
-                    lines_items.append({
-                        "n": idx,
-                        "text": line.rstrip('\n')
-                    })
+            file_content = ''.join(file_content_parts)
 
             filter_html = f'''
             <form method="get" style="margin-bottom:10px;">
@@ -354,8 +351,10 @@ class MainHandler(BaseHandler):
                       features=FEATURE_FLAGS,
                       start_line=start_line,
                       end_line=end_line,
-                      total_lines=len(all_lines),  # Always show the original total lines
-                      lines=lines_items)
+                      lines=lines_items,
+                      open_editor=False,
+                      full_file_content="",
+                      reached_EOF=reached_EOF)
         else:
             self.set_status(404)
             self.write("File not found")
@@ -376,6 +375,14 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
         path = path.lstrip('/')
         self.file_path = os.path.abspath(os.path.join(ROOT_DIR, path))
         self.running = True
+        # Number of tail lines to send on connect
+        try:
+            n_param = self.get_query_argument('n', default='100')
+            self.tail_n = int(n_param)
+            if self.tail_n < 1:
+                self.tail_n = 100
+        except Exception:
+            self.tail_n = 100
         if not os.path.isfile(self.file_path):
             await self.write_message(f"File not found: {self.file_path}")
             self.close()
@@ -383,9 +390,10 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
 
         try:
             with open(self.file_path, 'r', encoding='utf-8', errors='replace') as f:
-                last_100_lines = deque(f, 100)
-            if last_100_lines:
-                await self.write_message("".join(last_100_lines))
+                last_n_lines = deque(f, self.tail_n)
+            if last_n_lines:
+                for line in last_n_lines:
+                    await self.write_message(line)
         except Exception as e:
             await self.write_message(f"Error reading file history: {e}")
 
@@ -397,7 +405,8 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
             self.close()
             return
         self.loop = tornado.ioloop.IOLoop.current()
-        self.periodic = tornado.ioloop.PeriodicCallback(self.send_new_lines, 500)
+        # Stream near real-time
+        self.periodic = tornado.ioloop.PeriodicCallback(self.send_new_lines, 100)
         self.periodic.start()
 
     async def send_new_lines(self):
@@ -535,6 +544,49 @@ class EditHandler(BaseHandler):
         except Exception as e:
             self.set_status(500)
             self.write(f"Error saving file: {e}")
+
+class EditViewHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self, path):
+        if not FEATURE_FLAGS.get("file_edit"):
+            self.set_status(403)
+            self.write("File editing is disabled.")
+            return
+
+        abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
+        if not (abspath.startswith(ROOT_DIR)):
+            self.set_status(403)
+            self.write("Forbidden")
+            return
+        if not os.path.isfile(abspath):
+            self.set_status(404)
+            self.write("File not found")
+            return
+
+        # Prevent loading extremely large files into memory in the editor
+        try:
+            file_size = os.path.getsize(abspath)
+        except OSError:
+            file_size = 0
+        if file_size > MAX_READABLE_FILE_SIZE:
+            self.set_status(413)
+            self.write(f"File too large to edit in browser. Size: {file_size} bytes (limit {MAX_READABLE_FILE_SIZE} bytes)")
+            return
+
+        filename = os.path.basename(abspath)
+        # Read once into memory (bounded by MAX_READABLE_FILE_SIZE)
+        with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+            full_file_content = f.read()
+        total_lines = full_file_content.count('\n') + 1 if full_file_content else 0
+
+        self.render(
+            "edit.html",
+            filename=filename,
+            path=path,
+            full_file_content=full_file_content,
+            total_lines=total_lines,
+            features=FEATURE_FLAGS,
+        )
 
 class FileListAPIHandler(BaseHandler):
     @tornado.web.authenticated
@@ -690,6 +742,7 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
         (r"/upload", UploadHandler),
         (r"/delete", DeleteHandler),
         (r"/rename", RenameHandler),
+    (r"/edit/(.*)", EditViewHandler),
         (r"/edit", EditHandler),
         (r"/api/files/(.*)", FileListAPIHandler),
         (r"/share", ShareFilesHandler),

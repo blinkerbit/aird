@@ -358,12 +358,6 @@
                   >Download</a
                 >
                 {% end %}
-                <a
-                  href="#"
-                  onclick="streamFile('/files/{{ escape(join_path(current_path, file['name'])) }}?start_line=1&end_line=100')"
-                  class="action-link"
-                  >Stream</a
-                >
               {% end %}
               {% if features['file_rename'] %}
               <a
@@ -506,12 +500,6 @@
             }
           })
           .catch((err) => alert("Delete failed: " + err.message));
-      }
-
-      // File streaming functionality
-      function streamFile(filepath) {
-        const streamUrl = `${filepath}?stream=1`;
-        window.open(streamUrl, "_blank");
       }
 
       // Table sorting functionality

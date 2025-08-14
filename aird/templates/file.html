@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>{{ filename }}</title>
+    <meta id="page-flags" data-open-editor="{{ open_editor }}">
     <style>
         body {
             background-color: white;
@@ -23,18 +24,39 @@
         .download-btn, button {
             display: inline-flex;
             align-items: center;
-            padding: 3px 8px;
+            padding: 6px 12px;
             background-color: white;
             color: black;
             text-decoration: none;
             border-radius: 4px;
             font-size: 12px;
-            margin-left: 5px;
             border: 1px solid black;
             font-family: monospace;
+            margin: 0;
         }
         .download-btn:hover, button:hover {
             background-color: #f0f0f0;
+        }
+        .toolbar { 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between; 
+            gap: 10px; 
+            flex-wrap: wrap; 
+            margin: 10px 0;
+            padding: 8px 0;
+        }
+        .toolbar-left, .toolbar-right { 
+            display: flex; 
+            align-items: center; 
+            gap: 8px; 
+        }
+        .toolbar input[type="text"] {
+            padding: 6px 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
         }
         .line-numbers {
             text-align: right;
@@ -116,13 +138,21 @@
         </div>
     </div>
     <h2>{{ filename }}</h2>
-    <a href="/files/{{ path }}?download=1" class="download-btn" data-feature="file_download">Download</a>
-    <button id="stream-btn">Stream</button>
-    <button id="stop-stream-btn" style="display:none;">Stop Streaming</button>
-    <button id="copy-btn">Copy Content</button>
-    <button id="toggle-lines-btn">Hide Line Numbers</button>
-    <button id="edit-btn" data-feature="file_edit">Edit</button>
-    <button id="save-btn" style="display:none;">Save</button>
+        <div class="toolbar">
+            <div class="toolbar-left">
+                <a href="/files/{{ path }}?download=1" class="download-btn" data-feature="file_download">Download</a>
+                <button id="copy-btn">Copy Content</button>
+                <button id="toggle-lines-btn">Hide Line Numbers</button>
+                <button id="edit-btn" data-feature="file_edit">Edit</button>
+                <button id="save-btn" style="display:none;">Save</button>
+            </div>
+            <div class="toolbar-right">
+                <input type="text" id="last-n" inputmode="numeric" pattern="[0-9]*" placeholder="Last N (100)">
+                <button id="stream-btn">▶ Stream</button>
+                <button id="stop-stream-btn" style="display:none;">⏹ Stop</button>
+            </div>
+        </div>
+
     
     <div style="margin: 10px 0; padding: 10px; border: 1px solid #ccc; background-color: #f9f9f9;">
         <label for="start">Start:</label>
@@ -130,16 +160,15 @@
         <label for="end">End:</label>
         <input type="text" id="end" value="{{ end_line or 100 }}" style="width: 80px; margin-right: 10px;" title="Press Enter to submit">
         <button id="submit-btn">Submit</button>
-        <button id="show-all-btn">Show All</button>
-        <span style="margin-left: 10px; color: #666;">Total Lines: {{ total_lines }}</span>
-        {% if start_line and end_line and (start_line != 1 or end_line != total_lines) %}
-        <span style="margin-left: 10px; color: #0066cc;">Showing lines {{ start_line }} to {{ end_line }}</span>
-        {% end %}
+    <button id="show-all-btn">Show All</button>
+    {% if start_line and end_line %}
+    <span style="margin-left: 10px; color: #0066cc;">Showing lines {{ start_line }} to {{ end_line }} ; reached EOF: {{ reached_EOF }}</span>
+    {% end %}
     </div>
     <hr>
     <div id="editor-container" style="display:none;">
         <textarea id="line-numbers-editor" readonly></textarea>
-        <textarea id="editor"></textarea>
+        <textarea id="editor">{% if open_editor %}{{ full_file_content }}{% end %}</textarea>
     </div>
     <table id="file-content">
         <tbody>
@@ -160,8 +189,9 @@
         </tfoot>
     </table>
     <script>
-    const totalLines = parseInt('{{ total_lines }}');
+    const openEditor = (document.getElementById('page-flags')?.dataset.openEditor || 'False') === 'True';
     const streamBtn = document.getElementById('stream-btn');
+    const lastNInput = document.getElementById('last-n');
     const stopStreamBtn = document.getElementById('stop-stream-btn');
     const copyBtn = document.getElementById('copy-btn');
     const toggleLinesBtn = document.getElementById('toggle-lines-btn');
@@ -267,18 +297,7 @@
 
 
     editBtn.onclick = function() {
-        const content = Array.from(tableBody.rows).map(row => {
-            // Always get the content from the second cell (index 1)
-            const contentCell = row.cells[1];
-            return contentCell.textContent.replace('\u00A0', '');
-        }).join('\n');
-        
-        editor.value = content;
-        updateLineNumbers();
-        document.getElementById('file-content').style.display = 'none';
-        editorContainer.style.display = 'flex';
-        editBtn.style.display = 'none';
-        saveBtn.style.display = '';
+        window.location.href = `/edit/{{ path }}`;
     };
 
     saveBtn.onclick = function() {
@@ -304,40 +323,46 @@
     };
 
     streamBtn.onclick = function() {
-        ws = new WebSocket(`ws://${window.location.host}/stream/{{ path }}`);
+        let url = `ws://${window.location.host}/stream/{{ path }}`;
+        const nVal = (lastNInput?.value || '').trim();
+        if (nVal && /^\d+$/.test(nVal)) {
+            url += `?n=${nVal}`;
+        }
+        ws = new WebSocket(url);
         tableBody.innerHTML = '';
     lineCount = (parseInt('{{ start_line or 1 }}') - 1) || 0;
         streamBtn.style.display = 'none';
         stopStreamBtn.style.display = '';
         streamingIndicator.style.display = '';
         ws.onmessage = function(event) {
-            const lines = event.data.split('\n');
-            lines.forEach(line => {
-                lineCount++;
-                const row = tableBody.insertRow();
-                
-                // Always create both cells to maintain structure
-                const lineNumCell = row.insertCell(0);
-                const lineContentCell = row.insertCell(1);
-                
-                lineNumCell.className = 'line-numbers';
-                lineNumCell.textContent = lineCount;
-                // Ensure empty lines are preserved by using non-breaking space if line is empty
-                lineContentCell.innerHTML = `<pre>${line || '\u00A0'}</pre>`;
-                
-                // Apply line number visibility state to new rows
-                if (!lineNumbersVisible) {
-                    lineNumCell.classList.add('hidden');
-                }
-                
-                // Apply alternating row styling for dynamically added rows
-                if (lineCount % 2 === 1) {
-                    row.style.backgroundColor = '#f8f8f8';
-                }
-                
-                // Debug: Log row creation
-                console.log(`Created row ${lineCount} with ${row.cells.length} cells, line numbers visible: ${lineNumbersVisible}, line content: "${line}"`);
-            });
+            // Server sends one line per message, including trailing \n
+            let line = event.data;
+            if (line.endsWith('\n')) line = line.slice(0, -1);
+
+            lineCount++;
+            const row = tableBody.insertRow();
+
+            // Always create both cells to maintain structure
+            const lineNumCell = row.insertCell(0);
+            const lineContentCell = row.insertCell(1);
+
+            lineNumCell.className = 'line-numbers';
+            lineNumCell.textContent = lineCount;
+            // Ensure empty lines are preserved by using non-breaking space if line is empty
+            lineContentCell.innerHTML = `<pre>${line || '\u00A0'}</pre>`;
+
+            // Apply line number visibility state to new rows
+            if (!lineNumbersVisible) {
+                lineNumCell.classList.add('hidden');
+            }
+
+            // Apply alternating row styling for dynamically added rows
+            if (lineCount % 2 === 1) {
+                row.style.backgroundColor = '#f8f8f8';
+            }
+
+            // Debug: Log row creation
+            console.log(`Created row ${lineCount} with ${row.cells.length} cells, line numbers visible: ${lineNumbersVisible}, line content: "${line}"`);
             window.scrollTo(0, document.body.scrollHeight);
         };
         ws.onclose = function() {
@@ -419,11 +444,16 @@
                 row.style.backgroundColor = '#f8f8f8';
             }
         });
+        // Enforce numeric-only input
+        lastNInput?.addEventListener('input', () => {
+            lastNInput.value = lastNInput.value.replace(/[^0-9]/g, '');
+        });
         
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('stream')) {
             streamBtn.click();
         }
+    // Dedicated edit view now handles editor UI
     });
     </script>
 </body>
