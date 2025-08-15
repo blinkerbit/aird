@@ -1,7 +1,7 @@
 # Aird - A Lightweight Web-Based File Browser, Editor and Share.
-Aird uses the [All Contributors](https://allcontributors.org/) bot to recognize everyone who helps! To add yourself, comment on an issue or PR with:
+Install using
 ```
-@all-contributors add <username> <contribution-type>
+pip install aird
 ```
 
 ## ✨ Contributors
