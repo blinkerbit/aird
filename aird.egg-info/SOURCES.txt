@@ -14,6 +14,7 @@ aird/templates/admin.html
 aird/templates/admin_login.html
 aird/templates/browse.html
 aird/templates/directory.html
+aird/templates/edit.html
 aird/templates/file.html
 aird/templates/login.html
 aird/templates/share.html

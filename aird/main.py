@@ -765,6 +765,7 @@ def main():
     parser.add_argument("--ldap", action="store_true", help="Enable LDAP authentication")
     parser.add_argument("--ldap-server", help="LDAP server address")
     parser.add_argument("--ldap-base-dn", help="LDAP base DN for user search")
+    parser.add_argument("--hostname", help="Host name for the server")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
@@ -782,6 +783,7 @@ def main():
     ldap_enabled = args.ldap or config.get("ldap", False)
     ldap_server = args.ldap_server or config.get("ldap_server")
     ldap_base_dn = args.ldap_base_dn or config.get("ldap_base_dn")
+    host_name = args.hostname or config.get("hostname") or socket.getfqdn()
 
     if ldap_enabled and not (ldap_server and ldap_base_dn):
         print("Error: LDAP is enabled, but --ldap-server and --ldap-base-dn are not configured.")
@@ -802,7 +804,7 @@ def main():
         try:
             app.listen(port)
             print(f"Serving HTTP on 0.0.0.0 port {port} (http://0.0.0.0:{port}/) ...")
-            print(f"http://{socket.getfqdn()}:{port}/")
+            print(f"http://{host_name}:{port}/")
             tornado.ioloop.IOLoop.current().start()
             break
         except OSError:

@@ -1,15 +1,5 @@
 from setuptools import setup, find_packages
 
-def parse_requirements(filename):
-    requirements = []
-    with open(filename) as f:
-        for line in f:
-            line = line.strip()
-            # Skip comments, blank lines, and pip options
-            if line and not line.startswith('#') and not line.startswith('-'):
-                requirements.append(line)
-    return requirements
-
 setup(
     name='aird',
     version="0.3.0",
@@ -20,7 +10,10 @@ setup(
             'aird=aird.main:main',
         ],
     },
-    install_requires=parse_requirements('requirements.txt'),
+    install_requires=[
+        'tornado>=6.5.1',
+        'ldap3>=2.9.1',
+    ],
     author='Viswantha Srinivas P',
     author_email='psviswanatha@gmail.com',  # Please fill this in
     description='Aird - A lightweight web-based file browser, editor, and streamer with real-time capabilities',
