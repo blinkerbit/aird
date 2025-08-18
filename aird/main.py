@@ -163,6 +163,14 @@ class AdminLoginHandler(BaseHandler):
         else:
             self.render("admin_login.html", error="Invalid admin token.")
 
+class LogoutHandler(BaseHandler):
+    def get(self):
+        # Clear both regular and admin auth cookies
+        self.clear_cookie("user")
+        self.clear_cookie("admin")
+        # Redirect to login page
+        self.redirect("/login")
+
 class AdminHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
@@ -861,6 +869,7 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
     return tornado.web.Application([
         (r"/", RootHandler),
         (r"/login", login_handler),
+        (r"/logout", LogoutHandler),
         (r"/admin/login", AdminLoginHandler),
         (r"/admin", AdminHandler),
         (r"/stream/(.*)", FileStreamHandler),
