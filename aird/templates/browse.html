@@ -571,11 +571,12 @@
             reject(new Error(`Upload of ${item.file.name} cancelled`));
           });
 
-          const formData = new FormData();
-          formData.append("directory", '{{ current_path or "" }}');
-          formData.append("files", item.file, item.file.name);
+          // Stream raw file bytes with headers the backend expects
+          xhr.setRequestHeader("X-Upload-Dir", encodeURIComponent('{{ current_path or "" }}'));
+          xhr.setRequestHeader("X-Upload-Filename", encodeURIComponent(item.file.name));
+          xhr.setRequestHeader("Content-Type", "application/octet-stream");
 
-          xhr.send(formData);
+          xhr.send(item.file);
         });
       }
 

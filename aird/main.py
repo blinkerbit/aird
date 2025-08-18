@@ -17,6 +17,9 @@ from datetime import datetime
 import gzip
 import mimetypes
 from io import BytesIO
+import tempfile
+from urllib.parse import unquote
+import aiofiles
 
 def join_path(*parts):
     return os.path.join(*parts).replace("\\", "/")
@@ -429,47 +432,141 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
         if hasattr(self, 'file'):
             self.file.close()
 
+@tornado.web.stream_request_body
 class UploadHandler(BaseHandler):
+    async def prepare(self):
+        # Defaults for safety
+        self._reject: bool = False
+        self._reject_reason: str | None = None
+        self._temp_path: str | None = None
+        self._aiofile = None
+        self._buffer = deque()
+        self._writer_task = None
+        self._writing: bool = False
+        self._moved: bool = False
+        self._bytes_received: int = 0
+        self._too_large: bool = False
+
+        # Feature flag check deferred to post() for clear response,
+        # but if disabled, avoid doing any heavy work here.
+        if not FEATURE_FLAGS.get("file_upload", True):
+            self._reject = True
+            self._reject_reason = "File upload is disabled."
+            return
+
+        # Read and decode headers provided by client
+        self.upload_dir = unquote(self.request.headers.get("X-Upload-Dir", ""))
+        self.filename = unquote(self.request.headers.get("X-Upload-Filename", ""))
+
+        # Basic validation
+        if not self.filename:
+            self._reject = True
+            self._reject_reason = "Missing X-Upload-Filename header"
+            return
+
+        # Create temporary file for streamed writes
+        fd, self._temp_path = tempfile.mkstemp(prefix="aird_upload_")
+        # Close the low-level fd; we'll use aiofiles on the path
+        os.close(fd)
+        self._aiofile = await aiofiles.open(self._temp_path, "wb")
+
+    def data_received(self, chunk: bytes) -> None:
+        if self._reject:
+            return
+        # Track size to enforce limit at the end
+        self._bytes_received += len(chunk)
+        if self._bytes_received > MAX_FILE_SIZE:
+            self._too_large = True
+            # We still accept the stream but won't persist it
+            return
+
+        # Queue the chunk and ensure a writer task is draining
+        self._buffer.append(chunk)
+        if not self._writing:
+            self._writing = True
+            self._writer_task = asyncio.create_task(self._drain_buffer())
+
+    async def _drain_buffer(self) -> None:
+        try:
+            while self._buffer:
+                data = self._buffer.popleft()
+                await self._aiofile.write(data)
+            await self._aiofile.flush()
+        finally:
+            self._writing = False
+
     @tornado.web.authenticated
-    def post(self):
-        if not FEATURE_FLAGS["file_upload"]:
+    async def post(self):
+        # If uploads disabled, return now
+        if not FEATURE_FLAGS.get("file_upload", True):
             self.set_status(403)
             self.write("File upload is disabled.")
             return
 
-        directory = self.get_argument("directory", "")
-        file_infos = self.request.files.get('files', [])
-        
-        if not file_infos:
+        # If we rejected in prepare (bad/missing headers), report
+        if self._reject:
             self.set_status(400)
-            self.write("No files provided in the 'files' field.")
+            self.write(self._reject_reason or "Bad request")
             return
 
-        for file_info in file_infos:
-            if len(file_info['body']) > MAX_FILE_SIZE:
-                self.set_status(413)
-                self.write(f"File {file_info['filename']} is too large.")
-                return
-            
-            # Use the filename from the multipart header
-            filename = file_info['filename']
-            file_body = file_info['body']
-            
-            final_path = os.path.join(ROOT_DIR, directory, filename)
-            final_path_abs = os.path.abspath(final_path)
+        # Wait for any in-flight writes to complete
+        if self._writer_task is not None:
+            try:
+                await self._writer_task
+            except Exception:
+                pass
 
-            if not final_path_abs.startswith(os.path.abspath(os.path.join(ROOT_DIR, directory))):
-                self.set_status(403)
-                self.write(f"Forbidden path: {filename}")
-                return
+        # Close file to flush buffers
+        if self._aiofile is not None:
+            try:
+                await self._aiofile.close()
+            except Exception:
+                pass
 
-            os.makedirs(os.path.dirname(final_path_abs), exist_ok=True)
-            
-            with open(final_path_abs, 'wb') as f:
-                f.write(file_body)
-        
+        # Enforce size limit
+        if self._too_large:
+            self.set_status(413)
+            self.write("File too large")
+            return
+
+        # Sanitize and validate paths
+        safe_dir_abs = os.path.abspath(os.path.join(ROOT_DIR, self.upload_dir.strip("/")))
+        if not safe_dir_abs.startswith(ROOT_DIR):
+            self.set_status(403)
+            self.write("Forbidden path")
+            return
+
+        safe_filename = os.path.basename(self.filename)
+        final_path_abs = os.path.abspath(os.path.join(safe_dir_abs, safe_filename))
+        if not final_path_abs.startswith(safe_dir_abs):
+            self.set_status(403)
+            self.write("Forbidden path")
+            return
+
+        os.makedirs(os.path.dirname(final_path_abs), exist_ok=True)
+
+        try:
+            shutil.move(self._temp_path, final_path_abs)
+            self._moved = True
+        except Exception as e:
+            self.set_status(500)
+            self.write(f"Failed to save upload: {e}")
+            return
+
         self.set_status(200)
         self.write("Upload successful")
+
+    def on_finish(self) -> None:
+        # Clean up temp file on failures
+        try:
+            if getattr(self, "_temp_path", None) and not getattr(self, "_moved", False):
+                if os.path.exists(self._temp_path):
+                    try:
+                        os.remove(self._temp_path)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
 class DeleteHandler(BaseHandler):
     @tornado.web.authenticated
