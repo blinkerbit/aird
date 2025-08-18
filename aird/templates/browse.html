@@ -355,8 +355,13 @@
                 <a
                   href="/files/{{ escape(join_path(current_path, file['name'])) }}?download=1"
                   class="action-link"
-                  >Download</a
-                >
+                  >Download</a>
+                {% end %}
+                {% if features['file_edit'] %}
+                <a
+                  href="/edit/{{ escape(join_path(current_path, file['name'])) }}"
+                  class="action-link"
+                  >Edit</a>
                 {% end %}
               {% end %}
               {% if features['file_rename'] %}

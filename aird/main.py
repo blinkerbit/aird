@@ -620,8 +620,22 @@ class EditHandler(BaseHandler):
             self.write("File editing is disabled.")
             return
 
-        path = self.get_argument("path", "")
-        content = self.get_argument("content", "")
+        # Accept both JSON and form-encoded bodies
+        content_type = self.request.headers.get("Content-Type", "")
+        path = ""
+        content = ""
+        if content_type.startswith("application/json"):
+            try:
+                data = json.loads(self.request.body.decode("utf-8", errors="replace") or "{}")
+                path = data.get("path", "")
+                content = data.get("content", "")
+            except Exception:
+                self.set_status(400)
+                self.write("Invalid JSON body")
+                return
+        else:
+            path = self.get_argument("path", "")
+            content = self.get_argument("content", "")
         
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
         
@@ -636,10 +650,19 @@ class EditHandler(BaseHandler):
             return
 
         try:
-            with open(abspath, 'w', encoding='utf-8') as f:
-                f.write(content)
+            # Safe write: write to temp file in same directory then replace atomically
+            directory_name = os.path.dirname(abspath)
+            os.makedirs(directory_name, exist_ok=True)
+            with tempfile.NamedTemporaryFile('w', encoding='utf-8', delete=False, dir=directory_name) as tmp:
+                tmp.write(content)
+                temp_path = tmp.name
+            os.replace(temp_path, abspath)
             self.set_status(200)
-            self.write("File saved successfully.")
+            # Respond JSON if requested
+            if self.request.headers.get('Accept') == 'application/json':
+                self.write({"ok": True})
+            else:
+                self.write("File saved successfully.")
         except Exception as e:
             self.set_status(500)
             self.write(f"Error saving file: {e}")

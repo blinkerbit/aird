@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Edit {{ filename }}</title>
+    <style>
+      body { background-color: white; color: black; font-family: monospace; margin: 0; }
+      header { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:2px solid black; margin-bottom:10px; }
+      .breadcrumb a { color:black; text-decoration:none; }
+      .breadcrumb a:hover { text-decoration: underline; }
+      .path { color:#555; font-size:12px; }
+      .btns { display:flex; gap:8px; }
+      button { display:inline-flex; align-items:center; padding:6px 12px; background-color:white; color:black; text-decoration:none; border-radius:4px; font-size:12px; border:1px solid black; font-family: monospace; margin:0; cursor:pointer; }
+      button:hover { background-color:#f0f0f0; }
+      button[disabled] { opacity:0.6; cursor:not-allowed; }
+      .status { font-size:12px; color:#666; margin-left:10px; }
+      .editor-wrap { display:flex; height: calc(100vh - 60px); margin: 10px 14px; }
+      /* Line numbers gutter styled similar to file view */
+      .gutter {
+        width:40px;
+        padding:5px 5px 5px 2px;
+        background-color:#fff;
+        color:#999;
+        text-align:right;
+        border:1px solid #ccc;
+        border-right:1px solid #ccc;
+        overflow:hidden; /* hide own scrollbar; use editor's */
+        white-space:pre;
+        line-height:1.2em;
+        user-select:none;
+        /* Alternating row tint matching file view */
+        background-image:repeating-linear-gradient(to bottom, transparent 0, transparent 1.2em, #f8f8f8 1.2em, #f8f8f8 2.4em);
+        background-attachment: local;
+        background-origin: content-box;
+        background-clip: content-box;
+      }
+      textarea {
+        flex: 1;
+        height: 100%;
+        border:1px solid #ccc;
+        border-left:none; /* single divider like file view */
+        outline:none;
+        padding:5px;
+        font-family:inherit;
+        font-size:1em;
+        line-height:1.2em;
+        resize:none;
+        white-space:pre;
+        overflow:auto;
+        /* Alternating row tint matching file view */
+        background-image:repeating-linear-gradient(to bottom, transparent 0, transparent 1.2em, #f8f8f8 1.2em, #f8f8f8 2.4em);
+        background-attachment: local;
+        background-origin: content-box;
+        background-clip: content-box;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <div class="breadcrumb"><a href="/files/">🏠 Home</a></div>
+        <div><strong>Editing:</strong> {{ filename }}</div>
+        <div class="path">/{{ path }}</div>
+      </div>
+      <div class="btns">
+        <button id="backBtn" onclick="history.back()">Back</button>
+        <button id="saveBtn">Save (Ctrl/Cmd+S)</button>
+        <span id="status" class="status"></span>
+      </div>
+    </header>
+    <input type="hidden" id="path" value="/{{ path }}" />
+    <div class="editor-wrap">
+      <div id="gutter" class="gutter"></div>
+      <textarea id="editor" spellcheck="false" wrap="off">{{ full_file_content }}</textarea>
+    </div>
+
+    <script>
+      const path = document.getElementById('path').value;
+      const saveBtn = document.getElementById('saveBtn');
+      const statusEl = document.getElementById('status');
+      const editor = document.getElementById('editor');
+      const gutter = document.getElementById('gutter');
+      let dirty = false;
+
+      function setStatus(text, ok=true) {
+        statusEl.textContent = text || '';
+        statusEl.style.color = ok ? '#2a7' : '#d33';
+      }
+
+      function updateLineNumbers() {
+        const lines = (editor.value.match(/\n/g) || []).length + 1;
+        // Build once as a single string for performance
+        let buf = '';
+        for (let i = 1; i <= lines; i++) {
+          buf += i + (i === lines ? '' : '\n');
+        }
+        gutter.textContent = buf;
+      }
+
+      editor.addEventListener('input', () => {
+        dirty = true;
+        setStatus('Unsaved changes', true);
+        updateLineNumbers();
+      });
+
+      // Keep gutter scroll in sync with editor
+      editor.addEventListener('scroll', () => {
+        gutter.scrollTop = editor.scrollTop;
+      });
+      // Forward wheel events on gutter so only editor scroll bar is visible/used
+      gutter.addEventListener('wheel', (e) => {
+        editor.scrollTop += e.deltaY;
+        e.preventDefault();
+      }, { passive: false });
+
+      window.addEventListener('beforeunload', (e) => {
+        if (dirty) {
+          e.preventDefault();
+          e.returnValue = '';
+        }
+      });
+
+      async function save() {
+        saveBtn.disabled = true;
+        setStatus('Saving...');
+        try {
+          const res = await fetch('/edit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ path, content: editor.value })
+          });
+          if (!res.ok) {
+            const txt = await res.text();
+            throw new Error(txt || 'Save failed');
+          }
+          dirty = false;
+          setStatus('Saved', true);
+        } catch (err) {
+          setStatus(err.message || 'Save failed', false);
+        } finally {
+          saveBtn.disabled = false;
+        }
+      }
+
+      saveBtn.addEventListener('click', (e) => { e.preventDefault(); save(); });
+      document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+          e.preventDefault();
+          save();
+        }
+      });
+
+      // Initial render
+      updateLineNumbers();
+      // Ensure initial scroll sync
+      gutter.scrollTop = editor.scrollTop;
+    </script>
+  </body>
+ </html>
+
+
