@@ -282,7 +282,7 @@
         <p>Or click to select files</p>
         <input type="file" id="fileInput" multiple style="display: none" />
       </div>
-      <progress min="0" max="100" value="0" style="display: none;border-radius: 10px;background: green;width: 100%;" id="progress"></progress>
+      <div id="progressContainer" style="display:none;width:100%;"></div>
       {% end %}
 
       <!-- File Listing Table -->
@@ -394,10 +394,18 @@
     </div>
 
     <script>
+      // Configurable constants
+      const RELOAD_DELAY_MS = 500;
+      const MIN_COLUMN_WIDTH = 50;
+      const MAX_FILE_SIZE = {{ max_file_size }};
+
       // File upload functionality
       const uploadZone = document.getElementById("uploadZone");
       const fileInput = document.getElementById("fileInput");
-      const progress = document.getElementById("progress");
+      const progressContainer = document.getElementById("progressContainer");
+      let uploadQueue = [];
+      let isUploading = false;
+      let reloadTimer = null;
 
       uploadZone.addEventListener("click", () => fileInput.click());
       uploadZone.addEventListener("dragover", (e) => {
@@ -417,43 +425,158 @@
         handleFiles(e.target.files);
       });
 
-      async function handleFiles(files) {
+      function handleFiles(files) {
         if (files.length === 0) return;
-
-        progress.style.display = "block";
-        progress.value = 0;
-
-        const total = files.length;
-        let uploaded = 0;
-
+        const rejected = [];
         for (const file of files) {
-            const formData = new FormData();
-            formData.append("directory", '{{ current_path or "" }}');
-            formData.append("files", file, file.name);
+          if (file.size > MAX_FILE_SIZE) {
+            rejected.push(file.name);
+            continue;
+          }
 
-            try {
-                const response = await fetch("/upload", {
-                    method: "POST",
-                    body: formData,
-                });
+          const item = document.createElement("div");
+          item.style.marginTop = "5px";
+          const nameEl = document.createElement("div");
+          nameEl.textContent = file.name;
+          const bar = document.createElement("progress");
+          bar.max = 100;
+          bar.value = 0;
+          bar.style.width = "100%";
+          const info = document.createElement("span");
+          info.style.display = "block";
+          info.style.fontSize = "12px";
+          const cancelBtn = document.createElement("button");
+          cancelBtn.textContent = "Cancel";
+          cancelBtn.style.marginTop = "2px";
 
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`Upload of ${file.name} failed: ${errorText || response.statusText}`);
-                }
-                
-                uploaded++;
-                progress.value = (uploaded / total) * 100;
+          item.appendChild(nameEl);
+          item.appendChild(bar);
+          item.appendChild(info);
+          item.appendChild(cancelBtn);
+          progressContainer.appendChild(item);
 
-            } catch (err) {
-                alert(err.message);
-                progress.style.display = "none"; // Hide progress on error
-                return; // Stop on first error
+          const queueItem = { file, bar, info, cancelBtn, item, xhr: null, start: null };
+
+          cancelBtn.addEventListener("click", () => {
+            if (queueItem.xhr) {
+              queueItem.xhr.abort();
+            } else {
+              const idx = uploadQueue.indexOf(queueItem);
+              if (idx !== -1) {
+                uploadQueue.splice(idx, 1);
+              }
+              progressContainer.removeChild(item);
+              if (progressContainer.children.length === 0) {
+                progressContainer.style.display = "none";
+              }
             }
+          });
+
+          uploadQueue.push(queueItem);
         }
 
-        // All files uploaded successfully, now reload
-        location.reload();
+        if (rejected.length > 0) {
+          const limitGB = (MAX_FILE_SIZE / (1024 * 1024 * 1024)).toFixed(2);
+          alert(`Files exceed the ${limitGB} GB limit: ${rejected.join(", ")}`);
+        }
+
+        fileInput.value = "";
+        clearTimeout(reloadTimer);
+        if (!isUploading && uploadQueue.length > 0) {
+          isUploading = true;
+          progressContainer.style.display = "block";
+          processQueue();
+        }
+      }
+
+      async function processQueue() {
+        if (uploadQueue.length === 0) {
+          isUploading = false;
+          if (progressContainer.children.length === 0) {
+            progressContainer.style.display = "none";
+          }
+          scheduleReload();
+          return;
+        }
+
+        const current = uploadQueue.shift();
+        try {
+          await uploadFile(current);
+        } catch (err) {
+          // error text already set in uploadFile
+        }
+
+        processQueue();
+      }
+
+      function scheduleReload() {
+        clearTimeout(reloadTimer);
+        reloadTimer = setTimeout(() => {
+          if (uploadQueue.length === 0 && !isUploading) {
+            location.reload();
+          }
+        }, RELOAD_DELAY_MS);
+      }
+
+      function formatBytes(bytes) {
+        const units = ["B", "KB", "MB", "GB", "TB"];
+        let i = 0;
+        while (bytes >= 1024 && i < units.length - 1) {
+          bytes /= 1024;
+          i++;
+        }
+        return `${bytes.toFixed(1)} ${units[i]}`;
+      }
+
+      function uploadFile(item) {
+        return new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          item.xhr = xhr;
+          item.start = Date.now();
+          xhr.open("POST", "/upload");
+
+          xhr.upload.addEventListener("progress", (e) => {
+            if (e.lengthComputable) {
+              const percent = (e.loaded / e.total) * 100;
+              const elapsed = (Date.now() - item.start) / 1000;
+              const speed = e.loaded / (elapsed || 1);
+              const remaining = e.total - e.loaded;
+              item.bar.value = percent;
+              item.info.textContent = `${Math.round(percent)}% - ${formatBytes(e.loaded)} of ${formatBytes(e.total)} (${formatBytes(remaining)} left) @ ${formatBytes(speed)}/s`;
+            }
+          });
+
+          xhr.addEventListener("load", () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              item.bar.value = 100;
+              item.info.textContent = "Completed";
+              item.cancelBtn.remove();
+              resolve();
+            } else {
+              item.info.textContent = "Failed";
+              item.cancelBtn.remove();
+              reject(new Error(xhr.responseText || `Upload of ${item.file.name} failed`));
+            }
+          });
+
+          xhr.addEventListener("error", () => {
+            item.info.textContent = "Error";
+            item.cancelBtn.remove();
+            reject(new Error(`Upload of ${item.file.name} failed`));
+          });
+
+          xhr.addEventListener("abort", () => {
+            item.info.textContent = "Cancelled";
+            item.cancelBtn.remove();
+            reject(new Error(`Upload of ${item.file.name} cancelled`));
+          });
+
+          const formData = new FormData();
+          formData.append("directory", '{{ current_path or "" }}');
+          formData.append("files", item.file, item.file.name);
+
+          xhr.send(formData);
+        });
       }
 
       // Rename functionality
@@ -502,11 +625,35 @@
           .catch((err) => alert("Delete failed: " + err.message));
       }
 
+      function calculateSkipRows(allRows) {
+        // Skip parent directory link if present
+        if (
+          allRows.length > 0 &&
+          allRows[0].querySelector(".file-icon") &&
+          allRows[0].querySelector(".file-icon").textContent === "📁" &&
+          allRows[0].querySelector(".file-link") &&
+          allRows[0].querySelector(".file-link").textContent.trim() === ".."
+        ) {
+          return 1;
+        }
+        // Skip empty directory message
+        if (
+          allRows.length > 0 &&
+          allRows[0].children.length === 1 &&
+          allRows[0].children[0].textContent.includes("This directory is empty")
+        ) {
+          return 1;
+        }
+        return 0;
+      }
+
       // Table sorting functionality
       function sortTable(columnIndex) {
         const table = document.getElementById("fileTable");
         const tbody = table.querySelector("tbody");
-        const rows = Array.from(tbody.querySelectorAll("tr")).slice(skipRows);
+        const allRows = Array.from(tbody.querySelectorAll("tr"));
+        const skipRows = calculateSkipRows(allRows);
+        const rows = allRows.slice(skipRows);
 
         rows.sort((a, b) => {
           let aVal = a.children[columnIndex].textContent.trim();
@@ -564,7 +711,7 @@
 
         function mouseMove(e) {
           const width = startWidth + (e.pageX - startX);
-          if (width > 50) { // Minimum width
+          if (width > MIN_COLUMN_WIDTH) { // Minimum width
             th.style.width = width + 'px';
           }
         }

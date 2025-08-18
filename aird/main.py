@@ -40,7 +40,8 @@ FEATURE_FLAGS = {
 }
 
 
-MAX_FILE_SIZE = 10 * 1024 * 1024
+# Maximum upload size: 10 GB
+MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024
 MAX_READABLE_FILE_SIZE = 10 * 1024 * 1024
 CHUNK_SIZE = 1024 * 64
 
@@ -219,10 +220,11 @@ class MainHandler(BaseHandler):
                 "browse.html", 
                 current_path=path, 
                 parent_path=parent_path, 
-                files=files, 
-                join_path=join_path, 
+                files=files,
+                join_path=join_path,
                 get_file_icon=get_file_icon,
-                features=FEATURE_FLAGS
+                features=FEATURE_FLAGS,
+                max_file_size=MAX_FILE_SIZE
             )
         elif os.path.isfile(abspath):
             filename = os.path.basename(abspath)
@@ -724,6 +726,10 @@ class SharedFileHandler(tornado.web.RequestHandler):
 
 def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
     settings["template_path"] = os.path.join(os.path.dirname(__file__), "templates")
+    # Limit request size to avoid Tornado rejecting large uploads with
+    # "Content-Length too long" before our handler can respond.
+    settings.setdefault("max_body_size", MAX_FILE_SIZE)
+    settings.setdefault("max_buffer_size", MAX_FILE_SIZE)
     
     if ldap_enabled:
         settings["ldap_server"] = ldap_server
@@ -802,7 +808,11 @@ def main():
     app = make_app(settings, ldap_enabled, ldap_server, ldap_base_dn)
     while True:
         try:
-            app.listen(port)
+            app.listen(
+                port,
+                max_body_size=MAX_FILE_SIZE,
+                max_buffer_size=MAX_FILE_SIZE,
+            )
             print(f"Serving HTTP on 0.0.0.0 port {port} (http://0.0.0.0:{port}/) ...")
             print(f"http://{host_name}:{port}/")
             tornado.ioloop.IOLoop.current().start()
