@@ -912,8 +912,13 @@ def main():
 
     root = args.root or config.get("root") or os.getcwd()
     port = args.port or config.get("port") or 8000
+    # Determine if tokens were explicitly provided; if not, we'll print the generated values
+    token_provided_explicitly = bool(args.token or config.get("token") or os.environ.get("AIRD_ACCESS_TOKEN"))
+    admin_token_provided_explicitly = bool(args.admin_token or config.get("admin_token"))
+
     token = args.token or config.get("token") or os.environ.get("AIRD_ACCESS_TOKEN") or secrets.token_urlsafe(32)
     admin_token = args.admin_token or config.get("admin_token") or secrets.token_urlsafe(32)
+
 
     ldap_enabled = args.ldap or config.get("ldap", False)
     ldap_server = args.ldap_server or config.get("ldap_server")
@@ -934,6 +939,12 @@ def main():
         "login_url": "/login",
         "admin_login_url": "/admin/login",
     }
+
+    # Print tokens when they were not explicitly provided, so users can log in
+    if not token_provided_explicitly:
+        print(f"Access token (generated): {token}")
+    if not admin_token_provided_explicitly:
+        print(f"Admin token (generated): {admin_token}")
     app = make_app(settings, ldap_enabled, ldap_server, ldap_base_dn)
     while True:
         try:
