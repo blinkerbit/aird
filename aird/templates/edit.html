@@ -73,7 +73,7 @@
     <input type="hidden" id="path" value="/{{ path }}" />
     <div class="editor-wrap">
       <div id="gutter" class="gutter"></div>
-      <textarea id="editor" spellcheck="false" wrap="off">{{ full_file_content }}</textarea>
+      <textarea id="editor" spellcheck="false" wrap="off">{{ escape(full_file_content) }}</textarea>
     </div>
 
     <script>

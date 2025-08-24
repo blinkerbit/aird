@@ -171,14 +171,14 @@
     <hr>
     <div id="editor-container" style="display:none;">
         <textarea id="line-numbers-editor" readonly></textarea>
-        <textarea id="editor">{% if open_editor %}{{ full_file_content }}{% end %}</textarea>
+        <textarea id="editor">{% if open_editor %}{{ escape(full_file_content) }}{% end %}</textarea>
     </div>
     <table id="file-content">
         <tbody>
             {% for item in lines %}
             <tr>
                 <td class="line-numbers">{{ item['n'] }}</td>
-                <td><pre>{{ item['text'] or '\u00A0' }}</pre></td>
+                <td><pre>{{ escape(item['text']) if item['text'] else '\u00A0' }}</pre></td>
             </tr>
             {% end %}
         </tbody>

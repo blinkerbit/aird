@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: aird
-Version: 0.3.0
+Version: 0.3.9
 Summary: Aird - A lightweight web-based file browser, editor, and streamer with real-time capabilities
 Home-page: https://github.com/blinkerbit/aird
 Author: Viswantha Srinivas P
@@ -124,31 +124,34 @@ pip install aird
 After installation, you can run Aird using the `aird` command:
 
 ```bash
-# Basic usage with access token
-aird --port 8888 --access-token "your-secret-token"
+# Basic usage with a specific port
+aird --port 8000
+
+# A token will be generated and printed. To specify one:
+aird --port 8000 --token "your-secret-token"
 
 # With admin capabilities
-aird --port 8888 --access-token "user-token" --admin-token "admin-token"
+aird --port 8000 --token "user-token" --admin-token "admin-token"
 
-# Serve from specific directory
-aird --root-dir "/path/to/files" --access-token "your-token"
+# Serve from a specific directory
+aird --root "/path/to/files" --token "your-token"
 ```
 
-Navigate to `http://localhost:8888` and enter your access token to start browsing files.
+Navigate to `http://localhost:8000` and enter your access token to start browsing files.
 
 ### 🎮 Command-Line Arguments
 
-| Argument          | Description                                                              | Default                |
-| ----------------- | ------------------------------------------------------------------------ | ---------------------- |
-| `--host`          | The host address to bind to                                              | `0.0.0.0`              |
-| `--port`          | The port to listen on                                                    | `8888`                 |
-| `--root-dir`      | The root directory to serve files from                                   | Current directory      |
-| `--access-token`  | The token required for user login                                        | `None`                 |
-| `--admin-token`   | The token required for admin login                                       | `None`                 |
-| `--config`        | Path to a JSON configuration file                                        | `None`                 |
-| `--enable-ldap`   | Enable LDAP authentication                                               | `False`                |
-| `--ldap-server`   | The LDAP server address                                                  | `None`                 |
-| `--ldap-base-dn`  | The base DN for LDAP searches                                            | `None`                 |
+| Argument        | Description                                         | Default                               |
+| --------------- | --------------------------------------------------- | ------------------------------------- |
+| `--port`        | The port to listen on                               | `8000`                                |
+| `--root`        | The root directory to serve files from              | Current directory                     |
+| `--token`       | The token required for user login                   | (auto-generated)                      |
+| `--admin-token` | The token required for admin login                  | (auto-generated)                      |
+| `--hostname`    | Host name for the server, used for display          | (auto-detected)                       |
+| `--config`      | Path to a JSON configuration file                   | `None`                                |
+| `--ldap`        | Enable LDAP authentication                          | `False`                               |
+| `--ldap-server` | The LDAP server address (required if --ldap)        | `None`                                |
+| `--ldap-base-dn`| The base DN for LDAP searches (required if --ldap)  | `None`                                |
 
 ### ⚙️ Configuration File
 

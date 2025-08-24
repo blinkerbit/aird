@@ -18,9 +18,10 @@
 <body>
     <h2>Admin Login</h2>
     {% if error %}
-        <div style="color: red;">{{ error }}</div>
+        <div style="color: red;">{{ escape(error) }}</div>
     {% end %}
     <form method="POST">
+        {% raw xsrf_form_html() %}
         <input type="password" name="token" placeholder="Enter admin token">
         <br><br>
         <input type="submit" value="Login">

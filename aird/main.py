@@ -5,6 +5,7 @@ import json
 from typing import Set
 import logging
 import asyncio
+import mmap
 
 import tornado.ioloop
 import tornado.web
@@ -47,8 +48,190 @@ FEATURE_FLAGS = {
 MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024
 MAX_READABLE_FILE_SIZE = 10 * 1024 * 1024
 CHUNK_SIZE = 1024 * 64
+# Minimum file size to use mmap (avoid overhead for small files)
+MMAP_MIN_SIZE = 1024 * 1024  # 1MB
 
 SHARES = {}
+
+class MMapFileHandler:
+    """Efficient file handling using memory mapping for large files"""
+    
+    @staticmethod
+    def should_use_mmap(file_size: int) -> bool:
+        """Determine if mmap should be used based on file size"""
+        return file_size >= MMAP_MIN_SIZE
+    
+    @staticmethod
+    async def serve_file_chunk(file_path: str, start: int = 0, end: int = None, chunk_size: int = CHUNK_SIZE):
+        """Serve file chunks using mmap for efficient memory usage"""
+        try:
+            file_size = os.path.getsize(file_path)
+            
+            if not MMapFileHandler.should_use_mmap(file_size):
+                # Use traditional method for small files
+                with open(file_path, 'rb') as f:
+                    f.seek(start)
+                    remaining = (end - start + 1) if end is not None else file_size - start
+                    while remaining > 0:
+                        chunk = f.read(min(chunk_size, remaining))
+                        if not chunk:
+                            break
+                        yield chunk
+                        remaining -= len(chunk)
+                return
+            
+            # Use mmap for large files
+            with open(file_path, 'rb') as f:
+                with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                    actual_end = min(end or file_size - 1, file_size - 1)
+                    current = start
+                    
+                    while current <= actual_end:
+                        chunk_end = min(current + chunk_size, actual_end + 1)
+                        yield mm[current:chunk_end]
+                        current = chunk_end
+                        
+        except (OSError, ValueError) as e:
+            # Fallback to traditional method on mmap errors
+            with open(file_path, 'rb') as f:
+                f.seek(start)
+                remaining = (end - start + 1) if end is not None else file_size - start
+                while remaining > 0:
+                    chunk = f.read(min(chunk_size, remaining))
+                    if not chunk:
+                        break
+                    yield chunk
+                    remaining -= len(chunk)
+    
+    @staticmethod
+    def find_line_offsets(file_path: str, max_lines: int = None) -> list[int]:
+        """Efficiently find line start offsets using mmap"""
+        try:
+            file_size = os.path.getsize(file_path)
+            if not MMapFileHandler.should_use_mmap(file_size):
+                # Use traditional method for small files
+                offsets = [0]
+                with open(file_path, 'rb') as f:
+                    pos = 0
+                    for line in f:
+                        pos += len(line)
+                        offsets.append(pos)
+                        if max_lines and len(offsets) > max_lines:
+                            break
+                return offsets[:-1]  # Remove the last offset (EOF)
+            
+            # Use mmap for large files
+            offsets = [0]
+            with open(file_path, 'rb') as f:
+                with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                    pos = 0
+                    while pos < len(mm):
+                        newline_pos = mm.find(b'\n', pos)
+                        if newline_pos == -1:
+                            break
+                        pos = newline_pos + 1
+                        offsets.append(pos)
+                        if max_lines and len(offsets) > max_lines:
+                            break
+            return offsets[:-1]
+            
+        except (OSError, ValueError):
+            # Fallback to traditional method
+            offsets = [0]
+            with open(file_path, 'rb') as f:
+                pos = 0
+                for line in f:
+                    pos += len(line)
+                    offsets.append(pos)
+                    if max_lines and len(offsets) > max_lines:
+                        break
+            return offsets[:-1]
+    
+    @staticmethod
+    def search_in_file(file_path: str, search_term: str, max_results: int = 100) -> list[dict]:
+        """Efficiently search for text in file using mmap"""
+        results = []
+        try:
+            file_size = os.path.getsize(file_path)
+            search_bytes = search_term.encode('utf-8')
+            
+            if not MMapFileHandler.should_use_mmap(file_size):
+                # Use traditional method for small files
+                with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                    for line_num, line in enumerate(f, 1):
+                        if search_term in line:
+                            results.append({
+                                "line_number": line_num,
+                                "line_content": line.rstrip('\n'),
+                                "match_positions": [i for i in range(len(line)) if line[i:].startswith(search_term)]
+                            })
+                            if len(results) >= max_results:
+                                break
+                return results
+            
+            # Use mmap for large files
+            with open(file_path, 'rb') as f:
+                with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                    current_pos = 0
+                    line_number = 1
+                    line_start = 0
+                    
+                    while current_pos < len(mm) and len(results) < max_results:
+                        newline_pos = mm.find(b'\n', current_pos)
+                        if newline_pos == -1:
+                            # Last line
+                            line_bytes = mm[current_pos:]
+                            if search_bytes in line_bytes:
+                                line_content = line_bytes.decode('utf-8', errors='replace')
+                                match_positions = []
+                                start_pos = 0
+                                while True:
+                                    pos = line_content.find(search_term, start_pos)
+                                    if pos == -1:
+                                        break
+                                    match_positions.append(pos)
+                                    start_pos = pos + 1
+                                results.append({
+                                    "line_number": line_number,
+                                    "line_content": line_content,
+                                    "match_positions": match_positions
+                                })
+                            break
+                        
+                        line_bytes = mm[current_pos:newline_pos]
+                        if search_bytes in line_bytes:
+                            line_content = line_bytes.decode('utf-8', errors='replace')
+                            match_positions = []
+                            start_pos = 0
+                            while True:
+                                pos = line_content.find(search_term, start_pos)
+                                if pos == -1:
+                                    break
+                                match_positions.append(pos)
+                                start_pos = pos + 1
+                            results.append({
+                                "line_number": line_number,
+                                "line_content": line_content,
+                                "match_positions": match_positions
+                            })
+                        
+                        current_pos = newline_pos + 1
+                        line_number += 1
+                        
+        except (OSError, UnicodeDecodeError):
+            # Fallback to traditional search
+            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                for line_num, line in enumerate(f, 1):
+                    if search_term in line:
+                        results.append({
+                            "line_number": line_num,
+                            "line_content": line.rstrip('\n'),
+                            "match_positions": [i for i in range(len(line)) if line[i:].startswith(search_term)]
+                        })
+                        if len(results) >= max_results:
+                            break
+        
+        return results
 
 def get_files_in_directory(path="."):
     files = []
@@ -89,7 +272,14 @@ class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):
         FeatureFlagSocketHandler.connections.remove(self)
 
     def check_origin(self, origin):
-        return True
+        # Only allow connections from the same host
+        allowed_origins = [
+            f"http://{self.request.host}",
+            f"https://{self.request.host}",
+            "http://localhost:8000",
+            "http://127.0.0.1:8000"
+        ]
+        return origin in allowed_origins
 
     @classmethod
     def send_updates(cls):
@@ -98,11 +288,35 @@ class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):
 
 
 class BaseHandler(tornado.web.RequestHandler):
+    def set_default_headers(self):
+        # Security headers
+        self.set_header("X-Content-Type-Options", "nosniff")
+        self.set_header("X-Frame-Options", "DENY")
+        self.set_header("X-XSS-Protection", "1; mode=block")
+        self.set_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        # Content Security Policy
+        csp = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
+        self.set_header("Content-Security-Policy", csp)
+
     def get_current_user(self) -> str | None:
         return self.get_secure_cookie("user")
 
     def get_current_admin(self) -> str | None:
         return self.get_secure_cookie("admin")
+    
+    def write_error(self, status_code, **kwargs):
+        # Generic error messages to prevent information disclosure
+        error_messages = {
+            400: "Bad Request",
+            401: "Unauthorized", 
+            403: "Forbidden",
+            404: "Not Found",
+            413: "Request Entity Too Large",
+            500: "Internal Server Error"
+        }
+        self.render("error.html", 
+                   status_code=status_code, 
+                   message=error_messages.get(status_code, "Unknown Error"))
 
 class RootHandler(BaseHandler):
     def get(self):
@@ -116,8 +330,18 @@ class LDAPLoginHandler(BaseHandler):
         self.render("login.html", error=None, settings=self.settings)
 
     def post(self):
-        username = self.get_argument("username", "")
+        # Input validation
+        username = self.get_argument("username", "").strip()
         password = self.get_argument("password", "")
+        
+        if not username or not password:
+            self.render("login.html", error="Username and password are required.", settings=self.settings)
+            return
+            
+        # Basic input length validation
+        if len(username) > 256 or len(password) > 256:
+            self.render("login.html", error="Invalid input length.", settings=self.settings)
+            return
         
         try:
             server = Server(self.settings['ldap_server'], get_info=ALL)
@@ -127,8 +351,9 @@ class LDAPLoginHandler(BaseHandler):
                 self.redirect("/files/")
             else:
                 self.render("login.html", error="Invalid username or password.", settings=self.settings)
-        except Exception as e:
-            self.render("login.html", error=f"LDAP connection failed: {e}", settings=self.settings)
+        except Exception:
+            # Generic error message to prevent information disclosure
+            self.render("login.html", error="Authentication failed. Please check your credentials.", settings=self.settings)
 
 class LoginHandler(BaseHandler):
     def get(self):
@@ -140,8 +365,18 @@ class LoginHandler(BaseHandler):
         self.render("login.html", error=None, settings=self.settings, next_url=next_url)
 
     def post(self):
-        token = self.get_argument("token", "")
+        token = self.get_argument("token", "").strip()
         next_url = self.get_argument("next", "/files/")
+        
+        # Input validation
+        if not token:
+            self.render("login.html", error="Token is required.", settings=self.settings, next_url=next_url)
+            return
+            
+        if len(token) > 512:  # Reasonable token length limit
+            self.render("login.html", error="Invalid token.", settings=self.settings, next_url=next_url)
+            return
+            
         if token == ACCESS_TOKEN:
             self.set_secure_cookie("user", "authenticated")
             self.redirect(next_url)
@@ -156,7 +391,17 @@ class AdminLoginHandler(BaseHandler):
         self.render("admin_login.html", error=None)
 
     def post(self):
-        token = self.get_argument("token", "")
+        token = self.get_argument("token", "").strip()
+        
+        # Input validation
+        if not token:
+            self.render("admin_login.html", error="Token is required.")
+            return
+            
+        if len(token) > 512:  # Reasonable token length limit
+            self.render("admin_login.html", error="Invalid token.")
+            return
+            
         if token == ADMIN_TOKEN:
             self.set_secure_cookie("admin", "authenticated")
             self.redirect("/admin")
@@ -266,14 +511,10 @@ class MainHandler(BaseHandler):
                         await self.flush()
                         return
 
-                # Raw fallback
-                with open(abspath, 'rb') as f:
-                    while True:
-                        chunk = f.read(CHUNK_SIZE)
-                        if not chunk:
-                            break
-                        self.write(chunk)
-                        await self.flush()
+                # Use mmap for efficient file serving
+                async for chunk in MMapFileHandler.serve_file_chunk(abspath):
+                    self.write(chunk)
+                    await self.flush()
                 return
 
             # File viewing (stream/filter/text)
@@ -314,36 +555,113 @@ class MainHandler(BaseHandler):
             if start_line > end_line:
                 start_line = end_line
             
-            # Stream through file once: build range slice without scanning the rest
+            # Use mmap for efficient large file viewing
             file_content_parts: list[str] = []
             lines_items: list[dict] = []
             total_lines = 0
             display_index = 0  # used when filtering; numbering restarts at 1
-            reached_EOF =  False
-            with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
-                for line in f:
-                    total_lines += 1
-                    if total_lines < start_line:
-                        continue
-                    if total_lines > end_line:
-                        # don't continue scanning; we don't need total file length for view
-                        break
-                    if filter_substring:
-                        if filter_substring in line:
-                            display_index += 1
+            reached_EOF = False
+            
+            try:
+                file_size = os.path.getsize(abspath)
+                use_mmap = MMapFileHandler.should_use_mmap(file_size)
+                
+                if use_mmap:
+                    # Use mmap for large files - more efficient line processing
+                    with open(abspath, 'rb') as f:
+                        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                            current_pos = 0
+                            line_start = 0
+                            
+                            while current_pos < len(mm):
+                                newline_pos = mm.find(b'\n', current_pos)
+                                if newline_pos == -1:
+                                    # Last line without newline
+                                    if current_pos < len(mm):
+                                        line_bytes = mm[current_pos:len(mm)]
+                                        line = line_bytes.decode('utf-8', errors='replace')
+                                        total_lines += 1
+                                        if start_line <= total_lines <= end_line:
+                                            if not filter_substring or filter_substring in line:
+                                                if filter_substring:
+                                                    display_index += 1
+                                                    lines_items.append({"n": display_index, "text": line})
+                                                else:
+                                                    lines_items.append({"n": total_lines, "text": line})
+                                                file_content_parts.append(line + '\n')
+                                    reached_EOF = True
+                                    break
+                                
+                                line_bytes = mm[current_pos:newline_pos]
+                                line = line_bytes.decode('utf-8', errors='replace')
+                                total_lines += 1
+                                current_pos = newline_pos + 1
+                                
+                                if total_lines < start_line:
+                                    continue
+                                if total_lines > end_line:
+                                    break
+                                    
+                                if not filter_substring or filter_substring in line:
+                                    if filter_substring:
+                                        display_index += 1
+                                        lines_items.append({"n": display_index, "text": line})
+                                    else:
+                                        lines_items.append({"n": total_lines, "text": line})
+                                    file_content_parts.append(line + '\n')
+                            else:
+                                reached_EOF = True
+                else:
+                    # Use traditional method for small files
+                    with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+                        for line in f:
+                            total_lines += 1
+                            if total_lines < start_line:
+                                continue
+                            if total_lines > end_line:
+                                break
+                            if filter_substring:
+                                if filter_substring in line:
+                                    display_index += 1
+                                    file_content_parts.append(line)
+                                    lines_items.append({
+                                        "n": display_index,
+                                        "text": line.rstrip('\n')
+                                    })
+                            else:
+                                file_content_parts.append(line)
+                                lines_items.append({
+                                    "n": total_lines,
+                                    "text": line.rstrip('\n')
+                                })
+                        else:
+                            reached_EOF = True
+                            
+            except (OSError, UnicodeDecodeError):
+                # Fallback to traditional method on any errors
+                with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+                    for line in f:
+                        total_lines += 1
+                        if total_lines < start_line:
+                            continue
+                        if total_lines > end_line:
+                            break
+                        if filter_substring:
+                            if filter_substring in line:
+                                display_index += 1
+                                file_content_parts.append(line)
+                                lines_items.append({
+                                    "n": display_index,
+                                    "text": line.rstrip('\n')
+                                })
+                        else:
                             file_content_parts.append(line)
                             lines_items.append({
-                                "n": display_index,
+                                "n": total_lines,
                                 "text": line.rstrip('\n')
                             })
                     else:
-                        file_content_parts.append(line)
-                        lines_items.append({
-                            "n": total_lines,
-                            "text": line.rstrip('\n')
-                        })
-                else:
-                    reached_EOF = True
+                        reached_EOF = True
             # When filtering, restart numbering from 1 in the rendered view
             if filter_substring:
                 start_line = 1
@@ -378,7 +696,14 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
         return self.get_secure_cookie("user")
 
     def check_origin(self, origin):
-        return True
+        # Only allow connections from the same host
+        allowed_origins = [
+            f"http://{self.request.host}",
+            f"https://{self.request.host}",
+            "http://localhost:8000",
+            "http://127.0.0.1:8000"
+        ]
+        return origin in allowed_origins
 
     async def open(self, path):
         if not self.current_user:
@@ -537,14 +862,34 @@ class UploadHandler(BaseHandler):
             self.write("File too large")
             return
 
-        # Sanitize and validate paths
+        # Enhanced path validation
         safe_dir_abs = os.path.abspath(os.path.join(ROOT_DIR, self.upload_dir.strip("/")))
         if not safe_dir_abs.startswith(ROOT_DIR):
             self.set_status(403)
             self.write("Forbidden path")
             return
 
+        # Validate filename more strictly
         safe_filename = os.path.basename(self.filename)
+        if not safe_filename or safe_filename in ['.', '..']:
+            self.set_status(400)
+            self.write("Invalid filename")
+            return
+            
+        # Check for dangerous file extensions
+        dangerous_extensions = ['.exe', '.bat', '.cmd', '.scr', '.vbs', '.js', '.jar']
+        file_ext = os.path.splitext(safe_filename)[1].lower()
+        if file_ext in dangerous_extensions:
+            self.set_status(403)
+            self.write("File type not allowed")
+            return
+            
+        # Validate filename length
+        if len(safe_filename) > 255:
+            self.set_status(400)
+            self.write("Filename too long")
+            return
+
         final_path_abs = os.path.abspath(os.path.join(safe_dir_abs, safe_filename))
         if not final_path_abs.startswith(safe_dir_abs):
             self.set_status(403)
@@ -606,8 +951,26 @@ class RenameHandler(BaseHandler):
             self.write("File rename is disabled.")
             return
 
-        path = self.get_argument("path", "")
-        new_name = self.get_argument("new_name", "")
+        path = self.get_argument("path", "").strip()
+        new_name = self.get_argument("new_name", "").strip()
+        
+        # Input validation
+        if not path or not new_name:
+            self.set_status(400)
+            self.write("Path and new name are required.")
+            return
+            
+        # Validate new filename
+        if new_name in ['.', '..'] or '/' in new_name or '\\' in new_name:
+            self.set_status(400)
+            self.write("Invalid filename.")
+            return
+            
+        if len(new_name) > 255:
+            self.set_status(400)
+            self.write("Filename too long.")
+            return
+        
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
         new_abspath = os.path.abspath(os.path.join(ROOT_DIR, os.path.dirname(path), new_name))
         root = ROOT_DIR
@@ -615,7 +978,19 @@ class RenameHandler(BaseHandler):
             self.set_status(403)
             self.write("Forbidden")
             return
-        os.rename(abspath, new_abspath)
+            
+        if not os.path.exists(abspath):
+            self.set_status(404)
+            self.write("File not found")
+            return
+            
+        try:
+            os.rename(abspath, new_abspath)
+        except OSError:
+            self.set_status(500)
+            self.write("Rename failed")
+            return
+            
         parent = os.path.dirname(path)
         self.redirect("/files/" + parent if parent else "/files/")
 
@@ -704,9 +1079,23 @@ class EditViewHandler(BaseHandler):
             return
 
         filename = os.path.basename(abspath)
-        # Read once into memory (bounded by MAX_READABLE_FILE_SIZE)
-        with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
-            full_file_content = f.read()
+        # Use mmap for efficient large file loading
+        try:
+            file_size = os.path.getsize(abspath)
+            if MMapFileHandler.should_use_mmap(file_size):
+                # Use mmap for large files
+                with open(abspath, 'rb') as f:
+                    with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                        full_file_content = mm[:].decode('utf-8', errors='replace')
+            else:
+                # Use traditional method for small files
+                with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+                    full_file_content = f.read()
+        except (OSError, UnicodeDecodeError):
+            # Fallback to traditional method
+            with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+                full_file_content = f.read()
+                
         total_lines = full_file_content.count('\n') + 1 if full_file_content else 0
 
         self.render(
@@ -721,29 +1110,24 @@ class EditViewHandler(BaseHandler):
 class FileListAPIHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self, path):
-        print(f"DEBUG: FileListAPIHandler called with path: '{path}'")
         self.set_header("Content-Type", "application/json")
         
         # Normalize path
         path = path.strip('/')
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
-        print(f"DEBUG: Normalized path: '{path}', abspath: '{abspath}'")
         
         if not abspath.startswith(ROOT_DIR):
-            print(f"DEBUG: Forbidden - abspath doesn't start with ROOT_DIR")
             self.set_status(403)
             self.write({"error": "Forbidden"})
             return
 
         if not os.path.isdir(abspath):
-            print(f"DEBUG: Directory not found: {abspath}")
             self.set_status(404)
             self.write({"error": "Directory not found"})
             return
 
         try:
             files = get_files_in_directory(abspath)
-            print(f"DEBUG: Found {len(files)} files")
             result = {
                 "path": path,
                 "files": [
@@ -757,10 +1141,9 @@ class FileListAPIHandler(BaseHandler):
                 ]
             }
             self.write(result)
-        except Exception as e:
-            print(f"DEBUG: Exception: {e}")
+        except Exception:
             self.set_status(500)
-            self.write({"error": str(e)})
+            self.write({"error": "Internal server error"})
 
 class ShareFilesHandler(BaseHandler):
     @tornado.web.authenticated
@@ -848,8 +1231,21 @@ class SharedFileHandler(tornado.web.RequestHandler):
             self.write("File not found")
             return
         self.set_header('Content-Type', 'text/plain; charset=utf-8')
-        with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
-            self.write(f.read())
+        # Use mmap for efficient file serving
+        try:
+            file_size = os.path.getsize(abspath)
+            if MMapFileHandler.should_use_mmap(file_size):
+                with open(abspath, 'rb') as f:
+                    with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                        content = mm[:].decode('utf-8', errors='replace')
+                        self.write(content)
+            else:
+                with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+                    self.write(f.read())
+        except (OSError, UnicodeDecodeError):
+            # Fallback to traditional method
+            with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+                self.write(f.read())
 
 
 def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
@@ -877,7 +1273,7 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
         (r"/upload", UploadHandler),
         (r"/delete", DeleteHandler),
         (r"/rename", RenameHandler),
-    (r"/edit/(.*)", EditViewHandler),
+        (r"/edit/(.*)", EditViewHandler),
         (r"/edit", EditHandler),
         (r"/api/files/(.*)", FileListAPIHandler),
         (r"/share", ShareFilesHandler),
@@ -934,8 +1330,12 @@ def main():
     ADMIN_TOKEN = admin_token
     ROOT_DIR = os.path.abspath(root)
 
+    # Generate separate cookie secret for better security
+    cookie_secret = secrets.token_urlsafe(64)
+    
     settings = {
-        "cookie_secret": ACCESS_TOKEN,
+        "cookie_secret": cookie_secret,
+        "xsrf_cookies": True,  # Enable CSRF protection
         "login_url": "/login",
         "admin_login_url": "/admin/login",
     }

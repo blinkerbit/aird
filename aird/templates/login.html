@@ -18,9 +18,10 @@
 <body>
     <h2>Login</h2>
     {% if error %}
-        <div style="color: red;">{{ error }}</div>
+        <div style="color: red;">{{ escape(error) }}</div>
     {% end %}
     <form method="POST">
+        {% raw xsrf_form_html() %}
         {% if settings.get("ldap_server") %}
             <div style="margin-bottom:8px; color:#333;">LDAP is enabled. Sign in with your username and password.</div>
             <input type="text" name="username" placeholder="Enter username"><br><br>
