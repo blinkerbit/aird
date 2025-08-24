@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Error {{ status_code }}</title>
+    <style>
+        body {
+            font-family: monospace;
+            background-color: white;
+            color: black;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .error-container {
+            text-align: center;
+            border: 2px solid black;
+            padding: 40px;
+            max-width: 500px;
+        }
+        h1 {
+            font-size: 48px;
+            margin: 0 0 20px 0;
+        }
+        h2 {
+            font-size: 24px;
+            margin: 0 0 20px 0;
+        }
+        a {
+            color: black;
+            text-decoration: none;
+            border: 1px solid black;
+            padding: 10px 20px;
+            display: inline-block;
+            margin-top: 20px;
+        }
+        a:hover {
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <h1>{{ status_code }}</h1>
+        <h2>{{ escape(message) }}</h2>
+        <p>Something went wrong. Please try again or contact your administrator.</p>
+        <a href="/files/">← Back to Files</a>
+    </div>
+</body>
+</html>

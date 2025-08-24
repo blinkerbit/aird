@@ -1,7 +1,14 @@
 # Aird - A Lightweight Web-Based File Browser, Editor and Share.
-Install using
-```
+**v0.4.0** - Now with direct executable support and mmap optimizations!
+
+Install using:
+```bash
 pip install aird
+```
+
+Run directly:
+```bash
+aird --help
 ```
 Aird is a modern, lightweight, and fast web-based file browser, editor, and streamer built with Python and Tornado. It provides a comprehensive file management solution with real-time streaming, in-browser editing, and mobile-responsive design through a clean and intuitive web interface.
 
@@ -246,11 +253,14 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **One-click copy:** Copy shareable URLs to clipboard with visual feedback
 - **Temporary access:** All shares are session-based and can be easily revoked
 
-### 🚀 Performance Features
+### 🚀 Performance Features (New in v0.4.0!)
+- **Memory-mapped file operations:** Efficient handling of large files (>1MB) using mmap
+- **Enhanced security:** CSRF protection, XSS prevention, improved input validation
+- **Direct executable support:** Run with simple `aird` command instead of `python -m aird`
 - **Chunked file operations** for large files
 - **Async WebSocket streaming** for real-time updates
 - **Configurable buffer sizes** for optimal performance
-- **Memory-efficient** file handling
+- **Memory-efficient** file handling with constant memory usage
 
 ## 📋 Requirements
 

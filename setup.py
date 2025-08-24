@@ -13,6 +13,7 @@ setup(
     install_requires=[
         'tornado>=6.5.1',
         'ldap3>=2.9.1',
+        'aiofiles>=23.0.0',
     ],
     author='Viswantha Srinivas P',
     author_email='psviswanatha@gmail.com',  # Please fill this in

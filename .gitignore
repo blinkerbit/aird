@@ -4,3 +4,5 @@ __pycache__/
 build
 temp
 .venv
+tests/large_test_file_1gb.txt
+tests/test_file_1gb.txt
