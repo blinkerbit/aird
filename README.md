@@ -1,5 +1,5 @@
 # Aird - A Lightweight Web-Based File Browser, Editor and Share.
-**v0.4.0** - Now with direct executable support and mmap optimizations!
+**v0.3.11** - Now with direct executable support and mmap optimizations!
 
 Install using:
 ```bash
