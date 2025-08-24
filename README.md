@@ -331,7 +331,7 @@ This project is licensed under a **Custom License** that prohibits commercial us
 ### Key License Points:
 - ✅ **Free for personal and non-commercial use**
 - ✅ **Open source for educational purposes**
-- ❌ **Commercial use requires written permission**
+- ❌ **Commercial use requires written permission** (usually given for free, but requires written consent.) 
 - ❌ **No warranty or liability coverage**
 
 ## 🔗 Links
