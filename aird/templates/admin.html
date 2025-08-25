@@ -16,6 +16,7 @@
 <body>
     <h2>Admin Panel</h2>
     <form method="POST">
+        {% raw xsrf_form_html() %}
         <h3>Feature Flags</h3>
         <label>
             <input type="checkbox" name="file_upload" {% if features.get('file_upload') %}checked{% end %}>

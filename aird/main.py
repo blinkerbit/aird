@@ -6,6 +6,8 @@ from typing import Set
 import logging
 import asyncio
 import mmap
+import sys
+import sqlite3
 
 import tornado.ioloop
 import tornado.web
@@ -22,6 +24,25 @@ import tempfile
 from urllib.parse import unquote
 import aiofiles
 
+# Import Rust integration with fallback
+try:
+    from .rust_integration import (
+        HybridFileHandler,
+        HybridCompressionHandler,
+        RUST_AVAILABLE
+    )
+    # Log Rust availability
+    logger = logging.getLogger(__name__)
+    if RUST_AVAILABLE:
+        logger.info("🚀 Rust core extensions loaded - performance mode enabled!")
+    else:
+        logger.info("⚠️  Rust extensions not available, using Python fallbacks")
+except ImportError:
+    # Fallback if rust_integration module doesn't exist yet
+    RUST_AVAILABLE = False
+    HybridFileHandler = None
+    HybridCompressionHandler = None
+
 def join_path(*parts):
     return os.path.join(*parts).replace("\\", "/")
 
@@ -32,6 +53,8 @@ from tornado.web import RequestHandler, Application
 ACCESS_TOKEN = None
 ADMIN_TOKEN = None
 ROOT_DIR = os.getcwd()
+DB_CONN = None
+DB_PATH = None
 
 FEATURE_FLAGS = {
     "file_upload": True,
@@ -52,6 +75,115 @@ CHUNK_SIZE = 1024 * 64
 MMAP_MIN_SIZE = 1024 * 1024  # 1MB
 
 SHARES = {}
+
+# ------------------------
+# SQLite persistence layer
+# ------------------------
+
+def _get_data_dir() -> str:
+    """Return OS-appropriate data directory for storing the SQLite DB."""
+    try:
+        if os.name == 'nt':  # Windows
+            base = os.environ.get('LOCALAPPDATA') or os.environ.get('APPDATA') or os.path.expanduser('~\\AppData\\Local')
+        elif sys.platform == 'darwin':  # macOS
+            base = os.path.expanduser('~/Library/Application Support')
+        else:  # Linux and others
+            base = os.environ.get('XDG_DATA_HOME') or os.path.expanduser('~/.local/share')
+        data_dir = os.path.join(base, 'aird')
+        os.makedirs(data_dir, exist_ok=True)
+        return data_dir
+    except Exception:
+        # Fallback to current directory
+        return os.getcwd()
+
+def _init_db(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS feature_flags (
+            key TEXT PRIMARY KEY,
+            value INTEGER NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS shares (
+            id TEXT PRIMARY KEY,
+            created TEXT NOT NULL,
+            paths TEXT NOT NULL
+        )
+        """
+    )
+    conn.commit()
+
+def _load_feature_flags(conn: sqlite3.Connection) -> dict:
+    try:
+        rows = conn.execute("SELECT key, value FROM feature_flags").fetchall()
+        return {k: bool(v) for (k, v) in rows}
+    except Exception:
+        return {}
+
+def _save_feature_flags(conn: sqlite3.Connection, flags: dict) -> None:
+    try:
+        with conn:
+            for k, v in flags.items():
+                conn.execute(
+                    "REPLACE INTO feature_flags (key, value) VALUES (?, ?)",
+                    (k, 1 if v else 0),
+                )
+    except Exception:
+        pass
+
+def _load_shares(conn: sqlite3.Connection) -> dict:
+    loaded: dict = {}
+    try:
+        rows = conn.execute("SELECT id, created, paths FROM shares").fetchall()
+        for sid, created, paths_json in rows:
+            try:
+                paths = json.loads(paths_json) if paths_json else []
+            except Exception:
+                paths = []
+            loaded[sid] = {"paths": paths, "created": created}
+    except Exception:
+        return {}
+    return loaded
+
+def _insert_share(conn: sqlite3.Connection, sid: str, created: str, paths: list[str]) -> None:
+    try:
+        with conn:
+            conn.execute(
+                "REPLACE INTO shares (id, created, paths) VALUES (?, ?, ?)",
+                (sid, created, json.dumps(paths)),
+            )
+    except Exception:
+        pass
+
+def _delete_share(conn: sqlite3.Connection, sid: str) -> None:
+    try:
+        with conn:
+            conn.execute("DELETE FROM shares WHERE id = ?", (sid,))
+    except Exception:
+        pass
+
+def get_current_feature_flags() -> dict:
+    """Return current feature flags with SQLite values taking precedence.
+    Falls back to in-memory defaults if DB is unavailable.
+    """
+    current = FEATURE_FLAGS.copy()
+    if DB_CONN is not None:
+        try:
+            persisted = _load_feature_flags(DB_CONN)
+            if persisted:
+                # Persisted values override runtime defaults
+                for k, v in persisted.items():
+                    current[k] = bool(v)
+        except Exception:
+            pass
+    return current
+
+def is_feature_enabled(key: str, default: bool = False) -> bool:
+    flags = get_current_feature_flags()
+    return bool(flags.get(key, default))
 
 class MMapFileHandler:
     """Efficient file handling using memory mapping for large files"""
@@ -266,7 +398,9 @@ class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):
 
     def open(self):
         FeatureFlagSocketHandler.connections.add(self)
-        self.write_message(json.dumps(FEATURE_FLAGS))
+        # Load current feature flags from SQLite and send to client
+        current_flags = self._get_current_feature_flags()
+        self.write_message(json.dumps(current_flags))
 
     def on_close(self):
         FeatureFlagSocketHandler.connections.remove(self)
@@ -281,10 +415,52 @@ class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):
         ]
         return origin in allowed_origins
 
+    def _get_current_feature_flags(self):
+        """Get current feature flags, preferring SQLite data over in-memory."""
+        if DB_CONN is not None:
+            try:
+                persisted_flags = _load_feature_flags(DB_CONN)
+                if persisted_flags:
+                    # Use persisted flags as base, merge with any runtime changes
+                    current_flags = persisted_flags.copy()
+                    # Update with any in-memory changes not yet persisted
+                    for k, v in FEATURE_FLAGS.items():
+                        current_flags[k] = bool(v)
+                    return current_flags
+            except Exception:
+                pass
+        # Fallback to in-memory flags
+        return FEATURE_FLAGS.copy()
+
     @classmethod
     def send_updates(cls):
+        """Send feature flag updates to all connected clients, using SQLite data."""
+        if not cls.connections:
+            return
+
+        # Get current flags from SQLite for consistency
+        current_flags = {}
+        if DB_CONN is not None:
+            try:
+                current_flags = _load_feature_flags(DB_CONN)
+                if current_flags:
+                    # Merge with any runtime changes
+                    for k, v in FEATURE_FLAGS.items():
+                        current_flags[k] = bool(v)
+                else:
+                    current_flags = FEATURE_FLAGS.copy()
+            except Exception:
+                current_flags = FEATURE_FLAGS.copy()
+        else:
+            current_flags = FEATURE_FLAGS.copy()
+
+        # Send to all connected clients
         for connection in cls.connections:
-            connection.write_message(json.dumps(FEATURE_FLAGS))
+            try:
+                connection.write_message(json.dumps(current_flags))
+            except Exception:
+                # Remove dead connections
+                cls.connections.discard(connection)
 
 
 class BaseHandler(tornado.web.RequestHandler):
@@ -422,7 +598,37 @@ class AdminHandler(BaseHandler):
         if not self.get_current_admin():
             self.redirect("/admin/login")
             return
-        self.render("admin.html", features=FEATURE_FLAGS)
+        
+        # Get Rust performance stats if available
+        rust_stats = {}
+        if RUST_AVAILABLE:
+            try:
+                from .rust_integration import performance_monitor
+                rust_stats = performance_monitor.get_stats()
+            except Exception:
+                rust_stats = {"error": "Could not load performance stats"}
+        
+        # Get current feature flags from SQLite for consistency
+        current_features = {}
+        if DB_CONN is not None:
+            try:
+                persisted_flags = _load_feature_flags(DB_CONN)
+                if persisted_flags:
+                    current_features = persisted_flags.copy()
+                    # Merge with any runtime changes
+                    for k, v in FEATURE_FLAGS.items():
+                        current_features[k] = bool(v)
+                else:
+                    current_features = FEATURE_FLAGS.copy()
+            except Exception:
+                current_features = FEATURE_FLAGS.copy()
+        else:
+            current_features = FEATURE_FLAGS.copy()
+
+        self.render("admin.html",
+                   features=current_features,
+                   rust_available=RUST_AVAILABLE,
+                   rust_stats=rust_stats)
 
     @tornado.web.authenticated
     def post(self):
@@ -439,6 +645,13 @@ class AdminHandler(BaseHandler):
         FEATURE_FLAGS["file_edit"] = self.get_argument("file_edit", "off") == "on"
         FEATURE_FLAGS["file_share"] = self.get_argument("file_share", "off") == "on"
         
+        # Persist feature flags
+        try:
+            if DB_CONN is not None:
+                _save_feature_flags(DB_CONN, FEATURE_FLAGS)
+        except Exception:
+            pass
+
         FeatureFlagSocketHandler.send_updates()
         self.redirect("/admin")
 
@@ -464,7 +677,16 @@ class MainHandler(BaseHandler):
                 for p in share.get('paths', []):
                     all_shared_paths.add(p)
 
-            files = get_files_in_directory(abspath)
+            # Use Rust-optimized directory scanning when available
+            if RUST_AVAILABLE and HybridFileHandler:
+                try:
+                    files = HybridFileHandler.scan_directory(abspath)
+                except Exception as e:
+                    # Fallback to Python implementation on error
+                    logger.warning(f"Rust directory scan failed, using Python fallback: {e}")
+                    files = get_files_in_directory(abspath)
+            else:
+                files = get_files_in_directory(abspath)
             
             # Augment file data with shared status
             for file_info in files:
@@ -472,6 +694,8 @@ class MainHandler(BaseHandler):
                 file_info['is_shared'] = full_path in all_shared_paths
 
             parent_path = os.path.dirname(path) if path else None
+            # Use SQLite-backed flags for template
+            flags_for_template = get_current_feature_flags()
             self.render(
                 "browse.html", 
                 current_path=path, 
@@ -479,7 +703,7 @@ class MainHandler(BaseHandler):
                 files=files,
                 join_path=join_path,
                 get_file_icon=get_file_icon,
-                features=FEATURE_FLAGS,
+                features=flags_for_template,
                 max_file_size=MAX_FILE_SIZE
             )
         elif os.path.isfile(abspath):
@@ -503,6 +727,19 @@ class MainHandler(BaseHandler):
                     if any(mime_type.startswith(prefix) for prefix in compressible_types):
                         self.set_header("Content-Encoding", "gzip")
 
+                        # Use Rust-optimized compression when available
+                        if RUST_AVAILABLE and HybridCompressionHandler:
+                            try:
+                                with open(abspath, 'rb') as f:
+                                    file_data = f.read()
+                                compressed_data = HybridCompressionHandler.compress_data(file_data, level=6)
+                                self.write(compressed_data)
+                                await self.flush()
+                                return
+                            except Exception as e:
+                                logger.warning(f"Rust compression failed, using Python fallback: {e}")
+                        
+                        # Fallback to Python gzip compression
                         buffer = BytesIO()
                         with open(abspath, 'rb') as f_in, gzip.GzipFile(fileobj=buffer, mode='wb') as f_out:
                             shutil.copyfileobj(f_in, f_out)
@@ -511,10 +748,16 @@ class MainHandler(BaseHandler):
                         await self.flush()
                         return
 
-                # Use mmap for efficient file serving
-                async for chunk in MMapFileHandler.serve_file_chunk(abspath):
-                    self.write(chunk)
-                    await self.flush()
+                # Use Rust-optimized file serving when available
+                if RUST_AVAILABLE and HybridFileHandler:
+                    async for chunk in HybridFileHandler.serve_file_chunk(abspath):
+                        self.write(chunk)
+                        await self.flush()
+                else:
+                    # Fallback to Python mmap implementation
+                    async for chunk in MMapFileHandler.serve_file_chunk(abspath):
+                        self.write(chunk)
+                        await self.flush()
                 return
 
             # File viewing (stream/filter/text)
@@ -674,12 +917,13 @@ class MainHandler(BaseHandler):
                 <button type="submit">Apply Filter</button>
             </form>
             '''
+            flags_for_template = get_current_feature_flags()
             self.render("file.html", 
                       filename=filename, 
                       path=path, 
                       file_content=file_content, 
                       filter_html=filter_html, 
-                      features=FEATURE_FLAGS,
+                      features=flags_for_template,
                       start_line=start_line,
                       end_line=end_line,
                       lines=lines_items,
@@ -780,9 +1024,9 @@ class UploadHandler(BaseHandler):
         self._bytes_received: int = 0
         self._too_large: bool = False
 
-        # Feature flag check deferred to post() for clear response,
-        # but if disabled, avoid doing any heavy work here.
-        if not FEATURE_FLAGS.get("file_upload", True):
+        # Feature flag check (using SQLite-backed flags)
+        # Deferred to post() for clear response, but avoid heavy work if disabled
+        if not is_feature_enabled("file_upload", True):
             self._reject = True
             self._reject_reason = "File upload is disabled."
             return
@@ -831,7 +1075,7 @@ class UploadHandler(BaseHandler):
     @tornado.web.authenticated
     async def post(self):
         # If uploads disabled, return now
-        if not FEATURE_FLAGS.get("file_upload", True):
+        if not is_feature_enabled("file_upload", True):
             self.set_status(403)
             self.write("File upload is disabled.")
             return
@@ -924,7 +1168,7 @@ class UploadHandler(BaseHandler):
 class DeleteHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self):
-        if not FEATURE_FLAGS["file_delete"]:
+        if not is_feature_enabled("file_delete", True):
             self.set_status(403)
             self.write("File delete is disabled.")
             return
@@ -946,7 +1190,7 @@ class DeleteHandler(BaseHandler):
 class RenameHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self):
-        if not FEATURE_FLAGS["file_rename"]:
+        if not is_feature_enabled("file_rename", True):
             self.set_status(403)
             self.write("File rename is disabled.")
             return
@@ -998,7 +1242,7 @@ class RenameHandler(BaseHandler):
 class EditHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self):
-        if not FEATURE_FLAGS.get("file_edit"):
+        if not is_feature_enabled("file_edit", True):
             self.set_status(403)
             self.write("File editing is disabled.")
             return
@@ -1053,7 +1297,7 @@ class EditHandler(BaseHandler):
 class EditViewHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self, path):
-        if not FEATURE_FLAGS.get("file_edit"):
+        if not is_feature_enabled("file_edit", True):
             self.set_status(403)
             self.write("File editing is disabled.")
             return
@@ -1079,20 +1323,18 @@ class EditViewHandler(BaseHandler):
             return
 
         filename = os.path.basename(abspath)
-        # Use mmap for efficient large file loading
+        
+        # Use optimized file loading (sync version for template rendering)
         try:
             file_size = os.path.getsize(abspath)
             if MMapFileHandler.should_use_mmap(file_size):
-                # Use mmap for large files
                 with open(abspath, 'rb') as f:
                     with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
                         full_file_content = mm[:].decode('utf-8', errors='replace')
             else:
-                # Use traditional method for small files
                 with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
                     full_file_content = f.read()
         except (OSError, UnicodeDecodeError):
-            # Fallback to traditional method
             with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
                 full_file_content = f.read()
                 
@@ -1104,7 +1346,7 @@ class EditViewHandler(BaseHandler):
             path=path,
             full_file_content=full_file_content,
             total_lines=total_lines,
-            features=FEATURE_FLAGS,
+            features=get_current_feature_flags(),
         )
 
 class FileListAPIHandler(BaseHandler):
@@ -1127,7 +1369,16 @@ class FileListAPIHandler(BaseHandler):
             return
 
         try:
-            files = get_files_in_directory(abspath)
+            # Use Rust-optimized directory scanning when available
+            if RUST_AVAILABLE and HybridFileHandler:
+                try:
+                    files = HybridFileHandler.scan_directory(abspath)
+                except Exception as e:
+                    logger.warning(f"Rust directory scan failed, using Python fallback: {e}")
+                    files = get_files_in_directory(abspath)
+            else:
+                files = get_files_in_directory(abspath)
+                
             result = {
                 "path": path,
                 "files": [
@@ -1148,7 +1399,7 @@ class FileListAPIHandler(BaseHandler):
 class ShareFilesHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
-        if not FEATURE_FLAGS.get("file_share"):
+        if not is_feature_enabled("file_share", True):
             self.set_status(403)
             self.write("File sharing is disabled")
             return
@@ -1158,7 +1409,7 @@ class ShareFilesHandler(BaseHandler):
 class ShareCreateHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self):
-        if not FEATURE_FLAGS.get("file_share"):
+        if not is_feature_enabled("file_share", True):
             self.set_status(403)
             self.write({"error": "File sharing is disabled"})
             return
@@ -1175,7 +1426,14 @@ class ShareCreateHandler(BaseHandler):
                 self.write({"error": "No valid files"})
                 return
             sid = secrets.token_urlsafe(8)
-            SHARES[sid] = {"paths": valid_paths, "created": datetime.utcnow().isoformat()}
+            created = datetime.utcnow().isoformat()
+            SHARES[sid] = {"paths": valid_paths, "created": created}
+            # Persist to DB
+            try:
+                if DB_CONN is not None:
+                    _insert_share(DB_CONN, sid, created, valid_paths)
+            except Exception:
+                pass
             self.write({"id": sid, "url": f"/shared/{sid}"})
         except Exception as e:
             self.set_status(500)
@@ -1184,13 +1442,19 @@ class ShareCreateHandler(BaseHandler):
 class ShareRevokeHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self):
-        if not FEATURE_FLAGS.get("file_share"):
+        if not is_feature_enabled("file_share", True):
             self.set_status(403)
             self.write({"error": "File sharing is disabled"})
             return
         sid = self.get_argument('id', '')
         if sid in SHARES:
             del SHARES[sid]
+            # Persist deletion
+            try:
+                if DB_CONN is not None:
+                    _delete_share(DB_CONN, sid)
+            except Exception:
+                pass
         if self.request.headers.get('Accept') == 'application/json':
             self.write({'ok': True})
             return
@@ -1199,7 +1463,7 @@ class ShareRevokeHandler(BaseHandler):
 class ShareListAPIHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
-        if not FEATURE_FLAGS.get("file_share"):
+        if not is_feature_enabled("file_share", True):
             self.set_status(403)
             self.write({"error": "File sharing is disabled"})
             return
@@ -1215,7 +1479,7 @@ class SharedListHandler(tornado.web.RequestHandler):
         self.render("shared_list.html", share_id=sid, files=share['paths'])
 
 class SharedFileHandler(tornado.web.RequestHandler):
-    def get(self, sid, path):
+    async def get(self, sid, path):
         share = SHARES.get(sid)
         if not share:
             self.set_status(404)
@@ -1231,21 +1495,22 @@ class SharedFileHandler(tornado.web.RequestHandler):
             self.write("File not found")
             return
         self.set_header('Content-Type', 'text/plain; charset=utf-8')
-        # Use mmap for efficient file serving
+        # Stream in chunks to avoid loading entire file into memory
         try:
-            file_size = os.path.getsize(abspath)
-            if MMapFileHandler.should_use_mmap(file_size):
-                with open(abspath, 'rb') as f:
-                    with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-                        content = mm[:].decode('utf-8', errors='replace')
-                        self.write(content)
-            else:
-                with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
-                    self.write(f.read())
-        except (OSError, UnicodeDecodeError):
-            # Fallback to traditional method
-            with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
-                self.write(f.read())
+            # Prefer binary read and decode per chunk to preserve memory
+            with open(abspath, 'rb') as f:
+                while True:
+                    chunk = f.read(CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    # Decode chunk safely and write
+                    self.write(chunk.decode('utf-8', errors='replace'))
+                    await self.flush()
+        except Exception:
+            # As a last resort, send minimal error
+            self.set_status(500)
+            self.write("Error streaming file")
+            return
 
 
 def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
@@ -1286,7 +1551,21 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
     ], **settings)
 
 
+def print_banner():
+    """Print simple ASCII art banner for aird"""
+    banner = """
+ █████╗ ██╗██████╗ ██████╗ 
+██╔══██╗██║██╔══██╗██╔══██╗
+███████║██║██████╔╝██║  ██║
+██╔══██║██║██╔══██╗██║  ██║
+██║  ██║██║██║  ██║██████╔╝
+╚═╝  ╚═╝╚═╝╚═╝  ╚═╝╚═════╝ 
+"""
+    print(banner)
+
 def main():
+    print_banner()
+    
     parser = argparse.ArgumentParser(description="Run Aird")
     parser.add_argument("--config", help="Path to JSON config file")
     parser.add_argument("--root", help="Root directory to serve")
@@ -1325,7 +1604,7 @@ def main():
         print("Error: LDAP is enabled, but --ldap-server and --ldap-base-dn are not configured.")
         return
 
-    global ACCESS_TOKEN, ADMIN_TOKEN, ROOT_DIR
+    global ACCESS_TOKEN, ADMIN_TOKEN, ROOT_DIR, DB_CONN, DB_PATH
     ACCESS_TOKEN = token
     ADMIN_TOKEN = admin_token
     ROOT_DIR = os.path.abspath(root)
@@ -1339,6 +1618,27 @@ def main():
         "login_url": "/login",
         "admin_login_url": "/admin/login",
     }
+
+    # Initialize SQLite persistence under OS data dir
+    try:
+        data_dir = _get_data_dir()
+        DB_PATH = os.path.join(data_dir, 'aird.sqlite3')
+        db_exists = os.path.exists(DB_PATH)
+        print(f"SQLite database path: {DB_PATH}")
+        print(f"Database already exists: {'Yes' if db_exists else 'No (will be created)'}")
+        DB_CONN = sqlite3.connect(DB_PATH, check_same_thread=False)
+        _init_db(DB_CONN)
+        # Load persisted feature flags and merge
+        persisted_flags = _load_feature_flags(DB_CONN)
+        if persisted_flags:
+            for k, v in persisted_flags.items():
+                FEATURE_FLAGS[k] = bool(v)
+        # Load persisted shares
+        persisted_shares = _load_shares(DB_CONN)
+        if persisted_shares:
+            SHARES.update(persisted_shares)
+    except Exception:
+        DB_CONN = None
 
     # Print tokens when they were not explicitly provided, so users can log in
     if not token_provided_explicitly:
