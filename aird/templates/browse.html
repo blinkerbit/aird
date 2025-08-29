@@ -271,8 +271,9 @@
           </div>
         </div>
         <div>
+        <a href="/search?path={{ escape(current_path or '') }}" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;">🚀 Super Search</a>
         {% if features.get('file_share') %}
-        <a href="/share" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;">🔗 Share Files</a>
+        <a href="/share" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;margin-left:8px;">🔗 Share Files</a>
         {% end %}
         <a href="/logout" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;margin-left:8px;">↩ Logout</a>
         </div>

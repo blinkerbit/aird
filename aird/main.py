@@ -8,6 +8,9 @@ import asyncio
 import mmap
 import sys
 import sqlite3
+import fnmatch
+import glob
+import pathlib
 
 import tornado.ioloop
 import tornado.web
@@ -1513,6 +1516,298 @@ class SharedFileHandler(tornado.web.RequestHandler):
             return
 
 
+class SuperSearchHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        """Render the super search page"""
+        # Get the current path from query parameter
+        current_path = self.get_argument("path", "").strip()
+        # Ensure path is safe and within ROOT_DIR
+        if current_path:
+            current_path = current_path.strip('/')
+        self.render("super_search.html", current_path=current_path)
+
+
+class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
+    """WebSocket handler for streaming super search results"""
+    
+    def get_current_user(self) -> str | None:
+        return self.get_secure_cookie("user")
+
+    def check_origin(self, origin):
+        # Only allow connections from the same host
+        allowed_origins = [
+            f"http://{self.request.host}",
+            f"https://{self.request.host}",
+            "http://localhost:8000",
+            "http://127.0.0.1:8000"
+        ]
+        return origin in allowed_origins
+
+    def open(self):
+        if not self.current_user:
+            self.close()
+            return
+        self.search_cancelled = False
+
+    async def on_message(self, message):
+        """Handle search request from client"""
+        if self.search_cancelled:
+            return
+            
+        try:
+            data = json.loads(message)
+            pattern = data.get('pattern', '').strip()
+            search_text = data.get('search_text', '').strip()
+            
+            if not pattern or not search_text:
+                await self.write_message(json.dumps({
+                    'type': 'error',
+                    'message': 'Both pattern and search text are required'
+                }))
+                return
+                
+            # Start the search
+            await self.perform_search(pattern, search_text)
+            
+        except json.JSONDecodeError:
+            await self.write_message(json.dumps({
+                'type': 'error',
+                'message': 'Invalid JSON format'
+            }))
+        except Exception as e:
+            await self.write_message(json.dumps({
+                'type': 'error',
+                'message': f'Search error: {str(e)}'
+            }))
+
+    async def perform_search(self, pattern, search_text):
+        """Perform the super search and stream results"""
+        try:
+            # Send search start notification
+            await self.write_message(json.dumps({
+                'type': 'search_start',
+                'pattern': pattern,
+                'search_text': search_text
+            }))
+            
+            # Find matching files using glob pattern
+            matching_files = []
+            try:
+                # Normalize pattern to use platform-specific separators
+                normalized_pattern = pattern.replace('/', os.sep).replace('\\', os.sep)
+                
+                # Always search from ROOT_DIR - ensure pattern is relative to root
+                if os.path.isabs(normalized_pattern):
+                    # If absolute path provided, make it relative to ROOT_DIR
+                    try:
+                        normalized_pattern = os.path.relpath(normalized_pattern, ROOT_DIR)
+                    except ValueError:
+                        # If can't make relative (different drives on Windows), reject
+                        await self.write_message(json.dumps({
+                            'type': 'error',
+                            'message': 'Pattern must be within the server root directory'
+                        }))
+                        return
+                
+                # Strip leading separators to ensure relative path
+                normalized_pattern = normalized_pattern.lstrip(os.sep)
+                
+                # Construct search pattern relative to ROOT_DIR
+                search_pattern = os.path.join(ROOT_DIR, normalized_pattern)
+                
+                # Use pathlib for better cross-platform support
+                root_path = pathlib.Path(ROOT_DIR)
+                
+                # Use glob to find matching files
+                for file_path in glob.glob(search_pattern, recursive=True):
+                    if self.search_cancelled:
+                        return
+                    
+                    # Ensure file is within ROOT_DIR and is actually a file
+                    abs_path = os.path.abspath(file_path)
+                    path_obj = pathlib.Path(abs_path)
+                    
+                    # Security check: ensure the resolved path is within ROOT_DIR
+                    try:
+                        path_obj.relative_to(root_path)
+                    except ValueError:
+                        # Path is outside ROOT_DIR, skip it
+                        continue
+                    
+                    if path_obj.is_file():
+                        # Convert back to relative path for display using platform separators
+                        rel_path = os.path.relpath(abs_path, ROOT_DIR)
+                        matching_files.append((rel_path, abs_path))
+                        
+            except Exception as e:
+                await self.write_message(json.dumps({
+                    'type': 'error',
+                    'message': f'Pattern matching error: {str(e)}'
+                }))
+                return
+            
+            if not matching_files:
+                await self.write_message(json.dumps({
+                    'type': 'no_files',
+                    'message': f'No files found matching pattern: {pattern}'
+                }))
+                return
+            
+            # Search within each matching file
+            total_files = len(matching_files)
+            processed_files = 0
+            
+            for rel_path, abs_path in matching_files:
+                if self.search_cancelled:
+                    return
+                
+                processed_files += 1
+                
+                # Send file start notification
+                await self.write_message(json.dumps({
+                    'type': 'file_start',
+                    'file_path': rel_path,
+                    'progress': {'current': processed_files, 'total': total_files}
+                }))
+                
+                # Search within the file
+                try:
+                    await self.search_in_file(rel_path, abs_path, search_text)
+                except Exception as e:
+                    await self.write_message(json.dumps({
+                        'type': 'file_error',
+                        'file_path': rel_path,
+                        'message': f'Error searching in file: {str(e)}'
+                    }))
+                
+                # Send file end notification
+                await self.write_message(json.dumps({
+                    'type': 'file_end',
+                    'file_path': rel_path
+                }))
+                
+                # Allow other coroutines to run
+                await asyncio.sleep(0)
+            
+            # Send search completion
+            await self.write_message(json.dumps({
+                'type': 'search_complete',
+                'files_processed': processed_files
+            }))
+            
+        except Exception as e:
+            await self.write_message(json.dumps({
+                'type': 'error',
+                'message': f'Search failed: {str(e)}'
+            }))
+
+    async def search_in_file(self, rel_path, abs_path, search_text):
+        """Search for text within a single file and stream matches"""
+        try:
+            file_size = os.path.getsize(abs_path)
+            
+            # Use efficient search method based on file size
+            if MMapFileHandler.should_use_mmap(file_size):
+                await self.search_with_mmap(rel_path, abs_path, search_text)
+            else:
+                await self.search_traditional(rel_path, abs_path, search_text)
+                
+        except Exception as e:
+            await self.write_message(json.dumps({
+                'type': 'file_error',
+                'file_path': rel_path,
+                'message': f'Cannot read file: {str(e)}'
+            }))
+
+    async def search_with_mmap(self, rel_path, abs_path, search_text):
+        """Search using memory mapping for large files"""
+        try:
+            with open(abs_path, 'rb') as f:
+                with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                    current_pos = 0
+                    line_number = 1
+                    search_bytes = search_text.encode('utf-8')
+                    
+                    while current_pos < len(mm):
+                        if self.search_cancelled:
+                            return
+                        
+                        newline_pos = mm.find(b'\n', current_pos)
+                        if newline_pos == -1:
+                            # Last line
+                            line_bytes = mm[current_pos:]
+                            if search_bytes in line_bytes:
+                                line_content = line_bytes.decode('utf-8', errors='replace')
+                                await self.send_match(rel_path, line_number, line_content, search_text)
+                            break
+                        
+                        line_bytes = mm[current_pos:newline_pos]
+                        if search_bytes in line_bytes:
+                            line_content = line_bytes.decode('utf-8', errors='replace')
+                            await self.send_match(rel_path, line_number, line_content, search_text)
+                        
+                        current_pos = newline_pos + 1
+                        line_number += 1
+                        
+                        # Yield control periodically
+                        if line_number % 1000 == 0:
+                            await asyncio.sleep(0)
+                            
+        except (OSError, ValueError):
+            # Fallback to traditional search
+            await self.search_traditional(rel_path, abs_path, search_text)
+
+    async def search_traditional(self, rel_path, abs_path, search_text):
+        """Search using traditional file reading for small files"""
+        try:
+            with open(abs_path, 'r', encoding='utf-8', errors='replace') as f:
+                line_number = 1
+                for line in f:
+                    if self.search_cancelled:
+                        return
+                    
+                    if search_text in line:
+                        await self.send_match(rel_path, line_number, line.rstrip('\n'), search_text)
+                    
+                    line_number += 1
+                    
+                    # Yield control periodically
+                    if line_number % 1000 == 0:
+                        await asyncio.sleep(0)
+                        
+        except Exception as e:
+            await self.write_message(json.dumps({
+                'type': 'file_error',
+                'file_path': rel_path,
+                'message': f'Error reading file: {str(e)}'
+            }))
+
+    async def send_match(self, file_path, line_number, line_content, search_text):
+        """Send a match result to the client"""
+        # Find all match positions in the line
+        match_positions = []
+        start_pos = 0
+        while True:
+            pos = line_content.find(search_text, start_pos)
+            if pos == -1:
+                break
+            match_positions.append(pos)
+            start_pos = pos + 1
+        
+        await self.write_message(json.dumps({
+            'type': 'match',
+            'file_path': file_path,
+            'line_number': line_number,
+            'line_content': line_content,
+            'search_text': search_text,
+            'match_positions': match_positions
+        }))
+
+    def on_close(self):
+        self.search_cancelled = True
+
+
 def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
     settings["template_path"] = os.path.join(os.path.dirname(__file__), "templates")
     # Limit request size to avoid Tornado rejecting large uploads with
@@ -1547,6 +1842,8 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
         (r"/share/list", ShareListAPIHandler),
         (r"/shared/([A-Za-z0-9_\-]+)", SharedListHandler),
         (r"/shared/([A-Za-z0-9_\-]+)/file/(.*)", SharedFileHandler),
+        (r"/search", SuperSearchHandler),
+        (r"/search/ws", SuperSearchWebSocketHandler),
         (r"/files/(.*)", MainHandler),
     ], **settings)
 

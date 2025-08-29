@@ -1,5 +1,22 @@
 # Aird - A Lightweight Web-Based File Browser, Editor and Share.
-**v0.3.11** - Now with direct executable support and mmap optimizations!
+**v0.4.0** - 🚀 **NEW: Super Search + Direct Executable Support + mmap Optimizations!**
+
+## 🆕 What's New in v0.4.0
+
+### 🔍 **Super Search (NEW!)**
+- **Powerful File Content Search:** Search through file contents across your entire directory tree
+- **Real-time WebSocket Results:** Live search results as you type with instant feedback
+- **Advanced Pattern Matching:** Support for regex patterns and multiple search terms
+- **Path-aware Search:** Automatically filters results based on current directory context
+- **Performance Optimized:** Fast searching even in large codebases using memory-mapped operations
+
+### ⚡ **Performance & Usability Upgrades**
+- **Direct Executable:** Run with simple `aird` command instead of `python -m aird`
+- **50-80% Faster:** Memory-mapped file operations for massive performance gains
+- **Enhanced Security:** CSRF protection, XSS prevention, and improved input validation
+- **Memory Efficient:** Handle GB-sized files with constant ~64KB memory usage
+
+---
 
 Install using:
 ```bash
@@ -17,6 +34,15 @@ Aird is a modern, lightweight, and fast web-based file browser, editor, and stre
 <img width="1599" height="1126" alt="image" src="https://github.com/user-attachments/assets/1551cafc-1d6e-4668-86fb-b1acb5fdb7b2" />
 
 ## ✨ Features
+
+### 🔍 Super Search (NEW!)
+- **Powerful Content Search:** Search through file contents across your entire directory tree with real-time results
+- **WebSocket-powered:** Live search results as you type with instant feedback and progress indicators
+- **Advanced Pattern Matching:** Support for regex patterns, case-sensitive/insensitive search, and multiple search terms
+- **Path-aware Filtering:** Automatically filters results based on current directory context for focused searching
+- **Smart Result Display:** Shows matching lines with context, file paths, and line numbers for easy navigation
+- **Performance Optimized:** Fast searching even in large codebases using memory-mapped file operations
+- **Interactive Interface:** Click any result to instantly navigate to the file and line
 
 ### 🗂️ File Management
 - **Smart File Browser:** Navigate through your server's directory structure with resizable columns and mobile-friendly design
@@ -59,10 +85,12 @@ Aird is a modern, lightweight, and fast web-based file browser, editor, and stre
 
 ### 📱 Modern UI/UX
 - **Mobile-Responsive Design:** Optimized for smartphones and tablets with touch-friendly controls
+- **Real-time Search Interface:** Modern Super Search with live results and WebSocket updates
 - **Resizable Columns:** Customize the file browser layout to your preference
-- **Animated Indicators:** Visual feedback for streaming and loading operations
+- **Animated Indicators:** Visual feedback for streaming, searching, and loading operations
 - **Intuitive Interface:** Clean, minimalist design with well-organized toolbars
 - **Streaming Controls:** Dedicated streaming toolbar with configurable options (Last N lines, play/stop controls)
+- **Interactive Results:** Click-to-navigate search results with context highlighting
 - **Keyboard Shortcuts:** Efficient navigation and operations via keyboard
 - **Clean Layout:** Left-aligned file actions, right-aligned streaming controls for better organization
 
@@ -178,6 +206,36 @@ aird --enable-ldap \
 
 Users can authenticate with their LDAP credentials, with token authentication as fallback.
 
+### 🔍 Super Search
+
+The Super Search feature provides powerful, real-time content searching across your entire file system:
+
+1. **Access Super Search:**
+   - Click the "🚀 Super Search" button in the main file browser
+   - Or navigate directly to `/search` after logging in
+
+2. **Search Interface:**
+   - **Search Query:** Enter text, regex patterns, or multiple terms to find
+   - **Current Path:** Automatically set based on your current directory (can be modified)
+   - **Case Sensitive:** Toggle case-sensitive matching on/off
+   - **Max Results:** Limit the number of results to control performance
+
+3. **Real-time Results:**
+   - Results appear instantly as you type via WebSocket connection
+   - See matching lines with surrounding context for better understanding
+   - Click any result to navigate directly to the file and specific line
+   - Progress indicators show search status and completion
+
+4. **Advanced Features:**
+   - **Regex Support:** Use regular expressions for complex pattern matching
+   - **Path Filtering:** Search within specific directories or file types
+   - **Context Lines:** See surrounding lines for better match understanding
+   - **Performance Optimized:** Fast searching even in large codebases
+
+**Example URLs:**
+- Super Search page: `http://localhost:8888/search`
+- Search with preset path: `http://localhost:8888/search?path=/specific/folder`
+
 ### 🔗 File Sharing
 
 The file sharing feature allows you to create public, temporary links for files and directories:
@@ -229,6 +287,14 @@ The admin panel provides real-time control over server features and capabilities
 All changes apply immediately to all connected users via WebSocket updates.
 
 ## 🎯 Key Features in Detail
+
+### 🔍 Super Search (Latest Feature!)
+- **Content-based Search:** Find text within files across your entire directory structure
+- **Real-time Results:** Live search with WebSocket updates as you type
+- **Regex Support:** Advanced pattern matching with regular expressions
+- **Context Display:** See matching lines with surrounding context for better understanding
+- **Performance Optimized:** Memory-mapped operations for fast searching in large codebases
+- **Interactive Navigation:** Click any result to jump directly to the file and line
 
 ### 📝 In-Browser File Editing
 - **Real-time editing** with syntax highlighting
@@ -344,7 +410,7 @@ This project is licensed under a **Custom License** that prohibits commercial us
 
 ### 🔜 Upcoming Features
 - **File Previews:** In-browser previews for images, PDFs, and Markdown
-- **Search & Sort:** Advanced search functionality and sortable columns
+- **Enhanced Search:** Advanced search filters, file type filtering, and search history
 - **Multi-File Operations:** Batch actions for multiple files
 - **Theme Support:** Dark mode and customizable themes
 
