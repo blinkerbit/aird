@@ -31,6 +31,8 @@ setup(
         'tornado>=6.5.1',
         'ldap3>=2.9.1',
         'aiofiles>=23.0.0',
+        'aioquic>=0.9.20',
+        'cryptography>=3.4.8',
     ] + rust_dependencies,
     author='Viswantha Srinivas P',
     author_email='psviswanatha@gmail.com',  # Please fill this in

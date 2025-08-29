@@ -27,6 +27,18 @@ import tempfile
 from urllib.parse import unquote
 import aiofiles
 
+# Import QUIC server module
+try:
+    from .quic_server import create_quic_server, is_quic_available
+except (ImportError, ModuleNotFoundError):
+    try:
+        from quic_server import create_quic_server, is_quic_available
+    except (ImportError, ModuleNotFoundError):
+        def create_quic_server(*args, **kwargs):
+            return None
+        def is_quic_available():
+            return False
+
 # Import Rust integration with fallback
 try:
     from .rust_integration import (
@@ -1873,6 +1885,10 @@ def main():
     parser.add_argument("--ldap-server", help="LDAP server address")
     parser.add_argument("--ldap-base-dn", help="LDAP base DN for user search")
     parser.add_argument("--hostname", help="Host name for the server")
+    parser.add_argument("--enable-quic", action="store_true", help="Enable QUIC/HTTP3 protocol support")
+    parser.add_argument("--quic-port", type=int, help="Port for QUIC/HTTP3 server (default: 4433)")
+    parser.add_argument("--quic-cert", help="Path to SSL certificate file for QUIC")
+    parser.add_argument("--quic-key", help="Path to SSL private key file for QUIC")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
@@ -1896,6 +1912,12 @@ def main():
     ldap_server = args.ldap_server or config.get("ldap_server")
     ldap_base_dn = args.ldap_base_dn or config.get("ldap_base_dn")
     host_name = args.hostname or config.get("hostname") or socket.getfqdn()
+    
+    # QUIC configuration
+    quic_enabled = args.enable_quic or config.get("enable_quic", False)
+    quic_port = args.quic_port or config.get("quic_port", 4433)
+    quic_cert = args.quic_cert or config.get("quic_cert")
+    quic_key = args.quic_key or config.get("quic_key")
 
     if ldap_enabled and not (ldap_server and ldap_base_dn):
         print("Error: LDAP is enabled, but --ldap-server and --ldap-base-dn are not configured.")
@@ -1943,6 +1965,8 @@ def main():
     if not admin_token_provided_explicitly:
         print(f"Admin token (generated): {admin_token}")
     app = make_app(settings, ldap_enabled, ldap_server, ldap_base_dn)
+    
+    # Start HTTP server
     while True:
         try:
             app.listen(
@@ -1952,10 +1976,37 @@ def main():
             )
             print(f"Serving HTTP on 0.0.0.0 port {port} (http://0.0.0.0:{port}/) ...")
             print(f"http://{host_name}:{port}/")
-            tornado.ioloop.IOLoop.current().start()
             break
         except OSError:
             port += 1
+    
+    # Start QUIC server if enabled
+    quic_server = None
+    if quic_enabled:
+        if is_quic_available():
+            async def start_quic():
+                server = await create_quic_server(
+                    host="0.0.0.0",
+                    port=quic_port,
+                    cert_file=quic_cert,
+                    key_file=quic_key,
+                    tornado_app=app
+                )
+                if server:
+                    print(f"🚀 Serving HTTP/3 (QUIC) on 0.0.0.0 port {quic_port} (https://{host_name}:{quic_port}/) ...")
+                    print(f"🔒 QUIC protocol enabled for enhanced performance!")
+                else:
+                    print("❌ Failed to start QUIC server")
+                return server
+            
+            # Schedule QUIC server startup
+            tornado.ioloop.IOLoop.current().run_sync(start_quic)
+        else:
+            print("❌ QUIC support requested but aioquic library not available")
+            print("   Install with: pip install aioquic cryptography")
+    
+    # Start the event loop
+    tornado.ioloop.IOLoop.current().start()
     
 if __name__ == "__main__":
     main()

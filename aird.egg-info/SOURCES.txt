@@ -4,10 +4,12 @@ setup.py
 aird/__init__.py
 aird/__main__.py
 aird/main.py
+aird/rust_integration.py
 aird.egg-info/PKG-INFO
 aird.egg-info/SOURCES.txt
 aird.egg-info/dependency_links.txt
 aird.egg-info/entry_points.txt
+aird.egg-info/not-zip-safe
 aird.egg-info/requires.txt
 aird.egg-info/top_level.txt
 aird/templates/admin.html
@@ -20,6 +22,7 @@ aird/templates/file.html
 aird/templates/login.html
 aird/templates/share.html
 aird/templates/shared_list.html
+aird/templates/super_search.html
 tests/test_dos_large_file.py
 tests/test_path_traversal.py
 tests/test_websocket_origin.py

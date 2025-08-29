@@ -11,6 +11,7 @@
 - **Performance Optimized:** Fast searching even in large codebases using memory-mapped operations
 
 ### ⚡ **Performance & Usability Upgrades**
+- **🚀 QUIC Protocol Support:** HTTP/3 over QUIC for 0-RTT connections and enhanced performance
 - **Direct Executable:** Run with simple `aird` command instead of `python -m aird`
 - **50-80% Faster:** Memory-mapped file operations for massive performance gains
 - **Enhanced Security:** CSRF protection, XSS prevention, and improved input validation
@@ -159,6 +160,10 @@ Navigate to `http://localhost:8000` and enter your access token to start browsin
 | `--ldap`        | Enable LDAP authentication                          | `False`                               |
 | `--ldap-server` | The LDAP server address (required if --ldap)        | `None`                                |
 | `--ldap-base-dn`| The base DN for LDAP searches (required if --ldap)  | `None`                                |
+| `--enable-quic` | Enable QUIC/HTTP3 protocol support                  | `False`                               |
+| `--quic-port`   | Port for QUIC/HTTP3 server                          | `4433`                                |
+| `--quic-cert`   | Path to SSL certificate file for QUIC               | `None` (auto-generated)               |
+| `--quic-key`    | Path to SSL private key file for QUIC               | `None` (auto-generated)               |
 
 ### ⚙️ Configuration File
 
@@ -192,6 +197,53 @@ Run with configuration file:
 ```bash
 aird --config /path/to/config.json
 ```
+
+### 🚀 QUIC Protocol Support
+
+Aird supports the modern QUIC protocol (HTTP/3) for enhanced performance with features like 0-RTT connection establishment, improved multiplexing, and built-in encryption.
+
+#### **Enable QUIC Support**
+
+```bash
+# Basic QUIC setup with auto-generated certificates
+aird --enable-quic --port 8000 --quic-port 4433
+
+# QUIC with custom SSL certificates
+aird --enable-quic --quic-cert /path/to/cert.pem --quic-key /path/to/key.pem
+
+# Full example with both HTTP and QUIC
+aird --port 8000 --enable-quic --quic-port 4433 --token "my-token"
+```
+
+#### **QUIC Configuration in JSON**
+
+```json
+{
+  "host": "0.0.0.0",
+  "port": 8000,
+  "enable_quic": true,
+  "quic_port": 4433,
+  "quic_cert": "/path/to/certificate.pem",
+  "quic_key": "/path/to/private-key.pem",
+  "access_token": "your-token"
+}
+```
+
+#### **QUIC Benefits**
+- **Faster Connections:** 0-RTT connection establishment for returning clients
+- **Better Multiplexing:** No head-of-line blocking between HTTP streams
+- **Built-in Encryption:** TLS 1.3 is mandatory and integrated
+- **Connection Migration:** Seamlessly handle network changes
+- **Reduced Latency:** Combined transport and security handshake
+
+#### **Browser Support**
+Modern browsers support HTTP/3 over QUIC:
+- Chrome 87+ (enabled by default)
+- Firefox 88+ (enabled by default)
+- Safari 14+ (partial support)
+- Edge 87+ (enabled by default)
+
+**Note:** QUIC requires SSL certificates. If not provided, Aird will automatically generate self-signed certificates for development use.
 
 ### 🔐 LDAP Authentication
 
@@ -320,6 +372,7 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **Temporary access:** All shares are session-based and can be easily revoked
 
 ### 🚀 Performance Features (New in v0.4.0!)
+- **🔥 QUIC/HTTP3 Protocol:** Modern transport with 0-RTT connections, improved multiplexing, and built-in encryption
 - **Memory-mapped file operations:** Efficient handling of large files (>1MB) using mmap
 - **Enhanced security:** CSRF protection, XSS prevention, improved input validation
 - **Direct executable support:** Run with simple `aird` command instead of `python -m aird`
@@ -331,9 +384,10 @@ All changes apply immediately to all connected users via WebSocket updates.
 ## 📋 Requirements
 
 - **Python:** 3.10 or higher
-- **Dependencies:** Tornado, ldap3 (automatically installed)
+- **Dependencies:** Tornado, ldap3, aioquic, cryptography (automatically installed)
 - **Storage:** Minimal disk space for the application
-- **Network:** HTTP/HTTPS and WebSocket support
+- **Network:** HTTP/HTTPS, WebSocket, and optionally QUIC/HTTP3 support
+- **SSL:** For QUIC support, SSL certificates are required (auto-generated if not provided)
 
 ## 🤝 Contributing
 
