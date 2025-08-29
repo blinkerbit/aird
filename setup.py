@@ -32,6 +32,17 @@ setup(
         'ldap3>=2.9.1',
         'aiofiles>=23.0.0',
     ] + rust_dependencies,
+    extras_require={
+        'test': [
+            'pytest>=8.3.3',
+            'pytest-asyncio>=0.25.0',
+            'pytest-mock>=3.14.0',
+            'pytest-cov>=6.0.0',
+            'pytest-tornado>=0.8.1',
+            'coverage>=7.6.9',
+            'mock>=5.1.0',
+        ],
+    },
     author='Viswantha Srinivas P',
     author_email='psviswanatha@gmail.com',  # Please fill this in
     description='Aird - A lightweight web-based file browser, editor, and streamer with real-time capabilities',
