@@ -1,6 +1,8 @@
 # Aird - A Lightweight Web-Based File Browser, Editor and Share.
 **v0.4.0** - 🚀 **NEW: Super Search + Direct Executable Support + mmap Optimizations!**
 
+Note: Currently using this in conjunction to wireguard to handle file management and sharing for internal/private cloud. 
+
 ## 🆕 What's New in v0.4.0
 
 ### 🔍 **Super Search (NEW!)**
