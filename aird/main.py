@@ -392,8 +392,24 @@ def get_file_icon(filename):
         return "💻"
     elif ext in [".zip", ".rar"]:
         return "🗜️"
+    elif ext in [".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm", ".m4v"]:
+        return "🎬"
+    elif ext in [".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a"]:
+        return "🎵"
     else:
         return "📦"
+
+def is_video_file(filename):
+    """Check if file is a supported video format"""
+    ext = os.path.splitext(filename)[1].lower()
+    video_extensions = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.3gp', '.ogv'}
+    return ext in video_extensions
+
+def is_audio_file(filename):
+    """Check if file is a supported audio format"""
+    ext = os.path.splitext(filename)[1].lower()
+    audio_extensions = {'.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.wma'}
+    return ext in audio_extensions
 
 
 class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):

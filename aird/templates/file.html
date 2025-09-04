@@ -33,9 +33,39 @@
             border: 1px solid black;
             font-family: monospace;
             margin: 0;
+            position: relative;
         }
         .download-btn:hover, button:hover {
             background-color: #f0f0f0;
+        }
+        
+        /* Tooltip styles for icon buttons */
+        .download-btn[title]:hover::after, button[title]:hover::after {
+            content: attr(title);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            white-space: nowrap;
+            z-index: 1000;
+            margin-bottom: 5px;
+        }
+
+        .download-btn[title]:hover::before, button[title]:hover::before {
+            content: '';
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 4px solid transparent;
+            border-top-color: #333;
+            z-index: 1000;
+            margin-bottom: 1px;
         }
         .toolbar { 
             display: flex; 
@@ -63,6 +93,32 @@
             
             border-right: 1px solid #ccc;
             user-select: none;
+        }
+
+        /* Mobile responsive styles */
+        @media (max-width: 768px) {
+            .download-btn, button {
+                font-size: 14px;
+                padding: 8px 10px;
+                touch-action: manipulation;
+            }
+
+            .toolbar {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 15px;
+            }
+
+            .toolbar-left, .toolbar-right {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+
+            /* Increase tooltip size on mobile */
+            .download-btn[title]:hover::after, button[title]:hover::after {
+                font-size: 12px;
+                padding: 6px 10px;
+            }
         }
         table {
             border-collapse: collapse;
@@ -143,15 +199,15 @@
     <h2>{{ filename }}</h2>
         <div class="toolbar">
             <div class="toolbar-left">
-                <a href="/files/{{ path }}?download=1" class="download-btn" data-feature="file_download">Download</a>
-                <button id="copy-btn">Copy Content</button>
-                <button id="toggle-lines-btn">Hide Line Numbers</button>
-                <button id="edit-btn" data-feature="file_edit">Edit</button>
-                <button id="save-btn" style="display:none;">Save</button>
+                <a href="/files/{{ path }}?download=1" class="download-btn" data-feature="file_download">⬇️ Download</a>
+                <button id="copy-btn">📋 Copy Content</button>
+                <button id="toggle-lines-btn">🔢 Hide Line Numbers</button>
+                <button id="edit-btn" data-feature="file_edit">📝 Edit</button>
+                <button id="save-btn" style="display:none;">💾 Save</button>
             </div>
             <div class="toolbar-right">
                 <input type="text" id="last-n" inputmode="numeric" pattern="[0-9]*" placeholder="Last N (100)">
-                <button id="stream-btn">▶ Stream</button>
+                <button id="stream-btn">▶️ Stream</button>
                 <button id="stop-stream-btn" style="display:none;">⏹ Stop</button>
             </div>
         </div>
