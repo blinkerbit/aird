@@ -88,6 +88,17 @@
             font-family: monospace;
             font-size: 12px;
         }
+        
+        #stream-filter {
+            min-width: 150px;
+            margin-right: 8px;
+        }
+        
+        #stream-filter:focus {
+            border-color: #0066cc;
+            outline: none;
+            box-shadow: 0 0 5px rgba(0, 102, 204, 0.3);
+        }
         .line-numbers {
             text-align: right;
             
@@ -206,22 +217,38 @@
                 <button id="save-btn" style="display:none;">💾 Save</button>
             </div>
             <div class="toolbar-right">
+                <input type="text" id="stream-filter" placeholder="Filter: error OR warning AND user123" title="Complex filters: 'term1 AND term2', 'term1 OR term2', 'quoted phrases', (grouping)">
                 <input type="text" id="last-n" inputmode="numeric" pattern="[0-9]*" placeholder="Last N (100)">
                 <button id="stream-btn">▶️ Stream</button>
                 <button id="stop-stream-btn" style="display:none;">⏹ Stop</button>
             </div>
         </div>
 
+    <!-- Filter Help Section -->
+    <div id="filter-help" style="margin: 10px 0; padding: 8px; border: 1px solid #e0e0e0; background-color: #f8f8ff; border-radius: 4px; font-size: 11px; display: none;">
+        <strong>🔍 Filter Syntax Examples:</strong><br>
+        <code>error</code> - Simple text match<br>
+        <code>error OR warning</code> - Lines containing either term<br>
+        <code>user123 AND login</code> - Lines containing both terms<br>
+        <code>"exact phrase"</code> - Exact phrase matching (use quotes for literal OR/AND)<br>
+        <code>(error OR warning) AND critical</code> - Grouped conditions<br>
+        <code>failed AND (login OR auth)</code> - Complex combinations<br>
+        <strong>⚠️ Literal OR/AND:</strong><br>
+        <code>"ANDROID device"</code> - Use quotes to search for literal "AND"<br>
+        <code>\ANDROID</code> - Use backslash to escape logical operators
+    </div>
     
     <div style="margin: 10px 0; padding: 10px; border: 1px solid #ccc; background-color: #f9f9f9;">
         <label for="start">Start:</label>
         <input type="text" id="start" value="{{ start_line or 1 }}" style="width: 80px; margin-right: 10px;" title="Press Enter to submit">
         <label for="end">End:</label>
-        <input type="text" id="end" value="{{ end_line or 100 }}" style="width: 80px; margin-right: 10px;" title="Press Enter to submit">
+        <input type="text" id="end" value="{{ end_line or '' }}" placeholder="End line" style="width: 80px; margin-right: 10px;" title="Press Enter to submit">
         <button id="submit-btn">Submit</button>
-    <button id="show-all-btn">Show All</button>
+    <button id="show-all-btn">Fetch All Lines</button>
     {% if start_line and end_line %}
     <span style="margin-left: 10px; color: #0066cc;">Showing lines {{ start_line }} to {{ end_line }} ; reached EOF: {{ reached_EOF }}</span>
+    {% elif start_line %}
+    <span style="margin-left: 10px; color: #0066cc;">Showing entire file from line {{ start_line }} ; reached EOF: {{ reached_EOF }}</span>
     {% end %}
     </div>
     <hr>
@@ -383,10 +410,22 @@
 
     streamBtn.onclick = function() {
         let url = `ws://${window.location.host}/stream/{{ path }}`;
+        const params = new URLSearchParams();
+        
         const nVal = (lastNInput?.value || '').trim();
         if (nVal && /^\d+$/.test(nVal)) {
-            url += `?n=${nVal}`;
+            params.append('n', nVal);
         }
+        
+        const filterVal = (document.getElementById('stream-filter')?.value || '').trim();
+        if (filterVal) {
+            params.append('filter', filterVal);
+        }
+        
+        if (params.toString()) {
+            url += `?${params.toString()}`;
+        }
+        
         ws = new WebSocket(url);
         tableBody.innerHTML = '';
     lineCount = (parseInt('{{ start_line or 1 }}') - 1) || 0;
@@ -507,6 +546,35 @@
         lastNInput?.addEventListener('input', () => {
             lastNInput.value = lastNInput.value.replace(/[^0-9]/g, '');
         });
+        
+        // Add filter help functionality
+        const filterInput = document.getElementById('stream-filter');
+        const filterHelp = document.getElementById('filter-help');
+        
+        if (filterInput && filterHelp) {
+            // Show help on focus
+            filterInput.addEventListener('focus', function() {
+                filterHelp.style.display = 'block';
+            });
+            
+            // Hide help when clicking outside or when input becomes empty
+            filterInput.addEventListener('blur', function() {
+                setTimeout(() => {
+                    if (!filterInput.value.trim()) {
+                        filterHelp.style.display = 'none';
+                    }
+                }, 200);
+            });
+            
+            // Toggle help visibility based on input content
+            filterInput.addEventListener('input', function() {
+                if (this.value.trim()) {
+                    filterHelp.style.display = 'block';
+                } else {
+                    filterHelp.style.display = 'none';
+                }
+            });
+        }
         
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('stream')) {
