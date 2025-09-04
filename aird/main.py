@@ -30,6 +30,9 @@ import asyncio
 import concurrent.futures
 import re
 import shlex
+import time
+import threading
+import weakref
 
 # Import Rust integration with fallback
 try:
@@ -73,6 +76,16 @@ FEATURE_FLAGS = {
     "compression": True,  # ✅ NEW: Enable gzip compression
 }
 
+# WebSocket connection configuration
+WEBSOCKET_CONFIG = {
+    "feature_flags_max_connections": 50,
+    "feature_flags_idle_timeout": 600,  # 10 minutes
+    "file_streaming_max_connections": 200,
+    "file_streaming_idle_timeout": 300,  # 5 minutes
+    "search_max_connections": 100,
+    "search_idle_timeout": 180,  # 3 minutes
+}
+
 
 # Maximum upload size: 10 GB
 MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024
@@ -82,6 +95,139 @@ CHUNK_SIZE = 1024 * 64
 MMAP_MIN_SIZE = 1024 * 1024  # 1MB
 
 SHARES = {}
+
+class WebSocketConnectionManager:
+    """Base class for managing WebSocket connections with memory leak prevention"""
+    
+    def __init__(self, config_prefix: str, default_max_connections: int = 100, default_idle_timeout: int = 300):
+        self.connections: Set = set()
+        self.config_prefix = config_prefix
+        self.default_max_connections = default_max_connections
+        self.default_idle_timeout = default_idle_timeout
+        self.connection_times = weakref.WeakKeyDictionary()
+        self.last_activity = weakref.WeakKeyDictionary()
+        self._cleanup_lock = threading.Lock()
+        
+        # Start periodic cleanup
+        self._setup_cleanup_timer()
+    
+    @property
+    def max_connections(self) -> int:
+        """Get current max connections from configuration"""
+        config = get_current_websocket_config()
+        return config.get(f"{self.config_prefix}_max_connections", self.default_max_connections)
+    
+    @property
+    def idle_timeout(self) -> int:
+        """Get current idle timeout from configuration"""
+        config = get_current_websocket_config()
+        return config.get(f"{self.config_prefix}_idle_timeout", self.default_idle_timeout)
+    
+    def _setup_cleanup_timer(self):
+        """Setup periodic cleanup of dead and idle connections"""
+        def cleanup():
+            self.cleanup_dead_connections()
+            self.cleanup_idle_connections()
+            # Schedule next cleanup
+            tornado.ioloop.IOLoop.current().call_later(60, cleanup)
+        
+        # Start cleanup in 60 seconds
+        tornado.ioloop.IOLoop.current().call_later(60, cleanup)
+    
+    def add_connection(self, connection) -> bool:
+        """Add a connection if under limit. Returns True if added."""
+        with self._cleanup_lock:
+            if len(self.connections) >= self.max_connections:
+                return False
+            
+            self.connections.add(connection)
+            self.connection_times[connection] = time.time()
+            self.last_activity[connection] = time.time()
+            return True
+    
+    def remove_connection(self, connection):
+        """Remove a connection safely"""
+        with self._cleanup_lock:
+            self.connections.discard(connection)
+            self.connection_times.pop(connection, None)
+            self.last_activity.pop(connection, None)
+    
+    def update_activity(self, connection):
+        """Update last activity time for a connection"""
+        self.last_activity[connection] = time.time()
+    
+    def cleanup_dead_connections(self):
+        """Remove connections that can't receive messages"""
+        with self._cleanup_lock:
+            dead_connections = set()
+            for conn in list(self.connections):
+                try:
+                    # Try to ping the connection
+                    if hasattr(conn, 'ws_connection') and conn.ws_connection:
+                        conn.ping()
+                    else:
+                        # Connection is closed
+                        dead_connections.add(conn)
+                except Exception:
+                    dead_connections.add(conn)
+            
+            for conn in dead_connections:
+                self.remove_connection(conn)
+    
+    def cleanup_idle_connections(self):
+        """Remove connections that have been idle too long"""
+        with self._cleanup_lock:
+            current_time = time.time()
+            idle_connections = set()
+            
+            for conn in list(self.connections):
+                last_activity = self.last_activity.get(conn, 0)
+                if current_time - last_activity > self.idle_timeout:
+                    idle_connections.add(conn)
+            
+            for conn in idle_connections:
+                try:
+                    if hasattr(conn, 'close'):
+                        conn.close(code=1000, reason="Idle timeout")
+                except Exception:
+                    pass
+                self.remove_connection(conn)
+    
+    def get_stats(self) -> dict:
+        """Get connection statistics"""
+        with self._cleanup_lock:
+            current_time = time.time()
+            return {
+                'active_connections': len(self.connections),
+                'max_connections': self.max_connections,
+                'idle_timeout': self.idle_timeout,
+                'oldest_connection_age': max(
+                    (current_time - self.connection_times.get(conn, current_time) 
+                     for conn in self.connections), 
+                    default=0
+                ),
+                'average_connection_age': sum(
+                    current_time - self.connection_times.get(conn, current_time) 
+                    for conn in self.connections
+                ) / len(self.connections) if self.connections else 0
+            }
+    
+    def broadcast_message(self, message, filter_func=None):
+        """Broadcast message to all connections with optional filtering"""
+        with self._cleanup_lock:
+            dead_connections = set()
+            for conn in list(self.connections):
+                try:
+                    if filter_func is None or filter_func(conn):
+                        if hasattr(conn, 'write_message'):
+                            conn.write_message(message)
+                        self.update_activity(conn)
+                except Exception:
+                    dead_connections.add(conn)
+            
+            # Remove dead connections
+            for conn in dead_connections:
+                self.remove_connection(conn)
 
 class FilterExpression:
     """Parse and evaluate complex filter expressions with AND/OR logic"""
@@ -398,6 +544,28 @@ def _delete_share(conn: sqlite3.Connection, sid: str) -> None:
     except Exception:
         pass
 
+def _load_websocket_config(conn: sqlite3.Connection) -> dict:
+    """Load WebSocket configuration from SQLite database."""
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS websocket_config (key TEXT PRIMARY KEY, value INTEGER)")
+        rows = conn.execute("SELECT key, value FROM websocket_config").fetchall()
+        return {k: int(v) for (k, v) in rows}
+    except Exception:
+        return {}
+
+def _save_websocket_config(conn: sqlite3.Connection, config: dict) -> None:
+    """Save WebSocket configuration to SQLite database."""
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS websocket_config (key TEXT PRIMARY KEY, value INTEGER)")
+        with conn:
+            for key, value in config.items():
+                conn.execute(
+                    "INSERT OR REPLACE INTO websocket_config (key, value) VALUES (?, ?)",
+                    (key, int(value)),
+                )
+    except Exception:
+        pass
+
 def get_current_feature_flags() -> dict:
     """Return current feature flags with SQLite values taking precedence.
     Falls back to in-memory defaults if DB is unavailable.
@@ -410,6 +578,22 @@ def get_current_feature_flags() -> dict:
                 # Persisted values override runtime defaults
                 for k, v in persisted.items():
                     current[k] = bool(v)
+        except Exception:
+            pass
+    return current
+
+def get_current_websocket_config() -> dict:
+    """Return current WebSocket configuration with SQLite values taking precedence.
+    Falls back to in-memory defaults if DB is unavailable.
+    """
+    current = WEBSOCKET_CONFIG.copy()
+    if DB_CONN is not None:
+        try:
+            persisted = _load_websocket_config(DB_CONN)
+            if persisted:
+                # Persisted values override runtime defaults
+                for k, v in persisted.items():
+                    current[k] = int(v)
         except Exception:
             pass
     return current
@@ -643,16 +827,23 @@ def is_audio_file(filename):
 
 
 class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):
-    connections: Set['FeatureFlagSocketHandler'] = set()
+    # Use connection manager with configurable limits for feature flags
+    connection_manager = WebSocketConnectionManager("feature_flags", default_max_connections=50, default_idle_timeout=600)
 
     def open(self):
-        FeatureFlagSocketHandler.connections.add(self)
+        if not self.connection_manager.add_connection(self):
+            self.write_message(json.dumps({
+                'error': 'Connection limit exceeded. Please try again later.'
+            }))
+            self.close(code=1013, reason="Connection limit exceeded")
+            return
+            
         # Load current feature flags from SQLite and send to client
         current_flags = self._get_current_feature_flags()
         self.write_message(json.dumps(current_flags))
 
     def on_close(self):
-        FeatureFlagSocketHandler.connections.remove(self)
+        self.connection_manager.remove_connection(self)
 
     def check_origin(self, origin):
         # Only allow connections from the same host
@@ -684,9 +875,6 @@ class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):
     @classmethod
     def send_updates(cls):
         """Send feature flag updates to all connected clients, using SQLite data."""
-        if not cls.connections:
-            return
-
         # Get current flags from SQLite for consistency
         current_flags = {}
         if DB_CONN is not None:
@@ -703,13 +891,8 @@ class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):
         else:
             current_flags = FEATURE_FLAGS.copy()
 
-        # Send to all connected clients
-        for connection in cls.connections:
-            try:
-                connection.write_message(json.dumps(current_flags))
-            except Exception:
-                # Remove dead connections
-                cls.connections.discard(connection)
+        # Use connection manager to broadcast updates
+        cls.connection_manager.broadcast_message(json.dumps(current_flags))
 
 
 class BaseHandler(tornado.web.RequestHandler):
@@ -874,8 +1057,12 @@ class AdminHandler(BaseHandler):
         else:
             current_features = FEATURE_FLAGS.copy()
 
+        # Get current WebSocket configuration
+        current_websocket_config = get_current_websocket_config()
+        
         self.render("admin.html",
                    features=current_features,
+                   websocket_config=current_websocket_config,
                    rust_available=RUST_AVAILABLE,
                    rust_stats=rust_stats)
 
@@ -894,15 +1081,53 @@ class AdminHandler(BaseHandler):
         FEATURE_FLAGS["file_edit"] = self.get_argument("file_edit", "off") == "on"
         FEATURE_FLAGS["file_share"] = self.get_argument("file_share", "off") == "on"
         
-        # Persist feature flags
+        # Update WebSocket configuration
+        websocket_config = {}
+        try:
+            # Parse and validate WebSocket settings
+            websocket_config["feature_flags_max_connections"] = max(1, min(1000, int(self.get_argument("feature_flags_max_connections", "50"))))
+            websocket_config["feature_flags_idle_timeout"] = max(30, min(7200, int(self.get_argument("feature_flags_idle_timeout", "600"))))
+            websocket_config["file_streaming_max_connections"] = max(1, min(1000, int(self.get_argument("file_streaming_max_connections", "200"))))
+            websocket_config["file_streaming_idle_timeout"] = max(30, min(7200, int(self.get_argument("file_streaming_idle_timeout", "300"))))
+            websocket_config["search_max_connections"] = max(1, min(1000, int(self.get_argument("search_max_connections", "100"))))
+            websocket_config["search_idle_timeout"] = max(30, min(7200, int(self.get_argument("search_idle_timeout", "180"))))
+            
+            # Update in-memory configuration
+            WEBSOCKET_CONFIG.update(websocket_config)
+            
+        except (ValueError, TypeError):
+            # If parsing fails, use current values
+            pass
+        
+        # Persist both feature flags and WebSocket configuration
         try:
             if DB_CONN is not None:
                 _save_feature_flags(DB_CONN, FEATURE_FLAGS)
+                _save_websocket_config(DB_CONN, WEBSOCKET_CONFIG)
         except Exception:
             pass
 
         FeatureFlagSocketHandler.send_updates()
         self.redirect("/admin")
+
+class WebSocketStatsHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        """Return WebSocket connection statistics"""
+        if not self.get_current_admin():
+            self.set_status(403)
+            self.write("Forbidden")
+            return
+            
+        stats = {
+            'feature_flags': FeatureFlagSocketHandler.connection_manager.get_stats(),
+            'file_streaming': FileStreamHandler.connection_manager.get_stats(),
+            'super_search': SuperSearchWebSocketHandler.connection_manager.get_stats(),
+            'timestamp': time.time()
+        }
+        
+        self.set_header('Content-Type', 'application/json')
+        self.write(json.dumps(stats, indent=2))
 
 def get_relative_path(path, root):
     if path.startswith(root):
@@ -1215,6 +1440,9 @@ class MainHandler(BaseHandler):
 
 
 class FileStreamHandler(tornado.websocket.WebSocketHandler):
+    # Use connection manager with configurable limits for file streaming
+    connection_manager = WebSocketConnectionManager("file_streaming", default_max_connections=200, default_idle_timeout=300)
+    
     def get_current_user(self) -> str | None:
         return self.get_secure_cookie("user")
 
@@ -1231,6 +1459,11 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
     async def open(self, path):
         if not self.current_user:
             self.close()
+            return
+            
+        if not self.connection_manager.add_connection(self):
+            await self.write_message("Connection limit exceeded. Please try again later.")
+            self.close(code=1013, reason="Connection limit exceeded")
             return
 
         path = path.lstrip('/')
@@ -1300,12 +1533,15 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
             # Apply complex filter if specified
             if self.filter_expression is None or self.filter_expression.matches(line):
                 await self.write_message(line)
+                # Update activity for each message sent
+                self.connection_manager.update_activity(self)
             where = self.file.tell()
             line = self.file.readline()
         self.file.seek(where)
 
     def on_close(self):
         self.running = False
+        self.connection_manager.remove_connection(self)
         if hasattr(self, 'periodic'):
             self.periodic.stop()
         if hasattr(self, 'file'):
@@ -1842,6 +2078,9 @@ class SuperSearchHandler(BaseHandler):
 class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
     """WebSocket handler for streaming super search results"""
     
+    # Use connection manager with configurable limits for search operations
+    connection_manager = WebSocketConnectionManager("search", default_max_connections=100, default_idle_timeout=180)
+    
     def get_current_user(self) -> str | None:
         return self.get_secure_cookie("user")
 
@@ -1859,7 +2098,22 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
         if not self.current_user:
             self.close()
             return
+            
+        if not self.connection_manager.add_connection(self):
+            self.write_message(json.dumps({
+                'type': 'error',
+                'message': 'Connection limit exceeded. Please try again later.'
+            }))
+            self.close(code=1013, reason="Connection limit exceeded")
+            return
+            
         self.search_cancelled = False
+
+    async def write_message(self, message):
+        """Override write_message to track activity"""
+        result = await super().write_message(message)
+        self.connection_manager.update_activity(self)
+        return result
 
     async def on_message(self, message):
         """Handle search request from client"""
@@ -2134,6 +2388,7 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
 
     def on_close(self):
         self.search_cancelled = True
+        self.connection_manager.remove_connection(self)
 
 
 def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
@@ -2156,6 +2411,7 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
         (r"/logout", LogoutHandler),
         (r"/admin/login", AdminLoginHandler),
         (r"/admin", AdminHandler),
+        (r"/admin/websocket-stats", WebSocketStatsHandler),
         (r"/stream/(.*)", FileStreamHandler),
         (r"/features", FeatureFlagSocketHandler),
         (r"/upload", UploadHandler),
