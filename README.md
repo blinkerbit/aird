@@ -118,7 +118,11 @@ pip install aird
 
 3.  **Install dependencies:**
     ```bash
+    # For production use:
     pip install -r requirements.txt
+    
+    # For development (includes testing tools):
+    pip install -r requirements-dev.txt
     ```
 
 4.  **Install the package:**
@@ -356,6 +360,7 @@ cd aird
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
+pip install -r requirements-dev.txt  # Install development dependencies
 pip install -e .  # Install in development mode
 ```
 
