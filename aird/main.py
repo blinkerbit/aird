@@ -26,6 +26,13 @@ from io import BytesIO
 import tempfile
 from urllib.parse import unquote
 import aiofiles
+import asyncio
+import concurrent.futures
+import re
+import shlex
+import time
+import threading
+import weakref
 
 # Import Rust integration with fallback
 try:
@@ -69,6 +76,16 @@ FEATURE_FLAGS = {
     "compression": True,  # ✅ NEW: Enable gzip compression
 }
 
+# WebSocket connection configuration
+WEBSOCKET_CONFIG = {
+    "feature_flags_max_connections": 50,
+    "feature_flags_idle_timeout": 600,  # 10 minutes
+    "file_streaming_max_connections": 200,
+    "file_streaming_idle_timeout": 300,  # 5 minutes
+    "search_max_connections": 100,
+    "search_idle_timeout": 180,  # 3 minutes
+}
+
 
 # Maximum upload size: 10 GB
 MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024
@@ -78,6 +95,365 @@ CHUNK_SIZE = 1024 * 64
 MMAP_MIN_SIZE = 1024 * 1024  # 1MB
 
 SHARES = {}
+
+class WebSocketConnectionManager:
+    """Base class for managing WebSocket connections with memory leak prevention"""
+    
+    def __init__(self, config_prefix: str, default_max_connections: int = 100, default_idle_timeout: int = 300):
+        self.connections: Set = set()
+        self.config_prefix = config_prefix
+        self.default_max_connections = default_max_connections
+        self.default_idle_timeout = default_idle_timeout
+        self.connection_times = weakref.WeakKeyDictionary()
+        self.last_activity = weakref.WeakKeyDictionary()
+        self._cleanup_lock = threading.Lock()
+        
+        # Start periodic cleanup
+        self._setup_cleanup_timer()
+    
+    @property
+    def max_connections(self) -> int:
+        """Get current max connections from configuration"""
+        config = get_current_websocket_config()
+        return config.get(f"{self.config_prefix}_max_connections", self.default_max_connections)
+    
+    @property
+    def idle_timeout(self) -> int:
+        """Get current idle timeout from configuration"""
+        config = get_current_websocket_config()
+        return config.get(f"{self.config_prefix}_idle_timeout", self.default_idle_timeout)
+    
+    def _setup_cleanup_timer(self):
+        """Setup periodic cleanup of dead and idle connections"""
+        def cleanup():
+            self.cleanup_dead_connections()
+            self.cleanup_idle_connections()
+            # Schedule next cleanup
+            tornado.ioloop.IOLoop.current().call_later(60, cleanup)
+        
+        # Start cleanup in 60 seconds
+        tornado.ioloop.IOLoop.current().call_later(60, cleanup)
+    
+    def add_connection(self, connection) -> bool:
+        """Add a connection if under limit. Returns True if added."""
+        with self._cleanup_lock:
+            if len(self.connections) >= self.max_connections:
+                return False
+            
+            self.connections.add(connection)
+            self.connection_times[connection] = time.time()
+            self.last_activity[connection] = time.time()
+            return True
+    
+    def remove_connection(self, connection):
+        """Remove a connection safely"""
+        with self._cleanup_lock:
+            self.connections.discard(connection)
+            self.connection_times.pop(connection, None)
+            self.last_activity.pop(connection, None)
+    
+    def update_activity(self, connection):
+        """Update last activity time for a connection"""
+        self.last_activity[connection] = time.time()
+    
+    def cleanup_dead_connections(self):
+        """Remove connections that can't receive messages"""
+        with self._cleanup_lock:
+            dead_connections = set()
+            for conn in list(self.connections):
+                try:
+                    # Try to ping the connection
+                    if hasattr(conn, 'ws_connection') and conn.ws_connection:
+                        conn.ping()
+                    else:
+                        # Connection is closed
+                        dead_connections.add(conn)
+                except Exception:
+                    dead_connections.add(conn)
+            
+            for conn in dead_connections:
+                self.remove_connection(conn)
+    
+    def cleanup_idle_connections(self):
+        """Remove connections that have been idle too long"""
+        with self._cleanup_lock:
+            current_time = time.time()
+            idle_connections = set()
+            
+            for conn in list(self.connections):
+                last_activity = self.last_activity.get(conn, 0)
+                if current_time - last_activity > self.idle_timeout:
+                    idle_connections.add(conn)
+            
+            for conn in idle_connections:
+                try:
+                    if hasattr(conn, 'close'):
+                        conn.close(code=1000, reason="Idle timeout")
+                except Exception:
+                    pass
+                self.remove_connection(conn)
+    
+    def get_stats(self) -> dict:
+        """Get connection statistics"""
+        with self._cleanup_lock:
+            current_time = time.time()
+            return {
+                'active_connections': len(self.connections),
+                'max_connections': self.max_connections,
+                'idle_timeout': self.idle_timeout,
+                'oldest_connection_age': max(
+                    (current_time - self.connection_times.get(conn, current_time) 
+                     for conn in self.connections), 
+                    default=0
+                ),
+                'average_connection_age': sum(
+                    current_time - self.connection_times.get(conn, current_time) 
+                    for conn in self.connections
+                ) / len(self.connections) if self.connections else 0
+            }
+    
+    def broadcast_message(self, message, filter_func=None):
+        """Broadcast message to all connections with optional filtering"""
+        with self._cleanup_lock:
+            dead_connections = set()
+            for conn in list(self.connections):
+                try:
+                    if filter_func is None or filter_func(conn):
+                        if hasattr(conn, 'write_message'):
+                            conn.write_message(message)
+                        self.update_activity(conn)
+                except Exception:
+                    dead_connections.add(conn)
+            
+            # Remove dead connections
+            for conn in dead_connections:
+                self.remove_connection(conn)
+
+class FilterExpression:
+    """Parse and evaluate complex filter expressions with AND/OR logic"""
+    
+    def __init__(self, expression: str):
+        self.original_expression = expression
+        self.parsed_expression = self._parse(expression)
+    
+    def _parse(self, expression: str):
+        """Parse filter expression into evaluable structure"""
+        if not expression or not expression.strip():
+            return None
+            
+        expression = expression.strip()
+        
+        # Handle escaped expressions (prefix with backslash to force literal interpretation)
+        if expression.startswith('\\'):
+            return {'type': 'term', 'value': expression[1:].strip('"')}
+        
+        # Handle quoted expressions (always literal)
+        if ((expression.startswith('"') and expression.endswith('"')) or 
+            (expression.startswith("'") and expression.endswith("'"))):
+            return {'type': 'term', 'value': expression[1:-1]}
+        
+        # Check if this looks like a logical expression
+        # Use word boundary regex to detect standalone AND/OR operators
+        has_logical_operators = (
+            re.search(r'\bAND\b', expression, re.IGNORECASE) or
+            re.search(r'\bOR\b', expression, re.IGNORECASE)
+        )
+        
+        # Additional check: make sure these are actually surrounded by whitespace (logical operators)
+        if has_logical_operators:
+            # Verify these are standalone words, not part of other words
+            and_matches = list(re.finditer(r'\bAND\b', expression, re.IGNORECASE))
+            or_matches = list(re.finditer(r'\bOR\b', expression, re.IGNORECASE))
+            
+            has_logical_and = any(
+                self._is_standalone_operator_static(expression, match.start(), match.end())
+                for match in and_matches
+            )
+            has_logical_or = any(
+                self._is_standalone_operator_static(expression, match.start(), match.end())
+                for match in or_matches
+            )
+            
+            has_logical_operators = has_logical_and or has_logical_or
+        
+        if not has_logical_operators:
+            return {'type': 'term', 'value': expression.strip('"')}
+        
+        # Parse complex expressions
+        return self._parse_complex(expression)
+    
+    def _parse_complex(self, expression: str):
+        """Parse complex expressions with AND/OR and parentheses"""
+        try:
+            # Handle parentheses first by balancing them
+            expression = expression.strip()
+            
+            # If the entire expression is wrapped in parentheses, remove them
+            if expression.startswith('(') and expression.endswith(')'):
+                # Check if parentheses are balanced
+                if self._is_balanced_parentheses(expression):
+                    return self._parse_complex(expression[1:-1])
+            
+            # Find OR outside of parentheses (lower precedence)
+            or_parts = self._split_respecting_parentheses(expression, 'OR')
+            if len(or_parts) > 1:
+                return {
+                    'type': 'or',
+                    'operands': [self._parse_and_part(part.strip()) for part in or_parts]
+                }
+            
+            # If no OR, try AND
+            return self._parse_and_part(expression)
+            
+        except Exception:
+            # Fallback to simple term matching on parse error
+            return {'type': 'term', 'value': expression.strip('"')}
+    
+    def _parse_and_part(self, expression: str):
+        """Parse AND expressions"""
+        and_parts = self._split_respecting_parentheses(expression, 'AND')
+        if len(and_parts) > 1:
+            return {
+                'type': 'and',
+                'operands': [self._parse_term(part.strip()) for part in and_parts]
+            }
+        return self._parse_term(expression.strip())
+    
+    def _parse_term(self, term: str):
+        """Parse individual terms, handling quotes and parentheses"""
+        term = term.strip()
+        
+        # Handle parentheses
+        if term.startswith('(') and term.endswith(')'):
+            return self._parse_complex(term[1:-1])
+        
+        # Handle quoted terms
+        if (term.startswith('"') and term.endswith('"')) or (term.startswith("'") and term.endswith("'")):
+            return {'type': 'term', 'value': term[1:-1]}
+        
+        return {'type': 'term', 'value': term}
+    
+    def matches(self, line: str) -> bool:
+        """Evaluate if a line matches the filter expression"""
+        if self.parsed_expression is None:
+            return True
+        return self._evaluate(self.parsed_expression, line)
+    
+    def _evaluate(self, node, line: str) -> bool:
+        """Recursively evaluate parsed expression against line"""
+        if node['type'] == 'term':
+            return node['value'].lower() in line.lower()
+        elif node['type'] == 'and':
+            return all(self._evaluate(operand, line) for operand in node['operands'])
+        elif node['type'] == 'or':
+            return any(self._evaluate(operand, line) for operand in node['operands'])
+        return False
+    
+    def _split_respecting_parentheses(self, expression: str, operator: str):
+        """Split expression by operator while respecting parentheses and word boundaries"""
+        parts = []
+        current_part = ""
+        paren_depth = 0
+        in_quotes = False
+        quote_char = None
+        i = 0
+        
+        while i < len(expression):
+            char = expression[i]
+            
+            # Handle quotes
+            if char in ['"', "'"] and not in_quotes:
+                in_quotes = True
+                quote_char = char
+            elif char == quote_char and in_quotes:
+                in_quotes = False
+                quote_char = None
+            
+            # Skip everything inside quotes
+            if in_quotes:
+                current_part += char
+                i += 1
+                continue
+            
+            # Handle parentheses
+            if char == '(':
+                paren_depth += 1
+            elif char == ')':
+                paren_depth -= 1
+            
+            # Check for operator when we're at the top level
+            if paren_depth == 0:
+                # Check if we're at the start of the operator
+                remaining = expression[i:]
+                # Pattern: operator with word boundaries, possibly with whitespace
+                op_pattern = f'\\b{re.escape(operator)}\\b'
+                match = re.match(op_pattern, remaining, re.IGNORECASE)
+                if match:
+                    # Verify this is actually a logical operator by checking context
+                    operator_start = i
+                    operator_end = i + len(match.group(0))
+                    
+                    # Check if surrounded by whitespace or start/end of string
+                    before_ok = operator_start == 0 or expression[operator_start - 1].isspace()
+                    after_ok = operator_end >= len(expression) or expression[operator_end].isspace()
+                    
+                    if before_ok and after_ok:
+                        # Found operator at top level
+                        parts.append(current_part.strip())
+                        current_part = ""
+                        # Skip the operator and any following whitespace
+                        i = operator_end
+                        while i < len(expression) and expression[i].isspace():
+                            i += 1
+                        continue
+            
+            current_part += char
+            i += 1
+        
+        if current_part.strip():
+            parts.append(current_part.strip())
+        
+        return parts if len(parts) > 1 else [expression]
+    
+    
+    def _is_balanced_parentheses(self, expression: str):
+        """Check if parentheses are balanced"""
+        depth = 0
+        in_quotes = False
+        quote_char = None
+        
+        for char in expression:
+            if char in ['"', "'"] and not in_quotes:
+                in_quotes = True
+                quote_char = char
+            elif char == quote_char and in_quotes:
+                in_quotes = False
+                quote_char = None
+            elif not in_quotes:
+                if char == '(':
+                    depth += 1
+                elif char == ')':
+                    depth -= 1
+                    if depth < 0:
+                        return False
+        
+        return depth == 0
+    
+    def _is_standalone_operator(self, expression: str, start: int, end: int, operator: str):
+        """Check if AND/OR at this position is a standalone logical operator"""
+        return self._is_standalone_operator_static(expression, start, end)
+    
+    @staticmethod
+    def _is_standalone_operator_static(expression: str, start: int, end: int):
+        """Static version of _is_standalone_operator for use during parsing"""
+        # Check if surrounded by whitespace (indicating it's a logical operator)
+        before_space = start == 0 or expression[start - 1].isspace()
+        after_space = end >= len(expression) or expression[end].isspace()
+        
+        return before_space and after_space
+
+    def __str__(self):
+        return f"FilterExpression({self.original_expression})"
 
 # ------------------------
 # SQLite persistence layer
@@ -168,6 +544,28 @@ def _delete_share(conn: sqlite3.Connection, sid: str) -> None:
     except Exception:
         pass
 
+def _load_websocket_config(conn: sqlite3.Connection) -> dict:
+    """Load WebSocket configuration from SQLite database."""
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS websocket_config (key TEXT PRIMARY KEY, value INTEGER)")
+        rows = conn.execute("SELECT key, value FROM websocket_config").fetchall()
+        return {k: int(v) for (k, v) in rows}
+    except Exception:
+        return {}
+
+def _save_websocket_config(conn: sqlite3.Connection, config: dict) -> None:
+    """Save WebSocket configuration to SQLite database."""
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS websocket_config (key TEXT PRIMARY KEY, value INTEGER)")
+        with conn:
+            for key, value in config.items():
+                conn.execute(
+                    "INSERT OR REPLACE INTO websocket_config (key, value) VALUES (?, ?)",
+                    (key, int(value)),
+                )
+    except Exception:
+        pass
+
 def get_current_feature_flags() -> dict:
     """Return current feature flags with SQLite values taking precedence.
     Falls back to in-memory defaults if DB is unavailable.
@@ -180,6 +578,22 @@ def get_current_feature_flags() -> dict:
                 # Persisted values override runtime defaults
                 for k, v in persisted.items():
                     current[k] = bool(v)
+        except Exception:
+            pass
+    return current
+
+def get_current_websocket_config() -> dict:
+    """Return current WebSocket configuration with SQLite values taking precedence.
+    Falls back to in-memory defaults if DB is unavailable.
+    """
+    current = WEBSOCKET_CONFIG.copy()
+    if DB_CONN is not None:
+        try:
+            persisted = _load_websocket_config(DB_CONN)
+            if persisted:
+                # Persisted values override runtime defaults
+                for k, v in persisted.items():
+                    current[k] = int(v)
         except Exception:
             pass
     return current
@@ -392,21 +806,44 @@ def get_file_icon(filename):
         return "💻"
     elif ext in [".zip", ".rar"]:
         return "🗜️"
+    elif ext in [".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm", ".m4v"]:
+        return "🎬"
+    elif ext in [".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a"]:
+        return "🎵"
     else:
         return "📦"
 
+def is_video_file(filename):
+    """Check if file is a supported video format"""
+    ext = os.path.splitext(filename)[1].lower()
+    video_extensions = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.3gp', '.ogv'}
+    return ext in video_extensions
+
+def is_audio_file(filename):
+    """Check if file is a supported audio format"""
+    ext = os.path.splitext(filename)[1].lower()
+    audio_extensions = {'.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.wma'}
+    return ext in audio_extensions
+
 
 class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):
-    connections: Set['FeatureFlagSocketHandler'] = set()
+    # Use connection manager with configurable limits for feature flags
+    connection_manager = WebSocketConnectionManager("feature_flags", default_max_connections=50, default_idle_timeout=600)
 
     def open(self):
-        FeatureFlagSocketHandler.connections.add(self)
+        if not self.connection_manager.add_connection(self):
+            self.write_message(json.dumps({
+                'error': 'Connection limit exceeded. Please try again later.'
+            }))
+            self.close(code=1013, reason="Connection limit exceeded")
+            return
+            
         # Load current feature flags from SQLite and send to client
         current_flags = self._get_current_feature_flags()
         self.write_message(json.dumps(current_flags))
 
     def on_close(self):
-        FeatureFlagSocketHandler.connections.remove(self)
+        self.connection_manager.remove_connection(self)
 
     def check_origin(self, origin):
         # Only allow connections from the same host
@@ -438,9 +875,6 @@ class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):
     @classmethod
     def send_updates(cls):
         """Send feature flag updates to all connected clients, using SQLite data."""
-        if not cls.connections:
-            return
-
         # Get current flags from SQLite for consistency
         current_flags = {}
         if DB_CONN is not None:
@@ -457,13 +891,8 @@ class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):
         else:
             current_flags = FEATURE_FLAGS.copy()
 
-        # Send to all connected clients
-        for connection in cls.connections:
-            try:
-                connection.write_message(json.dumps(current_flags))
-            except Exception:
-                # Remove dead connections
-                cls.connections.discard(connection)
+        # Use connection manager to broadcast updates
+        cls.connection_manager.broadcast_message(json.dumps(current_flags))
 
 
 class BaseHandler(tornado.web.RequestHandler):
@@ -628,8 +1057,12 @@ class AdminHandler(BaseHandler):
         else:
             current_features = FEATURE_FLAGS.copy()
 
+        # Get current WebSocket configuration
+        current_websocket_config = get_current_websocket_config()
+        
         self.render("admin.html",
                    features=current_features,
+                   websocket_config=current_websocket_config,
                    rust_available=RUST_AVAILABLE,
                    rust_stats=rust_stats)
 
@@ -648,15 +1081,53 @@ class AdminHandler(BaseHandler):
         FEATURE_FLAGS["file_edit"] = self.get_argument("file_edit", "off") == "on"
         FEATURE_FLAGS["file_share"] = self.get_argument("file_share", "off") == "on"
         
-        # Persist feature flags
+        # Update WebSocket configuration
+        websocket_config = {}
+        try:
+            # Parse and validate WebSocket settings
+            websocket_config["feature_flags_max_connections"] = max(1, min(1000, int(self.get_argument("feature_flags_max_connections", "50"))))
+            websocket_config["feature_flags_idle_timeout"] = max(30, min(7200, int(self.get_argument("feature_flags_idle_timeout", "600"))))
+            websocket_config["file_streaming_max_connections"] = max(1, min(1000, int(self.get_argument("file_streaming_max_connections", "200"))))
+            websocket_config["file_streaming_idle_timeout"] = max(30, min(7200, int(self.get_argument("file_streaming_idle_timeout", "300"))))
+            websocket_config["search_max_connections"] = max(1, min(1000, int(self.get_argument("search_max_connections", "100"))))
+            websocket_config["search_idle_timeout"] = max(30, min(7200, int(self.get_argument("search_idle_timeout", "180"))))
+            
+            # Update in-memory configuration
+            WEBSOCKET_CONFIG.update(websocket_config)
+            
+        except (ValueError, TypeError):
+            # If parsing fails, use current values
+            pass
+        
+        # Persist both feature flags and WebSocket configuration
         try:
             if DB_CONN is not None:
                 _save_feature_flags(DB_CONN, FEATURE_FLAGS)
+                _save_websocket_config(DB_CONN, WEBSOCKET_CONFIG)
         except Exception:
             pass
 
         FeatureFlagSocketHandler.send_updates()
         self.redirect("/admin")
+
+class WebSocketStatsHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        """Return WebSocket connection statistics"""
+        if not self.get_current_admin():
+            self.set_status(403)
+            self.write("Forbidden")
+            return
+            
+        stats = {
+            'feature_flags': FeatureFlagSocketHandler.connection_manager.get_stats(),
+            'file_streaming': FileStreamHandler.connection_manager.get_stats(),
+            'super_search': SuperSearchWebSocketHandler.connection_manager.get_stats(),
+            'timestamp': time.time()
+        }
+        
+        self.set_header('Content-Type', 'application/json')
+        self.write(json.dumps(stats, indent=2))
 
 def get_relative_path(path, root):
     if path.startswith(root):
@@ -733,21 +1204,35 @@ class MainHandler(BaseHandler):
                         # Use Rust-optimized compression when available
                         if RUST_AVAILABLE and HybridCompressionHandler:
                             try:
-                                with open(abspath, 'rb') as f:
-                                    file_data = f.read()
-                                compressed_data = HybridCompressionHandler.compress_data(file_data, level=6)
+                                # Use async file reading to avoid blocking
+                                async with aiofiles.open(abspath, 'rb') as f:
+                                    file_data = await f.read()
+                                # Compression happens in thread pool to avoid blocking
+                                import concurrent.futures
+                                with concurrent.futures.ThreadPoolExecutor() as executor:
+                                    compressed_data = await asyncio.get_event_loop().run_in_executor(
+                                        executor, lambda: HybridCompressionHandler.compress_data(file_data, level=6)
+                                    )
                                 self.write(compressed_data)
                                 await self.flush()
                                 return
                             except Exception as e:
                                 logger.warning(f"Rust compression failed, using Python fallback: {e}")
                         
-                        # Fallback to Python gzip compression
-                        buffer = BytesIO()
-                        with open(abspath, 'rb') as f_in, gzip.GzipFile(fileobj=buffer, mode='wb') as f_out:
-                            shutil.copyfileobj(f_in, f_out)
+                        # Fallback to Python gzip compression with async I/O
+                        def compress_file():
+                            buffer = BytesIO()
+                            with open(abspath, 'rb') as f_in, gzip.GzipFile(fileobj=buffer, mode='wb') as f_out:
+                                shutil.copyfileobj(f_in, f_out)
+                            return buffer.getvalue()
+                        
+                        import concurrent.futures
+                        with concurrent.futures.ThreadPoolExecutor() as executor:
+                            compressed_data = await asyncio.get_event_loop().run_in_executor(
+                                executor, compress_file
+                            )
 
-                        self.write(buffer.getvalue())
+                        self.write(compressed_data)
                         await self.flush()
                         return
 
@@ -766,16 +1251,27 @@ class MainHandler(BaseHandler):
             # File viewing (stream/filter/text)
             start_streaming = self.get_argument('stream', None) is not None
             if start_streaming:
+                # Get filter parameter for HTTP streaming (supports complex expressions)
+                filter_expr = self.get_argument('filter', None)
+                filter_expression = None
+                if filter_expr:
+                    filter_expr = filter_expr.strip()
+                    if filter_expr:
+                        filter_expression = FilterExpression(filter_expr)
+                
                 self.set_header('Content-Type', 'text/plain; charset=utf-8')
-                self.write(f"Streaming file: {filename}\n\n")
+                filter_msg = f" (filtered by '{filter_expr}')" if filter_expr else ""
+                self.write(f"Streaming file: {filename}{filter_msg}\n\n")
                 await self.flush()
-                # Stream line-by-line as soon as it's read
-                with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
-                    for raw in f:
+                # Stream line-by-line using async file I/O
+                async with aiofiles.open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+                    async for raw in f:
                         # Avoid double spacing: strip one trailing newline and let browser render line breaks
                         line = raw[:-1] if raw.endswith('\n') else raw
-                        self.write(line + '\n')
-                        await self.flush()
+                        # Apply complex filter if specified
+                        if filter_expression is None or filter_expression.matches(line):
+                            self.write(line + '\n')
+                            await self.flush()
                 return
 
             filter_substring = self.get_argument('filter', None)
@@ -792,13 +1288,18 @@ class MainHandler(BaseHandler):
             if start_line < 1:
                 start_line = 1
 
-            try:
-                end_line = int(end_line) if end_line is not None else 100
-            except ValueError:
-                end_line = 100
+            # If no end_line is specified, show the entire file (None means no limit)
+            # Only default to 100 if end_line is explicitly provided but invalid
+            if end_line is not None:
+                try:
+                    end_line = int(end_line)
+                except ValueError:
+                    end_line = 100
+            else:
+                end_line = None  # No limit - show entire file
             
-            # Ensure start_line <= end_line
-            if start_line > end_line:
+            # Ensure start_line <= end_line (only if end_line is specified)
+            if end_line is not None and start_line > end_line:
                 start_line = end_line
             
             # Use mmap for efficient large file viewing
@@ -827,7 +1328,7 @@ class MainHandler(BaseHandler):
                                         line_bytes = mm[current_pos:len(mm)]
                                         line = line_bytes.decode('utf-8', errors='replace')
                                         total_lines += 1
-                                        if start_line <= total_lines <= end_line:
+                                        if total_lines >= start_line and (end_line is None or total_lines <= end_line):
                                             if not filter_substring or filter_substring in line:
                                                 if filter_substring:
                                                     display_index += 1
@@ -845,7 +1346,7 @@ class MainHandler(BaseHandler):
                                 
                                 if total_lines < start_line:
                                     continue
-                                if total_lines > end_line:
+                                if end_line is not None and total_lines > end_line:
                                     break
                                     
                                 if not filter_substring or filter_substring in line:
@@ -864,7 +1365,7 @@ class MainHandler(BaseHandler):
                             total_lines += 1
                             if total_lines < start_line:
                                 continue
-                            if total_lines > end_line:
+                            if end_line is not None and total_lines > end_line:
                                 break
                             if filter_substring:
                                 if filter_substring in line:
@@ -890,7 +1391,7 @@ class MainHandler(BaseHandler):
                         total_lines += 1
                         if total_lines < start_line:
                             continue
-                        if total_lines > end_line:
+                        if end_line is not None and total_lines > end_line:
                             break
                         if filter_substring:
                             if filter_substring in line:
@@ -939,6 +1440,9 @@ class MainHandler(BaseHandler):
 
 
 class FileStreamHandler(tornado.websocket.WebSocketHandler):
+    # Use connection manager with configurable limits for file streaming
+    connection_manager = WebSocketConnectionManager("file_streaming", default_max_connections=200, default_idle_timeout=300)
+    
     def get_current_user(self) -> str | None:
         return self.get_secure_cookie("user")
 
@@ -956,6 +1460,11 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
         if not self.current_user:
             self.close()
             return
+            
+        if not self.connection_manager.add_connection(self):
+            await self.write_message("Connection limit exceeded. Please try again later.")
+            self.close(code=1013, reason="Connection limit exceeded")
+            return
 
         path = path.lstrip('/')
         self.file_path = os.path.abspath(os.path.join(ROOT_DIR, path))
@@ -968,21 +1477,42 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
                 self.tail_n = 100
         except Exception:
             self.tail_n = 100
+            
+        # Filter expression for line filtering (supports AND/OR logic)
+        filter_expr = self.get_query_argument('filter', default=None)
+        if filter_expr:
+            filter_expr = filter_expr.strip()
+            if filter_expr:
+                self.filter_expression = FilterExpression(filter_expr)
+            else:
+                self.filter_expression = None
+        else:
+            self.filter_expression = None
         if not os.path.isfile(self.file_path):
             await self.write_message(f"File not found: {self.file_path}")
             self.close()
             return
 
         try:
-            with open(self.file_path, 'r', encoding='utf-8', errors='replace') as f:
-                last_n_lines = deque(f, self.tail_n)
+            # Use async file reading to avoid blocking event loop
+            async with aiofiles.open(self.file_path, 'r', encoding='utf-8', errors='replace') as f:
+                last_n_lines = deque()
+                async for line in f:
+                    last_n_lines.append(line)
+                    if len(last_n_lines) > self.tail_n:
+                        last_n_lines.popleft()
             if last_n_lines:
                 for line in last_n_lines:
-                    await self.write_message(line)
+                    # Apply complex filter if specified
+                    if self.filter_expression is None or self.filter_expression.matches(line):
+                        await self.write_message(line)
         except Exception as e:
             await self.write_message(f"Error reading file history: {e}")
 
         try:
+            # Note: For continuous file monitoring, we still need regular file operations
+            # as aiofiles doesn't support continuous monitoring well
+            # This is kept synchronous but runs infrequently (every 100ms)
             self.file = open(self.file_path, 'r', encoding='utf-8', errors='replace')
             self.file.seek(0, os.SEEK_END)
         except Exception as e:
@@ -1000,13 +1530,18 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
         where = self.file.tell()
         line = self.file.readline()
         while line:
-            await self.write_message(line)
+            # Apply complex filter if specified
+            if self.filter_expression is None or self.filter_expression.matches(line):
+                await self.write_message(line)
+                # Update activity for each message sent
+                self.connection_manager.update_activity(self)
             where = self.file.tell()
             line = self.file.readline()
         self.file.seek(where)
 
     def on_close(self):
         self.running = False
+        self.connection_manager.remove_connection(self)
         if hasattr(self, 'periodic'):
             self.periodic.stop()
         if hasattr(self, 'file'):
@@ -1299,7 +1834,7 @@ class EditHandler(BaseHandler):
 
 class EditViewHandler(BaseHandler):
     @tornado.web.authenticated
-    def get(self, path):
+    async def get(self, path):
         if not is_feature_enabled("file_edit", True):
             self.set_status(403)
             self.write("File editing is disabled.")
@@ -1327,19 +1862,31 @@ class EditViewHandler(BaseHandler):
 
         filename = os.path.basename(abspath)
         
-        # Use optimized file loading (sync version for template rendering)
+        # Use async file loading to prevent blocking event loop
         try:
             file_size = os.path.getsize(abspath)
             if MMapFileHandler.should_use_mmap(file_size):
-                with open(abspath, 'rb') as f:
-                    with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-                        full_file_content = mm[:].decode('utf-8', errors='replace')
+                # For large files, still use mmap but in a thread to avoid blocking
+                import asyncio
+                import concurrent.futures
+                
+                def read_mmap():
+                    with open(abspath, 'rb') as f:
+                        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                            return mm[:].decode('utf-8', errors='replace')
+                
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    full_file_content = await asyncio.get_event_loop().run_in_executor(
+                        executor, read_mmap
+                    )
             else:
-                with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
-                    full_file_content = f.read()
+                # Use aiofiles for small files
+                async with aiofiles.open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+                    full_file_content = await f.read()
         except (OSError, UnicodeDecodeError):
-            with open(abspath, 'r', encoding='utf-8', errors='replace') as f:
-                full_file_content = f.read()
+            # Fallback to async read
+            async with aiofiles.open(abspath, 'r', encoding='utf-8', errors='replace') as f:
+                full_file_content = await f.read()
                 
         total_lines = full_file_content.count('\n') + 1 if full_file_content else 0
 
@@ -1498,12 +2045,12 @@ class SharedFileHandler(tornado.web.RequestHandler):
             self.write("File not found")
             return
         self.set_header('Content-Type', 'text/plain; charset=utf-8')
-        # Stream in chunks to avoid loading entire file into memory
+        # Stream in chunks using async I/O to avoid blocking event loop
         try:
-            # Prefer binary read and decode per chunk to preserve memory
-            with open(abspath, 'rb') as f:
+            # Use aiofiles for async binary reading
+            async with aiofiles.open(abspath, 'rb') as f:
                 while True:
-                    chunk = f.read(CHUNK_SIZE)
+                    chunk = await f.read(CHUNK_SIZE)
                     if not chunk:
                         break
                     # Decode chunk safely and write
@@ -1531,6 +2078,9 @@ class SuperSearchHandler(BaseHandler):
 class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
     """WebSocket handler for streaming super search results"""
     
+    # Use connection manager with configurable limits for search operations
+    connection_manager = WebSocketConnectionManager("search", default_max_connections=100, default_idle_timeout=180)
+    
     def get_current_user(self) -> str | None:
         return self.get_secure_cookie("user")
 
@@ -1548,7 +2098,22 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
         if not self.current_user:
             self.close()
             return
+            
+        if not self.connection_manager.add_connection(self):
+            self.write_message(json.dumps({
+                'type': 'error',
+                'message': 'Connection limit exceeded. Please try again later.'
+            }))
+            self.close(code=1013, reason="Connection limit exceeded")
+            return
+            
         self.search_cancelled = False
+
+    async def write_message(self, message):
+        """Override write_message to track activity"""
+        result = await super().write_message(message)
+        self.connection_manager.update_activity(self)
+        return result
 
     async def on_message(self, message):
         """Handle search request from client"""
@@ -1723,56 +2288,73 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
     async def search_with_mmap(self, rel_path, abs_path, search_text):
         """Search using memory mapping for large files"""
         try:
-            with open(abs_path, 'rb') as f:
-                with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-                    current_pos = 0
-                    line_number = 1
-                    search_bytes = search_text.encode('utf-8')
-                    
-                    while current_pos < len(mm):
-                        if self.search_cancelled:
-                            return
+            # Use thread pool for mmap operations to avoid blocking
+            import concurrent.futures
+            
+            def search_mmap():
+                matches = []
+                filter_expression = FilterExpression(search_text)
+                with open(abs_path, 'rb') as f:
+                    with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                        current_pos = 0
+                        line_number = 1
                         
-                        newline_pos = mm.find(b'\n', current_pos)
-                        if newline_pos == -1:
-                            # Last line
-                            line_bytes = mm[current_pos:]
-                            if search_bytes in line_bytes:
+                        while current_pos < len(mm):
+                            if self.search_cancelled:
+                                return matches
+                            
+                            newline_pos = mm.find(b'\n', current_pos)
+                            if newline_pos == -1:
+                                # Last line
+                                line_bytes = mm[current_pos:]
                                 line_content = line_bytes.decode('utf-8', errors='replace')
-                                await self.send_match(rel_path, line_number, line_content, search_text)
-                            break
-                        
-                        line_bytes = mm[current_pos:newline_pos]
-                        if search_bytes in line_bytes:
+                                if filter_expression.matches(line_content):
+                                    matches.append((line_number, line_content))
+                                break
+                            
+                            line_bytes = mm[current_pos:newline_pos]
                             line_content = line_bytes.decode('utf-8', errors='replace')
-                            await self.send_match(rel_path, line_number, line_content, search_text)
-                        
-                        current_pos = newline_pos + 1
-                        line_number += 1
-                        
-                        # Yield control periodically
-                        if line_number % 1000 == 0:
-                            await asyncio.sleep(0)
+                            if filter_expression.matches(line_content):
+                                matches.append((line_number, line_content))
+                            
+                            current_pos = newline_pos + 1
+                            line_number += 1
+                return matches
+            
+            # Run mmap search in thread pool
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                matches = await asyncio.get_event_loop().run_in_executor(executor, search_mmap)
+            
+            # Send matches asynchronously
+            for line_number, line_content in matches:
+                if self.search_cancelled:
+                    break
+                await self.send_match(rel_path, line_number, line_content, search_text)
+                # Yield control between sends
+                if line_number % 100 == 0:
+                    await asyncio.sleep(0)
                             
         except (OSError, ValueError):
             # Fallback to traditional search
             await self.search_traditional(rel_path, abs_path, search_text)
 
     async def search_traditional(self, rel_path, abs_path, search_text):
-        """Search using traditional file reading for small files"""
+        """Search using async file reading for small files"""
         try:
-            with open(abs_path, 'r', encoding='utf-8', errors='replace') as f:
+            # Use aiofiles for non-blocking file reading with complex filtering
+            filter_expression = FilterExpression(search_text)
+            async with aiofiles.open(abs_path, 'r', encoding='utf-8', errors='replace') as f:
                 line_number = 1
-                for line in f:
+                async for line in f:
                     if self.search_cancelled:
                         return
                     
-                    if search_text in line:
+                    if filter_expression.matches(line):
                         await self.send_match(rel_path, line_number, line.rstrip('\n'), search_text)
                     
                     line_number += 1
                     
-                    # Yield control periodically
+                    # Yield control periodically to prevent blocking
                     if line_number % 1000 == 0:
                         await asyncio.sleep(0)
                         
@@ -1806,6 +2388,7 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
 
     def on_close(self):
         self.search_cancelled = True
+        self.connection_manager.remove_connection(self)
 
 
 def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
@@ -1828,6 +2411,7 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
         (r"/logout", LogoutHandler),
         (r"/admin/login", AdminLoginHandler),
         (r"/admin", AdminHandler),
+        (r"/admin/websocket-stats", WebSocketStatsHandler),
         (r"/stream/(.*)", FileStreamHandler),
         (r"/features", FeatureFlagSocketHandler),
         (r"/upload", UploadHandler),

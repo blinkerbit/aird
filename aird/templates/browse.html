@@ -165,15 +165,48 @@
         color: black;
         text-decoration: none;
         margin-right: 1px;
-        font-size: 11px;
-        padding: 2px 6px;
+        font-size: 14px;
+        padding: 4px 6px;
         border: 1px solid #ccc;
         background: #f9f9f9;
+        display: inline-block;
+        min-width: 24px;
+        text-align: center;
+        position: relative;
       }
 
       .action-link:hover {
         background: #e9e9e9;
         text-decoration: none;
+      }
+
+      /* Tooltip styles for icon buttons */
+      .action-link[title]:hover::after {
+        content: attr(title);
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #333;
+        color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        white-space: nowrap;
+        z-index: 1000;
+        margin-bottom: 5px;
+      }
+
+      .action-link[title]:hover::before {
+        content: '';
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        border: 4px solid transparent;
+        border-top-color: #333;
+        z-index: 1000;
+        margin-bottom: 1px;
       }
 
       .sort-header {
@@ -197,6 +230,21 @@
         .file-table td {
           display: block;
           width: 100%;
+        }
+
+        /* Mobile-friendly action buttons */
+        .action-link {
+          font-size: 16px;
+          padding: 6px 8px;
+          margin-right: 4px;
+          min-width: 32px;
+          touch-action: manipulation;
+        }
+
+        /* Increase tooltip size on mobile */
+        .action-link[title]:hover::after {
+          font-size: 12px;
+          padding: 6px 10px;
         }
 
         .file-table tr {
@@ -359,13 +407,15 @@
                 <a
                   href="/files/{{ escape(join_path(current_path, file['name'])) }}?download=1"
                   class="action-link"
-                  >Download</a>
+                  title="Download"
+                  >⬇️</a>
                 {% end %}
                 {% if features['file_edit'] %}
                 <a
                   href="/edit/{{ escape(join_path(current_path, file['name'])) }}"
                   class="action-link"
-                  >Edit</a>
+                  title="Edit"
+                  >📝</a>
                 {% end %}
               {% end %}
               {% if features['file_rename'] %}
@@ -373,14 +423,16 @@
                 href="#"
                 onclick="renameItem('{{ escape(join_path(current_path, file['name'])) }}')"
                 class="action-link"
-                >Rename</a>
+                title="Rename"
+                >✏️</a>
               {% end %}
               {% if features['file_delete'] %}
               <a
                 href="#"
                 onclick="deleteItem('{{ escape(join_path(current_path, file['name'])) }}')"
                 class="action-link"
-                >Delete</a>
+                title="Delete"
+                >🗑️</a>
               {% end %}
             </td>
           </tr>
