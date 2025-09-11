@@ -532,6 +532,12 @@
       });
     }
 
+    // CSRF Protection: Get XSRF token from cookie
+    function getXSRFToken() {
+      const match = document.cookie.match(/_xsrf=([^;]*)/);
+      return match ? decodeURIComponent(match[1]) : '';
+    }
+
     async function generateShareLink() {
       if (selectedFiles.size === 0) return;
 
@@ -541,7 +547,10 @@
       try {
         const response = await fetch('/share/create', {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
+          headers: {
+            'Content-Type': 'application/json',
+            'X-XSRFToken': getXSRFToken()
+          },
           body: JSON.stringify({paths: Array.from(selectedFiles)})
         });
 
@@ -676,6 +685,9 @@
         formData.append('id', shareId);
         await fetch('/share/revoke', {
           method: 'POST',
+          headers: {
+            'X-XSRFToken': getXSRFToken()
+          },
           body: formData
         });
         

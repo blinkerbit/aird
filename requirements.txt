@@ -1,4 +1,6 @@
-# Production dependencies
-tornado>=6.5.1
-ldap3>=2.9.1
-aiofiles>=23.0.0
+pip==25.1.1
+setuptools==80.3.1
+tornado==6.5.1
+wheel==0.45.1
+ldap3==2.9.1
+aiofiles==23.0.0

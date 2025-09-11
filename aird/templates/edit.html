@@ -122,13 +122,23 @@
         }
       });
 
+      // CSRF Protection: Get XSRF token from cookie
+      function getXSRFToken() {
+        const match = document.cookie.match(/_xsrf=([^;]*)/);
+        return match ? decodeURIComponent(match[1]) : '';
+      }
+
       async function save() {
         saveBtn.disabled = true;
         setStatus('Saving...');
         try {
           const res = await fetch('/edit', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json', 
+              'Accept': 'application/json',
+              'X-XSRFToken': getXSRFToken()
+            },
             body: JSON.stringify({ path, content: editor.value })
           });
           if (!res.ok) {

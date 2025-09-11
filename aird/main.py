@@ -959,12 +959,18 @@ class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):
         self.connection_manager.remove_connection(self)
 
     def check_origin(self, origin):
-        # Only allow connections from the same host
+        # Only allow connections from the same host for security
+        host = self.request.host
+        port = self.request.host.split(':')[1] if ':' in self.request.host else '80'
+        
         allowed_origins = [
-            f"http://{self.request.host}",
-            f"https://{self.request.host}",
-            "http://localhost:8000",
-            "http://127.0.0.1:8000"
+            f"http://{host}",
+            f"https://{host}",
+            f"http://localhost:{port}",
+            f"http://127.0.0.1:{port}",
+            # Also allow standard localhost variants for development
+            "http://localhost",
+            "http://127.0.0.1"
         ]
         return origin in allowed_origins
 
@@ -1560,12 +1566,18 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
         return self.get_secure_cookie("user")
 
     def check_origin(self, origin):
-        # Only allow connections from the same host
+        # Only allow connections from the same host for security
+        host = self.request.host
+        port = self.request.host.split(':')[1] if ':' in self.request.host else '80'
+        
         allowed_origins = [
-            f"http://{self.request.host}",
-            f"https://{self.request.host}",
-            "http://localhost:8000",
-            "http://127.0.0.1:8000"
+            f"http://{host}",
+            f"https://{host}",
+            f"http://localhost:{port}",
+            f"http://127.0.0.1:{port}",
+            # Also allow standard localhost variants for development
+            "http://localhost",
+            "http://127.0.0.1"
         ]
         return origin in allowed_origins
 
@@ -2198,12 +2210,18 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
         return self.get_secure_cookie("user")
 
     def check_origin(self, origin):
-        # Only allow connections from the same host
+        # Only allow connections from the same host for security
+        host = self.request.host
+        port = self.request.host.split(':')[1] if ':' in self.request.host else '80'
+        
         allowed_origins = [
-            f"http://{self.request.host}",
-            f"https://{self.request.host}",
-            "http://localhost:8000",
-            "http://127.0.0.1:8000"
+            f"http://{host}",
+            f"https://{host}",
+            f"http://localhost:{port}",
+            f"http://127.0.0.1:{port}",
+            # Also allow standard localhost variants for development
+            "http://localhost",
+            "http://127.0.0.1"
         ]
         return origin in allowed_origins
 

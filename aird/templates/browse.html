@@ -579,6 +579,12 @@
         }, RELOAD_DELAY_MS);
       }
 
+      // CSRF Protection: Get XSRF token from cookie
+      function getXSRFToken() {
+        const match = document.cookie.match(/_xsrf=([^;]*)/);
+        return match ? decodeURIComponent(match[1]) : '';
+      }
+
       function formatBytes(bytes) {
         const units = ["B", "KB", "MB", "GB", "TB"];
         let i = 0;
@@ -636,6 +642,11 @@
           xhr.setRequestHeader("X-Upload-Dir", encodeURIComponent('{{ current_path or "" }}'));
           xhr.setRequestHeader("X-Upload-Filename", encodeURIComponent(item.file.name));
           xhr.setRequestHeader("Content-Type", "application/octet-stream");
+          // CSRF Protection
+          const xsrfToken = getXSRFToken();
+          if (xsrfToken) {
+            xhr.setRequestHeader("X-XSRFToken", xsrfToken);
+          }
 
           xhr.send(item.file);
         });
@@ -652,6 +663,7 @@
           method: "POST",
           headers: {
             "Content-Type": "application/x-www-form-urlencoded",
+            "X-XSRFToken": getXSRFToken(),
           },
           body: formData.toString(),
         })
@@ -674,6 +686,7 @@
           method: "POST",
           headers: {
             "Content-Type": "application/x-www-form-urlencoded",
+            "X-XSRFToken": getXSRFToken(),
           },
           body: formData.toString(),
         })

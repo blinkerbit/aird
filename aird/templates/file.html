@@ -386,12 +386,19 @@
         window.location.href = `/edit/{{ path }}`;
     };
 
+    // CSRF Protection: Get XSRF token from cookie
+    function getXSRFToken() {
+        const match = document.cookie.match(/_xsrf=([^;]*)/);
+        return match ? decodeURIComponent(match[1]) : '';
+    }
+
     saveBtn.onclick = function() {
         const content = editor.value;
         fetch('/edit', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
+                'X-XSRFToken': getXSRFToken(),
             },
             body: `path={{ path }}&content=${encodeURIComponent(content)}`
         })
