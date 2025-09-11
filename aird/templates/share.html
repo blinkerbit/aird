@@ -301,13 +301,84 @@
 
     function getFileIcon(filename) {
       const ext = filename.toLowerCase().split('.').pop();
+      const lowerFilename = filename.toLowerCase();
+      
+      // Special files by name
+      if (['readme', 'readme.md', 'readme.txt'].includes(lowerFilename)) return '📖';
+      if (['license', 'licence', 'copying'].includes(lowerFilename)) return '📜';
+      if (['makefile', 'cmake', 'cmakelists.txt'].includes(lowerFilename)) return '🔨';
+      if (['dockerfile', 'docker-compose.yml', 'docker-compose.yaml'].includes(lowerFilename)) return '🐳';
+      if (['.gitignore', '.gitattributes', '.gitmodules'].includes(lowerFilename)) return '🔧';
+      if (lowerFilename.startsWith('.env')) return '🔐';
+      
       const iconMap = {
-        'txt': '📄', 'md': '📄', 'doc': '📄', 'docx': '📄', 'rtf': '📄',
-        'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'svg': '🖼️', 'bmp': '🖼️', 'webp': '🖼️',
-        'py': '💻', 'js': '💻', 'html': '💻', 'css': '💻', 'java': '💻', 'cpp': '💻', 'c': '💻', 'php': '💻',
-        'zip': '🗜️', 'rar': '🗜️', 'tar': '🗜️', 'gz': '🗜️', '7z': '🗜️',
-        'pdf': '📕', 'mp4': '🎬', 'avi': '🎬', 'mkv': '🎬', 'mp3': '🎵', 'wav': '🎵', 'flac': '🎵'
+        // Document files
+        'txt': '📄', 'md': '📄', 'rst': '📄', 'text': '📄',
+        'doc': '📝', 'docx': '📝', 'rtf': '📝', 'odt': '📝',
+        'pdf': '📕',
+        'xls': '📊', 'xlsx': '📊', 'ods': '📊', 'csv': '📊',
+        'ppt': '📋', 'pptx': '📋', 'odp': '📋',
+        
+        // Image files
+        'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'bmp': '🖼️', 'webp': '🖼️', 'tiff': '🖼️', 'tif': '🖼️',
+        'svg': '🎨', 'ico': '🎨',
+        'psd': '🎭', 'ai': '🎭', 'sketch': '🎭',
+        
+        // Programming files
+        'py': '🐍', 'pyw': '🐍', 'pyc': '🐍', 'pyo': '🐍',
+        'js': '🟨', 'jsx': '🟨', 'ts': '🟨', 'tsx': '🟨', 'mjs': '🟨',
+        'java': '☕', 'class': '☕', 'jar': '☕',
+        'cpp': '⚙️', 'cxx': '⚙️', 'cc': '⚙️', 'c': '⚙️', 'h': '⚙️', 'hpp': '⚙️',
+        'cs': '🔷', 'vb': '🔷', 'fs': '🔷',
+        'php': '🐘', 'phtml': '🐘',
+        'rb': '💎', 'rake': '💎', 'gem': '💎',
+        'go': '🐹',
+        'rs': '🦀',
+        'swift': '🦉',
+        'kt': '🟣', 'kts': '🟣',
+        'scala': '🔴',
+        'r': '📊', 'rmd': '📊',
+        'm': '🍎', 'mm': '🍎',
+        'pl': '🐪', 'pm': '🐪',
+        'sh': '📟', 'bash': '📟', 'zsh': '📟', 'fish': '📟', 'bat': '📟', 'cmd': '📟', 'ps1': '📟',
+        'lua': '🌙',
+        'dart': '🎯',
+        
+        // Web files
+        'html': '🌐', 'htm': '🌐', 'xhtml': '🌐',
+        'css': '🎨', 'scss': '🎨', 'sass': '🎨', 'less': '🎨',
+        'xml': '📰', 'xsl': '📰', 'xsd': '📰',
+        'json': '📋', 'jsonl': '📋',
+        'yaml': '📄', 'yml': '📄',
+        'toml': '⚙️', 'ini': '⚙️', 'cfg': '⚙️', 'conf': '⚙️',
+        
+        // Archive files
+        'zip': '🗜️', 'rar': '🗜️', '7z': '🗜️', 'tar': '🗜️', 'gz': '🗜️', 'bz2': '🗜️', 'xz': '🗜️', 'lz': '🗜️', 'lzma': '🗜️',
+        'deb': '📦', 'rpm': '📦', 'pkg': '📦', 'dmg': '📦', 'msi': '📦', 'exe': '📦',
+        
+        // Video files
+        'mp4': '🎬', 'avi': '🎬', 'mkv': '🎬', 'mov': '🎬', 'wmv': '🎬', 'flv': '🎬', 'webm': '🎬', 'm4v': '🎬', '3gp': '🎬', 'ogv': '🎬', 'mpg': '🎬', 'mpeg': '🎬',
+        
+        // Audio files
+        'mp3': '🎵', 'wav': '🎵', 'flac': '🎵', 'aac': '🎵', 'ogg': '🎵', 'm4a': '🎵', 'wma': '🎵', 'opus': '🎵', 'aiff': '🎵',
+        
+        // Font files
+        'ttf': '🔤', 'otf': '🔤', 'woff': '🔤', 'woff2': '🔤', 'eot': '🔤',
+        
+        // Database files
+        'db': '🗃️', 'sqlite': '🗃️', 'sqlite3': '🗃️', 'mdb': '🗃️', 'accdb': '🗃️',
+        
+        // Log files
+        'log': '📜', 'out': '📜', 'err': '📜',
+        
+        // Data files
+        'sql': '🗄️',
+        'parquet': '📊', 'avro': '📊', 'orc': '📊',
+        
+        // Notebook files
+        'ipynb': '📓'
       };
+      
       return iconMap[ext] || '📦';
     }
 

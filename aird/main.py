@@ -798,18 +798,131 @@ def get_files_in_directory(path="."):
 
 def get_file_icon(filename):
     ext = os.path.splitext(filename)[1].lower()
-    if ext in [".txt", ".md"]:
+    
+    # Special files by name (check first before extension)
+    if filename.lower() in ["readme", "readme.md", "readme.txt"]:
+        return "📖"
+    elif filename.lower() in ["license", "licence", "copying"]:
+        return "📜"
+    elif filename.lower() in ["makefile", "cmake", "cmakelists.txt"]:
+        return "🔨"
+    elif filename.lower() in ["dockerfile", "docker-compose.yml", "docker-compose.yaml"]:
+        return "🐳"
+    elif filename.lower() in [".gitignore", ".gitattributes", ".gitmodules"]:
+        return "🔧"
+    elif filename.startswith(".env"):
+        return "🔐"
+    
+    # Document files
+    elif ext in [".txt", ".md", ".rst", ".text"]:
         return "📄"
-    elif ext in [".jpg", ".jpeg", ".png", ".gif"]:
+    elif ext in [".doc", ".docx", ".rtf", ".odt"]:
+        return "📝"
+    elif ext in [".pdf"]:
+        return "📕"
+    elif ext in [".xls", ".xlsx", ".ods", ".csv"]:
+        return "📊"
+    elif ext in [".ppt", ".pptx", ".odp"]:
+        return "📋"
+    
+    # Image files
+    elif ext in [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"]:
         return "🖼️"
-    elif ext in [".py", ".js", ".java", ".cpp"]:
-        return "💻"
-    elif ext in [".zip", ".rar"]:
+    elif ext in [".svg", ".ico"]:
+        return "🎨"
+    elif ext in [".psd", ".ai", ".sketch"]:
+        return "🎭"
+    
+    # Programming files
+    elif ext in [".py", ".pyw", ".pyc", ".pyo"]:
+        return "🐍"
+    elif ext in [".js", ".jsx", ".ts", ".tsx", ".mjs"]:
+        return "🟨"
+    elif ext in [".java", ".class", ".jar"]:
+        return "☕"
+    elif ext in [".cpp", ".cxx", ".cc", ".c", ".h", ".hpp"]:
+        return "⚙️"
+    elif ext in [".cs", ".vb", ".fs"]:
+        return "🔷"
+    elif ext in [".php", ".phtml"]:
+        return "🐘"
+    elif ext in [".rb", ".rake", ".gem"]:
+        return "💎"
+    elif ext in [".go"]:
+        return "🐹"
+    elif ext in [".rs"]:
+        return "🦀"
+    elif ext in [".swift"]:
+        return "🦉"
+    elif ext in [".kt", ".kts"]:
+        return "🟣"
+    elif ext in [".scala"]:
+        return "🔴"
+    elif ext in [".r", ".rmd"]:
+        return "📊"
+    elif ext in [".m", ".mm"]:
+        return "🍎"
+    elif ext in [".pl", ".pm"]:
+        return "🐪"
+    elif ext in [".sh", ".bash", ".zsh", ".fish", ".bat", ".cmd", ".ps1"]:
+        return "📟"
+    elif ext in [".lua"]:
+        return "🌙"
+    elif ext in [".dart"]:
+        return "🎯"
+    
+    # Web files
+    elif ext in [".html", ".htm", ".xhtml"]:
+        return "🌐"
+    elif ext in [".css", ".scss", ".sass", ".less"]:
+        return "🎨"
+    elif ext in [".xml", ".xsl", ".xsd"]:
+        return "📰"
+    elif ext in [".json", ".jsonl"]:
+        return "📋"
+    elif ext in [".yaml", ".yml"]:
+        return "📄"
+    elif ext in [".toml", ".ini", ".cfg", ".conf"]:
+        return "⚙️"
+    
+    # Archive files
+    elif ext in [".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".lz", ".lzma"]:
         return "🗜️"
-    elif ext in [".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm", ".m4v"]:
+    elif ext in [".deb", ".rpm", ".pkg", ".dmg", ".msi", ".exe"]:
+        return "📦"
+    
+    # Video files
+    elif ext in [".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm", ".m4v", ".3gp", ".ogv", ".mpg", ".mpeg"]:
         return "🎬"
-    elif ext in [".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a"]:
+    
+    # Audio files
+    elif ext in [".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma", ".opus", ".aiff"]:
         return "🎵"
+    
+    # Font files
+    elif ext in [".ttf", ".otf", ".woff", ".woff2", ".eot"]:
+        return "🔤"
+    
+    # Database files
+    elif ext in [".db", ".sqlite", ".sqlite3", ".mdb", ".accdb"]:
+        return "🗃️"
+    
+    # Log files
+    elif ext in [".log", ".out", ".err"]:
+        return "📜"
+    
+    # Data files
+    elif ext in [".sql"]:
+        return "🗄️"
+    elif ext in [".parquet", ".avro", ".orc"]:
+        return "📊"
+    
+    # Notebook files
+    elif ext in [".ipynb"]:
+        return "📓"
+    
+    
+    # Default
     else:
         return "📦"
 
