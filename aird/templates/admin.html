@@ -76,6 +76,14 @@
                 <input type="checkbox" name="file_share" {% if features.get('file_share') %}checked{% end %}>
                 Enable File Share
             </label><br>
+            <label>
+                <input type="checkbox" name="super_search" {% if features.get('super_search') %}checked{% end %}>
+                Enable Super Search
+            </label><br>
+            <label>
+                <input type="checkbox" name="compression" {% if features.get('compression') %}checked{% end %}>
+                Enable Gzip Compression
+            </label><br>
         </div>
 
         <div class="section">

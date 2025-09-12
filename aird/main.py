@@ -74,6 +74,7 @@ FEATURE_FLAGS = {
     "file_edit": True,
     "file_share": True,
     "compression": True,  # ✅ NEW: Enable gzip compression
+    "super_search": True,  # ✅ NEW: Enable super search functionality
 }
 
 # WebSocket connection configuration
@@ -1187,7 +1188,6 @@ class AdminHandler(BaseHandler):
 
     @tornado.web.authenticated
     def post(self):
-        FEATURE_FLAGS["compression"] = self.get_argument("compression", "off") == "on"
         if not self.get_current_admin():
             self.set_status(403)
             self.write("Forbidden")
@@ -1199,6 +1199,8 @@ class AdminHandler(BaseHandler):
         FEATURE_FLAGS["file_download"] = self.get_argument("file_download", "off") == "on"
         FEATURE_FLAGS["file_edit"] = self.get_argument("file_edit", "off") == "on"
         FEATURE_FLAGS["file_share"] = self.get_argument("file_share", "off") == "on"
+        FEATURE_FLAGS["super_search"] = self.get_argument("super_search", "off") == "on"
+        FEATURE_FLAGS["compression"] = self.get_argument("compression", "off") == "on"
         
         # Update WebSocket configuration
         websocket_config = {}
@@ -1587,7 +1589,7 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
             return
             
         if not self.connection_manager.add_connection(self):
-            await self.write_message("Connection limit exceeded. Please try again later.")
+            self.write_message("Connection limit exceeded. Please try again later.")
             self.close(code=1013, reason="Connection limit exceeded")
             return
 
@@ -1614,7 +1616,7 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
         else:
             self.filter_expression = None
         if not os.path.isfile(self.file_path):
-            await self.write_message(f"File not found: {self.file_path}")
+            self.write_message(f"File not found: {self.file_path}")
             self.close()
             return
 
@@ -1630,9 +1632,9 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
                 for line in last_n_lines:
                     # Apply complex filter if specified
                     if self.filter_expression is None or self.filter_expression.matches(line):
-                        await self.write_message(line)
+                        self.write_message(line)
         except Exception as e:
-            await self.write_message(f"Error reading file history: {e}")
+            self.write_message(f"Error reading file history: {e}")
 
         try:
             # Note: For continuous file monitoring, we still need regular file operations
@@ -1641,7 +1643,7 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
             self.file = open(self.file_path, 'r', encoding='utf-8', errors='replace')
             self.file.seek(0, os.SEEK_END)
         except Exception as e:
-            await self.write_message(f"Error opening file for streaming: {e}")
+            self.write_message(f"Error opening file for streaming: {e}")
             self.close()
             return
         self.loop = tornado.ioloop.IOLoop.current()
@@ -1657,7 +1659,7 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
         while line:
             # Apply complex filter if specified
             if self.filter_expression is None or self.filter_expression.matches(line):
-                await self.write_message(line)
+                self.write_message(line)
                 # Update activity for each message sent
                 self.connection_manager.update_activity(self)
             where = self.file.tell()
@@ -2192,6 +2194,12 @@ class SuperSearchHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
         """Render the super search page"""
+        # Check if super search is enabled
+        if not is_feature_enabled("super_search"):
+            self.set_status(403)
+            self.write("Super search is disabled.")
+            return
+            
         # Get the current path from query parameter
         current_path = self.get_argument("path", "").strip()
         # Ensure path is safe and within ROOT_DIR
@@ -2230,6 +2238,15 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
             self.close()
             return
             
+        # Check if super search is enabled
+        if not is_feature_enabled("super_search"):
+            self.write_message(json.dumps({
+                'type': 'error',
+                'message': 'Super search is disabled.'
+            }))
+            self.close(code=1011, reason="Super search disabled")
+            return
+            
         if not self.connection_manager.add_connection(self):
             self.write_message(json.dumps({
                 'type': 'error',
@@ -2240,9 +2257,9 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
             
         self.search_cancelled = False
 
-    async def write_message(self, message):
+    def write_message(self, message):
         """Override write_message to track activity"""
-        result = await super().write_message(message)
+        result = super().write_message(message)
         self.connection_manager.update_activity(self)
         return result
 
@@ -2251,13 +2268,21 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
         if self.search_cancelled:
             return
             
+        # Double-check that super search is still enabled
+        if not is_feature_enabled("super_search"):
+            self.write_message(json.dumps({
+                'type': 'error',
+                'message': 'Super search has been disabled.'
+            }))
+            return
+            
         try:
             data = json.loads(message)
             pattern = data.get('pattern', '').strip()
             search_text = data.get('search_text', '').strip()
             
             if not pattern or not search_text:
-                await self.write_message(json.dumps({
+                self.write_message(json.dumps({
                     'type': 'error',
                     'message': 'Both pattern and search text are required'
                 }))
@@ -2267,12 +2292,12 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
             await self.perform_search(pattern, search_text)
             
         except json.JSONDecodeError:
-            await self.write_message(json.dumps({
+            self.write_message(json.dumps({
                 'type': 'error',
                 'message': 'Invalid JSON format'
             }))
         except Exception as e:
-            await self.write_message(json.dumps({
+            self.write_message(json.dumps({
                 'type': 'error',
                 'message': f'Search error: {str(e)}'
             }))
@@ -2281,7 +2306,7 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
         """Perform the super search and stream results"""
         try:
             # Send search start notification
-            await self.write_message(json.dumps({
+            self.write_message(json.dumps({
                 'type': 'search_start',
                 'pattern': pattern,
                 'search_text': search_text
@@ -2300,7 +2325,7 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
                         normalized_pattern = os.path.relpath(normalized_pattern, ROOT_DIR)
                     except ValueError:
                         # If can't make relative (different drives on Windows), reject
-                        await self.write_message(json.dumps({
+                        self.write_message(json.dumps({
                             'type': 'error',
                             'message': 'Pattern must be within the server root directory'
                         }))
@@ -2337,14 +2362,14 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
                         matching_files.append((rel_path, abs_path))
                         
             except Exception as e:
-                await self.write_message(json.dumps({
+                self.write_message(json.dumps({
                     'type': 'error',
                     'message': f'Pattern matching error: {str(e)}'
                 }))
                 return
             
             if not matching_files:
-                await self.write_message(json.dumps({
+                self.write_message(json.dumps({
                     'type': 'no_files',
                     'message': f'No files found matching pattern: {pattern}'
                 }))
@@ -2361,7 +2386,7 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
                 processed_files += 1
                 
                 # Send file start notification
-                await self.write_message(json.dumps({
+                self.write_message(json.dumps({
                     'type': 'file_start',
                     'file_path': rel_path,
                     'progress': {'current': processed_files, 'total': total_files}
@@ -2371,14 +2396,14 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
                 try:
                     await self.search_in_file(rel_path, abs_path, search_text)
                 except Exception as e:
-                    await self.write_message(json.dumps({
+                    self.write_message(json.dumps({
                         'type': 'file_error',
                         'file_path': rel_path,
                         'message': f'Error searching in file: {str(e)}'
                     }))
                 
                 # Send file end notification
-                await self.write_message(json.dumps({
+                self.write_message(json.dumps({
                     'type': 'file_end',
                     'file_path': rel_path
                 }))
@@ -2387,13 +2412,13 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
                 await asyncio.sleep(0)
             
             # Send search completion
-            await self.write_message(json.dumps({
+            self.write_message(json.dumps({
                 'type': 'search_complete',
                 'files_processed': processed_files
             }))
             
         except Exception as e:
-            await self.write_message(json.dumps({
+            self.write_message(json.dumps({
                 'type': 'error',
                 'message': f'Search failed: {str(e)}'
             }))
@@ -2410,7 +2435,7 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
                 await self.search_traditional(rel_path, abs_path, search_text)
                 
         except Exception as e:
-            await self.write_message(json.dumps({
+            self.write_message(json.dumps({
                 'type': 'file_error',
                 'file_path': rel_path,
                 'message': f'Cannot read file: {str(e)}'
@@ -2460,7 +2485,7 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
             for line_number, line_content in matches:
                 if self.search_cancelled:
                     break
-                await self.send_match(rel_path, line_number, line_content, search_text)
+                self.send_match(rel_path, line_number, line_content, search_text)
                 # Yield control between sends
                 if line_number % 100 == 0:
                     await asyncio.sleep(0)
@@ -2481,7 +2506,7 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
                         return
                     
                     if filter_expression.matches(line):
-                        await self.send_match(rel_path, line_number, line.rstrip('\n'), search_text)
+                        self.send_match(rel_path, line_number, line.rstrip('\n'), search_text)
                     
                     line_number += 1
                     
@@ -2490,13 +2515,13 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
                         await asyncio.sleep(0)
                         
         except Exception as e:
-            await self.write_message(json.dumps({
+            self.write_message(json.dumps({
                 'type': 'file_error',
                 'file_path': rel_path,
                 'message': f'Error reading file: {str(e)}'
             }))
 
-    async def send_match(self, file_path, line_number, line_content, search_text):
+    def send_match(self, file_path, line_number, line_content, search_text):
         """Send a match result to the client"""
         # Find all match positions in the line
         match_positions = []
@@ -2508,7 +2533,7 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
             match_positions.append(pos)
             start_pos = pos + 1
         
-        await self.write_message(json.dumps({
+        self.write_message(json.dumps({
             'type': 'match',
             'file_path': file_path,
             'line_number': line_number,

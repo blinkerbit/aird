@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Super Search - Aird</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Courier New", monospace;
+        background: white;
+        color: black;
+        line-height: 1.4;
+      }
+
+      .container {
+        max-width: 100%;
+        margin: 0 auto;
+        padding: 20px 10px;
+      }
+
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid black;
+        padding-bottom: 15px;
+        margin-bottom: 20px;
+      }
+
+      .header-left {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .header h1 {
+        font-size: 24px;
+        font-weight: bold;
+      }
+
+      .breadcrumb {
+        margin-top: 10px;
+        font-size: 14px;
+        color: #666;
+      }
+
+      .breadcrumb a {
+        color: black;
+        text-decoration: none;
+      }
+
+      .breadcrumb a:hover {
+        text-decoration: underline;
+      }
+
+      .search-form {
+        background: #f9f9f9;
+        border: 2px solid #ccc;
+        padding: 20px;
+        margin-bottom: 20px;
+        border-radius: 5px;
+      }
+
+      .form-group {
+        margin-bottom: 15px;
+      }
+
+      .form-group label {
+        display: block;
+        font-weight: bold;
+        margin-bottom: 5px;
+      }
+
+      .form-group input[type="text"] {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid #ccc;
+        font-family: "Courier New", monospace;
+        font-size: 14px;
+      }
+
+      .form-group input[type="text"]:focus {
+        outline: none;
+        border-color: black;
+        box-shadow: 0 0 3px rgba(0, 0, 0, 0.3);
+      }
+
+      .help-text {
+        font-size: 12px;
+        color: #666;
+        margin-top: 3px;
+      }
+
+      .search-buttons {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .btn {
+        padding: 10px 20px;
+        border: 1px solid black;
+        background: white;
+        color: black;
+        cursor: pointer;
+        font-family: "Courier New", monospace;
+        font-size: 14px;
+      }
+
+      .btn:hover {
+        background: #f0f0f0;
+      }
+
+      .btn:disabled {
+        background: #eee;
+        color: #999;
+        cursor: not-allowed;
+        border-color: #ccc;
+      }
+
+      .btn-primary {
+        background: black;
+        color: white;
+      }
+
+      .btn-primary:hover:not(:disabled) {
+        background: #333;
+      }
+
+      .status {
+        padding: 10px;
+        border: 1px solid #ccc;
+        background: #f9f9f9;
+        margin-bottom: 20px;
+        font-size: 14px;
+        min-height: 40px;
+        display: flex;
+        align-items: center;
+      }
+
+      .status.searching {
+        border-color: #007bff;
+        background: #e7f3ff;
+      }
+
+      .status.error {
+        border-color: #dc3545;
+        background: #f8d7da;
+        color: #721c24;
+      }
+
+      .status.success {
+        border-color: #28a745;
+        background: #d4edda;
+        color: #155724;
+      }
+
+      .progress-bar {
+        width: 100%;
+        height: 20px;
+        background: #f0f0f0;
+        border: 1px solid #ccc;
+        margin: 10px 0;
+        overflow: hidden;
+      }
+
+      .progress-fill {
+        height: 100%;
+        background: #007bff;
+        transition: width 0.3s ease;
+        width: 0%;
+      }
+
+      .results {
+        border: 1px solid black;
+        background: white;
+        max-height: 70vh;
+        overflow-y: auto;
+      }
+
+      .file-section {
+        border-bottom: 1px solid #ddd;
+      }
+
+      .file-header {
+        background: #f0f0f0;
+        padding: 10px 15px;
+        font-weight: bold;
+        border-bottom: 1px solid #ddd;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .file-header:hover {
+        background: #e0e0e0;
+      }
+
+      .file-header .toggle {
+        font-size: 12px;
+        color: #666;
+      }
+
+      .match-list {
+        max-height: 300px;
+        overflow-y: auto;
+      }
+
+      .match-list.collapsed {
+        display: none;
+      }
+
+      .match-item {
+        padding: 8px 15px;
+        border-bottom: 1px solid #eee;
+        font-family: "Courier New", monospace;
+        font-size: 12px;
+      }
+
+      .match-item:hover {
+        background: #f9f9f9;
+      }
+
+      .line-number {
+        color: #666;
+        margin-right: 10px;
+        min-width: 50px;
+        display: inline-block;
+      }
+
+      .line-content {
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+
+      .highlight {
+        background: yellow;
+        font-weight: bold;
+      }
+
+      .no-results {
+        padding: 40px;
+        text-align: center;
+        color: #666;
+        font-style: italic;
+      }
+
+      .stats {
+        padding: 10px 15px;
+        background: #f9f9f9;
+        border-top: 1px solid #ddd;
+        font-size: 12px;
+        color: #666;
+      }
+
+      @media (max-width: 768px) {
+        .search-buttons {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .btn {
+          margin-bottom: 5px;
+        }
+
+        .match-item {
+          padding: 6px 10px;
+        }
+
+        .line-number {
+          min-width: 40px;
+          margin-right: 8px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <div class="header-left">
+          <h1>Super Search</h1>
+          <div class="breadcrumb">
+            <a href="/files/">🏠 Home</a>
+            {% if current_path and current_path.strip() %}
+            {% set path_parts = current_path.strip('/').split('/') %}
+            {% for i, part in enumerate(path_parts) %} 
+            {% set partial_path = '/files/' + '/'.join(path_parts[:i+1]) %} /
+            <a href="{{ partial_path }}">{{ part }}</a>
+            {% end %}
+            {% end %}
+            / <a href="/search">🔍 Super Search</a>
+          </div>
+        </div>
+        <div>
+          {% if current_path and current_path.strip() %}
+          <a href="/files/{{ escape(current_path) }}" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;">📂 Back to {{ current_path.split('/')[-1] if '/' in current_path else current_path }}</a>
+          {% end %}
+          <a href="/files/" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;margin-left:8px;">📁 Browse Files</a>
+          <a href="/logout" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;margin-left:8px;">↩ Logout</a>
+        </div>
+      </div>
+
+      <div class="search-form">
+        <div class="form-group">
+          <label for="pattern">File Pattern (Platform-specific glob syntax):</label>
+          <input 
+            type="text" 
+            id="pattern" 
+            placeholder=""
+            value=""
+          />
+          <div class="help-text">
+            Use * for wildcards, ** for recursive matching, ? for single character. Searches from root directory only.
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="searchText">Search Text:</label>
+          <input 
+            type="text" 
+            id="searchText" 
+            placeholder="Text to search for in matching files"
+          />
+          <div class="help-text">
+            Case-sensitive text search within matching files
+          </div>
+        </div>
+
+        <div class="search-buttons">
+          <button id="searchBtn" class="btn btn-primary">🚀 Start Super Search</button>
+          <button id="cancelBtn" class="btn" disabled>⏹ Cancel</button>
+          <button id="clearBtn" class="btn">🗑 Clear Results</button>
+        </div>
+      </div>
+
+      <div id="status" class="status">
+        Ready to super search. Enter a file pattern and search text above.
+      </div>
+
+      <div id="progressContainer" style="display: none;">
+        <div class="progress-bar">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+        <div id="progressText" style="font-size: 12px; color: #666;"></div>
+      </div>
+
+      <div id="results" class="results" style="display: none;">
+        <div id="resultsContent"></div>
+        <div id="stats" class="stats"></div>
+      </div>
+    </div>
+
+    <script>
+      class SuperSearch {
+        constructor() {
+          this.ws = null;
+          this.isSearching = false;
+          this.results = new Map(); // file_path -> {matches: [], collapsed: false}
+          this.totalMatches = 0;
+          this.totalFiles = 0;
+          this.processedFiles = 0;
+
+          this.initializeElements();
+          this.bindEvents();
+        }
+
+        initializeElements() {
+          this.patternInput = document.getElementById('pattern');
+          this.searchTextInput = document.getElementById('searchText');
+          this.searchBtn = document.getElementById('searchBtn');
+          this.cancelBtn = document.getElementById('cancelBtn');
+          this.clearBtn = document.getElementById('clearBtn');
+          this.statusDiv = document.getElementById('status');
+          this.progressContainer = document.getElementById('progressContainer');
+          this.progressFill = document.getElementById('progressFill');
+          this.progressText = document.getElementById('progressText');
+          this.resultsDiv = document.getElementById('results');
+          this.resultsContent = document.getElementById('resultsContent');
+          this.statsDiv = document.getElementById('stats');
+          
+          // Set platform-specific defaults
+          this.setupPlatformDefaults();
+        }
+
+        setupPlatformDefaults() {
+          // Detect platform and set appropriate examples
+          const isWindows = navigator.platform.indexOf('Win') > -1;
+          const separator = isWindows ? '\\' : '/';
+          
+          // Get current path from template variable
+          const currentPath = '{{ current_path or "" }}';
+          
+          // Build default pattern based on current path
+          let defaultPattern;
+          if (currentPath && currentPath.trim() !== '') {
+            // Use current path as base for pattern
+            const normalizedPath = currentPath.replace(/[\/\\]/g, separator);
+            defaultPattern = `${normalizedPath}${separator}**${separator}*.txt`;
+          } else {
+            // Default to root search if no current path
+            defaultPattern = isWindows ? '**\\*.txt' : '**/*.txt';
+          }
+          
+          if (isWindows) {
+            this.patternInput.placeholder = 'e.g., *.py, **\\*.txt, src\\**\\*.js';
+          } else {
+            this.patternInput.placeholder = 'e.g., *.py, **/*.txt, src/**/*.js';
+          }
+          
+          this.patternInput.value = defaultPattern;
+          
+          // Update help text
+          const helpText = this.patternInput.parentElement.querySelector('.help-text');
+          helpText.innerHTML = `Use * for wildcards, ** for recursive matching, ? for single character. Use "${separator}" as path separator. Searches from root directory only.`;
+        }
+
+        bindEvents() {
+          this.searchBtn.addEventListener('click', () => this.startSearch());
+          this.cancelBtn.addEventListener('click', () => this.cancelSearch());
+          this.clearBtn.addEventListener('click', () => this.clearResults());
+
+          // Allow Enter key to start search
+          this.patternInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !this.isSearching) this.startSearch();
+          });
+          this.searchTextInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !this.isSearching) this.startSearch();
+          });
+        }
+
+        startSearch() {
+          const pattern = this.patternInput.value.trim();
+          const searchText = this.searchTextInput.value.trim();
+
+          if (!pattern || !searchText) {
+            this.showStatus('Please enter both file pattern and search text.', 'error');
+            return;
+          }
+
+          this.isSearching = true;
+          this.updateButtons();
+          this.clearResults();
+          this.showStatus('Connecting to search service...', 'searching');
+
+          // Create WebSocket connection
+          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const wsUrl = `${protocol}//${window.location.host}/search/ws`;
+          
+          this.ws = new WebSocket(wsUrl);
+
+          this.ws.onopen = () => {
+            this.showStatus('Connected. Starting search...', 'searching');
+            this.ws.send(JSON.stringify({
+              pattern: pattern,
+              search_text: searchText
+            }));
+          };
+
+          this.ws.onmessage = (event) => {
+            this.handleMessage(JSON.parse(event.data));
+          };
+
+          this.ws.onclose = () => {
+            this.isSearching = false;
+            this.updateButtons();
+            if (this.totalMatches === 0 && this.processedFiles > 0) {
+              this.showStatus('Search completed - no matches found.', 'success');
+            }
+          };
+
+          this.ws.onerror = () => {
+            this.showStatus('Connection error. Please try again.', 'error');
+            this.isSearching = false;
+            this.updateButtons();
+          };
+        }
+
+        handleMessage(data) {
+          switch (data.type) {
+            case 'search_start':
+              this.showStatus(`Searching for "${data.search_text}" in files matching "${data.pattern}"...`, 'searching');
+              this.progressContainer.style.display = 'block';
+              break;
+
+            case 'file_start':
+              this.processedFiles = data.progress.current;
+              this.totalFiles = data.progress.total;
+              this.updateProgress();
+              this.showStatus(`Processing file ${data.progress.current} of ${data.progress.total}: ${data.file_path}`, 'searching');
+              break;
+
+            case 'match':
+              this.addMatch(data);
+              break;
+
+            case 'file_end':
+              // File processing complete
+              break;
+
+            case 'search_complete':
+              this.showStatus(`Search completed. Found ${this.totalMatches} matches in ${this.processedFiles} files.`, 'success');
+              this.progressContainer.style.display = 'none';
+              this.isSearching = false;
+              this.updateButtons();
+              break;
+
+            case 'no_files':
+              this.showStatus(data.message, 'success');
+              this.progressContainer.style.display = 'none';
+              this.isSearching = false;
+              this.updateButtons();
+              break;
+
+            case 'error':
+            case 'file_error':
+              this.showStatus(`Error: ${data.message}`, 'error');
+              if (data.type === 'error') {
+                this.isSearching = false;
+                this.updateButtons();
+                this.progressContainer.style.display = 'none';
+              }
+              break;
+          }
+        }
+
+        addMatch(data) {
+          const filePath = data.file_path;
+          
+          if (!this.results.has(filePath)) {
+            this.results.set(filePath, { matches: [], collapsed: false });
+            this.createFileSection(filePath);
+          }
+
+          const fileData = this.results.get(filePath);
+          fileData.matches.push(data);
+          this.totalMatches++;
+
+          this.addMatchToDOM(filePath, data);
+          this.updateStats();
+        }
+
+        createFileSection(filePath) {
+          const section = document.createElement('div');
+          section.className = 'file-section';
+          section.id = `file-${this.escapeId(filePath)}`;
+
+          const header = document.createElement('div');
+          header.className = 'file-header';
+          header.innerHTML = `
+            <span>📄 ${this.escapeHtml(filePath)}</span>
+            <span class="toggle">−</span>
+          `;
+          header.onclick = () => this.toggleFileSection(filePath);
+
+          const matchList = document.createElement('div');
+          matchList.className = 'match-list';
+          matchList.id = `matches-${this.escapeId(filePath)}`;
+
+          section.appendChild(header);
+          section.appendChild(matchList);
+
+          this.resultsContent.appendChild(section);
+          this.resultsDiv.style.display = 'block';
+        }
+
+        addMatchToDOM(filePath, matchData) {
+          const matchList = document.getElementById(`matches-${this.escapeId(filePath)}`);
+          const matchItem = document.createElement('div');
+          matchItem.className = 'match-item';
+
+          const highlightedContent = this.highlightMatches(matchData.line_content, matchData.search_text, matchData.match_positions);
+
+          matchItem.innerHTML = `
+            <span class="line-number">${matchData.line_number}:</span>
+            <span class="line-content">${highlightedContent}</span>
+          `;
+
+          matchList.appendChild(matchItem);
+        }
+
+        highlightMatches(content, searchText, positions) {
+          if (!positions || positions.length === 0) {
+            return this.escapeHtml(content);
+          }
+
+          let result = '';
+          let lastIndex = 0;
+
+          positions.forEach(pos => {
+            // Add text before match
+            result += this.escapeHtml(content.substring(lastIndex, pos));
+            // Add highlighted match
+            result += `<span class="highlight">${this.escapeHtml(content.substring(pos, pos + searchText.length))}</span>`;
+            lastIndex = pos + searchText.length;
+          });
+
+          // Add remaining text
+          result += this.escapeHtml(content.substring(lastIndex));
+          return result;
+        }
+
+        toggleFileSection(filePath) {
+          const fileData = this.results.get(filePath);
+          const matchList = document.getElementById(`matches-${this.escapeId(filePath)}`);
+          const toggle = document.querySelector(`#file-${this.escapeId(filePath)} .toggle`);
+
+          fileData.collapsed = !fileData.collapsed;
+          
+          if (fileData.collapsed) {
+            matchList.classList.add('collapsed');
+            toggle.textContent = '+';
+          } else {
+            matchList.classList.remove('collapsed');
+            toggle.textContent = '−';
+          }
+        }
+
+        updateProgress() {
+          if (this.totalFiles > 0) {
+            const percentage = (this.processedFiles / this.totalFiles) * 100;
+            this.progressFill.style.width = `${percentage}%`;
+            this.progressText.textContent = `Processing file ${this.processedFiles} of ${this.totalFiles}`;
+          }
+        }
+
+        updateStats() {
+          this.statsDiv.innerHTML = `
+            📊 Results: ${this.totalMatches} matches across ${this.results.size} files
+          `;
+        }
+
+        cancelSearch() {
+          if (this.ws) {
+            this.ws.close();
+          }
+          this.isSearching = false;
+          this.updateButtons();
+          this.showStatus('Search cancelled.', 'error');
+          this.progressContainer.style.display = 'none';
+        }
+
+        clearResults() {
+          this.results.clear();
+          this.totalMatches = 0;
+          this.totalFiles = 0;
+          this.processedFiles = 0;
+          this.resultsContent.innerHTML = '';
+          this.statsDiv.innerHTML = '';
+          this.resultsDiv.style.display = 'none';
+          this.progressContainer.style.display = 'none';
+          this.progressFill.style.width = '0%';
+        }
+
+        updateButtons() {
+          this.searchBtn.disabled = this.isSearching;
+          this.cancelBtn.disabled = !this.isSearching;
+          this.patternInput.disabled = this.isSearching;
+          this.searchTextInput.disabled = this.isSearching;
+        }
+
+        showStatus(message, type = '') {
+          this.statusDiv.textContent = message;
+          this.statusDiv.className = `status ${type}`;
+        }
+
+        escapeHtml(text) {
+          const div = document.createElement('div');
+          div.textContent = text;
+          return div.innerHTML;
+        }
+
+        escapeId(text) {
+          return text.replace(/[^a-zA-Z0-9]/g, '_');
+        }
+      }
+
+      // Initialize the search interface when the page loads
+      document.addEventListener('DOMContentLoaded', () => {
+        new SuperSearch();
+      });
+    </script>
+  </body>
+</html>

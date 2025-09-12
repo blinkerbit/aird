@@ -8,6 +8,7 @@ aird.egg-info/PKG-INFO
 aird.egg-info/SOURCES.txt
 aird.egg-info/dependency_links.txt
 aird.egg-info/entry_points.txt
+aird.egg-info/not-zip-safe
 aird.egg-info/requires.txt
 aird.egg-info/top_level.txt
 aird/templates/admin.html
@@ -20,6 +21,11 @@ aird/templates/file.html
 aird/templates/login.html
 aird/templates/share.html
 aird/templates/shared_list.html
-tests/test_dos_large_file.py
-tests/test_path_traversal.py
-tests/test_websocket_origin.py
+aird/templates/super_search.html
+tests/__init__.py
+tests/test_database.py
+tests/test_file_operations.py
+tests/test_handlers.py
+tests/test_mmap_handler.py
+tests/test_utilities.py
+tests/test_websocket_handlers.py
