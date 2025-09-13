@@ -23,9 +23,14 @@ aird/templates/share.html
 aird/templates/shared_list.html
 aird/templates/super_search.html
 tests/__init__.py
+tests/test_additional_utilities.py
+tests/test_api_handlers.py
 tests/test_database.py
 tests/test_file_operations.py
+tests/test_file_streaming.py
+tests/test_filter_expression.py
 tests/test_handlers.py
+tests/test_ldap_handlers.py
 tests/test_mmap_handler.py
 tests/test_utilities.py
 tests/test_websocket_handlers.py
