@@ -31,6 +31,7 @@ tests/test_file_streaming.py
 tests/test_filter_expression.py
 tests/test_handlers.py
 tests/test_ldap_handlers.py
+tests/test_main_coverage.py
 tests/test_mmap_handler.py
 tests/test_utilities.py
 tests/test_websocket_handlers.py
