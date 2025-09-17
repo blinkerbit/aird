@@ -33,6 +33,7 @@ import shlex
 import time
 import threading
 import weakref
+import hashlib
 
 # Import Rust integration with fallback
 try:
@@ -494,6 +495,19 @@ def _init_db(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'user',
+            created_at TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1,
+            last_login TEXT
+        )
+        """
+    )
     conn.commit()
 
 def _load_feature_flags(conn: sqlite3.Connection) -> dict:
@@ -566,6 +580,145 @@ def _save_websocket_config(conn: sqlite3.Connection, config: dict) -> None:
                 )
     except Exception:
         pass
+
+# ------------------------
+# User management functions
+# ------------------------
+
+def _hash_password(password: str) -> str:
+    """Hash a password using SHA-256 with salt"""
+    salt = secrets.token_hex(32)
+    pwd_hash = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
+    return f"{salt}:{pwd_hash}"
+
+def _verify_password(password: str, password_hash: str) -> bool:
+    """Verify a password against its hash"""
+    try:
+        salt, stored_hash = password_hash.split(':', 1)
+        pwd_hash = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
+        return pwd_hash == stored_hash
+    except ValueError:
+        return False
+
+def _create_user(conn: sqlite3.Connection, username: str, password: str, role: str = 'user') -> dict:
+    """Create a new user in the database"""
+    try:
+        password_hash = _hash_password(password)
+        created_at = datetime.now().isoformat()
+        
+        with conn:
+            cursor = conn.execute(
+                "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
+                (username, password_hash, role, created_at)
+            )
+            user_id = cursor.lastrowid
+            
+        return {
+            "id": user_id,
+            "username": username,
+            "role": role,
+            "created_at": created_at,
+            "active": True,
+            "last_login": None
+        }
+    except sqlite3.IntegrityError:
+        raise ValueError(f"Username '{username}' already exists")
+    except Exception as e:
+        raise Exception(f"Failed to create user: {str(e)}")
+
+def _get_user_by_username(conn: sqlite3.Connection, username: str) -> dict | None:
+    """Get user by username"""
+    try:
+        row = conn.execute(
+            "SELECT id, username, password_hash, role, created_at, active, last_login FROM users WHERE username = ?",
+            (username,)
+        ).fetchone()
+        
+        if row:
+            return {
+                "id": row[0],
+                "username": row[1],
+                "password_hash": row[2],
+                "role": row[3],
+                "created_at": row[4],
+                "active": bool(row[5]),
+                "last_login": row[6]
+            }
+        return None
+    except Exception:
+        return None
+
+def _get_all_users(conn: sqlite3.Connection) -> list[dict]:
+    """Get all users from the database"""
+    try:
+        rows = conn.execute(
+            "SELECT id, username, role, created_at, active, last_login FROM users ORDER BY created_at DESC"
+        ).fetchall()
+        
+        return [
+            {
+                "id": row[0],
+                "username": row[1],
+                "role": row[2],
+                "created_at": row[3],
+                "active": bool(row[4]),
+                "last_login": row[5]
+            }
+            for row in rows
+        ]
+    except Exception:
+        return []
+
+def _update_user(conn: sqlite3.Connection, user_id: int, **kwargs) -> bool:
+    """Update user information"""
+    try:
+        valid_fields = ['username', 'password_hash', 'role', 'active', 'last_login']
+        updates = []
+        values = []
+        
+        for field, value in kwargs.items():
+            if field in valid_fields:
+                if field == 'password' and value:  # Special handling for password
+                    updates.append('password_hash = ?')
+                    values.append(_hash_password(value))
+                elif field == 'active':
+                    updates.append('active = ?')
+                    values.append(1 if value else 0)
+                else:
+                    updates.append(f'{field} = ?')
+                    values.append(value)
+        
+        if not updates:
+            return False
+            
+        values.append(user_id)
+        query = f"UPDATE users SET {', '.join(updates)} WHERE id = ?"
+        
+        with conn:
+            conn.execute(query, values)
+        return True
+    except Exception:
+        return False
+
+def _delete_user(conn: sqlite3.Connection, user_id: int) -> bool:
+    """Delete a user from the database"""
+    try:
+        with conn:
+            cursor = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            return cursor.rowcount > 0
+    except Exception:
+        return False
+
+def _authenticate_user(conn: sqlite3.Connection, username: str, password: str) -> dict | None:
+    """Authenticate a user and update last_login"""
+    user = _get_user_by_username(conn, username)
+    if user and user['active'] and _verify_password(password, user['password_hash']):
+        # Update last login timestamp
+        _update_user(conn, user['id'], last_login=datetime.now().isoformat())
+        # Remove sensitive information before returning
+        del user['password_hash']
+        return user
+    return None
 
 def get_current_feature_flags() -> dict:
     """Return current feature flags with SQLite values taking precedence.
@@ -835,8 +988,10 @@ def get_file_icon(filename):
         return "🎭"
     
     # Programming files
-    elif ext in [".py", ".pyw", ".pyc", ".pyo"]:
-        return "🐍"
+    elif ext in [".py", ".pyw"]:
+        return "🐍💎"  # Enhanced Python source files with gem (precious/valuable)
+    elif ext in [".pyc", ".pyo"]:
+        return "🐍⚡"  # Compiled Python files with lightning (fast/optimized)
     elif ext in [".js", ".jsx", ".ts", ".tsx", ".mjs"]:
         return "🟨"
     elif ext in [".java", ".class", ".jar"]:
@@ -1032,6 +1187,44 @@ class BaseHandler(tornado.web.RequestHandler):
     def get_current_admin(self) -> str | None:
         return self.get_secure_cookie("admin")
     
+    def get_current_user_role(self) -> str | None:
+        return self.get_secure_cookie("user_role")
+    
+    def is_admin_user(self) -> bool:
+        """Check if current user has admin privileges (either admin token or admin role)"""
+        user_role = self.get_current_user_role()
+        if user_role:
+            # Handle both bytes and string comparison
+            if isinstance(user_role, bytes):
+                user_role = user_role.decode('utf-8')
+            return bool(self.get_current_admin() or user_role == "admin")
+        return bool(self.get_current_admin())
+    
+    def get_display_username(self) -> str:
+        """Get username for display purposes"""
+        user = self.get_current_user()
+        if user:
+            # Decode from bytes if needed
+            if isinstance(user, bytes):
+                user = user.decode('utf-8')
+            # Handle different user types
+            if user == "token_authenticated":
+                return "Admin (Token)"
+            elif user == "authenticated":
+                return "Admin (Token)"
+            else:
+                # Regular username - show role if available
+                role = self.get_current_user_role()
+                if role:
+                    if isinstance(role, bytes):
+                        role = role.decode('utf-8')
+                    if role == "admin":
+                        return f"{user} (Admin)"
+                    else:
+                        return f"{user} (User)"
+                return user
+        return "Guest"
+    
     def write_error(self, status_code, **kwargs):
         # Generic error messages to prevent information disclosure
         error_messages = {
@@ -1093,12 +1286,39 @@ class LoginHandler(BaseHandler):
         self.render("login.html", error=None, settings=self.settings, next_url=next_url)
 
     def post(self):
+        # Check if it's username/password login or token login
+        username = self.get_argument("username", "").strip()
+        password = self.get_argument("password", "").strip()
         token = self.get_argument("token", "").strip()
         next_url = self.get_argument("next", "/files/")
         
-        # Input validation
+        # Try username/password authentication first (if both provided)
+        if username and password and DB_CONN is not None:
+            # Input validation
+            if len(username) > 256 or len(password) > 256:
+                self.render("login.html", error="Invalid input length.", settings=self.settings, next_url=next_url)
+                return
+            
+            try:
+                user = _authenticate_user(DB_CONN, username, password)
+                if user:
+                    self.set_secure_cookie("user", username)
+                    self.set_secure_cookie("user_role", user['role'])
+                    self.redirect(next_url)
+                    return
+                else:
+                    self.render("login.html", error="Invalid username or password.", settings=self.settings, next_url=next_url)
+                    return
+            except Exception:
+                self.render("login.html", error="Authentication failed. Please try again.", settings=self.settings, next_url=next_url)
+                return
+        
+        # Fallback to token authentication
         if not token:
-            self.render("login.html", error="Token is required.", settings=self.settings, next_url=next_url)
+            if username or password:
+                self.render("login.html", error="Invalid username or password.", settings=self.settings, next_url=next_url)
+            else:
+                self.render("login.html", error="Username/password or token is required.", settings=self.settings, next_url=next_url)
             return
             
         if len(token) > 512:  # Reasonable token length limit
@@ -1106,24 +1326,57 @@ class LoginHandler(BaseHandler):
             return
             
         if token == ACCESS_TOKEN:
-            self.set_secure_cookie("user", "authenticated")
+            self.set_secure_cookie("user", "token_authenticated")
+            self.set_secure_cookie("user_role", "admin")  # Token users get admin role
             self.redirect(next_url)
         else:
-            self.render("login.html", error="Invalid token. Try again.", settings=self.settings, next_url=next_url)
+            self.render("login.html", error="Invalid credentials. Try again.", settings=self.settings, next_url=next_url)
 
 class AdminLoginHandler(BaseHandler):
     def get(self):
-        if self.get_current_admin():
+        if self.is_admin_user():
             self.redirect("/admin")
             return
         self.render("admin_login.html", error=None)
 
     def post(self):
+        # Check if it's username/password login or token login
+        username = self.get_argument("username", "").strip()
+        password = self.get_argument("password", "").strip()
         token = self.get_argument("token", "").strip()
         
-        # Input validation
+        # Try username/password authentication first (if both provided)
+        if username and password and DB_CONN is not None:
+            # Input validation
+            if len(username) > 256 or len(password) > 256:
+                self.render("admin_login.html", error="Invalid input length.")
+                return
+            
+            try:
+                user = _authenticate_user(DB_CONN, username, password)
+                if user and user['role'] == 'admin':
+                    # Set both user and admin cookies for admin users
+                    self.set_secure_cookie("user", username)
+                    self.set_secure_cookie("user_role", user['role'])
+                    self.set_secure_cookie("admin", "authenticated")  # Also set admin cookie
+                    self.redirect("/admin")
+                    return
+                elif user and user['role'] != 'admin':
+                    self.render("admin_login.html", error="Access denied. Admin privileges required.")
+                    return
+                else:
+                    self.render("admin_login.html", error="Invalid username or password.")
+                    return
+            except Exception:
+                self.render("admin_login.html", error="Authentication failed. Please try again.")
+                return
+        
+        # Fallback to token authentication
         if not token:
-            self.render("admin_login.html", error="Token is required.")
+            if username or password:
+                self.render("admin_login.html", error="Invalid username or password.")
+            else:
+                self.render("admin_login.html", error="Username/password or token is required.")
             return
             
         if len(token) > 512:  # Reasonable token length limit
@@ -1147,7 +1400,7 @@ class LogoutHandler(BaseHandler):
 class AdminHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
-        if not self.get_current_admin():
+        if not self.is_admin_user():
             self.redirect("/admin/login")
             return
         
@@ -1188,7 +1441,7 @@ class AdminHandler(BaseHandler):
 
     @tornado.web.authenticated
     def post(self):
-        if not self.get_current_admin():
+        if not self.is_admin_user():
             self.set_status(403)
             self.write("Forbidden")
             return
@@ -1235,7 +1488,7 @@ class WebSocketStatsHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
         """Return WebSocket connection statistics"""
-        if not self.get_current_admin():
+        if not self.is_admin_user():
             self.set_status(403)
             self.write("Forbidden")
             return
@@ -1249,6 +1502,328 @@ class WebSocketStatsHandler(BaseHandler):
         
         self.set_header('Content-Type', 'application/json')
         self.write(json.dumps(stats, indent=2))
+
+class AdminUsersHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        """Display user management interface"""
+        if not self.is_admin_user():
+            self.redirect("/admin/login")
+            return
+            
+        users = []
+        if DB_CONN is not None:
+            users = _get_all_users(DB_CONN)
+            
+        self.render("admin_users.html", users=users)
+
+class UserCreateHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        """Show create user form"""
+        if not self.is_admin_user():
+            self.set_status(403)
+            self.write("Forbidden")
+            return
+            
+        self.render("user_create.html", error=None)
+    
+    @tornado.web.authenticated
+    def post(self):
+        """Create a new user"""
+        if not self.is_admin_user():
+            self.set_status(403)
+            self.write("Forbidden")
+            return
+            
+        if DB_CONN is None:
+            self.render("user_create.html", error="Database not available")
+            return
+            
+        username = self.get_argument("username", "").strip()
+        password = self.get_argument("password", "").strip()
+        role = self.get_argument("role", "user").strip()
+        
+        # Input validation
+        if not username or not password:
+            self.render("user_create.html", error="Username and password are required")
+            return
+            
+        if len(username) < 3 or len(username) > 50:
+            self.render("user_create.html", error="Username must be between 3 and 50 characters")
+            return
+            
+        if len(password) < 6:
+            self.render("user_create.html", error="Password must be at least 6 characters")
+            return
+            
+        if role not in ['user', 'admin']:
+            self.render("user_create.html", error="Invalid role")
+            return
+            
+        # Check for valid username format (alphanumeric + underscore/hyphen)
+        import re
+        if not re.match(r'^[a-zA-Z0-9_-]+$', username):
+            self.render("user_create.html", error="Username can only contain letters, numbers, underscores, and hyphens")
+            return
+            
+        try:
+            _create_user(DB_CONN, username, password, role)
+            self.redirect("/admin/users")
+        except ValueError as e:
+            self.render("user_create.html", error=str(e))
+        except Exception as e:
+            self.render("user_create.html", error="Failed to create user")
+
+class UserEditHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self, user_id):
+        """Show edit user form"""
+        if not self.is_admin_user():
+            self.set_status(403)
+            self.write("Forbidden")
+            return
+            
+        if DB_CONN is None:
+            self.set_status(500)
+            self.write("Database not available")
+            return
+            
+        try:
+            user_id = int(user_id)
+            # Get user by ID
+            users = _get_all_users(DB_CONN)
+            user = next((u for u in users if u['id'] == user_id), None)
+            
+            if not user:
+                self.set_status(404)
+                self.write("User not found")
+                return
+                
+            self.render("user_edit.html", user=user, error=None)
+        except ValueError:
+            self.set_status(400)
+            self.write("Invalid user ID")
+    
+    @tornado.web.authenticated
+    def post(self, user_id):
+        """Update user information"""
+        if not self.is_admin_user():
+            self.set_status(403)
+            self.write("Forbidden")
+            return
+            
+        if DB_CONN is None:
+            self.set_status(500)
+            self.write("Database not available")
+            return
+            
+        try:
+            user_id = int(user_id)
+            # Get existing user
+            users = _get_all_users(DB_CONN)
+            user = next((u for u in users if u['id'] == user_id), None)
+            
+            if not user:
+                self.set_status(404)
+                self.write("User not found")
+                return
+            
+            username = self.get_argument("username", "").strip()
+            password = self.get_argument("password", "").strip()
+            role = self.get_argument("role", "user").strip()
+            active = self.get_argument("active", "off") == "on"
+            
+            # Input validation
+            if not username:
+                self.render("user_edit.html", user=user, error="Username is required")
+                return
+                
+            if len(username) < 3 or len(username) > 50:
+                self.render("user_edit.html", user=user, error="Username must be between 3 and 50 characters")
+                return
+                
+            if password and len(password) < 6:
+                self.render("user_edit.html", user=user, error="Password must be at least 6 characters")
+                return
+                
+            if role not in ['user', 'admin']:
+                self.render("user_edit.html", user=user, error="Invalid role")
+                return
+            
+            # Check for valid username format
+            import re
+            if not re.match(r'^[a-zA-Z0-9_-]+$', username):
+                self.render("user_edit.html", user=user, error="Username can only contain letters, numbers, underscores, and hyphens")
+                return
+            
+            # Update user
+            update_data = {
+                'username': username,
+                'role': role,
+                'active': active
+            }
+            
+            if password:  # Only update password if provided
+                update_data['password'] = password
+                
+            if _update_user(DB_CONN, user_id, **update_data):
+                self.redirect("/admin/users")
+            else:
+                self.render("user_edit.html", user=user, error="Failed to update user")
+                
+        except ValueError:
+            self.set_status(400)
+            self.write("Invalid user ID")
+        except Exception as e:
+            self.render("user_edit.html", user=user, error=f"Error updating user: {str(e)}")
+
+class UserDeleteHandler(BaseHandler):
+    @tornado.web.authenticated
+    def post(self):
+        """Delete a user"""
+        if not self.is_admin_user():
+            self.set_status(403)
+            self.write("Forbidden")
+            return
+            
+        if DB_CONN is None:
+            self.set_status(500)
+            self.write("Database not available")
+            return
+            
+        try:
+            user_id = int(self.get_argument("user_id", "0"))
+            
+            if user_id <= 0:
+                self.set_status(400)
+                self.write("Invalid user ID")
+                return
+                
+            if _delete_user(DB_CONN, user_id):
+                self.redirect("/admin/users")
+            else:
+                self.set_status(404)
+                self.write("User not found")
+                
+        except ValueError:
+            self.set_status(400)
+            self.write("Invalid user ID")
+
+class ProfileHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        """Show user profile page"""
+        if DB_CONN is None:
+            self.set_status(500)
+            self.write("Database not available")
+            return
+            
+        # Get current user info
+        current_user = self.get_current_user()
+        if not current_user:
+            self.redirect("/login")
+            return
+            
+        # Decode username if it's bytes
+        if isinstance(current_user, bytes):
+            current_user = current_user.decode('utf-8')
+            
+        # Skip profile for token-authenticated users
+        if current_user in ["token_authenticated", "authenticated"]:
+            self.render("profile.html", 
+                       user=None, 
+                       error="Profile not available for token-authenticated users.",
+                       success=None)
+            return
+            
+        try:
+            user = _get_user_by_username(DB_CONN, current_user)
+            if not user:
+                self.set_status(404)
+                self.write("User not found")
+                return
+                
+            self.render("profile.html", user=user, error=None, success=None)
+        except Exception as e:
+            logging.getLogger(__name__).exception(f"Error loading profile for user {current_user}: {str(e)}")
+            self.set_status(500)
+            self.write("Error loading profile")
+    
+    @tornado.web.authenticated
+    def post(self):
+        """Update user profile"""
+        if DB_CONN is None:
+            self.set_status(500)
+            self.write("Database not available")
+            return
+            
+        # Get current user info
+        current_user = self.get_current_user()
+        if not current_user:
+            self.redirect("/login")
+            return
+            
+        # Decode username if it's bytes
+        if isinstance(current_user, bytes):
+            current_user = current_user.decode('utf-8')
+            
+        # Skip profile for token-authenticated users
+        if current_user in ["token_authenticated", "authenticated"]:
+            self.render("profile.html", 
+                       user=None, 
+                       error="Profile not available for token-authenticated users.",
+                       success=None)
+            return
+            
+        try:
+            user = _get_user_by_username(DB_CONN, current_user)
+            if not user:
+                self.set_status(404)
+                self.write("User not found")
+                return
+            
+            # Get form data
+            action = self.get_argument("action", "")
+            current_password = self.get_argument("current_password", "").strip()
+            
+            # Validate current password first
+            if not current_password:
+                self.render("profile.html", user=user, error="Current password is required.", success=None)
+                return
+                
+            if not _verify_password(current_password, user['password_hash']):
+                self.render("profile.html", user=user, error="Current password is incorrect.", success=None)
+                return
+            
+            if action == "change_password":
+                new_password = self.get_argument("new_password", "").strip()
+                confirm_password = self.get_argument("confirm_password", "").strip()
+                
+                # Input validation
+                if not new_password:
+                    self.render("profile.html", user=user, error="New password is required.", success=None)
+                    return
+                    
+                if len(new_password) < 6:
+                    self.render("profile.html", user=user, error="Password must be at least 6 characters.", success=None)
+                    return
+                    
+                if new_password != confirm_password:
+                    self.render("profile.html", user=user, error="New passwords do not match.", success=None)
+                    return
+                
+                # Update password
+                if _update_user(DB_CONN, user['id'], password=new_password):
+                    self.render("profile.html", user=user, error=None, success="Password updated successfully!")
+                else:
+                    self.render("profile.html", user=user, error="Failed to update password.", success=None)
+            else:
+                self.render("profile.html", user=user, error="Invalid action.", success=None)
+                
+        except Exception as e:
+            logging.getLogger(__name__).exception(f"Error updating profile for user {current_user}: {str(e)}")
+            self.render("profile.html", user=None, error=f"Error updating profile: {str(e)}", success=None)
 
 def get_relative_path(path, root):
     if path.startswith(root):
@@ -2565,8 +3140,13 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
         (r"/", RootHandler),
         (r"/login", login_handler),
         (r"/logout", LogoutHandler),
+        (r"/profile", ProfileHandler),
         (r"/admin/login", AdminLoginHandler),
         (r"/admin", AdminHandler),
+        (r"/admin/users", AdminUsersHandler),
+        (r"/admin/users/create", UserCreateHandler),
+        (r"/admin/users/edit/([0-9]+)", UserEditHandler),
+        (r"/admin/users/delete", UserDeleteHandler),
         (r"/admin/websocket-stats", WebSocketStatsHandler),
         (r"/stream/(.*)", FileStreamHandler),
         (r"/features", FeatureFlagSocketHandler),

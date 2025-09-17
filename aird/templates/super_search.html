@@ -297,7 +297,8 @@
             / <a href="/search">🔍 Super Search</a>
           </div>
         </div>
-        <div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <a href="/profile" style="font-size: 12px; color: #666; margin-right: 15px; text-decoration: none;">👤 {{ handler.get_display_username() }}</a>
           {% if current_path and current_path.strip() %}
           <a href="/files/{{ escape(current_path) }}" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;">📂 Back to {{ current_path.split('/')[-1] if '/' in current_path else current_path }}</a>
           {% end %}

@@ -1,12 +1,12 @@
 # Aird - A Lightweight Web-Based File Browser, Editor and Share
 
-**v0.4.0** - 🚀 **WebSocket Admin + Super Search + Performance Optimizations!**
+**v0.4.1** - 🐍 **Enhanced Python File Icons + WebSocket Admin + Super Search + Performance Optimizations!**
 
 A modern, lightweight, and fast web-based file browser, editor, and streamer built with Python and Tornado. It provides a comprehensive file management solution with real-time streaming, in-browser editing, and mobile-responsive design through a clean and intuitive web interface.
 
 Note: Currently using this in conjunction with WireGuard to handle file management and sharing for internal/private cloud.
 
-## 🆕 What's New in v0.4.0
+## 🆕 What's New in v0.4.1
 
 ### ⚙️ **WebSocket Admin Configuration (NEW!)**
 - **Dynamic Settings:** Adjust WebSocket connection limits and timeouts through admin UI
@@ -21,6 +21,13 @@ Note: Currently using this in conjunction with WireGuard to handle file manageme
 - **Advanced Pattern Matching:** Support for regex patterns and multiple search terms
 - **Path-aware Search:** Automatically filters results based on current directory context
 - **Performance Optimized:** Fast searching even in large codebases using memory-mapped operations
+
+### 🐍 **Enhanced Python File Icons (NEW!)**
+- **Smart Python File Recognition:** Distinctive icons for different Python file types
+- **Source Files (.py, .pyw):** Enhanced snake with gem (🐍💎) indicating precious/valuable source code
+- **Compiled Files (.pyc, .pyo):** Snake with lightning (🐍⚡) representing fast/optimized compiled code
+- **Better Visual Distinction:** Easily differentiate between source and compiled Python files at a glance
+- **Consistent Branding:** Maintains Python's snake identity while adding meaningful visual context
 
 ### ⚡ **Performance & Usability Upgrades**
 - **Direct Executable:** Run with simple `aird` command instead of `python -m aird`
@@ -80,8 +87,12 @@ aird --help
 - **Performance Optimized:** Fast searching even in large codebases using memory-mapped file operations
 - **Interactive Interface:** Click any result to instantly navigate to the file and line
 
-### 🗂️ File Management
+### 📁️ File Management
 - **Smart File Browser:** Navigate through your server's directory structure with resizable columns and mobile-friendly design
+- **Enhanced File Icons:** Intelligent file type recognition with special Python file icons:
+  - **Python Source (\*.py, \*.pyw):** 🐍💎 Snake with gem (precious source code)
+  - **Python Compiled (\*.pyc, \*.pyo):** 🐍⚡ Snake with lightning (optimized/fast)
+  - **50+ File Types:** Comprehensive icon coverage for all common file formats
 - **Advanced File Operations:**
   - Download files with progress indicators and compression support
   - Upload files with drag-and-drop support (can be disabled)
@@ -333,7 +344,8 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **One-click copy:** Copy shareable URLs to clipboard with visual feedback
 - **Temporary access:** All shares are session-based and can be easily revoked
 
-### 🚀 Performance Features (New in v0.4.0!)
+### 🚀 Performance Features (New in v0.4.1!)
+- **Enhanced Python File Icons:** Smart visual distinction between source (🐍💎) and compiled (🐍⚡) Python files
 - **Memory-mapped file operations:** Efficient handling of large files (>1MB) using mmap
 - **Enhanced security:** CSRF protection, XSS prevention, improved input validation
 - **Direct executable support:** Run with simple `aird` command instead of `python -m aird`

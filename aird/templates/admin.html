@@ -46,7 +46,10 @@
     </style>
 </head>
 <body>
-    <h2>Admin Panel</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <h2>Admin Panel</h2>
+        <a href="/profile" style="font-size: 12px; color: #666; text-decoration: none;">👤 {{ handler.get_display_username() }}</a>
+    </div>
     <form method="POST">
         {% raw xsrf_form_html() %}
         
@@ -149,8 +152,15 @@
         <input type="submit" value="Save Configuration">
     </form>
     <br>
+    <div class="section">
+        <h3>User Management</h3>
+        <p><em>Manage system users and their access permissions.</em></p>
+        <a href="/admin/users" style="display: inline-block; padding: 8px 16px; background-color: #007bff; color: white; text-decoration: none; border: 1px solid #007bff; margin-right: 10px;">👥 Manage Users</a>
+    </div>
+    
     <div style="margin: 20px 0;">
-        <a href="/admin/websocket-stats" target="_blank" style="margin-right: 20px;">📊 View WebSocket Statistics</a>
+        <a href="/files/" style="margin-right: 20px;">📁 Files</a>
+        <a href="/admin/websocket-stats" target="_blank" style="margin-right: 20px;">📈 View WebSocket Statistics</a>
         <a href="/logout">Logout</a>
     </div>
 </body>

@@ -36,19 +36,15 @@ Dynamic: requires-dist
 Dynamic: requires-python
 Dynamic: summary
 
-# Aird - A Lightweight Web-Based File Browser, Editor and Share.
-**v0.4.0** - 🚀 **NEW: Rust Integration + WebSocket Admin + Super Search + mmap Optimizations!**
+# Aird - A Lightweight Web-Based File Browser, Editor and Share
 
-Note: Currently using this in conjunction to wireguard to handle file management and sharing for internal/private cloud. 
+**v0.4.0** - 🚀 **WebSocket Admin + Super Search + Performance Optimizations!**
+
+A modern, lightweight, and fast web-based file browser, editor, and streamer built with Python and Tornado. It provides a comprehensive file management solution with real-time streaming, in-browser editing, and mobile-responsive design through a clean and intuitive web interface.
+
+Note: Currently using this in conjunction with WireGuard to handle file management and sharing for internal/private cloud.
 
 ## 🆕 What's New in v0.4.0
-
-### 🚀 **Rust Integration (PERFORMANCE BREAKTHROUGH!)**
-- **10-50x Performance Boost:** Optional Rust core for blazing-fast file operations
-- **Memory Safety:** Zero-cost abstractions with memory-safe file handling
-- **Backward Compatible:** Seamless fallback to Python when Rust unavailable
-- **Easy Installation:** Automated build script with `python build_with_rust.py`
-- **Production Ready:** Comprehensive error handling and performance monitoring
 
 ### ⚙️ **WebSocket Admin Configuration (NEW!)**
 - **Dynamic Settings:** Adjust WebSocket connection limits and timeouts through admin UI
@@ -72,16 +68,40 @@ Note: Currently using this in conjunction to wireguard to handle file management
 
 ---
 
-Install using:
+## 🚀 Installation
+
+### Option 1: Install from PyPI (Recommended)
 ```bash
 pip install aird
 ```
+
+### Option 2: Install from Source
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/blinkerbit/aird.git
+   cd aird
+   ```
+
+2. **Create a virtual environment (recommended):**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Install the package:**
+   ```bash
+   pip install .
+   ```
 
 Run directly:
 ```bash
 aird --help
 ```
-Aird is a modern, lightweight, and fast web-based file browser, editor, and streamer built with Python and Tornado. It provides a comprehensive file management solution with real-time streaming, in-browser editing, and mobile-responsive design through a clean and intuitive web interface.
 
 <img width="1696" height="715" alt="image" src="https://github.com/user-attachments/assets/95a9569d-5d0c-4d96-aab9-69e0b4cd98bf" />
 
@@ -147,52 +167,6 @@ Aird is a modern, lightweight, and fast web-based file browser, editor, and stre
 - **Interactive Results:** Click-to-navigate search results with context highlighting
 - **Keyboard Shortcuts:** Efficient navigation and operations via keyboard
 - **Clean Layout:** Left-aligned file actions, right-aligned streaming controls for better organization
-
-## 🚀 Installation
-
-### Option 1: Install from PyPI (Recommended)
-```bash
-pip install aird
-```
-
-### Option 2: Install with Rust Optimizations (Maximum Performance)
-For 10-50x performance improvements, install with Rust support:
-
-```bash
-# Automated installation with Rust
-git clone https://github.com/blinkerbit/aird.git
-cd aird
-python build_with_rust.py
-```
-
-This will automatically:
-- Install Rust if not present
-- Build optimized Rust extensions
-- Install Aird with performance enhancements
-- Run tests to verify everything works
-
-### Option 3: Install from Source
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/blinkerbit/aird.git
-    cd aird
-    ```
-
-2.  **Create a virtual environment (recommended):**
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # On Windows: venv\Scripts\activate
-    ```
-
-3.  **Install dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-4.  **Install the package:**
-    ```bash
-    pip install .
-    ```
 
 ## 📖 Usage
 
@@ -339,65 +313,32 @@ The admin panel provides real-time control over server features and capabilities
 
 ### Access the Admin Panel
 
-1.  **Start server with admin token:**
-    ```bash
-    aird --admin-token "your-admin-secret-token"
-    ```
+1. **Start server with admin token:**
+   ```bash
+   aird --admin-token "your-admin-secret-token"
+   ```
 
-2.  **Navigate to admin interface:**
-    Visit `http://localhost:8888/admin` and authenticate with your admin token
+2. **Navigate to admin interface:**
+   Visit `http://localhost:8888/admin` and authenticate with your admin token
 
-3.  **Feature Management:**
-    - **File Upload:** Toggle file upload capability
-    - **File Delete:** Enable/disable file and directory deletion
-    - **File Rename:** Control rename functionality
-    - **File Edit:** Toggle in-browser file editing
-    - **File Download:** Control file download access
-    - **File Share:** Enable/disable file sharing functionality
+3. **Feature Management:**
+   - **File Upload:** Toggle file upload capability
+   - **File Delete:** Enable/disable file and directory deletion
+   - **File Rename:** Control rename functionality
+   - **File Edit:** Toggle in-browser file editing
+   - **File Download:** Control file download access
+   - **File Share:** Enable/disable file sharing functionality
 
-4.  **WebSocket Connection Management (NEW!):**
-    - **Feature Flags WebSocket:** Configure max connections (1-1000) and idle timeout (30-7200s)
-    - **File Streaming WebSocket:** Optimize settings for high-traffic file operations
-    - **Search WebSocket:** Tune search handler performance limits
-    - **Real-time Statistics:** View live connection stats at `/admin/websocket-stats`
-    - **Dynamic Configuration:** All settings apply instantly without restart
+4. **WebSocket Connection Management (NEW!):**
+   - **Feature Flags WebSocket:** Configure max connections (1-1000) and idle timeout (30-7200s)
+   - **File Streaming WebSocket:** Optimize settings for high-traffic file operations
+   - **Search WebSocket:** Tune search handler performance limits
+   - **Real-time Statistics:** View live connection stats at `/admin/websocket-stats`
+   - **Dynamic Configuration:** All settings apply instantly without restart
 
 All changes apply immediately to all connected users via WebSocket updates.
 
 ## 🎯 Key Features in Detail
-
-### 🚀 Rust Integration (Performance Breakthrough!)
-Aird features optional Rust integration that provides massive performance improvements while maintaining full backward compatibility.
-
-#### **Performance Benchmarks**
-| Operation | Python Only | With Rust | Improvement |
-|-----------|-------------|-----------|-------------|
-| **File Streaming** | 50 MB/s | 500-1000 MB/s | **10-20x** |
-| **Text Search** | 100 MB/s | 1-5 GB/s | **10-50x** |
-| **Line Processing** | 200k lines/s | 2M+ lines/s | **10x+** |
-| **Compression** | 20 MB/s | 200-500 MB/s | **10-25x** |
-| **Directory Scan** | 10k files/s | 100k+ files/s | **10x+** |
-
-#### **Memory Efficiency**
-- **Constant Memory Usage**: Handle GB-sized files with ~64KB memory
-- **Reduced GC Pressure**: Less Python object allocation
-- **Better Cache Locality**: Optimized data structures in Rust
-
-#### **Installation Options**
-```bash
-# Option 1: Automated installation (recommended)
-python build_with_rust.py
-
-# Option 2: Manual installation
-pip install maturin setuptools-rust
-cd aird/rust_core && cargo build --release
-pip install -e .
-```
-
-#### **Automatic Fallbacks**
-- **Seamless Degradation**: Falls back to Python when Rust unavailable
-- **Zero Breaking Changes**: Existing code works unchanged
-- **Performance Monitoring**: Built-in performance tracking
 
 ### 🔍 Super Search (Latest Feature!)
 - **Content-based Search:** Find text within files across your entire directory structure
@@ -447,11 +388,6 @@ pip install -e .
 - **Storage:** Minimal disk space for the application
 - **Network:** HTTP/HTTPS and WebSocket support
 
-### **Optional Requirements (For Maximum Performance)**
-- **Rust:** 1.70+ (for 10-50x performance improvements)
-- **setuptools-rust:** For building Rust extensions
-- **maturin:** Alternative Rust-Python build tool
-
 ### **Development Requirements**
 For development and testing, additional dependencies are available in the test extras:
 ```bash
@@ -461,6 +397,32 @@ pip install -e .[test]
 This includes:
 - **Testing frameworks:** pytest, pytest-asyncio, pytest-mock, pytest-cov
 - **Development tools:** coverage, mock for comprehensive testing
+
+## 🧪 Testing
+
+The project includes a comprehensive test suite with multiple testing utilities:
+
+### Running Tests
+```bash
+# Run all tests
+python run_tests.py
+
+# Run with coverage
+python run_coverage.py
+
+# Run specific test files
+pytest tests/test_handlers.py
+
+# Run tests with verbose output
+pytest -v
+```
+
+### Test Coverage
+- **Comprehensive Coverage:** Tests for all major components including handlers, utilities, and database operations
+- **WebSocket Testing:** Real-time functionality testing with pytest-tornado
+- **File Operations:** Testing file streaming, editing, and sharing features
+- **Security Testing:** Path traversal protection and authentication testing
+- **Performance Testing:** Large file handling and memory efficiency tests
 
 ## 🤝 Contributing
 
@@ -484,10 +446,9 @@ pip install -r requirements.txt
 pip install -e .  # Install in development mode
 ```
 
-## � Contributors & Thanks
+## 👥 Contributors & Thanks
 
 We extend our heartfelt gratitude to all contributors who have helped make aird better:
-
 
 ### 💡 Community Contributors
 A special thanks to everyone who has contributed through:
@@ -517,7 +478,7 @@ If you've benefited from aird, consider:
 - 🐛 **Reporting issues**
 - 💝 **Sharing with others**
 
-## �📄 License
+## 📄 License
 
 This project is licensed under a **Custom License** that prohibits commercial use without explicit written consent from the author. See the `LICENSE` file for complete details.
 

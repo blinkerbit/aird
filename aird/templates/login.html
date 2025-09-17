@@ -27,8 +27,13 @@
             <input type="text" name="username" placeholder="Enter username"><br><br>
             <input type="password" name="password" placeholder="Enter password">
         {% else %}
-            <div style="margin-bottom:8px; color:#333;">Enter the access token provided by your administrator.</div>
-            <input type="password" name="token" placeholder="Enter access token">
+            <div style="margin-bottom:8px; color:#333;">Sign in with your username and password, or use an access token.</div>
+            <div style="margin-bottom:10px;">
+                <input type="text" name="username" placeholder="Username (optional)"><br><br>
+                <input type="password" name="password" placeholder="Password (optional)"><br><br>
+                <div style="text-align: center; margin: 10px 0; color: #666;">— OR —</div>
+                <input type="password" name="token" placeholder="Access token">
+            </div>
         {% end %}
         <br><br>
         <input type="submit" value="Login">

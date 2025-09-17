@@ -15,7 +15,7 @@
         font-family: "Courier New", monospace;
         background: white;
         color: black;
-        line-height: 1.4;
+        line-height: 1.2;
       }
 
       .container {
@@ -318,7 +318,8 @@
             {% end %} {% end %}
           </div>
         </div>
-        <div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+        <a href="/profile" style="font-size: 12px; color: #666; margin-right: 15px; text-decoration: none;">👤 {{ handler.get_display_username() }}</a>
         {% if features.get('super_search') %}
         <a href="/search?path={{ escape(current_path or '') }}" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;">🚀 Super Search</a>
         {% end %}
@@ -343,12 +344,12 @@
       <table class="file-table" id="fileTable">
         <thead>
           <tr>
-            <th class="name-col sort-header" onclick="sortTable(0)">📁 Name<div class="resizer"></div></th>
-            <th class="size-col sort-header" onclick="sortTable(1)">📏 Size<div class="resizer"></div></th>
+            <th class="name-col sort-header" onclick="sortTable(0)">📄 Name<div class="resizer"></div></th>
+            <th class="size-col sort-header" onclick="sortTable(1)">📊 Size<div class="resizer"></div></th>
             <th class="modified-col sort-header" onclick="sortTable(2)">
-              🕒 Modified<div class="resizer"></div>
+              🕐 Modified<div class="resizer"></div>
             </th>
-            <th class="actions-col">⚡ Actions</th>
+            <th class="actions-col">🛠️ Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -410,14 +411,14 @@
                   href="/files/{{ escape(join_path(current_path, file['name'])) }}?download=1"
                   class="action-link"
                   title="Download"
-                  >⬇️</a>
+                  >💾</a>
                 {% end %}
                 {% if features['file_edit'] %}
                 <a
                   href="/edit/{{ escape(join_path(current_path, file['name'])) }}"
                   class="action-link"
                   title="Edit"
-                  >📝</a>
+                  >✏️</a>
                 {% end %}
               {% end %}
               {% if features['file_rename'] %}
@@ -426,7 +427,7 @@
                 onclick="renameItem('{{ escape(join_path(current_path, file['name'])) }}')"
                 class="action-link"
                 title="Rename"
-                >✏️</a>
+                >🏷️</a>
               {% end %}
               {% if features['file_delete'] %}
               <a
@@ -434,7 +435,7 @@
                 onclick="deleteItem('{{ escape(join_path(current_path, file['name'])) }}')"
                 class="action-link"
                 title="Delete"
-                >🗑️</a>
+                >❌</a>
               {% end %}
             </td>
           </tr>

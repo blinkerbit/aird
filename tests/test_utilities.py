@@ -100,11 +100,14 @@ class TestGetFileIcon:
         assert get_file_icon(filename) == expected_icon
     
     @pytest.mark.parametrize("filename,expected_icon", [
-        ("script.py", "🐍"),  # Python files have snake icon
+        ("script.py", "🐍💎"),  # Python source files have enhanced snake icon with gem
+        ("script.pyw", "🐍💎"),  # Python Windows files have enhanced snake icon with gem
+        ("module.pyc", "🐍⚡"),  # Compiled Python files have snake with lightning
+        ("module.pyo", "🐍⚡"),  # Optimized Python files have snake with lightning
         ("app.js", "🟨"),  # JavaScript files have yellow square
         ("Main.java", "☕"),  # Java files have coffee icon
         ("program.cpp", "⚙️"),  # C++ files have gear icon
-        ("SCRIPT.PY", "🐍"),  # Case insensitive
+        ("SCRIPT.PY", "🐍💎"),  # Case insensitive
         ("code.c", "⚙️"),  # C files have gear icon
         ("web.html", "🌐"),  # HTML files have globe icon
         ("style.css", "🎨"),  # CSS files have art icon
@@ -402,7 +405,7 @@ class TestUtilitiesIntegration:
             assert icon and len(icon) > 0, f"File {file_entry['name']} should have a non-empty icon"
             # Check specific icons for known file types
             if file_entry["name"] == "script.py":
-                assert icon == "🐍"
+                assert icon == "🐍💎"
             elif file_entry["name"] == "document.txt":
                 assert icon == "📄" 
             elif file_entry["name"] == "image.jpg":

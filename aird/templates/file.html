@@ -203,7 +203,8 @@
         <div class="breadcrumb">
             <a href="/files/">🏠 Home</a>
         </div>
-        <div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <a href="/profile" style="font-size: 12px; color: #666; text-decoration: none;">👤 {{ handler.get_display_username() }}</a>
             <a href="/logout" class="download-btn">↩ Logout</a>
         </div>
     </div>

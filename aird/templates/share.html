@@ -224,6 +224,11 @@
           <span id="currentPath">Browse & Select Files</span>
         </div>
       </div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <a href="/profile" style="font-size: 12px; color: #666; margin-right: 15px; text-decoration: none;">👤 {{ handler.get_display_username() }}</a>
+        <a href="/files/" class="btn">📁 Browse Files</a>
+        <a href="/logout" class="btn">↩ Logout</a>
+      </div>
     </div>
 
     <!-- Selection Panel -->

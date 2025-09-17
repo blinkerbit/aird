@@ -7,24 +7,59 @@
             background-color: white;
             color: black;
             font-family: monospace;
+            margin: 50px auto;
+            max-width: 400px;
         }
         input {
             font-family: monospace;
             border: 1px solid black;
-            padding: 5px;
+            padding: 8px;
+            width: 100%;
+            box-sizing: border-box;
+            margin: 5px 0;
+        }
+        .form-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ccc;
+        }
+        .form-section h3 {
+            margin-top: 0;
+        }
+        .or-separator {
+            text-align: center;
+            margin: 20px 0;
+            font-weight: bold;
         }
     </style>
 </head>
 <body>
     <h2>Admin Login</h2>
     {% if error %}
-        <div style="color: red;">{{ escape(error) }}</div>
+        <div style="color: red; margin: 10px 0;">{{ escape(error) }}</div>
     {% end %}
-    <form method="POST">
-        {% raw xsrf_form_html() %}
-        <input type="password" name="token" placeholder="Enter admin token">
-        <br><br>
-        <input type="submit" value="Login">
-    </form>
+    
+    <!-- Username/Password Login -->
+    <div class="form-section">
+        <h3>Login with Admin Account</h3>
+        <form method="POST">
+            {% raw xsrf_form_html() %}
+            <input type="text" name="username" placeholder="Username" autocomplete="username">
+            <input type="password" name="password" placeholder="Password" autocomplete="current-password">
+            <input type="submit" value="Login with Password">
+        </form>
+    </div>
+    
+    <div class="or-separator">OR</div>
+    
+    <!-- Token Login -->
+    <div class="form-section">
+        <h3>Login with Admin Token</h3>
+        <form method="POST">
+            {% raw xsrf_form_html() %}
+            <input type="password" name="token" placeholder="Enter admin token" autocomplete="off">
+            <input type="submit" value="Login with Token">
+        </form>
+    </div>
 </body>
 </html>
