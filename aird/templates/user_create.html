@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Create New User</title>
+    <style>
+        body {
+            background-color: white;
+            color: black;
+            font-family: monospace;
+            margin: 20px;
+        }
+        input, select {
+            font-family: monospace;
+            border: 1px solid black;
+            padding: 5px;
+            width: 200px;
+        }
+        .form-group {
+            margin: 15px 0;
+        }
+        .form-group label {
+            display: inline-block;
+            width: 150px;
+            vertical-align: top;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+        }
+        .error {
+            color: red;
+            margin: 10px 0;
+        }
+        .nav-links {
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #ccc;
+        }
+        .nav-links a {
+            margin-right: 15px;
+            text-decoration: none;
+            color: #007bff;
+        }
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+        .btn {
+            padding: 8px 16px;
+            margin-right: 10px;
+            border: 1px solid #ccc;
+            background-color: #f8f9fa;
+            color: black;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn:hover {
+            background-color: #e9ecef;
+        }
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+        .btn-primary:hover {
+            background-color: #0056b3;
+        }
+        .help-text {
+            font-size: 0.9em;
+            color: #666;
+            margin-left: 160px;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav-links">
+        <a href="/admin/users">← Back to Users</a>
+        <a href="/admin">Admin Panel</a>
+        <a href="/logout">Logout</a>
+        <div style="float: right; font-size: 12px; color: #666;">👤 {{ handler.get_display_username() }}</div>
+    </div>
+    
+    <h2>Create New User</h2>
+    
+    {% if error %}
+        <div class="error">{{ escape(error) }}</div>
+    {% end %}
+    
+    <div class="section">
+        <form method="POST">
+            {% raw xsrf_form_html() %}
+            
+            <div class="form-group">
+                <label for="username">Username:</label>
+                <input type="text" id="username" name="username" required 
+                       pattern="[a-zA-Z0-9_-]+" 
+                       title="Username can only contain letters, numbers, underscores, and hyphens"
+                       minlength="3" maxlength="50">
+                <div class="help-text">3-50 characters, letters, numbers, underscore, and hyphen only</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" name="password" required minlength="6">
+                <div class="help-text">Minimum 6 characters</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="role">Role:</label>
+                <select id="role" name="role">
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                </select>
+                <div class="help-text">Admin users can manage other users and system settings</div>
+            </div>
+            
+            <div class="form-group">
+                <label></label>
+                <input type="submit" value="Create User" class="btn btn-primary">
+                <a href="/admin/users" class="btn">Cancel</a>
+            </div>
+        </form>
+    </div>
+    
+    <div class="section">
+        <h3>User Roles Explained</h3>
+        <ul>
+            <li><strong>User:</strong> Can access files, upload, download, and use all file management features based on system settings</li>
+            <li><strong>Admin:</strong> All user permissions plus ability to manage other users, modify system settings, and access admin panel</li>
+        </ul>
+    </div>
+</body>
+</html>

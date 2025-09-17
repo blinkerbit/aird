@@ -16,6 +16,7 @@ import tornado.ioloop
 import tornado.web
 import socket
 import tornado.websocket
+import tornado.escape as tornado_escape
 import shutil
 from collections import deque
 from ldap3 import Server, Connection, ALL
@@ -24,7 +25,7 @@ import gzip
 import mimetypes
 from io import BytesIO
 import tempfile
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 import aiofiles
 import asyncio
 import concurrent.futures
@@ -34,6 +35,15 @@ import time
 import threading
 import weakref
 import hashlib
+# Secure password hashing (Priority 1)
+try:
+    from argon2 import PasswordHasher
+    from argon2 import exceptions as argon2_exceptions
+    ARGON2_AVAILABLE = True
+    PH = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
+except Exception:
+    ARGON2_AVAILABLE = False
+    PH = None
 
 # Import Rust integration with fallback
 try:
@@ -56,6 +66,50 @@ except ImportError:
 
 def join_path(*parts):
     return os.path.join(*parts).replace("\\", "/")
+
+# Path security helper (Priority 1)
+def is_within_root(path: str, root: str) -> bool:
+    """Return True if path is within root after resolving symlinks and normalization."""
+    try:
+        path_real = os.path.realpath(path)
+        root_real = os.path.realpath(root)
+        return os.path.commonpath([path_real, root_real]) == root_real
+    except Exception:
+        return False
+
+# WebSocket origin validation helper (Priority 2)
+def is_valid_websocket_origin(handler, origin: str) -> bool:
+    try:
+        if not origin:
+            return False
+        parsed = urlparse(origin)
+        origin_host = parsed.hostname
+        origin_port = parsed.port
+        origin_scheme = parsed.scheme
+        # Determine expected host/port from request
+        req_host = handler.request.host.split(":")[0]
+        try:
+            req_port = int(handler.request.host.split(":")[1])
+        except (IndexError, ValueError):
+            req_port = 443 if handler.request.protocol == "https" else 80
+        expected_scheme = "https" if handler.request.protocol == "https" else "http"
+        if origin_scheme not in (expected_scheme, expected_scheme + "s"):
+            # Allow ws/wss equivalents to http/https
+            if not (origin_scheme in ("ws", "wss") and expected_scheme in ("http", "https")):
+                return False
+        if origin_host != req_host:
+            # Allow localhost in development if explicitly enabled
+            allow_dev = bool(handler.settings.get("allow_dev_origins", False))
+            if not (allow_dev and origin_host in {"localhost", "127.0.0.1"}):
+                return False
+        if origin_port and origin_port != req_port:
+            # Different port -> reject unless allow_dev and localhost
+            allow_dev = bool(handler.settings.get("allow_dev_origins", False))
+            if not (allow_dev and origin_host in {"localhost", "127.0.0.1"}):
+                return False
+        return True
+    except Exception:
+        return False
 
 # Add this import for template path
 from tornado.web import RequestHandler, Application
@@ -89,12 +143,32 @@ WEBSOCKET_CONFIG = {
 }
 
 
-# Maximum upload size: 10 GB
-MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024
-MAX_READABLE_FILE_SIZE = 10 * 1024 * 1024
+# Maximum upload size: reduced to 512 MB (Priority 2)
+MAX_FILE_SIZE = 512 * 1024 * 1024
+# Maximum size to load into editor: 5 MB (Priority 2)
+MAX_READABLE_FILE_SIZE = 5 * 1024 * 1024
 CHUNK_SIZE = 1024 * 64
 # Minimum file size to use mmap (avoid overhead for small files)
 MMAP_MIN_SIZE = 1024 * 1024  # 1MB
+
+# Allowed upload extensions (whitelist) to prevent dangerous uploads (Priority 1)
+ALLOWED_UPLOAD_EXTENSIONS = {
+    # Text and data
+    ".txt", ".log", ".md", ".csv", ".json", ".xml", ".yaml", ".yml",
+    # Images
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg",
+    # Archives (read-only; still safe to store)
+    ".zip", ".tar", ".gz", ".bz2", ".xz",
+    # Code snippets (store-only, not executed)
+    ".py", ".js", ".ts", ".java", ".c", ".cpp", ".go", ".rs", ".sh"
+}
+# Allow override via env for controlled environments
+_env_exts = os.environ.get("AIRD_ALLOWED_UPLOAD_EXTENSIONS")
+if _env_exts:
+    try:
+        ALLOWED_UPLOAD_EXTENSIONS = {"." + e.strip().lstrip(".").lower() for e in _env_exts.split(",") if e.strip()}
+    except Exception:
+        pass
 
 SHARES = {}
 
@@ -586,18 +660,30 @@ def _save_websocket_config(conn: sqlite3.Connection, config: dict) -> None:
 # ------------------------
 
 def _hash_password(password: str) -> str:
-    """Hash a password using SHA-256 with salt"""
+    """Hash a password using Argon2 (Priority 1). Falls back to legacy only if Argon2 unavailable."""
+    if ARGON2_AVAILABLE and PH is not None:
+        return PH.hash(password)
+    # Legacy fallback (not recommended): salted SHA-256
     salt = secrets.token_hex(32)
     pwd_hash = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
     return f"{salt}:{pwd_hash}"
 
 def _verify_password(password: str, password_hash: str) -> bool:
-    """Verify a password against its hash"""
+    """Verify password supporting Argon2 and legacy salted SHA-256."""
+    # Try Argon2 first
+    if password_hash and password_hash.startswith("$argon2") and ARGON2_AVAILABLE and PH is not None:
+        try:
+            return PH.verify(password_hash, password)
+        except argon2_exceptions.VerifyMismatchError:
+            return False
+        except Exception:
+            return False
+    # Legacy format: salt:hash
     try:
         salt, stored_hash = password_hash.split(':', 1)
         pwd_hash = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
         return pwd_hash == stored_hash
-    except ValueError:
+    except Exception:
         return False
 
 def _create_user(conn: sqlite3.Connection, username: str, password: str, role: str = 'user') -> dict:
@@ -1115,20 +1201,8 @@ class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):
         self.connection_manager.remove_connection(self)
 
     def check_origin(self, origin):
-        # Only allow connections from the same host for security
-        host = self.request.host
-        port = self.request.host.split(':')[1] if ':' in self.request.host else '80'
-        
-        allowed_origins = [
-            f"http://{host}",
-            f"https://{host}",
-            f"http://localhost:{port}",
-            f"http://127.0.0.1:{port}",
-            # Also allow standard localhost variants for development
-            "http://localhost",
-            "http://127.0.0.1"
-        ]
-        return origin in allowed_origins
+        # Improved origin validation (Priority 2)
+        return is_valid_websocket_origin(self, origin)
 
     def _get_current_feature_flags(self):
         """Get current feature flags, preferring SQLite data over in-memory."""
@@ -1268,7 +1342,7 @@ class LDAPLoginHandler(BaseHandler):
             server = Server(self.settings['ldap_server'], get_info=ALL)
             conn = Connection(server, user=f"uid={username},{self.settings['ldap_base_dn']}", password=password, auto_bind=True)
             if conn.bind():
-                self.set_secure_cookie("user", username)
+                self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
                 self.redirect("/files/")
             else:
                 self.render("login.html", error="Invalid username or password.", settings=self.settings)
@@ -1302,8 +1376,8 @@ class LoginHandler(BaseHandler):
             try:
                 user = _authenticate_user(DB_CONN, username, password)
                 if user:
-                    self.set_secure_cookie("user", username)
-                    self.set_secure_cookie("user_role", user['role'])
+                    self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
+                    self.set_secure_cookie("user_role", user['role'], httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
                     self.redirect(next_url)
                     return
                 else:
@@ -1326,8 +1400,8 @@ class LoginHandler(BaseHandler):
             return
             
         if token == ACCESS_TOKEN:
-            self.set_secure_cookie("user", "token_authenticated")
-            self.set_secure_cookie("user_role", "admin")  # Token users get admin role
+            self.set_secure_cookie("user", "token_authenticated", httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
+            self.set_secure_cookie("user_role", "admin", httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")  # Token users get admin role
             self.redirect(next_url)
         else:
             self.render("login.html", error="Invalid credentials. Try again.", settings=self.settings, next_url=next_url)
@@ -1356,9 +1430,9 @@ class AdminLoginHandler(BaseHandler):
                 user = _authenticate_user(DB_CONN, username, password)
                 if user and user['role'] == 'admin':
                     # Set both user and admin cookies for admin users
-                    self.set_secure_cookie("user", username)
-                    self.set_secure_cookie("user_role", user['role'])
-                    self.set_secure_cookie("admin", "authenticated")  # Also set admin cookie
+                    self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
+                    self.set_secure_cookie("user_role", user['role'], httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
+                    self.set_secure_cookie("admin", "authenticated", httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")  # Also set admin cookie
                     self.redirect("/admin")
                     return
                 elif user and user['role'] != 'admin':
@@ -1384,7 +1458,7 @@ class AdminLoginHandler(BaseHandler):
             return
             
         if token == ADMIN_TOKEN:
-            self.set_secure_cookie("admin", "authenticated")
+            self.set_secure_cookie("admin", "authenticated", httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
             self.redirect("/admin")
         else:
             self.render("admin_login.html", error="Invalid admin token.")
@@ -1835,7 +1909,7 @@ class MainHandler(BaseHandler):
     async def get(self, path):
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
 
-        if not abspath.startswith(ROOT_DIR):
+        if not is_within_root(abspath, ROOT_DIR):
             self.set_status(403)
             self.write("Forbidden")
             return
@@ -2110,10 +2184,13 @@ class MainHandler(BaseHandler):
                 start_line = 1
             file_content = ''.join(file_content_parts)
 
+            # Escape user-controlled values to prevent XSS in inline HTML (Priority 1)
+            safe_path = tornado_escape.xhtml_escape(path)
+            safe_filter = tornado_escape.xhtml_escape(filter_substring) if filter_substring else ''
             filter_html = f'''
             <form method="get" style="margin-bottom:10px;">
-                <input type="hidden" name="path" value="{path}">
-                <input type="text" name="filter" placeholder="Filter lines..." value="{filter_substring or ''}" style="width:200px;">
+                <input type="hidden" name="path" value="{safe_path}">
+                <input type="text" name="filter" placeholder="Filter lines..." value="{safe_filter}" style="width:200px;">
                 <button type="submit">Apply Filter</button>
             </form>
             '''
@@ -2143,20 +2220,8 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
         return self.get_secure_cookie("user")
 
     def check_origin(self, origin):
-        # Only allow connections from the same host for security
-        host = self.request.host
-        port = self.request.host.split(':')[1] if ':' in self.request.host else '80'
-        
-        allowed_origins = [
-            f"http://{host}",
-            f"https://{host}",
-            f"http://localhost:{port}",
-            f"http://127.0.0.1:{port}",
-            # Also allow standard localhost variants for development
-            "http://localhost",
-            "http://127.0.0.1"
-        ]
-        return origin in allowed_origins
+        # Improved origin validation (Priority 2)
+        return is_valid_websocket_origin(self, origin)
 
     async def open(self, path):
         if not self.current_user:
@@ -2170,6 +2235,11 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
 
         path = path.lstrip('/')
         self.file_path = os.path.abspath(os.path.join(ROOT_DIR, path))
+        # Enforce root restriction (Priority 1)
+        if not is_within_root(self.file_path, ROOT_DIR):
+            self.write_message("Forbidden path")
+            self.close()
+            return
         self.running = True
         # Number of tail lines to send on connect
         try:
@@ -2347,8 +2417,8 @@ class UploadHandler(BaseHandler):
             return
 
         # Enhanced path validation
-        safe_dir_abs = os.path.abspath(os.path.join(ROOT_DIR, self.upload_dir.strip("/")))
-        if not safe_dir_abs.startswith(ROOT_DIR):
+        safe_dir_abs = os.path.realpath(os.path.join(ROOT_DIR, self.upload_dir.strip("/")))
+        if not is_within_root(safe_dir_abs, ROOT_DIR):
             self.set_status(403)
             self.write("Forbidden path")
             return
@@ -2360,12 +2430,11 @@ class UploadHandler(BaseHandler):
             self.write("Invalid filename")
             return
             
-        # Check for dangerous file extensions
-        dangerous_extensions = ['.exe', '.bat', '.cmd', '.scr', '.vbs', '.js', '.jar']
+        # Enforce allowed extensions (whitelist)
         file_ext = os.path.splitext(safe_filename)[1].lower()
-        if file_ext in dangerous_extensions:
-            self.set_status(403)
-            self.write("File type not allowed")
+        if file_ext not in ALLOWED_UPLOAD_EXTENSIONS:
+            self.set_status(415)
+            self.write("Unsupported file type")
             return
             
         # Validate filename length
@@ -2374,8 +2443,8 @@ class UploadHandler(BaseHandler):
             self.write("Filename too long")
             return
 
-        final_path_abs = os.path.abspath(os.path.join(safe_dir_abs, safe_filename))
-        if not final_path_abs.startswith(safe_dir_abs):
+        final_path_abs = os.path.realpath(os.path.join(safe_dir_abs, safe_filename))
+        if not is_within_root(final_path_abs, safe_dir_abs):
             self.set_status(403)
             self.write("Forbidden path")
             return
@@ -2416,7 +2485,7 @@ class DeleteHandler(BaseHandler):
         path = self.get_argument("path", "")
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
         root = ROOT_DIR
-        if not abspath.startswith(root):
+        if not is_within_root(abspath, root):
             self.set_status(403)
             self.write("Forbidden")
             return
@@ -2458,7 +2527,7 @@ class RenameHandler(BaseHandler):
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
         new_abspath = os.path.abspath(os.path.join(ROOT_DIR, os.path.dirname(path), new_name))
         root = ROOT_DIR
-        if not (abspath.startswith(root) and new_abspath.startswith(root)):
+        if not (is_within_root(abspath, root) and is_within_root(new_abspath, root)):
             self.set_status(403)
             self.write("Forbidden")
             return
@@ -2506,7 +2575,7 @@ class EditHandler(BaseHandler):
         
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
         
-        if not abspath.startswith(ROOT_DIR):
+        if not is_within_root(abspath, ROOT_DIR):
             self.set_status(403)
             self.write("Forbidden")
             return
@@ -2543,7 +2612,7 @@ class EditViewHandler(BaseHandler):
             return
 
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
-        if not (abspath.startswith(ROOT_DIR)):
+if not is_within_root(abspath, ROOT_DIR):
             self.set_status(403)
             self.write("Forbidden")
             return
@@ -2610,7 +2679,7 @@ class FileListAPIHandler(BaseHandler):
         path = path.strip('/')
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
         
-        if not abspath.startswith(ROOT_DIR):
+        if not is_within_root(abspath, ROOT_DIR):
             self.set_status(403)
             self.write({"error": "Forbidden"})
             return
@@ -2671,13 +2740,13 @@ class ShareCreateHandler(BaseHandler):
             valid_paths = []
             for p in paths:
                 ap = os.path.abspath(os.path.join(ROOT_DIR, p))
-                if ap.startswith(ROOT_DIR) and os.path.isfile(ap):
+                if is_within_root(ap, ROOT_DIR) and os.path.isfile(ap):
                     valid_paths.append(p)
             if not valid_paths:
                 self.set_status(400)
                 self.write({"error": "No valid files"})
                 return
-            sid = secrets.token_urlsafe(8)
+sid = secrets.token_urlsafe(24)  # Increase entropy to reduce guessing risk (Priority 2)
             created = datetime.utcnow().isoformat()
             SHARES[sid] = {"paths": valid_paths, "created": created}
             # Persist to DB
@@ -2742,7 +2811,7 @@ class SharedFileHandler(tornado.web.RequestHandler):
             self.write("File not in share")
             return
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
-        if not (abspath.startswith(ROOT_DIR) and os.path.isfile(abspath)):
+        if not (is_within_root(abspath, ROOT_DIR) and os.path.isfile(abspath)):
             self.set_status(404)
             self.write("File not found")
             return
@@ -2793,20 +2862,8 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
         return self.get_secure_cookie("user")
 
     def check_origin(self, origin):
-        # Only allow connections from the same host for security
-        host = self.request.host
-        port = self.request.host.split(':')[1] if ':' in self.request.host else '80'
-        
-        allowed_origins = [
-            f"http://{host}",
-            f"https://{host}",
-            f"http://localhost:{port}",
-            f"http://127.0.0.1:{port}",
-            # Also allow standard localhost variants for development
-            "http://localhost",
-            "http://127.0.0.1"
-        ]
-        return origin in allowed_origins
+        # Improved origin validation (Priority 2)
+        return is_valid_websocket_origin(self, origin)
 
     def open(self):
         if not self.current_user:

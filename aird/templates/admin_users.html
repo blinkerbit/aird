@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>User Management</title>
+    <style>
+        body {
+            background-color: white;
+            color: black;
+            font-family: monospace;
+            margin: 20px;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: white;
+            margin: 10px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .status-active { color: green; }
+        .status-inactive { color: red; }
+        .role-admin { font-weight: bold; color: #d63384; }
+        .role-user { color: #6c757d; }
+        .action-btn {
+            display: inline-block;
+            margin: 2px;
+            padding: 4px 8px;
+            text-decoration: none;
+            border: 1px solid #ccc;
+            background-color: #f8f9fa;
+            color: black;
+            font-size: 12px;
+        }
+        .action-btn:hover {
+            background-color: #e9ecef;
+        }
+        .btn-edit { border-color: #007bff; color: #007bff; }
+        .btn-delete { border-color: #dc3545; color: #dc3545; }
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+            border: 1px solid #007bff;
+            padding: 8px 16px;
+            text-decoration: none;
+            margin-right: 10px;
+        }
+        .btn-primary:hover {
+            background-color: #0056b3;
+        }
+        .nav-links {
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #ccc;
+        }
+        .nav-links a {
+            margin-right: 15px;
+            text-decoration: none;
+            color: #007bff;
+        }
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+    </style>
+    <script>
+        function confirmDelete(username, userId) {
+            if (confirm('Are you sure you want to delete user "' + username + '"? This action cannot be undone.')) {
+                var form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '/admin/users/delete';
+                
+                var csrfInput = document.createElement('input');
+                csrfInput.type = 'hidden';
+                csrfInput.name = '_xsrf';
+                csrfInput.value = document.querySelector('input[name="_xsrf"]').value;
+                
+                var userIdInput = document.createElement('input');
+                userIdInput.type = 'hidden';
+                userIdInput.name = 'user_id';
+                userIdInput.value = userId;
+                
+                form.appendChild(csrfInput);
+                form.appendChild(userIdInput);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+    </script>
+</head>
+<body>
+    <div class="nav-links">
+        <a href="/admin">← Back to Admin Panel</a>
+        <a href="/logout">Logout</a>
+        <div style="float: right; font-size: 12px; color: #666;">👤 {{ handler.get_display_username() }}</div>
+    </div>
+    
+    <h2>User Management</h2>
+    
+    <div class="section">
+        <a href="/admin/users/create" class="btn-primary">+ Create New User</a>
+        <p><em>Manage system users and their access permissions.</em></p>
+    </div>
+    
+    <div class="section">
+        <h3>Users ({{ len(users) }} total)</h3>
+        
+        {% if users %}
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Username</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Last Login</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr>
+                    <td>{{ user['id'] }}</td>
+                    <td>{{ escape(user['username']) }}</td>
+                    <td>
+                        <span class="role-{{ user['role'] }}">
+                            {{ user['role'].upper() }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="status-{% if user['active'] %}active{% else %}inactive{% end %}">
+                            {% if user['active'] %}ACTIVE{% else %}INACTIVE{% end %}
+                        </span>
+                    </td>
+                    <td>{{ user['created_at'][:19] if user['created_at'] else 'N/A' }}</td>
+                    <td>{{ user['last_login'][:19] if user['last_login'] else 'Never' }}</td>
+                    <td>
+                        <a href="/admin/users/edit/{{ user['id'] }}" class="action-btn btn-edit">Edit</a>
+                        <a href="javascript:void(0)" onclick="confirmDelete('{{ escape(user['username']) }}', {{ user['id'] }})" class="action-btn btn-delete">Delete</a>
+                    </td>
+                </tr>
+                {% end %}
+            </tbody>
+        </table>
+        {% else %}
+        <p><em>No users found. Create your first user above.</em></p>
+        {% end %}
+    </div>
+    
+    <!-- Hidden CSRF token for delete operations -->
+    <form style="display: none;">
+        {% raw xsrf_form_html() %}
+    </form>
+</body>
+</html>

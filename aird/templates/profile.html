@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Profile - Aird</title>
+    <style>
+        body {
+            background-color: white;
+            color: black;
+            font-family: monospace;
+            margin: 50px auto;
+            max-width: 600px;
+        }
+        
+        .header {
+            border-bottom: 2px solid black;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+        }
+        
+        .profile-section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #ccc;
+        }
+        
+        .profile-section h3 {
+            margin-top: 0;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 10px;
+        }
+        
+        input, button {
+            font-family: monospace;
+            border: 1px solid black;
+            padding: 8px;
+            margin: 5px 0;
+        }
+        
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            box-sizing: border-box;
+        }
+        
+        button {
+            background-color: #f0f0f0;
+            cursor: pointer;
+            padding: 10px 20px;
+        }
+        
+        button:hover {
+            background-color: #e0e0e0;
+        }
+        
+        .error {
+            color: red;
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid red;
+            background-color: #ffe6e6;
+        }
+        
+        .success {
+            color: green;
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid green;
+            background-color: #e6ffe6;
+        }
+        
+        .info {
+            background-color: #e6f3ff;
+            border: 1px solid #b3d9ff;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        
+        .nav-links {
+            margin-bottom: 20px;
+        }
+        
+        .nav-links a {
+            color: black;
+            text-decoration: none;
+            margin-right: 20px;
+        }
+        
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+        
+        .form-group {
+            margin: 15px 0;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav-links">
+        <a href="/files/">← Files</a>
+        {% if user and user['role'] == "admin" %}
+            <a href="/admin">Admin Panel</a>
+        {% end %}
+    </div>
+    
+    <div class="header">
+        <h1>Profile Settings</h1>
+        {% if user %}
+            <p>User: <strong>{{ escape(user['username']) }}</strong> ({{ escape(user['role']) }})</p>
+            <p>Member since: {{ escape(user['created_at'].split('T')[0] if 'T' in user['created_at'] else user['created_at']) }}</p>
+        {% end %}
+    </div>
+    
+    {% if error %}
+        <div class="error">{{ escape(error) }}</div>
+    {% end %}
+    
+    {% if success %}
+        <div class="success">{{ escape(success) }}</div>
+    {% end %}
+    
+    {% if not user %}
+        <div class="info">
+            Profile management is not available for token-authenticated sessions.
+        </div>
+    {% else %}
+        <!-- Change Password Section -->
+        <div class="profile-section">
+            <h3>Change Password</h3>
+            <p>Update your account password. Make sure to use a strong password.</p>
+            
+            <form method="POST">
+                {% raw xsrf_form_html() %}
+                <input type="hidden" name="action" value="change_password">
+                
+                <div class="form-group">
+                    <label for="current_password_2">Current Password:</label>
+                    <input type="password" name="current_password" id="current_password_2" 
+                           placeholder="Enter your current password" autocomplete="current-password" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="new_password">New Password:</label>
+                    <input type="password" name="new_password" id="new_password" 
+                           placeholder="Enter new password (min 6 characters)" autocomplete="new-password" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="confirm_password">Confirm New Password:</label>
+                    <input type="password" name="confirm_password" id="confirm_password" 
+                           placeholder="Confirm new password" autocomplete="new-password" required>
+                </div>
+                
+                <button type="submit">Change Password</button>
+            </form>
+        </div>
+        
+        <!-- Account Info Section -->
+        <div class="profile-section">
+            <h3>Account Information</h3>
+            <p><strong>Username:</strong> {{ escape(user['username']) }}</p>
+            <p><strong>Role:</strong> {{ escape(user['role']) }}</p>
+            <p><strong>Created:</strong> {{ escape(user['created_at'].split('T')[0] if 'T' in user['created_at'] else user['created_at']) }}</p>
+            <p><strong>Status:</strong> {{ "Active" if user['active'] else "Inactive" }}</p>
+            {% if user['last_login'] %}
+                <p><strong>Last Login:</strong> {{ escape(user['last_login'].split('T')[0] if 'T' in user['last_login'] else user['last_login']) }}</p>
+            {% end %}
+        </div>
+    {% end %}
+</body>
+</html>

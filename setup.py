@@ -31,6 +31,7 @@ setup(
         'tornado>=6.5.1',
         'ldap3>=2.9.1',
         'aiofiles>=23.0.0',
+        'argon2-cffi>=23.1.0',
     ] + rust_dependencies,
     extras_require={
         'test': [
