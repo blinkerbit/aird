@@ -170,7 +170,7 @@ if _env_exts:
     except Exception:
         pass
 
-SHARES = {}
+# SHARES = {}  # REMOVED: Using database-only persistence
 
 class WebSocketConnectionManager:
     """Base class for managing WebSocket connections with memory leak prevention"""
@@ -565,7 +565,8 @@ def _init_db(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS shares (
             id TEXT PRIMARY KEY,
             created TEXT NOT NULL,
-            paths TEXT NOT NULL
+            paths TEXT NOT NULL,
+            allowed_users TEXT
         )
         """
     )
@@ -582,6 +583,14 @@ def _init_db(conn: sqlite3.Connection) -> None:
         )
         """
     )
+
+    # Migration for shares table
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(shares)")
+    columns = [column[1] for column in cursor.fetchall()]
+    if "allowed_users" not in columns:
+        cursor.execute("ALTER TABLE shares ADD COLUMN allowed_users TEXT")
+
     conn.commit()
 
 def _load_feature_flags(conn: sqlite3.Connection) -> dict:
@@ -605,26 +614,51 @@ def _save_feature_flags(conn: sqlite3.Connection, flags: dict) -> None:
 def _load_shares(conn: sqlite3.Connection) -> dict:
     loaded: dict = {}
     try:
-        rows = conn.execute("SELECT id, created, paths FROM shares").fetchall()
-        for sid, created, paths_json in rows:
-            try:
-                paths = json.loads(paths_json) if paths_json else []
-            except Exception:
-                paths = []
-            loaded[sid] = {"paths": paths, "created": created}
-    except Exception:
+        # Check if allowed_users column exists
+        cursor = conn.execute("PRAGMA table_info(shares)")
+        columns = [row[1] for row in cursor.fetchall()]
+        
+        if 'allowed_users' in columns:
+            rows = conn.execute("SELECT id, created, paths, allowed_users FROM shares").fetchall()
+            for sid, created, paths_json, allowed_users_json in rows:
+                try:
+                    paths = json.loads(paths_json) if paths_json else []
+                except Exception:
+                    paths = []
+                try:
+                    allowed_users = json.loads(allowed_users_json) if allowed_users_json else None
+                except Exception:
+                    allowed_users = None
+                loaded[sid] = {"paths": paths, "created": created, "allowed_users": allowed_users}
+        else:
+            # Fallback for old schema without allowed_users column
+            rows = conn.execute("SELECT id, created, paths FROM shares").fetchall()
+            for sid, created, paths_json in rows:
+                try:
+                    paths = json.loads(paths_json) if paths_json else []
+                except Exception:
+                    paths = []
+                loaded[sid] = {"paths": paths, "created": created, "allowed_users": None}
+    except Exception as e:
+        print(f"Error loading shares: {e}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         return {}
     return loaded
 
-def _insert_share(conn: sqlite3.Connection, sid: str, created: str, paths: list[str]) -> None:
+def _insert_share(conn: sqlite3.Connection, sid: str, created: str, paths: list[str], allowed_users: list[str] = None) -> bool:
     try:
         with conn:
             conn.execute(
-                "REPLACE INTO shares (id, created, paths) VALUES (?, ?, ?)",
-                (sid, created, json.dumps(paths)),
+                "REPLACE INTO shares (id, created, paths, allowed_users) VALUES (?, ?, ?, ?)",
+                (sid, created, json.dumps(paths), json.dumps(allowed_users) if allowed_users else None),
             )
-    except Exception:
-        pass
+        return True
+    except Exception as e:
+        logging.error(f"Failed to insert share {sid} into database: {e}")
+        import traceback
+        logging.debug(f"Traceback: {traceback.format_exc()}")
+        return False
 
 def _delete_share(conn: sqlite3.Connection, sid: str) -> None:
     try:
@@ -632,6 +666,95 @@ def _delete_share(conn: sqlite3.Connection, sid: str) -> None:
             conn.execute("DELETE FROM shares WHERE id = ?", (sid,))
     except Exception:
         pass
+
+def _update_share(conn: sqlite3.Connection, sid: str, **kwargs) -> bool:
+    """Update share information"""
+    try:
+        valid_fields = ['allowed_users', 'paths']
+        updates = []
+        values = []
+
+        for field, value in kwargs.items():
+            if field in valid_fields:
+                updates.append(f"{field} = ?")
+                if field in ['allowed_users', 'paths'] and value is not None:
+                    values.append(json.dumps(value))
+                else:
+                    values.append(value)
+
+        if not updates:
+            return False
+
+        values.append(sid)
+        query = f"UPDATE shares SET {', '.join(updates)} WHERE id = ?"
+
+        with conn:
+            conn.execute(query, values)
+        return True
+    except Exception:
+        return False
+
+def _get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict:
+    """Get a single share by ID from database"""
+    try:
+        cursor = conn.execute(
+            "SELECT id, created, paths, allowed_users FROM shares WHERE id = ?",
+            (sid,)
+        )
+        row = cursor.fetchone()
+        if row:
+            sid, created, paths_json, allowed_users_json = row
+            return {
+                "id": sid,
+                "created": created,
+                "paths": json.loads(paths_json) if paths_json else [],
+                "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None
+            }
+        return None
+    except Exception as e:
+        print(f"Error getting share {sid}: {e}")
+        return None
+
+def _get_all_shares(conn: sqlite3.Connection) -> dict:
+    """Get all shares from database"""
+    try:
+        cursor = conn.execute(
+            "SELECT id, created, paths, allowed_users FROM shares"
+        )
+        shares = {}
+        for row in cursor:
+            sid, created, paths_json, allowed_users_json = row
+            shares[sid] = {
+                "created": created,
+                "paths": json.loads(paths_json) if paths_json else [],
+                "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None
+            }
+        return shares
+    except Exception as e:
+        print(f"Error getting all shares: {e}")
+        return {}
+
+def _get_shares_for_path(conn: sqlite3.Connection, file_path: str) -> list:
+    """Get all shares that contain a specific file path"""
+    try:
+        cursor = conn.execute(
+            "SELECT id, created, paths, allowed_users FROM shares"
+        )
+        matching_shares = []
+        for row in cursor:
+            sid, created, paths_json, allowed_users_json = row
+            paths = json.loads(paths_json) if paths_json else []
+            if file_path in paths:
+                matching_shares.append({
+                    "id": sid,
+                    "created": created,
+                    "paths": paths,
+                    "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None
+                })
+        return matching_shares
+    except Exception as e:
+        print(f"Error getting shares for path {file_path}: {e}")
+        return []
 
 def _load_websocket_config(conn: sqlite3.Connection) -> dict:
     """Load WebSocket configuration from SQLite database."""
@@ -739,6 +862,28 @@ def _get_all_users(conn: sqlite3.Connection) -> list[dict]:
     try:
         rows = conn.execute(
             "SELECT id, username, role, created_at, active, last_login FROM users ORDER BY created_at DESC"
+        ).fetchall()
+        
+        return [
+            {
+                "id": row[0],
+                "username": row[1],
+                "role": row[2],
+                "created_at": row[3],
+                "active": bool(row[4]),
+                "last_login": row[5]
+            }
+            for row in rows
+        ]
+    except Exception:
+        return []
+
+def _search_users(conn: sqlite3.Connection, query: str) -> list[dict]:
+    """Search users by username (case-insensitive)"""
+    try:
+        rows = conn.execute(
+            "SELECT id, username, role, created_at, active, last_login FROM users WHERE username LIKE ? AND active = 1 ORDER BY username LIMIT 20",
+            (f"%{query}%",)
         ).fetchall()
         
         return [
@@ -1915,11 +2060,13 @@ class MainHandler(BaseHandler):
             return
 
         if os.path.isdir(abspath):
-            # Collect all shared paths for efficient lookup
+            # Collect all shared paths from database
             all_shared_paths = set()
-            for share in SHARES.values():
-                for p in share.get('paths', []):
-                    all_shared_paths.add(p)
+            if DB_CONN:
+                all_shares = _get_all_shares(DB_CONN)
+                for share in all_shares.values():
+                    for p in share.get('paths', []):
+                        all_shared_paths.add(p)
 
             # Use Rust-optimized directory scanning when available
             if RUST_AVAILABLE and HybridFileHandler:
@@ -2612,7 +2759,7 @@ class EditViewHandler(BaseHandler):
             return
 
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
-if not is_within_root(abspath, ROOT_DIR):
+        if not is_within_root(abspath, ROOT_DIR):
             self.set_status(403)
             self.write("Forbidden")
             return
@@ -2699,6 +2846,19 @@ class FileListAPIHandler(BaseHandler):
                     files = get_files_in_directory(abspath)
             else:
                 files = get_files_in_directory(abspath)
+            
+            # Collect all shared paths from database
+            all_shared_paths = set()
+            if DB_CONN:
+                all_shares = _get_all_shares(DB_CONN)
+                for share in all_shares.values():
+                    for p in share.get('paths', []):
+                        all_shared_paths.add(p)
+            
+            # Augment file data with shared status
+            for file_info in files:
+                full_path = join_path(path, file_info['name'])
+                file_info['is_shared'] = full_path in all_shared_paths
                 
             result = {
                 "path": path,
@@ -2707,7 +2867,8 @@ class FileListAPIHandler(BaseHandler):
                         "name": f["name"],
                         "is_dir": f["is_dir"],
                         "size_str": f.get("size_str", "-"),
-                        "modified": f.get("modified", "-")
+                        "modified": f.get("modified", "-"),
+                        "is_shared": f.get("is_shared", False)
                     }
                     for f in files
                 ]
@@ -2725,7 +2886,8 @@ class ShareFilesHandler(BaseHandler):
             self.write("File sharing is disabled")
             return
         # Just render the template - files will be loaded on-the-fly via JavaScript
-        self.render("share.html", shares=SHARES)
+        # Pass empty dict since shares are fetched via API
+        self.render("share.html", shares={})
 
 class ShareCreateHandler(BaseHandler):
     @tornado.web.authenticated
@@ -2737,6 +2899,7 @@ class ShareCreateHandler(BaseHandler):
         try:
             data = json.loads(self.request.body or b'{}')
             paths = data.get('paths', [])
+            allowed_users = data.get('allowed_users', [])
             valid_paths = []
             for p in paths:
                 ap = os.path.abspath(os.path.join(ROOT_DIR, p))
@@ -2746,16 +2909,34 @@ class ShareCreateHandler(BaseHandler):
                 self.set_status(400)
                 self.write({"error": "No valid files"})
                 return
-sid = secrets.token_urlsafe(24)  # Increase entropy to reduce guessing risk (Priority 2)
+            sid = secrets.token_urlsafe(24)  # Increase entropy to reduce guessing risk (Priority 2)
             created = datetime.utcnow().isoformat()
-            SHARES[sid] = {"paths": valid_paths, "created": created}
-            # Persist to DB
-            try:
-                if DB_CONN is not None:
-                    _insert_share(DB_CONN, sid, created, valid_paths)
-            except Exception:
-                pass
-            self.write({"id": sid, "url": f"/shared/{sid}"})
+            
+            # Ensure database connection
+            global DB_CONN
+            if DB_CONN is None:
+                print("Database connection is None, attempting to reinitialize...")
+                try:
+                    DB_PATH = os.path.join(os.path.expanduser('~'), '.local', 'aird', 'aird.sqlite3')
+                    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+                    DB_CONN = sqlite3.connect(DB_PATH, check_same_thread=False)
+                    _init_db(DB_CONN)
+                    print(f"Reinitialized database connection: {DB_CONN}")
+                except Exception as reconnect_error:
+                    print(f"Failed to reconnect to database: {reconnect_error}")
+                    self.set_status(500)
+                    self.write({"error": "Database connection failed"})
+                    return
+            
+            # Persist directly to database
+            success = _insert_share(DB_CONN, sid, created, valid_paths, allowed_users if allowed_users else None)
+            if success:
+                print(f"Share {sid} created successfully in database")
+                self.write({"id": sid, "url": f"/shared/{sid}"})
+            else:
+                print(f"Failed to create share {sid} in database")
+                self.set_status(500)
+                self.write({"error": "Failed to create share"})
         except Exception as e:
             self.set_status(500)
             self.write({"error": str(e)})
@@ -2768,14 +2949,21 @@ class ShareRevokeHandler(BaseHandler):
             self.write({"error": "File sharing is disabled"})
             return
         sid = self.get_argument('id', '')
-        if sid in SHARES:
-            del SHARES[sid]
-            # Persist deletion
-            try:
-                if DB_CONN is not None:
-                    _delete_share(DB_CONN, sid)
-            except Exception:
-                pass
+        
+        # Ensure database connection
+        global DB_CONN
+        if DB_CONN is None:
+            self.set_status(500)
+            self.write({"error": "Database connection unavailable"})
+            return
+            
+        # Delete from database
+        try:
+            _delete_share(DB_CONN, sid)
+            print(f"Share {sid} deleted from database")
+        except Exception as e:
+            print(f"Failed to delete share {sid}: {e}")
+            
         if self.request.headers.get('Accept') == 'application/json':
             self.write({'ok': True})
             return
@@ -2788,24 +2976,308 @@ class ShareListAPIHandler(BaseHandler):
             self.set_status(403)
             self.write({"error": "File sharing is disabled"})
             return
-        self.write({"shares": SHARES})
+
+        # Ensure database connection
+        global DB_CONN
+        if DB_CONN is None:
+            self.set_status(500)
+            self.write({"error": "Database connection unavailable"})
+            return
+            
+        # Get all shares from database
+        shares = _get_all_shares(DB_CONN)
+        self.write({"shares": shares})
+
+class DebugReloadSharesHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        """Debug endpoint to reload shares from database"""
+        if not self.is_admin_user():
+            self.set_status(403)
+            self.write({"error": "Admin access required"})
+            return
+
+        if DB_CONN is None:
+            self.write({"error": "Database not available"})
+            return
+
+        try:
+            db_shares = _get_all_shares(DB_CONN)
+            self.write({
+                "message": f"Loaded {len(db_shares)} shares from database",
+                "db_shares_count": len(db_shares)
+            })
+        except Exception as e:
+            self.write({"error": str(e)})
+
+class ShareUpdateHandler(BaseHandler):
+    @tornado.web.authenticated
+    def post(self):
+        """Update share access list"""
+        if not is_feature_enabled("file_share", True):
+            self.set_status(403)
+            self.write({"error": "File sharing is disabled"})
+            return
+
+        try:
+            data = json.loads(self.request.body or b'{}')
+            share_id = data.get('share_id')
+            allowed_users = data.get('allowed_users', [])
+            remove_files = data.get('remove_files', [])
+            paths = data.get('paths')  # New: support for updating entire paths list
+
+            if not share_id:
+                self.set_status(400)
+                self.write({"error": "Share ID is required"})
+                return
+
+            # Ensure database connection
+            global DB_CONN
+            if DB_CONN is None:
+                self.set_status(500)
+                self.write({"error": "Database connection unavailable"})
+                return
+                
+            # Get current share data from database
+            share_data = _get_share_by_id(DB_CONN, share_id)
+            if not share_data:
+                self.set_status(404)
+                self.write({"error": "Share not found"})
+                return
+
+            # Prepare update data
+            update_fields = {}
+            
+            # Handle file removal
+            if remove_files:
+                current_paths = share_data.get('paths', [])
+                updated_paths = [p for p in current_paths if p not in remove_files]
+                update_fields['paths'] = updated_paths
+                print(f"Removing files {remove_files} from share {share_id}")
+            
+            # Handle complete paths update (for adding files)
+            if paths is not None:
+                update_fields['paths'] = paths
+                print(f"Updating paths for share {share_id}: {paths}")
+
+            # Update allowed users if provided
+            if allowed_users is not None:
+                update_fields['allowed_users'] = allowed_users if allowed_users else None
+
+            # Update database
+            if update_fields:
+                db_success = _update_share(DB_CONN, share_id, **update_fields)
+                if db_success:
+                    print(f"Successfully updated share {share_id} in database")
+                else:
+                    print(f"Failed to update share {share_id} in database")
+                    self.set_status(500)
+                    self.write({"error": "Failed to update share"})
+                    return
+            else:
+                db_success = True  # No updates needed
+
+            # Get updated share data for response
+            updated_share = _get_share_by_id(DB_CONN, share_id)
+            
+            # Prepare response
+            response_data = {
+                "success": True,
+                "share_id": share_id,
+                "db_persisted": db_success
+            }
+
+            if allowed_users is not None:
+                response_data["allowed_users"] = updated_share.get('allowed_users')
+            if remove_files:
+                response_data["removed_files"] = remove_files
+                response_data["remaining_files"] = updated_share.get('paths', [])
+            if paths is not None:
+                response_data["updated_paths"] = updated_share.get('paths', [])
+
+            self.write(response_data)
+
+        except Exception as e:
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+class UserSearchAPIHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        """Search users by username (for share access control)"""
+        if DB_CONN is None:
+            self.set_status(500)
+            self.write({"error": "Database not available"})
+            return
+            
+        query = self.get_argument('q', '').strip()
+        if len(query) < 1:
+            self.write({"users": []})
+            return
+            
+        try:
+            users = _search_users(DB_CONN, query)
+            self.write({"users": users})
+        except Exception as e:
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+class ShareDetailsAPIHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        """Get share details for a specific file"""
+        if not is_feature_enabled("file_share", True):
+            self.set_status(403)
+            self.write({"error": "File sharing is disabled"})
+            return
+            
+        file_path = self.get_argument('path', '').strip()
+        if not file_path:
+            self.set_status(400)
+            self.write({"error": "File path is required"})
+            return
+            
+        # Ensure database connection
+        global DB_CONN
+        if DB_CONN is None:
+            self.set_status(500)
+            self.write({"error": "Database connection unavailable"})
+            return
+            
+        try:
+            # Find shares that contain this file
+            matching_shares = _get_shares_for_path(DB_CONN, file_path)
+
+            # Format response
+            formatted_shares = []
+            for share in matching_shares:
+                allowed_users = share.get('allowed_users')
+                share_info = {
+                    'id': share['id'],
+                    'created': share.get('created', ''),
+                    'allowed_users': allowed_users if allowed_users is not None else [],
+                    'url': f"/shared/{share['id']}",
+                    'paths': share.get('paths', [])
+                }
+                formatted_shares.append(share_info)
+
+            self.write({"shares": formatted_shares})
+        except Exception as e:
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+class ShareDetailsByIdAPIHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        """Get share details for a specific share ID"""
+        if not is_feature_enabled("file_share", True):
+            self.set_status(403)
+            self.write({"error": "File sharing is disabled"})
+            return
+
+        share_id = self.get_argument('id', '').strip()
+        if not share_id:
+            self.set_status(400)
+            self.write({"error": "Share ID is required"})
+            return
+
+        global DB_CONN
+        if DB_CONN is None:
+            self.set_status(500)
+            self.write({"error": "Database connection unavailable"})
+            return
+
+        try:
+            share = _get_share_by_id(DB_CONN, share_id)
+            if not share:
+                self.set_status(404)
+                self.write({"error": "Share not found"})
+                return
+
+            allowed_users = share.get('allowed_users')
+            share_info = {
+                'id': share['id'],
+                'created': share.get('created', ''),
+                'allowed_users': allowed_users if allowed_users is not None else [],
+                'url': f"/shared/{share['id']}",
+                'paths': share.get('paths', [])
+            }
+
+            self.write({"share": share_info})
+        except Exception as e:
+            self.set_status(500)
+            self.write({"error": str(e)})
 
 class SharedListHandler(tornado.web.RequestHandler):
     def get(self, sid):
-        share = SHARES.get(sid)
+        # Ensure database connection
+        if DB_CONN is None:
+            self.set_status(500)
+            self.write("Database connection unavailable")
+            return
+            
+        share = _get_share_by_id(DB_CONN, sid)
         if not share:
             self.set_status(404)
             self.write("Invalid share link")
             return
+        
+        # Check if share has user restrictions
+        allowed_users = share.get('allowed_users')
+        if allowed_users:
+            # Get current user from cookie
+            current_user = self.get_secure_cookie("user")
+            if not current_user:
+                self.set_status(401)
+                self.write("Authentication required")
+                return
+            
+            # Decode username if it's bytes
+            if isinstance(current_user, bytes):
+                current_user = current_user.decode('utf-8')
+            
+            # Check if current user is in allowed users list
+            if current_user not in allowed_users:
+                self.set_status(403)
+                self.write("Access denied")
+                return
+        
         self.render("shared_list.html", share_id=sid, files=share['paths'])
 
 class SharedFileHandler(tornado.web.RequestHandler):
     async def get(self, sid, path):
-        share = SHARES.get(sid)
+        # Ensure database connection
+        if DB_CONN is None:
+            self.set_status(500)
+            self.write("Database connection unavailable")
+            return
+            
+        share = _get_share_by_id(DB_CONN, sid)
         if not share:
             self.set_status(404)
             self.write("Invalid share link")
             return
+        
+        # Check if share has user restrictions
+        allowed_users = share.get('allowed_users')
+        if allowed_users:
+            # Get current user from cookie
+            current_user = self.get_secure_cookie("user")
+            if not current_user:
+                self.set_status(401)
+                self.write("Authentication required")
+                return
+            
+            # Decode username if it's bytes
+            if isinstance(current_user, bytes):
+                current_user = current_user.decode('utf-8')
+            
+            # Check if current user is in allowed users list
+            if current_user not in allowed_users:
+                self.set_status(403)
+                self.write("Access denied")
+                return
+        
         if path not in share['paths']:
             self.set_status(403)
             self.write("File not in share")
@@ -3213,10 +3685,15 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
         (r"/edit/(.*)", EditViewHandler),
         (r"/edit", EditHandler),
         (r"/api/files/(.*)", FileListAPIHandler),
+        (r"/api/users/search", UserSearchAPIHandler),
+        (r"/api/share/details", ShareDetailsAPIHandler),
+        (r"/api/share/details_by_id", ShareDetailsByIdAPIHandler),
         (r"/share", ShareFilesHandler),
         (r"/share/create", ShareCreateHandler),
         (r"/share/revoke", ShareRevokeHandler),
         (r"/share/list", ShareListAPIHandler),
+        (r"/share/update", ShareUpdateHandler),
+        (r"/debug/reload-shares", DebugReloadSharesHandler),
         (r"/shared/([A-Za-z0-9_\-]+)", SharedListHandler),
         (r"/shared/([A-Za-z0-9_\-]+)/file/(.*)", SharedFileHandler),
         (r"/search", SuperSearchHandler),
@@ -3307,12 +3784,27 @@ def main():
         if persisted_flags:
             for k, v in persisted_flags.items():
                 FEATURE_FLAGS[k] = bool(v)
-        # Load persisted shares
-        persisted_shares = _load_shares(DB_CONN)
-        if persisted_shares:
-            SHARES.update(persisted_shares)
-    except Exception:
+        # Database-only persistence for shares
+        print(f"Shares are now persisted directly in database")
+
+        # Ensure database connection is working
+        if DB_CONN is None:
+            print("WARNING: Database connection is None, attempting to create...")
+            try:
+                DB_PATH = os.path.join(os.path.expanduser('~'), '.local', 'aird', 'aird.sqlite3')
+                os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+                DB_CONN = sqlite3.connect(DB_PATH, check_same_thread=False)
+                _init_db(DB_CONN)
+                print(f"Created emergency database connection: {DB_CONN}")
+            except Exception as db_error:
+                print(f"Failed to create emergency database connection: {db_error}")
+
+    except Exception as e:
+        print(f"Database initialization failed: {e}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         DB_CONN = None
+        print(f"DB_CONN set to None: {DB_CONN}")
 
     # Print tokens when they were not explicitly provided, so users can log in
     if not token_provided_explicitly:
@@ -3329,6 +3821,7 @@ def main():
             )
             print(f"Serving HTTP on 0.0.0.0 port {port} (http://0.0.0.0:{port}/) ...")
             print(f"http://{host_name}:{port}/")
+
             tornado.ioloop.IOLoop.current().start()
             break
         except OSError:

@@ -1,10 +1,43 @@
 # Aird - A Lightweight Web-Based File Browser, Editor and Share
 
-**v0.4.1** - 🐍 **Enhanced Python File Icons + WebSocket Admin + Super Search + Performance Optimizations!**
+**v0.4.2** - 🎨 **Custom HTML/CSS Popups + Enhanced Share Management + File Browser Navigation!**
 
 A modern, lightweight, and fast web-based file browser, editor, and streamer built with Python and Tornado. It provides a comprehensive file management solution with real-time streaming, in-browser editing, and mobile-responsive design through a clean and intuitive web interface.
 
 Note: Currently using this in conjunction with WireGuard to handle file management and sharing for internal/private cloud.
+
+## 🆕 What's New in v0.4.2
+
+### 🎨 **Custom HTML/CSS Popups (NEW!)**
+- **Modern Dialog System:** Replaced all native browser alerts, confirms, and prompts with custom HTML/CSS modals
+- **Consistent UI/UX:** Beautiful, responsive popups that match the application's design language
+- **Enhanced User Experience:** Better visual feedback with styled buttons, proper spacing, and smooth animations
+- **Cross-browser Compatibility:** Custom popups work consistently across all browsers and devices
+- **Keyboard Support:** Full keyboard navigation with Enter to confirm and Escape to cancel
+- **Accessibility:** Improved accessibility with proper focus management and screen reader support
+
+### 🔗 **Enhanced Share Management (NEW!)**
+- **Dynamic File Management:** Add and remove files from existing shares without recreating them
+- **Interactive File Browser:** Navigate through directories to select additional files for sharing
+- **Real-time Share Updates:** Instantly modify share contents with live preview of changes
+- **Improved Share Modal:** Enhanced share management interface with better organization and controls
+- **File Selection Preview:** See selected files before adding them to shares
+- **Directory Navigation:** Full directory tree navigation within the share management interface
+
+### 🗂️ **Advanced File Browser Navigation (NEW!)**
+- **Full Directory Tree Access:** Navigate through all accessible directories when managing shares
+- **Smart Path Handling:** Proper path construction and navigation for complex directory structures
+- **File Type Recognition:** Enhanced file icons and type detection for better visual organization
+- **Breadcrumb Navigation:** Clear path display showing current location in the directory tree
+- **Error Handling:** Robust error handling with user-friendly messages for navigation issues
+
+### 🛠️ **Backend API Enhancements (NEW!)**
+- **Share Update API:** New endpoint for modifying existing shares with file additions/removals
+- **Database Migration:** Automatic database schema updates for new share management features
+- **Improved Error Handling:** Better error messages and status codes for API operations
+- **Path Validation:** Enhanced security with proper path validation and sanitization
+
+---
 
 ## 🆕 What's New in v0.4.1
 
@@ -140,6 +173,9 @@ aird --help
 - **Interactive Results:** Click-to-navigate search results with context highlighting
 - **Keyboard Shortcuts:** Efficient navigation and operations via keyboard
 - **Clean Layout:** Left-aligned file actions, right-aligned streaming controls for better organization
+- **Custom HTML/CSS Popups (NEW!):** Modern dialog system replacing all native browser popups
+- **Enhanced Share Management UI (NEW!):** Improved share management interface with better organization
+- **File Browser Navigation (NEW!):** Full directory tree navigation with breadcrumb display
 
 ## 📖 Usage
 
@@ -253,9 +289,9 @@ The Super Search feature provides powerful, real-time content searching across y
 - Super Search page: `http://localhost:8888/search`
 - Search with preset path: `http://localhost:8888/search?path=/specific/folder`
 
-### 🔗 File Sharing
+### 🔗 Enhanced File Sharing
 
-The file sharing feature allows you to create public, temporary links for files and directories:
+The enhanced file sharing feature allows you to create and manage public, temporary links for files and directories:
 
 1. **Access the Share Page:**
    - Navigate to `/share` after logging in
@@ -274,7 +310,19 @@ The file sharing feature allows you to create public, temporary links for files 
 4. **Manage Active Shares:**
    - View all active shares in the bottom panel
    - Copy existing share links or open them in a new tab
-   - Revoke shares instantly when no longer needed
+   - **NEW:** Click "Manage" to modify existing shares
+
+5. **Enhanced Share Management (NEW!):**
+   - **Add Files:** Click "Add Files" to browse and select additional files for existing shares
+   - **Remove Files:** Click "Remove" next to any file to remove it from the share
+   - **Directory Navigation:** Use the file browser to navigate through all accessible directories
+   - **File Selection Preview:** See selected files before adding them to shares
+   - **Real-time Updates:** Changes apply instantly without recreating the share
+
+6. **Custom Dialog System (NEW!):**
+   - All confirmations and prompts use modern HTML/CSS popups
+   - Consistent UI/UX across all share management operations
+   - Keyboard support with Enter to confirm and Escape to cancel
 
 **Example URLs:**
 - Share page: `http://localhost:8888/share`
@@ -335,14 +383,18 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **Real-time file streaming** with progress animations
 - **Keyboard navigation** support
 
-### 🔗 File Sharing System
+### 🔗 Enhanced File Sharing System
 - **Multi-file selection:** Choose multiple files and directories to share in a single link
+- **Dynamic Share Management:** Add and remove files from existing shares without recreating them
+- **Interactive File Browser:** Navigate through directories to select additional files for sharing
+- **Real-time Share Updates:** Instantly modify share contents with live preview of changes
 - **On-the-fly browsing:** Navigate directories dynamically without pre-loading all files
 - **Secure URL generation:** Each share gets a unique, hard-to-guess identifier
 - **Public access:** Shared files can be viewed without authentication
 - **Active share management:** View, copy, and revoke existing shares in real-time
 - **One-click copy:** Copy shareable URLs to clipboard with visual feedback
 - **Temporary access:** All shares are session-based and can be easily revoked
+- **Custom HTML/CSS Popups:** Modern dialog system for all share management operations
 
 ### 🚀 Performance Features (New in v0.4.1!)
 - **Enhanced Python File Icons:** Smart visual distinction between source (🐍💎) and compiled (🐍⚡) Python files
@@ -353,6 +405,25 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **Async WebSocket streaming** for real-time updates
 - **Configurable buffer sizes** for optimal performance
 - **Memory-efficient** file handling with constant memory usage
+
+### 🛠️ Technical Improvements (New in v0.4.2!)
+- **Database Schema Migration:** Automatic database updates for new share management features
+- **API Endpoint Enhancements:** New `/share/update` endpoint for dynamic share modifications
+- **Path Validation & Security:** Enhanced path handling and validation for file operations
+- **Error Handling Improvements:** Better error messages and status codes throughout the application
+- **Frontend Architecture:** Modular JavaScript functions for better maintainability
+- **Cross-browser Compatibility:** Improved compatibility across different browsers and devices
+- **Accessibility Enhancements:** Better keyboard navigation and screen reader support
+
+### 🐛 Bug Fixes & Improvements (New in v0.4.2!)
+- **Fixed Share Management:** Resolved "Failed to load share details" error in share management modal
+- **Fixed File Browser Navigation:** Corrected directory navigation issues in the Add Files modal
+- **Fixed API Response Handling:** Proper handling of API responses for file listing and share management
+- **Fixed Path Construction:** Corrected path building logic for file and directory operations
+- **Fixed Console Popup Dependencies:** Replaced all native browser popups with custom HTML/CSS modals
+- **Fixed Async Dialog Handling:** Proper async/await handling for all confirmation dialogs
+- **Fixed File Selection State:** Corrected file selection state management in share management
+- **Fixed Error Display:** Improved error message display and user feedback throughout the application
 
 ## 📋 Requirements
 

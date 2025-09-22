@@ -157,8 +157,180 @@
         text-decoration: underline;
       }
 
+      .shared-icon {
+        cursor: pointer;
+        color: #0066cc;
+        font-size: 14px;
+        transition: all 0.2s ease;
+        display: inline-block;
+        vertical-align: middle;
+        padding: 2px 4px;
+        border-radius: 3px;
+        background: rgba(0, 102, 204, 0.1);
+        margin-left: 8px;
+      }
+
+      .shared-icon:hover {
+        color: #004499;
+        transform: scale(1.2);
+        background: rgba(0, 102, 204, 0.2);
+      }
+
       .file-icon {
         margin-right: 8px;
+      }
+
+      /* Share Popup Styles */
+      .popup-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.3s ease;
+      }
+
+      .popup-overlay.show {
+        opacity: 1;
+        visibility: visible;
+      }
+
+      .popup-content {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) scale(0.8);
+        background: white;
+        border: 2px solid black;
+        border-radius: 8px;
+        padding: 20px;
+        max-width: 500px;
+        width: 90%;
+        max-height: 80vh;
+        overflow-y: auto;
+        transition: all 0.3s ease;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      }
+
+      .popup-overlay.show .popup-content {
+        transform: translate(-50%, -50%) scale(1);
+      }
+
+      .popup-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #ccc;
+      }
+
+      .popup-title {
+        font-size: 18px;
+        font-weight: bold;
+        margin: 0;
+      }
+
+      .popup-close {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        padding: 0;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .popup-close:hover {
+        background: #f0f0f0;
+        border-radius: 50%;
+      }
+
+      .share-item {
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 15px;
+        margin-bottom: 15px;
+        background: #fafafa;
+      }
+
+      .share-item:last-child {
+        margin-bottom: 0;
+      }
+
+      .share-id {
+        font-family: monospace;
+        background: #e6f3ff;
+        padding: 4px 8px;
+        border-radius: 3px;
+        font-size: 12px;
+        margin-bottom: 8px;
+        display: inline-block;
+      }
+
+      .share-url {
+        margin-bottom: 10px;
+      }
+
+      .share-url a {
+        color: #0066cc;
+        text-decoration: none;
+        font-size: 14px;
+      }
+
+      .share-url a:hover {
+        text-decoration: underline;
+      }
+
+      .share-access {
+        margin-bottom: 10px;
+        font-size: 14px;
+      }
+
+      .share-access.public {
+        color: #4a934a;
+      }
+
+      .share-access.restricted {
+        color: #cc6600;
+      }
+
+      .share-users {
+        margin-top: 10px;
+      }
+
+      .share-users-title {
+        font-size: 12px;
+        color: #666;
+        margin-bottom: 5px;
+      }
+
+      .user-tag {
+        display: inline-block;
+        background: #e6f3ff;
+        color: #0066cc;
+        padding: 2px 6px;
+        margin: 2px;
+        border-radius: 3px;
+        font-size: 11px;
+      }
+
+      .share-actions {
+        margin-top: 15px;
+        display: flex;
+        gap: 10px;
+      }
+
+      .share-actions .btn {
+        font-size: 11px;
+        padding: 6px 10px;
       }
 
       .action-link {
@@ -302,6 +474,87 @@
           margin: 5px 5px 5px 0;
         }
       }
+
+      /* Custom dialog modal styles */
+      .custom-dialog-modal {
+        display: none;
+        position: fixed;
+        z-index: 2000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        align-items: center;
+        justify-content: center;
+      }
+
+      .custom-dialog-modal.show {
+        display: flex;
+      }
+
+      .custom-dialog-modal-content {
+        background-color: #fff;
+        padding: 25px;
+        border-radius: 8px;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        width: 90%;
+        max-width: 400px;
+        text-align: center;
+      }
+
+      .custom-dialog-modal-content h2 {
+        margin-top: 0;
+        font-size: 1.25rem;
+      }
+
+      .custom-dialog-modal-content p {
+        margin: 15px 0;
+        font-size: 1rem;
+        color: #333;
+      }
+
+      .custom-dialog-input {
+        width: calc(100% - 20px);
+        padding: 10px;
+        margin-bottom: 20px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+
+      .custom-dialog-buttons {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+      }
+
+      .custom-dialog-buttons button {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        font-size: 14px;
+      }
+
+      .custom-dialog-buttons button#dialogConfirmBtn {
+        background-color: #007bff;
+        color: white;
+      }
+
+      .custom-dialog-buttons button#dialogConfirmBtn:hover {
+        background-color: #0056b3;
+      }
+
+      .custom-dialog-buttons button#dialogCancelBtn {
+        background-color: #ccc;
+        color: #333;
+      }
+
+      .custom-dialog-buttons button#dialogCancelBtn:hover {
+        background-color: #999;
+      }
     </style>
   </head>
   <body>
@@ -378,7 +631,7 @@
               >
                 <span class="file-icon">📁</span>{{ escape(file['name']) }}
                 {% if file.get('is_shared') %}
-                <span class="shared-icon" title="This file is shared">🔗</span>
+                <span class="shared-icon" title="Click to view share details" onclick="showShareDetails('{{ escape(join_path(current_path, file['name'])) }}'); event.stopPropagation(); return false;">🔗</span>
                 {% end %}
               </a>
               {% else %}
@@ -389,7 +642,7 @@
                 <span class="file-icon">{{ get_file_icon(file["name"]) }}</span>{{
                 escape(file['name']) }}
                 {% if file.get('is_shared') %}
-                <span class="shared-icon" title="This file is shared">🔗</span>
+                <span class="shared-icon" title="Click to view share details" onclick="showShareDetails('{{ escape(join_path(current_path, file['name'])) }}'); event.stopPropagation(); return false;">🔗</span>
                 {% end %}
               </a>
               {% end %}
@@ -457,11 +710,72 @@
 
     </div>
 
+    <!-- Custom dialog modal -->
+    <div id="customDialogModal" class="custom-dialog-modal">
+      <div class="custom-dialog-modal-content">
+        <h2 id="dialogTitle">Dialog</h2>
+        <p id="dialogMessage"></p>
+        <div id="dialogInputContainer" style="display: none;">
+          <input type="text" id="dialogInput" class="custom-dialog-input">
+        </div>
+        <div class="custom-dialog-buttons">
+          <button id="dialogConfirmBtn">Confirm</button>
+          <button id="dialogCancelBtn">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <script>
       // Configurable constants
       const RELOAD_DELAY_MS = 500;
       const MIN_COLUMN_WIDTH = 50;
       const MAX_FILE_SIZE = {{ max_file_size }};
+
+      // Custom dialog function
+      function showDialog(message, title = 'Confirm', options = {}) {
+        return new Promise((resolve) => {
+          document.getElementById('dialogTitle').textContent = title;
+          document.getElementById('dialogMessage').textContent = message;
+
+          const confirmBtn = document.getElementById('dialogConfirmBtn');
+          const cancelBtn = document.getElementById('dialogCancelBtn');
+          const inputContainer = document.getElementById('dialogInputContainer');
+          const input = document.getElementById('dialogInput');
+
+          confirmBtn.textContent = options.confirmText || 'OK';
+          cancelBtn.style.display = options.showCancel ? 'inline-block' : 'none';
+          inputContainer.style.display = options.prompt ? 'block' : 'none';
+          input.value = options.prompt ? (options.defaultValue || '') : '';
+
+          document.getElementById('customDialogModal').classList.add('show');
+
+          if (options.prompt) {
+            input.focus();
+            input.select();
+          }
+
+          confirmBtn.onclick = () => {
+            document.getElementById('customDialogModal').classList.remove('show');
+            resolve(options.prompt ? input.value : true);
+          };
+
+          cancelBtn.onclick = () => {
+            document.getElementById('customDialogModal').classList.remove('show');
+            resolve(options.prompt ? null : false);
+          };
+
+          // Handle Enter key for prompt
+          if (options.prompt) {
+            input.onkeydown = (e) => {
+              if (e.key === 'Enter') {
+                confirmBtn.click();
+              } else if (e.key === 'Escape') {
+                cancelBtn.click();
+              }
+            };
+          }
+        });
+      }
 
       // File upload functionality
       const uploadZone = document.getElementById("uploadZone");
@@ -541,7 +855,7 @@
 
         if (rejected.length > 0) {
           const limitGB = (MAX_FILE_SIZE / (1024 * 1024 * 1024)).toFixed(2);
-          alert(`Files exceed the ${limitGB} GB limit: ${rejected.join(", ")}`);
+          showDialog(`Files exceed the ${limitGB} GB limit: ${rejected.join(", ")}`, 'File Size Limit');
         }
 
         fileInput.value = "";
@@ -656,8 +970,8 @@
       }
 
       // Rename functionality
-      function renameItem(filepath) {
-        const newName = prompt("Enter new name:");
+      async function renameItem(filepath) {
+        const newName = await showDialog("Enter new name:", "Rename File", { prompt: true, showCancel: true });
         if (!newName) return;
         const formData = new URLSearchParams();
         formData.append("path", filepath);
@@ -674,15 +988,16 @@
             if (res.ok) {
               location.reload();
             } else {
-              res.text().then((t) => alert("Rename failed: " + t));
+              res.text().then((t) => showDialog("Rename failed: " + t, "Error"));
             }
           })
-          .catch((err) => alert("Rename failed: " + err.message));
+          .catch((err) => showDialog("Rename failed: " + err.message, "Error"));
       }
 
       // Delete functionality
-      function deleteItem(filepath) {
-        if (!confirm("Are you sure you want to delete this item?")) return;
+      async function deleteItem(filepath) {
+        const confirmed = await showDialog("Are you sure you want to delete this item?", "Confirm Delete", { showCancel: true });
+        if (!confirmed) return;
         const formData = new URLSearchParams();
         formData.append("path", filepath);
         fetch("/delete", {
@@ -697,10 +1012,10 @@
             if (res.ok) {
               location.reload();
             } else {
-              res.text().then((t) => alert("Delete failed: " + t));
+              res.text().then((t) => showDialog("Delete failed: " + t, "Error"));
             }
           })
-          .catch((err) => alert("Delete failed: " + err.message));
+          .catch((err) => showDialog("Delete failed: " + err.message, "Error"));
       }
 
       function calculateSkipRows(allRows) {
@@ -799,6 +1114,177 @@
           document.removeEventListener('mouseup', mouseUp);
         }
       });
+
+      // Share popup functions
+      async function showShareDetails(filePath) {
+        const popup = document.getElementById('sharePopup');
+        const content = document.getElementById('sharePopupContent');
+
+        // Show popup with loading state
+        popup.classList.add('show');
+        content.innerHTML = '<div class="loading">Loading share details...</div>';
+
+        try {
+          const response = await fetch(`/api/share/details?path=${encodeURIComponent(filePath)}`);
+          const data = await response.json();
+
+          if (data.error) {
+            content.innerHTML = `<div style="color: red; text-align: center; padding: 20px;">Error: ${data.error}</div>`;
+            return;
+          }
+
+          if (data.shares.length === 0) {
+            content.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">This file is not currently shared.</div>';
+            return;
+          }
+
+          // Update popup title with filename
+          document.querySelector('.popup-title').textContent = `Share Details - ${filePath.split('/').pop()}`;
+
+          // Render share details
+          content.innerHTML = data.shares.map(share => `
+            <div class="share-item">
+              <div class="share-id">${share.id}</div>
+              <div class="share-url">
+                <a href="${share.url}" target="_blank">${window.location.origin}${share.url}</a>
+              </div>
+              <div class="share-access ${share.allowed_users ? 'restricted' : 'public'}">
+                ${share.allowed_users ? `Restricted (${share.allowed_users.length} user${share.allowed_users.length !== 1 ? 's' : ''})` : 'Public Access'}
+              </div>
+              ${share.allowed_users ? `
+                <div class="share-users">
+                  <div class="share-users-title">Allowed Users:</div>
+                  ${share.allowed_users.map(username => `<span class="user-tag">${username}</span>`).join('')}
+                </div>
+              ` : ''}
+              <div class="share-actions">
+                <button class="btn" onclick="copyToClipboard('${window.location.origin}${share.url}', this)">Copy Link</button>
+                <button class="btn" onclick="openShare('${share.url}')">Open Share</button>
+                <button class="btn" onclick="revokeShare('${share.id}')">Revoke</button>
+              </div>
+            </div>
+          `).join('');
+
+        } catch (error) {
+          console.error('Error loading share details:', error);
+          content.innerHTML = '<div style="color: red; text-align: center; padding: 20px;">Failed to load share details</div>';
+        }
+      }
+
+      function closeSharePopup() {
+        const popup = document.getElementById('sharePopup');
+        popup.classList.remove('show');
+      }
+
+      // Close popup when clicking outside
+      document.addEventListener('click', function(event) {
+        const popup = document.getElementById('sharePopup');
+        if (event.target === popup) {
+          closeSharePopup();
+        }
+      });
+
+      // Close popup with Escape key
+      document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+          closeSharePopup();
+        }
+      });
+
+      function copyToClipboard(text, btn) {
+        // Check if the modern clipboard API is available
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(() => {
+            // Visual feedback
+            if (btn) {
+              const originalText = btn.textContent;
+              btn.textContent = 'Copied!';
+              setTimeout(() => btn.textContent = originalText, 1500);
+            }
+          }).catch(err => {
+            console.error('Clipboard API failed: ', err);
+            // Fall back to the old method
+            fallbackCopyTextToClipboard(text, btn);
+          });
+        } else {
+          // Fallback for older browsers or non-HTTPS contexts
+          fallbackCopyTextToClipboard(text, btn);
+        }
+      }
+
+      function fallbackCopyTextToClipboard(text, btn) {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.top = '-9999px';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+
+        try {
+          const successful = document.execCommand('copy');
+          if (successful && btn) {
+            const originalText = btn.textContent;
+            btn.textContent = 'Copied!';
+            setTimeout(() => btn.textContent = originalText, 1500);
+          } else if (!successful) {
+            console.error('Fallback copy command failed');
+            showDialog('Failed to copy to clipboard', 'Error');
+          }
+        } catch (err) {
+          console.error('Fallback copy failed: ', err);
+          showDialog('Failed to copy to clipboard', 'Error');
+        } finally {
+          document.body.removeChild(textArea);
+        }
+      }
+
+      function openShare(url) {
+        window.open(url, '_blank');
+      }
+
+      async function revokeShare(shareId) {
+        const confirmed = await showDialog('Are you sure you want to revoke this share?', 'Confirm Revoke', { showCancel: true });
+        if (!confirmed) return;
+
+        try {
+          const formData = new URLSearchParams();
+          formData.append('id', shareId);
+          await fetch('/share/revoke', {
+            method: 'POST',
+            headers: {
+              'X-XSRFToken': getXSRFToken()
+            },
+            body: formData
+          });
+
+          // Close popup and refresh the page to update share status
+          closeSharePopup();
+          location.reload();
+        } catch (error) {
+          console.error('Error revoking share:', error);
+          showDialog('Failed to revoke share', 'Error');
+        }
+      }
+
+      function getXSRFToken() {
+        const match = document.cookie.match(/_xsrf=([^;]*)/);
+        return match ? decodeURIComponent(match[1]) : '';
+      }
     </script>
+
+    <!-- Share Details Popup -->
+    <div id="sharePopup" class="popup-overlay">
+      <div class="popup-content">
+        <div class="popup-header">
+          <h3 class="popup-title">Share Details</h3>
+          <button class="popup-close" onclick="closeSharePopup()">&times;</button>
+        </div>
+        <div id="sharePopupContent">
+          <div class="loading">Loading share details...</div>
+        </div>
+      </div>
+    </div>
   </body>
 </html>
