@@ -1487,25 +1487,28 @@ class LDAPLoginHandler(BaseHandler):
             server = Server(self.settings['ldap_server'], get_info=ALL)
             conn = Connection(server, user=self.settings['ldap_user_template'].format(username=username), password=password, auto_bind=True)
             conn.search(search_base=self.settings['ldap_base_dn'],
-             search_filter=self.settings['ldap_user_template'].format(username=username),
+             search_filter=self.settings['ldap_filter_template'].format(username=username),
               attributes=self.settings['ldap_attributes'])
 
             """
             attribute_map = [{"member":'cn=asdfasdf,dc=com,dc=io'}]
             """
             # authentication 
-            if conn.bind():
-                for attribute_element in self.settings['ldap_attribute_map']:
-                    for key, value in attribute_element.items():
-                        if conn.entries[0].get(key) is not None:
-                            if value in conn.entries[0].get(key):
-                                self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
-                                self.redirect("/files/")
-                                return
-                self.render("login.html", error="Invalid username or password.", settings=self.settings)
-                return
-
+            
             # authorization logic
+            for attribute_element in self.settings['ldap_attribute_map']:
+                for key, value in attribute_element.items():
+                    try:
+                        if value in conn.entries[0][key]:
+                            self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
+                            self.redirect("/files/")
+                            return
+                    except KeyError:
+                        continue
+            self.render("login.html", error="Invalid username or password.", settings=self.settings)
+            return
+
+            
 
             if len(conn.entries) == 0:
                 self.render("login.html", error="Invalid username or password.", settings=self.settings)
@@ -3699,7 +3702,7 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
         self.connection_manager.remove_connection(self)
 
 
-def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
+def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None, ldap_user_template=None, ldap_filter_template=None, ldap_attributes=None, ldap_attribute_map=None):
     settings["template_path"] = os.path.join(os.path.dirname(__file__), "templates")
     # Limit request size to avoid Tornado rejecting large uploads with
     # "Content-Length too long" before our handler can respond.
@@ -3709,6 +3712,10 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None):
     if ldap_enabled:
         settings["ldap_server"] = ldap_server
         settings["ldap_base_dn"] = ldap_base_dn
+        settings["ldap_user_template"] = ldap_user_template
+        settings["ldap_filter_template"] = ldap_filter_template
+        settings["ldap_attributes"] = ldap_attributes
+        settings["ldap_attribute_map"] = ldap_attribute_map
         login_handler = LDAPLoginHandler
     else:
         login_handler = LoginHandler
@@ -3774,6 +3781,9 @@ def main():
     parser.add_argument("--ldap", action="store_true", help="Enable LDAP authentication")
     parser.add_argument("--ldap-server", help="LDAP server address")
     parser.add_argument("--ldap-base-dn", help="LDAP base DN for user search")
+    parser.add_argument("--ldap-user-template", help="LDAP user template (default: uid={username},{ldap_base_dn})")
+    parser.add_argument("--ldap-filter-template", help="LDAP filter template for user search")
+    parser.add_argument("--ldap-attributes", help="LDAP attributes to retrieve (comma-separated)")
     parser.add_argument("--hostname", help="Host name for the server")
     args = parser.parse_args()
 
@@ -3797,11 +3807,32 @@ def main():
     ldap_enabled = args.ldap or config.get("ldap", False)
     ldap_server = args.ldap_server or config.get("ldap_server")
     ldap_base_dn = args.ldap_base_dn or config.get("ldap_base_dn")
+    ldap_user_template = args.ldap_user_template or config.get("ldap_user_template", "uid={username},{ldap_base_dn}")
+    ldap_filter_template = args.ldap_filter_template or config.get("ldap_filter_template")
+    ldap_attributes = args.ldap_attributes or config.get("ldap_attributes", ["cn", "mail", "memberOf"])
+    ldap_attribute_map = config.get("ldap_attribute_map", [])
+    
+    # Parse comma-separated attributes if provided as string
+    if isinstance(ldap_attributes, str):
+        ldap_attributes = [attr.strip() for attr in ldap_attributes.split(",")]
     host_name = args.hostname or config.get("hostname") or socket.getfqdn()
 
-    if ldap_enabled and not (ldap_server and ldap_base_dn):
-        print("Error: LDAP is enabled, but --ldap-server and --ldap-base-dn are not configured.")
-        return
+    if ldap_enabled:
+        if not ldap_server:
+            print("Error: LDAP is enabled, but --ldap-server is not configured.")
+            return
+        if not ldap_base_dn:
+            print("Error: LDAP is enabled, but --ldap-base-dn is not configured.")
+            return
+        if not ldap_user_template:
+            print("Error: LDAP is enabled, but --ldap-user-template is not configured.")
+            return
+        if not ldap_filter_template:
+            print("Error: LDAP is enabled, but --ldap-filter-template is not configured.")
+            return
+        if not ldap_attributes:
+            print("Error: LDAP is enabled, but --ldap-attributes is not configured.")
+            return
 
     global ACCESS_TOKEN, ADMIN_TOKEN, ROOT_DIR, DB_CONN, DB_PATH
     ACCESS_TOKEN = token
@@ -3859,7 +3890,7 @@ def main():
         print(f"Access token (generated): {token}")
     if not admin_token_provided_explicitly:
         print(f"Admin token (generated): {admin_token}")
-    app = make_app(settings, ldap_enabled, ldap_server, ldap_base_dn)
+    app = make_app(settings, ldap_enabled, ldap_server, ldap_base_dn, ldap_user_template, ldap_filter_template, ldap_attributes, ldap_attribute_map)
     while True:
         try:
             app.listen(
