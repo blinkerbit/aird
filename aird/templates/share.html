@@ -1065,7 +1065,7 @@
       const ext = filename.toLowerCase().split('.').pop();
       const lowerFilename = filename.toLowerCase();
       
-      // Special files by name
+      // Special files by name - IDE-style
       if (['readme', 'readme.md', 'readme.txt'].includes(lowerFilename)) return '📖';
       if (['license', 'licence', 'copying'].includes(lowerFilename)) return '📜';
       if (['makefile', 'cmake', 'cmakelists.txt'].includes(lowerFilename)) return '🔨';
@@ -1074,19 +1074,19 @@
       if (lowerFilename.startsWith('.env')) return '🔐';
       
       const iconMap = {
-        // Document files
+        // Document files - IDE-style
         'txt': '📄', 'md': '📄', 'rst': '📄', 'text': '📄',
         'doc': '📝', 'docx': '📝', 'rtf': '📝', 'odt': '📝',
         'pdf': '📕',
         'xls': '📊', 'xlsx': '📊', 'ods': '📊', 'csv': '📊',
         'ppt': '📋', 'pptx': '📋', 'odp': '📋',
         
-        // Image files
+        // Image files - IDE-style
         'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'bmp': '🖼️', 'webp': '🖼️', 'tiff': '🖼️', 'tif': '🖼️',
         'svg': '🎨', 'ico': '🎨',
         'psd': '🎭', 'ai': '🎭', 'sketch': '🎭',
         
-        // Programming files
+        // Programming files - IDE-style (VS Code inspired)
         'py': '🐍', 'pyw': '🐍', 'pyc': '🐍', 'pyo': '🐍',
         'js': '🟨', 'jsx': '🟨', 'ts': '🟨', 'tsx': '🟨', 'mjs': '🟨',
         'java': '☕', 'class': '☕', 'jar': '☕',
@@ -1106,7 +1106,7 @@
         'lua': '🌙',
         'dart': '🎯',
         
-        // Web files
+        // Web files - IDE-style
         'html': '🌐', 'htm': '🌐', 'xhtml': '🌐',
         'css': '🎨', 'scss': '🎨', 'sass': '🎨', 'less': '🎨',
         'xml': '📰', 'xsl': '📰', 'xsd': '📰',
@@ -1114,30 +1114,30 @@
         'yaml': '📄', 'yml': '📄',
         'toml': '⚙️', 'ini': '⚙️', 'cfg': '⚙️', 'conf': '⚙️',
         
-        // Archive files
+        // Archive files - IDE-style
         'zip': '🗜️', 'rar': '🗜️', '7z': '🗜️', 'tar': '🗜️', 'gz': '🗜️', 'bz2': '🗜️', 'xz': '🗜️', 'lz': '🗜️', 'lzma': '🗜️',
         'deb': '📦', 'rpm': '📦', 'pkg': '📦', 'dmg': '📦', 'msi': '📦', 'exe': '📦',
         
-        // Video files
+        // Video files - IDE-style
         'mp4': '🎬', 'avi': '🎬', 'mkv': '🎬', 'mov': '🎬', 'wmv': '🎬', 'flv': '🎬', 'webm': '🎬', 'm4v': '🎬', '3gp': '🎬', 'ogv': '🎬', 'mpg': '🎬', 'mpeg': '🎬',
         
-        // Audio files
+        // Audio files - IDE-style
         'mp3': '🎵', 'wav': '🎵', 'flac': '🎵', 'aac': '🎵', 'ogg': '🎵', 'm4a': '🎵', 'wma': '🎵', 'opus': '🎵', 'aiff': '🎵',
         
-        // Font files
+        // Font files - IDE-style
         'ttf': '🔤', 'otf': '🔤', 'woff': '🔤', 'woff2': '🔤', 'eot': '🔤',
         
-        // Database files
+        // Database files - IDE-style
         'db': '🗃️', 'sqlite': '🗃️', 'sqlite3': '🗃️', 'mdb': '🗃️', 'accdb': '🗃️',
         
-        // Log files
+        // Log files - IDE-style
         'log': '📜', 'out': '📜', 'err': '📜',
         
-        // Data files
+        // Data files - IDE-style
         'sql': '🗄️',
         'parquet': '📊', 'avro': '📊', 'orc': '📊',
         
-        // Notebook files
+        // Notebook files - IDE-style
         'ipynb': '📓'
       };
       

@@ -3384,6 +3384,7 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
             data = json.loads(message)
             pattern = data.get('pattern', '').strip()
             search_text = data.get('search_text', '').strip()
+            search_mode = data.get('search_mode', 'content').strip()
             
             if not pattern or not search_text:
                 self.write_message(json.dumps({
@@ -3393,7 +3394,7 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
                 return
                 
             # Start the search
-            await self.perform_search(pattern, search_text)
+            await self.perform_search(pattern, search_text, search_mode)
             
         except json.JSONDecodeError:
             self.write_message(json.dumps({
@@ -3406,7 +3407,7 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
                 'message': f'Search error: {str(e)}'
             }))
 
-    async def perform_search(self, pattern, search_text):
+    async def perform_search(self, pattern, search_text, search_mode='content'):
         """Perform the super search and stream results"""
         try:
             # Send search start notification
@@ -3496,9 +3497,12 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
                     'progress': {'current': processed_files, 'total': total_files}
                 }))
                 
-                # Search within the file
+                # Search based on mode
                 try:
-                    await self.search_in_file(rel_path, abs_path, search_text)
+                    if search_mode == 'filename':
+                        await self.search_filename(rel_path, abs_path, search_text)
+                    else:
+                        await self.search_in_file(rel_path, abs_path, search_text)
                 except Exception as e:
                     self.write_message(json.dumps({
                         'type': 'file_error',
@@ -3645,6 +3649,25 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
             'search_text': search_text,
             'match_positions': match_positions
         }))
+
+    async def search_filename(self, rel_path, abs_path, search_text):
+        """Search for text in filename"""
+        try:
+            # Get just the filename from the path
+            filename = os.path.basename(rel_path)
+            
+            # Check if search text is in filename (case-sensitive)
+            if search_text in filename:
+                # For filename search, we show the full path as the "line content"
+                # and use line number 0 to indicate it's a filename match
+                self.send_match(rel_path, 0, f"📁 {rel_path}", search_text)
+                
+        except Exception as e:
+            self.write_message(json.dumps({
+                'type': 'file_error',
+                'file_path': rel_path,
+                'message': f'Error searching filename: {str(e)}'
+            }))
 
     def on_close(self):
         self.search_cancelled = True

@@ -94,6 +94,118 @@
         font-size: 12px;
         color: #666;
         margin-top: 3px;
+        line-height: 1.4;
+      }
+
+      .help-text code {
+        background: #f0f0f0;
+        padding: 1px 4px;
+        border-radius: 2px;
+        font-family: "Courier New", monospace;
+        font-size: 11px;
+      }
+
+      .wildcard-helper {
+        margin: 15px 0;
+        padding: 15px;
+        background: #f8f9fa;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+
+      .helper-title {
+        font-weight: bold;
+        margin-bottom: 10px;
+        color: #333;
+        font-size: 14px;
+      }
+
+      .pattern-buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .pattern-btn {
+        background: #e9ecef;
+        border: 1px solid #ced4da;
+        color: #495057;
+        padding: 4px 8px;
+        border-radius: 3px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-family: "Courier New", monospace;
+      }
+
+      .pattern-btn:hover {
+        background: #007bff;
+        color: white;
+        border-color: #007bff;
+      }
+
+      .pattern-btn:active {
+        transform: translateY(1px);
+      }
+
+      .search-mode-toggle {
+        margin: 15px 0;
+        padding: 15px;
+        background: #f8f9fa;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+
+      .toggle-container {
+        display: flex;
+        gap: 15px;
+        margin-bottom: 10px;
+      }
+
+      .toggle-label {
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.2s ease;
+      }
+
+      .toggle-label input[type="radio"] {
+        margin-right: 8px;
+        transform: scale(1.2);
+      }
+
+      .toggle-option {
+        padding: 8px 12px;
+        border: 2px solid #ddd;
+        border-radius: 4px;
+        background: white;
+        transition: all 0.2s ease;
+        font-size: 14px;
+      }
+
+      .toggle-label input[type="radio"]:checked + .toggle-option {
+        background: #007bff;
+        color: white;
+        border-color: #007bff;
+      }
+
+      .toggle-label:hover .toggle-option {
+        border-color: #007bff;
+      }
+
+      .mode-description {
+        font-size: 12px;
+        color: #666;
+        font-style: italic;
+      }
+
+      .filename-match {
+        font-weight: bold;
+        color: #007bff;
+        background: #e3f2fd;
+        padding: 2px 4px;
+        border-radius: 3px;
       }
 
       .search-buttons {
@@ -309,27 +421,65 @@
 
       <div class="search-form">
         <div class="form-group">
-          <label for="pattern">File Pattern (Platform-specific glob syntax):</label>
+          <label for="pattern">File Pattern (Wildcard/Glob syntax):</label>
           <input 
             type="text" 
             id="pattern" 
-            placeholder=""
+            placeholder="e.g., *.py, **/*.js, test_*.txt"
             value=""
           />
           <div class="help-text">
-            Use * for wildcards, ** for recursive matching, ? for single character. Searches from root directory only.
+            <strong>Wildcard patterns:</strong><br>
+            • <code>*</code> - matches any characters (except /)<br>
+            • <code>**</code> - matches any characters including subdirectories<br>
+            • <code>?</code> - matches single character<br>
+            • <code>[abc]</code> - matches any character in brackets<br>
+            • <code>[a-z]</code> - matches character range<br>
+            <strong>Examples:</strong> <code>*.py</code>, <code>**/*.js</code>, <code>test_*.txt</code>, <code>*.{py,js,html}</code>
+          </div>
+        </div>
+
+        <div class="search-mode-toggle">
+          <div class="toggle-container">
+            <label class="toggle-label">
+              <input type="radio" name="searchMode" value="content" checked>
+              <span class="toggle-option">📄 Search Content</span>
+            </label>
+            <label class="toggle-label">
+              <input type="radio" name="searchMode" value="filename">
+              <span class="toggle-option">📁 Search Filenames</span>
+            </label>
+          </div>
+          <div class="mode-description" id="modeDescription">
+            Search for text within file contents
           </div>
         </div>
 
         <div class="form-group">
-          <label for="searchText">Search Text:</label>
+          <label for="searchText" id="searchTextLabel">Search Text:</label>
           <input 
             type="text" 
             id="searchText" 
             placeholder="Text to search for in matching files"
           />
-          <div class="help-text">
+          <div class="help-text" id="searchTextHelp">
             Case-sensitive text search within matching files
+          </div>
+        </div>
+
+        <div class="wildcard-helper">
+          <div class="helper-title">Common Patterns:</div>
+          <div class="pattern-buttons">
+            <button class="pattern-btn" data-pattern="*.py">Python files</button>
+            <button class="pattern-btn" data-pattern="*.js">JavaScript files</button>
+            <button class="pattern-btn" data-pattern="*.html">HTML files</button>
+            <button class="pattern-btn" data-pattern="*.css">CSS files</button>
+            <button class="pattern-btn" data-pattern="*.txt">Text files</button>
+            <button class="pattern-btn" data-pattern="*.md">Markdown files</button>
+            <button class="pattern-btn" data-pattern="**/*.py">All Python files (recursive)</button>
+            <button class="pattern-btn" data-pattern="**/*.js">All JS files (recursive)</button>
+            <button class="pattern-btn" data-pattern="test_*">Files starting with 'test_'</button>
+            <button class="pattern-btn" data-pattern="*_test.*">Files ending with '_test'</button>
           </div>
         </div>
 
@@ -385,6 +535,12 @@
           this.resultsContent = document.getElementById('resultsContent');
           this.statsDiv = document.getElementById('stats');
           
+          // Search mode elements
+          this.searchModeRadios = document.querySelectorAll('input[name="searchMode"]');
+          this.searchTextLabel = document.getElementById('searchTextLabel');
+          this.searchTextHelp = document.getElementById('searchTextHelp');
+          this.modeDescription = document.getElementById('modeDescription');
+          
           // Set platform-specific defaults
           this.setupPlatformDefaults();
         }
@@ -433,11 +589,76 @@
           this.searchTextInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !this.isSearching) this.startSearch();
           });
+
+          // Pattern button clicks
+          document.querySelectorAll('.pattern-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const pattern = btn.getAttribute('data-pattern');
+              this.patternInput.value = pattern;
+              this.patternInput.focus();
+              this.validatePattern();
+            });
+          });
+
+          // Pattern validation on input
+          this.patternInput.addEventListener('input', () => this.validatePattern());
+
+          // Search mode toggle
+          this.searchModeRadios.forEach(radio => {
+            radio.addEventListener('change', () => this.updateSearchMode());
+          });
+        }
+
+        updateSearchMode() {
+          const selectedMode = document.querySelector('input[name="searchMode"]:checked').value;
+          
+          if (selectedMode === 'filename') {
+            this.searchTextLabel.textContent = 'Filename to Search:';
+            this.searchTextInput.placeholder = 'Enter filename or part of filename to search for';
+            this.searchTextHelp.innerHTML = 'Search for files by name. Use wildcards like <code>*</code> and <code>?</code> for pattern matching.';
+            this.modeDescription.textContent = 'Search for files by filename within the specified pattern';
+          } else {
+            this.searchTextLabel.textContent = 'Search Text:';
+            this.searchTextInput.placeholder = 'Text to search for in matching files';
+            this.searchTextHelp.innerHTML = 'Case-sensitive text search within matching files';
+            this.modeDescription.textContent = 'Search for text within file contents';
+          }
+        }
+
+        validatePattern() {
+          const pattern = this.patternInput.value.trim();
+          const helpText = this.patternInput.parentElement.querySelector('.help-text');
+          
+          if (!pattern) {
+            helpText.innerHTML = `<strong>Wildcard patterns:</strong><br>
+            • <code>*</code> - matches any characters (except /)<br>
+            • <code>**</code> - matches any characters including subdirectories<br>
+            • <code>?</code> - matches single character<br>
+            • <code>[abc]</code> - matches any character in brackets<br>
+            • <code>[a-z]</code> - matches character range<br>
+            <strong>Examples:</strong> <code>*.py</code>, <code>**/*.js</code>, <code>test_*.txt</code>, <code>*.{py,js,html}</code>`;
+            return;
+          }
+
+          // Basic pattern validation
+          const hasWildcard = pattern.includes('*') || pattern.includes('?') || pattern.includes('[');
+          const isValid = pattern.length > 0 && !pattern.includes('//');
+          
+          if (isValid) {
+            if (hasWildcard) {
+              helpText.innerHTML = `✅ Valid wildcard pattern. This will search for files matching: <code>${pattern}</code>`;
+            } else {
+              helpText.innerHTML = `ℹ️ Literal pattern. This will search for files named exactly: <code>${pattern}</code>`;
+            }
+          } else {
+            helpText.innerHTML = `❌ Invalid pattern. Check for double slashes or empty pattern.`;
+          }
         }
 
         startSearch() {
           const pattern = this.patternInput.value.trim();
           const searchText = this.searchTextInput.value.trim();
+          const searchMode = document.querySelector('input[name="searchMode"]:checked').value;
 
           if (!pattern || !searchText) {
             this.showStatus('Please enter both file pattern and search text.', 'error');
@@ -459,7 +680,8 @@
             this.showStatus('Connected. Starting search...', 'searching');
             this.ws.send(JSON.stringify({
               pattern: pattern,
-              search_text: searchText
+              search_text: searchText,
+              search_mode: searchMode
             }));
           };
 
@@ -577,10 +799,20 @@
 
           const highlightedContent = this.highlightMatches(matchData.line_content, matchData.search_text, matchData.match_positions);
 
-          matchItem.innerHTML = `
-            <span class="line-number">${matchData.line_number}:</span>
-            <span class="line-content">${highlightedContent}</span>
-          `;
+          // Handle filename search results differently
+          if (matchData.line_number === 0) {
+            // This is a filename match
+            matchItem.innerHTML = `
+              <span class="line-number">📁</span>
+              <span class="line-content filename-match">${highlightedContent}</span>
+            `;
+          } else {
+            // This is a content match
+            matchItem.innerHTML = `
+              <span class="line-number">${matchData.line_number}:</span>
+              <span class="line-content">${highlightedContent}</span>
+            `;
+          }
 
           matchList.appendChild(matchItem);
         }
