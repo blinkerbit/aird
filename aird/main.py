@@ -1485,12 +1485,37 @@ class LDAPLoginHandler(BaseHandler):
         
         try:
             server = Server(self.settings['ldap_server'], get_info=ALL)
-            conn = Connection(server, user=f"uid={username},{self.settings['ldap_base_dn']}", password=password, auto_bind=True)
+            conn = Connection(server, user=self.settings['ldap_user_template'].format(username=username), password=password, auto_bind=True)
+            conn.search(search_base=self.settings['ldap_base_dn'],
+             search_filter=self.settings['ldap_user_template'].format(username=username),
+              attributes=self.settings['ldap_attributes'])
+
+            """
+            attribute_map = [{"member":'cn=asdfasdf,dc=com,dc=io'}]
+            """
+            # authentication 
             if conn.bind():
-                self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
-                self.redirect("/files/")
-            else:
+                for attribute_element in self.settings['ldap_attribute_map']:
+                    for key, value in attribute_element.items():
+                        if conn.entries[0].get(key) is not None:
+                            if value in conn.entries[0].get(key):
+                                self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
+                                self.redirect("/files/")
+                                return
                 self.render("login.html", error="Invalid username or password.", settings=self.settings)
+                return
+
+            # authorization logic
+
+            if len(conn.entries) == 0:
+                self.render("login.html", error="Invalid username or password.", settings=self.settings)
+                return
+            
+            # if conn.bind():
+            #     self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
+            #     self.redirect("/files/")
+            # else:
+            #     self.render("login.html", error="Invalid username or password.", settings=self.settings)
         except Exception:
             # Generic error message to prevent information disclosure
             self.render("login.html", error="Authentication failed. Please check your credentials.", settings=self.settings)

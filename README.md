@@ -155,8 +155,11 @@ aird --help
 
 ### 🔐 Security & Authentication
 - **Token-based Authentication:** Secure access with customizable access tokens
-- **LDAP/Active Directory Integration:** Enterprise-grade authentication support
+- **LDAP/Active Directory Integration:** Enterprise-grade authentication support with full LDAP user management
+- **Dual Authentication Modes:** Support for both LDAP and token-based authentication
+- **Secure Session Management:** HTTP-only cookies with CSRF protection and secure session handling
 - **Path Traversal Protection:** Built-in security measures to prevent unauthorized access
+- **Input Validation:** Comprehensive input sanitization and length validation for security
 
 ### ⚙️ Administration
 - **Admin Panel:** Dedicated admin interface to toggle features on the fly
@@ -205,7 +208,7 @@ Navigate to `http://localhost:8000` and enter your access token to start browsin
 | --------------- | --------------------------------------------------- | ------------------------------------- |
 | `--port`        | The port to listen on                               | `8000`                                |
 | `--root`        | The root directory to serve files from              | Current directory                     |
-| `--token`       | The token required for user login                   | (auto-generated)                      |
+| `--token`       | The token required for user login (fallback for LDAP) | (auto-generated)                      |
 | `--admin-token` | The token required for admin login                  | (auto-generated)                      |
 | `--hostname`    | Host name for the server, used for display          | (auto-detected)                       |
 | `--config`      | Path to a JSON configuration file                   | `None`                                |
@@ -225,15 +228,22 @@ For advanced setups, use a JSON configuration file to define all settings:
   "root_dir": "/path/to/your/files",
   "access_token": "your-secret-token",
   "admin_token": "your-admin-secret-token",
-  "enable_ldap": false,
-  "ldap_server": null,
-  "ldap_base_dn": null,
+  "ldap": false,
+  "ldap_server": "ldap://your.ldap.server:389",
+  "ldap_base_dn": "ou=users,dc=example,dc=com",
+  "ldap_user_template": "uid={username}",
+  "ldap_attributes": ["cn", "mail", "memberOf"],
+  "ldap_attribute_map": [
+    {"memberOf": "cn=aird-users,ou=groups,dc=example,dc=com"}
+  ],
   "feature_flags": {
     "file_upload": true,
     "file_delete": true,
     "file_rename": true,
     "file_download": true,
-    "file_edit": true
+    "file_edit": true,
+    "file_share": true,
+    "super_search": true
   },
   "max_file_size": 10485760,
   "max_readable_file_size": 10485760,
@@ -246,18 +256,122 @@ Run with configuration file:
 aird --config /path/to/config.json
 ```
 
-### 🔐 LDAP Authentication
+### 🔐 LDAP Authentication & Authorization
 
-For enterprise environments, enable LDAP authentication:
+Aird provides comprehensive LDAP/Active Directory integration for enterprise environments with advanced user management capabilities.
 
+#### **LDAP Authentication Features**
+- **Enterprise Integration:** Full LDAP/Active Directory support for corporate environments
+- **Dual Authentication Modes:** LDAP users can authenticate with domain credentials
+- **Fallback Token Support:** Token-based authentication as backup for non-LDAP users
+- **Secure Session Management:** HTTP-only cookies with CSRF protection
+- **User Attribute Mapping:** Advanced LDAP attribute mapping for user authorization
+- **Group-based Authorization:** Support for LDAP group membership validation
+
+#### **LDAP Configuration**
+
+**Command Line Setup:**
 ```bash
-aird --enable-ldap \
-     --ldap-server "ldap://your.ldap.server" \
+# Basic LDAP configuration
+aird --ldap \
+     --ldap-server "ldap://your.ldap.server:389" \
      --ldap-base-dn "ou=users,dc=example,dc=com" \
-     --access-token "fallback-token"
+     --token "fallback-token"
+
+# With SSL/TLS encryption
+aird --ldap \
+     --ldap-server "ldaps://your.ldap.server:636" \
+     --ldap-base-dn "ou=users,dc=example,dc=com" \
+     --token "fallback-token"
 ```
 
-Users can authenticate with their LDAP credentials, with token authentication as fallback.
+**Configuration File Setup:**
+```json
+{
+  "ldap": true,
+  "ldap_server": "ldap://your.ldap.server:389",
+  "ldap_base_dn": "ou=users,dc=example,dc=com",
+  "ldap_user_template": "uid={username},{ldap_base_dn}",
+  "ldap_attributes": ["cn", "mail", "memberOf"],
+  "ldap_attribute_map": [
+    {"memberOf": "cn=aird-users,ou=groups,dc=example,dc=com"}
+  ],
+  "token": "fallback-token"
+}
+```
+
+#### **LDAP User Management**
+- **Automatic User Discovery:** Users are automatically discovered from LDAP directory
+- **Group Membership Validation:** Validate user access based on LDAP group membership
+- **Attribute-based Authorization:** Use LDAP attributes for fine-grained access control
+- **Real-time User Search:** Live user search functionality for share management
+- **User Profile Integration:** Display LDAP user information in the interface
+
+#### **LDAP Security Features**
+- **Secure Bind Operations:** Encrypted LDAP connections with SSL/TLS support
+- **Input Validation:** Comprehensive validation of LDAP queries and user inputs
+- **Error Handling:** Secure error messages that don't leak sensitive information
+- **Session Security:** Secure cookie handling with proper HTTP-only and SameSite attributes
+- **CSRF Protection:** Built-in CSRF protection for all LDAP-authenticated sessions
+
+#### **LDAP Login Interface**
+When LDAP is enabled, users see a simplified login interface:
+- **Username/Password Fields:** Clean interface for LDAP credentials
+- **Automatic Detection:** System automatically detects LDAP mode
+- **Secure Authentication:** All credentials are validated against LDAP server
+- **Session Management:** Secure session creation upon successful authentication
+
+#### **LDAP Integration Benefits**
+- **Enterprise Ready:** Seamless integration with existing corporate infrastructure
+- **Centralized User Management:** No need to manage separate user accounts
+- **Group-based Access Control:** Leverage existing LDAP groups for authorization
+- **Audit Trail:** Full integration with corporate audit and logging systems
+- **Single Sign-On Ready:** Compatible with SSO solutions and identity providers
+
+#### **LDAP Troubleshooting & Best Practices**
+
+**Common LDAP Issues:**
+- **Connection Timeouts:** Ensure LDAP server is accessible and firewall rules allow connections
+- **Authentication Failures:** Verify user DN format and base DN configuration
+- **SSL/TLS Issues:** Check certificate validity and SSL/TLS configuration
+- **Group Membership:** Ensure proper LDAP group structure and user membership
+
+**LDAP Best Practices:**
+- **Use SSL/TLS:** Always use `ldaps://` for production environments
+- **Proper DN Structure:** Use consistent organizational unit (OU) structure
+- **Group Management:** Create dedicated groups for Aird users and administrators
+- **Regular Testing:** Test LDAP connectivity and user authentication regularly
+- **Backup Authentication:** Always maintain token-based fallback for emergency access
+
+**LDAP Configuration Examples:**
+
+**Active Directory:**
+```json
+{
+  "ldap": true,
+  "ldap_server": "ldaps://ad.company.com:636",
+  "ldap_base_dn": "dc=company,dc=com",
+  "ldap_user_template": "{username}@company.com",
+  "ldap_attributes": ["cn", "mail", "memberOf"],
+  "ldap_attribute_map": [
+    {"memberOf": "CN=Aird-Users,OU=Groups,DC=company,DC=com"}
+  ]
+}
+```
+
+**OpenLDAP:**
+```json
+{
+  "ldap": true,
+  "ldap_server": "ldap://ldap.company.com:389",
+  "ldap_base_dn": "ou=people,dc=company,dc=com",
+  "ldap_user_template": "uid={username},ou=people,dc=company,dc=com",
+  "ldap_attributes": ["cn", "mail", "memberOf"],
+  "ldap_attribute_map": [
+    {"memberOf": "cn=aird-users,ou=groups,dc=company,dc=com"}
+  ]
+}
+```
 
 ### 🔍 Super Search
 
@@ -356,6 +470,14 @@ The admin panel provides real-time control over server features and capabilities
    - **Search WebSocket:** Tune search handler performance limits
    - **Real-time Statistics:** View live connection stats at `/admin/websocket-stats`
    - **Dynamic Configuration:** All settings apply instantly without restart
+
+5. **LDAP User Management (NEW!):**
+   - **User Discovery:** Automatically discover and manage LDAP users
+   - **Group Membership:** View and manage user group memberships
+   - **User Search:** Real-time search functionality for user management
+   - **Access Control:** Configure user permissions based on LDAP groups
+   - **User Profiles:** View and edit user profile information
+   - **Authentication Status:** Monitor user authentication and session status
 
 All changes apply immediately to all connected users via WebSocket updates.
 
