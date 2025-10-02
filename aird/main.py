@@ -11,6 +11,7 @@ import sqlite3
 import fnmatch
 import glob
 import pathlib
+import ssl
 
 import tornado.ioloop
 import tornado.web
@@ -931,6 +932,28 @@ def _update_user(conn: sqlite3.Connection, user_id: int, **kwargs) -> bool:
     except Exception:
         return False
 
+def _assign_admin_privileges(conn: sqlite3.Connection, admin_users: list) -> None:
+    """Assign admin privileges to users listed in admin_users configuration"""
+    if not admin_users or not conn:
+        return
+    
+    try:
+        for username in admin_users:
+            if not username or not isinstance(username, str):
+                continue
+                
+            # Check if user exists
+            user = _get_user_by_username(conn, username)
+            if user:
+                # Update user role to admin if not already admin
+                if user['role'] != 'admin':
+                    _update_user(conn, user['id'], role='admin')
+                    print(f"ADMIN: Assigned admin privileges to existing user '{username}'")
+            else:
+                print(f"ADMIN: User '{username}' not found in database - will be assigned admin privileges on first login")
+    except Exception as e:
+        print(f"ADMIN: Warning: Failed to assign admin privileges: {e}")
+
 def _delete_user(conn: sqlite3.Connection, user_id: int) -> bool:
     """Delete a user from the database"""
     try:
@@ -1457,6 +1480,28 @@ class BaseHandler(tornado.web.RequestHandler):
         self.render("error.html", 
                    status_code=status_code, 
                    message=error_messages.get(status_code, "Unknown Error"))
+    
+    def on_finish(self):
+        """Log access with username"""
+        # Get username for logging
+        username = "anonymous"
+        if self.current_user:
+            if isinstance(self.current_user, bytes):
+                username = self.current_user.decode('utf-8')
+            else:
+                username = str(self.current_user)
+        
+        # Get client IP
+        client_ip = self.request.remote_ip
+        
+        # Get request details
+        method = self.request.method
+        uri = self.request.uri
+        status = self.get_status()
+        # user_agent = self.request.headers.get('User-Agent', 'Unknown')
+        
+        # Log access with username
+        print(f"ACCESS: {client_ip} - {username} - {method} {uri} - {status}")
 
 class RootHandler(BaseHandler):
     def get(self):
@@ -1484,7 +1529,7 @@ class LDAPLoginHandler(BaseHandler):
             return
         
         try:
-            server = Server(self.settings['ldap_server'], get_info=ALL)
+            server = Server(self.settings['ldap_server'])
             conn = Connection(server, user=self.settings['ldap_user_template'].format(username=username), password=password, auto_bind=True)
             conn.search(search_base=self.settings['ldap_base_dn'],
              search_filter=self.settings['ldap_filter_template'].format(username=username),
@@ -1495,30 +1540,65 @@ class LDAPLoginHandler(BaseHandler):
             """
             # authentication 
             
-            # authorization logic
-            for attribute_element in self.settings['ldap_attribute_map']:
-                for key, value in attribute_element.items():
+            # authorization logic - check LDAP attribute maps if configured
+            ldap_attribute_map = self.settings.get('ldap_attribute_map', [])
+            if ldap_attribute_map:
+                # If attribute maps are configured, check authorization
+                authorized = False
+                for attribute_element in ldap_attribute_map:
+                    for key, value in attribute_element.items():
+                        try:
+                            if value in conn.entries[0][key]:
+                                authorized = True
+                                break
+                        except KeyError:
+                            continue
+                    if authorized:
+                        break
+                
+                if not authorized:
+                    self.render("login.html", error="Access denied. You do not have permission to access this system.", settings=self.settings)
+                    return
+            # If no attribute maps are configured, all LDAP users are authorized
+            
+            # Only create/update user in Aird's database after successful authorization
+            if DB_CONN:
+                existing_user = _get_user_by_username(DB_CONN, username)
+                admin_users = self.settings.get('admin_users', [])
+                is_admin_user = username in admin_users
+                
+                if not existing_user:
+                    # Create new user in Aird's database for first-time LDAP login
                     try:
-                        if value in conn.entries[0][key]:
-                            self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
-                            self.redirect("/files/")
-                            return
-                    except KeyError:
-                        continue
-            self.render("login.html", error="Invalid username or password.", settings=self.settings)
+                        user_role = 'admin' if is_admin_user else 'user'
+                        _create_user(DB_CONN, username, password, role=user_role)
+                        print(f"LDAP: Created new user '{username}' from LDAP authentication with role '{user_role}'")
+                    except Exception as e:
+                        print(f"LDAP: Warning: Failed to create user '{username}' in database: {e}")
+                        # Continue with login even if user creation fails
+                else:
+                    # Update last login timestamp and check for admin role assignment
+                    try:
+                        _update_user(DB_CONN, existing_user['id'], last_login=datetime.now().isoformat())
+                        print(f"LDAP: Updated last login for user '{username}'")
+                        
+                        # Check if user should have admin privileges
+                        if is_admin_user and existing_user['role'] != 'admin':
+                            _update_user(DB_CONN, existing_user['id'], role='admin')
+                            print(f"LDAP: Assigned admin privileges to user '{username}'")
+                    except Exception as e:
+                        print(f"LDAP: Warning: Failed to update user '{username}': {e}")
+            
+            # Successful authentication and authorization
+            # Get user role for cookie setting
+            user_role = 'admin' if is_admin_user else 'user'
+            if existing_user:
+                user_role = existing_user['role']
+            
+            self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
+            self.set_secure_cookie("user_role", user_role, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
+            self.redirect("/files/")
             return
-
-            
-
-            if len(conn.entries) == 0:
-                self.render("login.html", error="Invalid username or password.", settings=self.settings)
-                return
-            
-            # if conn.bind():
-            #     self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
-            #     self.redirect("/files/")
-            # else:
-            #     self.render("login.html", error="Invalid username or password.", settings=self.settings)
         except Exception:
             # Generic error message to prevent information disclosure
             self.render("login.html", error="Authentication failed. Please check your credentials.", settings=self.settings)
@@ -1911,6 +1991,11 @@ class UserEditHandler(BaseHandler):
                 'active': active
             }
             
+            # Check if LDAP is enabled - disable password updates for LDAP users
+            if password and self.settings.get('ldap_server'):
+                self.render("user_edit.html", user=user, error="Password changes are not allowed for LDAP users. Please change the password through the LDAP directory.")
+                return
+            
             if password:  # Only update password if provided
                 update_data['password'] = password
                 
@@ -2044,6 +2129,11 @@ class ProfileHandler(BaseHandler):
                 return
             
             if action == "change_password":
+                # Check if LDAP is enabled - disable password changes for LDAP users
+                if self.settings.get('ldap_server'):
+                    self.render("profile.html", user=user, error="Password changes are not allowed for LDAP users. Please change your password through your LDAP directory.", success=None)
+                    return
+                
                 new_password = self.get_argument("new_password", "").strip()
                 confirm_password = self.get_argument("confirm_password", "").strip()
                 
@@ -3702,7 +3792,7 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
         self.connection_manager.remove_connection(self)
 
 
-def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None, ldap_user_template=None, ldap_filter_template=None, ldap_attributes=None, ldap_attribute_map=None):
+def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None, ldap_user_template=None, ldap_filter_template=None, ldap_attributes=None, ldap_attribute_map=None, admin_users=None):
     settings["template_path"] = os.path.join(os.path.dirname(__file__), "templates")
     # Limit request size to avoid Tornado rejecting large uploads with
     # "Content-Length too long" before our handler can respond.
@@ -3716,6 +3806,12 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None, 
         settings["ldap_filter_template"] = ldap_filter_template
         settings["ldap_attributes"] = ldap_attributes
         settings["ldap_attribute_map"] = ldap_attribute_map
+    
+    # Add admin users configuration to settings
+    if admin_users:
+        settings["admin_users"] = admin_users
+    
+    if ldap_enabled:
         login_handler = LDAPLoginHandler
     else:
         login_handler = LoginHandler
@@ -3785,6 +3881,8 @@ def main():
     parser.add_argument("--ldap-filter-template", help="LDAP filter template for user search")
     parser.add_argument("--ldap-attributes", help="LDAP attributes to retrieve (comma-separated)")
     parser.add_argument("--hostname", help="Host name for the server")
+    parser.add_argument("--ssl-cert", help="Path to SSL certificate file")
+    parser.add_argument("--ssl-key", help="Path to SSL private key file")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
@@ -3815,6 +3913,14 @@ def main():
     # Parse comma-separated attributes if provided as string
     if isinstance(ldap_attributes, str):
         ldap_attributes = [attr.strip() for attr in ldap_attributes.split(",")]
+    
+    # SSL configuration
+    ssl_cert = args.ssl_cert or config.get("ssl_cert")
+    ssl_key = args.ssl_key or config.get("ssl_key")
+    
+    # Admin users configuration
+    admin_users = config.get("admin_users", [])
+    
     host_name = args.hostname or config.get("hostname") or socket.getfqdn()
 
     if ldap_enabled:
@@ -3832,6 +3938,22 @@ def main():
             return
         if not ldap_attributes:
             print("Error: LDAP is enabled, but --ldap-attributes is not configured.")
+            return
+
+    # SSL validation
+    if ssl_cert and not ssl_key:
+        print("Error: SSL certificate provided but SSL key is missing. Both --ssl-cert and --ssl-key are required for SSL.")
+        return
+    if ssl_key and not ssl_cert:
+        print("Error: SSL key provided but SSL certificate is missing. Both --ssl-cert and --ssl-key are required for SSL.")
+        return
+    if ssl_cert and ssl_key:
+        # Validate that certificate and key files exist
+        if not os.path.exists(ssl_cert):
+            print(f"Error: SSL certificate file not found: {ssl_cert}")
+            return
+        if not os.path.exists(ssl_key):
+            print(f"Error: SSL key file not found: {ssl_key}")
             return
 
     global ACCESS_TOKEN, ADMIN_TOKEN, ROOT_DIR, DB_CONN, DB_PATH
@@ -3865,6 +3987,9 @@ def main():
                 FEATURE_FLAGS[k] = bool(v)
         # Database-only persistence for shares
         print(f"Shares are now persisted directly in database")
+        
+        # Assign admin privileges to configured admin users
+        _assign_admin_privileges(DB_CONN, admin_users)
 
         # Ensure database connection is working
         if DB_CONN is None:
@@ -3890,16 +4015,34 @@ def main():
         print(f"Access token (generated): {token}")
     if not admin_token_provided_explicitly:
         print(f"Admin token (generated): {admin_token}")
-    app = make_app(settings, ldap_enabled, ldap_server, ldap_base_dn, ldap_user_template, ldap_filter_template, ldap_attributes, ldap_attribute_map)
+    app = make_app(settings, ldap_enabled, ldap_server, ldap_base_dn, ldap_user_template, ldap_filter_template, ldap_attributes, ldap_attribute_map, admin_users)
+    
+    # Configure SSL if certificates are provided
+    ssl_options = None
+    if ssl_cert and ssl_key:
+        ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ssl_context.load_cert_chain(ssl_cert, ssl_key)
+        ssl_options = ssl_context
+    
     while True:
         try:
-            app.listen(
-                port,
-                max_body_size=MAX_FILE_SIZE,
-                max_buffer_size=MAX_FILE_SIZE,
-            )
-            print(f"Serving HTTP on 0.0.0.0 port {port} (http://0.0.0.0:{port}/) ...")
-            print(f"http://{host_name}:{port}/")
+            if ssl_options:
+                app.listen(
+                    port,
+                    ssl_options=ssl_options,
+                    max_body_size=MAX_FILE_SIZE,
+                    max_buffer_size=MAX_FILE_SIZE,
+                )
+                print(f"Serving HTTPS on 0.0.0.0 port {port} (https://0.0.0.0:{port}/) ...")
+                print(f"https://{host_name}:{port}/")
+            else:
+                app.listen(
+                    port,
+                    max_body_size=MAX_FILE_SIZE,
+                    max_buffer_size=MAX_FILE_SIZE,
+                )
+                print(f"Serving HTTP on 0.0.0.0 port {port} (http://0.0.0.0:{port}/) ...")
+                print(f"http://{host_name}:{port}/")
 
             tornado.ioloop.IOLoop.current().start()
             break

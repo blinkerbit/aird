@@ -128,6 +128,7 @@
             Profile management is not available for token-authenticated sessions.
         </div>
     {% else %}
+        {% if not settings.get('ldap_server') %}
         <!-- Change Password Section -->
         <div class="profile-section">
             <h3>Change Password</h3>
@@ -158,6 +159,16 @@
                 <button type="submit">Change Password</button>
             </form>
         </div>
+        {% else %}
+        <!-- LDAP User Notice -->
+        <div class="profile-section">
+            <h3>Password Management</h3>
+            <div class="info">
+                <p><strong>LDAP Authentication:</strong> Your account is managed through LDAP directory.</p>
+                <p>To change your password, please use your organization's password change system or contact your system administrator.</p>
+            </div>
+        </div>
+        {% end %}
         
         <!-- Account Info Section -->
         <div class="profile-section">

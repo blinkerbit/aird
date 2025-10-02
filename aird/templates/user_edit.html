@@ -114,11 +114,21 @@
                 <div class="help-text">3-50 characters, letters, numbers, underscore, and hyphen only</div>
             </div>
             
+            {% if not settings.get('ldap_server') %}
             <div class="form-group">
                 <label for="password">New Password:</label>
                 <input type="password" id="password" name="password" minlength="6">
                 <div class="help-text">Leave blank to keep current password, minimum 6 characters if changing</div>
             </div>
+            {% else %}
+            <div class="form-group">
+                <label>Password Management:</label>
+                <div class="info">
+                    <p><strong>LDAP User:</strong> Password changes are managed through the LDAP directory.</p>
+                    <p>To change this user's password, use your organization's LDAP management tools.</p>
+                </div>
+            </div>
+            {% end %}
             
             <div class="form-group">
                 <label for="role">Role:</label>

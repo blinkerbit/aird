@@ -198,6 +198,9 @@ aird --port 8000 --token "user-token" --admin-token "admin-token"
 
 # Serve from a specific directory
 aird --root "/path/to/files" --token "your-token"
+
+# Enable SSL/HTTPS
+aird --ssl-cert "/path/to/certificate.crt" --ssl-key "/path/to/private.key" --token "your-token"
 ```
 
 Navigate to `http://localhost:8000` and enter your access token to start browsing files.
@@ -215,6 +218,12 @@ Navigate to `http://localhost:8000` and enter your access token to start browsin
 | `--ldap`        | Enable LDAP authentication                          | `False`                               |
 | `--ldap-server` | The LDAP server address (required if --ldap)        | `None`                                |
 | `--ldap-base-dn`| The base DN for LDAP searches (required if --ldap)  | `None`                                |
+| `--ldap-user-template` | LDAP user template for authentication (required if --ldap) | `None` |
+| `--ldap-filter-template` | LDAP filter template for user search (required if --ldap) | `None` |
+| `--ldap-ssl-cert` | Path to LDAP client SSL certificate file (this feature is in progress, do not use this flag)| `None` |
+| `--ldap-ssl-key` | Path to LDAP client SSL private key file( this feature is in progress, do not use this flag) | `None` |
+| `--ssl-cert` | Path to SSL certificate file for HTTPS | `None` |
+| `--ssl-key` | Path to SSL private key file for HTTPS | `None` |
 
 ### ⚙️ Configuration File
 
@@ -232,10 +241,16 @@ For advanced setups, use a JSON configuration file to define all settings:
   "ldap_server": "ldap://your.ldap.server:389",
   "ldap_base_dn": "ou=users,dc=example,dc=com",
   "ldap_user_template": "uid={username}",
+  "ldap_filter_template": "(&(objectClass=person)(uid={username}))",
   "ldap_attributes": ["cn", "mail", "memberOf"],
   "ldap_attribute_map": [
     {"memberOf": "cn=aird-users,ou=groups,dc=example,dc=com"}
   ],
+  "ldap_ssl_cert": "/path/to/ldap/client.crt",
+  "ldap_ssl_key": "/path/to/ldap/client.key",
+  "admin_users": ["admin1", "admin2", "john.doe"],
+  "ssl_cert": "/path/to/your/certificate.crt",
+  "ssl_key": "/path/to/your/private.key",
   "feature_flags": {
     "file_upload": true,
     "file_delete": true,
@@ -276,12 +291,26 @@ Aird provides comprehensive LDAP/Active Directory integration for enterprise env
 aird --ldap \
      --ldap-server "ldap://your.ldap.server:389" \
      --ldap-base-dn "ou=users,dc=example,dc=com" \
+     --ldap-user-template "uid={username},{ldap_base_dn}" \
+     --ldap-filter-template "(&(objectClass=person)(uid={username}))" \
      --token "fallback-token"
 
 # With SSL/TLS encryption
 aird --ldap \
      --ldap-server "ldaps://your.ldap.server:636" \
      --ldap-base-dn "ou=users,dc=example,dc=com" \
+     --ldap-user-template "uid={username},{ldap_base_dn}" \
+     --ldap-filter-template "(&(objectClass=person)(uid={username}))" \
+     --token "fallback-token"
+
+# With LDAP client certificate authentication
+aird --ldap \
+     --ldap-server "ldaps://your.ldap.server:636" \
+     --ldap-base-dn "ou=users,dc=example,dc=com" \
+     --ldap-user-template "uid={username},{ldap_base_dn}" \
+     --ldap-filter-template "(&(objectClass=person)(uid={username}))" \
+     --ldap-ssl-cert "/path/to/ldap/client.crt" \
+     --ldap-ssl-key "/path/to/ldap/client.key" \
      --token "fallback-token"
 ```
 
@@ -292,6 +321,9 @@ aird --ldap \
   "ldap_server": "ldap://your.ldap.server:389",
   "ldap_base_dn": "ou=users,dc=example,dc=com",
   "ldap_user_template": "uid={username},{ldap_base_dn}",
+  "ldap_filter_template": "(&(objectClass=person)(uid={username}))",
+  "ldap_ssl_cert": "/path/to/ldap/client.crt",
+  "ldap_ssl_key": "/path/to/ldap/client.key",
   "ldap_attributes": ["cn", "mail", "memberOf"],
   "ldap_attribute_map": [
     {"memberOf": "cn=aird-users,ou=groups,dc=example,dc=com"}
@@ -300,7 +332,149 @@ aird --ldap \
 }
 ```
 
+#### **LDAP Filter Template Configuration**
+
+The `ldap_filter_template` parameter defines the LDAP search filter used to locate users in the directory. This is a critical component for LDAP authentication as it determines how users are found and validated.
+
+**Key Features:**
+- **Flexible Search Patterns:** Support for complex LDAP filter expressions
+- **Username Substitution:** Use `{username}` placeholder for dynamic user search
+- **Object Class Filtering:** Filter by specific LDAP object classes (person, user, etc.)
+- **Attribute-based Search:** Search by any LDAP attribute (uid, sAMAccountName, cn, etc.)
+
+**Common Filter Templates:**
+
+| LDAP Server Type | Filter Template | Description |
+|------------------|-----------------|-------------|
+| **OpenLDAP** | `(&(objectClass=person)(uid={username}))` | Standard person object with uid attribute |
+| **Active Directory** | `(&(objectClass=user)(sAMAccountName={username}))` | AD user with sAMAccountName |
+| **Generic LDAP** | `(&(objectClass=inetOrgPerson)(uid={username}))` | RFC 2798 inetOrgPerson object |
+| **Custom Schema** | `(&(objectClass=myUser)(myUsername={username}))` | Custom object class and attribute |
+
+**Advanced Filter Examples:**
+```bash
+# Search for active users only
+"(&(objectClass=person)(uid={username})(!(accountStatus=disabled)))"
+
+# Search with multiple attributes
+"(&(objectClass=person)(|(uid={username})(mail={username})))"
+
+# Search with organizational unit filtering
+"(&(objectClass=person)(uid={username})(ou=employees))"
+```
+
+#### **LDAP SSL Client Certificate Authentication**
+
+Aird supports LDAP client certificate authentication for enhanced security. This allows the LDAP client to authenticate using SSL certificates instead of or in addition to username/password authentication.
+
+**Key Features:**
+- **Client Certificate Authentication:** Use SSL certificates for LDAP client authentication
+- **TLS Before Bind:** Secure LDAP communication with TLS encryption
+- **Certificate-based Authentication:** Enhanced security with client certificates
+- **Flexible Configuration:** Support for both command line and configuration file setup
+
+**LDAP SSL Configuration:**
+
+**Command Line Setup:**
+```bash
+# LDAP with client certificate authentication
+aird --ldap \
+     --ldap-server "ldaps://your.ldap.server:636" \
+     --ldap-base-dn "ou=users,dc=example,dc=com" \
+     --ldap-user-template "uid={username},{ldap_base_dn}" \
+     --ldap-filter-template "(&(objectClass=person)(uid={username}))" \
+     --ldap-ssl-cert "/path/to/ldap/client.crt" \
+     --ldap-ssl-key "/path/to/ldap/client.key" \
+     --token "fallback-token"
+```
+
+**Configuration File Setup:**
+```json
+{
+  "ldap": true,
+  "ldap_server": "ldaps://your.ldap.server:636",
+  "ldap_base_dn": "ou=users,dc=example,dc=com",
+  "ldap_user_template": "uid={username},{ldap_base_dn}",
+  "ldap_filter_template": "(&(objectClass=person)(uid={username}))",
+  "ldap_ssl_cert": "/path/to/ldap/client.crt",
+  "ldap_ssl_key": "/path/to/ldap/client.key",
+  "ldap_attributes": ["cn", "mail", "memberOf"],
+  "ldap_attribute_map": [
+    {"memberOf": "cn=aird-users,ou=groups,dc=example,dc=com"}
+  ]
+}
+```
+
+**LDAP SSL Certificate Requirements:**
+- **Certificate Format:** PEM format (.crt, .pem, .cert files)
+- **Private Key Format:** PEM format (.key files)
+- **Certificate Chain:** Include intermediate certificates if required
+- **Key Size:** Minimum 2048-bit RSA or equivalent ECDSA keys
+- **Validity:** Ensure certificates are not expired
+- **LDAP Server Compatibility:** Verify LDAP server supports client certificate authentication
+
+**LDAP SSL Security Features:**
+- **TLS Encryption:** All LDAP communication encrypted with TLS
+- **Client Certificate Authentication:** Enhanced security with certificate-based authentication
+- **Certificate Validation:** Automatic certificate and key file validation
+- **Secure Context:** Uses Python's ssl.create_default_context() for optimal security
+- **Perfect Forward Secrecy:** Modern cipher suites for enhanced security
+
+**LDAP SSL Configuration Examples:**
+
+**Self-Signed Client Certificate:**
+```bash
+# Generate LDAP client certificate (for testing)
+openssl req -newkey rsa:4096 -keyout ldap_client.key -out ldap_client.crt -days 365 -nodes
+
+# Run Aird with LDAP client certificate
+aird --ldap \
+     --ldap-server "ldaps://your.ldap.server:636" \
+     --ldap-ssl-cert "ldap_client.crt" \
+     --ldap-ssl-key "ldap_client.key" \
+     --ldap-base-dn "ou=users,dc=example,dc=com" \
+     --ldap-user-template "uid={username},{ldap_base_dn}" \
+     --ldap-filter-template "(&(objectClass=person)(uid={username}))"
+```
+
+**Production LDAP SSL Configuration:**
+```json
+{
+  "ldap": true,
+  "ldap_server": "ldaps://ldap.company.com:636",
+  "ldap_base_dn": "ou=people,dc=company,dc=com",
+  "ldap_user_template": "uid={username},ou=people,dc=company,dc=com",
+  "ldap_filter_template": "(&(objectClass=person)(uid={username}))",
+  "ldap_ssl_cert": "/etc/ssl/certs/ldap_client.crt",
+  "ldap_ssl_key": "/etc/ssl/private/ldap_client.key",
+  "ldap_attributes": ["cn", "mail", "memberOf"],
+  "ldap_attribute_map": [
+    {"memberOf": "cn=aird-users,ou=groups,dc=company,dc=com"}
+  ]
+}
+```
+
+**LDAP SSL Troubleshooting:**
+
+**Common Issues:**
+- **Certificate Not Found:** Ensure LDAP certificate and key file paths are correct
+- **Permission Denied:** Check file permissions (certificate should be readable, key should be 600)
+- **Invalid Certificate:** Verify certificate format and validity
+- **LDAP Server Rejection:** Ensure LDAP server is configured to accept client certificates
+- **Certificate Mismatch:** Verify certificate is issued for the correct LDAP server
+
+**LDAP SSL Best Practices:**
+- **Use Strong Certificates:** 2048-bit RSA or 256-bit ECDSA minimum
+- **Regular Renewal:** Set up automatic certificate renewal
+- **Secure Storage:** Store private keys securely with restricted permissions
+- **Monitor Expiry:** Set up alerts for certificate expiration
+- **Server Compatibility:** Ensure LDAP server supports client certificate authentication
+- **Certificate Authority:** Use certificates from trusted Certificate Authorities
+
 #### **LDAP User Management**
+- **Automatic User Registration:** LDAP users are automatically added to Aird's database on first login
+- **Seamless Integration:** No manual user creation required - users are created automatically
+- **User Tracking:** Track user login history and activity in Aird's database
 - **Automatic User Discovery:** Users are automatically discovered from LDAP directory
 - **Group Membership Validation:** Validate user access based on LDAP group membership
 - **Attribute-based Authorization:** Use LDAP attributes for fine-grained access control
@@ -324,9 +498,11 @@ When LDAP is enabled, users see a simplified login interface:
 #### **LDAP Integration Benefits**
 - **Enterprise Ready:** Seamless integration with existing corporate infrastructure
 - **Centralized User Management:** No need to manage separate user accounts
+- **Automatic User Provisioning:** LDAP users are automatically created in Aird on first login
 - **Group-based Access Control:** Leverage existing LDAP groups for authorization
 - **Audit Trail:** Full integration with corporate audit and logging systems
 - **Single Sign-On Ready:** Compatible with SSO solutions and identity providers
+- **Zero Configuration:** No manual user setup required - everything happens automatically
 
 #### **LDAP Troubleshooting & Best Practices**
 
@@ -352,6 +528,7 @@ When LDAP is enabled, users see a simplified login interface:
   "ldap_server": "ldaps://ad.company.com:636",
   "ldap_base_dn": "dc=company,dc=com",
   "ldap_user_template": "{username}@company.com",
+  "ldap_filter_template": "(&(objectClass=user)(sAMAccountName={username}))",
   "ldap_attributes": ["cn", "mail", "memberOf"],
   "ldap_attribute_map": [
     {"memberOf": "CN=Aird-Users,OU=Groups,DC=company,DC=com"}
@@ -366,12 +543,197 @@ When LDAP is enabled, users see a simplified login interface:
   "ldap_server": "ldap://ldap.company.com:389",
   "ldap_base_dn": "ou=people,dc=company,dc=com",
   "ldap_user_template": "uid={username},ou=people,dc=company,dc=com",
+  "ldap_filter_template": "(&(objectClass=person)(uid={username}))",
   "ldap_attributes": ["cn", "mail", "memberOf"],
   "ldap_attribute_map": [
     {"memberOf": "cn=aird-users,ou=groups,dc=company,dc=com"}
   ]
 }
 ```
+
+### 🔒 SSL/HTTPS Support
+
+Aird supports SSL/HTTPS encryption for secure file access and management. SSL can be configured through command line arguments or configuration files.
+
+#### **SSL Configuration**
+
+**Command Line Setup:**
+```bash
+# Basic SSL configuration
+aird --ssl-cert "/path/to/certificate.crt" --ssl-key "/path/to/private.key"
+
+# SSL with custom port
+aird --port 8443 --ssl-cert "/path/to/certificate.crt" --ssl-key "/path/to/private.key"
+
+# SSL with LDAP authentication
+aird --ldap \
+     --ldap-server "ldaps://your.ldap.server:636" \
+     --ldap-base-dn "ou=users,dc=example,dc=com" \
+     --ldap-user-template "uid={username},{ldap_base_dn}" \
+     --ldap-filter-template "(&(objectClass=person)(uid={username}))" \
+     --ssl-cert "/path/to/certificate.crt" \
+     --ssl-key "/path/to/private.key"
+```
+
+**Configuration File Setup:**
+```json
+{
+  "port": 8443,
+  "ssl_cert": "/path/to/your/certificate.crt",
+  "ssl_key": "/path/to/your/private.key",
+  "token": "your-secret-token"
+}
+```
+
+#### **SSL Certificate Requirements**
+
+- **Certificate Format:** PEM format (.crt, .pem, .cert files)
+- **Private Key Format:** PEM format (.key files)
+- **Certificate Chain:** Include intermediate certificates if required
+- **Key Size:** Minimum 2048-bit RSA or equivalent ECDSA keys
+- **Validity:** Ensure certificates are not expired
+
+#### **SSL Security Features**
+
+- **TLS 1.2+ Support:** Modern TLS protocol support for secure connections
+- **Certificate Validation:** Automatic certificate and key file validation
+- **Secure Context:** Uses Python's ssl.create_default_context() for optimal security
+- **Client Authentication:** Supports client certificate authentication
+- **Perfect Forward Secrecy:** Modern cipher suites for enhanced security
+
+#### **SSL Configuration Examples**
+
+**Self-Signed Certificate:**
+```bash
+# Generate self-signed certificate (for testing)
+openssl req -x509 -newkey rsa:4096 -keyout private.key -out certificate.crt -days 365 -nodes
+
+# Run Aird with self-signed certificate
+aird --ssl-cert "certificate.crt" --ssl-key "private.key"
+```
+
+**Let's Encrypt Certificate:**
+```bash
+# Use Let's Encrypt certificates
+aird --ssl-cert "/etc/letsencrypt/live/yourdomain.com/fullchain.pem" \
+     --ssl-key "/etc/letsencrypt/live/yourdomain.com/privkey.pem"
+```
+
+**Production Configuration:**
+```json
+{
+  "port": 443,
+  "ssl_cert": "/etc/ssl/certs/yourdomain.com.crt",
+  "ssl_key": "/etc/ssl/private/yourdomain.com.key",
+  "hostname": "yourdomain.com",
+  "token": "your-secure-token"
+}
+```
+
+#### **SSL Troubleshooting**
+
+**Common Issues:**
+- **Certificate Not Found:** Ensure certificate and key file paths are correct
+- **Permission Denied:** Check file permissions (certificate should be readable, key should be 600)
+- **Invalid Certificate:** Verify certificate format and validity
+- **Port Conflicts:** Ensure port is not already in use
+
+**SSL Best Practices:**
+- **Use Strong Certificates:** 2048-bit RSA or 256-bit ECDSA minimum
+- **Regular Renewal:** Set up automatic certificate renewal
+- **Secure Storage:** Store private keys securely with restricted permissions
+- **Monitor Expiry:** Set up alerts for certificate expiration
+- **Use Trusted CAs:** Prefer certificates from trusted Certificate Authorities
+
+### 👑 Admin User Management
+
+Aird supports automatic admin privilege assignment through configuration, making it easy to manage administrative access for LDAP and local users.
+
+#### **Admin User Configuration**
+
+**Configuration File Setup:**
+```json
+{
+  "admin_users": ["admin1", "admin2", "john.doe", "jane.smith"],
+  "ldap": true,
+  "ldap_server": "ldaps://your.ldap.server:636",
+  "ldap_base_dn": "ou=users,dc=example,dc=com"
+}
+```
+
+**Key Features:**
+- **Automatic Assignment:** Admin privileges are assigned automatically at startup and during first login
+- **LDAP Integration:** Works seamlessly with LDAP authentication
+- **Dynamic Updates:** Admin privileges are updated when users log in
+- **Flexible Configuration:** Support for both LDAP and local users
+
+#### **How Admin Assignment Works**
+
+**At Startup:**
+- Aird reads the `admin_users` list from configuration
+- Existing users in the database are immediately assigned admin privileges
+- Users not yet in the database are flagged for admin assignment on first login
+
+**During First Login:**
+- New LDAP users are created with admin role if they're in the `admin_users` list
+- Existing users are checked and upgraded to admin if they're in the list
+- All admin assignments are logged for audit purposes
+
+**Admin Privilege Features:**
+- **Full System Access:** Admin users can access the admin panel
+- **User Management:** Create, edit, and delete other users
+- **System Configuration:** Modify feature flags and system settings
+- **WebSocket Management:** Configure connection limits and timeouts
+- **Share Management:** View and manage all file shares
+
+#### **Admin User Examples**
+
+**LDAP Admin Users:**
+```json
+{
+  "ldap": true,
+  "ldap_server": "ldaps://company.com:636",
+  "ldap_base_dn": "ou=people,dc=company,dc=com",
+  "admin_users": ["john.doe", "jane.smith", "admin.user"]
+}
+```
+
+**Mixed Admin Users:**
+```json
+{
+  "ldap": false,
+  "admin_users": ["localadmin", "john.doe", "jane.smith"]
+}
+```
+
+**Enterprise Configuration:**
+```json
+{
+  "ldap": true,
+  "ldap_server": "ldaps://ad.company.com:636",
+  "ldap_base_dn": "dc=company,dc=com",
+  "ldap_user_template": "{username}@company.com",
+  "ldap_filter_template": "(&(objectClass=user)(sAMAccountName={username}))",
+  "admin_users": ["it.admin", "security.team", "john.doe", "jane.smith"]
+}
+```
+
+#### **Admin User Benefits**
+
+- **Centralized Management:** All admin users defined in one configuration
+- **Automatic Provisioning:** No manual admin assignment required
+- **LDAP Integration:** Works with existing LDAP user management
+- **Audit Trail:** All admin assignments are logged
+- **Flexible Updates:** Easy to add or remove admin users
+- **Security:** Admin privileges are managed through configuration
+
+#### **Admin User Best Practices**
+
+- **Regular Review:** Periodically review the admin_users list
+- **Principle of Least Privilege:** Only assign admin to users who need it
+- **Documentation:** Keep track of why users have admin privileges
+- **Testing:** Test admin assignment with new users
+- **Monitoring:** Monitor admin user activity through access logs
 
 ### 🔍 Super Search
 
