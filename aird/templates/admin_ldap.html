@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LDAP Management</title>
+    <style>
+        body {
+            background-color: white;
+            color: black;
+            font-family: monospace;
+            margin: 20px;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: white;
+            margin: 10px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .status-active { color: green; }
+        .status-inactive { color: red; }
+        .action-btn {
+            display: inline-block;
+            margin: 2px;
+            padding: 4px 8px;
+            text-decoration: none;
+            border: 1px solid #ccc;
+            background-color: #f8f9fa;
+            color: black;
+            font-size: 12px;
+        }
+        .action-btn:hover {
+            background-color: #e9ecef;
+        }
+        .btn-edit { border-color: #007bff; color: #007bff; }
+        .btn-delete { border-color: #dc3545; color: #dc3545; }
+        .btn-sync { border-color: #28a745; color: #28a745; }
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+            border: 1px solid #007bff;
+            padding: 8px 16px;
+            text-decoration: none;
+            margin-right: 10px;
+        }
+        .btn-primary:hover {
+            background-color: #0056b3;
+        }
+        .btn-success {
+            background-color: #28a745;
+            color: white;
+            border: 1px solid #28a745;
+            padding: 8px 16px;
+            text-decoration: none;
+            margin-right: 10px;
+        }
+        .btn-success:hover {
+            background-color: #218838;
+        }
+        .nav-links {
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #ccc;
+        }
+        .nav-links a {
+            margin-right: 15px;
+            text-decoration: none;
+            color: #007bff;
+        }
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+        .sync-status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .sync-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .sync-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+    <script>
+        function confirmDelete(configName, configId) {
+            if (confirm('Are you sure you want to delete LDAP configuration "' + configName + '"? This action cannot be undone.')) {
+                var form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '/admin/ldap/delete';
+                
+                var csrfInput = document.createElement('input');
+                csrfInput.type = 'hidden';
+                csrfInput.name = '_xsrf';
+                csrfInput.value = document.querySelector('input[name="_xsrf"]').value;
+                
+                var configIdInput = document.createElement('input');
+                configIdInput.type = 'hidden';
+                configIdInput.name = 'config_id';
+                configIdInput.value = configId;
+                
+                form.appendChild(csrfInput);
+                form.appendChild(configIdInput);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+
+        function syncUsers() {
+            if (confirm('Are you sure you want to sync users from all active LDAP configurations? This will create/remove users based on LDAP group membership.')) {
+                var form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '/admin/ldap/sync';
+                
+                var csrfInput = document.createElement('input');
+                csrfInput.type = 'hidden';
+                csrfInput.name = '_xsrf';
+                csrfInput.value = document.querySelector('input[name="_xsrf"]').value;
+                
+                form.appendChild(csrfInput);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+    </script>
+</head>
+<body>
+    <div class="nav-links">
+        <a href="/admin">← Back to Admin Panel</a>
+        <a href="/logout">Logout</a>
+        <div style="float: right; font-size: 12px; color: #666;">👤 {{ handler.get_display_username() }}</div>
+    </div>
+    
+    <h2>LDAP Management</h2>
+    
+    <div class="section">
+        <a href="/admin/ldap/create" class="btn-primary">+ Create New LDAP Configuration</a>
+        <button onclick="syncUsers()" class="btn-success">🔄 Sync Users Now</button>
+        <p><em>Manage LDAP configurations and synchronize users from LDAP groups.</em></p>
+    </div>
+    
+    <div class="section">
+        <h3>LDAP Configurations ({{ len(configs) }} total)</h3>
+        
+        {% if configs %}
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Server</th>
+                    <th>Base DN</th>
+                    <th>Member Attribute</th>
+                    <th>User Template</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for config in configs %}
+                <tr>
+                    <td>{{ config['id'] }}</td>
+                    <td>{{ escape(config['name']) }}</td>
+                    <td>{{ escape(config['server']) }}</td>
+                    <td>{{ escape(config['ldap_base_dn']) }}</td>
+                    <td>{{ escape(config['ldap_member_attributes']) }}</td>
+                    <td>{{ escape(config['user_template']) }}</td>
+                    <td>
+                        <span class="status-{% if config['active'] %}active{% else %}inactive{% end %}">
+                            {% if config['active'] %}ACTIVE{% else %}INACTIVE{% end %}
+                        </span>
+                    </td>
+                    <td>{{ config['created_at'][:19] if config['created_at'] else 'N/A' }}</td>
+                    <td>
+                        <a href="/admin/ldap/edit/{{ config['id'] }}" class="action-btn btn-edit">Edit</a>
+                        <a href="javascript:void(0)" onclick="confirmDelete('{{ escape(config['name']) }}', {{ config['id'] }})" class="action-btn btn-delete">Delete</a>
+                    </td>
+                </tr>
+                {% end %}
+            </tbody>
+        </table>
+        {% else %}
+        <p><em>No LDAP configurations found. Create your first configuration above.</em></p>
+        {% end %}
+    </div>
+    
+    <div class="section">
+        <h3>Recent Sync Logs</h3>
+        
+        {% if sync_logs %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Config</th>
+                    <th>Type</th>
+                    <th>Users Found</th>
+                    <th>Users Created</th>
+                    <th>Users Removed</th>
+                    <th>Status</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in sync_logs %}
+                <tr>
+                    <td>{{ escape(log['config_name']) }}</td>
+                    <td>{{ escape(log['sync_type']) }}</td>
+                    <td>{{ log['users_found'] }}</td>
+                    <td>{{ log['users_created'] }}</td>
+                    <td>{{ log['users_removed'] }}</td>
+                    <td>
+                        <span class="status-{% if log['status'] == 'success' %}active{% else %}inactive{% end %}">
+                            {{ log['status'].upper() }}
+                        </span>
+                    </td>
+                    <td>{{ log['sync_time'][:19] if log['sync_time'] else 'N/A' }}</td>
+                </tr>
+                {% end %}
+            </tbody>
+        </table>
+        {% else %}
+        <p><em>No sync logs found. Run a sync to see activity.</em></p>
+        {% end %}
+    </div>
+    
+    <!-- Hidden CSRF token for delete operations -->
+    <form style="display: none;">
+        {% raw xsrf_form_html() %}
+    </form>
+</body>
+</html>
+

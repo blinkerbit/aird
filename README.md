@@ -1,10 +1,59 @@
 # Aird - A Lightweight Web-Based File Browser, Editor and Share
 
-**v0.4.2** - 🎨 **Custom HTML/CSS Popups + Enhanced Share Management + File Browser Navigation!**
+**v0.4.3** - 🔐 **Secure File Sharing + Advanced Share Management + Token Security!**
 
 A modern, lightweight, and fast web-based file browser, editor, and streamer built with Python and Tornado. It provides a comprehensive file management solution with real-time streaming, in-browser editing, and mobile-responsive design through a clean and intuitive web interface.
 
 Note: Currently using this in conjunction with WireGuard to handle file management and sharing for internal/private cloud.
+
+## 🆕 What's New in v0.4.3
+
+### 🔐 **Secure File Sharing (NEW!)**
+- **Secret Token Protection:** Generate secure, randomly generated tokens for share access control
+- **Token-based Authentication:** Users must enter secret tokens to access shared files
+- **Public/Private Shares:** Choose between token-protected or public access for shares
+- **Token Management:** Enable/disable tokens, generate new tokens, and manage share security
+- **Secure URL Generation:** Cryptographically secure share IDs and tokens using `secrets` module
+- **Session Persistence:** Tokens stored in cookies and Authorization headers for seamless access
+
+### 📁 **Advanced Share Management (NEW!)**
+- **Complete Share Parameter Control:** Modify all share settings after creation
+- **Share Type Configuration:** Switch between Static (snapshot) and Dynamic (live folder) shares
+- **File Filtering System:** Advanced allow/avoid list filtering using glob patterns
+- **Real-time Share Updates:** Changes apply instantly without recreating shares
+- **Visual Share Management:** Intuitive interface showing current settings with visual indicators
+- **Parameter Modification:** Update share type, token settings, file filters, and access controls
+
+### 🎯 **Dynamic vs Static Shares (NEW!)**
+- **Static Shares:** Snapshot of files at creation time - perfect for archival sharing
+- **Dynamic Shares:** Live folder sharing - new files automatically appear in the share
+- **Real-time Updates:** Dynamic shares reflect current folder contents in real-time
+- **Flexible Sharing:** Choose the right sharing method for your use case
+- **Automatic File Discovery:** Dynamic shares automatically include new files added to folders
+
+### 🔍 **Advanced File Filtering (NEW!)**
+- **Glob Pattern Support:** Use powerful glob patterns for file inclusion/exclusion
+- **Allow Lists:** Specify which files to include using patterns like `*.pdf`, `documents/**`
+- **Avoid Lists:** Exclude files using patterns like `*.tmp`, `.git/**`, `temp/*`
+- **Priority System:** Avoid lists take priority over allow lists for security
+- **Pattern Examples:** Support for recursive matching with `**` and complex patterns
+- **Real-time Filtering:** Filters apply instantly to both static and dynamic shares
+
+### 🛠️ **Enhanced Share Management UI (NEW!)**
+- **Current Settings Display:** Shows actual share configuration instead of defaults
+- **Visual Indicators:** "← Current" labels show which settings are currently active
+- **Form Pre-population:** All fields automatically populated with current values
+- **Mutually Exclusive Controls:** Token enable/disable checkboxes work together
+- **Debug Information:** Console logging for troubleshooting share management
+- **Success Notifications:** Clear feedback when shares are updated successfully
+
+### 🔧 **Backend API Enhancements (NEW!)**
+- **Share Update API:** New `/share/update` endpoint for modifying existing shares
+- **Database Schema Migration:** Automatic database updates for new share features
+- **Token Management:** Secure token generation, storage, and validation
+- **Parameter Validation:** Comprehensive validation of all share parameters
+- **Debug Endpoints:** Troubleshooting endpoints for share management issues
+- **Enhanced Error Handling:** Better error messages and status codes
 
 ## 🆕 What's New in v0.4.2
 
@@ -767,7 +816,7 @@ The Super Search feature provides powerful, real-time content searching across y
 
 ### 🔗 Enhanced File Sharing
 
-The enhanced file sharing feature allows you to create and manage public, temporary links for files and directories:
+The enhanced file sharing feature allows you to create and manage secure, temporary links for files and directories with advanced security and management options:
 
 1. **Access the Share Page:**
    - Navigate to `/share` after logging in
@@ -778,31 +827,51 @@ The enhanced file sharing feature allows you to create and manage public, tempor
    - Navigate between folders to select files from different locations
    - Use "Select All (Current Dir)" to quickly select all visible files
 
-3. **Generate Share Links:**
-   - Click "Generate Share Link" after selecting files
-   - Copy the generated URL using the "Copy Link" button
-   - Share the URL with others for public access (no login required)
+3. **Configure Share Settings:**
+   - **Share Type:** Choose between Static (snapshot) or Dynamic (live folder) sharing
+   - **Security Options:** Enable/disable secret token protection for share access
+   - **File Filtering:** Set allow/avoid lists using glob patterns for file inclusion/exclusion
+   - **Access Control:** Configure user restrictions and permissions
 
-4. **Manage Active Shares:**
+4. **Generate Share Links:**
+   - Click "Generate Share Link" after configuring settings
+   - Copy the generated URL using the "Copy Link" button
+   - **Secure Shares:** Copy the secret token for token-protected shares
+   - **Public Shares:** Share the URL directly for public access (no login required)
+
+5. **Manage Active Shares:**
    - View all active shares in the bottom panel
    - Copy existing share links or open them in a new tab
-   - **NEW:** Click "Manage" to modify existing shares
+   - **NEW:** Click "Manage" to modify existing shares with full parameter control
 
-5. **Enhanced Share Management (NEW!):**
-   - **Add Files:** Click "Add Files" to browse and select additional files for existing shares
-   - **Remove Files:** Click "Remove" next to any file to remove it from the share
-   - **Directory Navigation:** Use the file browser to navigate through all accessible directories
-   - **File Selection Preview:** See selected files before adding them to shares
+6. **Advanced Share Management (NEW in v0.4.3!):**
+   - **Complete Parameter Control:** Modify share type, token settings, file filters, and access controls
+   - **Current Settings Display:** See actual share configuration instead of defaults
+   - **Visual Indicators:** "← Current" labels show which settings are currently active
    - **Real-time Updates:** Changes apply instantly without recreating the share
+   - **Token Management:** Enable/disable tokens, generate new tokens, and manage share security
 
-6. **Custom Dialog System (NEW!):**
-   - All confirmations and prompts use modern HTML/CSS popups
-   - Consistent UI/UX across all share management operations
-   - Keyboard support with Enter to confirm and Escape to cancel
+7. **Secure Share Access (NEW in v0.4.3!):**
+   - **Token Verification:** Users must enter secret tokens to access protected shares
+   - **Session Persistence:** Tokens stored in cookies and Authorization headers
+   - **Public Access:** Option to disable token requirement for public sharing
+   - **Token Generation:** Cryptographically secure tokens using `secrets` module
+
+8. **File Filtering System (NEW in v0.4.3!):**
+   - **Allow Lists:** Specify which files to include using patterns like `*.pdf`, `documents/**`
+   - **Avoid Lists:** Exclude files using patterns like `*.tmp`, `.git/**`, `temp/*`
+   - **Priority System:** Avoid lists take priority over allow lists for security
+   - **Pattern Examples:** Support for recursive matching with `**` and complex patterns
+
+9. **Dynamic vs Static Shares (NEW in v0.4.3!):**
+   - **Static Shares:** Snapshot of files at creation time - perfect for archival sharing
+   - **Dynamic Shares:** Live folder sharing - new files automatically appear in the share
+   - **Real-time Updates:** Dynamic shares reflect current folder contents in real-time
 
 **Example URLs:**
 - Share page: `http://localhost:8888/share`
 - Public shared files: `http://localhost:8888/shared/abc123def456`
+- Token-protected shares: `http://localhost:8888/shared/abc123def456` (requires token entry)
 
 ## 👑 Admin Panel
 
@@ -880,6 +949,37 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **Temporary access:** All shares are session-based and can be easily revoked
 - **Custom HTML/CSS Popups:** Modern dialog system for all share management operations
 
+### 🔐 **Secure File Sharing (NEW in v0.4.3!)**
+- **Secret Token Protection:** Generate secure, randomly generated tokens for share access control
+- **Token-based Authentication:** Users must enter secret tokens to access shared files
+- **Public/Private Shares:** Choose between token-protected or public access for shares
+- **Token Management:** Enable/disable tokens, generate new tokens, and manage share security
+- **Secure URL Generation:** Cryptographically secure share IDs and tokens using `secrets` module
+- **Session Persistence:** Tokens stored in cookies and Authorization headers for seamless access
+
+### 📁 **Advanced Share Management (NEW in v0.4.3!)**
+- **Complete Share Parameter Control:** Modify all share settings after creation
+- **Share Type Configuration:** Switch between Static (snapshot) and Dynamic (live folder) shares
+- **File Filtering System:** Advanced allow/avoid list filtering using glob patterns
+- **Real-time Share Updates:** Changes apply instantly without recreating shares
+- **Visual Share Management:** Intuitive interface showing current settings with visual indicators
+- **Parameter Modification:** Update share type, token settings, file filters, and access controls
+
+### 🎯 **Dynamic vs Static Shares (NEW in v0.4.3!)**
+- **Static Shares:** Snapshot of files at creation time - perfect for archival sharing
+- **Dynamic Shares:** Live folder sharing - new files automatically appear in the share
+- **Real-time Updates:** Dynamic shares reflect current folder contents in real-time
+- **Flexible Sharing:** Choose the right sharing method for your use case
+- **Automatic File Discovery:** Dynamic shares automatically include new files added to folders
+
+### 🔍 **Advanced File Filtering (NEW in v0.4.3!)**
+- **Glob Pattern Support:** Use powerful glob patterns for file inclusion/exclusion
+- **Allow Lists:** Specify which files to include using patterns like `*.pdf`, `documents/**`
+- **Avoid Lists:** Exclude files using patterns like `*.tmp`, `.git/**`, `temp/*`
+- **Priority System:** Avoid lists take priority over allow lists for security
+- **Pattern Examples:** Support for recursive matching with `**` and complex patterns
+- **Real-time Filtering:** Filters apply instantly to both static and dynamic shares
+
 ### 🚀 Performance Features (New in v0.4.1!)
 - **Enhanced Python File Icons:** Smart visual distinction between source (🐍💎) and compiled (🐍⚡) Python files
 - **Memory-mapped file operations:** Efficient handling of large files (>1MB) using mmap
@@ -890,6 +990,19 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **Configurable buffer sizes** for optimal performance
 - **Memory-efficient** file handling with constant memory usage
 
+### 🛠️ Technical Improvements (New in v0.4.3!)
+- **Secure Token Management:** Cryptographically secure token generation and validation using `secrets` module
+- **Database Schema Migration:** Automatic database updates for new share management features
+- **API Endpoint Enhancements:** New `/share/update` endpoint for dynamic share modifications
+- **Path Validation & Security:** Enhanced path handling and validation for file operations
+- **Error Handling Improvements:** Better error messages and status codes throughout the application
+- **Frontend Architecture:** Modular JavaScript functions for better maintainability
+- **Cross-browser Compatibility:** Improved compatibility across different browsers and devices
+- **Accessibility Enhancements:** Better keyboard navigation and screen reader support
+- **Share Parameter Validation:** Comprehensive validation of all share parameters
+- **Debug Endpoints:** Troubleshooting endpoints for share management issues
+- **Token Security:** Enhanced token storage and validation with session persistence
+
 ### 🛠️ Technical Improvements (New in v0.4.2!)
 - **Database Schema Migration:** Automatic database updates for new share management features
 - **API Endpoint Enhancements:** New `/share/update` endpoint for dynamic share modifications
@@ -898,6 +1011,16 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **Frontend Architecture:** Modular JavaScript functions for better maintainability
 - **Cross-browser Compatibility:** Improved compatibility across different browsers and devices
 - **Accessibility Enhancements:** Better keyboard navigation and screen reader support
+
+### 🐛 Bug Fixes & Improvements (New in v0.4.3!)
+- **Fixed Token Management:** Corrected token enable/disable logic in share management
+- **Fixed Share Parameter Updates:** Resolved database update issues for share parameters
+- **Fixed Current Settings Display:** Share management now shows actual settings instead of defaults
+- **Fixed Token Generation:** Proper token generation and storage in database
+- **Fixed Form Validation:** Enhanced validation for all share management parameters
+- **Fixed Debug Logging:** Added comprehensive debug logging for troubleshooting
+- **Fixed API Response Handling:** Proper handling of new token generation responses
+- **Fixed Share Management UI:** Improved visual indicators and form pre-population
 
 ### 🐛 Bug Fixes & Improvements (New in v0.4.2!)
 - **Fixed Share Management:** Resolved "Failed to load share details" error in share management modal

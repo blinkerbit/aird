@@ -625,6 +625,12 @@ def _init_db(conn: sqlite3.Connection) -> None:
         cursor.execute("ALTER TABLE shares ADD COLUMN allowed_users TEXT")
     if "secret_token" not in columns:
         cursor.execute("ALTER TABLE shares ADD COLUMN secret_token TEXT")
+    if "share_type" not in columns:
+        cursor.execute("ALTER TABLE shares ADD COLUMN share_type TEXT DEFAULT 'static'")
+    if "allow_list" not in columns:
+        cursor.execute("ALTER TABLE shares ADD COLUMN allow_list TEXT")
+    if "avoid_list" not in columns:
+        cursor.execute("ALTER TABLE shares ADD COLUMN avoid_list TEXT")
 
     conn.commit()
 
@@ -653,7 +659,39 @@ def _load_shares(conn: sqlite3.Connection) -> dict:
         cursor = conn.execute("PRAGMA table_info(shares)")
         columns = [row[1] for row in cursor.fetchall()]
         
-        if 'allowed_users' in columns and 'secret_token' in columns:
+        if 'allowed_users' in columns and 'secret_token' in columns and 'share_type' in columns and 'allow_list' in columns and 'avoid_list' in columns:
+            rows = conn.execute("SELECT id, created, paths, allowed_users, secret_token, share_type, allow_list, avoid_list FROM shares").fetchall()
+            for sid, created, paths_json, allowed_users_json, secret_token, share_type, allow_list_json, avoid_list_json in rows:
+                try:
+                    paths = json.loads(paths_json) if paths_json else []
+                except Exception:
+                    paths = []
+                try:
+                    allowed_users = json.loads(allowed_users_json) if allowed_users_json else None
+                except Exception:
+                    allowed_users = None
+                try:
+                    allow_list = json.loads(allow_list_json) if allow_list_json else []
+                except Exception:
+                    allow_list = []
+                try:
+                    avoid_list = json.loads(avoid_list_json) if avoid_list_json else []
+                except Exception:
+                    avoid_list = []
+                loaded[sid] = {"paths": paths, "created": created, "allowed_users": allowed_users, "secret_token": secret_token, "share_type": share_type or "static", "allow_list": allow_list, "avoid_list": avoid_list}
+        elif 'allowed_users' in columns and 'secret_token' in columns and 'share_type' in columns:
+            rows = conn.execute("SELECT id, created, paths, allowed_users, secret_token, share_type FROM shares").fetchall()
+            for sid, created, paths_json, allowed_users_json, secret_token, share_type in rows:
+                try:
+                    paths = json.loads(paths_json) if paths_json else []
+                except Exception:
+                    paths = []
+                try:
+                    allowed_users = json.loads(allowed_users_json) if allowed_users_json else None
+                except Exception:
+                    allowed_users = None
+                loaded[sid] = {"paths": paths, "created": created, "allowed_users": allowed_users, "secret_token": secret_token, "share_type": share_type or "static", "allow_list": [], "avoid_list": []}
+        elif 'allowed_users' in columns and 'secret_token' in columns:
             rows = conn.execute("SELECT id, created, paths, allowed_users, secret_token FROM shares").fetchall()
             for sid, created, paths_json, allowed_users_json, secret_token in rows:
                 try:
@@ -664,7 +702,7 @@ def _load_shares(conn: sqlite3.Connection) -> dict:
                     allowed_users = json.loads(allowed_users_json) if allowed_users_json else None
                 except Exception:
                     allowed_users = None
-                loaded[sid] = {"paths": paths, "created": created, "allowed_users": allowed_users, "secret_token": secret_token}
+                loaded[sid] = {"paths": paths, "created": created, "allowed_users": allowed_users, "secret_token": secret_token, "share_type": "static", "allow_list": [], "avoid_list": []}
         elif 'allowed_users' in columns:
             rows = conn.execute("SELECT id, created, paths, allowed_users FROM shares").fetchall()
             for sid, created, paths_json, allowed_users_json in rows:
@@ -676,7 +714,7 @@ def _load_shares(conn: sqlite3.Connection) -> dict:
                     allowed_users = json.loads(allowed_users_json) if allowed_users_json else None
                 except Exception:
                     allowed_users = None
-                loaded[sid] = {"paths": paths, "created": created, "allowed_users": allowed_users, "secret_token": None}
+                loaded[sid] = {"paths": paths, "created": created, "allowed_users": allowed_users, "secret_token": None, "share_type": "static", "allow_list": [], "avoid_list": []}
         else:
             # Fallback for old schema without allowed_users column
             rows = conn.execute("SELECT id, created, paths FROM shares").fetchall()
@@ -685,7 +723,7 @@ def _load_shares(conn: sqlite3.Connection) -> dict:
                     paths = json.loads(paths_json) if paths_json else []
                 except Exception:
                     paths = []
-                loaded[sid] = {"paths": paths, "created": created, "allowed_users": None, "secret_token": None}
+                loaded[sid] = {"paths": paths, "created": created, "allowed_users": None, "secret_token": None, "share_type": "static", "allow_list": [], "avoid_list": []}
     except Exception as e:
         print(f"Error loading shares: {e}")
         import traceback
@@ -693,12 +731,12 @@ def _load_shares(conn: sqlite3.Connection) -> dict:
         return {}
     return loaded
 
-def _insert_share(conn: sqlite3.Connection, sid: str, created: str, paths: list[str], allowed_users: list[str] = None, secret_token: str = None) -> bool:
+def _insert_share(conn: sqlite3.Connection, sid: str, created: str, paths: list[str], allowed_users: list[str] = None, secret_token: str = None, share_type: str = "static", allow_list: list[str] = None, avoid_list: list[str] = None) -> bool:
     try:
         with conn:
             conn.execute(
-                "REPLACE INTO shares (id, created, paths, allowed_users, secret_token) VALUES (?, ?, ?, ?, ?)",
-                (sid, created, json.dumps(paths), json.dumps(allowed_users) if allowed_users else None, secret_token),
+                "REPLACE INTO shares (id, created, paths, allowed_users, secret_token, share_type, allow_list, avoid_list) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (sid, created, json.dumps(paths), json.dumps(allowed_users) if allowed_users else None, secret_token, share_type, json.dumps(allow_list) if allow_list else None, json.dumps(avoid_list) if avoid_list else None),
             )
         return True
     except Exception as e:
@@ -714,13 +752,38 @@ def _delete_share(conn: sqlite3.Connection, sid: str) -> None:
     except Exception:
         pass
 
-def _update_share(conn: sqlite3.Connection, sid: str, **kwargs) -> bool:
+def _update_share(conn: sqlite3.Connection, sid: str, share_type: str = None, disable_token: bool = None, allow_list: list = None, avoid_list: list = None,secret_token: str = None, **kwargs) -> bool:
     """Update share information"""
     try:
-        valid_fields = ['allowed_users', 'paths']
         updates = []
         values = []
 
+        # Handle new parameters
+        if share_type is not None:
+            updates.append("share_type = ?")
+            values.append(share_type)
+        
+        if disable_token == True:
+            logging.debug(f"_update_share - disable_token={disable_token}")
+            logging.debug("Disabling token (setting to None)")
+            updates.append("secret_token = ?")
+            values.append(None)
+        else:
+            new_token = secrets.token_urlsafe(32) if secret_token is None else secret_token
+            updates.append("secret_token = ?")
+            values.append(new_token)
+
+        
+        if allow_list is not None:
+            updates.append("allow_list = ?")
+            values.append(json.dumps(allow_list) if allow_list else None)
+        
+        if avoid_list is not None:
+            updates.append("avoid_list = ?")
+            values.append(json.dumps(avoid_list) if avoid_list else None)
+
+        # Handle legacy parameters
+        valid_fields = ['allowed_users', 'paths']
         for field, value in kwargs.items():
             if field in valid_fields:
                 updates.append(f"{field} = ?")
@@ -736,30 +799,136 @@ def _update_share(conn: sqlite3.Connection, sid: str, **kwargs) -> bool:
         query = f"UPDATE shares SET {', '.join(updates)} WHERE id = ?"
 
         with conn:
-            conn.execute(query, values)
+            cursor = conn.execute(query, values)
+            logging.debug(f"Update executed, rows affected: {cursor.rowcount}")
+            
         return True
-    except Exception:
+    except Exception as e:
+        logging.error(f"Failed to update share {sid}: {e}")
+        import traceback
+        logging.debug(f"Traceback: {traceback.format_exc()}")
         return False
+
+def _get_all_files_recursive(root_path: str, base_path: str = "") -> list:
+    """Recursively get all files in a directory"""
+    all_files = []
+    try:
+        for item in os.listdir(root_path):
+            item_path = os.path.join(root_path, item)
+            relative_path = os.path.join(base_path, item) if base_path else item
+            
+            if os.path.isfile(item_path):
+                # It's a file, add it to the list
+                all_files.append(relative_path)
+            elif os.path.isdir(item_path):
+                # It's a directory, recursively scan it
+                sub_files = _get_all_files_recursive(item_path, relative_path)
+                all_files.extend(sub_files)
+    except (OSError, PermissionError) as e:
+        print(f"Error scanning directory {root_path}: {e}")
+    
+    return all_files
+
+def _matches_glob_patterns(file_path: str, patterns: list[str]) -> bool:
+    """Check if a file path matches any of the given glob patterns"""
+    if not patterns:
+        return False
+    
+    import fnmatch
+    for pattern in patterns:
+        if fnmatch.fnmatch(file_path, pattern):
+            return True
+    return False
+
+def _filter_files_by_patterns(files: list[str], allow_list: list[str] = None, avoid_list: list[str] = None) -> list[str]:
+    """Filter files based on allow and avoid glob patterns"""
+    if not files:
+        return files
+    
+    filtered_files = []
+    
+    for file_path in files:
+        # Check avoid list first (takes priority)
+        if avoid_list and _matches_glob_patterns(file_path, avoid_list):
+            print(f"DEBUG: File {file_path} excluded by avoid list")
+            continue
+        
+        # Check allow list
+        if allow_list:
+            if _matches_glob_patterns(file_path, allow_list):
+                print(f"DEBUG: File {file_path} included by allow list")
+                filtered_files.append(file_path)
+            else:
+                print(f"DEBUG: File {file_path} excluded by allow list")
+        else:
+            # No allow list means all files are allowed (unless in avoid list)
+            filtered_files.append(file_path)
+    
+    return filtered_files
 
 def _get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict:
     """Get a single share by ID from database"""
     try:
-        print(f"DEBUG: _get_share_by_id called with sid='{sid}'")
-        print(f"DEBUG: conn is {'None' if conn is None else 'available'}")
+        logging.debug(f"_get_share_by_id called with sid='{sid}'")
+        logging.debug(f"conn is {'None' if conn is None else 'available'}")
         
         # Check if secret_token column exists
         cursor = conn.execute("PRAGMA table_info(shares)")
         columns = [row[1] for row in cursor.fetchall()]
-        print(f"DEBUG: Table columns: {columns}")
+        logging.debug(f"Table columns: {columns}")
         
-        if 'secret_token' in columns:
-            print(f"DEBUG: Using query with secret_token column")
+        if 'secret_token' in columns and 'share_type' in columns and 'allow_list' in columns and 'avoid_list' in columns:
+            logging.debug(f"Using query with all columns")
+            cursor = conn.execute(
+                "SELECT id, created, paths, allowed_users, secret_token, share_type, allow_list, avoid_list FROM shares WHERE id = ?",
+                (sid,)
+            )
+            row = cursor.fetchone()
+            logging.debug(f"Query result: {row}")
+            if row:
+                sid, created, paths_json, allowed_users_json, secret_token, share_type, allow_list_json, avoid_list_json = row
+                result = {
+                    "id": sid,
+                    "created": created,
+                    "paths": json.loads(paths_json) if paths_json else [],
+                    "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
+                    "secret_token": secret_token,
+                    "share_type": share_type or "static",
+                    "allow_list": json.loads(allow_list_json) if allow_list_json else [],
+                    "avoid_list": json.loads(avoid_list_json) if avoid_list_json else []
+                }
+                logging.debug(f"Returning share data: {result}")
+                return result
+        elif 'secret_token' in columns and 'share_type' in columns:
+            logging.debug(f"Using query with secret_token and share_type columns")
+            cursor = conn.execute(
+                "SELECT id, created, paths, allowed_users, secret_token, share_type FROM shares WHERE id = ?",
+                (sid,)
+            )
+            row = cursor.fetchone()
+            logging.debug(f"Query result: {row}")
+            if row:
+                sid, created, paths_json, allowed_users_json, secret_token, share_type = row
+                result = {
+                    "id": sid,
+                    "created": created,
+                    "paths": json.loads(paths_json) if paths_json else [],
+                    "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
+                    "secret_token": secret_token,
+                    "share_type": share_type or "static",
+                    "allow_list": [],
+                    "avoid_list": []
+                }
+                logging.debug(f"Returning share data: {result}")
+                return result
+        elif 'secret_token' in columns:
+            logging.debug(f"Using query with secret_token column")
             cursor = conn.execute(
                 "SELECT id, created, paths, allowed_users, secret_token FROM shares WHERE id = ?",
                 (sid,)
             )
             row = cursor.fetchone()
-            print(f"DEBUG: Query result: {row}")
+            logging.debug(f"Query result: {row}")
             if row:
                 sid, created, paths_json, allowed_users_json, secret_token = row
                 result = {
@@ -767,18 +936,19 @@ def _get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict:
                     "created": created,
                     "paths": json.loads(paths_json) if paths_json else [],
                     "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
-                    "secret_token": secret_token
+                    "secret_token": secret_token,
+                    "share_type": "static"
                 }
-                print(f"DEBUG: Returning share data: {result}")
+                logging.debug(f"Returning share data: {result}")
                 return result
         else:
-            print(f"DEBUG: Using query without secret_token column")
+            logging.debug(f"Using query without secret_token column")
             cursor = conn.execute(
                 "SELECT id, created, paths, allowed_users FROM shares WHERE id = ?",
                 (sid,)
             )
             row = cursor.fetchone()
-            print(f"DEBUG: Query result: {row}")
+            logging.debug(f"Query result: {row}")
             if row:
                 sid, created, paths_json, allowed_users_json = row
                 result = {
@@ -788,15 +958,15 @@ def _get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict:
                     "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
                     "secret_token": None
                 }
-                print(f"DEBUG: Returning share data: {result}")
+                logging.debug(f"Returning share data: {result}")
                 return result
         
-        print(f"DEBUG: No share found for sid='{sid}'")
+        logging.debug(f"No share found for sid='{sid}'")
         return None
     except Exception as e:
-        print(f"Error getting share {sid}: {e}")
+        logging.error(f"Error getting share {sid}: {e}")
         import traceback
-        print(f"Traceback: {traceback.format_exc()}")
+        logging.debug(f"Traceback: {traceback.format_exc()}")
         return None
 
 def _get_all_shares(conn: sqlite3.Connection) -> dict:
@@ -3670,44 +3840,191 @@ class ShareCreateHandler(BaseHandler):
             data = json.loads(self.request.body or b'{}')
             paths = data.get('paths', [])
             allowed_users = data.get('allowed_users', [])
+            share_type = data.get('share_type', 'static')  # Default to static for backward compatibility
+            allow_list = data.get('allow_list', [])
+            avoid_list = data.get('avoid_list', [])
+            disable_token = data.get('disable_token', False)
+            
             valid_paths = []
+            dynamic_folders = []  # Store folders for dynamic shares
+            
             for p in paths:
                 ap = os.path.abspath(os.path.join(ROOT_DIR, p))
-                if is_within_root(ap, ROOT_DIR) and os.path.isfile(ap):
+                if not is_within_root(ap, ROOT_DIR):
+                    continue
+                    
+                if os.path.isfile(ap):
+                    # It's a file, add it directly
                     valid_paths.append(p)
-            if not valid_paths:
-                self.set_status(400)
-                self.write({"error": "No valid files"})
-                return
+                elif os.path.isdir(ap):
+                    if share_type == 'dynamic':
+                        # For dynamic shares, store the folder path
+                        dynamic_folders.append(p)
+                        logging.debug(f"Added dynamic folder: {p}")
+                    else:
+                        # For static shares, recursively get all files
+                        try:
+                            all_files = _get_all_files_recursive(ap, p)
+                            valid_paths.extend(all_files)
+                            logging.debug(f"Added {len(all_files)} files from directory: {p}")
+                        except Exception as e:
+                            logging.error(f"Error scanning directory {p}: {e}")
+                            continue
+                        
+            if share_type == 'dynamic':
+                if not dynamic_folders:
+                    self.set_status(400)
+                    self.write({"error": "No valid directories for dynamic share"})
+                    return
+                # For dynamic shares, store the folder paths
+                valid_paths = dynamic_folders
+            else:
+                if not valid_paths:
+                    self.set_status(400)
+                    self.write({"error": "No valid files or directories"})
+                    return
+                    
             sid = secrets.token_urlsafe(24)  # Increase entropy to reduce guessing risk (Priority 2)
-            secret_token = secrets.token_urlsafe(32)  # Generate secret token for secure access
+            secret_token = secrets.token_urlsafe(32) if not disable_token else None  # Generate secret token only if not disabled
             created = datetime.utcnow().isoformat()
             
             # Ensure database connection
             global DB_CONN
             if DB_CONN is None:
-                print("Database connection is None, attempting to reinitialize...")
+                logging.warning("Database connection is None, attempting to reinitialize...")
                 try:
                     DB_PATH = os.path.join(os.path.expanduser('~'), '.local', 'aird', 'aird.sqlite3')
                     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
                     DB_CONN = sqlite3.connect(DB_PATH, check_same_thread=False)
                     _init_db(DB_CONN)
-                    print(f"Reinitialized database connection: {DB_CONN}")
+                    logging.info(f"Reinitialized database connection: {DB_CONN}")
                 except Exception as reconnect_error:
-                    print(f"Failed to reconnect to database: {reconnect_error}")
+                    logging.error(f"Failed to reconnect to database: {reconnect_error}")
                     self.set_status(500)
                     self.write({"error": "Database connection failed"})
                     return
             
             # Persist directly to database
-            success = _insert_share(DB_CONN, sid, created, valid_paths, allowed_users if allowed_users else None, secret_token)
+            success = _insert_share(DB_CONN, sid, created, valid_paths, allowed_users if allowed_users else None, secret_token, share_type, allow_list if allow_list else None, avoid_list if avoid_list else None)
             if success:
-                print(f"Share {sid} created successfully in database")
-                self.write({"id": sid, "url": f"/shared/{sid}", "secret_token": secret_token})
+                logging.info(f"Share {sid} created successfully in database")
+                response_data = {"id": sid, "url": f"/shared/{sid}"}
+                if not disable_token:
+                    response_data["secret_token"] = secret_token
+                self.write(response_data)
             else:
-                print(f"Failed to create share {sid} in database")
+                logging.error(f"Failed to create share {sid} in database")
                 self.set_status(500)
                 self.write({"error": "Failed to create share"})
+        except Exception as e:
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+class ShareUpdateHandler(BaseHandler):
+    @tornado.web.authenticated
+    def post(self):
+        if not is_feature_enabled("file_share", True):
+            self.set_status(403)
+            self.write({"error": "File sharing is disabled"})
+            return
+        try:
+            data = json.loads(self.request.body or b'{}')
+            share_id = data.get('share_id')
+            share_type = data.get('share_type', 'static')
+            disable_token = data.get('disable_token', False)
+            allow_list = data.get('allow_list', [])
+            avoid_list = data.get('avoid_list', [])
+            
+            if not share_id:
+                self.set_status(400)
+                self.write({"error": "Share ID is required"})
+                return
+            
+            # Ensure database connection
+            global DB_CONN
+            if DB_CONN is None:
+                self.set_status(500)
+                self.write({"error": "Database connection unavailable"})
+                return
+            
+            # Get existing share
+            share = _get_share_by_id(DB_CONN, share_id)
+            if not share:
+                self.set_status(404)
+                self.write({"error": "Share not found"})
+                return
+            
+            # Update share parameters
+            logging.debug(f"Updating share {share_id} with parameters:")
+            logging.debug(f"  - share_type: {share_type}")
+            logging.debug(f"  - disable_token: {disable_token}")
+            logging.debug(f"  - allow_list: {allow_list}")
+            logging.debug(f"  - avoid_list: {avoid_list}")
+            logging.debug(f"Database connection: {'available' if DB_CONN else 'None'}")
+            
+            success = _update_share(DB_CONN, share_id, share_type, disable_token, allow_list, avoid_list)
+            if success:
+                logging.debug(f"Share {share_id} updated successfully")
+                
+                # Verify the update by reading the share back
+                updated_share = _get_share_by_id(DB_CONN, share_id)
+                if updated_share:
+                    logging.debug(f"Verification - Share {share_id} after update:")
+                    logging.debug(f"  - share_type: {updated_share.get('share_type')}")
+                    logging.debug(f"  - secret_token: {'present' if updated_share.get('secret_token') else 'none'}")
+                    logging.debug(f"  - allow_list: {updated_share.get('allow_list')}")
+                    logging.debug(f"  - avoid_list: {updated_share.get('avoid_list')}")
+                
+                response_data = {"success": True, "message": "Share updated successfully"}
+                
+                # If a new token was generated, include it in the response
+                if disable_token is False and updated_share and updated_share.get('secret_token'):
+                    response_data["new_token"] = updated_share.get('secret_token')
+                    logging.debug(f"Returning new token to frontend")
+                
+                self.write(response_data)
+            else:
+                logging.error(f"Failed to update share {share_id}")
+                self.set_status(500)
+                self.write({"error": "Failed to update share"})
+        except Exception as e:
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+class DebugUpdateShareHandler(BaseHandler):
+    @tornado.web.authenticated
+    def post(self):
+        """Debug endpoint to test share update functionality"""
+        try:
+            data = json.loads(self.request.body or b'{}')
+            share_id = data.get('share_id')
+            
+            if not share_id:
+                self.set_status(400)
+                self.write({"error": "Share ID is required"})
+                return
+            
+            global DB_CONN
+            if DB_CONN is None:
+                self.set_status(500)
+                self.write({"error": "Database connection unavailable"})
+                return
+            
+            # Test update with dummy data
+                logging.debug(f"Testing update for share {share_id}")
+            success = _update_share(DB_CONN, share_id, share_type="static", disable_token=True, allow_list=["*.txt"], avoid_list=["*.tmp"])
+            
+            if success:
+                # Verify the update
+                updated_share = _get_share_by_id(DB_CONN, share_id)
+                self.write({
+                    "success": True,
+                    "message": "Debug update completed",
+                    "updated_share": updated_share
+                })
+            else:
+                self.set_status(500)
+                self.write({"error": "Debug update failed"})
         except Exception as e:
             self.set_status(500)
             self.write({"error": str(e)})
@@ -3839,7 +4156,9 @@ class ShareUpdateHandler(BaseHandler):
             allowed_users = data.get('allowed_users', [])
             remove_files = data.get('remove_files', [])
             paths = data.get('paths')  # New: support for updating entire paths list
-
+            disable_token = data.get('disable_token')
+            allow_list = data.get('allow_list')
+            avoid_list = data.get('avoid_list')
             if not share_id:
                 self.set_status(400)
                 self.write({"error": "Share ID is required"})
@@ -3877,7 +4196,24 @@ class ShareUpdateHandler(BaseHandler):
             # Update allowed users if provided
             if allowed_users is not None:
                 update_fields['allowed_users'] = allowed_users if allowed_users else None
+            
 
+            if disable_token is True:
+                update_fields['secret_token'] = None
+                update_fields['disable_token'] = True
+            elif disable_token is False:
+                if share_data['secret_token'] is None:
+                    update_fields['secret_token'] = secrets.token_urlsafe(32)
+                else:
+                    update_fields['secret_token'] = share_data['secret_token']
+                update_fields['disable_token'] = False
+
+
+            if allow_list is not None:
+                update_fields['allow_list'] = allow_list
+            if avoid_list is not None:
+                update_fields['avoid_list'] = avoid_list
+            
             # Update database
             if update_fields:
                 db_success = _update_share(DB_CONN, share_id, **update_fields)
@@ -4014,7 +4350,11 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
                 'created': share.get('created', ''),
                 'allowed_users': allowed_users if allowed_users is not None else [],
                 'url': f"/shared/{share['id']}",
-                'paths': share.get('paths', [])
+                'paths': share.get('paths', []),
+                'secret_token': share.get('secret_token'),
+                'share_type': share.get('share_type', 'static'),
+                'allow_list': share.get('allow_list', []),
+                'avoid_list': share.get('avoid_list', [])
             }
 
             self.write({"share": share_info})
@@ -4150,6 +4490,7 @@ class SharedListHandler(tornado.web.RequestHandler):
                 # No valid token found, redirect to verification
                 self.redirect(f"/shared/{sid}/verify")
                 return
+        # If secret_token is None or empty, no token verification is required
         
         # Check if share has user restrictions
         allowed_users = share.get('allowed_users')
@@ -4171,7 +4512,43 @@ class SharedListHandler(tornado.web.RequestHandler):
                 self.write("Access denied")
                 return
         
-        self.render("shared_list.html", share_id=sid, files=share['paths'])
+        import json
+        
+        # Handle dynamic vs static shares
+        share_type = share.get('share_type', 'static')
+        allow_list = share.get('allow_list', [])
+        avoid_list = share.get('avoid_list', [])
+        
+        if share_type == 'dynamic':
+            # For dynamic shares, scan the folders in real-time
+            print(f"DEBUG: Processing dynamic share {sid}")
+            dynamic_files = []
+            for folder_path in share['paths']:
+                try:
+                    full_path = os.path.abspath(os.path.join(ROOT_DIR, folder_path))
+                    if os.path.isdir(full_path) and is_within_root(full_path, ROOT_DIR):
+                        # Recursively scan the folder for current files
+                        all_files = _get_all_files_recursive(full_path, folder_path)
+                        dynamic_files.extend(all_files)
+                        print(f"DEBUG: Found {len(all_files)} files in dynamic folder: {folder_path}")
+                except Exception as e:
+                    print(f"DEBUG: Error scanning dynamic folder {folder_path}: {e}")
+                    continue
+            
+            # Apply allow/avoid list filtering
+            filtered_files = _filter_files_by_patterns(dynamic_files, allow_list, avoid_list)
+            print(f"DEBUG: Dynamic share total files: {len(dynamic_files)}, filtered: {len(filtered_files)}")
+            self.render("shared_list.html", share_id=sid, files=filtered_files, files_json=json.dumps(filtered_files))
+        else:
+            # For static shares, use the stored paths
+            print(f"DEBUG: Processing static share {sid}")
+            print(f"DEBUG: Share paths: {share['paths']}")
+            
+            # Apply allow/avoid list filtering to static shares
+            filtered_files = _filter_files_by_patterns(share['paths'], allow_list, avoid_list)
+            print(f"DEBUG: Static share total files: {len(share['paths'])}, filtered: {len(filtered_files)}")
+            print(f"DEBUG: JSON encoded paths: {json.dumps(filtered_files)}")
+            self.render("shared_list.html", share_id=sid, files=filtered_files, files_json=json.dumps(filtered_files))
 
 class SharedFileHandler(tornado.web.RequestHandler):
     async def get(self, sid, path):
@@ -4222,6 +4599,7 @@ class SharedFileHandler(tornado.web.RequestHandler):
                 # No valid token found, redirect to verification
                 self.redirect(f"/shared/{sid}/verify")
                 return
+        # If secret_token is None or empty, no token verification is required
         
         # Check if share has user restrictions
         allowed_users = share.get('allowed_users')
@@ -4243,10 +4621,44 @@ class SharedFileHandler(tornado.web.RequestHandler):
                 self.write("Access denied")
                 return
         
-        if path not in share['paths']:
-            self.set_status(403)
-            self.write("File not in share")
-            return
+        # Check if file is accessible based on share type
+        share_type = share.get('share_type', 'static')
+        allow_list = share.get('allow_list', [])
+        avoid_list = share.get('avoid_list', [])
+        
+        if share_type == 'dynamic':
+            # For dynamic shares, check if file is within any of the shared folders
+            file_accessible = False
+            for folder_path in share['paths']:
+                try:
+                    full_folder_path = os.path.abspath(os.path.join(ROOT_DIR, folder_path))
+                    if os.path.isdir(full_folder_path) and is_within_root(full_folder_path, ROOT_DIR):
+                        # Check if the requested file is within this folder
+                        full_file_path = os.path.abspath(os.path.join(ROOT_DIR, path))
+                        if full_file_path.startswith(full_folder_path) and os.path.isfile(full_file_path):
+                            file_accessible = True
+                            break
+                except Exception as e:
+                    print(f"DEBUG: Error checking dynamic folder {folder_path}: {e}")
+                    continue
+            
+            if not file_accessible:
+                self.set_status(403)
+                self.write("File not in share")
+                return
+        else:
+            # For static shares, check if file is in the stored paths
+            if path not in share['paths']:
+                self.set_status(403)
+                self.write("File not in share")
+                return
+        
+        # Apply allow/avoid list filtering
+        if allow_list or avoid_list:
+            if not _filter_files_by_patterns([path], allow_list, avoid_list):
+                self.set_status(403)
+                self.write("File not allowed by filter rules")
+                return
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
         if not (is_within_root(abspath, ROOT_DIR) and os.path.isfile(abspath)):
             self.set_status(404)
@@ -4694,6 +5106,7 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None, 
         (r"/share/update", ShareUpdateHandler),
         (r"/debug/reload-shares", DebugReloadSharesHandler),
         (r"/debug/share/([A-Za-z0-9_\-]+)", DebugShareHandler),
+        (r"/debug/update-share", DebugUpdateShareHandler),
         (r"/shared/([A-Za-z0-9_\-]+)/verify", TokenVerificationHandler),
         (r"/shared/([A-Za-z0-9_\-]+)", SharedListHandler),
         (r"/shared/([A-Za-z0-9_\-]+)/file/(.*)", SharedFileHandler),

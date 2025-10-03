@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Secure Share Access</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: "Courier New", monospace;
+      background: white;
+      color: black;
+      line-height: 1.4;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 500px;
+      width: 90%;
+      padding: 40px 20px;
+      border: 2px solid black;
+      border-radius: 8px;
+      background: white;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .header h1 {
+      font-size: 24px;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      color: #666;
+      font-size: 14px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-family: "Courier New", monospace;
+      font-size: 14px;
+    }
+
+    .form-group input:focus {
+      outline: none;
+      border-color: black;
+      box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+    }
+
+    .btn {
+      width: 100%;
+      padding: 12px;
+      background: black;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-family: "Courier New", monospace;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .btn:hover {
+      background: #333;
+    }
+
+    .btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    .error {
+      background: #ffebee;
+      border: 1px solid #f44336;
+      color: #c62828;
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+
+    .info {
+      background: #e3f2fd;
+      border: 1px solid #2196f3;
+      color: #1565c0;
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+
+    .loading {
+      text-align: center;
+      color: #666;
+      font-size: 14px;
+    }
+
+    .back-link {
+      text-align: center;
+      margin-top: 20px;
+    }
+
+    .back-link a {
+      color: #666;
+      text-decoration: none;
+      font-size: 12px;
+    }
+
+    .back-link a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🔐 Secure Share Access</h1>
+      <p>Enter the secret token to access this shared content</p>
+    </div>
+
+    <div id="errorMessage" class="error" style="display: none;"></div>
+    <div id="infoMessage" class="info" style="display: none;"></div>
+
+    <form id="tokenForm">
+      <div class="form-group">
+        <label for="token">Secret Token:</label>
+        <input type="text" id="token" name="token" placeholder="Enter the secret token" required autocomplete="off">
+      </div>
+      
+      <button type="submit" class="btn" id="submitBtn">Access Share</button>
+    </form>
+
+    <div class="back-link">
+      <a href="/">← Back to Home</a>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('tokenForm');
+    const tokenInput = document.getElementById('token');
+    const submitBtn = document.getElementById('submitBtn');
+    const errorMessage = document.getElementById('errorMessage');
+    const infoMessage = document.getElementById('infoMessage');
+
+    // Get share ID from URL
+    const pathParts = window.location.pathname.split('/');
+    const shareId = pathParts[pathParts.length - 2];
+
+    form.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      
+      const token = tokenInput.value.trim();
+      if (!token) {
+        showError('Please enter a secret token');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Verifying...';
+
+      try {
+        const response = await fetch(`/shared/${shareId}/verify`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ token: token })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          // Store token globally and in session storage
+          setAuthToken(token);
+          // Access the share with Authorization header
+          accessShareWithToken(shareId, token);
+        } else {
+          showError(data.error || 'Invalid token');
+        }
+      } catch (error) {
+        showError('Network error. Please try again.');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Access Share';
+      }
+    });
+
+    function showError(message) {
+      errorMessage.textContent = message;
+      errorMessage.style.display = 'block';
+      infoMessage.style.display = 'none';
+    }
+
+    function showInfo(message) {
+      infoMessage.textContent = message;
+      infoMessage.style.display = 'block';
+      errorMessage.style.display = 'none';
+    }
+
+    // Global token management
+    let currentAuthToken = null;
+    
+    // Function to get stored auth token
+    function getAuthToken() {
+      if (!currentAuthToken) {
+        currentAuthToken = sessionStorage.getItem(`share_token_${shareId}`);
+      }
+      return currentAuthToken;
+    }
+    
+    // Function to set auth token
+    function setAuthToken(token) {
+      currentAuthToken = token;
+      sessionStorage.setItem(`share_token_${shareId}`, token);
+      // Also set a cookie for server-side access
+      document.cookie = `share_token_${shareId}=${token}; path=/; max-age=3600; SameSite=Lax`;
+    }
+    
+    // Enhanced fetch function that automatically includes auth token
+    async function fetchWithAuth(url, options = {}) {
+      const token = getAuthToken();
+      if (token) {
+        options.headers = {
+          ...options.headers,
+          'Authorization': `Bearer ${token}`
+        };
+      }
+      return fetch(url, options);
+    }
+
+    async function accessShareWithToken(shareId, token) {
+      try {
+        // Store the token globally
+        setAuthToken(token);
+        
+        const response = await fetchWithAuth(`/shared/${shareId}`, {
+          method: 'GET'
+        });
+
+        if (response.ok) {
+          // If successful, redirect to the share
+          window.location.href = `/shared/${shareId}`;
+        } else {
+          showError('Failed to access share with token');
+        }
+      } catch (error) {
+        showError('Network error accessing share');
+      }
+    }
+
+    // Check if user already has a valid token for this share
+    const existingToken = sessionStorage.getItem(`share_token_${shareId}`);
+    if (existingToken) {
+      showInfo('You already have access to this share. Redirecting...');
+      setTimeout(() => {
+        accessShareWithToken(shareId, existingToken);
+      }, 1000);
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Create LDAP Configuration</title>
+    <style>
+        body {
+            background-color: white;
+            color: black;
+            font-family: monospace;
+            margin: 20px;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+        }
+        .form-group {
+            margin: 15px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], input[type="url"], textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        textarea {
+            height: 60px;
+            resize: vertical;
+        }
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+            border: 1px solid #007bff;
+            padding: 8px 16px;
+            text-decoration: none;
+            margin-right: 10px;
+        }
+        .btn-primary:hover {
+            background-color: #0056b3;
+        }
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+            border: 1px solid #6c757d;
+            padding: 8px 16px;
+            text-decoration: none;
+            margin-right: 10px;
+        }
+        .btn-secondary:hover {
+            background-color: #545b62;
+        }
+        .error {
+            color: #dc3545;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .help-text {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .nav-links {
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #ccc;
+        }
+        .nav-links a {
+            margin-right: 15px;
+            text-decoration: none;
+            color: #007bff;
+        }
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="nav-links">
+        <a href="/admin/ldap">← Back to LDAP Management</a>
+        <a href="/admin">Admin Panel</a>
+        <a href="/logout">Logout</a>
+        <div style="float: right; font-size: 12px; color: #666;">👤 {{ handler.get_display_username() }}</div>
+    </div>
+    
+    <h2>Create LDAP Configuration</h2>
+    
+    {% if error %}
+    <div class="error">
+        {{ escape(error) }}
+    </div>
+    {% end %}
+    
+    <div class="section">
+        <form method="POST">
+            {% raw xsrf_form_html() %}
+            
+            <div class="form-group">
+                <label for="name">Configuration Name *</label>
+                <input type="text" id="name" name="name" required maxlength="50" placeholder="e.g., Main LDAP Server">
+                <div class="help-text">A unique name to identify this LDAP configuration (3-50 characters)</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="server">LDAP Server *</label>
+                <input type="url" id="server" name="server" required placeholder="ldap://ldap.example.com:389 or ldaps://ldap.example.com:636">
+                <div class="help-text">LDAP server URL (ldap:// for unencrypted, ldaps:// for SSL/TLS)</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="ldap_base_dn">Base DN *</label>
+                <input type="text" id="ldap_base_dn" name="ldap_base_dn" required placeholder="ou=groups,dc=example,dc=com">
+                <div class="help-text">The base DN where LDAP groups are located</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="ldap_member_attributes">Member Attributes</label>
+                <input type="text" id="ldap_member_attributes" name="ldap_member_attributes" value="member" placeholder="member">
+                <div class="help-text">LDAP attribute that contains group members (default: member)</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="user_template">User Template *</label>
+                <input type="text" id="user_template" name="user_template" required placeholder="uid={username},ou=users,dc=example,dc=com">
+                <div class="help-text">Template to extract username from member DN. Use {username} placeholder.</div>
+            </div>
+            
+            <div class="form-group">
+                <input type="submit" value="Create Configuration" class="btn-primary">
+                <a href="/admin/ldap" class="btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+    
+    <div class="section">
+        <h3>Configuration Examples</h3>
+        <p><strong>OpenLDAP:</strong></p>
+        <ul>
+            <li>Server: <code>ldap://ldap.example.com:389</code></li>
+            <li>Base DN: <code>ou=groups,dc=example,dc=com</code></li>
+            <li>Member Attribute: <code>member</code></li>
+            <li>User Template: <code>uid={username},ou=users,dc=example,dc=com</code></li>
+        </ul>
+        
+        <p><strong>Active Directory:</strong></p>
+        <ul>
+            <li>Server: <code>ldaps://ad.company.com:636</code></li>
+            <li>Base DN: <code>OU=Groups,DC=company,DC=com</code></li>
+            <li>Member Attribute: <code>member</code></li>
+            <li>User Template: <code>CN={username},OU=Users,DC=company,DC=com</code></li>
+        </ul>
+    </div>
+</body>
+</html>
+

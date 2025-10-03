@@ -1,81 +1,350 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Shared Files</title>
-  <style>
-    body { font-family:monospace; background:#fff; color:#000; }
-    ul { list-style:none; padding:0; }
-    li { padding:4px 6px; border-bottom:1px solid #eee; }
-    a { color:#000; text-decoration:none; }
-    a:hover { text-decoration:underline; }
-    pre { white-space:pre-wrap; }
-    .file-list { max-width:600px; margin:20px auto; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shared Files</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "Courier New", monospace;
+            background: white;
+            color: black;
+            line-height: 1.2;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 20px 10px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid black;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .file-table {
+            width: 100%;
+            border-collapse: collapse;
+            border: 1px solid black;
+            background: white;
+            table-layout: fixed;
+        }
+
+        .file-table th {
+            background: black;
+            color: white;
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: bold;
+            border-bottom: 2px solid black;
+            position: relative;
+        }
+
+        .file-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid #ddd;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .file-table tbody tr:hover {
+            background: #f5f5f5;
+        }
+
+        .file-table th,
+        .file-table td {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .name-col {
+            width: 80%;
+        }
+        .actions-col {
+            width: 20%;
+            text-align: right;
+        }
+
+        .actions-cell {
+            text-align: right;
+        }
+
+        .file-link {
+            color: black;
+            text-decoration: none;
+            display: block;
+        }
+
+        .file-link:hover {
+            text-decoration: underline;
+        }
+
+        .file-icon {
+            margin-right: 8px;
+        }
+
+        .action-link {
+            color: #0066cc;
+            text-decoration: none;
+            margin-left: 8px;
+            font-size: 14px;
+        }
+
+        .action-link:hover {
+            text-decoration: underline;
+        }
+
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .file-table thead {
+                display: none;
+            }
+
+            .file-table,
+            .file-table tbody,
+            .file-table tr,
+            .file-table td {
+                display: block;
+                width: 100%;
+            }
+
+            .file-table tr {
+                border: 1px solid #ccc;
+                margin-bottom: 10px;
+                padding: 10px;
+                background: white;
+            }
+
+            .file-table td {
+                border: none;
+                padding: 5px 0;
+                position: relative;
+                padding-left: 50%;
+            }
+
+            .file-table td:before {
+                content: attr(data-label) ": ";
+                position: absolute;
+                left: 6px;
+                width: 45%;
+                padding-right: 10px;
+                white-space: nowrap;
+                font-weight: bold;
+            }
+
+            .name-cell::before {
+                display: none;
+            }
+
+            .actions-cell {
+                padding-left: 10px !important;
+                text-align: left !important;
+            }
+
+            .actions-cell::before {
+                content: "Download: ";
+                position: absolute;
+                left: 6px;
+                width: 45%;
+                padding-right: 10px;
+                white-space: nowrap;
+                font-weight: bold;
+            }
+
+            .action-link {
+                display: inline-block;
+                margin: 5px 5px 5px 0;
+            }
+        }
+    </style>
 </head>
 <body>
-  <div class="file-list">
-    <h1>Shared Files</h1>
-    <ul>
-      {% for f in files %}
-      <li><a href="#" onclick="openFileWithAuth('{{ f }}')" target="_blank">{{ f }}</a></li>
-      {% end %}
-    </ul>
-    {% if not files %}<p>No files.</p>{% end %}
-  </div>
+    <div class="container">
+        <div class="header">
+            <h1>📁 Shared Files</h1>
+            <button onclick="document.getElementById('debugInfo').style.display = document.getElementById('debugInfo').style.display === 'none' ? 'block' : 'none';" style="padding: 5px 10px; background: #f0f0f0; border: 1px solid #ccc; cursor: pointer;">Debug</button>
+        </div>
+        
+        <table class="file-table" id="fileTable">
+            <thead>
+                <tr>
+                    <th class="name-col">📄 Name</th>
+                    <th class="actions-col">⬇️ Download</th>
+                </tr>
+            </thead>
+            <tbody id="fileTableBody">
+                <!-- Files will be populated by JavaScript -->
+                {% if files %}
+                {% for file_path in files %}
+                <tr>
+                    <td class="name-cell" data-label="Name">
+                        <span class="file-icon">📄</span>
+                        <span>{{ file_path.split('/')[-1] }}</span>
+                    </td>
+                    <td class="actions-cell" data-label="Download">
+                        <a href="/shared/{{ share_id }}/file/{{ file_path }}?download=1" class="action-link" title="Download">⬇️</a>
+                    </td>
+                </tr>
+                {% end %}
+                {% else %}
+                <tr><td colspan="2" style="text-align: center; padding: 20px;">No files available</td></tr>
+                {% end %}
+            </tbody>
+        </table>
+        
+        <!-- Fallback display for debugging -->
+        <div id="debugInfo" style="display: none; margin-top: 20px; padding: 10px; background: #f0f0f0; border: 1px solid #ccc;">
+            <h3>Debug Information</h3>
+            <p><strong>Share ID:</strong> {{ share_id }}</p>
+            <p><strong>Files (Python list):</strong> {{ files }}</p>
+            <p><strong>Files JSON:</strong> {{ files_json }}</p>
+        </div>
+    </div>
 
-  <script>
-    // Global token management for shared files
-    let currentAuthToken = null;
-    const shareId = '{{ share_id }}';
-    
-    // Function to get stored auth token
-    function getAuthToken() {
-      if (!currentAuthToken) {
-        currentAuthToken = sessionStorage.getItem(`share_token_${shareId}`);
-      }
-      return currentAuthToken;
-    }
-    
-    // Function to set auth token
-    function setAuthToken(token) {
-      currentAuthToken = token;
-      sessionStorage.setItem(`share_token_${shareId}`, token);
-    }
-    
-    // Enhanced fetch function that automatically includes auth token
-    async function fetchWithAuth(url, options = {}) {
-      const token = getAuthToken();
-      if (token) {
-        options.headers = {
-          ...options.headers,
-          'Authorization': `Bearer ${token}`
-        };
-      }
-      return fetch(url, options);
-    }
-    
-    // Function to open file with authentication
-    function openFileWithAuth(filePath) {
-      const token = getAuthToken();
-      if (!token) {
-        // No token available, redirect to verification
-        window.location.href = `/shared/${shareId}/verify`;
-        return;
-      }
-      
-      // Open file directly - the server will check the cookie
-      const fileUrl = `/shared/${shareId}/file/${encodeURIComponent(filePath)}`;
-      window.open(fileUrl, '_blank');
-    }
-    
-    // Check if we have a token on page load
-    document.addEventListener('DOMContentLoaded', function() {
-      const token = getAuthToken();
-      if (!token) {
-        // No token available, redirect to verification
-        window.location.href = `/shared/${shareId}/verify`;
-      }
-    });
-  </script>
+    <script>
+        // Global token management for shared files
+        let currentAuthToken = null;
+        const shareId = '{{ share_id }}';
+        
+        // Function to get stored auth token
+        function getAuthToken() {
+            if (!currentAuthToken) {
+                currentAuthToken = sessionStorage.getItem(`share_token_${shareId}`);
+            }
+            return currentAuthToken;
+        }
+        
+        // Function to set auth token
+        function setAuthToken(token) {
+            currentAuthToken = token;
+            sessionStorage.setItem(`share_token_${shareId}`, token);
+            // Also set a cookie for server-side access
+            document.cookie = `share_token_${shareId}=${token}; path=/; max-age=3600; SameSite=Lax`;
+        }
+        
+        // Enhanced fetch function that automatically includes auth token
+        async function fetchWithAuth(url, options = {}) {
+            const token = getAuthToken();
+            if (token) {
+                options.headers = {
+                    ...options.headers,
+                    'Authorization': `Bearer ${token}`
+                };
+            }
+            return fetch(url, options);
+        }
+        
+        // Function to get file icon based on extension
+        function getFileIcon(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            const iconMap = {
+                'txt': '📄', 'md': '📝', 'py': '🐍', 'js': '📜', 'html': '🌐', 'css': '🎨',
+                'json': '📋', 'xml': '📄', 'csv': '📊', 'pdf': '📕', 'doc': '📘', 'docx': '📘',
+                'xls': '📗', 'xlsx': '📗', 'ppt': '📙', 'pptx': '📙', 'zip': '📦', 'rar': '📦',
+                'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'svg': '🖼️',
+                'mp4': '🎬', 'avi': '🎬', 'mov': '🎬', 'mp3': '🎵', 'wav': '🎵',
+                'exe': '⚙️', 'dll': '⚙️', 'bat': '⚙️', 'sh': '⚙️'
+            };
+            return iconMap[ext] || '📄';
+        }
+        
+        // Function to format file size
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+        
+        // Function to open file with authentication
+        function openFileWithAuth(filePath) {
+            const token = getAuthToken();
+            if (!token) {
+                // No token available, redirect to verification
+                window.location.href = `/shared/${shareId}/verify`;
+                return;
+            }
+            
+            // Open file directly - the server will check the cookie
+            const fileUrl = `/shared/${shareId}/file/${encodeURIComponent(filePath)}`;
+            window.open(fileUrl, '_blank');
+        }
+        
+        // Function to render files in table format
+        function renderFiles(files) {
+            const tbody = document.getElementById('fileTableBody');
+            tbody.innerHTML = '';
+            
+            if (!files || files.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; padding: 20px;">No files available</td></tr>';
+                return;
+            }
+            
+            // Sort files: folders first, then files, both alphabetically
+            const sortedFiles = files.sort((a, b) => {
+                // For shared files, we don't have actual folders, just file paths
+                // So we'll just sort alphabetically
+                return a.localeCompare(b);
+            });
+            
+            sortedFiles.forEach(filePath => {
+                const fileName = filePath.split('/').pop();
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="name-cell" data-label="Name">
+                        <span class="file-icon">${getFileIcon(fileName)}</span>
+                        <span>${fileName}</span>
+                    </td>
+                    <td class="actions-cell" data-label="Download">
+                        <a href="/shared/${shareId}/file/${encodeURIComponent(filePath)}?download=1" class="action-link" title="Download">⬇️</a>
+                    </td>
+                `;
+                
+                tbody.appendChild(row);
+            });
+        }
+        
+        // Check if we have a token on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const token = getAuthToken();
+            if (!token) {
+                // No token available, redirect to verification
+                window.location.href = `/shared/${shareId}/verify`;
+                return;
+            }
+            
+            // Render files in table format
+            try {
+                const files = {{ files_json }};
+                console.log('Files data:', files); // Debug log
+                console.log('Files type:', typeof files);
+                console.log('Files length:', files ? files.length : 'undefined');
+                renderFiles(files);
+            } catch (error) {
+                console.error('Error processing files data:', error);
+                document.getElementById('fileTableBody').innerHTML = '<tr><td colspan="2" style="text-align: center; padding: 20px; color: red;">Error loading files data</td></tr>';
+            }
+        });
+    </script>
 </body>
 </html>
