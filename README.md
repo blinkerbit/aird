@@ -1,12 +1,13 @@
 # Aird - A Lightweight Web-Based File Browser, Editor and Share
 
-**v0.4.3** - 🔐 **Secure File Sharing + Advanced Share Management + Token Security!**
+**v0.4.4** - 🔐 **Secure File Sharing + Advanced Share Management + Token Security!**
 
 A modern, lightweight, and fast web-based file browser, editor, and streamer built with Python and Tornado. It provides a comprehensive file management solution with real-time streaming, in-browser editing, and mobile-responsive design through a clean and intuitive web interface.
 
 Note: Currently using this in conjunction with WireGuard to handle file management and sharing for internal/private cloud.
 
-## 🆕 What's New in v0.4.3
+## 🆕 What's New in v0.4.4
+
 
 ### 🔐 **Secure File Sharing (NEW!)**
 - **Secret Token Protection:** Generate secure, randomly generated tokens for share access control
@@ -990,6 +991,12 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **Configurable buffer sizes** for optimal performance
 - **Memory-efficient** file handling with constant memory usage
 
+### 🛠️ Technical Improvements (New in v0.4.4!)
+- **HTML Content Rendering:** Fixed HTML entity display in file templates for proper content rendering
+- **Template Security:** Maintained proper escaping for user input while allowing file content to render
+- **File Viewer Enhancement:** HTML content now displays correctly in both view and edit modes
+- **Content Type Support:** Improved support for HTML files and mixed content types
+
 ### 🛠️ Technical Improvements (New in v0.4.3!)
 - **Secure Token Management:** Cryptographically secure token generation and validation using `secrets` module
 - **Database Schema Migration:** Automatic database updates for new share management features
@@ -1011,6 +1018,12 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **Frontend Architecture:** Modular JavaScript functions for better maintainability
 - **Cross-browser Compatibility:** Improved compatibility across different browsers and devices
 - **Accessibility Enhancements:** Better keyboard navigation and screen reader support
+
+### 🐛 Bug Fixes & Improvements (New in v0.4.4!)
+- **Fixed HTML Entity Display:** HTML entities like `&lt;/a&gt;` now properly render as HTML instead of being displayed as text
+- **Fixed File Content Rendering:** HTML content in files now displays correctly in the file viewer
+- **Fixed Edit Mode HTML:** HTML content properly renders in both view and edit modes
+- **Fixed Template Escaping:** Maintained security for user input while allowing file content to render
 
 ### 🐛 Bug Fixes & Improvements (New in v0.4.3!)
 - **Fixed Token Management:** Corrected token enable/disable logic in share management
