@@ -156,6 +156,9 @@
         <h3>User Management</h3>
         <p><em>Manage system users and their access permissions.</em></p>
         <a href="/admin/users" style="display: inline-block; padding: 8px 16px; background-color: #007bff; color: white; text-decoration: none; border: 1px solid #007bff; margin-right: 10px;">👥 Manage Users</a>
+        {% if ldap_enabled %}
+        <a href="/admin/ldap" style="display: inline-block; padding: 8px 16px; background-color: #28a745; color: white; text-decoration: none; border: 1px solid #28a745; margin-right: 10px;">🔗 LDAP Management</a>
+        {% end %}
     </div>
     
     <div style="margin: 20px 0;">

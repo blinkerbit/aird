@@ -20,6 +20,7 @@ aird/templates/edit.html
 aird/templates/error.html
 aird/templates/file.html
 aird/templates/login.html
+aird/templates/profile.html
 aird/templates/share.html
 aird/templates/shared_list.html
 aird/templates/super_search.html

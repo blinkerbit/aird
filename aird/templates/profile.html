@@ -128,7 +128,7 @@
             Profile management is not available for token-authenticated sessions.
         </div>
     {% else %}
-        {% if not settings.get('ldap_server') %}
+        {% if not ldap_enabled %}
         <!-- Change Password Section -->
         <div class="profile-section">
             <h3>Change Password</h3>

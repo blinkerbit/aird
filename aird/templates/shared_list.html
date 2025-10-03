@@ -17,10 +17,65 @@
     <h1>Shared Files</h1>
     <ul>
       {% for f in files %}
-      <li><a href="/shared/{{ share_id }}/file/{{ f }}" target="_blank">{{ f }}</a></li>
+      <li><a href="#" onclick="openFileWithAuth('{{ f }}')" target="_blank">{{ f }}</a></li>
       {% end %}
     </ul>
     {% if not files %}<p>No files.</p>{% end %}
   </div>
+
+  <script>
+    // Global token management for shared files
+    let currentAuthToken = null;
+    const shareId = '{{ share_id }}';
+    
+    // Function to get stored auth token
+    function getAuthToken() {
+      if (!currentAuthToken) {
+        currentAuthToken = sessionStorage.getItem(`share_token_${shareId}`);
+      }
+      return currentAuthToken;
+    }
+    
+    // Function to set auth token
+    function setAuthToken(token) {
+      currentAuthToken = token;
+      sessionStorage.setItem(`share_token_${shareId}`, token);
+    }
+    
+    // Enhanced fetch function that automatically includes auth token
+    async function fetchWithAuth(url, options = {}) {
+      const token = getAuthToken();
+      if (token) {
+        options.headers = {
+          ...options.headers,
+          'Authorization': `Bearer ${token}`
+        };
+      }
+      return fetch(url, options);
+    }
+    
+    // Function to open file with authentication
+    function openFileWithAuth(filePath) {
+      const token = getAuthToken();
+      if (!token) {
+        // No token available, redirect to verification
+        window.location.href = `/shared/${shareId}/verify`;
+        return;
+      }
+      
+      // Open file directly - the server will check the cookie
+      const fileUrl = `/shared/${shareId}/file/${encodeURIComponent(filePath)}`;
+      window.open(fileUrl, '_blank');
+    }
+    
+    // Check if we have a token on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      const token = getAuthToken();
+      if (!token) {
+        // No token available, redirect to verification
+        window.location.href = `/shared/${shareId}/verify`;
+      }
+    });
+  </script>
 </body>
 </html>

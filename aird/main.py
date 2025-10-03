@@ -23,6 +23,8 @@ from collections import deque
 from ldap3 import Server, Connection, ALL
 from datetime import datetime
 import gzip
+import threading
+import time
 import mimetypes
 from io import BytesIO
 import tempfile
@@ -584,6 +586,36 @@ def _init_db(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ldap_configs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            server TEXT NOT NULL,
+            ldap_base_dn TEXT NOT NULL,
+            ldap_member_attributes TEXT NOT NULL DEFAULT 'member',
+            user_template TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ldap_sync_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            config_id INTEGER NOT NULL,
+            sync_type TEXT NOT NULL,
+            users_found INTEGER NOT NULL,
+            users_created INTEGER NOT NULL,
+            users_removed INTEGER NOT NULL,
+            sync_time TEXT NOT NULL,
+            status TEXT NOT NULL,
+            error_message TEXT,
+            FOREIGN KEY (config_id) REFERENCES ldap_configs (id)
+        )
+        """
+    )
 
     # Migration for shares table
     cursor = conn.cursor()
@@ -591,6 +623,8 @@ def _init_db(conn: sqlite3.Connection) -> None:
     columns = [column[1] for column in cursor.fetchall()]
     if "allowed_users" not in columns:
         cursor.execute("ALTER TABLE shares ADD COLUMN allowed_users TEXT")
+    if "secret_token" not in columns:
+        cursor.execute("ALTER TABLE shares ADD COLUMN secret_token TEXT")
 
     conn.commit()
 
@@ -615,11 +649,23 @@ def _save_feature_flags(conn: sqlite3.Connection, flags: dict) -> None:
 def _load_shares(conn: sqlite3.Connection) -> dict:
     loaded: dict = {}
     try:
-        # Check if allowed_users column exists
+        # Check if allowed_users and secret_token columns exist
         cursor = conn.execute("PRAGMA table_info(shares)")
         columns = [row[1] for row in cursor.fetchall()]
         
-        if 'allowed_users' in columns:
+        if 'allowed_users' in columns and 'secret_token' in columns:
+            rows = conn.execute("SELECT id, created, paths, allowed_users, secret_token FROM shares").fetchall()
+            for sid, created, paths_json, allowed_users_json, secret_token in rows:
+                try:
+                    paths = json.loads(paths_json) if paths_json else []
+                except Exception:
+                    paths = []
+                try:
+                    allowed_users = json.loads(allowed_users_json) if allowed_users_json else None
+                except Exception:
+                    allowed_users = None
+                loaded[sid] = {"paths": paths, "created": created, "allowed_users": allowed_users, "secret_token": secret_token}
+        elif 'allowed_users' in columns:
             rows = conn.execute("SELECT id, created, paths, allowed_users FROM shares").fetchall()
             for sid, created, paths_json, allowed_users_json in rows:
                 try:
@@ -630,7 +676,7 @@ def _load_shares(conn: sqlite3.Connection) -> dict:
                     allowed_users = json.loads(allowed_users_json) if allowed_users_json else None
                 except Exception:
                     allowed_users = None
-                loaded[sid] = {"paths": paths, "created": created, "allowed_users": allowed_users}
+                loaded[sid] = {"paths": paths, "created": created, "allowed_users": allowed_users, "secret_token": None}
         else:
             # Fallback for old schema without allowed_users column
             rows = conn.execute("SELECT id, created, paths FROM shares").fetchall()
@@ -639,7 +685,7 @@ def _load_shares(conn: sqlite3.Connection) -> dict:
                     paths = json.loads(paths_json) if paths_json else []
                 except Exception:
                     paths = []
-                loaded[sid] = {"paths": paths, "created": created, "allowed_users": None}
+                loaded[sid] = {"paths": paths, "created": created, "allowed_users": None, "secret_token": None}
     except Exception as e:
         print(f"Error loading shares: {e}")
         import traceback
@@ -647,12 +693,12 @@ def _load_shares(conn: sqlite3.Connection) -> dict:
         return {}
     return loaded
 
-def _insert_share(conn: sqlite3.Connection, sid: str, created: str, paths: list[str], allowed_users: list[str] = None) -> bool:
+def _insert_share(conn: sqlite3.Connection, sid: str, created: str, paths: list[str], allowed_users: list[str] = None, secret_token: str = None) -> bool:
     try:
         with conn:
             conn.execute(
-                "REPLACE INTO shares (id, created, paths, allowed_users) VALUES (?, ?, ?, ?)",
-                (sid, created, json.dumps(paths), json.dumps(allowed_users) if allowed_users else None),
+                "REPLACE INTO shares (id, created, paths, allowed_users, secret_token) VALUES (?, ?, ?, ?, ?)",
+                (sid, created, json.dumps(paths), json.dumps(allowed_users) if allowed_users else None, secret_token),
             )
         return True
     except Exception as e:
@@ -698,38 +744,94 @@ def _update_share(conn: sqlite3.Connection, sid: str, **kwargs) -> bool:
 def _get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict:
     """Get a single share by ID from database"""
     try:
-        cursor = conn.execute(
-            "SELECT id, created, paths, allowed_users FROM shares WHERE id = ?",
-            (sid,)
-        )
-        row = cursor.fetchone()
-        if row:
-            sid, created, paths_json, allowed_users_json = row
-            return {
-                "id": sid,
-                "created": created,
-                "paths": json.loads(paths_json) if paths_json else [],
-                "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None
-            }
+        print(f"DEBUG: _get_share_by_id called with sid='{sid}'")
+        print(f"DEBUG: conn is {'None' if conn is None else 'available'}")
+        
+        # Check if secret_token column exists
+        cursor = conn.execute("PRAGMA table_info(shares)")
+        columns = [row[1] for row in cursor.fetchall()]
+        print(f"DEBUG: Table columns: {columns}")
+        
+        if 'secret_token' in columns:
+            print(f"DEBUG: Using query with secret_token column")
+            cursor = conn.execute(
+                "SELECT id, created, paths, allowed_users, secret_token FROM shares WHERE id = ?",
+                (sid,)
+            )
+            row = cursor.fetchone()
+            print(f"DEBUG: Query result: {row}")
+            if row:
+                sid, created, paths_json, allowed_users_json, secret_token = row
+                result = {
+                    "id": sid,
+                    "created": created,
+                    "paths": json.loads(paths_json) if paths_json else [],
+                    "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
+                    "secret_token": secret_token
+                }
+                print(f"DEBUG: Returning share data: {result}")
+                return result
+        else:
+            print(f"DEBUG: Using query without secret_token column")
+            cursor = conn.execute(
+                "SELECT id, created, paths, allowed_users FROM shares WHERE id = ?",
+                (sid,)
+            )
+            row = cursor.fetchone()
+            print(f"DEBUG: Query result: {row}")
+            if row:
+                sid, created, paths_json, allowed_users_json = row
+                result = {
+                    "id": sid,
+                    "created": created,
+                    "paths": json.loads(paths_json) if paths_json else [],
+                    "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
+                    "secret_token": None
+                }
+                print(f"DEBUG: Returning share data: {result}")
+                return result
+        
+        print(f"DEBUG: No share found for sid='{sid}'")
         return None
     except Exception as e:
         print(f"Error getting share {sid}: {e}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         return None
 
 def _get_all_shares(conn: sqlite3.Connection) -> dict:
     """Get all shares from database"""
     try:
-        cursor = conn.execute(
-            "SELECT id, created, paths, allowed_users FROM shares"
-        )
-        shares = {}
-        for row in cursor:
-            sid, created, paths_json, allowed_users_json = row
-            shares[sid] = {
-                "created": created,
-                "paths": json.loads(paths_json) if paths_json else [],
-                "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None
-            }
+        # Check if secret_token column exists
+        cursor = conn.execute("PRAGMA table_info(shares)")
+        columns = [row[1] for row in cursor.fetchall()]
+        
+        if 'secret_token' in columns:
+            cursor = conn.execute(
+                "SELECT id, created, paths, allowed_users, secret_token FROM shares"
+            )
+            shares = {}
+            for row in cursor:
+                sid, created, paths_json, allowed_users_json, secret_token = row
+                shares[sid] = {
+                    "created": created,
+                    "paths": json.loads(paths_json) if paths_json else [],
+                    "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
+                    "secret_token": secret_token
+                }
+        else:
+            cursor = conn.execute(
+                "SELECT id, created, paths, allowed_users FROM shares"
+            )
+            shares = {}
+            for row in cursor:
+                sid, created, paths_json, allowed_users_json = row
+                shares[sid] = {
+                    "created": created,
+                    "paths": json.loads(paths_json) if paths_json else [],
+                    "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
+                    "secret_token": None
+                }
         return shares
     except Exception as e:
         print(f"Error getting all shares: {e}")
@@ -738,20 +840,42 @@ def _get_all_shares(conn: sqlite3.Connection) -> dict:
 def _get_shares_for_path(conn: sqlite3.Connection, file_path: str) -> list:
     """Get all shares that contain a specific file path"""
     try:
-        cursor = conn.execute(
-            "SELECT id, created, paths, allowed_users FROM shares"
-        )
-        matching_shares = []
-        for row in cursor:
-            sid, created, paths_json, allowed_users_json = row
-            paths = json.loads(paths_json) if paths_json else []
-            if file_path in paths:
-                matching_shares.append({
-                    "id": sid,
-                    "created": created,
-                    "paths": paths,
-                    "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None
-                })
+        # Check if secret_token column exists
+        cursor = conn.execute("PRAGMA table_info(shares)")
+        columns = [row[1] for row in cursor.fetchall()]
+        
+        if 'secret_token' in columns:
+            cursor = conn.execute(
+                "SELECT id, created, paths, allowed_users, secret_token FROM shares"
+            )
+            matching_shares = []
+            for row in cursor:
+                sid, created, paths_json, allowed_users_json, secret_token = row
+                paths = json.loads(paths_json) if paths_json else []
+                if file_path in paths:
+                    matching_shares.append({
+                        "id": sid,
+                        "created": created,
+                        "paths": paths,
+                        "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
+                        "secret_token": secret_token
+                    })
+        else:
+            cursor = conn.execute(
+                "SELECT id, created, paths, allowed_users FROM shares"
+            )
+            matching_shares = []
+            for row in cursor:
+                sid, created, paths_json, allowed_users_json = row
+                paths = json.loads(paths_json) if paths_json else []
+                if file_path in paths:
+                    matching_shares.append({
+                        "id": sid,
+                        "created": created,
+                        "paths": paths,
+                        "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
+                        "secret_token": None
+                    })
         return matching_shares
     except Exception as e:
         print(f"Error getting shares for path {file_path}: {e}")
@@ -931,6 +1055,312 @@ def _update_user(conn: sqlite3.Connection, user_id: int, **kwargs) -> bool:
         return True
     except Exception:
         return False
+
+def _create_ldap_config(conn: sqlite3.Connection, name: str, server: str, ldap_base_dn: str, 
+                       ldap_member_attributes: str, user_template: str) -> dict:
+    """Create a new LDAP configuration"""
+    try:
+        created_at = datetime.now().isoformat()
+        
+        with conn:
+            cursor = conn.execute(
+                """INSERT INTO ldap_configs (name, server, ldap_base_dn, ldap_member_attributes, user_template, created_at) 
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (name, server, ldap_base_dn, ldap_member_attributes, user_template, created_at)
+            )
+            config_id = cursor.lastrowid
+            
+        return {
+            "id": config_id,
+            "name": name,
+            "server": server,
+            "ldap_base_dn": ldap_base_dn,
+            "ldap_member_attributes": ldap_member_attributes,
+            "user_template": user_template,
+            "created_at": created_at,
+            "active": True
+        }
+    except sqlite3.IntegrityError:
+        raise ValueError(f"LDAP configuration '{name}' already exists")
+    except Exception as e:
+        raise Exception(f"Failed to create LDAP configuration: {str(e)}")
+
+def _get_all_ldap_configs(conn: sqlite3.Connection) -> list[dict]:
+    """Get all LDAP configurations"""
+    try:
+        rows = conn.execute(
+            "SELECT id, name, server, ldap_base_dn, ldap_member_attributes, user_template, created_at, active FROM ldap_configs ORDER BY created_at DESC"
+        ).fetchall()
+        
+        return [
+            {
+                "id": row[0],
+                "name": row[1],
+                "server": row[2],
+                "ldap_base_dn": row[3],
+                "ldap_member_attributes": row[4],
+                "user_template": row[5],
+                "created_at": row[6],
+                "active": bool(row[7])
+            }
+            for row in rows
+        ]
+    except Exception:
+        return []
+
+def _get_ldap_config_by_id(conn: sqlite3.Connection, config_id: int) -> dict | None:
+    """Get LDAP configuration by ID"""
+    try:
+        row = conn.execute(
+            "SELECT id, name, server, ldap_base_dn, ldap_member_attributes, user_template, created_at, active FROM ldap_configs WHERE id = ?",
+            (config_id,)
+        ).fetchone()
+        
+        if row:
+            return {
+                "id": row[0],
+                "name": row[1],
+                "server": row[2],
+                "ldap_base_dn": row[3],
+                "ldap_member_attributes": row[4],
+                "user_template": row[5],
+                "created_at": row[6],
+                "active": bool(row[7])
+            }
+    except Exception:
+        return None
+
+def _update_ldap_config(conn: sqlite3.Connection, config_id: int, **kwargs) -> bool:
+    """Update LDAP configuration"""
+    try:
+        valid_fields = ['name', 'server', 'ldap_base_dn', 'ldap_member_attributes', 'user_template', 'active']
+        updates = []
+        values = []
+        
+        for field, value in kwargs.items():
+            if field in valid_fields:
+                if field == 'active':
+                    updates.append('active = ?')
+                    values.append(1 if value else 0)
+                else:
+                    updates.append(f'{field} = ?')
+                    values.append(value)
+        
+        if not updates:
+            return False
+            
+        values.append(config_id)
+        query = f"UPDATE ldap_configs SET {', '.join(updates)} WHERE id = ?"
+        
+        with conn:
+            conn.execute(query, values)
+        return True
+    except Exception:
+        return False
+
+def _delete_ldap_config(conn: sqlite3.Connection, config_id: int) -> bool:
+    """Delete LDAP configuration"""
+    try:
+        with conn:
+            cursor = conn.execute("DELETE FROM ldap_configs WHERE id = ?", (config_id,))
+            return cursor.rowcount > 0
+    except Exception:
+        return False
+
+def _log_ldap_sync(conn: sqlite3.Connection, config_id: int, sync_type: str, users_found: int, 
+                  users_created: int, users_removed: int, status: str, error_message: str = None) -> None:
+    """Log LDAP synchronization results"""
+    try:
+        sync_time = datetime.now().isoformat()
+        with conn:
+            conn.execute(
+                """INSERT INTO ldap_sync_log (config_id, sync_type, users_found, users_created, users_removed, sync_time, status, error_message)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (config_id, sync_type, users_found, users_created, users_removed, sync_time, status, error_message)
+            )
+    except Exception:
+        pass  # Don't fail the sync if logging fails
+
+def _get_ldap_sync_logs(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
+    """Get recent LDAP sync logs"""
+    try:
+        rows = conn.execute(
+            """SELECT l.id, l.config_id, c.name, l.sync_type, l.users_found, l.users_created, l.users_removed, 
+                      l.sync_time, l.status, l.error_message
+               FROM ldap_sync_log l
+               JOIN ldap_configs c ON l.config_id = c.id
+               ORDER BY l.sync_time DESC
+               LIMIT ?""",
+            (limit,)
+        ).fetchall()
+        
+        return [
+            {
+                "id": row[0],
+                "config_id": row[1],
+                "config_name": row[2],
+                "sync_type": row[3],
+                "users_found": row[4],
+                "users_created": row[5],
+                "users_removed": row[6],
+                "sync_time": row[7],
+                "status": row[8],
+                "error_message": row[9]
+            }
+            for row in rows
+        ]
+    except Exception:
+        return []
+
+def _sync_ldap_users(conn: sqlite3.Connection) -> dict:
+    """Synchronize users from all active LDAP configurations"""
+    if not conn:
+        return {"status": "error", "message": "Database not available"}
+    
+    try:
+        # Get all active LDAP configurations
+        configs = _get_all_ldap_configs(conn)
+        active_configs = [c for c in configs if c['active']]
+        
+        if not active_configs:
+            return {"status": "success", "message": "No active LDAP configurations found"}
+        
+        all_ldap_users = set()  # Use set to automatically handle duplicates
+        sync_results = []
+        
+        for config in active_configs:
+            try:
+                # Connect to LDAP server
+                from ldap3 import Server, Connection, ALL
+                server = Server(config['server'], get_info=ALL)
+                conn_ldap = Connection(server)
+                
+                if not conn_ldap.bind():
+                    sync_results.append({
+                        "config_name": config['name'],
+                        "status": "error",
+                        "message": f"Failed to bind to LDAP server: {config['server']}"
+                    })
+                    continue
+                
+                # Search for groups and their members
+                search_filter = f"(objectClass=groupOfNames)"
+                conn_ldap.search(
+                    search_base=config['ldap_base_dn'],
+                    search_filter=search_filter,
+                    attributes=[config['ldap_member_attributes']]
+                )
+                
+                config_users = set()
+                for entry in conn_ldap.entries:
+                    if hasattr(entry, config['ldap_member_attributes']):
+                        members = getattr(entry, config['ldap_member_attributes'])
+                        if members:
+                            for member in members:
+                                # Extract username using the user template
+                                username = _extract_username_from_dn(member, config['user_template'])
+                                if username:
+                                    config_users.add(username)
+                                    all_ldap_users.add(username)
+                
+                sync_results.append({
+                    "config_name": config['name'],
+                    "status": "success",
+                    "users_found": len(config_users)
+                })
+                
+                # Log the sync for this config
+                _log_ldap_sync(conn, config['id'], 'group_sync', len(config_users), 0, 0, 'success')
+                
+            except Exception as e:
+                sync_results.append({
+                    "config_name": config['name'],
+                    "status": "error",
+                    "message": str(e)
+                })
+                _log_ldap_sync(conn, config['id'], 'group_sync', 0, 0, 0, 'error', str(e))
+        
+        # Now sync users with the database
+        users_created = 0
+        users_removed = 0
+        
+        # Get current users from database
+        current_users = _get_all_users(conn)
+        current_usernames = {user['username'] for user in current_users}
+        
+        # Create new users that are in LDAP but not in database
+        for username in all_ldap_users:
+            if username not in current_usernames:
+                try:
+                    # Create user with a dummy password (they'll authenticate via LDAP)
+                    _create_user(conn, username, "ldap_user", role='user')
+                    users_created += 1
+                except Exception as e:
+                    print(f"Failed to create user {username}: {e}")
+        
+        # Remove users that are in database but not in LDAP
+        for user in current_users:
+            if user['username'] not in all_ldap_users and user['username'] != 'admin':
+                try:
+                    _delete_user(conn, user['id'])
+                    users_removed += 1
+                except Exception as e:
+                    print(f"Failed to remove user {user['username']}: {e}")
+        
+        return {
+            "status": "success",
+            "total_ldap_users": len(all_ldap_users),
+            "users_created": users_created,
+            "users_removed": users_removed,
+            "config_results": sync_results
+        }
+        
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def _extract_username_from_dn(dn: str, user_template: str) -> str:
+    """Extract username from LDAP DN using the user template"""
+    try:
+        # Simple template matching - can be enhanced for more complex patterns
+        if '{username}' in user_template:
+            # For templates like "uid={username},ou=users,dc=example,dc=com"
+            # We need to extract the actual username from the DN
+            # This is a simplified implementation
+            parts = dn.split(',')
+            for part in parts:
+                if '=' in part:
+                    key, value = part.split('=', 1)
+                    if key.strip() in ['uid', 'cn', 'sAMAccountName']:
+                        return value.strip()
+        return None
+    except Exception:
+        return None
+
+def _start_ldap_sync_scheduler(conn: sqlite3.Connection) -> None:
+    """Start the daily LDAP sync scheduler in a background thread"""
+    def sync_worker():
+        while True:
+            try:
+                # Run sync at 2 AM every day
+                current_time = datetime.now()
+                if current_time.hour == 2 and current_time.minute == 0:
+                    print("Starting daily LDAP sync...")
+                    sync_result = _sync_ldap_users(conn)
+                    if sync_result["status"] == "success":
+                        print(f"Daily LDAP sync completed: {sync_result.get('total_ldap_users', 0)} users found, {sync_result.get('users_created', 0)} created, {sync_result.get('users_removed', 0)} removed")
+                    else:
+                        print(f"Daily LDAP sync failed: {sync_result.get('message', 'Unknown error')}")
+                
+                # Sleep for 1 minute to avoid busy waiting
+                time.sleep(60)
+            except Exception as e:
+                print(f"Error in LDAP sync scheduler: {e}")
+                time.sleep(300)  # Sleep for 5 minutes on error
+    
+    if conn:
+        sync_thread = threading.Thread(target=sync_worker, daemon=True)
+        sync_thread.start()
+        print("LDAP sync scheduler started (daily at 2 AM)")
 
 def _assign_admin_privileges(conn: sqlite3.Connection, admin_users: list) -> None:
     """Assign admin privileges to users listed in admin_users configuration"""
@@ -1760,11 +2190,15 @@ class AdminHandler(BaseHandler):
         # Get current WebSocket configuration
         current_websocket_config = get_current_websocket_config()
         
+        # Check if LDAP is enabled
+        ldap_enabled = self.settings.get('ldap_server') is not None
+        
         self.render("admin.html",
                    features=current_features,
                    websocket_config=current_websocket_config,
                    rust_available=RUST_AVAILABLE,
-                   rust_stats=rust_stats)
+                   rust_stats=rust_stats,
+                   ldap_enabled=ldap_enabled)
 
     @tornado.web.authenticated
     def post(self):
@@ -2042,7 +2476,220 @@ class UserDeleteHandler(BaseHandler):
             self.set_status(400)
             self.write("Invalid user ID")
 
+class LDAPConfigHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        """Display LDAP configuration management interface"""
+        if not self.is_admin_user():
+            self.redirect("/admin/login")
+            return
+            
+        configs = []
+        sync_logs = []
+        if DB_CONN is not None:
+            configs = _get_all_ldap_configs(DB_CONN)
+            sync_logs = _get_ldap_sync_logs(DB_CONN, limit=20)
+            
+        self.render("admin_ldap.html", configs=configs, sync_logs=sync_logs)
+
+class LDAPConfigCreateHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        """Show create LDAP configuration form"""
+        if not self.is_admin_user():
+            self.set_status(403)
+            self.write("Forbidden")
+            return
+            
+        self.render("ldap_config_create.html", error=None)
+    
+    @tornado.web.authenticated
+    def post(self):
+        """Create a new LDAP configuration"""
+        if not self.is_admin_user():
+            self.set_status(403)
+            self.write("Forbidden")
+            return
+            
+        if DB_CONN is None:
+            self.render("ldap_config_create.html", error="Database not available")
+            return
+            
+        name = self.get_argument("name", "").strip()
+        server = self.get_argument("server", "").strip()
+        ldap_base_dn = self.get_argument("ldap_base_dn", "").strip()
+        ldap_member_attributes = self.get_argument("ldap_member_attributes", "member").strip()
+        user_template = self.get_argument("user_template", "").strip()
+        
+        # Input validation
+        if not all([name, server, ldap_base_dn, user_template]):
+            self.render("ldap_config_create.html", error="All fields are required")
+            return
+            
+        if len(name) < 3 or len(name) > 50:
+            self.render("ldap_config_create.html", error="Configuration name must be between 3 and 50 characters")
+            return
+            
+        try:
+            _create_ldap_config(DB_CONN, name, server, ldap_base_dn, ldap_member_attributes, user_template)
+            self.redirect("/admin/ldap")
+        except ValueError as e:
+            self.render("ldap_config_create.html", error=str(e))
+        except Exception as e:
+            self.render("ldap_config_create.html", error=f"Error creating configuration: {str(e)}")
+
+class LDAPConfigEditHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self, config_id):
+        """Show edit LDAP configuration form"""
+        if not self.is_admin_user():
+            self.set_status(403)
+            self.write("Forbidden")
+            return
+            
+        if DB_CONN is None:
+            self.set_status(500)
+            self.write("Database not available")
+            return
+            
+        try:
+            config_id = int(config_id)
+            config = _get_ldap_config_by_id(DB_CONN, config_id)
+            
+            if not config:
+                self.set_status(404)
+                self.write("Configuration not found")
+                return
+                
+            self.render("ldap_config_edit.html", config=config, error=None)
+        except ValueError:
+            self.write("Invalid configuration ID")
+    
+    @tornado.web.authenticated
+    def post(self, config_id):
+        """Update LDAP configuration"""
+        if not self.is_admin_user():
+            self.set_status(403)
+            self.write("Forbidden")
+            return
+            
+        if DB_CONN is None:
+            self.set_status(500)
+            self.write("Database not available")
+            return
+            
+        try:
+            config_id = int(config_id)
+            config = _get_ldap_config_by_id(DB_CONN, config_id)
+            
+            if not config:
+                self.set_status(404)
+                self.write("Configuration not found")
+                return
+            
+            name = self.get_argument("name", "").strip()
+            server = self.get_argument("server", "").strip()
+            ldap_base_dn = self.get_argument("ldap_base_dn", "").strip()
+            ldap_member_attributes = self.get_argument("ldap_member_attributes", "member").strip()
+            user_template = self.get_argument("user_template", "").strip()
+            active = self.get_argument("active", "off") == "on"
+            
+            # Input validation
+            if not all([name, server, ldap_base_dn, user_template]):
+                self.render("ldap_config_edit.html", config=config, error="All fields are required")
+                return
+                
+            if len(name) < 3 or len(name) > 50:
+                self.render("ldap_config_edit.html", config=config, error="Configuration name must be between 3 and 50 characters")
+                return
+            
+            # Update configuration
+            if _update_ldap_config(DB_CONN, config_id, 
+                                 name=name, server=server, ldap_base_dn=ldap_base_dn,
+                                 ldap_member_attributes=ldap_member_attributes, 
+                                 user_template=user_template, active=active):
+                self.redirect("/admin/ldap")
+            else:
+                self.render("ldap_config_edit.html", config=config, error="Failed to update configuration")
+                
+        except ValueError:
+            self.write("Invalid configuration ID")
+        except Exception as e:
+            self.render("ldap_config_edit.html", config=config, error=f"Error updating configuration: {str(e)}")
+
+class LDAPConfigDeleteHandler(BaseHandler):
+    @tornado.web.authenticated
+    def post(self):
+        """Delete LDAP configuration"""
+        if not self.is_admin_user():
+            self.set_status(403)
+            self.write("Forbidden")
+            return
+            
+        if DB_CONN is None:
+            self.set_status(500)
+            self.write("Database not available")
+            return
+            
+        try:
+            config_id = int(self.get_argument("config_id", "0"))
+            
+            if config_id <= 0:
+                self.set_status(400)
+                self.write("Invalid configuration ID")
+                return
+                
+            if _delete_ldap_config(DB_CONN, config_id):
+                self.redirect("/admin/ldap")
+            else:
+                self.set_status(404)
+                self.write("Configuration not found")
+                
+        except ValueError:
+            self.set_status(400)
+            self.write("Invalid configuration ID")
+
+class LDAPSyncHandler(BaseHandler):
+    @tornado.web.authenticated
+    def post(self):
+        """Trigger LDAP user synchronization"""
+        if not self.is_admin_user():
+            self.set_status(403)
+            self.write("Forbidden")
+            return
+            
+        if DB_CONN is None:
+            self.set_status(500)
+            self.write("Database not available")
+            return
+        
+        try:
+            sync_result = _sync_ldap_users(DB_CONN)
+            
+            if sync_result["status"] == "success":
+                self.write(json.dumps({
+                    "status": "success",
+                    "message": f"Sync completed. Found {sync_result.get('total_ldap_users', 0)} users, created {sync_result.get('users_created', 0)}, removed {sync_result.get('users_removed', 0)}"
+                }))
+            else:
+                self.set_status(500)
+                self.write(json.dumps({
+                    "status": "error",
+                    "message": sync_result.get("message", "Unknown error")
+                }))
+                
+        except Exception as e:
+            self.set_status(500)
+            self.write(json.dumps({
+                "status": "error",
+                "message": str(e)
+            }))
+
 class ProfileHandler(BaseHandler):
+    def _get_ldap_enabled(self):
+        """Helper method to check if LDAP is enabled"""
+        return self.settings.get('ldap_server') is not None
+    
     @tornado.web.authenticated
     def get(self):
         """Show user profile page"""
@@ -2066,7 +2713,8 @@ class ProfileHandler(BaseHandler):
             self.render("profile.html", 
                        user=None, 
                        error="Profile not available for token-authenticated users.",
-                       success=None)
+                       success=None,
+                       ldap_enabled=self._get_ldap_enabled())
             return
             
         try:
@@ -2076,7 +2724,10 @@ class ProfileHandler(BaseHandler):
                 self.write("User not found")
                 return
                 
-            self.render("profile.html", user=user, error=None, success=None)
+            # Check if LDAP is enabled
+            ldap_enabled = self.settings.get('ldap_server') is not None
+            
+            self.render("profile.html", user=user, error=None, success=None, ldap_enabled=ldap_enabled)
         except Exception as e:
             logging.getLogger(__name__).exception(f"Error loading profile for user {current_user}: {str(e)}")
             self.set_status(500)
@@ -2105,7 +2756,8 @@ class ProfileHandler(BaseHandler):
             self.render("profile.html", 
                        user=None, 
                        error="Profile not available for token-authenticated users.",
-                       success=None)
+                       success=None,
+                       ldap_enabled=self._get_ldap_enabled())
             return
             
         try:
@@ -2121,17 +2773,17 @@ class ProfileHandler(BaseHandler):
             
             # Validate current password first
             if not current_password:
-                self.render("profile.html", user=user, error="Current password is required.", success=None)
+                self.render("profile.html", user=user, error="Current password is required.", success=None, ldap_enabled=self._get_ldap_enabled())
                 return
                 
             if not _verify_password(current_password, user['password_hash']):
-                self.render("profile.html", user=user, error="Current password is incorrect.", success=None)
+                self.render("profile.html", user=user, error="Current password is incorrect.", success=None, ldap_enabled=self._get_ldap_enabled())
                 return
             
             if action == "change_password":
                 # Check if LDAP is enabled - disable password changes for LDAP users
                 if self.settings.get('ldap_server'):
-                    self.render("profile.html", user=user, error="Password changes are not allowed for LDAP users. Please change your password through your LDAP directory.", success=None)
+                    self.render("profile.html", user=user, error="Password changes are not allowed for LDAP users. Please change your password through your LDAP directory.", success=None, ldap_enabled=self._get_ldap_enabled())
                     return
                 
                 new_password = self.get_argument("new_password", "").strip()
@@ -2139,28 +2791,28 @@ class ProfileHandler(BaseHandler):
                 
                 # Input validation
                 if not new_password:
-                    self.render("profile.html", user=user, error="New password is required.", success=None)
+                    self.render("profile.html", user=user, error="New password is required.", success=None, ldap_enabled=self._get_ldap_enabled())
                     return
                     
                 if len(new_password) < 6:
-                    self.render("profile.html", user=user, error="Password must be at least 6 characters.", success=None)
+                    self.render("profile.html", user=user, error="Password must be at least 6 characters.", success=None, ldap_enabled=self._get_ldap_enabled())
                     return
                     
                 if new_password != confirm_password:
-                    self.render("profile.html", user=user, error="New passwords do not match.", success=None)
+                    self.render("profile.html", user=user, error="New passwords do not match.", success=None, ldap_enabled=self._get_ldap_enabled())
                     return
                 
                 # Update password
                 if _update_user(DB_CONN, user['id'], password=new_password):
-                    self.render("profile.html", user=user, error=None, success="Password updated successfully!")
+                    self.render("profile.html", user=user, error=None, success="Password updated successfully!", ldap_enabled=self._get_ldap_enabled())
                 else:
-                    self.render("profile.html", user=user, error="Failed to update password.", success=None)
+                    self.render("profile.html", user=user, error="Failed to update password.", success=None, ldap_enabled=self._get_ldap_enabled())
             else:
-                self.render("profile.html", user=user, error="Invalid action.", success=None)
+                self.render("profile.html", user=user, error="Invalid action.", success=None, ldap_enabled=self._get_ldap_enabled())
                 
         except Exception as e:
             logging.getLogger(__name__).exception(f"Error updating profile for user {current_user}: {str(e)}")
-            self.render("profile.html", user=None, error=f"Error updating profile: {str(e)}", success=None)
+            self.render("profile.html", user=None, error=f"Error updating profile: {str(e)}", success=None, ldap_enabled=self._get_ldap_enabled())
 
 def get_relative_path(path, root):
     if path.startswith(root):
@@ -3028,6 +3680,7 @@ class ShareCreateHandler(BaseHandler):
                 self.write({"error": "No valid files"})
                 return
             sid = secrets.token_urlsafe(24)  # Increase entropy to reduce guessing risk (Priority 2)
+            secret_token = secrets.token_urlsafe(32)  # Generate secret token for secure access
             created = datetime.utcnow().isoformat()
             
             # Ensure database connection
@@ -3047,10 +3700,10 @@ class ShareCreateHandler(BaseHandler):
                     return
             
             # Persist directly to database
-            success = _insert_share(DB_CONN, sid, created, valid_paths, allowed_users if allowed_users else None)
+            success = _insert_share(DB_CONN, sid, created, valid_paths, allowed_users if allowed_users else None, secret_token)
             if success:
                 print(f"Share {sid} created successfully in database")
-                self.write({"id": sid, "url": f"/shared/{sid}"})
+                self.write({"id": sid, "url": f"/shared/{sid}", "secret_token": secret_token})
             else:
                 print(f"Failed to create share {sid} in database")
                 self.set_status(500)
@@ -3123,7 +3776,50 @@ class DebugReloadSharesHandler(BaseHandler):
             db_shares = _get_all_shares(DB_CONN)
             self.write({
                 "message": f"Loaded {len(db_shares)} shares from database",
-                "db_shares_count": len(db_shares)
+                "db_shares_count": len(db_shares),
+                "shares": db_shares
+            })
+        except Exception as e:
+            self.write({"error": str(e)})
+
+class DebugShareHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self, sid):
+        """Debug endpoint to check a specific share"""
+        if not self.is_admin_user():
+            self.set_status(403)
+            self.write({"error": "Admin access required"})
+            return
+
+        if DB_CONN is None:
+            self.write({"error": "Database not available"})
+            return
+
+        try:
+            # Get share details
+            share = _get_share_by_id(DB_CONN, sid)
+            
+            # Get all shares for comparison
+            all_shares = _get_all_shares(DB_CONN)
+            
+            # Get database info
+            cursor = DB_CONN.execute("PRAGMA table_info(shares)")
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            cursor = DB_CONN.execute("SELECT COUNT(*) FROM shares")
+            total_count = cursor.fetchone()[0]
+            
+            cursor = DB_CONN.execute("SELECT id FROM shares")
+            all_ids = [row[0] for row in cursor.fetchall()]
+            
+            self.write({
+                "requested_sid": sid,
+                "share_found": share is not None,
+                "share_data": share,
+                "total_shares": total_count,
+                "all_share_ids": all_ids,
+                "table_columns": columns,
+                "all_shares": all_shares
             })
         except Exception as e:
             self.write({"error": str(e)})
@@ -3326,6 +4022,85 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
             self.set_status(500)
             self.write({"error": str(e)})
 
+class TokenVerificationHandler(tornado.web.RequestHandler):
+    def check_xsrf_cookie(self):
+        # Disable CSRF protection for token verification
+        # This endpoint is meant to be accessed by external users
+        pass
+    
+    def get(self, sid):
+        """Show token verification page"""
+        # Check if share exists
+        if DB_CONN is None:
+            self.set_status(500)
+            self.write("Database connection unavailable")
+            return
+            
+        share = _get_share_by_id(DB_CONN, sid)
+        if not share:
+            # Debug information
+            print(f"DEBUG: Share ID '{sid}' not found in database")
+            print(f"DEBUG: DB_CONN is {'None' if DB_CONN is None else 'available'}")
+            if DB_CONN:
+                try:
+                    # Check if shares table exists and has data
+                    cursor = DB_CONN.execute("SELECT COUNT(*) FROM shares")
+                    count = cursor.fetchone()[0]
+                    print(f"DEBUG: Total shares in database: {count}")
+                    
+                    # List all share IDs for debugging
+                    cursor = DB_CONN.execute("SELECT id FROM shares")
+                    all_ids = [row[0] for row in cursor.fetchall()]
+                    print(f"DEBUG: All share IDs: {all_ids}")
+                except Exception as e:
+                    print(f"DEBUG: Error checking database: {e}")
+            
+            self.set_status(404)
+            self.write("Invalid share link")
+            return
+        
+        self.render("token_verification.html", share_id=sid)
+
+    def post(self, sid):
+        """Verify token and grant access"""
+        if DB_CONN is None:
+            self.set_status(500)
+            self.write({"error": "Database connection unavailable"})
+            return
+            
+        share = _get_share_by_id(DB_CONN, sid)
+        if not share:
+            self.set_status(404)
+            self.write({"error": "Invalid share link"})
+            return
+        
+        try:
+            data = json.loads(self.request.body or b'{}')
+            provided_token = data.get('token', '').strip()
+            stored_token = share.get('secret_token')
+            
+            if not stored_token:
+                # Old share without secret token - allow access
+                self.write({"success": True})
+                return
+                
+            if not provided_token:
+                self.set_status(400)
+                self.write({"error": "Token is required"})
+                return
+                
+            if provided_token != stored_token:
+                self.set_status(403)
+                self.write({"error": "Invalid token"})
+                return
+                
+            # Token is valid
+            self.write({"success": True})
+            
+        except Exception as e:
+            self.set_status(500)
+            self.write({"error": "Server error"})
+
 class SharedListHandler(tornado.web.RequestHandler):
     def get(self, sid):
         # Ensure database connection
@@ -3336,9 +4111,45 @@ class SharedListHandler(tornado.web.RequestHandler):
             
         share = _get_share_by_id(DB_CONN, sid)
         if not share:
+            # Debug information
+            print(f"DEBUG: Share ID '{sid}' not found in database")
+            print(f"DEBUG: DB_CONN is {'None' if DB_CONN is None else 'available'}")
+            if DB_CONN:
+                try:
+                    # Check if shares table exists and has data
+                    cursor = DB_CONN.execute("SELECT COUNT(*) FROM shares")
+                    count = cursor.fetchone()[0]
+                    print(f"DEBUG: Total shares in database: {count}")
+                    
+                    # List all share IDs for debugging
+                    cursor = DB_CONN.execute("SELECT id FROM shares")
+                    all_ids = [row[0] for row in cursor.fetchall()]
+                    print(f"DEBUG: All share IDs: {all_ids}")
+                except Exception as e:
+                    print(f"DEBUG: Error checking database: {e}")
+            
             self.set_status(404)
             self.write("Invalid share link")
             return
+        
+        # Check if share requires token verification
+        secret_token = share.get('secret_token')
+        if secret_token:
+            # Check for Authorization header first
+            auth_header = self.request.headers.get('Authorization', '')
+            provided_token = None
+            
+            if auth_header.startswith('Bearer '):
+                provided_token = auth_header[7:]  # Remove 'Bearer ' prefix
+            else:
+                # Check for cookie as fallback
+                cookie_name = f"share_token_{sid}"
+                provided_token = self.get_cookie(cookie_name)
+            
+            if not provided_token or provided_token != secret_token:
+                # No valid token found, redirect to verification
+                self.redirect(f"/shared/{sid}/verify")
+                return
         
         # Check if share has user restrictions
         allowed_users = share.get('allowed_users')
@@ -3372,9 +4183,45 @@ class SharedFileHandler(tornado.web.RequestHandler):
             
         share = _get_share_by_id(DB_CONN, sid)
         if not share:
+            # Debug information
+            print(f"DEBUG: Share ID '{sid}' not found in database")
+            print(f"DEBUG: DB_CONN is {'None' if DB_CONN is None else 'available'}")
+            if DB_CONN:
+                try:
+                    # Check if shares table exists and has data
+                    cursor = DB_CONN.execute("SELECT COUNT(*) FROM shares")
+                    count = cursor.fetchone()[0]
+                    print(f"DEBUG: Total shares in database: {count}")
+                    
+                    # List all share IDs for debugging
+                    cursor = DB_CONN.execute("SELECT id FROM shares")
+                    all_ids = [row[0] for row in cursor.fetchall()]
+                    print(f"DEBUG: All share IDs: {all_ids}")
+                except Exception as e:
+                    print(f"DEBUG: Error checking database: {e}")
+            
             self.set_status(404)
             self.write("Invalid share link")
             return
+        
+        # Check if share requires token verification
+        secret_token = share.get('secret_token')
+        if secret_token:
+            # Check for Authorization header first
+            auth_header = self.request.headers.get('Authorization', '')
+            provided_token = None
+            
+            if auth_header.startswith('Bearer '):
+                provided_token = auth_header[7:]  # Remove 'Bearer ' prefix
+            else:
+                # Check for cookie as fallback
+                cookie_name = f"share_token_{sid}"
+                provided_token = self.get_cookie(cookie_name)
+            
+            if not provided_token or provided_token != secret_token:
+                # No valid token found, redirect to verification
+                self.redirect(f"/shared/{sid}/verify")
+                return
         
         # Check if share has user restrictions
         allowed_users = share.get('allowed_users')
@@ -3816,7 +4663,8 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None, 
     else:
         login_handler = LoginHandler
 
-    return tornado.web.Application([
+    # Build routes list
+    routes = [
         (r"/", RootHandler),
         (r"/login", login_handler),
         (r"/logout", LogoutHandler),
@@ -3845,12 +4693,26 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None, 
         (r"/share/list", ShareListAPIHandler),
         (r"/share/update", ShareUpdateHandler),
         (r"/debug/reload-shares", DebugReloadSharesHandler),
+        (r"/debug/share/([A-Za-z0-9_\-]+)", DebugShareHandler),
+        (r"/shared/([A-Za-z0-9_\-]+)/verify", TokenVerificationHandler),
         (r"/shared/([A-Za-z0-9_\-]+)", SharedListHandler),
         (r"/shared/([A-Za-z0-9_\-]+)/file/(.*)", SharedFileHandler),
         (r"/search", SuperSearchHandler),
         (r"/search/ws", SuperSearchWebSocketHandler),
         (r"/files/(.*)", MainHandler),
-    ], **settings)
+    ]
+    
+    # Add LDAP routes only if LDAP is enabled
+    if ldap_enabled:
+        routes.extend([
+            (r"/admin/ldap", LDAPConfigHandler),
+            (r"/admin/ldap/create", LDAPConfigCreateHandler),
+            (r"/admin/ldap/edit/([0-9]+)", LDAPConfigEditHandler),
+            (r"/admin/ldap/delete", LDAPConfigDeleteHandler),
+            (r"/admin/ldap/sync", LDAPSyncHandler),
+        ])
+    
+    return tornado.web.Application(routes, **settings)
 
 
 def print_banner():
@@ -3985,6 +4847,9 @@ def main():
         if persisted_flags:
             for k, v in persisted_flags.items():
                 FEATURE_FLAGS[k] = bool(v)
+        
+        # Start LDAP sync scheduler
+        _start_ldap_sync_scheduler(DB_CONN)
         # Database-only persistence for shares
         print(f"Shares are now persisted directly in database")
         

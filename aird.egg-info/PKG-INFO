@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: aird
-Version: 0.4.0
+Version: 0.4.4
 Summary: Aird - A lightweight web-based file browser, editor, and streamer with real-time capabilities
 Home-page: https://github.com/blinkerbit/aird
 Author: Viswantha Srinivas P
@@ -15,6 +15,7 @@ License-File: LICENSE
 Requires-Dist: tornado>=6.5.1
 Requires-Dist: ldap3>=2.9.1
 Requires-Dist: aiofiles>=23.0.0
+Requires-Dist: argon2-cffi>=23.1.0
 Provides-Extra: test
 Requires-Dist: pytest>=8.3.3; extra == "test"
 Requires-Dist: pytest-asyncio>=0.25.0; extra == "test"
@@ -38,13 +39,46 @@ Dynamic: summary
 
 # Aird - A Lightweight Web-Based File Browser, Editor and Share
 
-**v0.4.0** - 🚀 **WebSocket Admin + Super Search + Performance Optimizations!**
+**v0.4.2** - 🎨 **Custom HTML/CSS Popups + Enhanced Share Management + File Browser Navigation!**
 
 A modern, lightweight, and fast web-based file browser, editor, and streamer built with Python and Tornado. It provides a comprehensive file management solution with real-time streaming, in-browser editing, and mobile-responsive design through a clean and intuitive web interface.
 
 Note: Currently using this in conjunction with WireGuard to handle file management and sharing for internal/private cloud.
 
-## 🆕 What's New in v0.4.0
+## 🆕 What's New in v0.4.2
+
+### 🎨 **Custom HTML/CSS Popups (NEW!)**
+- **Modern Dialog System:** Replaced all native browser alerts, confirms, and prompts with custom HTML/CSS modals
+- **Consistent UI/UX:** Beautiful, responsive popups that match the application's design language
+- **Enhanced User Experience:** Better visual feedback with styled buttons, proper spacing, and smooth animations
+- **Cross-browser Compatibility:** Custom popups work consistently across all browsers and devices
+- **Keyboard Support:** Full keyboard navigation with Enter to confirm and Escape to cancel
+- **Accessibility:** Improved accessibility with proper focus management and screen reader support
+
+### 🔗 **Enhanced Share Management (NEW!)**
+- **Dynamic File Management:** Add and remove files from existing shares without recreating them
+- **Interactive File Browser:** Navigate through directories to select additional files for sharing
+- **Real-time Share Updates:** Instantly modify share contents with live preview of changes
+- **Improved Share Modal:** Enhanced share management interface with better organization and controls
+- **File Selection Preview:** See selected files before adding them to shares
+- **Directory Navigation:** Full directory tree navigation within the share management interface
+
+### 🗂️ **Advanced File Browser Navigation (NEW!)**
+- **Full Directory Tree Access:** Navigate through all accessible directories when managing shares
+- **Smart Path Handling:** Proper path construction and navigation for complex directory structures
+- **File Type Recognition:** Enhanced file icons and type detection for better visual organization
+- **Breadcrumb Navigation:** Clear path display showing current location in the directory tree
+- **Error Handling:** Robust error handling with user-friendly messages for navigation issues
+
+### 🛠️ **Backend API Enhancements (NEW!)**
+- **Share Update API:** New endpoint for modifying existing shares with file additions/removals
+- **Database Migration:** Automatic database schema updates for new share management features
+- **Improved Error Handling:** Better error messages and status codes for API operations
+- **Path Validation:** Enhanced security with proper path validation and sanitization
+
+---
+
+## 🆕 What's New in v0.4.1
 
 ### ⚙️ **WebSocket Admin Configuration (NEW!)**
 - **Dynamic Settings:** Adjust WebSocket connection limits and timeouts through admin UI
@@ -59,6 +93,13 @@ Note: Currently using this in conjunction with WireGuard to handle file manageme
 - **Advanced Pattern Matching:** Support for regex patterns and multiple search terms
 - **Path-aware Search:** Automatically filters results based on current directory context
 - **Performance Optimized:** Fast searching even in large codebases using memory-mapped operations
+
+### 🐍 **Enhanced Python File Icons (NEW!)**
+- **Smart Python File Recognition:** Distinctive icons for different Python file types
+- **Source Files (.py, .pyw):** Enhanced snake with gem (🐍💎) indicating precious/valuable source code
+- **Compiled Files (.pyc, .pyo):** Snake with lightning (🐍⚡) representing fast/optimized compiled code
+- **Better Visual Distinction:** Easily differentiate between source and compiled Python files at a glance
+- **Consistent Branding:** Maintains Python's snake identity while adding meaningful visual context
 
 ### ⚡ **Performance & Usability Upgrades**
 - **Direct Executable:** Run with simple `aird` command instead of `python -m aird`
@@ -118,8 +159,12 @@ aird --help
 - **Performance Optimized:** Fast searching even in large codebases using memory-mapped file operations
 - **Interactive Interface:** Click any result to instantly navigate to the file and line
 
-### 🗂️ File Management
+### 📁️ File Management
 - **Smart File Browser:** Navigate through your server's directory structure with resizable columns and mobile-friendly design
+- **Enhanced File Icons:** Intelligent file type recognition with special Python file icons:
+  - **Python Source (\*.py, \*.pyw):** 🐍💎 Snake with gem (precious source code)
+  - **Python Compiled (\*.pyc, \*.pyo):** 🐍⚡ Snake with lightning (optimized/fast)
+  - **50+ File Types:** Comprehensive icon coverage for all common file formats
 - **Advanced File Operations:**
   - Download files with progress indicators and compression support
   - Upload files with drag-and-drop support (can be disabled)
@@ -149,8 +194,11 @@ aird --help
 
 ### 🔐 Security & Authentication
 - **Token-based Authentication:** Secure access with customizable access tokens
-- **LDAP/Active Directory Integration:** Enterprise-grade authentication support
+- **LDAP/Active Directory Integration:** Enterprise-grade authentication support with full LDAP user management
+- **Dual Authentication Modes:** Support for both LDAP and token-based authentication
+- **Secure Session Management:** HTTP-only cookies with CSRF protection and secure session handling
 - **Path Traversal Protection:** Built-in security measures to prevent unauthorized access
+- **Input Validation:** Comprehensive input sanitization and length validation for security
 
 ### ⚙️ Administration
 - **Admin Panel:** Dedicated admin interface to toggle features on the fly
@@ -167,6 +215,9 @@ aird --help
 - **Interactive Results:** Click-to-navigate search results with context highlighting
 - **Keyboard Shortcuts:** Efficient navigation and operations via keyboard
 - **Clean Layout:** Left-aligned file actions, right-aligned streaming controls for better organization
+- **Custom HTML/CSS Popups (NEW!):** Modern dialog system replacing all native browser popups
+- **Enhanced Share Management UI (NEW!):** Improved share management interface with better organization
+- **File Browser Navigation (NEW!):** Full directory tree navigation with breadcrumb display
 
 ## 📖 Usage
 
@@ -186,6 +237,9 @@ aird --port 8000 --token "user-token" --admin-token "admin-token"
 
 # Serve from a specific directory
 aird --root "/path/to/files" --token "your-token"
+
+# Enable SSL/HTTPS
+aird --ssl-cert "/path/to/certificate.crt" --ssl-key "/path/to/private.key" --token "your-token"
 ```
 
 Navigate to `http://localhost:8000` and enter your access token to start browsing files.
@@ -196,13 +250,19 @@ Navigate to `http://localhost:8000` and enter your access token to start browsin
 | --------------- | --------------------------------------------------- | ------------------------------------- |
 | `--port`        | The port to listen on                               | `8000`                                |
 | `--root`        | The root directory to serve files from              | Current directory                     |
-| `--token`       | The token required for user login                   | (auto-generated)                      |
+| `--token`       | The token required for user login (fallback for LDAP) | (auto-generated)                      |
 | `--admin-token` | The token required for admin login                  | (auto-generated)                      |
 | `--hostname`    | Host name for the server, used for display          | (auto-detected)                       |
 | `--config`      | Path to a JSON configuration file                   | `None`                                |
 | `--ldap`        | Enable LDAP authentication                          | `False`                               |
 | `--ldap-server` | The LDAP server address (required if --ldap)        | `None`                                |
 | `--ldap-base-dn`| The base DN for LDAP searches (required if --ldap)  | `None`                                |
+| `--ldap-user-template` | LDAP user template for authentication (required if --ldap) | `None` |
+| `--ldap-filter-template` | LDAP filter template for user search (required if --ldap) | `None` |
+| `--ldap-ssl-cert` | Path to LDAP client SSL certificate file (this feature is in progress, do not use this flag)| `None` |
+| `--ldap-ssl-key` | Path to LDAP client SSL private key file( this feature is in progress, do not use this flag) | `None` |
+| `--ssl-cert` | Path to SSL certificate file for HTTPS | `None` |
+| `--ssl-key` | Path to SSL private key file for HTTPS | `None` |
 
 ### ⚙️ Configuration File
 
@@ -216,15 +276,28 @@ For advanced setups, use a JSON configuration file to define all settings:
   "root_dir": "/path/to/your/files",
   "access_token": "your-secret-token",
   "admin_token": "your-admin-secret-token",
-  "enable_ldap": false,
-  "ldap_server": null,
-  "ldap_base_dn": null,
+  "ldap": false,
+  "ldap_server": "ldap://your.ldap.server:389",
+  "ldap_base_dn": "ou=users,dc=example,dc=com",
+  "ldap_user_template": "uid={username}",
+  "ldap_filter_template": "(&(objectClass=person)(uid={username}))",
+  "ldap_attributes": ["cn", "mail", "memberOf"],
+  "ldap_attribute_map": [
+    {"memberOf": "cn=aird-users,ou=groups,dc=example,dc=com"}
+  ],
+  "ldap_ssl_cert": "/path/to/ldap/client.crt",
+  "ldap_ssl_key": "/path/to/ldap/client.key",
+  "admin_users": ["admin1", "admin2", "john.doe"],
+  "ssl_cert": "/path/to/your/certificate.crt",
+  "ssl_key": "/path/to/your/private.key",
   "feature_flags": {
     "file_upload": true,
     "file_delete": true,
     "file_rename": true,
     "file_download": true,
-    "file_edit": true
+    "file_edit": true,
+    "file_share": true,
+    "super_search": true
   },
   "max_file_size": 10485760,
   "max_readable_file_size": 10485760,
@@ -237,18 +310,469 @@ Run with configuration file:
 aird --config /path/to/config.json
 ```
 
-### 🔐 LDAP Authentication
+### 🔐 LDAP Authentication & Authorization
 
-For enterprise environments, enable LDAP authentication:
+Aird provides comprehensive LDAP/Active Directory integration for enterprise environments with advanced user management capabilities.
 
+#### **LDAP Authentication Features**
+- **Enterprise Integration:** Full LDAP/Active Directory support for corporate environments
+- **Dual Authentication Modes:** LDAP users can authenticate with domain credentials
+- **Fallback Token Support:** Token-based authentication as backup for non-LDAP users
+- **Secure Session Management:** HTTP-only cookies with CSRF protection
+- **User Attribute Mapping:** Advanced LDAP attribute mapping for user authorization
+- **Group-based Authorization:** Support for LDAP group membership validation
+
+#### **LDAP Configuration**
+
+**Command Line Setup:**
 ```bash
-aird --enable-ldap \
-     --ldap-server "ldap://your.ldap.server" \
+# Basic LDAP configuration
+aird --ldap \
+     --ldap-server "ldap://your.ldap.server:389" \
      --ldap-base-dn "ou=users,dc=example,dc=com" \
-     --access-token "fallback-token"
+     --ldap-user-template "uid={username},{ldap_base_dn}" \
+     --ldap-filter-template "(&(objectClass=person)(uid={username}))" \
+     --token "fallback-token"
+
+# With SSL/TLS encryption
+aird --ldap \
+     --ldap-server "ldaps://your.ldap.server:636" \
+     --ldap-base-dn "ou=users,dc=example,dc=com" \
+     --ldap-user-template "uid={username},{ldap_base_dn}" \
+     --ldap-filter-template "(&(objectClass=person)(uid={username}))" \
+     --token "fallback-token"
+
+# With LDAP client certificate authentication
+aird --ldap \
+     --ldap-server "ldaps://your.ldap.server:636" \
+     --ldap-base-dn "ou=users,dc=example,dc=com" \
+     --ldap-user-template "uid={username},{ldap_base_dn}" \
+     --ldap-filter-template "(&(objectClass=person)(uid={username}))" \
+     --ldap-ssl-cert "/path/to/ldap/client.crt" \
+     --ldap-ssl-key "/path/to/ldap/client.key" \
+     --token "fallback-token"
 ```
 
-Users can authenticate with their LDAP credentials, with token authentication as fallback.
+**Configuration File Setup:**
+```json
+{
+  "ldap": true,
+  "ldap_server": "ldap://your.ldap.server:389",
+  "ldap_base_dn": "ou=users,dc=example,dc=com",
+  "ldap_user_template": "uid={username},{ldap_base_dn}",
+  "ldap_filter_template": "(&(objectClass=person)(uid={username}))",
+  "ldap_ssl_cert": "/path/to/ldap/client.crt",
+  "ldap_ssl_key": "/path/to/ldap/client.key",
+  "ldap_attributes": ["cn", "mail", "memberOf"],
+  "ldap_attribute_map": [
+    {"memberOf": "cn=aird-users,ou=groups,dc=example,dc=com"}
+  ],
+  "token": "fallback-token"
+}
+```
+
+#### **LDAP Filter Template Configuration**
+
+The `ldap_filter_template` parameter defines the LDAP search filter used to locate users in the directory. This is a critical component for LDAP authentication as it determines how users are found and validated.
+
+**Key Features:**
+- **Flexible Search Patterns:** Support for complex LDAP filter expressions
+- **Username Substitution:** Use `{username}` placeholder for dynamic user search
+- **Object Class Filtering:** Filter by specific LDAP object classes (person, user, etc.)
+- **Attribute-based Search:** Search by any LDAP attribute (uid, sAMAccountName, cn, etc.)
+
+**Common Filter Templates:**
+
+| LDAP Server Type | Filter Template | Description |
+|------------------|-----------------|-------------|
+| **OpenLDAP** | `(&(objectClass=person)(uid={username}))` | Standard person object with uid attribute |
+| **Active Directory** | `(&(objectClass=user)(sAMAccountName={username}))` | AD user with sAMAccountName |
+| **Generic LDAP** | `(&(objectClass=inetOrgPerson)(uid={username}))` | RFC 2798 inetOrgPerson object |
+| **Custom Schema** | `(&(objectClass=myUser)(myUsername={username}))` | Custom object class and attribute |
+
+**Advanced Filter Examples:**
+```bash
+# Search for active users only
+"(&(objectClass=person)(uid={username})(!(accountStatus=disabled)))"
+
+# Search with multiple attributes
+"(&(objectClass=person)(|(uid={username})(mail={username})))"
+
+# Search with organizational unit filtering
+"(&(objectClass=person)(uid={username})(ou=employees))"
+```
+
+#### **LDAP SSL Client Certificate Authentication**
+
+Aird supports LDAP client certificate authentication for enhanced security. This allows the LDAP client to authenticate using SSL certificates instead of or in addition to username/password authentication.
+
+**Key Features:**
+- **Client Certificate Authentication:** Use SSL certificates for LDAP client authentication
+- **TLS Before Bind:** Secure LDAP communication with TLS encryption
+- **Certificate-based Authentication:** Enhanced security with client certificates
+- **Flexible Configuration:** Support for both command line and configuration file setup
+
+**LDAP SSL Configuration:**
+
+**Command Line Setup:**
+```bash
+# LDAP with client certificate authentication
+aird --ldap \
+     --ldap-server "ldaps://your.ldap.server:636" \
+     --ldap-base-dn "ou=users,dc=example,dc=com" \
+     --ldap-user-template "uid={username},{ldap_base_dn}" \
+     --ldap-filter-template "(&(objectClass=person)(uid={username}))" \
+     --ldap-ssl-cert "/path/to/ldap/client.crt" \
+     --ldap-ssl-key "/path/to/ldap/client.key" \
+     --token "fallback-token"
+```
+
+**Configuration File Setup:**
+```json
+{
+  "ldap": true,
+  "ldap_server": "ldaps://your.ldap.server:636",
+  "ldap_base_dn": "ou=users,dc=example,dc=com",
+  "ldap_user_template": "uid={username},{ldap_base_dn}",
+  "ldap_filter_template": "(&(objectClass=person)(uid={username}))",
+  "ldap_ssl_cert": "/path/to/ldap/client.crt",
+  "ldap_ssl_key": "/path/to/ldap/client.key",
+  "ldap_attributes": ["cn", "mail", "memberOf"],
+  "ldap_attribute_map": [
+    {"memberOf": "cn=aird-users,ou=groups,dc=example,dc=com"}
+  ]
+}
+```
+
+**LDAP SSL Certificate Requirements:**
+- **Certificate Format:** PEM format (.crt, .pem, .cert files)
+- **Private Key Format:** PEM format (.key files)
+- **Certificate Chain:** Include intermediate certificates if required
+- **Key Size:** Minimum 2048-bit RSA or equivalent ECDSA keys
+- **Validity:** Ensure certificates are not expired
+- **LDAP Server Compatibility:** Verify LDAP server supports client certificate authentication
+
+**LDAP SSL Security Features:**
+- **TLS Encryption:** All LDAP communication encrypted with TLS
+- **Client Certificate Authentication:** Enhanced security with certificate-based authentication
+- **Certificate Validation:** Automatic certificate and key file validation
+- **Secure Context:** Uses Python's ssl.create_default_context() for optimal security
+- **Perfect Forward Secrecy:** Modern cipher suites for enhanced security
+
+**LDAP SSL Configuration Examples:**
+
+**Self-Signed Client Certificate:**
+```bash
+# Generate LDAP client certificate (for testing)
+openssl req -newkey rsa:4096 -keyout ldap_client.key -out ldap_client.crt -days 365 -nodes
+
+# Run Aird with LDAP client certificate
+aird --ldap \
+     --ldap-server "ldaps://your.ldap.server:636" \
+     --ldap-ssl-cert "ldap_client.crt" \
+     --ldap-ssl-key "ldap_client.key" \
+     --ldap-base-dn "ou=users,dc=example,dc=com" \
+     --ldap-user-template "uid={username},{ldap_base_dn}" \
+     --ldap-filter-template "(&(objectClass=person)(uid={username}))"
+```
+
+**Production LDAP SSL Configuration:**
+```json
+{
+  "ldap": true,
+  "ldap_server": "ldaps://ldap.company.com:636",
+  "ldap_base_dn": "ou=people,dc=company,dc=com",
+  "ldap_user_template": "uid={username},ou=people,dc=company,dc=com",
+  "ldap_filter_template": "(&(objectClass=person)(uid={username}))",
+  "ldap_ssl_cert": "/etc/ssl/certs/ldap_client.crt",
+  "ldap_ssl_key": "/etc/ssl/private/ldap_client.key",
+  "ldap_attributes": ["cn", "mail", "memberOf"],
+  "ldap_attribute_map": [
+    {"memberOf": "cn=aird-users,ou=groups,dc=company,dc=com"}
+  ]
+}
+```
+
+**LDAP SSL Troubleshooting:**
+
+**Common Issues:**
+- **Certificate Not Found:** Ensure LDAP certificate and key file paths are correct
+- **Permission Denied:** Check file permissions (certificate should be readable, key should be 600)
+- **Invalid Certificate:** Verify certificate format and validity
+- **LDAP Server Rejection:** Ensure LDAP server is configured to accept client certificates
+- **Certificate Mismatch:** Verify certificate is issued for the correct LDAP server
+
+**LDAP SSL Best Practices:**
+- **Use Strong Certificates:** 2048-bit RSA or 256-bit ECDSA minimum
+- **Regular Renewal:** Set up automatic certificate renewal
+- **Secure Storage:** Store private keys securely with restricted permissions
+- **Monitor Expiry:** Set up alerts for certificate expiration
+- **Server Compatibility:** Ensure LDAP server supports client certificate authentication
+- **Certificate Authority:** Use certificates from trusted Certificate Authorities
+
+#### **LDAP User Management**
+- **Automatic User Registration:** LDAP users are automatically added to Aird's database on first login
+- **Seamless Integration:** No manual user creation required - users are created automatically
+- **User Tracking:** Track user login history and activity in Aird's database
+- **Automatic User Discovery:** Users are automatically discovered from LDAP directory
+- **Group Membership Validation:** Validate user access based on LDAP group membership
+- **Attribute-based Authorization:** Use LDAP attributes for fine-grained access control
+- **Real-time User Search:** Live user search functionality for share management
+- **User Profile Integration:** Display LDAP user information in the interface
+
+#### **LDAP Security Features**
+- **Secure Bind Operations:** Encrypted LDAP connections with SSL/TLS support
+- **Input Validation:** Comprehensive validation of LDAP queries and user inputs
+- **Error Handling:** Secure error messages that don't leak sensitive information
+- **Session Security:** Secure cookie handling with proper HTTP-only and SameSite attributes
+- **CSRF Protection:** Built-in CSRF protection for all LDAP-authenticated sessions
+
+#### **LDAP Login Interface**
+When LDAP is enabled, users see a simplified login interface:
+- **Username/Password Fields:** Clean interface for LDAP credentials
+- **Automatic Detection:** System automatically detects LDAP mode
+- **Secure Authentication:** All credentials are validated against LDAP server
+- **Session Management:** Secure session creation upon successful authentication
+
+#### **LDAP Integration Benefits**
+- **Enterprise Ready:** Seamless integration with existing corporate infrastructure
+- **Centralized User Management:** No need to manage separate user accounts
+- **Automatic User Provisioning:** LDAP users are automatically created in Aird on first login
+- **Group-based Access Control:** Leverage existing LDAP groups for authorization
+- **Audit Trail:** Full integration with corporate audit and logging systems
+- **Single Sign-On Ready:** Compatible with SSO solutions and identity providers
+- **Zero Configuration:** No manual user setup required - everything happens automatically
+
+#### **LDAP Troubleshooting & Best Practices**
+
+**Common LDAP Issues:**
+- **Connection Timeouts:** Ensure LDAP server is accessible and firewall rules allow connections
+- **Authentication Failures:** Verify user DN format and base DN configuration
+- **SSL/TLS Issues:** Check certificate validity and SSL/TLS configuration
+- **Group Membership:** Ensure proper LDAP group structure and user membership
+
+**LDAP Best Practices:**
+- **Use SSL/TLS:** Always use `ldaps://` for production environments
+- **Proper DN Structure:** Use consistent organizational unit (OU) structure
+- **Group Management:** Create dedicated groups for Aird users and administrators
+- **Regular Testing:** Test LDAP connectivity and user authentication regularly
+- **Backup Authentication:** Always maintain token-based fallback for emergency access
+
+**LDAP Configuration Examples:**
+
+**Active Directory:**
+```json
+{
+  "ldap": true,
+  "ldap_server": "ldaps://ad.company.com:636",
+  "ldap_base_dn": "dc=company,dc=com",
+  "ldap_user_template": "{username}@company.com",
+  "ldap_filter_template": "(&(objectClass=user)(sAMAccountName={username}))",
+  "ldap_attributes": ["cn", "mail", "memberOf"],
+  "ldap_attribute_map": [
+    {"memberOf": "CN=Aird-Users,OU=Groups,DC=company,DC=com"}
+  ]
+}
+```
+
+**OpenLDAP:**
+```json
+{
+  "ldap": true,
+  "ldap_server": "ldap://ldap.company.com:389",
+  "ldap_base_dn": "ou=people,dc=company,dc=com",
+  "ldap_user_template": "uid={username},ou=people,dc=company,dc=com",
+  "ldap_filter_template": "(&(objectClass=person)(uid={username}))",
+  "ldap_attributes": ["cn", "mail", "memberOf"],
+  "ldap_attribute_map": [
+    {"memberOf": "cn=aird-users,ou=groups,dc=company,dc=com"}
+  ]
+}
+```
+
+### 🔒 SSL/HTTPS Support
+
+Aird supports SSL/HTTPS encryption for secure file access and management. SSL can be configured through command line arguments or configuration files.
+
+#### **SSL Configuration**
+
+**Command Line Setup:**
+```bash
+# Basic SSL configuration
+aird --ssl-cert "/path/to/certificate.crt" --ssl-key "/path/to/private.key"
+
+# SSL with custom port
+aird --port 8443 --ssl-cert "/path/to/certificate.crt" --ssl-key "/path/to/private.key"
+
+# SSL with LDAP authentication
+aird --ldap \
+     --ldap-server "ldaps://your.ldap.server:636" \
+     --ldap-base-dn "ou=users,dc=example,dc=com" \
+     --ldap-user-template "uid={username},{ldap_base_dn}" \
+     --ldap-filter-template "(&(objectClass=person)(uid={username}))" \
+     --ssl-cert "/path/to/certificate.crt" \
+     --ssl-key "/path/to/private.key"
+```
+
+**Configuration File Setup:**
+```json
+{
+  "port": 8443,
+  "ssl_cert": "/path/to/your/certificate.crt",
+  "ssl_key": "/path/to/your/private.key",
+  "token": "your-secret-token"
+}
+```
+
+#### **SSL Certificate Requirements**
+
+- **Certificate Format:** PEM format (.crt, .pem, .cert files)
+- **Private Key Format:** PEM format (.key files)
+- **Certificate Chain:** Include intermediate certificates if required
+- **Key Size:** Minimum 2048-bit RSA or equivalent ECDSA keys
+- **Validity:** Ensure certificates are not expired
+
+#### **SSL Security Features**
+
+- **TLS 1.2+ Support:** Modern TLS protocol support for secure connections
+- **Certificate Validation:** Automatic certificate and key file validation
+- **Secure Context:** Uses Python's ssl.create_default_context() for optimal security
+- **Client Authentication:** Supports client certificate authentication
+- **Perfect Forward Secrecy:** Modern cipher suites for enhanced security
+
+#### **SSL Configuration Examples**
+
+**Self-Signed Certificate:**
+```bash
+# Generate self-signed certificate (for testing)
+openssl req -x509 -newkey rsa:4096 -keyout private.key -out certificate.crt -days 365 -nodes
+
+# Run Aird with self-signed certificate
+aird --ssl-cert "certificate.crt" --ssl-key "private.key"
+```
+
+**Let's Encrypt Certificate:**
+```bash
+# Use Let's Encrypt certificates
+aird --ssl-cert "/etc/letsencrypt/live/yourdomain.com/fullchain.pem" \
+     --ssl-key "/etc/letsencrypt/live/yourdomain.com/privkey.pem"
+```
+
+**Production Configuration:**
+```json
+{
+  "port": 443,
+  "ssl_cert": "/etc/ssl/certs/yourdomain.com.crt",
+  "ssl_key": "/etc/ssl/private/yourdomain.com.key",
+  "hostname": "yourdomain.com",
+  "token": "your-secure-token"
+}
+```
+
+#### **SSL Troubleshooting**
+
+**Common Issues:**
+- **Certificate Not Found:** Ensure certificate and key file paths are correct
+- **Permission Denied:** Check file permissions (certificate should be readable, key should be 600)
+- **Invalid Certificate:** Verify certificate format and validity
+- **Port Conflicts:** Ensure port is not already in use
+
+**SSL Best Practices:**
+- **Use Strong Certificates:** 2048-bit RSA or 256-bit ECDSA minimum
+- **Regular Renewal:** Set up automatic certificate renewal
+- **Secure Storage:** Store private keys securely with restricted permissions
+- **Monitor Expiry:** Set up alerts for certificate expiration
+- **Use Trusted CAs:** Prefer certificates from trusted Certificate Authorities
+
+### 👑 Admin User Management
+
+Aird supports automatic admin privilege assignment through configuration, making it easy to manage administrative access for LDAP and local users.
+
+#### **Admin User Configuration**
+
+**Configuration File Setup:**
+```json
+{
+  "admin_users": ["admin1", "admin2", "john.doe", "jane.smith"],
+  "ldap": true,
+  "ldap_server": "ldaps://your.ldap.server:636",
+  "ldap_base_dn": "ou=users,dc=example,dc=com"
+}
+```
+
+**Key Features:**
+- **Automatic Assignment:** Admin privileges are assigned automatically at startup and during first login
+- **LDAP Integration:** Works seamlessly with LDAP authentication
+- **Dynamic Updates:** Admin privileges are updated when users log in
+- **Flexible Configuration:** Support for both LDAP and local users
+
+#### **How Admin Assignment Works**
+
+**At Startup:**
+- Aird reads the `admin_users` list from configuration
+- Existing users in the database are immediately assigned admin privileges
+- Users not yet in the database are flagged for admin assignment on first login
+
+**During First Login:**
+- New LDAP users are created with admin role if they're in the `admin_users` list
+- Existing users are checked and upgraded to admin if they're in the list
+- All admin assignments are logged for audit purposes
+
+**Admin Privilege Features:**
+- **Full System Access:** Admin users can access the admin panel
+- **User Management:** Create, edit, and delete other users
+- **System Configuration:** Modify feature flags and system settings
+- **WebSocket Management:** Configure connection limits and timeouts
+- **Share Management:** View and manage all file shares
+
+#### **Admin User Examples**
+
+**LDAP Admin Users:**
+```json
+{
+  "ldap": true,
+  "ldap_server": "ldaps://company.com:636",
+  "ldap_base_dn": "ou=people,dc=company,dc=com",
+  "admin_users": ["john.doe", "jane.smith", "admin.user"]
+}
+```
+
+**Mixed Admin Users:**
+```json
+{
+  "ldap": false,
+  "admin_users": ["localadmin", "john.doe", "jane.smith"]
+}
+```
+
+**Enterprise Configuration:**
+```json
+{
+  "ldap": true,
+  "ldap_server": "ldaps://ad.company.com:636",
+  "ldap_base_dn": "dc=company,dc=com",
+  "ldap_user_template": "{username}@company.com",
+  "ldap_filter_template": "(&(objectClass=user)(sAMAccountName={username}))",
+  "admin_users": ["it.admin", "security.team", "john.doe", "jane.smith"]
+}
+```
+
+#### **Admin User Benefits**
+
+- **Centralized Management:** All admin users defined in one configuration
+- **Automatic Provisioning:** No manual admin assignment required
+- **LDAP Integration:** Works with existing LDAP user management
+- **Audit Trail:** All admin assignments are logged
+- **Flexible Updates:** Easy to add or remove admin users
+- **Security:** Admin privileges are managed through configuration
+
+#### **Admin User Best Practices**
+
+- **Regular Review:** Periodically review the admin_users list
+- **Principle of Least Privilege:** Only assign admin to users who need it
+- **Documentation:** Keep track of why users have admin privileges
+- **Testing:** Test admin assignment with new users
+- **Monitoring:** Monitor admin user activity through access logs
 
 ### 🔍 Super Search
 
@@ -280,9 +804,9 @@ The Super Search feature provides powerful, real-time content searching across y
 - Super Search page: `http://localhost:8888/search`
 - Search with preset path: `http://localhost:8888/search?path=/specific/folder`
 
-### 🔗 File Sharing
+### 🔗 Enhanced File Sharing
 
-The file sharing feature allows you to create public, temporary links for files and directories:
+The enhanced file sharing feature allows you to create and manage public, temporary links for files and directories:
 
 1. **Access the Share Page:**
    - Navigate to `/share` after logging in
@@ -301,7 +825,19 @@ The file sharing feature allows you to create public, temporary links for files 
 4. **Manage Active Shares:**
    - View all active shares in the bottom panel
    - Copy existing share links or open them in a new tab
-   - Revoke shares instantly when no longer needed
+   - **NEW:** Click "Manage" to modify existing shares
+
+5. **Enhanced Share Management (NEW!):**
+   - **Add Files:** Click "Add Files" to browse and select additional files for existing shares
+   - **Remove Files:** Click "Remove" next to any file to remove it from the share
+   - **Directory Navigation:** Use the file browser to navigate through all accessible directories
+   - **File Selection Preview:** See selected files before adding them to shares
+   - **Real-time Updates:** Changes apply instantly without recreating the share
+
+6. **Custom Dialog System (NEW!):**
+   - All confirmations and prompts use modern HTML/CSS popups
+   - Consistent UI/UX across all share management operations
+   - Keyboard support with Enter to confirm and Escape to cancel
 
 **Example URLs:**
 - Share page: `http://localhost:8888/share`
@@ -336,6 +872,14 @@ The admin panel provides real-time control over server features and capabilities
    - **Real-time Statistics:** View live connection stats at `/admin/websocket-stats`
    - **Dynamic Configuration:** All settings apply instantly without restart
 
+5. **LDAP User Management (NEW!):**
+   - **User Discovery:** Automatically discover and manage LDAP users
+   - **Group Membership:** View and manage user group memberships
+   - **User Search:** Real-time search functionality for user management
+   - **Access Control:** Configure user permissions based on LDAP groups
+   - **User Profiles:** View and edit user profile information
+   - **Authentication Status:** Monitor user authentication and session status
+
 All changes apply immediately to all connected users via WebSocket updates.
 
 ## 🎯 Key Features in Detail
@@ -362,16 +906,21 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **Real-time file streaming** with progress animations
 - **Keyboard navigation** support
 
-### 🔗 File Sharing System
+### 🔗 Enhanced File Sharing System
 - **Multi-file selection:** Choose multiple files and directories to share in a single link
+- **Dynamic Share Management:** Add and remove files from existing shares without recreating them
+- **Interactive File Browser:** Navigate through directories to select additional files for sharing
+- **Real-time Share Updates:** Instantly modify share contents with live preview of changes
 - **On-the-fly browsing:** Navigate directories dynamically without pre-loading all files
 - **Secure URL generation:** Each share gets a unique, hard-to-guess identifier
 - **Public access:** Shared files can be viewed without authentication
 - **Active share management:** View, copy, and revoke existing shares in real-time
 - **One-click copy:** Copy shareable URLs to clipboard with visual feedback
 - **Temporary access:** All shares are session-based and can be easily revoked
+- **Custom HTML/CSS Popups:** Modern dialog system for all share management operations
 
-### 🚀 Performance Features (New in v0.4.0!)
+### 🚀 Performance Features (New in v0.4.1!)
+- **Enhanced Python File Icons:** Smart visual distinction between source (🐍💎) and compiled (🐍⚡) Python files
 - **Memory-mapped file operations:** Efficient handling of large files (>1MB) using mmap
 - **Enhanced security:** CSRF protection, XSS prevention, improved input validation
 - **Direct executable support:** Run with simple `aird` command instead of `python -m aird`
@@ -379,6 +928,25 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **Async WebSocket streaming** for real-time updates
 - **Configurable buffer sizes** for optimal performance
 - **Memory-efficient** file handling with constant memory usage
+
+### 🛠️ Technical Improvements (New in v0.4.2!)
+- **Database Schema Migration:** Automatic database updates for new share management features
+- **API Endpoint Enhancements:** New `/share/update` endpoint for dynamic share modifications
+- **Path Validation & Security:** Enhanced path handling and validation for file operations
+- **Error Handling Improvements:** Better error messages and status codes throughout the application
+- **Frontend Architecture:** Modular JavaScript functions for better maintainability
+- **Cross-browser Compatibility:** Improved compatibility across different browsers and devices
+- **Accessibility Enhancements:** Better keyboard navigation and screen reader support
+
+### 🐛 Bug Fixes & Improvements (New in v0.4.2!)
+- **Fixed Share Management:** Resolved "Failed to load share details" error in share management modal
+- **Fixed File Browser Navigation:** Corrected directory navigation issues in the Add Files modal
+- **Fixed API Response Handling:** Proper handling of API responses for file listing and share management
+- **Fixed Path Construction:** Corrected path building logic for file and directory operations
+- **Fixed Console Popup Dependencies:** Replaced all native browser popups with custom HTML/CSS modals
+- **Fixed Async Dialog Handling:** Proper async/await handling for all confirmation dialogs
+- **Fixed File Selection State:** Corrected file selection state management in share management
+- **Fixed Error Display:** Improved error message display and user feedback throughout the application
 
 ## 📋 Requirements
 

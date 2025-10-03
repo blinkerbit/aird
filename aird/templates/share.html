@@ -1356,6 +1356,16 @@
             <div><strong>Access:</strong> <span class="${share.allowed_users ? 'restricted' : 'public'}">${accessInfo}</span></div>
             <div><strong>Created:</strong> Just now</div>
             <div><strong>URL:</strong> <a href="${share.url}" target="_blank">${window.location.origin}${share.url}</a></div>
+            ${share.secret_token ? `
+            <div style="margin-top: 15px;">
+              <strong>🔐 Secret Token:</strong><br>
+              <code style="background: #f0f0f0; padding: 4px 8px; border-radius: 3px; font-family: monospace; font-size: 12px; word-break: break-all; display: inline-block; margin: 5px 0;">${share.secret_token}</code>
+              <button class="btn" onclick="copyToClipboard('${share.secret_token}', this)" style="margin-left: 10px; font-size: 11px; padding: 4px 8px;">Copy Token</button>
+              <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 8px; border-radius: 4px; font-size: 11px; color: #856404; margin-top: 8px;">
+                <strong>⚠️ Important:</strong> Users need this token to access the share.
+              </div>
+            </div>
+            ` : ''}
           </div>
 
           <div class="share-info-section">
@@ -1920,6 +1930,14 @@
             <strong>Share link created:</strong><br>
             <a href="${data.url}" target="_blank">${data.url}</a>
             <button class="btn" onclick="copyToClipboard('${fullUrl}', this)" style="margin-left: 10px;">Copy Link</button>
+            <br><br>
+            <strong>🔐 Secret Token:</strong><br>
+            <code style="background: #f0f0f0; padding: 4px 8px; border-radius: 3px; font-family: monospace; font-size: 12px; word-break: break-all;">${data.secret_token}</code>
+            <button class="btn" onclick="copyToClipboard('${data.secret_token}', this)" style="margin-left: 10px;">Copy Token</button>
+            <br><br>
+            <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 4px; font-size: 12px; color: #856404;">
+              <strong>⚠️ Important:</strong> Share this secret token with users who need access. They will need to enter this token to view the shared files.
+            </div>
             ${accessInfo}
           `;
           
@@ -1973,6 +1991,7 @@
             <td>Just now</td>
             <td>
               <button class="btn" onclick="copyToClipboard('${window.location.origin}/shared/${share.id}', this)">Copy Link</button>
+              ${share.secret_token ? `<button class="btn" onclick="copyToClipboard('${share.secret_token}', this)" title="Copy Secret Token">Copy Token</button>` : ''}
               <button class="btn" onclick="openShare('/shared/${share.id}')">Open</button>
               <button class="btn" onclick="manageShare('${share.id}')">Manage</button>
               <button class="btn" onclick="revokeShare('${share.id}')">Revoke</button>
@@ -2101,6 +2120,13 @@
             <div class="share-access ${share.allowed_users ? 'restricted' : 'public'}">
               ${share.allowed_users ? `Restricted (${share.allowed_users.length} user${share.allowed_users.length !== 1 ? 's' : ''})` : 'Public Access'}
             </div>
+            ${share.secret_token ? `
+              <div style="margin: 10px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
+                <strong>🔐 Secret Token:</strong><br>
+                <code style="background: #e9ecef; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 11px; word-break: break-all;">${share.secret_token}</code>
+                <button class="btn" onclick="copyToClipboard('${share.secret_token}', this)" style="margin-left: 8px; font-size: 10px; padding: 2px 6px;">Copy</button>
+              </div>
+            ` : ''}
             ${share.allowed_users ? `
               <div class="share-users">
                 <div class="share-users-title">Allowed Users:</div>
