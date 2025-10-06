@@ -1,12 +1,12 @@
 # Aird - A Lightweight Web-Based File Browser, Editor and Share
 
-**v0.4.4** - 🔐 **Secure File Sharing + Advanced Share Management + Token Security!**
+🔐 **Secure File Sharing + Advanced Share Management + Token Security!**
 
 A modern, lightweight, and fast web-based file browser, editor, and streamer built with Python and Tornado. It provides a comprehensive file management solution with real-time streaming, in-browser editing, and mobile-responsive design through a clean and intuitive web interface.
 
 Note: Currently using this in conjunction with WireGuard to handle file management and sharing for internal/private cloud.
 
-## 🆕 What's New in v0.4.4
+## 🆕 What's New 0.4.5
 
 
 ### 🔐 **Secure File Sharing (NEW!)**
@@ -56,7 +56,7 @@ Note: Currently using this in conjunction with WireGuard to handle file manageme
 - **Debug Endpoints:** Troubleshooting endpoints for share management issues
 - **Enhanced Error Handling:** Better error messages and status codes
 
-## 🆕 What's New in v0.4.2
+## 🆕 Previous Features
 
 ### 🎨 **Custom HTML/CSS Popups (NEW!)**
 - **Modern Dialog System:** Replaced all native browser alerts, confirms, and prompts with custom HTML/CSS modals
@@ -89,7 +89,7 @@ Note: Currently using this in conjunction with WireGuard to handle file manageme
 
 ---
 
-## 🆕 What's New in v0.4.1
+## 🆕 Earlier Features
 
 ### ⚙️ **WebSocket Admin Configuration (NEW!)**
 - **Dynamic Settings:** Adjust WebSocket connection limits and timeouts through admin UI
@@ -845,26 +845,26 @@ The enhanced file sharing feature allows you to create and manage secure, tempor
    - Copy existing share links or open them in a new tab
    - **NEW:** Click "Manage" to modify existing shares with full parameter control
 
-6. **Advanced Share Management (NEW in v0.4.3!):**
+6. **Advanced Share Management:**
    - **Complete Parameter Control:** Modify share type, token settings, file filters, and access controls
    - **Current Settings Display:** See actual share configuration instead of defaults
    - **Visual Indicators:** "← Current" labels show which settings are currently active
    - **Real-time Updates:** Changes apply instantly without recreating the share
    - **Token Management:** Enable/disable tokens, generate new tokens, and manage share security
 
-7. **Secure Share Access (NEW in v0.4.3!):**
+7. **Secure Share Access:**
    - **Token Verification:** Users must enter secret tokens to access protected shares
    - **Session Persistence:** Tokens stored in cookies and Authorization headers
    - **Public Access:** Option to disable token requirement for public sharing
    - **Token Generation:** Cryptographically secure tokens using `secrets` module
 
-8. **File Filtering System (NEW in v0.4.3!):**
+8. **File Filtering System:**
    - **Allow Lists:** Specify which files to include using patterns like `*.pdf`, `documents/**`
    - **Avoid Lists:** Exclude files using patterns like `*.tmp`, `.git/**`, `temp/*`
    - **Priority System:** Avoid lists take priority over allow lists for security
    - **Pattern Examples:** Support for recursive matching with `**` and complex patterns
 
-9. **Dynamic vs Static Shares (NEW in v0.4.3!):**
+9. **Dynamic vs Static Shares:**
    - **Static Shares:** Snapshot of files at creation time - perfect for archival sharing
    - **Dynamic Shares:** Live folder sharing - new files automatically appear in the share
    - **Real-time Updates:** Dynamic shares reflect current folder contents in real-time
@@ -950,7 +950,7 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **Temporary access:** All shares are session-based and can be easily revoked
 - **Custom HTML/CSS Popups:** Modern dialog system for all share management operations
 
-### 🔐 **Secure File Sharing (NEW in v0.4.3!)**
+### 🔐 **Secure File Sharing**
 - **Secret Token Protection:** Generate secure, randomly generated tokens for share access control
 - **Token-based Authentication:** Users must enter secret tokens to access shared files
 - **Public/Private Shares:** Choose between token-protected or public access for shares
@@ -958,7 +958,7 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **Secure URL Generation:** Cryptographically secure share IDs and tokens using `secrets` module
 - **Session Persistence:** Tokens stored in cookies and Authorization headers for seamless access
 
-### 📁 **Advanced Share Management (NEW in v0.4.3!)**
+### 📁 **Advanced Share Management**
 - **Complete Share Parameter Control:** Modify all share settings after creation
 - **Share Type Configuration:** Switch between Static (snapshot) and Dynamic (live folder) shares
 - **File Filtering System:** Advanced allow/avoid list filtering using glob patterns
@@ -966,14 +966,14 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **Visual Share Management:** Intuitive interface showing current settings with visual indicators
 - **Parameter Modification:** Update share type, token settings, file filters, and access controls
 
-### 🎯 **Dynamic vs Static Shares (NEW in v0.4.3!)**
+### 🎯 **Dynamic vs Static Shares**
 - **Static Shares:** Snapshot of files at creation time - perfect for archival sharing
 - **Dynamic Shares:** Live folder sharing - new files automatically appear in the share
 - **Real-time Updates:** Dynamic shares reflect current folder contents in real-time
 - **Flexible Sharing:** Choose the right sharing method for your use case
 - **Automatic File Discovery:** Dynamic shares automatically include new files added to folders
 
-### 🔍 **Advanced File Filtering (NEW in v0.4.3!)**
+### 🔍 **Advanced File Filtering**
 - **Glob Pattern Support:** Use powerful glob patterns for file inclusion/exclusion
 - **Allow Lists:** Specify which files to include using patterns like `*.pdf`, `documents/**`
 - **Avoid Lists:** Exclude files using patterns like `*.tmp`, `.git/**`, `temp/*`
@@ -981,7 +981,7 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **Pattern Examples:** Support for recursive matching with `**` and complex patterns
 - **Real-time Filtering:** Filters apply instantly to both static and dynamic shares
 
-### 🚀 Performance Features (New in v0.4.1!)
+### 🚀 Performance Features
 - **Enhanced Python File Icons:** Smart visual distinction between source (🐍💎) and compiled (🐍⚡) Python files
 - **Memory-mapped file operations:** Efficient handling of large files (>1MB) using mmap
 - **Enhanced security:** CSRF protection, XSS prevention, improved input validation
@@ -991,13 +991,11 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **Configurable buffer sizes** for optimal performance
 - **Memory-efficient** file handling with constant memory usage
 
-### 🛠️ Technical Improvements (New in v0.4.4!)
+### 🛠️ Technical Improvements
 - **HTML Content Rendering:** Fixed HTML entity display in file templates for proper content rendering
 - **Template Security:** Maintained proper escaping for user input while allowing file content to render
 - **File Viewer Enhancement:** HTML content now displays correctly in both view and edit modes
 - **Content Type Support:** Improved support for HTML files and mixed content types
-
-### 🛠️ Technical Improvements (New in v0.4.3!)
 - **Secure Token Management:** Cryptographically secure token generation and validation using `secrets` module
 - **Database Schema Migration:** Automatic database updates for new share management features
 - **API Endpoint Enhancements:** New `/share/update` endpoint for dynamic share modifications
@@ -1010,22 +1008,11 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **Debug Endpoints:** Troubleshooting endpoints for share management issues
 - **Token Security:** Enhanced token storage and validation with session persistence
 
-### 🛠️ Technical Improvements (New in v0.4.2!)
-- **Database Schema Migration:** Automatic database updates for new share management features
-- **API Endpoint Enhancements:** New `/share/update` endpoint for dynamic share modifications
-- **Path Validation & Security:** Enhanced path handling and validation for file operations
-- **Error Handling Improvements:** Better error messages and status codes throughout the application
-- **Frontend Architecture:** Modular JavaScript functions for better maintainability
-- **Cross-browser Compatibility:** Improved compatibility across different browsers and devices
-- **Accessibility Enhancements:** Better keyboard navigation and screen reader support
-
-### 🐛 Bug Fixes & Improvements (New in v0.4.4!)
+### 🐛 Bug Fixes & Improvements
 - **Fixed HTML Entity Display:** HTML entities like `&lt;/a&gt;` now properly render as HTML instead of being displayed as text
 - **Fixed File Content Rendering:** HTML content in files now displays correctly in the file viewer
 - **Fixed Edit Mode HTML:** HTML content properly renders in both view and edit modes
 - **Fixed Template Escaping:** Maintained security for user input while allowing file content to render
-
-### 🐛 Bug Fixes & Improvements (New in v0.4.3!)
 - **Fixed Token Management:** Corrected token enable/disable logic in share management
 - **Fixed Share Parameter Updates:** Resolved database update issues for share parameters
 - **Fixed Current Settings Display:** Share management now shows actual settings instead of defaults
@@ -1034,11 +1021,8 @@ All changes apply immediately to all connected users via WebSocket updates.
 - **Fixed Debug Logging:** Added comprehensive debug logging for troubleshooting
 - **Fixed API Response Handling:** Proper handling of new token generation responses
 - **Fixed Share Management UI:** Improved visual indicators and form pre-population
-
-### 🐛 Bug Fixes & Improvements (New in v0.4.2!)
 - **Fixed Share Management:** Resolved "Failed to load share details" error in share management modal
 - **Fixed File Browser Navigation:** Corrected directory navigation issues in the Add Files modal
-- **Fixed API Response Handling:** Proper handling of API responses for file listing and share management
 - **Fixed Path Construction:** Corrected path building logic for file and directory operations
 - **Fixed Console Popup Dependencies:** Replaced all native browser popups with custom HTML/CSS modals
 - **Fixed Async Dialog Handling:** Proper async/await handling for all confirmation dialogs
@@ -1145,12 +1129,13 @@ If you've benefited from aird, consider:
 
 ## 📄 License
 
-This project is licensed under a **Custom License** that prohibits commercial use without explicit written consent from the author. See the `LICENSE` file for complete details.
+This project is licensed under the **MIT License** - see the `LICENSE` file for complete details.
 
 ### Key License Points:
-- ✅ **Free for personal and non-commercial use**
-- ✅ **Open source for educational purposes**
-- ❌ **Commercial use requires written permission** (usually given for free, but requires written consent.) 
+- ✅ **Free for personal and commercial use**
+- ✅ **Open source and permissive**
+- ✅ **Commercial use allowed without restrictions**
+- ✅ **Modification and distribution allowed**
 - ❌ **No warranty or liability coverage**
 
 ## 🔗 Links

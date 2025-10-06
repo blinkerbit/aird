@@ -631,6 +631,8 @@ def _init_db(conn: sqlite3.Connection) -> None:
         cursor.execute("ALTER TABLE shares ADD COLUMN allow_list TEXT")
     if "avoid_list" not in columns:
         cursor.execute("ALTER TABLE shares ADD COLUMN avoid_list TEXT")
+    if "expiry_date" not in columns:
+        cursor.execute("ALTER TABLE shares ADD COLUMN expiry_date TEXT")
 
     conn.commit()
 
@@ -659,9 +661,9 @@ def _load_shares(conn: sqlite3.Connection) -> dict:
         cursor = conn.execute("PRAGMA table_info(shares)")
         columns = [row[1] for row in cursor.fetchall()]
         
-        if 'allowed_users' in columns and 'secret_token' in columns and 'share_type' in columns and 'allow_list' in columns and 'avoid_list' in columns:
-            rows = conn.execute("SELECT id, created, paths, allowed_users, secret_token, share_type, allow_list, avoid_list FROM shares").fetchall()
-            for sid, created, paths_json, allowed_users_json, secret_token, share_type, allow_list_json, avoid_list_json in rows:
+        if 'allowed_users' in columns and 'secret_token' in columns and 'share_type' in columns and 'allow_list' in columns and 'avoid_list' in columns and 'expiry_date' in columns:
+            rows = conn.execute("SELECT id, created, paths, allowed_users, secret_token, share_type, allow_list, avoid_list, expiry_date FROM shares").fetchall()
+            for sid, created, paths_json, allowed_users_json, secret_token, share_type, allow_list_json, avoid_list_json, expiry_date in rows:
                 try:
                     paths = json.loads(paths_json) if paths_json else []
                 except Exception:
@@ -678,7 +680,7 @@ def _load_shares(conn: sqlite3.Connection) -> dict:
                     avoid_list = json.loads(avoid_list_json) if avoid_list_json else []
                 except Exception:
                     avoid_list = []
-                loaded[sid] = {"paths": paths, "created": created, "allowed_users": allowed_users, "secret_token": secret_token, "share_type": share_type or "static", "allow_list": allow_list, "avoid_list": avoid_list}
+                loaded[sid] = {"paths": paths, "created": created, "allowed_users": allowed_users, "secret_token": secret_token, "share_type": share_type or "static", "allow_list": allow_list, "avoid_list": avoid_list, "expiry_date": expiry_date}
         elif 'allowed_users' in columns and 'secret_token' in columns and 'share_type' in columns:
             rows = conn.execute("SELECT id, created, paths, allowed_users, secret_token, share_type FROM shares").fetchall()
             for sid, created, paths_json, allowed_users_json, secret_token, share_type in rows:
@@ -690,7 +692,7 @@ def _load_shares(conn: sqlite3.Connection) -> dict:
                     allowed_users = json.loads(allowed_users_json) if allowed_users_json else None
                 except Exception:
                     allowed_users = None
-                loaded[sid] = {"paths": paths, "created": created, "allowed_users": allowed_users, "secret_token": secret_token, "share_type": share_type or "static", "allow_list": [], "avoid_list": []}
+                loaded[sid] = {"paths": paths, "created": created, "allowed_users": allowed_users, "secret_token": secret_token, "share_type": share_type or "static", "allow_list": [], "avoid_list": [], "expiry_date": None}
         elif 'allowed_users' in columns and 'secret_token' in columns:
             rows = conn.execute("SELECT id, created, paths, allowed_users, secret_token FROM shares").fetchall()
             for sid, created, paths_json, allowed_users_json, secret_token in rows:
@@ -702,7 +704,7 @@ def _load_shares(conn: sqlite3.Connection) -> dict:
                     allowed_users = json.loads(allowed_users_json) if allowed_users_json else None
                 except Exception:
                     allowed_users = None
-                loaded[sid] = {"paths": paths, "created": created, "allowed_users": allowed_users, "secret_token": secret_token, "share_type": "static", "allow_list": [], "avoid_list": []}
+                loaded[sid] = {"paths": paths, "created": created, "allowed_users": allowed_users, "secret_token": secret_token, "share_type": "static", "allow_list": [], "avoid_list": [], "expiry_date": None}
         elif 'allowed_users' in columns:
             rows = conn.execute("SELECT id, created, paths, allowed_users FROM shares").fetchall()
             for sid, created, paths_json, allowed_users_json in rows:
@@ -714,7 +716,7 @@ def _load_shares(conn: sqlite3.Connection) -> dict:
                     allowed_users = json.loads(allowed_users_json) if allowed_users_json else None
                 except Exception:
                     allowed_users = None
-                loaded[sid] = {"paths": paths, "created": created, "allowed_users": allowed_users, "secret_token": None, "share_type": "static", "allow_list": [], "avoid_list": []}
+                loaded[sid] = {"paths": paths, "created": created, "allowed_users": allowed_users, "secret_token": None, "share_type": "static", "allow_list": [], "avoid_list": [], "expiry_date": None}
         else:
             # Fallback for old schema without allowed_users column
             rows = conn.execute("SELECT id, created, paths FROM shares").fetchall()
@@ -723,7 +725,7 @@ def _load_shares(conn: sqlite3.Connection) -> dict:
                     paths = json.loads(paths_json) if paths_json else []
                 except Exception:
                     paths = []
-                loaded[sid] = {"paths": paths, "created": created, "allowed_users": None, "secret_token": None, "share_type": "static", "allow_list": [], "avoid_list": []}
+                loaded[sid] = {"paths": paths, "created": created, "allowed_users": None, "secret_token": None, "share_type": "static", "allow_list": [], "avoid_list": [], "expiry_date": None}
     except Exception as e:
         print(f"Error loading shares: {e}")
         import traceback
@@ -731,12 +733,12 @@ def _load_shares(conn: sqlite3.Connection) -> dict:
         return {}
     return loaded
 
-def _insert_share(conn: sqlite3.Connection, sid: str, created: str, paths: list[str], allowed_users: list[str] = None, secret_token: str = None, share_type: str = "static", allow_list: list[str] = None, avoid_list: list[str] = None) -> bool:
+def _insert_share(conn: sqlite3.Connection, sid: str, created: str, paths: list[str], allowed_users: list[str] = None, secret_token: str = None, share_type: str = "static", allow_list: list[str] = None, avoid_list: list[str] = None, expiry_date: str = None) -> bool:
     try:
         with conn:
             conn.execute(
-                "REPLACE INTO shares (id, created, paths, allowed_users, secret_token, share_type, allow_list, avoid_list) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (sid, created, json.dumps(paths), json.dumps(allowed_users) if allowed_users else None, secret_token, share_type, json.dumps(allow_list) if allow_list else None, json.dumps(avoid_list) if avoid_list else None),
+                "REPLACE INTO shares (id, created, paths, allowed_users, secret_token, share_type, allow_list, avoid_list, expiry_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (sid, created, json.dumps(paths), json.dumps(allowed_users) if allowed_users else None, secret_token, share_type, json.dumps(allow_list) if allow_list else None, json.dumps(avoid_list) if avoid_list else None, expiry_date),
             )
         return True
     except Exception as e:
@@ -752,7 +754,7 @@ def _delete_share(conn: sqlite3.Connection, sid: str) -> None:
     except Exception:
         pass
 
-def _update_share(conn: sqlite3.Connection, sid: str, share_type: str = None, disable_token: bool = None, allow_list: list = None, avoid_list: list = None,secret_token: str = None, **kwargs) -> bool:
+def _update_share(conn: sqlite3.Connection, sid: str, share_type: str = None, disable_token: bool = None, allow_list: list = None, avoid_list: list = None, secret_token: str = None, expiry_date: str = None, **kwargs) -> bool:
     """Update share information"""
     try:
         updates = []
@@ -781,6 +783,10 @@ def _update_share(conn: sqlite3.Connection, sid: str, share_type: str = None, di
         if avoid_list is not None:
             updates.append("avoid_list = ?")
             values.append(json.dumps(avoid_list) if avoid_list else None)
+        
+        if expiry_date is not None:
+            updates.append("expiry_date = ?")
+            values.append(expiry_date)
 
         # Handle legacy parameters
         valid_fields = ['allowed_users', 'paths']
@@ -866,6 +872,48 @@ def _filter_files_by_patterns(files: list[str], allow_list: list[str] = None, av
     
     return filtered_files
 
+def _is_share_expired(expiry_date: str) -> bool:
+    """Check if a share has expired based on expiry_date using system time"""
+    if not expiry_date:
+        return False
+    
+    try:
+        from datetime import datetime
+        
+        # Parse the expiry date and convert to naive datetime (system time)
+        expiry_datetime = datetime.fromisoformat(expiry_date.replace('Z', ''))
+        
+        # Get current system time (naive datetime)
+        current_datetime = datetime.now()
+        
+        # Simple comparison using system time
+        is_expired = current_datetime > expiry_datetime
+        logging.debug(f"Checking expiry: current={current_datetime}, expiry={expiry_datetime}, expired={is_expired}")
+        return is_expired
+    except Exception as e:
+        logging.error(f"Error checking expiry date {expiry_date}: {e}")
+        return False
+
+def _cleanup_expired_shares(conn: sqlite3.Connection) -> int:
+    """Remove expired shares from the database. Returns the number of shares deleted."""
+    try:
+        from datetime import datetime
+        cursor = conn.execute("SELECT id, expiry_date FROM shares WHERE expiry_date IS NOT NULL")
+        rows = cursor.fetchall()
+        
+        deleted_count = 0
+        for share_id, expiry_date in rows:
+            if _is_share_expired(expiry_date):
+                with conn:
+                    conn.execute("DELETE FROM shares WHERE id = ?", (share_id,))
+                    deleted_count += 1
+                    logging.info(f"Deleted expired share: {share_id}")
+        
+        return deleted_count
+    except Exception as e:
+        logging.error(f"Error cleaning up expired shares: {e}")
+        return 0
+
 def _get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict:
     """Get a single share by ID from database"""
     try:
@@ -877,16 +925,16 @@ def _get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict:
         columns = [row[1] for row in cursor.fetchall()]
         logging.debug(f"Table columns: {columns}")
         
-        if 'secret_token' in columns and 'share_type' in columns and 'allow_list' in columns and 'avoid_list' in columns:
-            logging.debug(f"Using query with all columns")
+        if 'secret_token' in columns and 'share_type' in columns and 'allow_list' in columns and 'avoid_list' in columns and 'expiry_date' in columns:
+            logging.debug(f"Using query with all columns including expiry_date")
             cursor = conn.execute(
-                "SELECT id, created, paths, allowed_users, secret_token, share_type, allow_list, avoid_list FROM shares WHERE id = ?",
+                "SELECT id, created, paths, allowed_users, secret_token, share_type, allow_list, avoid_list, expiry_date FROM shares WHERE id = ?",
                 (sid,)
             )
             row = cursor.fetchone()
             logging.debug(f"Query result: {row}")
             if row:
-                sid, created, paths_json, allowed_users_json, secret_token, share_type, allow_list_json, avoid_list_json = row
+                sid, created, paths_json, allowed_users_json, secret_token, share_type, allow_list_json, avoid_list_json, expiry_date = row
                 result = {
                     "id": sid,
                     "created": created,
@@ -895,7 +943,8 @@ def _get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict:
                     "secret_token": secret_token,
                     "share_type": share_type or "static",
                     "allow_list": json.loads(allow_list_json) if allow_list_json else [],
-                    "avoid_list": json.loads(avoid_list_json) if avoid_list_json else []
+                    "avoid_list": json.loads(avoid_list_json) if avoid_list_json else [],
+                    "expiry_date": expiry_date
                 }
                 logging.debug(f"Returning share data: {result}")
                 return result
@@ -917,7 +966,8 @@ def _get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict:
                     "secret_token": secret_token,
                     "share_type": share_type or "static",
                     "allow_list": [],
-                    "avoid_list": []
+                    "avoid_list": [],
+                    "expiry_date": None
                 }
                 logging.debug(f"Returning share data: {result}")
                 return result
@@ -937,7 +987,10 @@ def _get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict:
                     "paths": json.loads(paths_json) if paths_json else [],
                     "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
                     "secret_token": secret_token,
-                    "share_type": "static"
+                    "share_type": "static",
+                    "allow_list": [],
+                    "avoid_list": [],
+                    "expiry_date": None
                 }
                 logging.debug(f"Returning share data: {result}")
                 return result
@@ -956,7 +1009,11 @@ def _get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict:
                     "created": created,
                     "paths": json.loads(paths_json) if paths_json else [],
                     "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
-                    "secret_token": None
+                    "secret_token": None,
+                    "share_type": "static",
+                    "allow_list": [],
+                    "avoid_list": [],
+                    "expiry_date": None
                 }
                 logging.debug(f"Returning share data: {result}")
                 return result
@@ -3844,6 +3901,7 @@ class ShareCreateHandler(BaseHandler):
             allow_list = data.get('allow_list', [])
             avoid_list = data.get('avoid_list', [])
             disable_token = data.get('disable_token', False)
+            expiry_date = data.get('expiry_date', None)
             
             valid_paths = []
             dynamic_folders = []  # Store folders for dynamic shares
@@ -3905,7 +3963,7 @@ class ShareCreateHandler(BaseHandler):
                     return
             
             # Persist directly to database
-            success = _insert_share(DB_CONN, sid, created, valid_paths, allowed_users if allowed_users else None, secret_token, share_type, allow_list if allow_list else None, avoid_list if avoid_list else None)
+            success = _insert_share(DB_CONN, sid, created, valid_paths, allowed_users if allowed_users else None, secret_token, share_type, allow_list if allow_list else None, avoid_list if avoid_list else None, expiry_date)
             if success:
                 logging.info(f"Share {sid} created successfully in database")
                 response_data = {"id": sid, "url": f"/shared/{sid}"}
@@ -3934,6 +3992,7 @@ class ShareUpdateHandler(BaseHandler):
             disable_token = data.get('disable_token', False)
             allow_list = data.get('allow_list', [])
             avoid_list = data.get('avoid_list', [])
+            expiry_date = data.get('expiry_date', None)
             
             if not share_id:
                 self.set_status(400)
@@ -3962,7 +4021,7 @@ class ShareUpdateHandler(BaseHandler):
             logging.debug(f"  - avoid_list: {avoid_list}")
             logging.debug(f"Database connection: {'available' if DB_CONN else 'None'}")
             
-            success = _update_share(DB_CONN, share_id, share_type, disable_token, allow_list, avoid_list)
+            success = _update_share(DB_CONN, share_id, share_type, disable_token, allow_list, avoid_list, None, expiry_date)
             if success:
                 logging.debug(f"Share {share_id} updated successfully")
                 
@@ -3987,44 +4046,6 @@ class ShareUpdateHandler(BaseHandler):
                 logging.error(f"Failed to update share {share_id}")
                 self.set_status(500)
                 self.write({"error": "Failed to update share"})
-        except Exception as e:
-            self.set_status(500)
-            self.write({"error": str(e)})
-
-class DebugUpdateShareHandler(BaseHandler):
-    @tornado.web.authenticated
-    def post(self):
-        """Debug endpoint to test share update functionality"""
-        try:
-            data = json.loads(self.request.body or b'{}')
-            share_id = data.get('share_id')
-            
-            if not share_id:
-                self.set_status(400)
-                self.write({"error": "Share ID is required"})
-                return
-            
-            global DB_CONN
-            if DB_CONN is None:
-                self.set_status(500)
-                self.write({"error": "Database connection unavailable"})
-                return
-            
-            # Test update with dummy data
-                logging.debug(f"Testing update for share {share_id}")
-            success = _update_share(DB_CONN, share_id, share_type="static", disable_token=True, allow_list=["*.txt"], avoid_list=["*.tmp"])
-            
-            if success:
-                # Verify the update
-                updated_share = _get_share_by_id(DB_CONN, share_id)
-                self.write({
-                    "success": True,
-                    "message": "Debug update completed",
-                    "updated_share": updated_share
-                })
-            else:
-                self.set_status(500)
-                self.write({"error": "Debug update failed"})
         except Exception as e:
             self.set_status(500)
             self.write({"error": str(e)})
@@ -4075,71 +4096,6 @@ class ShareListAPIHandler(BaseHandler):
         # Get all shares from database
         shares = _get_all_shares(DB_CONN)
         self.write({"shares": shares})
-
-class DebugReloadSharesHandler(BaseHandler):
-    @tornado.web.authenticated
-    def get(self):
-        """Debug endpoint to reload shares from database"""
-        if not self.is_admin_user():
-            self.set_status(403)
-            self.write({"error": "Admin access required"})
-            return
-
-        if DB_CONN is None:
-            self.write({"error": "Database not available"})
-            return
-
-        try:
-            db_shares = _get_all_shares(DB_CONN)
-            self.write({
-                "message": f"Loaded {len(db_shares)} shares from database",
-                "db_shares_count": len(db_shares),
-                "shares": db_shares
-            })
-        except Exception as e:
-            self.write({"error": str(e)})
-
-class DebugShareHandler(BaseHandler):
-    @tornado.web.authenticated
-    def get(self, sid):
-        """Debug endpoint to check a specific share"""
-        if not self.is_admin_user():
-            self.set_status(403)
-            self.write({"error": "Admin access required"})
-            return
-
-        if DB_CONN is None:
-            self.write({"error": "Database not available"})
-            return
-
-        try:
-            # Get share details
-            share = _get_share_by_id(DB_CONN, sid)
-            
-            # Get all shares for comparison
-            all_shares = _get_all_shares(DB_CONN)
-            
-            # Get database info
-            cursor = DB_CONN.execute("PRAGMA table_info(shares)")
-            columns = [row[1] for row in cursor.fetchall()]
-            
-            cursor = DB_CONN.execute("SELECT COUNT(*) FROM shares")
-            total_count = cursor.fetchone()[0]
-            
-            cursor = DB_CONN.execute("SELECT id FROM shares")
-            all_ids = [row[0] for row in cursor.fetchall()]
-            
-            self.write({
-                "requested_sid": sid,
-                "share_found": share is not None,
-                "share_data": share,
-                "total_shares": total_count,
-                "all_share_ids": all_ids,
-                "table_columns": columns,
-                "all_shares": all_shares
-            })
-        except Exception as e:
-            self.write({"error": str(e)})
 
 class ShareUpdateHandler(BaseHandler):
     @tornado.web.authenticated
@@ -4354,7 +4310,8 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
                 'secret_token': share.get('secret_token'),
                 'share_type': share.get('share_type', 'static'),
                 'allow_list': share.get('allow_list', []),
-                'avoid_list': share.get('avoid_list', [])
+                'avoid_list': share.get('avoid_list', []),
+                'expiry_date': share.get('expiry_date')
             }
 
             self.write({"share": share_info})
@@ -4367,6 +4324,32 @@ class TokenVerificationHandler(tornado.web.RequestHandler):
         # Disable CSRF protection for token verification
         # This endpoint is meant to be accessed by external users
         pass
+
+class DebugExpiryHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        """Debug endpoint to test expiry functionality using system time"""
+        from datetime import datetime
+        
+        # Get current system time
+        now_system = datetime.now()
+        
+        # Test with a sample expiry date (system time format)
+        test_expiry = "2024-12-31T23:59:59"
+        is_expired = _is_share_expired(test_expiry)
+        
+        # Test with a past date
+        past_expiry = "2020-01-01T00:00:00"
+        past_expired = _is_share_expired(past_expiry)
+        
+        self.write({
+            "current_system_time": now_system.isoformat(),
+            "test_expiry": test_expiry,
+            "is_expired": is_expired,
+            "past_expiry": past_expiry,
+            "past_expired": past_expired,
+            "note": "All times are in system timezone (no UTC conversion)"
+        })
     
     def get(self, sid):
         """Show token verification page"""
@@ -4470,6 +4453,13 @@ class SharedListHandler(tornado.web.RequestHandler):
             
             self.set_status(404)
             self.write("Invalid share link")
+            return
+        
+        # Check if share has expired
+        expiry_date = share.get('expiry_date')
+        if _is_share_expired(expiry_date):
+            self.set_status(410)  # Gone
+            self.write("This share has expired")
             return
         
         # Check if share requires token verification
@@ -4579,6 +4569,13 @@ class SharedFileHandler(tornado.web.RequestHandler):
             
             self.set_status(404)
             self.write("Invalid share link")
+            return
+        
+        # Check if share has expired
+        expiry_date = share.get('expiry_date')
+        if _is_share_expired(expiry_date):
+            self.set_status(410)  # Gone
+            self.write("This share has expired")
             return
         
         # Check if share requires token verification
@@ -5104,10 +5101,8 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None, 
         (r"/share/revoke", ShareRevokeHandler),
         (r"/share/list", ShareListAPIHandler),
         (r"/share/update", ShareUpdateHandler),
-        (r"/debug/reload-shares", DebugReloadSharesHandler),
-        (r"/debug/share/([A-Za-z0-9_\-]+)", DebugShareHandler),
-        (r"/debug/update-share", DebugUpdateShareHandler),
         (r"/shared/([A-Za-z0-9_\-]+)/verify", TokenVerificationHandler),
+        (r"/debug/expiry", DebugExpiryHandler),
         (r"/shared/([A-Za-z0-9_\-]+)", SharedListHandler),
         (r"/shared/([A-Za-z0-9_\-]+)/file/(.*)", SharedFileHandler),
         (r"/search", SuperSearchHandler),
@@ -5322,6 +5317,20 @@ def main():
                 print(f"Serving HTTP on 0.0.0.0 port {port} (http://0.0.0.0:{port}/) ...")
                 print(f"http://{host_name}:{port}/")
 
+            # Setup periodic cleanup of expired shares
+            def cleanup_expired_shares_periodic():
+                """Periodic task to cleanup expired shares"""
+                global DB_CONN
+                if DB_CONN:
+                    deleted = _cleanup_expired_shares(DB_CONN)
+                    if deleted > 0:
+                        logging.info(f"Cleaned up {deleted} expired share(s)")
+                # Schedule next cleanup in 1 hour (3600 seconds)
+                tornado.ioloop.IOLoop.current().call_later(3600, cleanup_expired_shares_periodic)
+            
+            # Start cleanup in 1 hour
+            tornado.ioloop.IOLoop.current().call_later(3600, cleanup_expired_shares_periodic)
+            
             tornado.ioloop.IOLoop.current().start()
             break
         except OSError:

@@ -12,6 +12,7 @@ aird.egg-info/not-zip-safe
 aird.egg-info/requires.txt
 aird.egg-info/top_level.txt
 aird/templates/admin.html
+aird/templates/admin_ldap.html
 aird/templates/admin_login.html
 aird/templates/admin_users.html
 aird/templates/browse.html
@@ -19,11 +20,14 @@ aird/templates/directory.html
 aird/templates/edit.html
 aird/templates/error.html
 aird/templates/file.html
+aird/templates/ldap_config_create.html
+aird/templates/ldap_config_edit.html
 aird/templates/login.html
 aird/templates/profile.html
 aird/templates/share.html
 aird/templates/shared_list.html
 aird/templates/super_search.html
+aird/templates/token_verification.html
 aird/templates/user_create.html
 aird/templates/user_edit.html
 tests/__init__.py

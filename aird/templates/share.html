@@ -971,6 +971,26 @@
         </div>
       </div>
       
+      <!-- Expiry Date -->
+      <div style="margin: 15px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa;">
+        <div style="margin-bottom: 10px;">
+          <strong>Expiry Date (Optional):</strong>
+        </div>
+        <div style="margin-bottom: 10px;">
+          <label style="display: block; margin-bottom: 5px; font-size: 12px;">
+            <strong>Share Expires On:</strong>
+          </label>
+          <input type="datetime-local" id="expiryDate" 
+                 style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px;">
+          <div style="font-size: 11px; color: #666; margin-top: 3px;">
+            Leave empty for no expiration. The share will automatically become inaccessible after this date/time.
+          </div>
+        </div>
+        <div style="margin-top: 8px; padding: 8px; background: #fff3cd; border-radius: 3px; font-size: 12px; color: #856404;">
+          <strong>⏰ Note:</strong> After expiration, users will receive a "share has expired" message when attempting to access it.
+        </div>
+      </div>
+      
       <!-- File Filtering -->
       <div style="margin: 15px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa;">
         <div style="margin-bottom: 10px;">
@@ -1507,6 +1527,21 @@
             </div>
           </div>
 
+          <!-- Expiry Date -->
+          <div class="share-info-section">
+            <h3>Expiry Date</h3>
+            <div style="margin-bottom: 10px;">
+              <label style="display: block; margin-bottom: 5px; font-size: 12px;">
+                <strong>Share Expires On:</strong>
+              </label>
+              <input type="datetime-local" id="expiryDateEdit" value="${share.expiry_date ? new Date(share.expiry_date).toISOString().slice(0, 16) : ''}"
+                     style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px;">
+              <div style="font-size: 11px; color: #666; margin-top: 3px;">
+                Leave empty for no expiration. Current: ${share.expiry_date ? `<strong>${new Date(share.expiry_date).toLocaleString()}</strong>` : '<strong>No expiration</strong>'}
+              </div>
+            </div>
+          </div>
+
           <!-- File Filtering -->
           <div class="share-info-section">
             <h3>File Filtering</h3>
@@ -1621,6 +1656,10 @@
           
           const allowList = allowListText ? allowListText.split(',').map(s => s.trim()).filter(s => s) : [];
           const avoidList = avoidListText ? avoidListText.split(',').map(s => s.trim()).filter(s => s) : [];
+          
+          // Get expiry date (store as system time)
+          const expiryDateInput = document.getElementById('expiryDateEdit').value;
+          const expiryDate = expiryDateInput ? new Date(expiryDateInput).toISOString().replace('Z', '') : null;
 
           console.log('Updating share with values:', {
             share_id: currentShareData.id,
@@ -1629,7 +1668,8 @@
             disableToken_checked: disableToken,
             enableToken_checked: enableToken,
             allow_list: allowList,
-            avoid_list: avoidList
+            avoid_list: avoidList,
+            expiry_date: expiryDate
           });
 
           const response = await fetch('/share/update', {
@@ -1643,7 +1683,8 @@
               share_type: shareType,
               disable_token: tokenDisabled,
               allow_list: allowList,
-              avoid_list: avoidList
+              avoid_list: avoidList,
+              expiry_date: expiryDate
             })
           });
 
@@ -2196,6 +2237,10 @@
         const avoidListText = document.getElementById('avoidList').value.trim();
         const allowList = allowListText ? allowListText.split(',').map(s => s.trim()).filter(s => s) : [];
         const avoidList = avoidListText ? avoidListText.split(',').map(s => s.trim()).filter(s => s) : [];
+        
+        // Get expiry date (store as system time)
+        const expiryDateInput = document.getElementById('expiryDate').value;
+        const expiryDate = expiryDateInput ? new Date(expiryDateInput).toISOString().replace('Z', '') : null;
 
         const response = await fetch('/share/create', {
           method: 'POST',
@@ -2209,7 +2254,8 @@
             share_type: shareType,
             allow_list: allowList,
             avoid_list: avoidList,
-            disable_token: disableToken
+            disable_token: disableToken,
+            expiry_date: expiryDate
           })
         });
 
