@@ -2421,7 +2421,7 @@ class AdminHandler(BaseHandler):
     def post(self):
         if not self.is_admin_user():
             self.set_status(403)
-            self.write("Forbidden")
+            self.write("Access denied: You don't have permission to perform this action")
             return
         
         FEATURE_FLAGS["file_upload"] = self.get_argument("file_upload", "off") == "on"
@@ -2468,7 +2468,7 @@ class WebSocketStatsHandler(BaseHandler):
         """Return WebSocket connection statistics"""
         if not self.is_admin_user():
             self.set_status(403)
-            self.write("Forbidden")
+            self.write("Access denied: You don't have permission to perform this action")
             return
             
         stats = {
@@ -2501,7 +2501,7 @@ class UserCreateHandler(BaseHandler):
         """Show create user form"""
         if not self.is_admin_user():
             self.set_status(403)
-            self.write("Forbidden")
+            self.write("Access denied: You don't have permission to perform this action")
             return
             
         self.render("user_create.html", error=None)
@@ -2511,7 +2511,7 @@ class UserCreateHandler(BaseHandler):
         """Create a new user"""
         if not self.is_admin_user():
             self.set_status(403)
-            self.write("Forbidden")
+            self.write("Access denied: You don't have permission to perform this action")
             return
             
         if DB_CONN is None:
@@ -2559,12 +2559,12 @@ class UserEditHandler(BaseHandler):
         """Show edit user form"""
         if not self.is_admin_user():
             self.set_status(403)
-            self.write("Forbidden")
+            self.write("Access denied: You don't have permission to perform this action")
             return
             
         if DB_CONN is None:
             self.set_status(500)
-            self.write("Database not available")
+            self.write("Service temporarily unavailable: Database connection error")
             return
             
         try:
@@ -2575,25 +2575,25 @@ class UserEditHandler(BaseHandler):
             
             if not user:
                 self.set_status(404)
-                self.write("User not found")
+                self.write("User not found: The requested user does not exist")
                 return
                 
             self.render("user_edit.html", user=user, error=None)
         except ValueError:
             self.set_status(400)
-            self.write("Invalid user ID")
+            self.write("Invalid request: Please provide a valid user ID")
     
     @tornado.web.authenticated
     def post(self, user_id):
         """Update user information"""
         if not self.is_admin_user():
             self.set_status(403)
-            self.write("Forbidden")
+            self.write("Access denied: You don't have permission to perform this action")
             return
             
         if DB_CONN is None:
             self.set_status(500)
-            self.write("Database not available")
+            self.write("Service temporarily unavailable: Database connection error")
             return
             
         try:
@@ -2604,7 +2604,7 @@ class UserEditHandler(BaseHandler):
             
             if not user:
                 self.set_status(404)
-                self.write("User not found")
+                self.write("User not found: The requested user does not exist")
                 return
             
             username = self.get_argument("username", "").strip()
@@ -2657,7 +2657,7 @@ class UserEditHandler(BaseHandler):
                 
         except ValueError:
             self.set_status(400)
-            self.write("Invalid user ID")
+            self.write("Invalid request: Please provide a valid user ID")
         except Exception as e:
             self.render("user_edit.html", user=user, error=f"Error updating user: {str(e)}")
 
@@ -2667,12 +2667,12 @@ class UserDeleteHandler(BaseHandler):
         """Delete a user"""
         if not self.is_admin_user():
             self.set_status(403)
-            self.write("Forbidden")
+            self.write("Access denied: You don't have permission to perform this action")
             return
             
         if DB_CONN is None:
             self.set_status(500)
-            self.write("Database not available")
+            self.write("Service temporarily unavailable: Database connection error")
             return
             
         try:
@@ -2687,11 +2687,11 @@ class UserDeleteHandler(BaseHandler):
                 self.redirect("/admin/users")
             else:
                 self.set_status(404)
-                self.write("User not found")
+                self.write("User not found: The requested user does not exist")
                 
         except ValueError:
             self.set_status(400)
-            self.write("Invalid user ID")
+            self.write("Invalid request: Please provide a valid user ID")
 
 class LDAPConfigHandler(BaseHandler):
     @tornado.web.authenticated
@@ -2715,7 +2715,7 @@ class LDAPConfigCreateHandler(BaseHandler):
         """Show create LDAP configuration form"""
         if not self.is_admin_user():
             self.set_status(403)
-            self.write("Forbidden")
+            self.write("Access denied: You don't have permission to perform this action")
             return
             
         self.render("ldap_config_create.html", error=None)
@@ -2725,7 +2725,7 @@ class LDAPConfigCreateHandler(BaseHandler):
         """Create a new LDAP configuration"""
         if not self.is_admin_user():
             self.set_status(403)
-            self.write("Forbidden")
+            self.write("Access denied: You don't have permission to perform this action")
             return
             
         if DB_CONN is None:
@@ -2761,12 +2761,12 @@ class LDAPConfigEditHandler(BaseHandler):
         """Show edit LDAP configuration form"""
         if not self.is_admin_user():
             self.set_status(403)
-            self.write("Forbidden")
+            self.write("Access denied: You don't have permission to perform this action")
             return
             
         if DB_CONN is None:
             self.set_status(500)
-            self.write("Database not available")
+            self.write("Service temporarily unavailable: Database connection error")
             return
             
         try:
@@ -2775,24 +2775,24 @@ class LDAPConfigEditHandler(BaseHandler):
             
             if not config:
                 self.set_status(404)
-                self.write("Configuration not found")
+                self.write("Configuration not found: The requested configuration does not exist")
                 return
                 
             self.render("ldap_config_edit.html", config=config, error=None)
         except ValueError:
-            self.write("Invalid configuration ID")
+            self.write("Invalid request: Please provide a valid configuration ID")
     
     @tornado.web.authenticated
     def post(self, config_id):
         """Update LDAP configuration"""
         if not self.is_admin_user():
             self.set_status(403)
-            self.write("Forbidden")
+            self.write("Access denied: You don't have permission to perform this action")
             return
             
         if DB_CONN is None:
             self.set_status(500)
-            self.write("Database not available")
+            self.write("Service temporarily unavailable: Database connection error")
             return
             
         try:
@@ -2801,7 +2801,7 @@ class LDAPConfigEditHandler(BaseHandler):
             
             if not config:
                 self.set_status(404)
-                self.write("Configuration not found")
+                self.write("Configuration not found: The requested configuration does not exist")
                 return
             
             name = self.get_argument("name", "").strip()
@@ -2830,7 +2830,7 @@ class LDAPConfigEditHandler(BaseHandler):
                 self.render("ldap_config_edit.html", config=config, error="Failed to update configuration")
                 
         except ValueError:
-            self.write("Invalid configuration ID")
+            self.write("Invalid request: Please provide a valid configuration ID")
         except Exception as e:
             self.render("ldap_config_edit.html", config=config, error=f"Error updating configuration: {str(e)}")
 
@@ -2840,12 +2840,12 @@ class LDAPConfigDeleteHandler(BaseHandler):
         """Delete LDAP configuration"""
         if not self.is_admin_user():
             self.set_status(403)
-            self.write("Forbidden")
+            self.write("Access denied: You don't have permission to perform this action")
             return
             
         if DB_CONN is None:
             self.set_status(500)
-            self.write("Database not available")
+            self.write("Service temporarily unavailable: Database connection error")
             return
             
         try:
@@ -2853,18 +2853,18 @@ class LDAPConfigDeleteHandler(BaseHandler):
             
             if config_id <= 0:
                 self.set_status(400)
-                self.write("Invalid configuration ID")
+                self.write("Invalid request: Please provide a valid configuration ID")
                 return
                 
             if _delete_ldap_config(DB_CONN, config_id):
                 self.redirect("/admin/ldap")
             else:
                 self.set_status(404)
-                self.write("Configuration not found")
+                self.write("Configuration not found: The requested configuration does not exist")
                 
         except ValueError:
             self.set_status(400)
-            self.write("Invalid configuration ID")
+            self.write("Invalid request: Please provide a valid configuration ID")
 
 class LDAPSyncHandler(BaseHandler):
     @tornado.web.authenticated
@@ -2872,12 +2872,12 @@ class LDAPSyncHandler(BaseHandler):
         """Trigger LDAP user synchronization"""
         if not self.is_admin_user():
             self.set_status(403)
-            self.write("Forbidden")
+            self.write("Access denied: You don't have permission to perform this action")
             return
             
         if DB_CONN is None:
             self.set_status(500)
-            self.write("Database not available")
+            self.write("Service temporarily unavailable: Database connection error")
             return
         
         try:
@@ -2912,7 +2912,7 @@ class ProfileHandler(BaseHandler):
         """Show user profile page"""
         if DB_CONN is None:
             self.set_status(500)
-            self.write("Database not available")
+            self.write("Service temporarily unavailable: Database connection error")
             return
             
         # Get current user info
@@ -2938,7 +2938,7 @@ class ProfileHandler(BaseHandler):
             user = _get_user_by_username(DB_CONN, current_user)
             if not user:
                 self.set_status(404)
-                self.write("User not found")
+                self.write("User not found: The requested user does not exist")
                 return
                 
             # Check if LDAP is enabled
@@ -2948,14 +2948,14 @@ class ProfileHandler(BaseHandler):
         except Exception as e:
             logging.getLogger(__name__).exception(f"Error loading profile for user {current_user}: {str(e)}")
             self.set_status(500)
-            self.write("Error loading profile")
+            self.write("Profile error: Unable to load user profile information")
     
     @tornado.web.authenticated
     def post(self):
         """Update user profile"""
         if DB_CONN is None:
             self.set_status(500)
-            self.write("Database not available")
+            self.write("Service temporarily unavailable: Database connection error")
             return
             
         # Get current user info
@@ -2981,7 +2981,7 @@ class ProfileHandler(BaseHandler):
             user = _get_user_by_username(DB_CONN, current_user)
             if not user:
                 self.set_status(404)
-                self.write("User not found")
+                self.write("User not found: The requested user does not exist")
                 return
             
             # Get form data
@@ -3043,7 +3043,7 @@ class MainHandler(BaseHandler):
 
         if not is_within_root(abspath, ROOT_DIR):
             self.set_status(403)
-            self.write("Forbidden")
+            self.write("Access denied: You don't have permission to perform this action")
             return
 
         if os.path.isdir(abspath):
@@ -3089,7 +3089,7 @@ class MainHandler(BaseHandler):
             if self.get_argument('download', None):
                 if not FEATURE_FLAGS.get("file_download", True):
                     self.set_status(403)
-                    self.write("File download is disabled.")
+                    self.write("Feature disabled: File download is currently disabled by administrator")
                     return
 
                 self.set_header('Content-Disposition', f'attachment; filename="{filename}"')
@@ -3343,7 +3343,7 @@ class MainHandler(BaseHandler):
                       reached_EOF=reached_EOF)
         else:
             self.set_status(404)
-            self.write("File not found")
+            self.write("File not found: The requested file may have been moved or deleted")
 
 
 class FileStreamHandler(tornado.websocket.WebSocketHandler):
@@ -3521,7 +3521,7 @@ class UploadHandler(BaseHandler):
         # If uploads disabled, return now
         if not is_feature_enabled("file_upload", True):
             self.set_status(403)
-            self.write("File upload is disabled.")
+            self.write("Feature disabled: File upload is currently disabled by administrator")
             return
 
         # If we rejected in prepare (bad/missing headers), report
@@ -3547,40 +3547,40 @@ class UploadHandler(BaseHandler):
         # Enforce size limit
         if self._too_large:
             self.set_status(413)
-            self.write("File too large")
+            self.write("File too large: Please choose a file smaller than 512 MB")
             return
 
         # Enhanced path validation
         safe_dir_abs = os.path.realpath(os.path.join(ROOT_DIR, self.upload_dir.strip("/")))
         if not is_within_root(safe_dir_abs, ROOT_DIR):
             self.set_status(403)
-            self.write("Forbidden path")
+            self.write("Access denied: This path is not allowed for security reasons")
             return
 
         # Validate filename more strictly
         safe_filename = os.path.basename(self.filename)
         if not safe_filename or safe_filename in ['.', '..']:
             self.set_status(400)
-            self.write("Invalid filename")
+            self.write("Invalid filename: Please use a valid filename without special characters")
             return
             
         # Enforce allowed extensions (whitelist)
         file_ext = os.path.splitext(safe_filename)[1].lower()
         if file_ext not in ALLOWED_UPLOAD_EXTENSIONS:
             self.set_status(415)
-            self.write("Unsupported file type")
+            self.write("Unsupported file type: This file type is not allowed for upload")
             return
             
         # Validate filename length
         if len(safe_filename) > 255:
             self.set_status(400)
-            self.write("Filename too long")
+            self.write("Filename too long: Please use a shorter filename")
             return
 
         final_path_abs = os.path.realpath(os.path.join(safe_dir_abs, safe_filename))
         if not is_within_root(final_path_abs, safe_dir_abs):
             self.set_status(403)
-            self.write("Forbidden path")
+            self.write("Access denied: This path is not allowed for security reasons")
             return
 
         os.makedirs(os.path.dirname(final_path_abs), exist_ok=True)
@@ -3613,7 +3613,7 @@ class DeleteHandler(BaseHandler):
     def post(self):
         if not is_feature_enabled("file_delete", True):
             self.set_status(403)
-            self.write("File delete is disabled.")
+            self.write("Feature disabled: File deletion is currently disabled by administrator")
             return
 
         path = self.get_argument("path", "")
@@ -3621,7 +3621,7 @@ class DeleteHandler(BaseHandler):
         root = ROOT_DIR
         if not is_within_root(abspath, root):
             self.set_status(403)
-            self.write("Forbidden")
+            self.write("Access denied: You don't have permission to perform this action")
             return
         if os.path.isdir(abspath):
             shutil.rmtree(abspath)
@@ -3635,7 +3635,7 @@ class RenameHandler(BaseHandler):
     def post(self):
         if not is_feature_enabled("file_rename", True):
             self.set_status(403)
-            self.write("File rename is disabled.")
+            self.write("Feature disabled: File renaming is currently disabled by administrator")
             return
 
         path = self.get_argument("path", "").strip()
@@ -3644,18 +3644,18 @@ class RenameHandler(BaseHandler):
         # Input validation
         if not path or not new_name:
             self.set_status(400)
-            self.write("Path and new name are required.")
+            self.write("Invalid request: Both file path and new name are required")
             return
             
         # Validate new filename
         if new_name in ['.', '..'] or '/' in new_name or '\\' in new_name:
             self.set_status(400)
-            self.write("Invalid filename.")
+            self.write("Invalid filename: Please use a valid filename without special characters")
             return
             
         if len(new_name) > 255:
             self.set_status(400)
-            self.write("Filename too long.")
+            self.write("Filename too long: Please use a shorter filename")
             return
         
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
@@ -3663,19 +3663,19 @@ class RenameHandler(BaseHandler):
         root = ROOT_DIR
         if not (is_within_root(abspath, root) and is_within_root(new_abspath, root)):
             self.set_status(403)
-            self.write("Forbidden")
+            self.write("Access denied: You don't have permission to perform this action")
             return
             
         if not os.path.exists(abspath):
             self.set_status(404)
-            self.write("File not found")
+            self.write("File not found: The requested file may have been moved or deleted")
             return
             
         try:
             os.rename(abspath, new_abspath)
         except OSError:
             self.set_status(500)
-            self.write("Rename failed")
+            self.write("Operation failed: Unable to rename the file")
             return
             
         parent = os.path.dirname(path)
@@ -3687,7 +3687,7 @@ class EditHandler(BaseHandler):
     def post(self):
         if not is_feature_enabled("file_edit", True):
             self.set_status(403)
-            self.write("File editing is disabled.")
+            self.write("Feature disabled: File editing is currently disabled by administrator")
             return
 
         # Accept both JSON and form-encoded bodies
@@ -3701,7 +3701,7 @@ class EditHandler(BaseHandler):
                 content = data.get("content", "")
             except Exception:
                 self.set_status(400)
-                self.write("Invalid JSON body")
+                self.write("Invalid request: Please provide valid JSON data")
                 return
         else:
             path = self.get_argument("path", "")
@@ -3711,12 +3711,12 @@ class EditHandler(BaseHandler):
         
         if not is_within_root(abspath, ROOT_DIR):
             self.set_status(403)
-            self.write("Forbidden")
+            self.write("Access denied: You don't have permission to perform this action")
             return
             
         if not os.path.isfile(abspath):
             self.set_status(404)
-            self.write("File not found")
+            self.write("File not found: The requested file may have been moved or deleted")
             return
 
         try:
@@ -3742,17 +3742,17 @@ class EditViewHandler(BaseHandler):
     async def get(self, path):
         if not is_feature_enabled("file_edit", True):
             self.set_status(403)
-            self.write("File editing is disabled.")
+            self.write("Feature disabled: File editing is currently disabled by administrator")
             return
 
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
         if not is_within_root(abspath, ROOT_DIR):
             self.set_status(403)
-            self.write("Forbidden")
+            self.write("Access denied: You don't have permission to perform this action")
             return
         if not os.path.isfile(abspath):
             self.set_status(404)
-            self.write("File not found")
+            self.write("File not found: The requested file may have been moved or deleted")
             return
 
         # Prevent loading extremely large files into memory in the editor
@@ -3870,7 +3870,7 @@ class ShareFilesHandler(BaseHandler):
     def get(self):
         if not is_feature_enabled("file_share", True):
             self.set_status(403)
-            self.write("File sharing is disabled")
+            self.write("Feature disabled: File sharing is currently disabled by administrator")
             return
         # Just render the template - files will be loaded on-the-fly via JavaScript
         # Pass empty dict since shares are fetched via API
@@ -4321,13 +4321,13 @@ class TokenVerificationHandler(BaseHandler):
         # Check if share exists
         if DB_CONN is None:
             self.set_status(500)
-            self.write("Database connection unavailable")
+            self.write("Service temporarily unavailable: Database connection error")
             return
             
         share = _get_share_by_id(DB_CONN, sid)
         if not share:
             self.set_status(404)
-            self.write("Invalid share link")
+            self.write("Invalid share link: The requested share does not exist or has been removed")
             return
         
         self.render("token_verification.html", share_id=sid)
@@ -4377,20 +4377,20 @@ class SharedListHandler(tornado.web.RequestHandler):
         # Ensure database connection
         if DB_CONN is None:
             self.set_status(500)
-            self.write("Database connection unavailable")
+            self.write("Service temporarily unavailable: Database connection error")
             return
             
         share = _get_share_by_id(DB_CONN, sid)
         if not share:
             self.set_status(404)
-            self.write("Invalid share link")
+            self.write("Invalid share link: The requested share does not exist or has been removed")
             return
         
         # Check if share has expired
         expiry_date = share.get('expiry_date')
         if _is_share_expired(expiry_date):
             self.set_status(410)  # Gone
-            self.write("This share has expired")
+            self.write("Share expired: This share is no longer available")
             return
         
         # Check if share requires token verification
@@ -4420,7 +4420,7 @@ class SharedListHandler(tornado.web.RequestHandler):
             current_user = self.get_secure_cookie("user")
             if not current_user:
                 self.set_status(401)
-                self.write("Authentication required")
+                self.write("Authentication required: Please provide a valid access token")
                 return
             
             # Decode username if it's bytes
@@ -4430,7 +4430,7 @@ class SharedListHandler(tornado.web.RequestHandler):
             # Check if current user is in allowed users list
             if current_user not in allowed_users:
                 self.set_status(403)
-                self.write("Access denied")
+                self.write("Access denied: Invalid or expired access token")
                 return
         
         import json
@@ -4468,20 +4468,20 @@ class SharedFileHandler(tornado.web.RequestHandler):
         # Ensure database connection
         if DB_CONN is None:
             self.set_status(500)
-            self.write("Database connection unavailable")
+            self.write("Service temporarily unavailable: Database connection error")
             return
             
         share = _get_share_by_id(DB_CONN, sid)
         if not share:
             self.set_status(404)
-            self.write("Invalid share link")
+            self.write("Invalid share link: The requested share does not exist or has been removed")
             return
         
         # Check if share has expired
         expiry_date = share.get('expiry_date')
         if _is_share_expired(expiry_date):
             self.set_status(410)  # Gone
-            self.write("This share has expired")
+            self.write("Share expired: This share is no longer available")
             return
         
         # Check if share requires token verification
@@ -4511,7 +4511,7 @@ class SharedFileHandler(tornado.web.RequestHandler):
             current_user = self.get_secure_cookie("user")
             if not current_user:
                 self.set_status(401)
-                self.write("Authentication required")
+                self.write("Authentication required: Please provide a valid access token")
                 return
             
             # Decode username if it's bytes
@@ -4521,7 +4521,7 @@ class SharedFileHandler(tornado.web.RequestHandler):
             # Check if current user is in allowed users list
             if current_user not in allowed_users:
                 self.set_status(403)
-                self.write("Access denied")
+                self.write("Access denied: Invalid or expired access token")
                 return
         
         # Check if file is accessible based on share type
@@ -4547,25 +4547,25 @@ class SharedFileHandler(tornado.web.RequestHandler):
             
             if not file_accessible:
                 self.set_status(403)
-                self.write("File not in share")
+                self.write("Access denied: This file is not included in the current share")
                 return
         else:
             # For static shares, check if file is in the stored paths
             if path not in share['paths']:
                 self.set_status(403)
-                self.write("File not in share")
+                self.write("Access denied: This file is not included in the current share")
                 return
         
         # Apply allow/avoid list filtering
         if allow_list or avoid_list:
             if not _filter_files_by_patterns([path], allow_list, avoid_list):
                 self.set_status(403)
-                self.write("File not allowed by filter rules")
+                self.write("Access denied: This file is excluded by the share's filter rules")
                 return
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
         if not (is_within_root(abspath, ROOT_DIR) and os.path.isfile(abspath)):
             self.set_status(404)
-            self.write("File not found")
+            self.write("File not found: The requested file may have been moved or deleted")
             return
         self.set_header('Content-Type', 'text/plain; charset=utf-8')
         # Stream in chunks using async I/O to avoid blocking event loop
@@ -4582,7 +4582,7 @@ class SharedFileHandler(tornado.web.RequestHandler):
         except Exception:
             # As a last resort, send minimal error
             self.set_status(500)
-            self.write("Error streaming file")
+            self.write("Streaming error: Unable to stream the file content")
             return
 
 
@@ -4593,7 +4593,7 @@ class SuperSearchHandler(BaseHandler):
         # Check if super search is enabled
         if not is_feature_enabled("super_search"):
             self.set_status(403)
-            self.write("Super search is disabled.")
+            self.write("Feature disabled: Super search is currently disabled by administrator")
             return
             
         # Get the current path from query parameter
