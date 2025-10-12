@@ -8,7 +8,6 @@ import asyncio
 import mmap
 import sys
 import sqlite3
-import fnmatch
 import glob
 import pathlib
 import ssl
@@ -30,12 +29,7 @@ from io import BytesIO
 import tempfile
 from urllib.parse import unquote, urlparse
 import aiofiles
-import asyncio
-import concurrent.futures
 import re
-import shlex
-import time
-import threading
 import weakref
 import hashlib
 # Secure password hashing (Priority 1)
@@ -856,16 +850,12 @@ def _filter_files_by_patterns(files: list[str], allow_list: list[str] = None, av
     for file_path in files:
         # Check avoid list first (takes priority)
         if avoid_list and _matches_glob_patterns(file_path, avoid_list):
-            print(f"DEBUG: File {file_path} excluded by avoid list")
             continue
         
         # Check allow list
         if allow_list:
             if _matches_glob_patterns(file_path, allow_list):
-                print(f"DEBUG: File {file_path} included by allow list")
                 filtered_files.append(file_path)
-            else:
-                print(f"DEBUG: File {file_path} excluded by allow list")
         else:
             # No allow list means all files are allowed (unless in avoid list)
             filtered_files.append(file_path)
@@ -4325,32 +4315,7 @@ class TokenVerificationHandler(tornado.web.RequestHandler):
         # This endpoint is meant to be accessed by external users
         pass
 
-class DebugExpiryHandler(BaseHandler):
-    @tornado.web.authenticated
-    def get(self):
-        """Debug endpoint to test expiry functionality using system time"""
-        from datetime import datetime
-        
-        # Get current system time
-        now_system = datetime.now()
-        
-        # Test with a sample expiry date (system time format)
-        test_expiry = "2024-12-31T23:59:59"
-        is_expired = _is_share_expired(test_expiry)
-        
-        # Test with a past date
-        past_expiry = "2020-01-01T00:00:00"
-        past_expired = _is_share_expired(past_expiry)
-        
-        self.write({
-            "current_system_time": now_system.isoformat(),
-            "test_expiry": test_expiry,
-            "is_expired": is_expired,
-            "past_expiry": past_expiry,
-            "past_expired": past_expired,
-            "note": "All times are in system timezone (no UTC conversion)"
-        })
-    
+class TokenVerificationHandler(BaseHandler):
     def get(self, sid):
         """Show token verification page"""
         # Check if share exists
@@ -4361,23 +4326,6 @@ class DebugExpiryHandler(BaseHandler):
             
         share = _get_share_by_id(DB_CONN, sid)
         if not share:
-            # Debug information
-            print(f"DEBUG: Share ID '{sid}' not found in database")
-            print(f"DEBUG: DB_CONN is {'None' if DB_CONN is None else 'available'}")
-            if DB_CONN:
-                try:
-                    # Check if shares table exists and has data
-                    cursor = DB_CONN.execute("SELECT COUNT(*) FROM shares")
-                    count = cursor.fetchone()[0]
-                    print(f"DEBUG: Total shares in database: {count}")
-                    
-                    # List all share IDs for debugging
-                    cursor = DB_CONN.execute("SELECT id FROM shares")
-                    all_ids = [row[0] for row in cursor.fetchall()]
-                    print(f"DEBUG: All share IDs: {all_ids}")
-                except Exception as e:
-                    print(f"DEBUG: Error checking database: {e}")
-            
             self.set_status(404)
             self.write("Invalid share link")
             return
@@ -4434,23 +4382,6 @@ class SharedListHandler(tornado.web.RequestHandler):
             
         share = _get_share_by_id(DB_CONN, sid)
         if not share:
-            # Debug information
-            print(f"DEBUG: Share ID '{sid}' not found in database")
-            print(f"DEBUG: DB_CONN is {'None' if DB_CONN is None else 'available'}")
-            if DB_CONN:
-                try:
-                    # Check if shares table exists and has data
-                    cursor = DB_CONN.execute("SELECT COUNT(*) FROM shares")
-                    count = cursor.fetchone()[0]
-                    print(f"DEBUG: Total shares in database: {count}")
-                    
-                    # List all share IDs for debugging
-                    cursor = DB_CONN.execute("SELECT id FROM shares")
-                    all_ids = [row[0] for row in cursor.fetchall()]
-                    print(f"DEBUG: All share IDs: {all_ids}")
-                except Exception as e:
-                    print(f"DEBUG: Error checking database: {e}")
-            
             self.set_status(404)
             self.write("Invalid share link")
             return
@@ -4511,7 +4442,6 @@ class SharedListHandler(tornado.web.RequestHandler):
         
         if share_type == 'dynamic':
             # For dynamic shares, scan the folders in real-time
-            print(f"DEBUG: Processing dynamic share {sid}")
             dynamic_files = []
             for folder_path in share['paths']:
                 try:
@@ -4520,24 +4450,17 @@ class SharedListHandler(tornado.web.RequestHandler):
                         # Recursively scan the folder for current files
                         all_files = _get_all_files_recursive(full_path, folder_path)
                         dynamic_files.extend(all_files)
-                        print(f"DEBUG: Found {len(all_files)} files in dynamic folder: {folder_path}")
                 except Exception as e:
-                    print(f"DEBUG: Error scanning dynamic folder {folder_path}: {e}")
                     continue
             
             # Apply allow/avoid list filtering
             filtered_files = _filter_files_by_patterns(dynamic_files, allow_list, avoid_list)
-            print(f"DEBUG: Dynamic share total files: {len(dynamic_files)}, filtered: {len(filtered_files)}")
             self.render("shared_list.html", share_id=sid, files=filtered_files, files_json=json.dumps(filtered_files))
         else:
             # For static shares, use the stored paths
-            print(f"DEBUG: Processing static share {sid}")
-            print(f"DEBUG: Share paths: {share['paths']}")
             
             # Apply allow/avoid list filtering to static shares
             filtered_files = _filter_files_by_patterns(share['paths'], allow_list, avoid_list)
-            print(f"DEBUG: Static share total files: {len(share['paths'])}, filtered: {len(filtered_files)}")
-            print(f"DEBUG: JSON encoded paths: {json.dumps(filtered_files)}")
             self.render("shared_list.html", share_id=sid, files=filtered_files, files_json=json.dumps(filtered_files))
 
 class SharedFileHandler(tornado.web.RequestHandler):
@@ -4550,23 +4473,6 @@ class SharedFileHandler(tornado.web.RequestHandler):
             
         share = _get_share_by_id(DB_CONN, sid)
         if not share:
-            # Debug information
-            print(f"DEBUG: Share ID '{sid}' not found in database")
-            print(f"DEBUG: DB_CONN is {'None' if DB_CONN is None else 'available'}")
-            if DB_CONN:
-                try:
-                    # Check if shares table exists and has data
-                    cursor = DB_CONN.execute("SELECT COUNT(*) FROM shares")
-                    count = cursor.fetchone()[0]
-                    print(f"DEBUG: Total shares in database: {count}")
-                    
-                    # List all share IDs for debugging
-                    cursor = DB_CONN.execute("SELECT id FROM shares")
-                    all_ids = [row[0] for row in cursor.fetchall()]
-                    print(f"DEBUG: All share IDs: {all_ids}")
-                except Exception as e:
-                    print(f"DEBUG: Error checking database: {e}")
-            
             self.set_status(404)
             self.write("Invalid share link")
             return
@@ -5102,7 +5008,6 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None, 
         (r"/share/list", ShareListAPIHandler),
         (r"/share/update", ShareUpdateHandler),
         (r"/shared/([A-Za-z0-9_\-]+)/verify", TokenVerificationHandler),
-        (r"/debug/expiry", DebugExpiryHandler),
         (r"/shared/([A-Za-z0-9_\-]+)", SharedListHandler),
         (r"/shared/([A-Za-z0-9_\-]+)/file/(.*)", SharedFileHandler),
         (r"/search", SuperSearchHandler),
@@ -5184,6 +5089,14 @@ def main():
     if isinstance(ldap_attributes, str):
         ldap_attributes = [attr.strip() for attr in ldap_attributes.split(",")]
     
+    # Load feature flags from config.json if present
+    if "features" in config:
+        features_config = config["features"]
+        for feature_name, feature_value in features_config.items():
+            if feature_name in FEATURE_FLAGS:
+                FEATURE_FLAGS[feature_name] = bool(feature_value)
+                print(f"Feature flag '{feature_name}' set to {feature_value} from config.json")
+    
     # SSL configuration
     ssl_cert = args.ssl_cert or config.get("ssl_cert")
     ssl_key = args.ssl_key or config.get("ssl_key")
@@ -5255,6 +5168,12 @@ def main():
         if persisted_flags:
             for k, v in persisted_flags.items():
                 FEATURE_FLAGS[k] = bool(v)
+                print(f"Feature flag '{k}' set to {bool(v)} from database")
+        
+        # Print final feature flags status
+        print("Final feature flags:")
+        for k, v in FEATURE_FLAGS.items():
+            print(f"  {k}: {v}")
         
         # Start LDAP sync scheduler
         _start_ldap_sync_scheduler(DB_CONN)
