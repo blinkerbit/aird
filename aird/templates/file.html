@@ -467,7 +467,6 @@
                 row.style.backgroundColor = '#f8f8f8';
             }
 
-            // Debug: Log row creation
             console.log(`Created row ${lineCount} with ${row.cells.length} cells, line numbers visible: ${lineNumbersVisible}, line content: "${line}"`);
             window.scrollTo(0, document.body.scrollHeight);
         };
@@ -507,7 +506,6 @@
             }
         });
         
-        // Debug: Log the current state
         console.log('Line numbers visible:', lineNumbersVisible);
         console.log('Total rows:', rows.length);
         

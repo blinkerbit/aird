@@ -180,7 +180,6 @@
     <div class="container">
         <div class="header">
             <h1>📁 Shared Files</h1>
-            <button onclick="document.getElementById('debugInfo').style.display = document.getElementById('debugInfo').style.display === 'none' ? 'block' : 'none';" style="padding: 5px 10px; background: #f0f0f0; border: 1px solid #ccc; cursor: pointer;">Debug</button>
         </div>
         
         <table class="file-table" id="fileTable">
@@ -210,13 +209,6 @@
             </tbody>
         </table>
         
-        <!-- Fallback display for debugging -->
-        <div id="debugInfo" style="display: none; margin-top: 20px; padding: 10px; background: #f0f0f0; border: 1px solid #ccc;">
-            <h3>Debug Information</h3>
-            <p><strong>Share ID:</strong> {{ share_id }}</p>
-            <p><strong>Files (Python list):</strong> {{ files }}</p>
-            <p><strong>Files JSON:</strong> {{ files_json }}</p>
-        </div>
     </div>
 
     <script>
@@ -336,7 +328,6 @@
             // Render files in table format
             try {
                 const files = {{ files_json }};
-                console.log('Files data:', files); // Debug log
                 console.log('Files type:', typeof files);
                 console.log('Files length:', files ? files.length : 'undefined');
                 renderFiles(files);
