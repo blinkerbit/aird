@@ -86,6 +86,82 @@
       flex-wrap: wrap;
     }
 
+    .cloud-browser-modal {
+      max-width: 720px;
+      width: 100%;
+    }
+
+    .cloud-controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+      font-size: 12px;
+    }
+
+    .cloud-controls select {
+      padding: 4px 6px;
+      border: 1px solid #ccc;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+    }
+
+    .cloud-upload {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+      font-size: 12px;
+    }
+
+    .cloud-upload input[type="file"] {
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+    }
+
+    .cloud-upload-status {
+      font-size: 12px;
+      color: #0066cc;
+      min-height: 16px;
+      margin-bottom: 10px;
+    }
+
+    .cloud-upload-status.error {
+      color: #cc3300;
+    }
+
+    .cloud-path {
+      font-size: 12px;
+      color: #555;
+      margin-bottom: 8px;
+      word-break: break-word;
+    }
+
+    .cloud-status {
+      min-height: 18px;
+      font-size: 12px;
+      color: #0066cc;
+      margin-bottom: 10px;
+    }
+
+    .cloud-status.error {
+      color: #cc3300;
+    }
+
+    .cloud-table-wrapper {
+      max-height: 360px;
+      overflow-y: auto;
+      border: 1px solid #ccc;
+      border-radius: 3px;
+    }
+
+    .cloud-table-wrapper .file-table th,
+    .cloud-table-wrapper .file-table td {
+      font-size: 12px;
+    }
+
     .btn {
       font-family: "Courier New", monospace;
       border: 1px solid black;
@@ -1027,6 +1103,7 @@
       <div class="action-buttons">
         <button class="btn primary" id="generateLink" disabled>Generate Share Link</button>
         <button class="btn" id="clearSelection">Clear Selection</button>
+        <button class="btn" id="openCloudBrowser">Browse Cloud Drives</button>
         <button class="btn" id="selectAllVisible">Select All (Current Dir)</button>
       </div>
       <div class="share-result" id="shareResult"></div>
@@ -1072,6 +1149,45 @@
       </table>
     </div>
   </div>
+
+    <!-- Cloud Browser Modal -->
+    <div id="cloudBrowserModal" class="popup-overlay">
+      <div class="popup-content cloud-browser-modal">
+        <div class="popup-header">
+          <h3 class="popup-title">Cloud Drives</h3>
+          <button class="popup-close" onclick="closeCloudBrowser()">&times;</button>
+        </div>
+        <div class="cloud-controls">
+          <label for="cloudProviderSelect">Provider:</label>
+          <select id="cloudProviderSelect"></select>
+          <button class="btn" type="button" id="cloudUpButton">⬆️ Up</button>
+        </div>
+        <div class="cloud-upload">
+          <input type="file" id="cloudUploadInput" title="Choose a file to upload to the selected cloud folder">
+          <button class="btn" type="button" id="cloudUploadButton">Upload to folder</button>
+        </div>
+        <div class="cloud-upload-status" id="cloudUploadStatus"></div>
+        <div class="cloud-path" id="cloudPathDisplay"></div>
+        <div class="cloud-status" id="cloudStatusMessage"></div>
+        <div class="cloud-table-wrapper">
+          <table class="file-table">
+            <thead>
+              <tr>
+                <th class="name-col">📁 Name</th>
+                <th class="size-col">📏 Size</th>
+                <th class="modified-col">🕒 Modified</th>
+                <th class="actions-col">⚡ Actions</th>
+              </tr>
+            </thead>
+            <tbody id="cloudFilesTableBody">
+              <tr>
+                <td colspan="4" class="loading">Loading...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
 
     <!-- Share Details Popup -->
     <div id="sharePopup" class="popup-overlay">
@@ -1162,6 +1278,30 @@
       fileTableBody: document.getElementById('fileTableBody'),
       sharesTableBody: document.getElementById('sharesTableBody'),
       activeSharesCount: document.getElementById('activeSharesCount')
+    };
+
+    const selectedFileMetadata = new Map();
+
+    const cloudElements = {
+      modal: document.getElementById('cloudBrowserModal'),
+      providerSelect: document.getElementById('cloudProviderSelect'),
+      pathDisplay: document.getElementById('cloudPathDisplay'),
+      statusMessage: document.getElementById('cloudStatusMessage'),
+      tableBody: document.getElementById('cloudFilesTableBody'),
+      upButton: document.getElementById('cloudUpButton'),
+      uploadInput: document.getElementById('cloudUploadInput'),
+      uploadButton: document.getElementById('cloudUploadButton'),
+      uploadStatus: document.getElementById('cloudUploadStatus')
+    };
+
+    const cloudState = {
+      providers: [],
+      currentProvider: null,
+      currentFolder: null,
+      currentFiles: [],
+      pathStack: [],
+      loading: false,
+      uploading: false
     };
 
     function getFileIcon(filename) {
@@ -1255,6 +1395,489 @@
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
+    function escapeHtml(text) {
+      if (text === undefined || text === null) {
+        return '';
+      }
+      return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function cloudSelectionKey(providerName, fileId) {
+      return `cloud:${providerName}:${fileId}`;
+    }
+
+    function isCloudFileSelected(providerName, fileId) {
+      return selectedFiles.has(cloudSelectionKey(providerName, fileId));
+    }
+
+    function setCloudStatus(message, isError = false) {
+      if (!cloudElements.statusMessage) return;
+      cloudElements.statusMessage.textContent = message || '';
+      cloudElements.statusMessage.classList.toggle('error', Boolean(isError) && Boolean(message));
+    }
+
+    function clearCloudStatus() {
+      setCloudStatus('');
+    }
+
+    function setCloudUploadStatus(message, isError = false) {
+      if (!cloudElements.uploadStatus) return;
+      cloudElements.uploadStatus.textContent = message || '';
+      cloudElements.uploadStatus.classList.toggle('error', Boolean(isError) && Boolean(message));
+    }
+
+    function clearCloudUploadStatus() {
+      setCloudUploadStatus('');
+    }
+
+    function updateCloudPathDisplay() {
+      if (!cloudElements.pathDisplay) return;
+      if (!cloudState.currentProvider) {
+        cloudElements.pathDisplay.textContent = '';
+        return;
+      }
+
+      const providerLabel = cloudState.currentProvider.label || cloudState.currentProvider.name;
+      if (!cloudState.pathStack.length) {
+        cloudElements.pathDisplay.textContent = providerLabel;
+        return;
+      }
+
+      const parts = cloudState.pathStack.map(entry => entry.name).filter(Boolean);
+      cloudElements.pathDisplay.textContent = `${providerLabel} / ${parts.join(' / ')}`;
+    }
+
+    function updateCloudNavigationState() {
+      if (cloudElements.upButton) {
+        const disableUp = cloudState.loading || cloudState.uploading || cloudState.pathStack.length === 0;
+        cloudElements.upButton.disabled = disableUp;
+      }
+      if (cloudElements.uploadButton) {
+        const disableUpload = cloudState.loading || cloudState.uploading || !cloudState.currentProvider;
+        cloudElements.uploadButton.disabled = disableUpload;
+      }
+      if (cloudElements.providerSelect) {
+        cloudElements.providerSelect.disabled = cloudState.uploading;
+      }
+    }
+
+    function renderCloudProviders(providers) {
+      if (!cloudElements.providerSelect) return;
+
+      cloudElements.providerSelect.innerHTML = '';
+
+      if (!providers || providers.length === 0) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'No providers available';
+        option.disabled = true;
+        option.selected = true;
+        cloudElements.providerSelect.appendChild(option);
+        setCloudStatus('No cloud providers configured.', true);
+        return;
+      }
+
+      providers.forEach((provider, index) => {
+        const option = document.createElement('option');
+        option.value = provider.name;
+        option.textContent = provider.label || provider.name;
+        if (index === 0) {
+          option.selected = true;
+        }
+        cloudElements.providerSelect.appendChild(option);
+      });
+
+      clearCloudStatus();
+    }
+
+    async function loadCloudProviders(forceReload = false) {
+      if (!cloudElements.providerSelect) return;
+
+      clearCloudUploadStatus();
+
+      if (!forceReload && cloudState.providers.length) {
+        renderCloudProviders(cloudState.providers);
+        if (!cloudState.currentProvider && cloudState.providers.length) {
+          switchCloudProvider(cloudState.providers[0].name);
+        }
+        return;
+      }
+
+      try {
+        setCloudStatus('Loading providers...');
+        const response = await fetch('/api/cloud/providers');
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const payload = await response.json();
+        cloudState.providers = Array.isArray(payload.providers) ? payload.providers : [];
+        renderCloudProviders(cloudState.providers);
+
+        if (cloudState.providers.length) {
+          switchCloudProvider(cloudState.providers[0].name);
+        } else {
+          cloudState.currentProvider = null;
+          cloudState.currentFiles = [];
+          cloudState.pathStack = [];
+          if (cloudElements.tableBody) {
+            cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="loading">Connect a cloud provider to browse files.</td></tr>';
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load cloud providers:', error);
+        setCloudStatus('Unable to load cloud providers.', true);
+        if (cloudElements.tableBody) {
+          cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="loading">Error loading providers</td></tr>';
+        }
+      }
+    }
+
+    function switchCloudProvider(providerName) {
+      if (!providerName) return;
+      const provider = cloudState.providers.find(p => p.name === providerName);
+      if (!provider) {
+        setCloudStatus('Selected provider is not configured.', true);
+        return;
+      }
+
+      cloudState.currentProvider = provider;
+      cloudState.currentFolder = provider.root || 'root';
+      cloudState.currentFiles = [];
+      cloudState.pathStack = [];
+
+      if (cloudElements.uploadInput) {
+        cloudElements.uploadInput.value = '';
+      }
+      clearCloudUploadStatus();
+
+      if (cloudElements.providerSelect && cloudElements.providerSelect.value !== provider.name) {
+        cloudElements.providerSelect.value = provider.name;
+      }
+
+      updateCloudPathDisplay();
+      updateCloudNavigationState();
+      loadCloudFolder(cloudState.currentFolder, { reset: true });
+    }
+
+    function openCloudBrowser() {
+      const shareTypeRadio = document.querySelector('input[name="shareType"]:checked');
+      if (shareTypeRadio && shareTypeRadio.value === 'dynamic') {
+        showDialog('Cloud files are not supported when creating a dynamic share.', 'Cloud Files');
+        return;
+      }
+
+      clearCloudUploadStatus();
+      if (cloudElements.uploadInput) {
+        cloudElements.uploadInput.value = '';
+        cloudElements.uploadInput.disabled = false;
+      }
+      cloudState.uploading = false;
+      updateCloudNavigationState();
+
+      if (cloudElements.modal) {
+        cloudElements.modal.classList.add('show');
+      }
+
+      if (cloudElements.tableBody) {
+        cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="loading">Loading cloud files...</td></tr>';
+      }
+
+      loadCloudProviders();
+    }
+
+    function closeCloudBrowser() {
+      if (cloudElements.modal) {
+        cloudElements.modal.classList.remove('show');
+      }
+      clearCloudStatus();
+      clearCloudUploadStatus();
+    }
+
+    async function loadCloudFolder(folderId, options = {}) {
+      if (!cloudState.currentProvider) return;
+
+      const provider = cloudState.currentProvider;
+      const targetFolder = folderId || provider.root || 'root';
+
+      if (cloudElements.tableBody) {
+        cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="loading">Loading...</td></tr>';
+      }
+      setCloudStatus('Loading files...');
+      cloudState.loading = true;
+      updateCloudNavigationState();
+
+      const previousFolder = cloudState.currentFolder;
+      const previousStack = cloudState.pathStack.slice();
+
+      try {
+        const params = new URLSearchParams();
+        if (targetFolder) {
+          params.set('folder', targetFolder);
+        }
+        const query = params.toString();
+        const url = query ? `/api/cloud/${provider.name}/files?${query}` : `/api/cloud/${provider.name}/files`;
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const payload = await response.json();
+        const files = Array.isArray(payload.files) ? payload.files : [];
+
+        if (options.reset) {
+          cloudState.pathStack = [];
+        } else if (options.pop) {
+          cloudState.pathStack = cloudState.pathStack.slice(0, -1);
+        } else if (options.pushEntry) {
+          cloudState.pathStack = cloudState.pathStack.concat(options.pushEntry);
+        }
+
+        cloudState.currentFolder = targetFolder;
+        cloudState.currentFiles = files;
+
+        renderCloudFiles(files);
+        clearCloudStatus();
+      } catch (error) {
+        console.error('Failed to load cloud files:', error);
+        cloudState.currentFolder = previousFolder;
+        cloudState.pathStack = previousStack;
+        setCloudStatus('Failed to load cloud files.', true);
+        if (cloudElements.tableBody) {
+          cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="loading">Error loading files</td></tr>';
+        }
+      } finally {
+        cloudState.loading = false;
+        updateCloudPathDisplay();
+        updateCloudNavigationState();
+      }
+    }
+
+    function cloudNavigateUp() {
+      if (!cloudState.currentProvider || cloudState.pathStack.length === 0 || cloudState.loading) {
+        return;
+      }
+
+      const parentEntry = cloudState.pathStack.length > 1
+        ? cloudState.pathStack[cloudState.pathStack.length - 2]
+        : null;
+      const parentFolder = parentEntry ? parentEntry.id : (cloudState.currentProvider.root || 'root');
+      loadCloudFolder(parentFolder, { pop: true });
+    }
+
+    function handleCloudFolderNavigation(file) {
+      if (!file || !file.is_dir) return;
+      const entry = { id: file.id, name: file.name || 'Folder' };
+      loadCloudFolder(file.id, { pushEntry: entry });
+    }
+
+    function renderCloudFiles(files) {
+      if (!cloudElements.tableBody) return;
+
+      cloudElements.tableBody.innerHTML = '';
+
+      if (!files || files.length === 0) {
+        cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="loading">No items found in this folder.</td></tr>';
+        return;
+      }
+
+      files.forEach(file => {
+        const row = document.createElement('tr');
+
+        const nameCell = document.createElement('td');
+        nameCell.className = 'name-col';
+        const icon = file.is_dir ? '📁' : '📄';
+
+        if (file.is_dir) {
+          const link = document.createElement('a');
+          link.href = '#';
+          link.className = 'file-link';
+          link.innerHTML = `<span class="file-icon">${icon}</span>${escapeHtml(file.name || 'Unnamed')}`;
+          link.addEventListener('click', event => {
+            event.preventDefault();
+            handleCloudFolderNavigation(file);
+          });
+          nameCell.appendChild(link);
+        } else {
+          nameCell.innerHTML = `<span class="file-icon">${icon}</span>${escapeHtml(file.name || 'Unnamed')}`;
+        }
+
+        const sizeCell = document.createElement('td');
+        sizeCell.className = 'size-col';
+        if (file.is_dir || typeof file.size !== 'number') {
+          sizeCell.textContent = '-';
+        } else {
+          sizeCell.textContent = formatFileSize(file.size);
+        }
+
+        const modifiedCell = document.createElement('td');
+        modifiedCell.className = 'modified-col';
+        modifiedCell.textContent = file.modified ? file.modified : '-';
+
+        const actionCell = document.createElement('td');
+        actionCell.className = 'actions-col';
+
+        if (file.is_dir) {
+          const openBtn = document.createElement('button');
+          openBtn.className = 'btn';
+          openBtn.type = 'button';
+          openBtn.textContent = 'Open';
+          openBtn.addEventListener('click', () => handleCloudFolderNavigation(file));
+          actionCell.appendChild(openBtn);
+        } else {
+          const key = cloudSelectionKey(cloudState.currentProvider.name, file.id);
+          const button = document.createElement('button');
+          button.className = isCloudFileSelected(cloudState.currentProvider.name, file.id) ? 'btn' : 'btn primary';
+          button.type = 'button';
+          button.textContent = isCloudFileSelected(cloudState.currentProvider.name, file.id) ? 'Remove' : 'Select';
+          button.addEventListener('click', () => {
+            if (isCloudFileSelected(cloudState.currentProvider.name, file.id)) {
+              removeCloudSelection(key);
+            } else {
+              selectCloudFile(file);
+            }
+          });
+          actionCell.appendChild(button);
+
+          if (isCloudFileSelected(cloudState.currentProvider.name, file.id)) {
+            row.classList.add('selected');
+          }
+        }
+
+        row.appendChild(nameCell);
+        row.appendChild(sizeCell);
+        row.appendChild(modifiedCell);
+        row.appendChild(actionCell);
+
+        cloudElements.tableBody.appendChild(row);
+      });
+    }
+
+    async function handleCloudUpload() {
+      if (!cloudState.currentProvider) {
+        setCloudUploadStatus('Select a cloud provider before uploading.', true);
+        return;
+      }
+
+      if (!cloudElements.uploadInput || !cloudElements.uploadInput.files || !cloudElements.uploadInput.files.length) {
+        setCloudUploadStatus('Choose a file to upload.', true);
+        return;
+      }
+
+      const file = cloudElements.uploadInput.files[0];
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const targetFolder = cloudState.currentFolder || cloudState.currentProvider.root;
+      if (targetFolder) {
+        formData.append('parent_id', targetFolder);
+      }
+
+      cloudState.uploading = true;
+      setCloudUploadStatus(`Uploading ${file.name || 'file'}...`);
+      updateCloudNavigationState();
+
+      if (cloudElements.uploadInput) {
+        cloudElements.uploadInput.disabled = true;
+      }
+
+      try {
+        const response = await fetch(`/api/cloud/${cloudState.currentProvider.name}/upload`, {
+          method: 'POST',
+          body: formData
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const message = payload && payload.error ? payload.error : `Upload failed (HTTP ${response.status})`;
+          throw new Error(message);
+        }
+
+        const uploadedName = payload && payload.file && payload.file.name ? payload.file.name : (file.name || 'file');
+        setCloudUploadStatus(`Uploaded ${uploadedName}.`);
+
+        if (cloudElements.uploadInput) {
+          cloudElements.uploadInput.value = '';
+        }
+
+        const folderToReload = cloudState.currentFolder;
+        await loadCloudFolder(folderToReload, {});
+        setCloudStatus(`Uploaded ${uploadedName} to ${cloudState.currentProvider.label || cloudState.currentProvider.name}.`);
+      } catch (error) {
+        console.error('Cloud upload failed:', error);
+        setCloudUploadStatus(error && error.message ? error.message : 'Upload failed.', true);
+      } finally {
+        cloudState.uploading = false;
+        if (cloudElements.uploadInput) {
+          cloudElements.uploadInput.disabled = false;
+        }
+        updateCloudNavigationState();
+      }
+    }
+
+    function selectCloudFile(file) {
+      if (!cloudState.currentProvider || !file || file.is_dir) return;
+
+      const key = cloudSelectionKey(cloudState.currentProvider.name, file.id);
+      const metadata = {
+        type: 'cloud',
+        provider: cloudState.currentProvider.name,
+        id: file.id,
+        name: file.name,
+        is_dir: !!file.is_dir
+      };
+
+      addToSelection(key, metadata);
+      setCloudStatus(`Added ${file.name || 'Unnamed file'} from ${cloudState.currentProvider.label || cloudState.currentProvider.name}.`);
+      renderCloudFiles(cloudState.currentFiles);
+    }
+
+    function removeCloudSelection(key) {
+      removeFromSelection(key);
+      renderCloudFiles(cloudState.currentFiles);
+    }
+
+    const openCloudButton = document.getElementById('openCloudBrowser');
+    if (openCloudButton) {
+      openCloudButton.addEventListener('click', openCloudBrowser);
+    }
+
+    if (cloudElements.providerSelect) {
+      cloudElements.providerSelect.addEventListener('change', event => {
+        switchCloudProvider(event.target.value);
+      });
+    }
+
+    if (cloudElements.upButton) {
+      cloudElements.upButton.addEventListener('click', cloudNavigateUp);
+    }
+
+    if (cloudElements.uploadButton) {
+      cloudElements.uploadButton.addEventListener('click', handleCloudUpload);
+    }
+
+    if (cloudElements.uploadInput) {
+      cloudElements.uploadInput.addEventListener('change', () => {
+        clearCloudUploadStatus();
+      });
+    }
+
+    if (cloudElements.modal) {
+      cloudElements.modal.addEventListener('click', event => {
+        if (event.target === cloudElements.modal) {
+          closeCloudBrowser();
+        }
+      });
+    }
+
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape' && cloudElements.modal && cloudElements.modal.classList.contains('show')) {
+        closeCloudBrowser();
+      }
+    });
+
     function updateSelectedDisplay() {
       elements.selectedCount.textContent = selectedFiles.size;
       elements.generateLink.disabled = selectedFiles.size === 0;
@@ -1264,10 +1887,23 @@
       } else {
         elements.selectedFilesDiv.innerHTML = Array.from(selectedFiles)
           .map(file => {
-            const fileName = file.split('/').pop();
-            const isDir = file.endsWith('/') || (allFiles.find(f => f.name === fileName && f.is_dir));
-            const icon = isDir ? '📁' : '📄';
-            return `<span class="selected-file" onclick="removeFromSelection('${file}')">${icon} ${fileName} ×</span>`;
+            const meta = selectedFileMetadata.get(file);
+            let icon = '📄';
+            let label = '';
+
+            if (meta && meta.type === 'cloud') {
+              const providerLabel = meta.provider ? meta.provider.toUpperCase() : 'CLOUD';
+              icon = '☁️';
+              label = `${providerLabel} · ${meta.name || 'Unnamed'}`;
+            } else {
+              const fileName = file.split('/').pop();
+              const isDir = file.endsWith('/') || (allFiles.find(f => f.name === fileName && f.is_dir));
+              icon = isDir ? '📁' : '📄';
+              label = fileName;
+            }
+
+            const safeKey = file.replace(/'/g, "\\'");
+            return `<span class="selected-file" onclick="removeFromSelection('${safeKey}')">${icon} ${escapeHtml(label)} ×</span>`;
           })
           .join('');
       }
@@ -1279,15 +1915,22 @@
           row.classList.toggle('selected', checkbox.checked);
         }
       });
+
     }
 
-    function addToSelection(filePath) {
+    function addToSelection(filePath, metadata = null) {
       selectedFiles.add(filePath);
+      if (metadata) {
+        selectedFileMetadata.set(filePath, metadata);
+      }
       updateSelectedDisplay();
     }
 
     function removeFromSelection(filePath) {
       selectedFiles.delete(filePath);
+      if (selectedFileMetadata.has(filePath)) {
+        selectedFileMetadata.delete(filePath);
+      }
       const checkbox = document.querySelector(`input[value="${filePath}"]`);
       if (checkbox) checkbox.checked = false;
       updateSelectedDisplay();
@@ -1295,10 +1938,10 @@
 
     function clearSelection() {
       selectedFiles.clear();
+      selectedFileMetadata.clear();
       document.querySelectorAll('#fileTableBody input[type="checkbox"]').forEach(cb => cb.checked = false);
       updateSelectedDisplay();
     }
-
     function selectAllVisible() {
       const visibleFiles = document.querySelectorAll('#fileTableBody input[type="checkbox"]');
       visibleFiles.forEach(checkbox => {
@@ -2242,6 +2885,20 @@
         const expiryDateInput = document.getElementById('expiryDate').value;
         const expiryDate = expiryDateInput ? new Date(expiryDateInput).toISOString().replace('Z', '') : null;
 
+        const pathsPayload = Array.from(selectedFiles).map(item => {
+          const meta = selectedFileMetadata.get(item);
+          if (meta && meta.type === 'cloud') {
+            return {
+              type: 'cloud',
+              provider: meta.provider,
+              id: meta.id,
+              name: meta.name,
+              is_dir: !!meta.is_dir
+            };
+          }
+          return item;
+        });
+
         const response = await fetch('/share/create', {
           method: 'POST',
           headers: {
@@ -2249,7 +2906,7 @@
             'X-XSRFToken': getXSRFToken()
           },
           body: JSON.stringify({
-            paths: Array.from(selectedFiles),
+            paths: pathsPayload,
             allowed_users: allowedUsers,
             share_type: shareType,
             allow_list: allowList,
