@@ -32,6 +32,13 @@ import aiofiles
 import re
 import weakref
 import hashlib
+
+from .cloud import (
+    CloudManager,
+    CloudProviderError,
+    GoogleDriveProvider,
+    OneDriveProvider,
+)
 # Secure password hashing (Priority 1)
 try:
     from argon2 import PasswordHasher
@@ -117,6 +124,8 @@ ADMIN_TOKEN = None
 ROOT_DIR = os.getcwd()
 DB_CONN = None
 DB_PATH = None
+CLOUD_MANAGER = CloudManager()
+CLOUD_SHARE_FOLDER = ".aird_cloud"
 
 FEATURE_FLAGS = {
     "file_upload": True,
@@ -759,15 +768,17 @@ def _update_share(conn: sqlite3.Connection, sid: str, share_type: str = None, di
             updates.append("share_type = ?")
             values.append(share_type)
         
-        if disable_token == True:
-            logging.debug(f"_update_share - disable_token={disable_token}")
-            logging.debug("Disabling token (setting to None)")
-            updates.append("secret_token = ?")
-            values.append(None)
-        else:
-            new_token = secrets.token_urlsafe(32) if secret_token is None else secret_token
-            updates.append("secret_token = ?")
-            values.append(new_token)
+        token_update_requested = (disable_token is not None) or (secret_token is not None)
+        if token_update_requested:
+            if disable_token is True:
+                logging.debug(f"_update_share - disable_token={disable_token}")
+                logging.debug("Disabling token (setting to None)")
+                updates.append("secret_token = ?")
+                values.append(None)
+            else:
+                new_token = secrets.token_urlsafe(32) if secret_token is None else secret_token
+                updates.append("secret_token = ?")
+                values.append(new_token)
 
         
         if allow_list is not None:
@@ -840,18 +851,20 @@ def _matches_glob_patterns(file_path: str, patterns: list[str]) -> bool:
             return True
     return False
 
-def _filter_files_by_patterns(files: list[str], allow_list: list[str] = None, avoid_list: list[str] = None) -> list[str]:
-    """Filter files based on allow and avoid glob patterns"""
+def _filter_files_by_patterns(
+    files: list[str], allow_list: list[str] = None, avoid_list: list[str] = None
+) -> list[str]:
+    """Filter files based on allow and avoid glob patterns."""
     if not files:
         return files
-    
+
     filtered_files = []
-    
+
     for file_path in files:
         # Check avoid list first (takes priority)
         if avoid_list and _matches_glob_patterns(file_path, avoid_list):
             continue
-        
+
         # Check allow list
         if allow_list:
             if _matches_glob_patterns(file_path, allow_list):
@@ -859,8 +872,190 @@ def _filter_files_by_patterns(files: list[str], allow_list: list[str] = None, av
         else:
             # No allow list means all files are allowed (unless in avoid list)
             filtered_files.append(file_path)
-    
+
     return filtered_files
+
+
+def _cloud_root_dir() -> str:
+    return os.path.join(ROOT_DIR, CLOUD_SHARE_FOLDER)
+
+
+def _ensure_share_cloud_dir(share_id: str) -> str:
+    share_dir = os.path.join(_cloud_root_dir(), share_id)
+    os.makedirs(share_dir, exist_ok=True)
+    return share_dir
+
+
+def _sanitize_cloud_filename(name: str | None) -> str:
+    candidate = (name or "cloud_file").strip()
+    candidate = candidate.replace(os.sep, "_").replace("/", "_")
+    candidate = re.sub(r"[^A-Za-z0-9._-]", "_", candidate)
+    candidate = candidate.strip("._")
+    if not candidate:
+        candidate = "cloud_file"
+    return candidate[:128]
+
+
+def _is_cloud_relative_path(share_id: str, relative_path: str) -> bool:
+    normalized = relative_path.replace("\\", "/")
+    prefix = f"{CLOUD_SHARE_FOLDER}/{share_id}/"
+    return normalized.startswith(prefix)
+
+
+def _remove_cloud_file_if_exists(share_id: str, relative_path: str) -> None:
+    if not _is_cloud_relative_path(share_id, relative_path):
+        return
+    abs_path = os.path.abspath(os.path.join(ROOT_DIR, relative_path))
+    if not is_within_root(abs_path, ROOT_DIR):
+        return
+    if os.path.isfile(abs_path):
+        try:
+            os.remove(abs_path)
+        except OSError:
+            pass
+    _cleanup_share_cloud_dir_if_empty(share_id)
+
+
+def _cleanup_share_cloud_dir_if_empty(share_id: str) -> None:
+    share_dir = os.path.join(_cloud_root_dir(), share_id)
+    try:
+        if os.path.isdir(share_dir) and not os.listdir(share_dir):
+            shutil.rmtree(share_dir, ignore_errors=True)
+    except Exception:
+        pass
+
+
+def _remove_share_cloud_dir(share_id: str) -> None:
+    if not share_id:
+        return
+    share_dir = os.path.join(_cloud_root_dir(), share_id)
+    shutil.rmtree(share_dir, ignore_errors=True)
+
+
+def _download_cloud_item(share_id: str, item: dict) -> str:
+    provider_name = item.get("provider")
+    file_id = item.get("id")
+    if not provider_name or not file_id:
+        raise CloudProviderError("Invalid cloud file specification")
+    if item.get("is_dir"):
+        raise CloudProviderError("Cloud folder sharing is not supported")
+    provider = CLOUD_MANAGER.get(provider_name)
+    if not provider:
+        raise CloudProviderError(f"Cloud provider '{provider_name}' is not configured")
+    try:
+        download = provider.download_file(file_id)
+    except CloudProviderError:
+        raise
+    except Exception as exc:
+        raise CloudProviderError(str(exc)) from exc
+
+    filename = _sanitize_cloud_filename(item.get("name") or getattr(download, "name", None) or f"{provider_name}-{file_id}")
+    share_dir = _ensure_share_cloud_dir(share_id)
+    base, ext = os.path.splitext(filename)
+    candidate = filename
+    dest_path = os.path.join(share_dir, candidate)
+    counter = 1
+    while os.path.exists(dest_path):
+        candidate = f"{base}_{counter}{ext}"
+        dest_path = os.path.join(share_dir, candidate)
+        counter += 1
+
+    try:
+        with open(dest_path, "wb") as fh:
+            for chunk in download.iter_chunks():
+                fh.write(chunk)
+    except Exception as exc:
+        try:
+            os.remove(dest_path)
+        except OSError:
+            pass
+        raise CloudProviderError(f"Failed to download cloud file '{filename}': {exc}") from exc
+    finally:
+        try:
+            download.close()
+        except Exception:
+            pass
+
+    relative = join_path(CLOUD_SHARE_FOLDER, share_id, os.path.basename(dest_path))
+    return relative
+
+
+def _download_cloud_items(share_id: str, items: list[dict]) -> list[str]:
+    if not items:
+        return []
+    downloaded: list[str] = []
+    try:
+        for item in items:
+            downloaded.append(_download_cloud_item(share_id, item))
+        return downloaded
+    except CloudProviderError:
+        for rel_path in downloaded:
+            _remove_cloud_file_if_exists(share_id, rel_path)
+        raise
+    except Exception as exc:
+        for rel_path in downloaded:
+            _remove_cloud_file_if_exists(share_id, rel_path)
+        raise CloudProviderError(str(exc)) from exc
+
+def _configure_cloud_providers(config: dict | None) -> None:
+    """Load cloud provider configuration from config dict and environment."""
+    CLOUD_MANAGER.reset()
+
+    if not isinstance(config, dict):
+        config = {}
+
+    cloud_config = config.get('cloud', {})
+    if not isinstance(cloud_config, dict):
+        cloud_config = {}
+
+    # Google Drive configuration
+    gdrive_config = cloud_config.get('google_drive', {})
+    if not isinstance(gdrive_config, dict):
+        gdrive_config = {}
+    gdrive_token = (
+        gdrive_config.get('access_token')
+        or os.environ.get('AIRD_GDRIVE_ACCESS_TOKEN')
+    )
+    gdrive_root = (
+        gdrive_config.get('root_id')
+        or os.environ.get('AIRD_GDRIVE_ROOT_ID')
+        or 'root'
+    )
+    include_shared = gdrive_config.get('include_shared_drives', True)
+
+    if gdrive_token:
+        try:
+            CLOUD_MANAGER.register(
+                GoogleDriveProvider(
+                    gdrive_token,
+                    root_id=gdrive_root,
+                    include_shared_drives=bool(include_shared),
+                )
+            )
+        except CloudProviderError as exc:
+            logging.error("Failed to configure Google Drive provider: %s", exc)
+
+    # OneDrive configuration
+    onedrive_config = cloud_config.get('one_drive')
+    if not isinstance(onedrive_config, dict):
+        onedrive_config = cloud_config.get('onedrive', {})
+        if not isinstance(onedrive_config, dict):
+            onedrive_config = {}
+    onedrive_token = (
+        onedrive_config.get('access_token')
+        or os.environ.get('AIRD_ONEDRIVE_ACCESS_TOKEN')
+        or os.environ.get('AIRD_ONE_DRIVE_ACCESS_TOKEN')
+    )
+    drive_id = onedrive_config.get('drive_id') or os.environ.get('AIRD_ONEDRIVE_DRIVE_ID')
+
+    if onedrive_token:
+        try:
+            CLOUD_MANAGER.register(OneDriveProvider(onedrive_token, drive_id=drive_id))
+        except CloudProviderError as exc:
+            logging.error("Failed to configure OneDrive provider: %s", exc)
+
+    if not CLOUD_MANAGER.has_providers():
+        logging.info("No cloud providers configured")
 
 def _is_share_expired(expiry_date: str) -> bool:
     """Check if a share has expired based on expiry_date using system time"""
@@ -3865,6 +4060,161 @@ class FileListAPIHandler(BaseHandler):
             self.set_status(500)
             self.write({"error": "Internal server error"})
 
+class CloudProvidersHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        manager: CloudManager = self.application.settings.get("cloud_manager", CLOUD_MANAGER)
+        providers = [
+            {
+                "name": provider.name,
+                "label": provider.label,
+                "root": provider.root_identifier,
+            }
+            for provider in manager.list_providers()
+        ]
+        self.write({"providers": providers})
+
+
+class CloudFilesHandler(BaseHandler):
+    @tornado.web.authenticated
+    async def get(self, provider_name: str):
+        manager: CloudManager = self.application.settings.get("cloud_manager", CLOUD_MANAGER)
+        provider = manager.get(provider_name)
+        if not provider:
+            self.set_status(404)
+            self.write({"error": "Provider not configured"})
+            return
+
+        folder_id = self.get_query_argument("folder", provider.root_identifier)
+        try:
+            files = await asyncio.to_thread(provider.list_files, folder_id or provider.root_identifier)
+        except CloudProviderError as exc:
+            self.set_status(400)
+            self.write({"error": str(exc)})
+            return
+        except Exception:
+            logging.exception("Failed to list cloud files for provider %s", provider_name)
+            self.set_status(500)
+            self.write({"error": "Failed to load cloud files"})
+            return
+
+        payload = {
+            "provider": provider_name,
+            "folder": folder_id or provider.root_identifier,
+            "files": [cloud_file.to_dict() for cloud_file in files],
+        }
+        self.write(payload)
+
+
+class CloudDownloadHandler(BaseHandler):
+    @tornado.web.authenticated
+    async def get(self, provider_name: str):
+        manager: CloudManager = self.application.settings.get("cloud_manager", CLOUD_MANAGER)
+        provider = manager.get(provider_name)
+        if not provider:
+            self.set_status(404)
+            self.write({"error": "Provider not configured"})
+            return
+
+        file_id = self.get_query_argument("file_id", "").strip()
+        if not file_id:
+            self.set_status(400)
+            self.write({"error": "file_id is required"})
+            return
+
+        requested_name = self.get_query_argument("file_name", "").strip()
+
+        try:
+            download = await asyncio.to_thread(provider.download_file, file_id)
+        except CloudProviderError as exc:
+            self.set_status(400)
+            self.write({"error": str(exc)})
+            return
+        except Exception:
+            logging.exception("Failed to download cloud file from %s", provider_name)
+            self.set_status(500)
+            self.write({"error": "Failed to download cloud file"})
+            return
+
+        filename = _sanitize_cloud_filename(requested_name or getattr(download, "name", None))
+        if not filename:
+            filename = f"{provider_name}-file"
+
+        self.set_header("Content-Type", download.content_type or "application/octet-stream")
+        disposition_name = filename.replace('"', '_')
+        self.set_header("Content-Disposition", f'attachment; filename="{disposition_name}"')
+        if download.content_length:
+            self.set_header("Content-Length", str(download.content_length))
+
+        iterator = download.iter_chunks()
+        try:
+            while True:
+                chunk = await asyncio.to_thread(next, iterator, None)
+                if not chunk:
+                    break
+                self.write(chunk)
+                await self.flush()
+        finally:
+            download.close()
+
+
+class CloudUploadHandler(BaseHandler):
+    @tornado.web.authenticated
+    async def post(self, provider_name: str):
+        manager: CloudManager = self.application.settings.get("cloud_manager", CLOUD_MANAGER)
+        provider = manager.get(provider_name)
+        if not provider:
+            self.set_status(404)
+            self.write({"error": "Provider not configured"})
+            return
+
+        uploads = self.request.files.get("file")
+        if not uploads:
+            self.set_status(400)
+            self.write({"error": "No file uploaded"})
+            return
+
+        upload = uploads[0]
+        body: bytes = upload.get("body", b"")
+        filename = upload.get("filename") or "upload.bin"
+        content_type = upload.get("content_type") or None
+
+        size = len(body)
+        if size == 0:
+            # Allow empty files but still enforce limit check below
+            pass
+        if size > MAX_FILE_SIZE:
+            self.set_status(413)
+            self.write({"error": "File too large for upload"})
+            return
+
+        parent_id = self.get_body_argument("parent_id", None, strip=True)
+        parent_id = parent_id or None
+
+        def _do_upload():
+            stream = BytesIO(body)
+            return provider.upload_file(
+                stream,
+                name=filename,
+                parent_id=parent_id,
+                size=size,
+                content_type=content_type,
+            )
+
+        try:
+            cloud_file = await asyncio.to_thread(_do_upload)
+        except CloudProviderError as exc:
+            self.set_status(400)
+            self.write({"error": str(exc)})
+            return
+        except Exception:
+            logging.exception("Failed to upload file to cloud provider %s", provider_name)
+            self.set_status(500)
+            self.write({"error": "Failed to upload file"})
+            return
+
+        self.write({"file": cloud_file.to_dict()})
+
 class ShareFilesHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
@@ -3895,44 +4245,91 @@ class ShareCreateHandler(BaseHandler):
             
             valid_paths = []
             dynamic_folders = []  # Store folders for dynamic shares
-            
-            for p in paths:
-                ap = os.path.abspath(os.path.join(ROOT_DIR, p))
+            remote_items = []
+
+            for entry in paths:
+                candidate_path = entry
+                if isinstance(entry, dict):
+                    entry_type = entry.get('type')
+                    if entry_type == 'cloud':
+                        remote_items.append(entry)
+                        continue
+                    if entry_type == 'local':
+                        candidate_path = entry.get('path')
+                if not isinstance(candidate_path, str):
+                    continue
+                candidate_path = candidate_path.strip()
+                if not candidate_path:
+                    continue
+
+                ap = os.path.abspath(os.path.join(ROOT_DIR, candidate_path))
                 if not is_within_root(ap, ROOT_DIR):
                     continue
-                    
+
                 if os.path.isfile(ap):
                     # It's a file, add it directly
-                    valid_paths.append(p)
+                    valid_paths.append(candidate_path)
                 elif os.path.isdir(ap):
                     if share_type == 'dynamic':
                         # For dynamic shares, store the folder path
-                        dynamic_folders.append(p)
-                        logging.debug(f"Added dynamic folder: {p}")
+                        dynamic_folders.append(candidate_path)
+                        logging.debug(f"Added dynamic folder: {candidate_path}")
                     else:
                         # For static shares, recursively get all files
                         try:
-                            all_files = _get_all_files_recursive(ap, p)
+                            all_files = _get_all_files_recursive(ap, candidate_path)
                             valid_paths.extend(all_files)
-                            logging.debug(f"Added {len(all_files)} files from directory: {p}")
+                            logging.debug(f"Added {len(all_files)} files from directory: {candidate_path}")
                         except Exception as e:
-                            logging.error(f"Error scanning directory {p}: {e}")
+                            logging.error(f"Error scanning directory {candidate_path}: {e}")
                             continue
-                        
+
+            sid = secrets.token_urlsafe(24)  # Increase entropy to reduce guessing risk (Priority 2)
+
             if share_type == 'dynamic':
+                if remote_items:
+                    self.set_status(400)
+                    self.write({"error": "Cloud files are not supported in dynamic shares"})
+                    _remove_share_cloud_dir(sid)
+                    return
                 if not dynamic_folders:
                     self.set_status(400)
                     self.write({"error": "No valid directories for dynamic share"})
+                    _remove_share_cloud_dir(sid)
                     return
                 # For dynamic shares, store the folder paths
-                valid_paths = dynamic_folders
+                final_paths = dynamic_folders
             else:
-                if not valid_paths:
+                combined_paths = list(valid_paths)
+                if remote_items:
+                    try:
+                        cloud_paths = _download_cloud_items(sid, remote_items)
+                        combined_paths.extend(cloud_paths)
+                    except CloudProviderError as cloud_error:
+                        _remove_share_cloud_dir(sid)
+                        self.set_status(400)
+                        self.write({"error": str(cloud_error)})
+                        return
+                    except Exception as exc:
+                        _remove_share_cloud_dir(sid)
+                        logging.exception("Failed to download cloud files for share %s", sid)
+                        self.set_status(500)
+                        self.write({"error": "Failed to download cloud files"})
+                        return
+
+                if not combined_paths:
+                    _remove_share_cloud_dir(sid)
                     self.set_status(400)
                     self.write({"error": "No valid files or directories"})
                     return
-                    
-            sid = secrets.token_urlsafe(24)  # Increase entropy to reduce guessing risk (Priority 2)
+
+                seen_paths = set()
+                final_paths = []
+                for rel_path in combined_paths:
+                    if rel_path not in seen_paths:
+                        final_paths.append(rel_path)
+                        seen_paths.add(rel_path)
+
             secret_token = secrets.token_urlsafe(32) if not disable_token else None  # Generate secret token only if not disabled
             created = datetime.utcnow().isoformat()
             
@@ -3968,78 +4365,6 @@ class ShareCreateHandler(BaseHandler):
             self.set_status(500)
             self.write({"error": str(e)})
 
-class ShareUpdateHandler(BaseHandler):
-    @tornado.web.authenticated
-    def post(self):
-        if not is_feature_enabled("file_share", True):
-            self.set_status(403)
-            self.write({"error": "File sharing is disabled"})
-            return
-        try:
-            data = json.loads(self.request.body or b'{}')
-            share_id = data.get('share_id')
-            share_type = data.get('share_type', 'static')
-            disable_token = data.get('disable_token', False)
-            allow_list = data.get('allow_list', [])
-            avoid_list = data.get('avoid_list', [])
-            expiry_date = data.get('expiry_date', None)
-            
-            if not share_id:
-                self.set_status(400)
-                self.write({"error": "Share ID is required"})
-                return
-            
-            # Ensure database connection
-            global DB_CONN
-            if DB_CONN is None:
-                self.set_status(500)
-                self.write({"error": "Database connection unavailable"})
-                return
-            
-            # Get existing share
-            share = _get_share_by_id(DB_CONN, share_id)
-            if not share:
-                self.set_status(404)
-                self.write({"error": "Share not found"})
-                return
-            
-            # Update share parameters
-            logging.debug(f"Updating share {share_id} with parameters:")
-            logging.debug(f"  - share_type: {share_type}")
-            logging.debug(f"  - disable_token: {disable_token}")
-            logging.debug(f"  - allow_list: {allow_list}")
-            logging.debug(f"  - avoid_list: {avoid_list}")
-            logging.debug(f"Database connection: {'available' if DB_CONN else 'None'}")
-            
-            success = _update_share(DB_CONN, share_id, share_type, disable_token, allow_list, avoid_list, None, expiry_date)
-            if success:
-                logging.debug(f"Share {share_id} updated successfully")
-                
-                # Verify the update by reading the share back
-                updated_share = _get_share_by_id(DB_CONN, share_id)
-                if updated_share:
-                    logging.debug(f"Verification - Share {share_id} after update:")
-                    logging.debug(f"  - share_type: {updated_share.get('share_type')}")
-                    logging.debug(f"  - secret_token: {'present' if updated_share.get('secret_token') else 'none'}")
-                    logging.debug(f"  - allow_list: {updated_share.get('allow_list')}")
-                    logging.debug(f"  - avoid_list: {updated_share.get('avoid_list')}")
-                
-                response_data = {"success": True, "message": "Share updated successfully"}
-                
-                # If a new token was generated, include it in the response
-                if disable_token is False and updated_share and updated_share.get('secret_token'):
-                    response_data["new_token"] = updated_share.get('secret_token')
-                    logging.debug(f"Returning new token to frontend")
-                
-                self.write(response_data)
-            else:
-                logging.error(f"Failed to update share {share_id}")
-                self.set_status(500)
-                self.write({"error": "Failed to update share"})
-        except Exception as e:
-            self.set_status(500)
-            self.write({"error": str(e)})
-
 class ShareRevokeHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self):
@@ -4063,6 +4388,9 @@ class ShareRevokeHandler(BaseHandler):
         except Exception as e:
             print(f"Failed to delete share {sid}: {e}")
             
+        if sid:
+            _remove_share_cloud_dir(sid)
+
         if self.request.headers.get('Accept') == 'application/json':
             self.write({'ok': True})
             return
@@ -4096,15 +4424,20 @@ class ShareUpdateHandler(BaseHandler):
             self.write({"error": "File sharing is disabled"})
             return
 
+        share_id = None
+        new_cloud_paths: list[str] = []
         try:
             data = json.loads(self.request.body or b'{}')
             share_id = data.get('share_id')
-            allowed_users = data.get('allowed_users', [])
+            allowed_users = data.get('allowed_users')
             remove_files = data.get('remove_files', [])
             paths = data.get('paths')  # New: support for updating entire paths list
             disable_token = data.get('disable_token')
             allow_list = data.get('allow_list')
             avoid_list = data.get('avoid_list')
+            share_type = data.get('share_type')
+            expiry_date = data.get('expiry_date')
+
             if not share_id:
                 self.set_status(400)
                 self.write({"error": "Share ID is required"})
@@ -4116,7 +4449,7 @@ class ShareUpdateHandler(BaseHandler):
                 self.set_status(500)
                 self.write({"error": "Database connection unavailable"})
                 return
-                
+
             # Get current share data from database
             share_data = _get_share_by_id(DB_CONN, share_id)
             if not share_data:
@@ -4124,25 +4457,90 @@ class ShareUpdateHandler(BaseHandler):
                 self.write({"error": "Share not found"})
                 return
 
-            # Prepare update data
-            update_fields = {}
-            
-            # Handle file removal
+            current_paths = share_data.get('paths', []) or []
+            requested_share_type = share_type if share_type is not None else share_data.get('share_type', 'static')
+
+            if requested_share_type == 'dynamic' and any(
+                _is_cloud_relative_path(share_id, path) for path in current_paths
+            ):
+                self.set_status(400)
+                self.write({"error": "Remove cloud files before switching to a dynamic share"})
+                return
+
+            update_fields: dict[str, object] = {}
+            cloud_paths_to_remove: list[str] = []
+
+            if share_type is not None:
+                update_fields['share_type'] = share_type
+
+            # Handle file removal requests
             if remove_files:
-                current_paths = share_data.get('paths', [])
                 updated_paths = [p for p in current_paths if p not in remove_files]
                 update_fields['paths'] = updated_paths
-                print(f"Removing files {remove_files} from share {share_id}")
-            
+                cloud_paths_to_remove.extend(
+                    [p for p in remove_files if _is_cloud_relative_path(share_id, p)]
+                )
+                logging.debug(f"Removing files {remove_files} from share {share_id}")
+
             # Handle complete paths update (for adding files)
             if paths is not None:
-                update_fields['paths'] = paths
-                print(f"Updating paths for share {share_id}: {paths}")
+                remote_items = []
+                processed_paths: list[str] = []
+
+                for entry in paths:
+                    candidate_path = entry
+                    if isinstance(entry, dict):
+                        entry_type = entry.get('type')
+                        if entry_type == 'cloud':
+                            remote_items.append(entry)
+                            continue
+                        if entry_type == 'local':
+                            candidate_path = entry.get('path')
+                    if not isinstance(candidate_path, str):
+                        continue
+                    cleaned = candidate_path.strip()
+                    if not cleaned:
+                        continue
+                    processed_paths.append(cleaned)
+
+                if requested_share_type == 'dynamic' and remote_items:
+                    self.set_status(400)
+                    self.write({"error": "Cloud files are not supported in dynamic shares"})
+                    return
+
+                if remote_items:
+                    try:
+                        downloaded_paths = _download_cloud_items(share_id, remote_items)
+                        processed_paths.extend(downloaded_paths)
+                        new_cloud_paths.extend(downloaded_paths)
+                    except CloudProviderError as cloud_error:
+                        self.set_status(400)
+                        self.write({"error": str(cloud_error)})
+                        return
+                    except Exception:
+                        logging.exception("Failed to download cloud files for share %s", share_id)
+                        self.set_status(500)
+                        self.write({"error": "Failed to download cloud files"})
+                        return
+
+                seen_paths = set()
+                deduped_paths: list[str] = []
+                for rel_path in processed_paths:
+                    if rel_path not in seen_paths:
+                        deduped_paths.append(rel_path)
+                        seen_paths.add(rel_path)
+
+                update_fields['paths'] = deduped_paths
+                removed_via_override = [
+                    p for p in current_paths
+                    if p not in deduped_paths and _is_cloud_relative_path(share_id, p)
+                ]
+                cloud_paths_to_remove.extend(removed_via_override)
+                logging.debug(f"Updating paths for share {share_id}: {deduped_paths}")
 
             # Update allowed users if provided
             if allowed_users is not None:
                 update_fields['allowed_users'] = allowed_users if allowed_users else None
-            
 
             if disable_token is True:
                 update_fields['secret_token'] = None
@@ -4154,29 +4552,34 @@ class ShareUpdateHandler(BaseHandler):
                     update_fields['secret_token'] = share_data['secret_token']
                 update_fields['disable_token'] = False
 
-
             if allow_list is not None:
                 update_fields['allow_list'] = allow_list
             if avoid_list is not None:
                 update_fields['avoid_list'] = avoid_list
-            
-            # Update database
+            if expiry_date is not None:
+                update_fields['expiry_date'] = expiry_date
+
+            # Persist updates
             if update_fields:
                 db_success = _update_share(DB_CONN, share_id, **update_fields)
-                if db_success:
-                    print(f"Successfully updated share {share_id} in database")
-                else:
-                    print(f"Failed to update share {share_id} in database")
+                if not db_success:
+                    for rel_path in new_cloud_paths:
+                        _remove_cloud_file_if_exists(share_id, rel_path)
+                    _cleanup_share_cloud_dir_if_empty(share_id)
                     self.set_status(500)
                     self.write({"error": "Failed to update share"})
                     return
             else:
                 db_success = True  # No updates needed
 
+            if cloud_paths_to_remove:
+                for rel_path in set(cloud_paths_to_remove):
+                    _remove_cloud_file_if_exists(share_id, rel_path)
+            _cleanup_share_cloud_dir_if_empty(share_id)
+
             # Get updated share data for response
             updated_share = _get_share_by_id(DB_CONN, share_id)
-            
-            # Prepare response
+
             response_data = {
                 "success": True,
                 "share_id": share_id,
@@ -4190,12 +4593,23 @@ class ShareUpdateHandler(BaseHandler):
                 response_data["remaining_files"] = updated_share.get('paths', [])
             if paths is not None:
                 response_data["updated_paths"] = updated_share.get('paths', [])
+            if share_type is not None:
+                response_data["share_type"] = updated_share.get('share_type')
+            if expiry_date is not None:
+                response_data["expiry_date"] = updated_share.get('expiry_date')
+            if disable_token is False and updated_share and updated_share.get('secret_token'):
+                response_data["new_token"] = updated_share.get('secret_token')
 
             self.write(response_data)
 
         except Exception as e:
+            if share_id and new_cloud_paths:
+                for rel_path in new_cloud_paths:
+                    _remove_cloud_file_if_exists(share_id, rel_path)
+                _cleanup_share_cloud_dir_if_empty(share_id)
             self.set_status(500)
             self.write({"error": str(e)})
+
 
 class UserSearchAPIHandler(BaseHandler):
     @tornado.web.authenticated
@@ -5000,6 +5414,10 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None, 
         (r"/edit", EditHandler),
         (r"/api/files/(.*)", FileListAPIHandler),
         (r"/api/users/search", UserSearchAPIHandler),
+        (r"/api/cloud/providers", CloudProvidersHandler),
+        (r"/api/cloud/([a-z0-9_\-]+)/files", CloudFilesHandler),
+        (r"/api/cloud/([a-z0-9_\-]+)/download", CloudDownloadHandler),
+        (r"/api/cloud/([a-z0-9_\-]+)/upload", CloudUploadHandler),
         (r"/api/share/details", ShareDetailsAPIHandler),
         (r"/api/share/details_by_id", ShareDetailsByIdAPIHandler),
         (r"/share", ShareFilesHandler),
@@ -5097,6 +5515,8 @@ def main():
                 FEATURE_FLAGS[feature_name] = bool(feature_value)
                 print(f"Feature flag '{feature_name}' set to {feature_value} from config.json")
     
+    _configure_cloud_providers(config)
+
     # SSL configuration
     ssl_cert = args.ssl_cert or config.get("ssl_cert")
     ssl_key = args.ssl_key or config.get("ssl_key")
@@ -5152,6 +5572,7 @@ def main():
         "xsrf_cookies": True,  # Enable CSRF protection
         "login_url": "/login",
         "admin_login_url": "/admin/login",
+        "cloud_manager": CLOUD_MANAGER,
     }
 
     # Initialize SQLite persistence under OS data dir
