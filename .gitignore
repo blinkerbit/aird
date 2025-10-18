@@ -6,3 +6,16 @@ temp
 .venv
 tests/large_test_file_1gb.txt
 tests/test_file_1gb.txt
+htmlcov
+.coverage
+.pytest_cache
+.ruff_cache
+.vscode
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+dists
+aird.egg-info
+
