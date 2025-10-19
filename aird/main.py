@@ -32,6 +32,7 @@ import aiofiles
 import re
 import weakref
 import hashlib
+import concurrent.futures
 from aird.utils.util import *
 from aird.constants import *
 
@@ -3637,13 +3638,17 @@ class EditHandler(BaseHandler):
             content = self.get_argument("content", "")
         
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
+        abspath = (pathlib.Path(ROOT_DIR) /  ("."+path)).absolute().resolve()
+        print(f"EditHandler: abspath: {abspath}")
         
-        if not is_within_root(abspath, ROOT_DIR):
+        if ROOT_DIR in abspath.parents:
+            logging.warning(f"EditHandler: access denied for path {path}.")
             self.set_status(403)
-            self.write("Access denied: You don't have permission to perform this action")
+            self.write(f"Access denied: You don't have permission to perform this action for path {path}.")
             return
             
         if not os.path.isfile(abspath):
+            logging.warning(f"EditHandler: file not found at path {path}.")
             self.set_status(404)
             self.write("File not found: The requested file may have been moved or deleted")
             return
@@ -4981,7 +4986,7 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
         """Search using memory mapping for large files"""
         try:
             # Use thread pool for mmap operations to avoid blocking
-            import concurrent.futures
+           
             
             def search_mmap():
                 matches = []
