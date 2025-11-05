@@ -5,8 +5,11 @@ import json
 from typing import Set
 import logging
 import asyncio
+import mmap
 import sys
 import sqlite3
+import glob
+import pathlib
 import ssl
 
 import tornado.ioloop
@@ -18,9 +21,18 @@ import shutil
 from collections import deque
 from ldap3 import Server, Connection, ALL
 from datetime import datetime
+import gzip
+import threading
 import time
-from urllib.parse import unquote
+import mimetypes
+from io import BytesIO
+import tempfile
+from urllib.parse import unquote, urlparse
 import aiofiles
+import re
+import weakref
+import hashlib
+import concurrent.futures
 from aird.utils.util import *
 from aird.constants import *
 
@@ -30,76 +42,7 @@ from cloud import (
     GoogleDriveProvider,
     OneDriveProvider,
 )
-
-# Import modularized components
-from aird.core.security import join_path, is_within_root, is_valid_websocket_origin
-from aird.core.websocket_manager import WebSocketConnectionManager, get_current_websocket_config
-from aird.core.filter_expression import FilterExpression
-from aird.core.mmap_handler import MMapFileHandler, get_files_in_directory, is_video_file, is_audio_file
-from aird.core.file_operations import (
-    get_all_files_recursive as _get_all_files_recursive,
-    matches_glob_patterns as _matches_glob_patterns,
-    filter_files_by_patterns as _filter_files_by_patterns,
-    cloud_root_dir as _cloud_root_dir,
-    ensure_share_cloud_dir as _ensure_share_cloud_dir,
-    sanitize_cloud_filename as _sanitize_cloud_filename,
-    is_cloud_relative_path as _is_cloud_relative_path,
-    remove_cloud_file_if_exists as _remove_cloud_file_if_exists,
-    cleanup_share_cloud_dir_if_empty as _cleanup_share_cloud_dir_if_empty,
-    remove_share_cloud_dir as _remove_share_cloud_dir,
-    download_cloud_item as _download_cloud_item,
-    download_cloud_items as _download_cloud_items,
-    configure_cloud_providers as _configure_cloud_providers,
-)
-
-from aird.database.db import (
-    get_data_dir as _get_data_dir,
-    init_db as _init_db,
-    set_db_conn,
-    get_db_conn,
-)
-from aird.database.users import (
-    hash_password as _hash_password,
-    verify_password as _verify_password,
-    create_user as _create_user,
-    get_user_by_username as _get_user_by_username,
-    get_all_users as _get_all_users,
-    search_users as _search_users,
-    update_user as _update_user,
-    delete_user as _delete_user,
-    authenticate_user as _authenticate_user,
-    assign_admin_privileges as _assign_admin_privileges,
-)
-from aird.database.shares import (
-    insert_share as _insert_share,
-    delete_share as _delete_share,
-    update_share as _update_share,
-    get_share_by_id as _get_share_by_id,
-    get_all_shares as _get_all_shares,
-    get_shares_for_path as _get_shares_for_path,
-    is_share_expired as _is_share_expired,
-    cleanup_expired_shares as _cleanup_expired_shares,
-)
-from aird.database.ldap import (
-    create_ldap_config as _create_ldap_config,
-    get_all_ldap_configs as _get_all_ldap_configs,
-    get_ldap_config_by_id as _get_ldap_config_by_id,
-    update_ldap_config as _update_ldap_config,
-    delete_ldap_config as _delete_ldap_config,
-    log_ldap_sync as _log_ldap_sync,
-    get_ldap_sync_logs as _get_ldap_sync_logs,
-    sync_ldap_users as _sync_ldap_users,
-    start_ldap_sync_scheduler as _start_ldap_sync_scheduler,
-)
-from aird.database.feature_flags import (
-    load_feature_flags as _load_feature_flags,
-    save_feature_flags as _save_feature_flags,
-    load_websocket_config as _load_websocket_config,
-    save_websocket_config as _save_websocket_config,
-    is_feature_enabled,
-)
-
-# Secure password hashing
+# Secure password hashing (Priority 1)
 try:
     from argon2 import PasswordHasher
     from argon2 import exceptions as argon2_exceptions
@@ -109,47 +52,1878 @@ except Exception:
     ARGON2_AVAILABLE = False
     PH = None
 
-# Rust integration
+# Import Rust integration with fallback
 try:
     from .rust_integration import (
         HybridFileHandler,
         HybridCompressionHandler,
         RUST_AVAILABLE
     )
+    # Log Rust availability
     logger = logging.getLogger(__name__)
     if RUST_AVAILABLE:
         logger.info("🚀 Rust core extensions loaded - performance mode enabled!")
     else:
         logger.info("⚠️  Rust extensions not available, using Python fallbacks")
 except ImportError:
+    # Fallback if rust_integration module doesn't exist yet
     RUST_AVAILABLE = False
     HybridFileHandler = None
     HybridCompressionHandler = None
 
+def join_path(*parts):
+    return os.path.join(*parts).replace("\\", "/")
 
-# Legacy global variables (to be phased out)
-ACCESS_TOKEN = None
-ADMIN_TOKEN = None
-ROOT_DIR = os.getcwd()
-DB_CONN = None
-DB_PATH = None
+# Path security helper (Priority 1)
+def is_within_root(path: str, root: str) -> bool:
+    """Return True if path is within root after resolving symlinks and normalization."""
+    try:
+        path_real = os.path.realpath(path)
+        root_real = os.path.realpath(root)
+        return os.path.commonpath([path_real, root_real]) == root_real
+    except Exception:
+        return False
 
-
-# Helper functions for backward compatibility with global DB_CONN
-def get_current_feature_flags() -> dict:
-    """Return current feature flags with SQLite values taking precedence."""
-    current = FEATURE_FLAGS.copy()
-    conn = get_db_conn() or DB_CONN
-    if conn is not None:
+# WebSocket origin validation helper (Priority 2)
+def is_valid_websocket_origin(handler, origin: str) -> bool:
+    try:
+        if not origin:
+            return False
+        parsed = urlparse(origin)
+        origin_host = parsed.hostname
+        origin_port = parsed.port
+        origin_scheme = parsed.scheme
+        # Determine expected host/port from request
+        req_host = handler.request.host.split(":")[0]
         try:
-            persisted = _load_feature_flags(conn)
+            req_port = int(handler.request.host.split(":")[1])
+        except (IndexError, ValueError):
+            req_port = 443 if handler.request.protocol == "https" else 80
+        expected_scheme = "https" if handler.request.protocol == "https" else "http"
+        if origin_scheme not in (expected_scheme, expected_scheme + "s"):
+            # Allow ws/wss equivalents to http/https
+            if not (origin_scheme in ("ws", "wss") and expected_scheme in ("http", "https")):
+                return False
+        if origin_host != req_host:
+            # Allow localhost in development if explicitly enabled
+            allow_dev = bool(handler.settings.get("allow_dev_origins", False))
+            if not (allow_dev and origin_host in {"localhost", "127.0.0.1"}):
+                return False
+        if origin_port and origin_port != req_port:
+            # Different port -> reject unless allow_dev and localhost
+            allow_dev = bool(handler.settings.get("allow_dev_origins", False))
+            if not (allow_dev and origin_host in {"localhost", "127.0.0.1"}):
+                return False
+        return True
+    except Exception:
+        return False
+
+
+
+
+class WebSocketConnectionManager:
+    """Base class for managing WebSocket connections with memory leak prevention"""
+    
+    def __init__(self, config_prefix: str, default_max_connections: int = 100, default_idle_timeout: int = 300):
+        self.connections: Set = set()
+        self.config_prefix = config_prefix
+        self.default_max_connections = default_max_connections
+        self.default_idle_timeout = default_idle_timeout
+        self.connection_times = weakref.WeakKeyDictionary()
+        self.last_activity = weakref.WeakKeyDictionary()
+        self._cleanup_lock = threading.Lock()
+        
+        # Start periodic cleanup
+        self._setup_cleanup_timer()
+    
+    @property
+    def max_connections(self) -> int:
+        """Get current max connections from configuration"""
+        config = get_current_websocket_config()
+        return config.get(f"{self.config_prefix}_max_connections", self.default_max_connections)
+    
+    @property
+    def idle_timeout(self) -> int:
+        """Get current idle timeout from configuration"""
+        config = get_current_websocket_config()
+        return config.get(f"{self.config_prefix}_idle_timeout", self.default_idle_timeout)
+    
+    def _setup_cleanup_timer(self):
+        """Setup periodic cleanup of dead and idle connections"""
+        def cleanup():
+            self.cleanup_dead_connections()
+            self.cleanup_idle_connections()
+            # Schedule next cleanup
+            tornado.ioloop.IOLoop.current().call_later(60, cleanup)
+        
+        # Start cleanup in 60 seconds
+        tornado.ioloop.IOLoop.current().call_later(60, cleanup)
+    
+    def add_connection(self, connection) -> bool:
+        """Add a connection if under limit. Returns True if added."""
+        with self._cleanup_lock:
+            if len(self.connections) >= self.max_connections:
+                return False
+            
+            self.connections.add(connection)
+            self.connection_times[connection] = time.time()
+            self.last_activity[connection] = time.time()
+            return True
+    
+    def remove_connection(self, connection):
+        """Remove a connection safely"""
+        with self._cleanup_lock:
+            self.connections.discard(connection)
+            self.connection_times.pop(connection, None)
+            self.last_activity.pop(connection, None)
+    
+    def update_activity(self, connection):
+        """Update last activity time for a connection"""
+        self.last_activity[connection] = time.time()
+    
+    def cleanup_dead_connections(self):
+        """Remove connections that can't receive messages"""
+        with self._cleanup_lock:
+            dead_connections = set()
+            for conn in list(self.connections):
+                try:
+                    # Try to ping the connection
+                    if hasattr(conn, 'ws_connection') and conn.ws_connection:
+                        conn.ping()
+                    else:
+                        # Connection is closed
+                        dead_connections.add(conn)
+                except Exception:
+                    dead_connections.add(conn)
+            
+            for conn in dead_connections:
+                self.remove_connection(conn)
+    
+    def cleanup_idle_connections(self):
+        """Remove connections that have been idle too long"""
+        with self._cleanup_lock:
+            current_time = time.time()
+            idle_connections = set()
+            
+            for conn in list(self.connections):
+                last_activity = self.last_activity.get(conn, 0)
+                if current_time - last_activity > self.idle_timeout:
+                    idle_connections.add(conn)
+            
+            for conn in idle_connections:
+                try:
+                    if hasattr(conn, 'close'):
+                        conn.close(code=1000, reason="Idle timeout")
+                except Exception:
+                    pass
+                self.remove_connection(conn)
+    
+    def get_stats(self) -> dict:
+        """Get connection statistics"""
+        with self._cleanup_lock:
+            current_time = time.time()
+            return {
+                'active_connections': len(self.connections),
+                'max_connections': self.max_connections,
+                'idle_timeout': self.idle_timeout,
+                'oldest_connection_age': max(
+                    (current_time - self.connection_times.get(conn, current_time) 
+                     for conn in self.connections), 
+                    default=0
+                ),
+                'average_connection_age': sum(
+                    current_time - self.connection_times.get(conn, current_time) 
+                    for conn in self.connections
+                ) / len(self.connections) if self.connections else 0
+            }
+    
+    def broadcast_message(self, message, filter_func=None):
+        """Broadcast message to all connections with optional filtering"""
+        with self._cleanup_lock:
+            dead_connections = set()
+            for conn in list(self.connections):
+                try:
+                    if filter_func is None or filter_func(conn):
+                        if hasattr(conn, 'write_message'):
+                            conn.write_message(message)
+                        self.update_activity(conn)
+                except Exception:
+                    dead_connections.add(conn)
+            
+            # Remove dead connections
+            for conn in dead_connections:
+                self.remove_connection(conn)
+
+class FilterExpression:
+    """Parse and evaluate complex filter expressions with AND/OR logic"""
+    
+    def __init__(self, expression: str):
+        self.original_expression = expression
+        self.parsed_expression = self._parse(expression)
+    
+    def _parse(self, expression: str):
+        """Parse filter expression into evaluable structure"""
+        if not expression or not expression.strip():
+            return None
+            
+        expression = expression.strip()
+        
+        # Handle escaped expressions (prefix with backslash to force literal interpretation)
+        if expression.startswith('\\'):
+            return {'type': 'term', 'value': expression[1:].strip('"')}
+        
+        # Handle quoted expressions (always literal)
+        if ((expression.startswith('"') and expression.endswith('"')) or 
+            (expression.startswith("'") and expression.endswith("'"))):
+            return {'type': 'term', 'value': expression[1:-1]}
+        
+        # Check if this looks like a logical expression
+        # Use word boundary regex to detect standalone AND/OR operators
+        has_logical_operators = (
+            re.search(r'\bAND\b', expression, re.IGNORECASE) or
+            re.search(r'\bOR\b', expression, re.IGNORECASE)
+        )
+        
+        # Additional check: make sure these are actually surrounded by whitespace (logical operators)
+        if has_logical_operators:
+            # Verify these are standalone words, not part of other words
+            and_matches = list(re.finditer(r'\bAND\b', expression, re.IGNORECASE))
+            or_matches = list(re.finditer(r'\bOR\b', expression, re.IGNORECASE))
+            
+            has_logical_and = any(
+                self._is_standalone_operator_static(expression, match.start(), match.end())
+                for match in and_matches
+            )
+            has_logical_or = any(
+                self._is_standalone_operator_static(expression, match.start(), match.end())
+                for match in or_matches
+            )
+            
+            has_logical_operators = has_logical_and or has_logical_or
+        
+        if not has_logical_operators:
+            return {'type': 'term', 'value': expression.strip('"')}
+        
+        # Parse complex expressions
+        return self._parse_complex(expression)
+    
+    def _parse_complex(self, expression: str):
+        """Parse complex expressions with AND/OR and parentheses"""
+        try:
+            # Handle parentheses first by balancing them
+            expression = expression.strip()
+            
+            # If the entire expression is wrapped in parentheses, remove them
+            if expression.startswith('(') and expression.endswith(')'):
+                # Check if parentheses are balanced
+                if self._is_balanced_parentheses(expression):
+                    return self._parse_complex(expression[1:-1])
+            
+            # Find OR outside of parentheses (lower precedence)
+            or_parts = self._split_respecting_parentheses(expression, 'OR')
+            if len(or_parts) > 1:
+                return {
+                    'type': 'or',
+                    'operands': [self._parse_and_part(part.strip()) for part in or_parts]
+                }
+            
+            # If no OR, try AND
+            return self._parse_and_part(expression)
+            
+        except Exception:
+            # Fallback to simple term matching on parse error
+            return {'type': 'term', 'value': expression.strip('"')}
+    
+    def _parse_and_part(self, expression: str):
+        """Parse AND expressions"""
+        and_parts = self._split_respecting_parentheses(expression, 'AND')
+        if len(and_parts) > 1:
+            return {
+                'type': 'and',
+                'operands': [self._parse_term(part.strip()) for part in and_parts]
+            }
+        return self._parse_term(expression.strip())
+    
+    def _parse_term(self, term: str):
+        """Parse individual terms, handling quotes and parentheses"""
+        term = term.strip()
+        
+        # Handle parentheses
+        if term.startswith('(') and term.endswith(')'):
+            return self._parse_complex(term[1:-1])
+        
+        # Handle quoted terms
+        if (term.startswith('"') and term.endswith('"')) or (term.startswith("'") and term.endswith("'")):
+            return {'type': 'term', 'value': term[1:-1]}
+        
+        return {'type': 'term', 'value': term}
+    
+    def matches(self, line: str) -> bool:
+        """Evaluate if a line matches the filter expression"""
+        if self.parsed_expression is None:
+            return True
+        return self._evaluate(self.parsed_expression, line)
+    
+    def _evaluate(self, node, line: str) -> bool:
+        """Recursively evaluate parsed expression against line"""
+        if node['type'] == 'term':
+            return node['value'].lower() in line.lower()
+        elif node['type'] == 'and':
+            return all(self._evaluate(operand, line) for operand in node['operands'])
+        elif node['type'] == 'or':
+            return any(self._evaluate(operand, line) for operand in node['operands'])
+        return False
+    
+    def _split_respecting_parentheses(self, expression: str, operator: str):
+        """Split expression by operator while respecting parentheses and word boundaries"""
+        parts = []
+        current_part = ""
+        paren_depth = 0
+        in_quotes = False
+        quote_char = None
+        i = 0
+        
+        while i < len(expression):
+            char = expression[i]
+            
+            # Handle quotes
+            if char in ['"', "'"] and not in_quotes:
+                in_quotes = True
+                quote_char = char
+            elif char == quote_char and in_quotes:
+                in_quotes = False
+                quote_char = None
+            
+            # Skip everything inside quotes
+            if in_quotes:
+                current_part += char
+                i += 1
+                continue
+            
+            # Handle parentheses
+            if char == '(':
+                paren_depth += 1
+            elif char == ')':
+                paren_depth -= 1
+            
+            # Check for operator when we're at the top level
+            if paren_depth == 0:
+                # Check if we're at the start of the operator
+                remaining = expression[i:]
+                # Pattern: operator with word boundaries, possibly with whitespace
+                op_pattern = f'\\b{re.escape(operator)}\\b'
+                match = re.match(op_pattern, remaining, re.IGNORECASE)
+                if match:
+                    # Verify this is actually a logical operator by checking context
+                    operator_start = i
+                    operator_end = i + len(match.group(0))
+                    
+                    # Check if surrounded by whitespace or start/end of string
+                    before_ok = operator_start == 0 or expression[operator_start - 1].isspace()
+                    after_ok = operator_end >= len(expression) or expression[operator_end].isspace()
+                    
+                    if before_ok and after_ok:
+                        # Found operator at top level
+                        parts.append(current_part.strip())
+                        current_part = ""
+                        # Skip the operator and any following whitespace
+                        i = operator_end
+                        while i < len(expression) and expression[i].isspace():
+                            i += 1
+                        continue
+            
+            current_part += char
+            i += 1
+        
+        if current_part.strip():
+            parts.append(current_part.strip())
+        
+        return parts if len(parts) > 1 else [expression]
+    
+    
+    def _is_balanced_parentheses(self, expression: str):
+        """Check if parentheses are balanced"""
+        depth = 0
+        in_quotes = False
+        quote_char = None
+        
+        for char in expression:
+            if char in ['"', "'"] and not in_quotes:
+                in_quotes = True
+                quote_char = char
+            elif char == quote_char and in_quotes:
+                in_quotes = False
+                quote_char = None
+            elif not in_quotes:
+                if char == '(':
+                    depth += 1
+                elif char == ')':
+                    depth -= 1
+                    if depth < 0:
+                        return False
+        
+        return depth == 0
+    
+    def _is_standalone_operator(self, expression: str, start: int, end: int, operator: str):
+        """Check if AND/OR at this position is a standalone logical operator"""
+        return self._is_standalone_operator_static(expression, start, end)
+    
+    @staticmethod
+    def _is_standalone_operator_static(expression: str, start: int, end: int):
+        """Static version of _is_standalone_operator for use during parsing"""
+        # Check if surrounded by whitespace (indicating it's a logical operator)
+        before_space = start == 0 or expression[start - 1].isspace()
+        after_space = end >= len(expression) or expression[end].isspace()
+        
+        return before_space and after_space
+
+    def __str__(self):
+        return f"FilterExpression({self.original_expression})"
+
+# ------------------------
+# SQLite persistence layer
+# ------------------------
+
+def _get_data_dir() -> str:
+    """Return OS-appropriate data directory for storing the SQLite DB."""
+    try:
+        if os.name == 'nt':  # Windows
+            base = os.environ.get('LOCALAPPDATA') or os.environ.get('APPDATA') or os.path.expanduser('~\\AppData\\Local')
+        elif sys.platform == 'darwin':  # macOS
+            base = os.path.expanduser('~/Library/Application Support')
+        else:  # Linux and others
+            base = os.environ.get('XDG_DATA_HOME') or os.path.expanduser('~/.local/share')
+        data_dir = os.path.join(base, 'aird')
+        os.makedirs(data_dir, exist_ok=True)
+        return data_dir
+    except Exception:
+        # Fallback to current directory
+        return os.getcwd()
+
+def _init_db(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS feature_flags (
+            key TEXT PRIMARY KEY,
+            value INTEGER NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS shares (
+            id TEXT PRIMARY KEY,
+            created TEXT NOT NULL,
+            paths TEXT NOT NULL,
+            allowed_users TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'user',
+            created_at TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1,
+            last_login TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ldap_configs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            server TEXT NOT NULL,
+            ldap_base_dn TEXT NOT NULL,
+            ldap_member_attributes TEXT NOT NULL DEFAULT 'member',
+            user_template TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ldap_sync_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            config_id INTEGER NOT NULL,
+            sync_type TEXT NOT NULL,
+            users_found INTEGER NOT NULL,
+            users_created INTEGER NOT NULL,
+            users_removed INTEGER NOT NULL,
+            sync_time TEXT NOT NULL,
+            status TEXT NOT NULL,
+            error_message TEXT,
+            FOREIGN KEY (config_id) REFERENCES ldap_configs (id)
+        )
+        """
+    )
+
+    # Migration for shares table
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(shares)")
+    columns = [column[1] for column in cursor.fetchall()]
+    if "allowed_users" not in columns:
+        cursor.execute("ALTER TABLE shares ADD COLUMN allowed_users TEXT")
+    if "secret_token" not in columns:
+        cursor.execute("ALTER TABLE shares ADD COLUMN secret_token TEXT")
+    if "share_type" not in columns:
+        cursor.execute("ALTER TABLE shares ADD COLUMN share_type TEXT DEFAULT 'static'")
+    if "allow_list" not in columns:
+        cursor.execute("ALTER TABLE shares ADD COLUMN allow_list TEXT")
+    if "avoid_list" not in columns:
+        cursor.execute("ALTER TABLE shares ADD COLUMN avoid_list TEXT")
+    if "expiry_date" not in columns:
+        cursor.execute("ALTER TABLE shares ADD COLUMN expiry_date TEXT")
+
+    conn.commit()
+
+def _load_feature_flags(conn: sqlite3.Connection) -> dict:
+    try:
+        rows = conn.execute("SELECT key, value FROM feature_flags").fetchall()
+        return {k: bool(v) for (k, v) in rows}
+    except Exception:
+        return {}
+
+def _save_feature_flags(conn: sqlite3.Connection, flags: dict) -> None:
+    try:
+        with conn:
+            for k, v in flags.items():
+                conn.execute(
+                    "REPLACE INTO feature_flags (key, value) VALUES (?, ?)",
+                    (k, 1 if v else 0),
+                )
+    except Exception:
+        pass
+
+
+def _insert_share(conn: sqlite3.Connection, sid: str, created: str, paths: list[str], allowed_users: list[str] = None, secret_token: str = None, share_type: str = "static", allow_list: list[str] = None, avoid_list: list[str] = None, expiry_date: str = None) -> bool:
+    try:
+        with conn:
+            conn.execute(
+                "REPLACE INTO shares (id, created, paths, allowed_users, secret_token, share_type, allow_list, avoid_list, expiry_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (sid, created, json.dumps(paths), json.dumps(allowed_users) if allowed_users else None, secret_token, share_type, json.dumps(allow_list) if allow_list else None, json.dumps(avoid_list) if avoid_list else None, expiry_date),
+            )
+        return True
+    except Exception as e:
+        logging.error(f"Failed to insert share {sid} into database: {e}")
+        import traceback
+        logging.debug(f"Traceback: {traceback.format_exc()}")
+        return False
+
+def _delete_share(conn: sqlite3.Connection, sid: str) -> None:
+    try:
+        with conn:
+            conn.execute("DELETE FROM shares WHERE id = ?", (sid,))
+    except Exception:
+        pass
+
+def _update_share(conn: sqlite3.Connection, sid: str, share_type: str = None, disable_token: bool = None, allow_list: list = None, avoid_list: list = None, secret_token: str = None, expiry_date: str = None, **kwargs) -> bool:
+    """Update share information"""
+    try:
+        updates = []
+        values = []
+
+        # Handle new parameters
+        if share_type is not None:
+            updates.append("share_type = ?")
+            values.append(share_type)
+        
+        token_update_requested = (disable_token is not None) or (secret_token is not None)
+        if token_update_requested:
+            if disable_token is True:
+                logging.debug(f"_update_share - disable_token={disable_token}")
+                logging.debug("Disabling token (setting to None)")
+                updates.append("secret_token = ?")
+                values.append(None)
+            else:
+                new_token = secrets.token_urlsafe(32) if secret_token is None else secret_token
+                updates.append("secret_token = ?")
+                values.append(new_token)
+
+        
+        if allow_list is not None:
+            updates.append("allow_list = ?")
+            values.append(json.dumps(allow_list) if allow_list else None)
+        
+        if avoid_list is not None:
+            updates.append("avoid_list = ?")
+            values.append(json.dumps(avoid_list) if avoid_list else None)
+        
+        if expiry_date is not None:
+            updates.append("expiry_date = ?")
+            values.append(expiry_date)
+
+        # Handle legacy parameters
+        valid_fields = ['allowed_users', 'paths']
+        for field, value in kwargs.items():
+            if field in valid_fields:
+                updates.append(f"{field} = ?")
+                if field in ['allowed_users', 'paths'] and value is not None:
+                    values.append(json.dumps(value))
+                else:
+                    values.append(value)
+
+        if not updates:
+            return False
+
+        values.append(sid)
+        query = f"UPDATE shares SET {', '.join(updates)} WHERE id = ?"
+
+        with conn:
+            cursor = conn.execute(query, values)
+            logging.debug(f"Update executed, rows affected: {cursor.rowcount}")
+            
+        return True
+    except Exception as e:
+        logging.error(f"Failed to update share {sid}: {e}")
+        import traceback
+        logging.debug(f"Traceback: {traceback.format_exc()}")
+        return False
+
+def _get_all_files_recursive(root_path: str, base_path: str = "") -> list:
+    """Recursively get all files in a directory"""
+    all_files = []
+    try:
+        for item in os.listdir(root_path):
+            item_path = os.path.join(root_path, item)
+            relative_path = os.path.join(base_path, item) if base_path else item
+            
+            if os.path.isfile(item_path):
+                # It's a file, add it to the list
+                all_files.append(relative_path)
+            elif os.path.isdir(item_path):
+                # It's a directory, recursively scan it
+                sub_files = _get_all_files_recursive(item_path, relative_path)
+                all_files.extend(sub_files)
+    except (OSError, PermissionError) as e:
+        print(f"Error scanning directory {root_path}: {e}")
+    
+    return all_files
+
+def _matches_glob_patterns(file_path: str, patterns: list[str]) -> bool:
+    """Check if a file path matches any of the given glob patterns"""
+    if not patterns:
+        return False
+    
+    import fnmatch
+    for pattern in patterns:
+        if fnmatch.fnmatch(file_path, pattern):
+            return True
+    return False
+
+def _filter_files_by_patterns(
+    files: list[str], allow_list: list[str] = None, avoid_list: list[str] = None
+) -> list[str]:
+    """Filter files based on allow and avoid glob patterns."""
+    if not files:
+        return files
+
+    filtered_files = []
+
+    for file_path in files:
+        # Check avoid list first (takes priority)
+        if avoid_list and _matches_glob_patterns(file_path, avoid_list):
+            continue
+
+        # Check allow list
+        if allow_list:
+            if _matches_glob_patterns(file_path, allow_list):
+                filtered_files.append(file_path)
+        else:
+            # No allow list means all files are allowed (unless in avoid list)
+            filtered_files.append(file_path)
+
+    return filtered_files
+
+
+def _cloud_root_dir() -> str:
+    return os.path.join(ROOT_DIR, CLOUD_SHARE_FOLDER)
+
+
+def _ensure_share_cloud_dir(share_id: str) -> str:
+    share_dir = os.path.join(_cloud_root_dir(), share_id)
+    os.makedirs(share_dir, exist_ok=True)
+    return share_dir
+
+
+def _sanitize_cloud_filename(name: str | None) -> str:
+    candidate = (name or "cloud_file").strip()
+    candidate = candidate.replace(os.sep, "_").replace("/", "_")
+    candidate = re.sub(r"[^A-Za-z0-9._-]", "_", candidate)
+    candidate = candidate.strip("._")
+    if not candidate:
+        candidate = "cloud_file"
+    return candidate[:128]
+
+
+def _is_cloud_relative_path(share_id: str, relative_path: str) -> bool:
+    normalized = relative_path.replace("\\", "/")
+    prefix = f"{CLOUD_SHARE_FOLDER}/{share_id}/"
+    return normalized.startswith(prefix)
+
+
+def _remove_cloud_file_if_exists(share_id: str, relative_path: str) -> None:
+    if not _is_cloud_relative_path(share_id, relative_path):
+        return
+    abs_path = os.path.abspath(os.path.join(ROOT_DIR, relative_path))
+    if not is_within_root(abs_path, ROOT_DIR):
+        return
+    if os.path.isfile(abs_path):
+        try:
+            os.remove(abs_path)
+        except OSError:
+            pass
+    _cleanup_share_cloud_dir_if_empty(share_id)
+
+
+def _cleanup_share_cloud_dir_if_empty(share_id: str) -> None:
+    share_dir = os.path.join(_cloud_root_dir(), share_id)
+    try:
+        if os.path.isdir(share_dir) and not os.listdir(share_dir):
+            shutil.rmtree(share_dir, ignore_errors=True)
+    except Exception:
+        pass
+
+
+def _remove_share_cloud_dir(share_id: str) -> None:
+    if not share_id:
+        return
+    share_dir = os.path.join(_cloud_root_dir(), share_id)
+    shutil.rmtree(share_dir, ignore_errors=True)
+
+
+def _download_cloud_item(share_id: str, item: dict) -> str:
+    provider_name = item.get("provider")
+    file_id = item.get("id")
+    if not provider_name or not file_id:
+        raise CloudProviderError("Invalid cloud file specification")
+    if item.get("is_dir"):
+        raise CloudProviderError("Cloud folder sharing is not supported")
+    provider = CLOUD_MANAGER.get(provider_name)
+    if not provider:
+        raise CloudProviderError(f"Cloud provider '{provider_name}' is not configured")
+    try:
+        download = provider.download_file(file_id)
+    except CloudProviderError:
+        raise
+    except Exception as exc:
+        raise CloudProviderError(str(exc)) from exc
+
+    filename = _sanitize_cloud_filename(item.get("name") or getattr(download, "name", None) or f"{provider_name}-{file_id}")
+    share_dir = _ensure_share_cloud_dir(share_id)
+    base, ext = os.path.splitext(filename)
+    candidate = filename
+    dest_path = os.path.join(share_dir, candidate)
+    counter = 1
+    while os.path.exists(dest_path):
+        candidate = f"{base}_{counter}{ext}"
+        dest_path = os.path.join(share_dir, candidate)
+        counter += 1
+
+    try:
+        with open(dest_path, "wb") as fh:
+            for chunk in download.iter_chunks():
+                fh.write(chunk)
+    except Exception as exc:
+        try:
+            os.remove(dest_path)
+        except OSError:
+            pass
+        raise CloudProviderError(f"Failed to download cloud file '{filename}': {exc}") from exc
+    finally:
+        try:
+            download.close()
+        except Exception:
+            pass
+
+    relative = join_path(CLOUD_SHARE_FOLDER, share_id, os.path.basename(dest_path))
+    return relative
+
+
+def _download_cloud_items(share_id: str, items: list[dict]) -> list[str]:
+    if not items:
+        return []
+    downloaded: list[str] = []
+    try:
+        for item in items:
+            downloaded.append(_download_cloud_item(share_id, item))
+        return downloaded
+    except CloudProviderError:
+        for rel_path in downloaded:
+            _remove_cloud_file_if_exists(share_id, rel_path)
+        raise
+    except Exception as exc:
+        for rel_path in downloaded:
+            _remove_cloud_file_if_exists(share_id, rel_path)
+        raise CloudProviderError(str(exc)) from exc
+
+def _configure_cloud_providers(config: dict | None) -> None:
+    """Load cloud provider configuration from config dict and environment."""
+    CLOUD_MANAGER.reset()
+
+    if not isinstance(config, dict):
+        config = {}
+
+    cloud_config = config.get('cloud', {})
+    if not isinstance(cloud_config, dict):
+        cloud_config = {}
+
+    # Google Drive configuration
+    gdrive_config = cloud_config.get('google_drive', {})
+    if not isinstance(gdrive_config, dict):
+        gdrive_config = {}
+    gdrive_token = (
+        gdrive_config.get('access_token')
+        or os.environ.get('AIRD_GDRIVE_ACCESS_TOKEN')
+    )
+    gdrive_root = (
+        gdrive_config.get('root_id')
+        or os.environ.get('AIRD_GDRIVE_ROOT_ID')
+        or 'root'
+    )
+    include_shared = gdrive_config.get('include_shared_drives', True)
+
+    if gdrive_token:
+        try:
+            CLOUD_MANAGER.register(
+                GoogleDriveProvider(
+                    gdrive_token,
+                    root_id=gdrive_root,
+                    include_shared_drives=bool(include_shared),
+                )
+            )
+        except CloudProviderError as exc:
+            logging.error("Failed to configure Google Drive provider: %s", exc)
+
+    # OneDrive configuration
+    onedrive_config = cloud_config.get('one_drive')
+    if not isinstance(onedrive_config, dict):
+        onedrive_config = cloud_config.get('onedrive', {})
+        if not isinstance(onedrive_config, dict):
+            onedrive_config = {}
+    onedrive_token = (
+        onedrive_config.get('access_token')
+        or os.environ.get('AIRD_ONEDRIVE_ACCESS_TOKEN')
+        or os.environ.get('AIRD_ONE_DRIVE_ACCESS_TOKEN')
+    )
+    drive_id = onedrive_config.get('drive_id') or os.environ.get('AIRD_ONEDRIVE_DRIVE_ID')
+
+    if onedrive_token:
+        try:
+            CLOUD_MANAGER.register(OneDriveProvider(onedrive_token, drive_id=drive_id))
+        except CloudProviderError as exc:
+            logging.error("Failed to configure OneDrive provider: %s", exc)
+
+    if not CLOUD_MANAGER.has_providers():
+        logging.info("No cloud providers configured")
+
+def _is_share_expired(expiry_date: str) -> bool:
+    """Check if a share has expired based on expiry_date using system time"""
+    if not expiry_date:
+        return False
+    
+    try:
+        from datetime import datetime
+        
+        # Parse the expiry date and convert to naive datetime (system time)
+        expiry_datetime = datetime.fromisoformat(expiry_date.replace('Z', ''))
+        
+        # Get current system time (naive datetime)
+        current_datetime = datetime.now()
+        
+        # Simple comparison using system time
+        is_expired = current_datetime > expiry_datetime
+        logging.debug(f"Checking expiry: current={current_datetime}, expiry={expiry_datetime}, expired={is_expired}")
+        return is_expired
+    except Exception as e:
+        logging.error(f"Error checking expiry date {expiry_date}: {e}")
+        return False
+
+def _cleanup_expired_shares(conn: sqlite3.Connection) -> int:
+    """Remove expired shares from the database. Returns the number of shares deleted."""
+    try:
+        from datetime import datetime
+        cursor = conn.execute("SELECT id, expiry_date FROM shares WHERE expiry_date IS NOT NULL")
+        rows = cursor.fetchall()
+        
+        deleted_count = 0
+        for share_id, expiry_date in rows:
+            if _is_share_expired(expiry_date):
+                with conn:
+                    conn.execute("DELETE FROM shares WHERE id = ?", (share_id,))
+                    deleted_count += 1
+                    logging.info(f"Deleted expired share: {share_id}")
+        
+        return deleted_count
+    except Exception as e:
+        logging.error(f"Error cleaning up expired shares: {e}")
+        return 0
+
+def _get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict:
+    """Get a single share by ID from database"""
+    try:
+        logging.debug(f"_get_share_by_id called with sid='{sid}'")
+        logging.debug(f"conn is {'None' if conn is None else 'available'}")
+        
+        # Check if secret_token column exists
+        cursor = conn.execute("PRAGMA table_info(shares)")
+        columns = [row[1] for row in cursor.fetchall()]
+        logging.debug(f"Table columns: {columns}")
+        
+        if 'secret_token' in columns and 'share_type' in columns and 'allow_list' in columns and 'avoid_list' in columns and 'expiry_date' in columns:
+            logging.debug(f"Using query with all columns including expiry_date")
+            cursor = conn.execute(
+                "SELECT id, created, paths, allowed_users, secret_token, share_type, allow_list, avoid_list, expiry_date FROM shares WHERE id = ?",
+                (sid,)
+            )
+            row = cursor.fetchone()
+            logging.debug(f"Query result: {row}")
+            if row:
+                sid, created, paths_json, allowed_users_json, secret_token, share_type, allow_list_json, avoid_list_json, expiry_date = row
+                result = {
+                    "id": sid,
+                    "created": created,
+                    "paths": json.loads(paths_json) if paths_json else [],
+                    "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
+                    "secret_token": secret_token,
+                    "share_type": share_type or "static",
+                    "allow_list": json.loads(allow_list_json) if allow_list_json else [],
+                    "avoid_list": json.loads(avoid_list_json) if avoid_list_json else [],
+                    "expiry_date": expiry_date
+                }
+                logging.debug(f"Returning share data: {result}")
+                return result
+        elif 'secret_token' in columns and 'share_type' in columns:
+            logging.debug(f"Using query with secret_token and share_type columns")
+            cursor = conn.execute(
+                "SELECT id, created, paths, allowed_users, secret_token, share_type FROM shares WHERE id = ?",
+                (sid,)
+            )
+            row = cursor.fetchone()
+            logging.debug(f"Query result: {row}")
+            if row:
+                sid, created, paths_json, allowed_users_json, secret_token, share_type = row
+                result = {
+                    "id": sid,
+                    "created": created,
+                    "paths": json.loads(paths_json) if paths_json else [],
+                    "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
+                    "secret_token": secret_token,
+                    "share_type": share_type or "static",
+                    "allow_list": [],
+                    "avoid_list": [],
+                    "expiry_date": None
+                }
+                logging.debug(f"Returning share data: {result}")
+                return result
+        elif 'secret_token' in columns:
+            logging.debug(f"Using query with secret_token column")
+            cursor = conn.execute(
+                "SELECT id, created, paths, allowed_users, secret_token FROM shares WHERE id = ?",
+                (sid,)
+            )
+            row = cursor.fetchone()
+            logging.debug(f"Query result: {row}")
+            if row:
+                sid, created, paths_json, allowed_users_json, secret_token = row
+                result = {
+                    "id": sid,
+                    "created": created,
+                    "paths": json.loads(paths_json) if paths_json else [],
+                    "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
+                    "secret_token": secret_token,
+                    "share_type": "static",
+                    "allow_list": [],
+                    "avoid_list": [],
+                    "expiry_date": None
+                }
+                logging.debug(f"Returning share data: {result}")
+                return result
+        else:
+            logging.debug(f"Using query without secret_token column")
+            cursor = conn.execute(
+                "SELECT id, created, paths, allowed_users FROM shares WHERE id = ?",
+                (sid,)
+            )
+            row = cursor.fetchone()
+            logging.debug(f"Query result: {row}")
+            if row:
+                sid, created, paths_json, allowed_users_json = row
+                result = {
+                    "id": sid,
+                    "created": created,
+                    "paths": json.loads(paths_json) if paths_json else [],
+                    "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
+                    "secret_token": None,
+                    "share_type": "static",
+                    "allow_list": [],
+                    "avoid_list": [],
+                    "expiry_date": None
+                }
+                logging.debug(f"Returning share data: {result}")
+                return result
+        
+        logging.debug(f"No share found for sid='{sid}'")
+        return None
+    except Exception as e:
+        logging.error(f"Error getting share {sid}: {e}")
+        import traceback
+        logging.debug(f"Traceback: {traceback.format_exc()}")
+        return None
+
+def _get_all_shares(conn: sqlite3.Connection) -> dict:
+    """Get all shares from database"""
+    try:
+        # Check if secret_token column exists
+        cursor = conn.execute("PRAGMA table_info(shares)")
+        columns = [row[1] for row in cursor.fetchall()]
+        
+        if 'secret_token' in columns:
+            cursor = conn.execute(
+                "SELECT id, created, paths, allowed_users, secret_token FROM shares"
+            )
+            shares = {}
+            for row in cursor:
+                sid, created, paths_json, allowed_users_json, secret_token = row
+                shares[sid] = {
+                    "created": created,
+                    "paths": json.loads(paths_json) if paths_json else [],
+                    "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
+                    "secret_token": secret_token
+                }
+        else:
+            cursor = conn.execute(
+                "SELECT id, created, paths, allowed_users FROM shares"
+            )
+            shares = {}
+            for row in cursor:
+                sid, created, paths_json, allowed_users_json = row
+                shares[sid] = {
+                    "created": created,
+                    "paths": json.loads(paths_json) if paths_json else [],
+                    "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
+                    "secret_token": None
+                }
+        return shares
+    except Exception as e:
+        print(f"Error getting all shares: {e}")
+        return {}
+
+def _get_shares_for_path(conn: sqlite3.Connection, file_path: str) -> list:
+    """Get all shares that contain a specific file path"""
+    try:
+        # Check if secret_token column exists
+        cursor = conn.execute("PRAGMA table_info(shares)")
+        columns = [row[1] for row in cursor.fetchall()]
+        
+        if 'secret_token' in columns:
+            cursor = conn.execute(
+                "SELECT id, created, paths, allowed_users, secret_token FROM shares"
+            )
+            matching_shares = []
+            for row in cursor:
+                sid, created, paths_json, allowed_users_json, secret_token = row
+                paths = json.loads(paths_json) if paths_json else []
+                if file_path in paths:
+                    matching_shares.append({
+                        "id": sid,
+                        "created": created,
+                        "paths": paths,
+                        "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
+                        "secret_token": secret_token
+                    })
+        else:
+            cursor = conn.execute(
+                "SELECT id, created, paths, allowed_users FROM shares"
+            )
+            matching_shares = []
+            for row in cursor:
+                sid, created, paths_json, allowed_users_json = row
+                paths = json.loads(paths_json) if paths_json else []
+                if file_path in paths:
+                    matching_shares.append({
+                        "id": sid,
+                        "created": created,
+                        "paths": paths,
+                        "allowed_users": json.loads(allowed_users_json) if allowed_users_json else None,
+                        "secret_token": None
+                    })
+        return matching_shares
+    except Exception as e:
+        print(f"Error getting shares for path {file_path}: {e}")
+        return []
+
+def _load_websocket_config(conn: sqlite3.Connection) -> dict:
+    """Load WebSocket configuration from SQLite database."""
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS websocket_config (key TEXT PRIMARY KEY, value INTEGER)")
+        rows = conn.execute("SELECT key, value FROM websocket_config").fetchall()
+        return {k: int(v) for (k, v) in rows}
+    except Exception:
+        return {}
+
+def _save_websocket_config(conn: sqlite3.Connection, config: dict) -> None:
+    """Save WebSocket configuration to SQLite database."""
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS websocket_config (key TEXT PRIMARY KEY, value INTEGER)")
+        with conn:
+            for key, value in config.items():
+                conn.execute(
+                    "INSERT OR REPLACE INTO websocket_config (key, value) VALUES (?, ?)",
+                    (key, int(value)),
+                )
+    except Exception:
+        pass
+
+# ------------------------
+# User management functions
+# ------------------------
+
+def _hash_password(password: str) -> str:
+    """Hash a password using Argon2 (Priority 1). Falls back to legacy only if Argon2 unavailable."""
+    if ARGON2_AVAILABLE and PH is not None:
+        return PH.hash(password)
+    # Legacy fallback (not recommended): salted SHA-256
+    salt = secrets.token_hex(32)
+    pwd_hash = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
+    return f"{salt}:{pwd_hash}"
+
+def _verify_password(password: str, password_hash: str) -> bool:
+    """Verify password supporting Argon2 and legacy salted SHA-256."""
+    # Try Argon2 first
+    if password_hash and password_hash.startswith("$argon2") and ARGON2_AVAILABLE and PH is not None:
+        try:
+            return PH.verify(password_hash, password)
+        except argon2_exceptions.VerifyMismatchError:
+            return False
+        except Exception:
+            return False
+    # Legacy format: salt:hash
+    try:
+        salt, stored_hash = password_hash.split(':', 1)
+        pwd_hash = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
+        return pwd_hash == stored_hash
+    except Exception:
+        return False
+
+def _create_user(conn: sqlite3.Connection, username: str, password: str, role: str = 'user') -> dict:
+    """Create a new user in the database"""
+    try:
+        password_hash = _hash_password(password)
+        created_at = datetime.now().isoformat()
+        
+        with conn:
+            cursor = conn.execute(
+                "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
+                (username, password_hash, role, created_at)
+            )
+            user_id = cursor.lastrowid
+            
+        return {
+            "id": user_id,
+            "username": username,
+            "role": role,
+            "created_at": created_at,
+            "active": True,
+            "last_login": None
+        }
+    except sqlite3.IntegrityError:
+        raise ValueError(f"Username '{username}' already exists")
+    except Exception as e:
+        raise Exception(f"Failed to create user: {str(e)}")
+
+def _get_user_by_username(conn: sqlite3.Connection, username: str) -> dict | None:
+    """Get user by username"""
+    try:
+        row = conn.execute(
+            "SELECT id, username, password_hash, role, created_at, active, last_login FROM users WHERE username = ?",
+            (username,)
+        ).fetchone()
+        
+        if row:
+            return {
+                "id": row[0],
+                "username": row[1],
+                "password_hash": row[2],
+                "role": row[3],
+                "created_at": row[4],
+                "active": bool(row[5]),
+                "last_login": row[6]
+            }
+        return None
+    except Exception:
+        return None
+
+def _get_all_users(conn: sqlite3.Connection) -> list[dict]:
+    """Get all users from the database"""
+    try:
+        rows = conn.execute(
+            "SELECT id, username, role, created_at, active, last_login FROM users ORDER BY created_at DESC"
+        ).fetchall()
+        
+        return [
+            {
+                "id": row[0],
+                "username": row[1],
+                "role": row[2],
+                "created_at": row[3],
+                "active": bool(row[4]),
+                "last_login": row[5]
+            }
+            for row in rows
+        ]
+    except Exception:
+        return []
+
+def _search_users(conn: sqlite3.Connection, query: str) -> list[dict]:
+    """Search users by username (case-insensitive)"""
+    try:
+        rows = conn.execute(
+            "SELECT id, username, role, created_at, active, last_login FROM users WHERE username LIKE ? AND active = 1 ORDER BY username LIMIT 20",
+            (f"%{query}%",)
+        ).fetchall()
+        
+        return [
+            {
+                "id": row[0],
+                "username": row[1],
+                "role": row[2],
+                "created_at": row[3],
+                "active": bool(row[4]),
+                "last_login": row[5]
+            }
+            for row in rows
+        ]
+    except Exception:
+        return []
+
+def _update_user(conn: sqlite3.Connection, user_id: int, **kwargs) -> bool:
+    """Update user information"""
+    try:
+        valid_fields = ['username', 'password_hash', 'role', 'active', 'last_login']
+        updates = []
+        values = []
+        
+        for field, value in kwargs.items():
+            if field in valid_fields:
+                if field == 'password' and value:  # Special handling for password
+                    updates.append('password_hash = ?')
+                    values.append(_hash_password(value))
+                elif field == 'active':
+                    updates.append('active = ?')
+                    values.append(1 if value else 0)
+                else:
+                    updates.append(f'{field} = ?')
+                    values.append(value)
+        
+        if not updates:
+            return False
+            
+        values.append(user_id)
+        query = f"UPDATE users SET {', '.join(updates)} WHERE id = ?"
+        
+        with conn:
+            conn.execute(query, values)
+        return True
+    except Exception:
+        return False
+
+def _create_ldap_config(conn: sqlite3.Connection, name: str, server: str, ldap_base_dn: str, 
+                       ldap_member_attributes: str, user_template: str) -> dict:
+    """Create a new LDAP configuration"""
+    try:
+        created_at = datetime.now().isoformat()
+        
+        with conn:
+            cursor = conn.execute(
+                """INSERT INTO ldap_configs (name, server, ldap_base_dn, ldap_member_attributes, user_template, created_at) 
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (name, server, ldap_base_dn, ldap_member_attributes, user_template, created_at)
+            )
+            config_id = cursor.lastrowid
+            
+        return {
+            "id": config_id,
+            "name": name,
+            "server": server,
+            "ldap_base_dn": ldap_base_dn,
+            "ldap_member_attributes": ldap_member_attributes,
+            "user_template": user_template,
+            "created_at": created_at,
+            "active": True
+        }
+    except sqlite3.IntegrityError:
+        raise ValueError(f"LDAP configuration '{name}' already exists")
+    except Exception as e:
+        raise Exception(f"Failed to create LDAP configuration: {str(e)}")
+
+def _get_all_ldap_configs(conn: sqlite3.Connection) -> list[dict]:
+    """Get all LDAP configurations"""
+    try:
+        rows = conn.execute(
+            "SELECT id, name, server, ldap_base_dn, ldap_member_attributes, user_template, created_at, active FROM ldap_configs ORDER BY created_at DESC"
+        ).fetchall()
+        
+        return [
+            {
+                "id": row[0],
+                "name": row[1],
+                "server": row[2],
+                "ldap_base_dn": row[3],
+                "ldap_member_attributes": row[4],
+                "user_template": row[5],
+                "created_at": row[6],
+                "active": bool(row[7])
+            }
+            for row in rows
+        ]
+    except Exception:
+        return []
+
+def _get_ldap_config_by_id(conn: sqlite3.Connection, config_id: int) -> dict | None:
+    """Get LDAP configuration by ID"""
+    try:
+        row = conn.execute(
+            "SELECT id, name, server, ldap_base_dn, ldap_member_attributes, user_template, created_at, active FROM ldap_configs WHERE id = ?",
+            (config_id,)
+        ).fetchone()
+        
+        if row:
+            return {
+                "id": row[0],
+                "name": row[1],
+                "server": row[2],
+                "ldap_base_dn": row[3],
+                "ldap_member_attributes": row[4],
+                "user_template": row[5],
+                "created_at": row[6],
+                "active": bool(row[7])
+            }
+    except Exception:
+        return None
+
+def _update_ldap_config(conn: sqlite3.Connection, config_id: int, **kwargs) -> bool:
+    """Update LDAP configuration"""
+    try:
+        valid_fields = ['name', 'server', 'ldap_base_dn', 'ldap_member_attributes', 'user_template', 'active']
+        updates = []
+        values = []
+        
+        for field, value in kwargs.items():
+            if field in valid_fields:
+                if field == 'active':
+                    updates.append('active = ?')
+                    values.append(1 if value else 0)
+                else:
+                    updates.append(f'{field} = ?')
+                    values.append(value)
+        
+        if not updates:
+            return False
+            
+        values.append(config_id)
+        query = f"UPDATE ldap_configs SET {', '.join(updates)} WHERE id = ?"
+        
+        with conn:
+            conn.execute(query, values)
+        return True
+    except Exception:
+        return False
+
+def _delete_ldap_config(conn: sqlite3.Connection, config_id: int) -> bool:
+    """Delete LDAP configuration"""
+    try:
+        with conn:
+            cursor = conn.execute("DELETE FROM ldap_configs WHERE id = ?", (config_id,))
+            return cursor.rowcount > 0
+    except Exception:
+        return False
+
+def _log_ldap_sync(conn: sqlite3.Connection, config_id: int, sync_type: str, users_found: int, 
+                  users_created: int, users_removed: int, status: str, error_message: str = None) -> None:
+    """Log LDAP synchronization results"""
+    try:
+        sync_time = datetime.now().isoformat()
+        with conn:
+            conn.execute(
+                """INSERT INTO ldap_sync_log (config_id, sync_type, users_found, users_created, users_removed, sync_time, status, error_message)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (config_id, sync_type, users_found, users_created, users_removed, sync_time, status, error_message)
+            )
+    except Exception:
+        pass  # Don't fail the sync if logging fails
+
+def _get_ldap_sync_logs(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
+    """Get recent LDAP sync logs"""
+    try:
+        rows = conn.execute(
+            """SELECT l.id, l.config_id, c.name, l.sync_type, l.users_found, l.users_created, l.users_removed, 
+                      l.sync_time, l.status, l.error_message
+               FROM ldap_sync_log l
+               JOIN ldap_configs c ON l.config_id = c.id
+               ORDER BY l.sync_time DESC
+               LIMIT ?""",
+            (limit,)
+        ).fetchall()
+        
+        return [
+            {
+                "id": row[0],
+                "config_id": row[1],
+                "config_name": row[2],
+                "sync_type": row[3],
+                "users_found": row[4],
+                "users_created": row[5],
+                "users_removed": row[6],
+                "sync_time": row[7],
+                "status": row[8],
+                "error_message": row[9]
+            }
+            for row in rows
+        ]
+    except Exception:
+        return []
+
+def _sync_ldap_users(conn: sqlite3.Connection) -> dict:
+    """Synchronize users from all active LDAP configurations"""
+    if not conn:
+        return {"status": "error", "message": "Database not available"}
+    
+    try:
+        # Get all active LDAP configurations
+        configs = _get_all_ldap_configs(conn)
+        active_configs = [c for c in configs if c['active']]
+        
+        if not active_configs:
+            return {"status": "success", "message": "No active LDAP configurations found"}
+        
+        all_ldap_users = set()  # Use set to automatically handle duplicates
+        sync_results = []
+        
+        for config in active_configs:
+            try:
+                # Connect to LDAP server
+                from ldap3 import Server, Connection, ALL
+                server = Server(config['server'], get_info=ALL)
+                conn_ldap = Connection(server)
+                
+                if not conn_ldap.bind():
+                    sync_results.append({
+                        "config_name": config['name'],
+                        "status": "error",
+                        "message": f"Failed to bind to LDAP server: {config['server']}"
+                    })
+                    continue
+                
+                # Search for groups and their members
+                search_filter = f"(objectClass=groupOfNames)"
+                conn_ldap.search(
+                    search_base=config['ldap_base_dn'],
+                    search_filter=search_filter,
+                    attributes=[config['ldap_member_attributes']]
+                )
+                
+                config_users = set()
+                for entry in conn_ldap.entries:
+                    if hasattr(entry, config['ldap_member_attributes']):
+                        members = getattr(entry, config['ldap_member_attributes'])
+                        if members:
+                            for member in members:
+                                # Extract username using the user template
+                                username = _extract_username_from_dn(member, config['user_template'])
+                                if username:
+                                    config_users.add(username)
+                                    all_ldap_users.add(username)
+                
+                sync_results.append({
+                    "config_name": config['name'],
+                    "status": "success",
+                    "users_found": len(config_users)
+                })
+                
+                # Log the sync for this config
+                _log_ldap_sync(conn, config['id'], 'group_sync', len(config_users), 0, 0, 'success')
+                
+            except Exception as e:
+                sync_results.append({
+                    "config_name": config['name'],
+                    "status": "error",
+                    "message": str(e)
+                })
+                _log_ldap_sync(conn, config['id'], 'group_sync', 0, 0, 0, 'error', str(e))
+        
+        # Now sync users with the database
+        users_created = 0
+        users_removed = 0
+        
+        # Get current users from database
+        current_users = _get_all_users(conn)
+        current_usernames = {user['username'] for user in current_users}
+        
+        # Create new users that are in LDAP but not in database
+        for username in all_ldap_users:
+            if username not in current_usernames:
+                try:
+                    # Create user with a dummy password (they'll authenticate via LDAP)
+                    _create_user(conn, username, "ldap_user", role='user')
+                    users_created += 1
+                except Exception as e:
+                    print(f"Failed to create user {username}: {e}")
+        
+        # Remove users that are in database but not in LDAP
+        for user in current_users:
+            if user['username'] not in all_ldap_users and user['username'] != 'admin':
+                try:
+                    _delete_user(conn, user['id'])
+                    users_removed += 1
+                except Exception as e:
+                    print(f"Failed to remove user {user['username']}: {e}")
+        
+        return {
+            "status": "success",
+            "total_ldap_users": len(all_ldap_users),
+            "users_created": users_created,
+            "users_removed": users_removed,
+            "config_results": sync_results
+        }
+        
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def _extract_username_from_dn(dn: str, user_template: str) -> str:
+    """Extract username from LDAP DN using the user template"""
+    try:
+        # Simple template matching - can be enhanced for more complex patterns
+        if '{username}' in user_template:
+            # For templates like "uid={username},ou=users,dc=example,dc=com"
+            # We need to extract the actual username from the DN
+            # This is a simplified implementation
+            parts = dn.split(',')
+            for part in parts:
+                if '=' in part:
+                    key, value = part.split('=', 1)
+                    if key.strip() in ['uid', 'cn', 'sAMAccountName']:
+                        return value.strip()
+        return None
+    except Exception:
+        return None
+
+def _start_ldap_sync_scheduler(conn: sqlite3.Connection) -> None:
+    """Start the daily LDAP sync scheduler in a background thread"""
+    def sync_worker():
+        while True:
+            try:
+                # Run sync at 2 AM every day
+                current_time = datetime.now()
+                if current_time.hour == 2 and current_time.minute == 0:
+                    print("Starting daily LDAP sync...")
+                    sync_result = _sync_ldap_users(conn)
+                    if sync_result["status"] == "success":
+                        print(f"Daily LDAP sync completed: {sync_result.get('total_ldap_users', 0)} users found, {sync_result.get('users_created', 0)} created, {sync_result.get('users_removed', 0)} removed")
+                    else:
+                        print(f"Daily LDAP sync failed: {sync_result.get('message', 'Unknown error')}")
+                
+                # Sleep for 1 minute to avoid busy waiting
+                time.sleep(60)
+            except Exception as e:
+                print(f"Error in LDAP sync scheduler: {e}")
+                time.sleep(300)  # Sleep for 5 minutes on error
+    
+    if conn:
+        sync_thread = threading.Thread(target=sync_worker, daemon=True)
+        sync_thread.start()
+        print("LDAP sync scheduler started (daily at 2 AM)")
+
+def _assign_admin_privileges(conn: sqlite3.Connection, admin_users: list) -> None:
+    """Assign admin privileges to users listed in admin_users configuration"""
+    if not admin_users or not conn:
+        return
+    
+    try:
+        for username in admin_users:
+            if not username or not isinstance(username, str):
+                continue
+                
+            # Check if user exists
+            user = _get_user_by_username(conn, username)
+            if user:
+                # Update user role to admin if not already admin
+                if user['role'] != 'admin':
+                    _update_user(conn, user['id'], role='admin')
+                    print(f"ADMIN: Assigned admin privileges to existing user '{username}'")
+            else:
+                print(f"ADMIN: User '{username}' not found in database - will be assigned admin privileges on first login")
+    except Exception as e:
+        print(f"ADMIN: Warning: Failed to assign admin privileges: {e}")
+
+def _delete_user(conn: sqlite3.Connection, user_id: int) -> bool:
+    """Delete a user from the database"""
+    try:
+        with conn:
+            cursor = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            return cursor.rowcount > 0
+    except Exception:
+        return False
+
+def _authenticate_user(conn: sqlite3.Connection, username: str, password: str) -> dict | None:
+    """Authenticate a user and update last_login"""
+    user = _get_user_by_username(conn, username)
+    if user and user['active'] and _verify_password(password, user['password_hash']):
+        # Update last login timestamp
+        _update_user(conn, user['id'], last_login=datetime.now().isoformat())
+        # Remove sensitive information before returning
+        del user['password_hash']
+        return user
+    return None
+
+def get_current_feature_flags() -> dict:
+    """Return current feature flags with SQLite values taking precedence.
+    Falls back to in-memory defaults if DB is unavailable.
+    """
+    current = FEATURE_FLAGS.copy()
+    if DB_CONN is not None:
+        try:
+            persisted = _load_feature_flags(DB_CONN)
             if persisted:
+                # Persisted values override runtime defaults
                 for k, v in persisted.items():
                     current[k] = bool(v)
         except Exception:
             pass
     return current
 
+def get_current_websocket_config() -> dict:
+    """Return current WebSocket configuration with SQLite values taking precedence.
+    Falls back to in-memory defaults if DB is unavailable.
+    """
+    current = WEBSOCKET_CONFIG.copy()
+    if DB_CONN is not None:
+        try:
+            persisted = _load_websocket_config(DB_CONN)
+            if persisted:
+                # Persisted values override runtime defaults
+                for k, v in persisted.items():
+                    current[k] = int(v)
+        except Exception:
+            pass
+    return current
+
+def is_feature_enabled(key: str, default: bool = False) -> bool:
+    flags = get_current_feature_flags()
+    return bool(flags.get(key, default))
+
+class MMapFileHandler:
+    """Efficient file handling using memory mapping for large files"""
+    
+    @staticmethod
+    def should_use_mmap(file_size: int) -> bool:
+        """Determine if mmap should be used based on file size"""
+        return file_size >= MMAP_MIN_SIZE
+    
+    @staticmethod
+    async def serve_file_chunk(file_path: str, start: int = 0, end: int = None, chunk_size: int = CHUNK_SIZE):
+        """Serve file chunks using mmap for efficient memory usage"""
+        try:
+            file_size = os.path.getsize(file_path)
+            
+            if not MMapFileHandler.should_use_mmap(file_size):
+                # Use traditional method for small files
+                with open(file_path, 'rb') as f:
+                    f.seek(start)
+                    remaining = (end - start + 1) if end is not None else file_size - start
+                    while remaining > 0:
+                        chunk = f.read(min(chunk_size, remaining))
+                        if not chunk:
+                            break
+                        yield chunk
+                        remaining -= len(chunk)
+                return
+            
+            # Use mmap for large files
+            with open(file_path, 'rb') as f:
+                with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                    actual_end = min(end or file_size - 1, file_size - 1)
+                    current = start
+                    
+                    while current <= actual_end:
+                        chunk_end = min(current + chunk_size, actual_end + 1)
+                        yield mm[current:chunk_end]
+                        current = chunk_end
+                        
+        except (OSError, ValueError) as e:
+            # Fallback to traditional method on mmap errors
+            with open(file_path, 'rb') as f:
+                f.seek(start)
+                remaining = (end - start + 1) if end is not None else file_size - start
+                while remaining > 0:
+                    chunk = f.read(min(chunk_size, remaining))
+                    if not chunk:
+                        break
+                    yield chunk
+                    remaining -= len(chunk)
+    
+    @staticmethod
+    def find_line_offsets(file_path: str, max_lines: int = None) -> list[int]:
+        """Efficiently find line start offsets using mmap"""
+        try:
+            file_size = os.path.getsize(file_path)
+            if not MMapFileHandler.should_use_mmap(file_size):
+                # Use traditional method for small files
+                offsets = [0]
+                with open(file_path, 'rb') as f:
+                    pos = 0
+                    for line in f:
+                        pos += len(line)
+                        offsets.append(pos)
+                        if max_lines and len(offsets) > max_lines:
+                            break
+                return offsets[:-1]  # Remove the last offset (EOF)
+            
+            # Use mmap for large files
+            offsets = [0]
+            with open(file_path, 'rb') as f:
+                with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                    pos = 0
+                    while pos < len(mm):
+                        newline_pos = mm.find(b'\n', pos)
+                        if newline_pos == -1:
+                            break
+                        pos = newline_pos + 1
+                        offsets.append(pos)
+                        if max_lines and len(offsets) > max_lines:
+                            break
+            return offsets[:-1]
+            
+        except (OSError, ValueError):
+            # Fallback to traditional method
+            offsets = [0]
+            with open(file_path, 'rb') as f:
+                pos = 0
+                for line in f:
+                    pos += len(line)
+                    offsets.append(pos)
+                    if max_lines and len(offsets) > max_lines:
+                        break
+            return offsets[:-1]
+    
+    @staticmethod
+    def search_in_file(file_path: str, search_term: str, max_results: int = 100) -> list[dict]:
+        """Efficiently search for text in file using mmap"""
+        results = []
+        try:
+            file_size = os.path.getsize(file_path)
+            search_bytes = search_term.encode('utf-8')
+            
+            if not MMapFileHandler.should_use_mmap(file_size):
+                # Use traditional method for small files
+                with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                    for line_num, line in enumerate(f, 1):
+                        if search_term in line:
+                            results.append({
+                                "line_number": line_num,
+                                "line_content": line.rstrip('\n'),
+                                "match_positions": [i for i in range(len(line)) if line[i:].startswith(search_term)]
+                            })
+                            if len(results) >= max_results:
+                                break
+                return results
+            
+            # Use mmap for large files
+            with open(file_path, 'rb') as f:
+                with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                    current_pos = 0
+                    line_number = 1
+                    line_start = 0
+                    
+                    while current_pos < len(mm) and len(results) < max_results:
+                        newline_pos = mm.find(b'\n', current_pos)
+                        if newline_pos == -1:
+                            # Last line
+                            line_bytes = mm[current_pos:]
+                            if search_bytes in line_bytes:
+                                line_content = line_bytes.decode('utf-8', errors='replace')
+                                match_positions = []
+                                start_pos = 0
+                                while True:
+                                    pos = line_content.find(search_term, start_pos)
+                                    if pos == -1:
+                                        break
+                                    match_positions.append(pos)
+                                    start_pos = pos + 1
+                                results.append({
+                                    "line_number": line_number,
+                                    "line_content": line_content,
+                                    "match_positions": match_positions
+                                })
+                            break
+                        
+                        line_bytes = mm[current_pos:newline_pos]
+                        if search_bytes in line_bytes:
+                            line_content = line_bytes.decode('utf-8', errors='replace')
+                            match_positions = []
+                            start_pos = 0
+                            while True:
+                                pos = line_content.find(search_term, start_pos)
+                                if pos == -1:
+                                    break
+                                match_positions.append(pos)
+                                start_pos = pos + 1
+                            results.append({
+                                "line_number": line_number,
+                                "line_content": line_content,
+                                "match_positions": match_positions
+                            })
+                        
+                        current_pos = newline_pos + 1
+                        line_number += 1
+                        
+        except (OSError, UnicodeDecodeError):
+            # Fallback to traditional search
+            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                for line_num, line in enumerate(f, 1):
+                    if search_term in line:
+                        results.append({
+                            "line_number": line_num,
+                            "line_content": line.rstrip('\n'),
+                            "match_positions": [i for i in range(len(line)) if line[i:].startswith(search_term)]
+                        })
+                        if len(results) >= max_results:
+                            break
+        
+        return results
+
+def get_files_in_directory(path="."):
+    files = []
+    for entry in os.scandir(path):
+        stat = entry.stat()
+        files.append({
+            "name": entry.name,
+            "is_dir": entry.is_dir(),
+            "size_bytes": stat.st_size,
+            "size_str": f"{stat.st_size / 1024:.2f} KB" if not entry.is_dir() else "-",
+            "modified": datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+            "modified_timestamp": int(stat.st_mtime)
+        })
+    return files
+
+
+
+def is_video_file(filename):
+    """Check if file is a supported video format"""
+    ext = os.path.splitext(filename)[1].lower()
+    video_extensions = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.3gp', '.ogv'}
+    return ext in video_extensions
+
+def is_audio_file(filename):
+    """Check if file is a supported audio format"""
+    ext = os.path.splitext(filename)[1].lower()
+    audio_extensions = {'.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.wma'}
+    return ext in audio_extensions
 
 
 class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):
