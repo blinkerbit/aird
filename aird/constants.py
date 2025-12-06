@@ -1,5 +1,7 @@
 import os
-from cloud import CloudManager
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from aird.cloud import CloudManager
 
 # Will be set in main() after parsing configuration
 ACCESS_TOKEN = None
@@ -10,6 +12,7 @@ DB_PATH = None
 CLOUD_MANAGER = CloudManager()
 CLOUD_SHARE_FOLDER = ".aird_cloud"
 
+# Default feature flags (can be overridden by config.json or database)
 FEATURE_FLAGS = {
     "file_upload": True,
     "file_delete": True,
@@ -31,32 +34,18 @@ WEBSOCKET_CONFIG = {
     "search_idle_timeout": 180,  # 3 minutes
 }
 
-
-# Maximum upload size: reduced to 512 MB (Priority 2)
-MAX_FILE_SIZE = 512 * 1024 * 1024
-# Maximum size to load into editor: 5 MB (Priority 2)
-MAX_READABLE_FILE_SIZE = 5 * 1024 * 1024
-CHUNK_SIZE = 1024 * 64
-# Minimum file size to use mmap (avoid overhead for small files)
-MMAP_MIN_SIZE = 1024 * 1024  # 1MB
-
-# Allowed upload extensions (whitelist) to prevent dangerous uploads (Priority 1)
+# File operation constants
+MAX_FILE_SIZE = 512 * 1024 * 1024  # 512 MB
+MAX_READABLE_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 ALLOWED_UPLOAD_EXTENSIONS = {
-    # Text and data
-    ".txt", ".log", ".md", ".csv", ".json", ".xml", ".yaml", ".yml",
-    # Images
-    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg",
-    # Archives (read-only; still safe to store)
-    ".zip", ".tar", ".gz", ".bz2", ".xz",
-    # Code snippets (store-only, not executed)
-    ".py", ".js", ".ts", ".java", ".c", ".cpp", ".go", ".rs", ".sh"
+    ".txt", ".log", ".md", ".json", ".xml", ".yaml", ".yml", ".csv",
+    ".jpg", ".jpeg", ".png", ".gif", ".svg", ".ico",
+    ".mp4", ".webm", ".ogg", ".mp3", ".wav",
+    ".pdf", ".zip", ".gz", ".tar", ".bz2",
 }
-# Allow override via env for controlled environments
-_env_exts = os.environ.get("AIRD_ALLOWED_UPLOAD_EXTENSIONS")
-if _env_exts:
-    try:
-        ALLOWED_UPLOAD_EXTENSIONS = {"." + e.strip().lstrip(".").lower() for e in _env_exts.split(",") if e.strip()}
-    except Exception:
-        pass
+
+# Mmap constants
+MMAP_MIN_SIZE = 1 * 1024 * 1024  # 1 MB
+CHUNK_SIZE = 64 * 1024  # 64 KB
 
 # SHARES = {}  # REMOVED: Using database-only persistence

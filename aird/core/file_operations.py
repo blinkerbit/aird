@@ -6,7 +6,7 @@ import shutil
 import fnmatch
 from aird.constants import ROOT_DIR, CLOUD_SHARE_FOLDER, CLOUD_MANAGER
 from aird.core.security import is_within_root
-from cloud import CloudProviderError
+from aird.cloud import CloudProviderError
 
 
 def get_all_files_recursive(root_path: str, base_path: str = "") -> list:
@@ -185,13 +185,13 @@ def configure_cloud_providers(config: dict | None) -> None:
 
     gd_config = config.get("google_drive")
     if gd_config and gd_config.get("enabled"):
-        from cloud import GoogleDriveProvider
+        from aird.cloud import GoogleDriveProvider
         credentials_file = gd_config.get("credentials_file")
         token_file = gd_config.get("token_file")
         if credentials_file:
             try:
                 gd = GoogleDriveProvider(credentials_file=credentials_file, token_file=token_file)
-                CLOUD_MANAGER.register("google_drive", gd)
+                CLOUD_MANAGER.register(gd)
                 print("✅ Google Drive provider registered successfully")
             except Exception as e:
                 print(f"⚠️  Failed to register Google Drive provider: {e}")
@@ -200,7 +200,7 @@ def configure_cloud_providers(config: dict | None) -> None:
 
     od_config = config.get("onedrive")
     if od_config and od_config.get("enabled"):
-        from cloud import OneDriveProvider
+        from aird.cloud import OneDriveProvider
         client_id = od_config.get("client_id")
         client_secret = od_config.get("client_secret")
         redirect_uri = od_config.get("redirect_uri")
@@ -213,7 +213,7 @@ def configure_cloud_providers(config: dict | None) -> None:
                     redirect_uri=redirect_uri,
                     token_file=token_file
                 )
-                CLOUD_MANAGER.register("onedrive", od)
+                CLOUD_MANAGER.register(od)
                 print("✅ OneDrive provider registered successfully")
             except Exception as e:
                 print(f"⚠️  Failed to register OneDrive provider: {e}")

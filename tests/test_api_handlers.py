@@ -1,349 +1,358 @@
-#!/usr/bin/env python3
-"""
-Tests for API handlers.
-
-This module tests REST API endpoints for file operations, sharing, and WebSocket stats.
-"""
-
-import pytest
 import json
 import os
-import tempfile
-from unittest.mock import MagicMock, patch, AsyncMock
 
-# Try to import from aird.main, skip tests if not available
-try:
-    from aird.main import (
-        FileListAPIHandler, ShareFilesHandler, ShareCreateHandler, 
-        ShareRevokeHandler, ShareListAPIHandler, SharedListHandler, 
-        SharedFileHandler, WebSocketStatsHandler, EditViewHandler
-    )
-    AIRD_AVAILABLE = True
-except ImportError:
-    AIRD_AVAILABLE = False
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from aird.handlers.api_handlers import (
+    FeatureFlagSocketHandler,
+    FileListAPIHandler,
+    FileStreamHandler,
+    ShareDetailsAPIHandler,
+    ShareDetailsByIdAPIHandler,
+    ShareListAPIHandler,
+    SuperSearchHandler,
+    SuperSearchWebSocketHandler,
+    UserSearchAPIHandler,
+    WebSocketStatsHandler,
+)
+from tests.handler_helpers import authenticate, patch_db_conn, prepare_handler
 
 
-@pytest.mark.skipif(not AIRD_AVAILABLE, reason="aird.main module not available")
+def make_request_handler(handler_cls):
+    """Helper for BaseHandler descendants."""
+    app = MagicMock()
+    app.settings = {'cookie_secret': 'test_secret'}
+    request = MagicMock()
+    request.protocol = "http"
+    handler = prepare_handler(handler_cls(app, request))
+    authenticate(handler, role='admin')
+    return handler
+
+
+def make_ws_handler(handler_cls):
+    app = MagicMock()
+    app.settings = {'cookie_secret': 'test_secret'}
+    request = MagicMock()
+    request.headers = {}
+    request.path = "/ws"
+    request.connection = MagicMock()
+    handler = handler_cls(app, request)
+    handler.write_message = MagicMock()
+    handler.close = MagicMock()
+    handler.request = request
+    return handler
+
+
 class TestFileListAPIHandler:
-    """Test file listing API functionality"""
+    def test_get_success(self):
+        handler = make_request_handler(FileListAPIHandler)
+        with patch('os.path.abspath', return_value='/root/path'), \
+             patch('aird.handlers.api_handlers.is_within_root', return_value=True), \
+             patch('os.path.isdir', return_value=True), \
+             patch('aird.handlers.api_handlers.get_files_in_directory', return_value=[{'name': 'file.txt'}]), \
+             patch('aird.handlers.api_handlers.is_video_file', return_value=False), \
+             patch('aird.handlers.api_handlers.is_audio_file', return_value=False), \
+             patch_db_conn(MagicMock(), modules=['aird.handlers.api_handlers']), \
+             patch('aird.handlers.api_handlers.get_all_shares', return_value={'share': {'paths': ['path/file.txt']}}):
 
-    def setup_method(self):
-        """Setup test fixtures"""
-        self.mock_app = MagicMock()
-        self.mock_request = MagicMock()
-        self.mock_app.settings = {'login_url': '/login'}
-        self.mock_request.connection = MagicMock()
-        self.mock_request.connection.context = MagicMock()
+            handler.get("path")
+            handler.write.assert_called()
+            payload = handler.write.call_args[0][0]
+            assert payload['files'][0]['name'] == 'file.txt'
 
-    @patch.object(FileListAPIHandler, 'get_current_user', return_value='user')
-    @patch('aird.main.ROOT_DIR', '/test/root')
-    @patch('os.path.abspath')
-    @patch('os.path.isdir')
-    @patch('aird.main.get_files_in_directory')
-    def test_get_directory_listing(self, mock_get_files, mock_isdir, mock_abspath, mock_user):
-        """Test successful directory listing"""
-        handler = FileListAPIHandler(self.mock_app, self.mock_request)
-        handler.set_header = MagicMock()
-        handler.write = MagicMock()
-        
-        mock_abspath.return_value = '/test/root/subdir'
-        mock_isdir.return_value = True
-        mock_get_files.return_value = [
-            {'name': 'file1.txt', 'is_dir': False, 'size_str': '1KB', 'modified': '2023-01-01'},
-            {'name': 'subdir', 'is_dir': True, 'size_str': '-', 'modified': '2023-01-01'}
-        ]
-        
-        handler.get('subdir')
-        
-        handler.set_header.assert_called_with("Content-Type", "application/json")
-        expected_response = {
-            "path": "subdir",
-            "files": [
-                {"name": "file1.txt", "is_dir": False, "size_str": "1KB", "modified": "2023-01-01"},
-                {"name": "subdir", "is_dir": True, "size_str": "-", "modified": "2023-01-01"}
-            ]
-        }
-        handler.write.assert_called_with(expected_response)
-
-    @patch.object(FileListAPIHandler, 'get_current_user', return_value='user')
-    @patch('aird.main.ROOT_DIR', '/test/root')
-    @patch('os.path.abspath')
-    def test_get_forbidden_path(self, mock_abspath, mock_user):
-        """Test access to forbidden path"""
-        handler = FileListAPIHandler(self.mock_app, self.mock_request)
+    def test_get_forbidden_path(self):
+        handler = make_request_handler(FileListAPIHandler)
         handler.set_status = MagicMock()
-        handler.write = MagicMock()
-        
-        mock_abspath.return_value = '/outside/root'
-        
-        handler.get('../../outside')
-        
-        handler.set_status.assert_called_with(403)
-        handler.write.assert_called_with({"error": "Forbidden"})
+        with patch('os.path.abspath', return_value='/bad'), \
+             patch('aird.handlers.api_handlers.is_within_root', return_value=False):
+            handler.get("bad")
+            handler.set_status.assert_called_with(403)
+            handler.write.assert_called_with("Access denied")
 
-    @patch.object(FileListAPIHandler, 'get_current_user', return_value='user')
-    @patch('aird.main.ROOT_DIR', '/test/root')
-    @patch('os.path.abspath')
-    @patch('os.path.isdir')
-    def test_get_nonexistent_directory(self, mock_isdir, mock_abspath, mock_user):
-        """Test request for non-existent directory"""
-        handler = FileListAPIHandler(self.mock_app, self.mock_request)
+    def test_missing_directory(self):
+        handler = make_request_handler(FileListAPIHandler)
         handler.set_status = MagicMock()
-        handler.write = MagicMock()
-        
-        mock_abspath.return_value = '/test/root/nonexistent'
-        mock_isdir.return_value = False
-        
-        handler.get('nonexistent')
-        
-        handler.set_status.assert_called_with(404)
-        handler.write.assert_called_with({"error": "Directory not found"})
+        with patch('os.path.abspath', return_value='/root/path'), \
+             patch('aird.handlers.api_handlers.is_within_root', return_value=True), \
+             patch('os.path.isdir', return_value=False):
+            handler.get("missing")
+            handler.set_status.assert_called_with(404)
+            handler.write.assert_called_with("Directory not found")
 
-
-@pytest.mark.skipif(not AIRD_AVAILABLE, reason="aird.main module not available")
-class TestWebSocketStatsHandler:
-    """Test WebSocket statistics API"""
-
-    def setup_method(self):
-        """Setup test fixtures"""
-        self.mock_app = MagicMock()
-        self.mock_request = MagicMock()
-        self.mock_app.settings = {'login_url': '/login'}
-        self.mock_request.connection = MagicMock()
-        self.mock_request.connection.context = MagicMock()
-
-    @patch.object(WebSocketStatsHandler, 'get_current_user', return_value='user')
-    @patch.object(WebSocketStatsHandler, 'get_current_admin', return_value='admin')
-    @patch('aird.main.FeatureFlagSocketHandler')
-    @patch('aird.main.SuperSearchWebSocketHandler')
-    @patch('aird.main.FileStreamHandler')
-    def test_get_websocket_stats(self, mock_file_stream, mock_search, mock_feature, mock_admin, mock_user):
-        """Test getting WebSocket statistics"""
-        handler = WebSocketStatsHandler(self.mock_app, self.mock_request)
-        handler.write = MagicMock()
-        
-        # Mock connection managers
-        mock_feature.connection_manager.get_stats.return_value = {
-            'total_connections': 5, 'max_connections': 50
-        }
-        mock_search.connection_manager.get_stats.return_value = {
-            'total_connections': 3, 'max_connections': 100
-        }
-        mock_file_stream.connection_manager.get_stats.return_value = {
-            'total_connections': 8, 'max_connections': 200
-        }
-        
-        handler.get()
-        
-        # Should write JSON stats
-        handler.write.assert_called_once()
-        written_data = handler.write.call_args[0][0]
-        stats = json.loads(written_data)
-        
-        assert 'feature_flags' in stats
-        assert 'super_search' in stats
-        assert 'file_streaming' in stats
-
-    @patch.object(WebSocketStatsHandler, 'get_current_user', return_value='user')
-    @patch.object(WebSocketStatsHandler, 'get_current_admin', return_value=None)
-    def test_get_websocket_stats_not_admin(self, mock_admin, mock_user):
-        """Test WebSocket stats request without admin privileges"""
-        handler = WebSocketStatsHandler(self.mock_app, self.mock_request)
+    def test_get_handles_exception(self):
+        handler = make_request_handler(FileListAPIHandler)
         handler.set_status = MagicMock()
-        handler.write = MagicMock()
-        
-        handler.get()
-        
-        handler.set_status.assert_called_with(403)
-        handler.write.assert_called_with("Forbidden")
+        with patch('os.path.abspath', return_value='/root/path'), \
+             patch('aird.handlers.api_handlers.is_within_root', return_value=True), \
+             patch('os.path.isdir', return_value=True), \
+             patch('aird.handlers.api_handlers.get_files_in_directory', side_effect=RuntimeError("boom")):
+            handler.get("path")
+            handler.set_status.assert_called_with(500)
+            handler.write.assert_called_with("boom")
 
 
-@pytest.mark.skipif(not AIRD_AVAILABLE, reason="aird.main module not available")
-class TestEditViewHandler:
-    """Test file edit view handler"""
-
-    def setup_method(self):
-        """Setup test fixtures"""
-        self.mock_app = MagicMock()
-        self.mock_request = MagicMock()
-        self.mock_app.settings = {'login_url': '/login'}
-        self.mock_request.connection = MagicMock()
-        self.mock_request.connection.context = MagicMock()
-
-    @pytest.mark.asyncio
-    @patch.object(EditViewHandler, 'get_current_user', return_value='user')
-    @patch('aird.main.ROOT_DIR', '/test/root')
-    @patch('os.path.abspath')
-    @patch('os.path.isfile')
-    @patch('os.path.getsize')
-    @patch('aiofiles.open')
-    @patch('aird.main.is_feature_enabled')
-    async def test_get_edit_view(self, mock_feature, mock_aiofiles_open, mock_getsize, mock_isfile, mock_abspath, mock_user):
-        """Test getting file edit view"""
-        handler = EditViewHandler(self.mock_app, self.mock_request)
-        handler.render = MagicMock()
-        
-        mock_abspath.return_value = '/test/root/file.txt'
-        mock_isfile.return_value = True
-        mock_getsize.return_value = 1000  # Small file size
-        mock_feature.return_value = True
-        
-        # Mock async file reading
-        mock_file = MagicMock()
-        mock_file.read.return_value = "file content"
-        mock_aiofiles_open.return_value.__aenter__.return_value = mock_file
-        
-        # Create a proper async mock for the get method
-        async def mock_get(path):
-            handler.render("edit.html", filename="file.txt", content="file content", file_path="/test/root/file.txt")
-        
-        handler.get = mock_get
-        
-        # Call the async method
-        await handler.get('file.txt')
-        
-        handler.render.assert_called_once()
-        render_args = handler.render.call_args[0]
-        assert render_args[0] == "edit.html"
-
-    @pytest.mark.asyncio
-    @patch.object(EditViewHandler, 'get_current_user', return_value='user')
-    @patch('aird.main.is_feature_enabled')
-    async def test_get_edit_view_disabled(self, mock_feature, mock_user):
-        """Test edit view when feature is disabled"""
-        handler = EditViewHandler(self.mock_app, self.mock_request)
-        handler.set_status = MagicMock()
-        handler.write = MagicMock()
-        
-        mock_feature.return_value = False
-        
-        await handler.get('file.txt')
-        
-        handler.set_status.assert_called_with(403)
-        handler.write.assert_called_with("File editing is disabled.")
-
-
-@pytest.mark.skipif(not AIRD_AVAILABLE, reason="aird.main module not available")
-class TestShareHandlers:
-    """Test file sharing functionality"""
-
-    def setup_method(self):
-        """Setup test fixtures"""
-        self.mock_app = MagicMock()
-        self.mock_request = MagicMock()
-        self.mock_app.settings = {'login_url': '/login'}
-        self.mock_request.connection = MagicMock()
-        self.mock_request.connection.context = MagicMock()
-
-    @patch.object(ShareFilesHandler, 'get_current_user', return_value='user')
-    @patch('aird.main.is_feature_enabled')
-    def test_share_files_handler_get(self, mock_feature, mock_user):
-        """Test share files handler GET request"""
-        handler = ShareFilesHandler(self.mock_app, self.mock_request)
-        handler.render = MagicMock()
-        
-        mock_feature.return_value = True
-        
-        # Mock the SHARES variable directly
-        with patch('aird.main.SHARES', {}):
+class TestSuperSearchHandler:
+    def test_get_renders_when_enabled(self):
+        handler = make_request_handler(SuperSearchHandler)
+        handler.get_argument = MagicMock(return_value="//nested//")
+        with patch('aird.main.is_feature_enabled', return_value=True):
             handler.get()
-        
-        handler.render.assert_called_with("share.html", shares={})
+            handler.render.assert_called()
+            assert handler.render.call_args[1]['current_path'] == "nested"
 
-    @patch.object(ShareFilesHandler, 'get_current_user', return_value='user')
-    @patch('aird.main.is_feature_enabled')
-    def test_share_files_handler_disabled(self, mock_feature, mock_user):
-        """Test share files handler when sharing is disabled"""
-        handler = ShareFilesHandler(self.mock_app, self.mock_request)
+    def test_get_feature_disabled(self):
+        handler = make_request_handler(SuperSearchHandler)
         handler.set_status = MagicMock()
-        handler.write = MagicMock()
-        
-        mock_feature.return_value = False
-        
+        with patch('aird.main.is_feature_enabled', return_value=False):
+            handler.get()
+            handler.set_status.assert_called_with(403)
+            handler.write.assert_called_with("Feature disabled: Super Search is currently disabled by administrator")
+
+
+class TestSuperSearchWebSocketHandler:
+    def test_open_requires_auth(self):
+        handler = make_ws_handler(SuperSearchWebSocketHandler)
+        handler.get_current_user = MagicMock(return_value=None)
+        handler.open()
+        handler.write_message.assert_called()
+        handler.close.assert_called_with(code=1008, reason="Authentication required")
+
+    def test_open_connection_limit(self):
+        handler = make_ws_handler(SuperSearchWebSocketHandler)
+        handler.get_current_user = MagicMock(return_value={'username': 'admin'})
+        with patch.object(SuperSearchWebSocketHandler.connection_manager, 'add_connection', return_value=False):
+            handler.open()
+            handler.close.assert_called_with(code=1013, reason="Connection limit exceeded")
+
+    @pytest.mark.asyncio
+    async def test_on_message_auth_failure(self):
+        handler = make_ws_handler(SuperSearchWebSocketHandler)
+        handler.get_current_user = MagicMock(return_value=None)
+        await handler.on_message(json.dumps({'pattern': '*.py', 'search_text': 'foo'}))
+        handler.close.assert_called_with(code=1008, reason="Authentication expired")
+
+
+class TestUserSearchAPIHandler:
+    def test_requires_db_connection(self):
+        handler = make_request_handler(UserSearchAPIHandler)
+        handler.set_status = MagicMock()
+        handler.get_argument = MagicMock(return_value="bob")
+        with patch_db_conn(None, modules=['aird.handlers.api_handlers']):
+            handler.get()
+            handler.set_status.assert_called_with(500)
+            handler.write.assert_called_with({"error": "Database not available"})
+
+    def test_returns_empty_for_short_query(self):
+        handler = make_request_handler(UserSearchAPIHandler)
+        handler.get_argument = MagicMock(return_value=" ")
+        with patch_db_conn(MagicMock(), modules=['aird.handlers.api_handlers']):
+            handler.get()
+            handler.write.assert_called_with({"users": []})
+
+    def test_handles_search_error(self):
+        handler = make_request_handler(UserSearchAPIHandler)
+        handler.set_status = MagicMock()
+        handler.get_argument = MagicMock(return_value="bob")
+        with patch_db_conn(MagicMock(), modules=['aird.handlers.api_handlers']), \
+             patch('aird.handlers.api_handlers.search_users', side_effect=RuntimeError("nope")):
+            handler.get()
+            handler.set_status.assert_called_with(500)
+            handler.write.assert_called_with({"error": "nope"})
+
+    def test_search_success(self):
+        handler = make_request_handler(UserSearchAPIHandler)
+        handler.get_argument = MagicMock(return_value="alice")
+        with patch_db_conn(MagicMock(), modules=['aird.handlers.api_handlers']), \
+             patch('aird.handlers.api_handlers.search_users', return_value=[{'username': 'alice'}]):
+            handler.get()
+            handler.write.assert_called_with({"users": [{'username': 'alice'}]})
+
+
+class TestShareDetailsAPIHandler:
+    def _make_handler(self):
+        handler = make_request_handler(ShareDetailsAPIHandler)
+        handler.get_argument = MagicMock(return_value="file.txt")
+        return handler
+
+    def test_feature_disabled(self):
+        handler = self._make_handler()
+        handler.set_status = MagicMock()
+        with patch('aird.main.is_feature_enabled', return_value=False):
+            handler.get()
+            handler.set_status.assert_called_with(403)
+            handler.write.assert_called_with({"error": "File sharing is disabled"})
+
+    def test_missing_path(self):
+        handler = self._make_handler()
+        handler.set_status = MagicMock()
+        handler.get_argument = MagicMock(return_value="")
+        with patch('aird.main.is_feature_enabled', return_value=True):
+            handler.get()
+            handler.set_status.assert_called_with(400)
+            handler.write.assert_called_with({"error": "File path is required"})
+
+    def test_db_missing(self):
+        handler = self._make_handler()
+        handler.set_status = MagicMock()
+        with patch('aird.main.is_feature_enabled', return_value=True), \
+             patch_db_conn(None, modules=['aird.handlers.api_handlers']):
+            handler.get()
+            handler.set_status.assert_called_with(500)
+            handler.write.assert_called_with({"error": "Database connection not available"})
+
+    def test_success(self):
+        handler = self._make_handler()
+        with patch('aird.main.is_feature_enabled', return_value=True), \
+             patch_db_conn(MagicMock(), modules=['aird.handlers.api_handlers']), \
+             patch('aird.handlers.api_handlers.get_shares_for_path', return_value=[{'id': 's1', 'paths': ['file.txt']}]):
+            handler.get()
+            handler.write.assert_called()
+            payload = handler.write.call_args[0][0]
+            assert payload['shares'][0]['id'] == 's1'
+
+
+class TestShareDetailsByIdAPIHandler:
+    def _make_handler(self):
+        handler = make_request_handler(ShareDetailsByIdAPIHandler)
+        handler.get_argument = MagicMock(return_value="share1")
+        return handler
+
+    def test_missing_id(self):
+        handler = self._make_handler()
+        handler.set_status = MagicMock()
+        handler.get_argument = MagicMock(return_value="")
+        with patch('aird.main.is_feature_enabled', return_value=True):
+            handler.get()
+            handler.set_status.assert_called_with(400)
+            handler.write.assert_called_with({"error": "Share ID is required"})
+
+    def test_share_not_found(self):
+        handler = self._make_handler()
+        handler.set_status = MagicMock()
+        with patch('aird.main.is_feature_enabled', return_value=True), \
+             patch_db_conn(MagicMock(), modules=['aird.handlers.api_handlers']), \
+             patch('aird.handlers.api_handlers.get_share_by_id', return_value=None):
+            handler.get()
+            handler.set_status.assert_called_with(404)
+            handler.write.assert_called_with({"error": "Share not found"})
+
+    def test_success(self):
+        handler = self._make_handler()
+        share_data = {'id': 'share1', 'paths': [], 'secret_token': 'token'}
+        with patch('aird.main.is_feature_enabled', return_value=True), \
+             patch_db_conn(MagicMock(), modules=['aird.handlers.api_handlers']), \
+             patch('aird.handlers.api_handlers.get_share_by_id', return_value=share_data):
+            handler.get()
+            payload = handler.write.call_args[0][0]
+            assert payload['share']['id'] == 'share1'
+
+
+class TestShareListAPIHandler:
+    def test_feature_disabled(self):
+        handler = make_request_handler(ShareListAPIHandler)
+        handler.set_status = MagicMock()
+        with patch('aird.main.is_feature_enabled', return_value=False):
+            handler.get()
+            handler.set_status.assert_called_with(403)
+            handler.write.assert_called_with({"error": "File sharing is disabled"})
+
+    def test_db_missing(self):
+        handler = make_request_handler(ShareListAPIHandler)
+        handler.set_status = MagicMock()
+        with patch('aird.main.is_feature_enabled', return_value=True), \
+             patch_db_conn(None, modules=['aird.handlers.api_handlers']):
+            handler.get()
+            handler.set_status.assert_called_with(500)
+            handler.write.assert_called_with({"error": "Database connection not available"})
+
+    def test_success(self):
+        handler = make_request_handler(ShareListAPIHandler)
+        with patch('aird.main.is_feature_enabled', return_value=True), \
+             patch_db_conn(MagicMock(), modules=['aird.handlers.api_handlers']), \
+             patch('aird.handlers.api_handlers.get_all_shares', return_value={'s1': {'paths': []}}):
+            handler.get()
+            handler.write.assert_called_with({"shares": {'s1': {'paths': []}}})
+
+
+class TestFeatureFlagSocketHandler:
+    def test_open_sends_current_flags(self):
+        handler = make_ws_handler(FeatureFlagSocketHandler)
+        with patch.object(FeatureFlagSocketHandler.connection_manager, 'add_connection', return_value=True), \
+             patch('aird.constants.FEATURE_FLAGS', {'in_memory': True}), \
+             patch_db_conn(MagicMock(), modules=['aird.handlers.api_handlers']), \
+             patch('aird.handlers.api_handlers.load_feature_flags', return_value={'persisted': False}):
+            handler.open()
+            handler.write_message.assert_called()
+            message = json.loads(handler.write_message.call_args[0][0])
+            assert message['in_memory'] is True
+
+    def test_open_connection_limit(self):
+        handler = make_ws_handler(FeatureFlagSocketHandler)
+        with patch.object(FeatureFlagSocketHandler.connection_manager, 'add_connection', return_value=False):
+            handler.open()
+            handler.close.assert_called_with(code=1013, reason="Connection limit exceeded")
+
+    def test_send_updates_merges_flags(self):
+        with patch('aird.constants.FEATURE_FLAGS', {'feature_a': True}), \
+             patch_db_conn(MagicMock(), modules=['aird.handlers.api_handlers']), \
+             patch('aird.handlers.api_handlers.load_feature_flags', return_value={'feature_b': False}), \
+             patch.object(FeatureFlagSocketHandler.connection_manager, 'broadcast_message') as mock_broadcast:
+            FeatureFlagSocketHandler.send_updates()
+            payload = json.loads(mock_broadcast.call_args[0][0])
+            assert payload['feature_a'] is True
+            assert payload['feature_b'] is False
+
+
+class TestFileStreamHandler:
+    @pytest.mark.asyncio
+    async def test_open_requires_auth(self):
+        handler = make_ws_handler(FileStreamHandler)
+        handler.get_current_user = MagicMock(return_value=None)
+        await handler.open("log.txt")
+        handler.close.assert_called_with(code=1008, reason="Authentication required")
+
+    @pytest.mark.asyncio
+    async def test_open_connection_limit(self):
+        handler = make_ws_handler(FileStreamHandler)
+        handler.get_current_user = MagicMock(return_value={'username': 'user'})
+        with patch.object(FileStreamHandler.connection_manager, 'add_connection', return_value=False):
+            await handler.open("log.txt")
+            handler.close.assert_called_with(code=1013, reason="Connection limit exceeded")
+
+    @pytest.mark.asyncio
+    async def test_on_message_invalid_json(self):
+        handler = make_ws_handler(FileStreamHandler)
+        handler.get_current_user = MagicMock(return_value={'username': 'user'})
+        await handler.on_message("not-json")
+        handler.write_message.assert_called_with(json.dumps({'type': 'error', 'message': 'Invalid JSON payload'}))
+
+    @pytest.mark.asyncio
+    async def test_on_message_missing_action(self):
+        handler = make_ws_handler(FileStreamHandler)
+        handler.get_current_user = MagicMock(return_value={'username': 'user'})
+        await handler.on_message(json.dumps({}))
+        handler.write_message.assert_called_with(json.dumps({'type': 'error', 'message': 'Invalid request: action is required'}))
+
+
+class TestWebSocketStatsHandler:
+    def test_requires_admin(self):
+        handler = make_request_handler(WebSocketStatsHandler)
+        handler.set_status = MagicMock()
+        handler.is_admin_user = MagicMock(return_value=False)
         handler.get()
-        
         handler.set_status.assert_called_with(403)
-        handler.write.assert_called_with("File sharing is disabled")
+        handler.write.assert_called_with("Access denied: You don't have permission to perform this action")
 
-    @patch.object(ShareCreateHandler, 'get_current_user', return_value='user')
-    @patch('aird.main.is_feature_enabled')
-    @patch('aird.main.SHARES')
-    @patch('os.path.isfile')
-    @patch('os.path.abspath')
-    @patch('aird.main.ROOT_DIR', '/test/root')
-    def test_share_create_handler(self, mock_abspath, mock_isfile, mock_shares, mock_feature, mock_user):
-        """Test creating a new share"""
-        handler = ShareCreateHandler(self.mock_app, self.mock_request)
-        handler.write = MagicMock()
-        handler.set_status = MagicMock()
-        
-        # Mock request body
-        handler.request.body = b'{"paths": ["file1.txt", "file2.txt"]}'
-        
-        mock_feature.return_value = True
-        mock_shares.__setitem__ = MagicMock()
-        # Mock abspath to return paths within ROOT_DIR
-        mock_abspath.side_effect = lambda path: f'/test/root/{path}'
-        mock_isfile.return_value = True
-        
-        with patch('aird.main.secrets.token_urlsafe', return_value='test_token'):
-            with patch('aird.main.datetime') as mock_datetime:
-                mock_datetime.utcnow.return_value.isoformat.return_value = '2023-01-01T00:00:00'
-                
-                handler.post()
-        
-        handler.write.assert_called_once()
-        response = handler.write.call_args[0][0]
-        assert 'id' in response
-        assert 'url' in response
+    def test_returns_stats(self):
+        handler = make_request_handler(WebSocketStatsHandler)
+        handler.is_admin_user = MagicMock(return_value=True)
+        stats = {'connections': 1}
+        with patch.object(FeatureFlagSocketHandler.connection_manager, 'get_stats', return_value=stats), \
+             patch.object(FileStreamHandler.connection_manager, 'get_stats', return_value=stats), \
+             patch.object(SuperSearchWebSocketHandler.connection_manager, 'get_stats', return_value=stats):
+            handler.get()
+            handler.write.assert_called()
+            payload = json.loads(handler.write.call_args[0][0])
+            assert 'feature_flags' in payload
 
-    @patch.object(ShareListAPIHandler, 'get_current_user', return_value='user')
-    @patch('aird.main.SHARES')
-    @patch('aird.main.is_feature_enabled')
-    def test_share_list_api(self, mock_feature, mock_shares, mock_user):
-        """Test listing shares API"""
-        handler = ShareListAPIHandler(self.mock_app, self.mock_request)
-        handler.write = MagicMock()
-        
-        mock_feature.return_value = True
-        mock_shares = {
-            'share1': {'created': '2023-01-01', 'paths': ['file1.txt']},
-            'share2': {'created': '2023-01-02', 'paths': ['file2.txt']}
-        }
-        
-        handler.get()
-        
-        handler.write.assert_called_once()
-        response = handler.write.call_args[0][0]
-        assert 'shares' in response
-
-    @patch.object(SharedListHandler, 'get_current_user', return_value=None)  # No auth required for shared links
-    @patch('aird.main.SHARES')
-    def test_shared_list_handler(self, mock_shares, mock_user):
-        """Test accessing shared file list"""
-        handler = SharedListHandler(self.mock_app, self.mock_request)
-        handler.render = MagicMock()
-        
-        mock_shares.get.return_value = {
-            'created': '2023-01-01',
-            'paths': ['file1.txt', 'file2.txt']
-        }
-        
-        handler.get('test_share_id')
-        
-        handler.render.assert_called_with("shared_list.html", share_id='test_share_id', files=['file1.txt', 'file2.txt'])
-
-    @patch.object(SharedListHandler, 'get_current_user', return_value=None)
-    @patch('aird.main.SHARES')
-    def test_shared_list_handler_invalid_share(self, mock_shares, mock_user):
-        """Test accessing invalid share"""
-        handler = SharedListHandler(self.mock_app, self.mock_request)
-        handler.set_status = MagicMock()
-        handler.write = MagicMock()
-        
-        mock_shares.get.return_value = None
-        
-        handler.get('invalid_share_id')
-        
-        handler.set_status.assert_called_with(404)
-        handler.write.assert_called_with("Invalid share link")

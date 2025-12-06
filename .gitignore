@@ -18,4 +18,22 @@ htmlcov
 .env.production.local
 dists
 aird.egg-info
+*.tar.gz
+main_combine.py 
+combine_main.py 
+permission.md 
+*.txt 
 
+*.egg*
+worktree.json
+main_backup.py
+*.whl
+*.zip
+*.tar
+*.gz
+*.bz2
+*.xz
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.gz.part

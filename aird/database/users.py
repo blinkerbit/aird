@@ -146,7 +146,7 @@ def search_users(conn: sqlite3.Connection, query: str) -> list[dict]:
 def update_user(conn: sqlite3.Connection, user_id: int, **kwargs) -> bool:
     """Update user information"""
     try:
-        valid_fields = ['username', 'password_hash', 'role', 'active', 'last_login']
+        valid_fields = ['username', 'password', 'password_hash', 'role', 'active', 'last_login']
         updates = []
         values = []
         

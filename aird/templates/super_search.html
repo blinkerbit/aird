@@ -689,9 +689,19 @@
             this.handleMessage(JSON.parse(event.data));
           };
 
-          this.ws.onclose = () => {
+          this.ws.onclose = (event) => {
             this.isSearching = false;
             this.updateButtons();
+            
+            // Check if closed due to authentication failure (code 1008)
+            if (event.code === 1008) {
+              this.showStatus('Authentication required. Redirecting to login...', 'error');
+              setTimeout(() => {
+                window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+              }, 1500);
+              return;
+            }
+            
             if (this.totalMatches === 0 && this.processedFiles > 0) {
               this.showStatus('Search completed - no matches found.', 'success');
             }
@@ -706,6 +716,19 @@
 
         handleMessage(data) {
           switch (data.type) {
+            case 'auth_required':
+              // Authentication required - redirect to login page
+              this.showStatus('Authentication required. Redirecting to login...', 'error');
+              this.isSearching = false;
+              this.updateButtons();
+              this.progressContainer.style.display = 'none';
+              // Redirect to login page with next parameter
+              const redirectUrl = data.redirect || '/login?next=' + encodeURIComponent(window.location.pathname);
+              setTimeout(() => {
+                window.location.href = redirectUrl;
+              }, 1500); // Give user time to see the message
+              break;
+
             case 'search_start':
               this.showStatus(`Searching for "${data.search_text}" in files matching "${data.pattern}"...`, 'searching');
               this.progressContainer.style.display = 'block';
