@@ -22,6 +22,9 @@
     {% end %}
     <form method="POST">
         {% raw xsrf_form_html() %}
+        {% if next_url %}
+            <input type="hidden" name="next" value="{{ escape(next_url) }}">
+        {% end %}
         {% if settings.get("ldap_server") %}
             <div style="margin-bottom:8px; color:#333;">LDAP is enabled. Sign in with your username and password.</div>
             <input type="text" name="username" placeholder="Enter username"><br><br>

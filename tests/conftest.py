@@ -28,79 +28,38 @@ def test_db():
 
 
 @pytest.fixture
-def mock_root_dir(temp_dir):
-    """Mock ROOT_DIR to use temporary directory"""
-    with patch('aird.main.ROOT_DIR', temp_dir):
-        yield temp_dir
-
-
-@pytest.fixture
-def sample_files(temp_dir):
-    """Create sample files for testing"""
-    files = {}
+def mock_db_conn():
+    """Mock database connection with initialized tables"""
+    conn = sqlite3.connect(":memory:")
+    try:
+        from aird.db import init_db
+        init_db(conn)
+    except ImportError:
+        # Create basic tables if aird.db can't be imported
+        conn.execute('''CREATE TABLE IF NOT EXISTS feature_flags 
+                        (key TEXT PRIMARY KEY, value INTEGER)''')
+        conn.execute('''CREATE TABLE IF NOT EXISTS shares 
+                        (id TEXT PRIMARY KEY, created TEXT, paths TEXT)''')
+        conn.execute('''CREATE TABLE IF NOT EXISTS users 
+                        (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, 
+                         password_hash TEXT, role TEXT, active INTEGER DEFAULT 1, 
+                         created_at TEXT, last_login TEXT)''')
+        conn.execute('''CREATE TABLE IF NOT EXISTS websocket_config 
+                        (key TEXT PRIMARY KEY, value TEXT)''')
+        conn.commit()
     
-    # Create text file
-    text_file = os.path.join(temp_dir, "sample.txt")
-    with open(text_file, "w", encoding='utf-8') as f:
-        f.write("Line 1: Hello world\nLine 2: Python testing\nLine 3: End of file\n")
-    files['text'] = text_file
+    with patch('aird.constants.DB_CONN', conn), \
+         patch('aird.handlers.admin_handlers.constants_module.DB_CONN', conn), \
+         patch('aird.handlers.admin_handlers.DB_CONN', conn, create=True):
+        yield conn
     
-    # Create Python file
-    py_file = os.path.join(temp_dir, "script.py")
-    with open(py_file, "w", encoding='utf-8') as f:
-        f.write("def hello():\n    print('Hello, world!')\n    return True\n")
-    files['python'] = py_file
-    
-    # Create subdirectory with file
-    subdir = os.path.join(temp_dir, "subdir")
-    os.makedirs(subdir)
-    sub_file = os.path.join(subdir, "nested.md")
-    with open(sub_file, "w", encoding='utf-8') as f:
-        f.write("# Nested File\n\nThis is a nested markdown file.\n")
-    files['nested'] = sub_file
-    
-    # Create binary file
-    bin_file = os.path.join(temp_dir, "binary.dat")
-    with open(bin_file, "wb") as f:
-        f.write(b'\x00\x01\x02\x03\x04\x05')
-    files['binary'] = bin_file
-    
-    yield files
+    conn.close()
 
 
 @pytest.fixture(autouse=True)
 def reset_feature_flags():
     """Reset feature flags to default state before each test"""
-    try:
-        from aird.main import FEATURE_FLAGS
-        original_flags = FEATURE_FLAGS.copy()
-        yield
-        FEATURE_FLAGS.clear()
-        FEATURE_FLAGS.update(original_flags)
-    except ImportError:
-        # If aird.main can't be imported, just yield
-        yield
-
-
-@pytest.fixture
-def mock_db_conn():
-    """Mock database connection with initialized tables"""
-    conn = sqlite3.connect(":memory:")
-    try:
-        from aird.main import _init_db
-        _init_db(conn)
-    except ImportError:
-        # Create basic tables if aird.main can't be imported
-        conn.execute('''CREATE TABLE IF NOT EXISTS feature_flags 
-                        (key TEXT PRIMARY KEY, value INTEGER)''')
-        conn.execute('''CREATE TABLE IF NOT EXISTS shares 
-                        (id TEXT PRIMARY KEY, created TEXT, paths TEXT)''')
-        conn.commit()
-    
-    with patch('aird.main.DB_CONN', conn):
-        yield conn
-    
-    conn.close()
+    pass
 
 
 @pytest.fixture
@@ -111,7 +70,8 @@ def mock_tornado_app():
         'cookie_secret': 'test_secret_key_for_testing',
         'template_path': 'templates',
         'debug': False,
-        'login_url': '/login'
+        'login_url': '/login',
+        'ldap_server': None  # LDAP disabled by default
     }
     return app
 
@@ -127,6 +87,7 @@ def mock_tornado_request():
     request.arguments = {}
     request.files = {}
     request.host = "localhost:8000"
+    request.protocol = "http"
     request.connection = MagicMock()
     request.connection.context = MagicMock()
     return request
@@ -149,21 +110,3 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "database: Database tests")
     config.addinivalue_line("markers", "security: Security tests")
     config.addinivalue_line("markers", "asyncio: Async tests")
-
-
-@pytest.fixture
-def disable_network():
-    """Disable network access for tests"""
-    with patch('socket.socket') as mock_socket:
-        mock_socket.side_effect = OSError("Network access disabled in tests")
-        yield
-
-
-@pytest.fixture
-def large_file(temp_dir):
-    """Create a large file for testing memory-mapped operations"""
-    file_path = os.path.join(temp_dir, "large_file.txt")
-    with open(file_path, "w", encoding='utf-8') as f:
-        for i in range(10000):
-            f.write(f"Line {i}: This is a test line with some content for testing.\n")
-    yield file_path

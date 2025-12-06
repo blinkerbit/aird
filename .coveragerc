@@ -6,6 +6,9 @@ omit =
     setup.py
     */venv/*
     */virtualenv/*
+    aird/main_backup.py
+    aird/main_original.py
+    aird/combine_main.py  
 
 [report]
 exclude_lines =
