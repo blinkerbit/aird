@@ -37,3 +37,4 @@ main_backup.py
 *.tar.bz2
 *.tar.xz
 *.tar.gz.part
+.cursor

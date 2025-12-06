@@ -1299,7 +1299,7 @@ def main():
                     max_buffer_size=constants.MAX_FILE_SIZE,
                 )
                 logger.info(f"Serving HTTPS on 0.0.0.0 port {port} (https://0.0.0.0:{port}/) ...")
-                logger.info(f"https://{config.HOSTNAME}:{port}/")
+                print(f"https://{config.HOSTNAME}:{port}/")
             else:
                 app.listen(
                     port,
@@ -1307,7 +1307,7 @@ def main():
                     max_buffer_size=constants.MAX_FILE_SIZE,
                 )
                 logger.info(f"Serving HTTP on 0.0.0.0 port {port} (http://0.0.0.0:{port}/) ...")
-                logger.info(f"http://{config.HOSTNAME}:{port}/")
+                print(f"http://{config.HOSTNAME}:{port}/")
 
             # Setup periodic cleanup of expired shares
             def cleanup_expired_shares_periodic():
