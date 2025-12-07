@@ -96,6 +96,10 @@ from aird.handlers.view_handlers import (
     RootHandler,
     EditViewHandler,
 )
+from aird.handlers.p2p_handlers import (
+    P2PTransferHandler,
+    P2PSignalingHandler,
+)
 from aird.utils.util import *
 from aird.cloud import (
     CloudManager,
@@ -1150,6 +1154,8 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None, 
         (r"/shared/([A-Za-z0-9_\-]+)/file/(.*)", SharedFileHandler),
         (r"/search", SuperSearchHandler),
         (r"/search/ws", SuperSearchWebSocketHandler),
+        (r"/p2p", P2PTransferHandler),
+        (r"/p2p/signal", P2PSignalingHandler),
         (r"/files/(.*)", MainHandler),
     ]
     

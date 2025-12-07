@@ -334,23 +334,50 @@
       }
 
       .action-link {
-        color: black;
+        color: #555;
         text-decoration: none;
-        margin-right: 1px;
-        font-size: 14px;
-        padding: 4px 6px;
-        border: 1px solid #ccc;
-        background: #f9f9f9;
-        display: inline-block;
-        min-width: 24px;
+        margin-right: 4px;
+        padding: 6px 8px;
+        border: 1px solid #e0e0e0;
+        background: #fafafa;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 32px;
+        height: 32px;
         text-align: center;
         position: relative;
+        border-radius: 6px;
+        transition: all 0.15s ease;
       }
 
       .action-link:hover {
-        background: #e9e9e9;
+        background: #f0f0f0;
+        border-color: #ccc;
         text-decoration: none;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
       }
+
+      .action-link svg {
+        width: 16px;
+        height: 16px;
+        stroke: currentColor;
+        stroke-width: 2;
+        fill: none;
+      }
+
+      .action-link.download-btn { color: #2563eb; border-color: #bfdbfe; background: #eff6ff; }
+      .action-link.download-btn:hover { background: #dbeafe; border-color: #93c5fd; }
+
+      .action-link.edit-btn { color: #d97706; border-color: #fde68a; background: #fffbeb; }
+      .action-link.edit-btn:hover { background: #fef3c7; border-color: #fcd34d; }
+
+      .action-link.rename-btn { color: #7c3aed; border-color: #ddd6fe; background: #f5f3ff; }
+      .action-link.rename-btn:hover { background: #ede9fe; border-color: #c4b5fd; }
+
+      .action-link.delete-btn { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
+      .action-link.delete-btn:hover { background: #fee2e2; border-color: #fca5a5; }
 
       /* Tooltip styles for icon buttons */
       .action-link[title]:hover::after {
@@ -406,11 +433,16 @@
 
         /* Mobile-friendly action buttons */
         .action-link {
-          font-size: 16px;
-          padding: 6px 8px;
-          margin-right: 4px;
-          min-width: 32px;
+          padding: 8px 10px;
+          margin-right: 6px;
+          min-width: 40px;
+          height: 40px;
           touch-action: manipulation;
+        }
+
+        .action-link svg {
+          width: 20px;
+          height: 20px;
         }
 
         /* Increase tooltip size on mobile */
@@ -579,6 +611,7 @@
         {% if features.get('file_share') %}
         <a href="/share" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;{% if features.get('super_search') %}margin-left:8px;{% end %}">🔗 Share Files</a>
         {% end %}
+        <a href="/p2p" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;margin-left:8px;">🔀 P2P Transfer</a>
         <a href="/logout" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;margin-left:8px;">↩ Logout</a>
         </div>
       </div>
@@ -662,33 +695,33 @@
                 {% if features['file_download'] %}
                 <a
                   href="/files/{{ escape(join_path(current_path, file['name'])) }}?download=1"
-                  class="action-link"
+                  class="action-link download-btn"
                   title="Download"
-                  >⬇️</a>
+                  ><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></a>
                 {% end %}
                 {% if features['file_edit'] %}
                 <a
                   href="/edit/{{ escape(join_path(current_path, file['name'])) }}"
-                  class="action-link"
+                  class="action-link edit-btn"
                   title="Edit"
-                  >✏️</a>
+                  ><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></a>
                 {% end %}
               {% end %}
               {% if features['file_rename'] %}
               <a
                 href="#"
                 onclick="renameItem('{{ escape(join_path(current_path, file['name'])) }}')"
-                class="action-link"
+                class="action-link rename-btn"
                 title="Rename"
-                >🏷️</a>
+                ><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></a>
               {% end %}
               {% if features['file_delete'] %}
               <a
                 href="#"
                 onclick="deleteItem('{{ escape(join_path(current_path, file['name'])) }}')"
-                class="action-link"
+                class="action-link delete-btn"
                 title="Delete"
-                >❌</a>
+                ><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></a>
               {% end %}
             </td>
           </tr>

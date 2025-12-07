@@ -141,8 +141,9 @@ class AdminUsersHandler(BaseHandler):
             return
             
         users = []
-        if DB_CONN is not None:
-            users = get_all_users(DB_CONN)
+        db_conn = constants_module.DB_CONN
+        if db_conn is not None:
+            users = get_all_users(db_conn)
             
         self.render("admin_users.html", users=users)
 
@@ -164,8 +165,9 @@ class UserCreateHandler(BaseHandler):
             self.set_status(403)
             self.write("Access denied: You don't have permission to perform this action")
             return
-            
-        if DB_CONN is None:
+        
+        db_conn = constants_module.DB_CONN
+        if db_conn is None:
             self.render("user_create.html", error="Database not available")
             return
             
@@ -196,7 +198,7 @@ class UserCreateHandler(BaseHandler):
             return
             
         try:
-            create_user(DB_CONN, username, password, role)
+            create_user(db_conn, username, password, role)
             self.redirect("/admin/users")
         except ValueError as e:
             self.render("user_create.html", error=str(e))
@@ -211,8 +213,9 @@ class UserEditHandler(BaseHandler):
             self.set_status(403)
             self.write("Access denied: You don't have permission to perform this action")
             return
-            
-        if DB_CONN is None:
+        
+        db_conn = constants_module.DB_CONN
+        if db_conn is None:
             self.set_status(500)
             self.write("Service temporarily unavailable: Database connection error")
             return
@@ -220,7 +223,7 @@ class UserEditHandler(BaseHandler):
         try:
             user_id = int(user_id)
             # Get user by ID
-            users = get_all_users(DB_CONN)
+            users = get_all_users(db_conn)
             user = next((u for u in users if u['id'] == user_id), None)
             
             if not user:
@@ -240,8 +243,9 @@ class UserEditHandler(BaseHandler):
             self.set_status(403)
             self.write("Access denied: You don't have permission to perform this action")
             return
-            
-        if DB_CONN is None:
+        
+        db_conn = constants_module.DB_CONN
+        if db_conn is None:
             self.set_status(500)
             self.write("Service temporarily unavailable: Database connection error")
             return
@@ -249,7 +253,7 @@ class UserEditHandler(BaseHandler):
         try:
             user_id = int(user_id)
             # Get existing user
-            users = get_all_users(DB_CONN)
+            users = get_all_users(db_conn)
             user = next((u for u in users if u['id'] == user_id), None)
             
             if not user:
@@ -299,7 +303,7 @@ class UserEditHandler(BaseHandler):
             if password:  # Only update password if provided
                 update_data['password'] = password
                 
-            if update_user(DB_CONN, user_id, **update_data):
+            if update_user(db_conn, user_id, **update_data):
                 self.redirect("/admin/users")
             else:
                 self.render("user_edit.html", user=user, error="Failed to update user")
@@ -318,8 +322,9 @@ class UserDeleteHandler(BaseHandler):
             self.set_status(403)
             self.write("Access denied: You don't have permission to perform this action")
             return
-            
-        if DB_CONN is None:
+        
+        db_conn = constants_module.DB_CONN
+        if db_conn is None:
             self.set_status(500)
             self.write("Service temporarily unavailable: Database connection error")
             return
@@ -332,7 +337,7 @@ class UserDeleteHandler(BaseHandler):
                 self.write("Invalid user ID")
                 return
                 
-            if delete_user(DB_CONN, user_id):
+            if delete_user(db_conn, user_id):
                 self.redirect("/admin/users")
             else:
                 self.set_status(404)
@@ -352,9 +357,10 @@ class LDAPConfigHandler(BaseHandler):
             
         configs = []
         sync_logs = []
-        if DB_CONN is not None:
-            configs = get_all_ldap_configs(DB_CONN)
-            sync_logs = get_ldap_sync_logs(DB_CONN, limit=20)
+        db_conn = constants_module.DB_CONN
+        if db_conn is not None:
+            configs = get_all_ldap_configs(db_conn)
+            sync_logs = get_ldap_sync_logs(db_conn, limit=20)
             
         self.render("admin_ldap.html", configs=configs, sync_logs=sync_logs)
 
@@ -376,8 +382,9 @@ class LDAPConfigCreateHandler(BaseHandler):
             self.set_status(403)
             self.write("Access denied: You don't have permission to perform this action")
             return
-            
-        if DB_CONN is None:
+        
+        db_conn = constants_module.DB_CONN
+        if db_conn is None:
             self.render("ldap_config_create.html", error="Database not available")
             return
             
@@ -397,7 +404,7 @@ class LDAPConfigCreateHandler(BaseHandler):
             return
             
         try:
-            create_ldap_config(DB_CONN, name, server, ldap_base_dn, ldap_member_attributes, user_template)
+            create_ldap_config(db_conn, name, server, ldap_base_dn, ldap_member_attributes, user_template)
             self.redirect("/admin/ldap")
         except ValueError as e:
             self.render("ldap_config_create.html", error=str(e))
@@ -412,15 +419,16 @@ class LDAPConfigEditHandler(BaseHandler):
             self.set_status(403)
             self.write("Access denied: You don't have permission to perform this action")
             return
-            
-        if DB_CONN is None:
+        
+        db_conn = constants_module.DB_CONN
+        if db_conn is None:
             self.set_status(500)
             self.write("Service temporarily unavailable: Database connection error")
             return
             
         try:
             config_id = int(config_id)
-            config = get_ldap_config_by_id(DB_CONN, config_id)
+            config = get_ldap_config_by_id(db_conn, config_id)
             
             if not config:
                 self.set_status(404)
@@ -438,15 +446,16 @@ class LDAPConfigEditHandler(BaseHandler):
             self.set_status(403)
             self.write("Access denied: You don't have permission to perform this action")
             return
-            
-        if DB_CONN is None:
+        
+        db_conn = constants_module.DB_CONN
+        if db_conn is None:
             self.set_status(500)
             self.write("Service temporarily unavailable: Database connection error")
             return
             
         try:
             config_id = int(config_id)
-            config = get_ldap_config_by_id(DB_CONN, config_id)
+            config = get_ldap_config_by_id(db_conn, config_id)
             
             if not config:
                 self.set_status(404)
@@ -470,7 +479,7 @@ class LDAPConfigEditHandler(BaseHandler):
                 return
             
             # Update configuration
-            if update_ldap_config(DB_CONN, config_id, 
+            if update_ldap_config(db_conn, config_id, 
                                  name=name, server=server, ldap_base_dn=ldap_base_dn,
                                  ldap_member_attributes=ldap_member_attributes, 
                                  user_template=user_template, active=active):
@@ -491,8 +500,9 @@ class LDAPConfigDeleteHandler(BaseHandler):
             self.set_status(403)
             self.write("Access denied: You don't have permission to perform this action")
             return
-            
-        if DB_CONN is None:
+        
+        db_conn = constants_module.DB_CONN
+        if db_conn is None:
             self.set_status(500)
             self.write("Service temporarily unavailable: Database connection error")
             return
@@ -505,7 +515,7 @@ class LDAPConfigDeleteHandler(BaseHandler):
                 self.write("Invalid request: Please provide a valid configuration ID")
                 return
                 
-            if delete_ldap_config(DB_CONN, config_id):
+            if delete_ldap_config(db_conn, config_id):
                 self.redirect("/admin/ldap")
             else:
                 self.set_status(404)
