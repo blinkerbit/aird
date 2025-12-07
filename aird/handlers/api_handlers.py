@@ -45,6 +45,10 @@ class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):
     connection_manager = WebSocketConnectionManager("feature_flags", default_max_connections=50, default_idle_timeout=600)
 
     def open(self):
+        if not self.get_current_user():
+            self.close(code=1008, reason="Authentication required")
+            return
+
         if not self.connection_manager.add_connection(self):
             self.write_message(json.dumps({
                 'error': 'Connection limit exceeded. Please try again later.'

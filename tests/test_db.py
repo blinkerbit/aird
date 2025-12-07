@@ -401,6 +401,20 @@ class TestUserManagement:
         updated = get_user_by_username(db_conn, "testuser")
         assert updated['role'] == "admin"
     
+    def test_update_user_password(self, db_conn):
+        """Test updating user password via 'password' field"""
+        user = create_user(db_conn, "testuser", "old_password")
+        old_hash = get_user_by_username(db_conn, "testuser")['password_hash']
+        
+        result = update_user(db_conn, user['id'], password="new_password")
+        assert result is True
+        
+        updated = get_user_by_username(db_conn, "testuser")
+        # Password hash should have changed
+        assert updated['password_hash'] != old_hash
+        # New password should verify correctly
+        assert verify_password("new_password", updated['password_hash']) is True
+    
     def test_delete_user(self, db_conn):
         """Test deleting user"""
         user = create_user(db_conn, "testuser", "password123")
@@ -468,6 +482,11 @@ class TestLdapConfig:
         result = get_ldap_config_by_id(db_conn, config['id'])
         assert result is not None
         assert result['name'] == "Test"
+    
+    def test_get_ldap_config_by_id_not_found(self, db_conn):
+        """Test getting LDAP config by non-existent ID returns None"""
+        result = get_ldap_config_by_id(db_conn, 99999)
+        assert result is None
     
     def test_update_ldap_config(self, db_conn):
         """Test updating LDAP config"""

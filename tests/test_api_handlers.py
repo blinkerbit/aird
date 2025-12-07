@@ -282,6 +282,10 @@ class TestFeatureFlagSocketHandler:
              patch('aird.constants.FEATURE_FLAGS', {'in_memory': True}), \
              patch_db_conn(MagicMock(), modules=['aird.handlers.api_handlers']), \
              patch('aird.handlers.api_handlers.load_feature_flags', return_value={'persisted': False}):
+            
+            # Mock authentication
+            handler.get_current_user = MagicMock(return_value={'username': 'admin'})
+            
             handler.open()
             handler.write_message.assert_called()
             message = json.loads(handler.write_message.call_args[0][0])
@@ -289,6 +293,9 @@ class TestFeatureFlagSocketHandler:
 
     def test_open_connection_limit(self):
         handler = make_ws_handler(FeatureFlagSocketHandler)
+        # Mock authentication
+        handler.get_current_user = MagicMock(return_value={'username': 'admin'})
+        
         with patch.object(FeatureFlagSocketHandler.connection_manager, 'add_connection', return_value=False):
             handler.open()
             handler.close.assert_called_with(code=1013, reason="Connection limit exceeded")

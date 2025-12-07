@@ -39,7 +39,7 @@ MAX_FILE_SIZE = 512 * 1024 * 1024  # 512 MB
 MAX_READABLE_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 ALLOWED_UPLOAD_EXTENSIONS = {
     ".txt", ".log", ".md", ".json", ".xml", ".yaml", ".yml", ".csv",
-    ".jpg", ".jpeg", ".png", ".gif", ".svg", ".ico",
+    ".jpg", ".jpeg", ".png", ".gif", ".ico",
     ".mp4", ".webm", ".ogg", ".mp3", ".wav",
     ".pdf", ".zip", ".gz", ".tar", ".bz2",
 }

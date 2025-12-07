@@ -158,10 +158,12 @@ class TestLoginHandlerExtended:
             
             handler.post()
             mock_render.assert_called_with("login.html", error="Invalid credentials. Try again.", settings=ANY, next_url=ANY)
-            # Verify logging of mismatch details
-            assert mock_log.call_count >= 2
+            # Verify generic logging (security hardening removed detailed logging)
+            assert mock_log.call_count >= 1
+            assert any("Token authentication failed" in call[0][0] for call in mock_log.call_args_list)
 
-    def test_post_token_length_mismatch(self):
+    def test_post_token_length_mismatch_secure(self):
+        """Verify that length mismatch does NOT log details (Side-channel protection)"""
         handler = LoginHandler(self.mock_app, self.mock_request)
         handler.get_argument = MagicMock(side_effect=lambda k, d=None: "short" if k == "token" else "")
         
@@ -170,9 +172,10 @@ class TestLoginHandlerExtended:
              patch.object(handler, 'render') as mock_render:
             
             handler.post()
-            # Verify logging of length mismatch
+            # Verify NO logging of length specific mismatch
             args = [call[0][0] for call in mock_log.call_args_list]
-            assert any("Token length mismatch" in arg for arg in args)
+            assert not any("Token length mismatch" in arg for arg in args)
+            assert any("Token authentication failed" in arg for arg in args)
 
     def test_post_token_success(self):
         handler = LoginHandler(self.mock_app, self.mock_request)

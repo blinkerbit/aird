@@ -277,7 +277,7 @@ class EditHandler(BaseHandler):
         
         abspath = (pathlib.Path(ROOT_DIR) /  ("."+path)).absolute().resolve()
         
-        if ROOT_DIR in abspath.parents:
+        if not is_within_root(str(abspath), ROOT_DIR):
             logging.warning(f"EditHandler: access denied for path {path}.")
             self.set_status(403)
             self.write(f"Access denied: You don't have permission to perform this action for path {path}.")
@@ -325,7 +325,8 @@ class CloudUploadHandler(BaseHandler):
 
         upload = uploads[0]
         body: bytes = upload.get("body", b"")
-        filename = upload.get("filename") or "upload.bin"
+        raw_filename = upload.get("filename") or "upload.bin"
+        filename = sanitize_cloud_filename(raw_filename)
         content_type = upload.get("content_type") or None
 
         size = len(body)

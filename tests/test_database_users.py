@@ -295,6 +295,24 @@ class TestUpdateUser:
         updated = get_user_by_username(db_conn, "testuser")
         assert updated['last_login'] == login_time
     
+    def test_update_user_password(self, db_conn):
+        """Test updating user password via 'password' field"""
+        # Create user with initial password
+        user = create_user(db_conn, "testuser", "old_password")
+        old_hash = get_user_by_username(db_conn, "testuser")['password_hash']
+        
+        # Update password using the 'password' field
+        result = update_user(db_conn, user['id'], password="new_password")
+        
+        assert result is True
+        updated = get_user_by_username(db_conn, "testuser")
+        # Password hash should have changed
+        assert updated['password_hash'] != old_hash
+        # New password should verify correctly
+        assert verify_password("new_password", updated['password_hash']) is True
+        # Old password should NOT verify
+        assert verify_password("old_password", updated['password_hash']) is False
+    
     def test_update_user_exception_returns_false(self):
         """Test that exceptions return False"""
         mock_conn = MagicMock()

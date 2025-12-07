@@ -3,7 +3,9 @@ import tornado.web
 import logging
 from aird.handlers.base_handler import BaseHandler
 from datetime import datetime
+import secrets
 from ldap3 import Server, Connection
+from ldap3.utils.conv import escape_filter_chars
 from aird.db import (
     get_user_by_username,
     create_user,
@@ -37,9 +39,14 @@ class LDAPLoginHandler(BaseHandler):
         
         try:
             server = Server(self.settings['ldap_server'])
+            # Bind with the provided password (no need to escape for bind DN if template handles it, 
+            # but usually username in DN is just placed. However, we are focusing on the search filter injection)
             conn = Connection(server, user=self.settings['ldap_user_template'].format(username=username), password=password, auto_bind=True)
+            
+            # Escape username for search filter to prevent LDAP injection
+            username_escaped = escape_filter_chars(username)
             conn.search(search_base=self.settings['ldap_base_dn'],
-             search_filter=self.settings['ldap_filter_template'].format(username=username),
+             search_filter=self.settings['ldap_filter_template'].format(username=username_escaped),
               attributes=self.settings['ldap_attributes'])
 
             """
@@ -80,22 +87,22 @@ class LDAPLoginHandler(BaseHandler):
                     try:
                         user_role = 'admin' if is_admin_user else 'user'
                         create_user(db_conn, username, password, role=user_role)
-                        print(f"LDAP: Created new user '{username}' from LDAP authentication with role '{user_role}'")
+                        logging.info(f"LDAP: Created new user '{username}' from LDAP authentication with role '{user_role}'")
                     except Exception as e:
-                        print(f"LDAP: Warning: Failed to create user '{username}' in database: {e}")
+                        logging.warning(f"LDAP: Warning: Failed to create user '{username}' in database: {e}")
                         # Continue with login even if user creation fails
                 else:
                     # Update last login timestamp and check for admin role assignment
                     try:
                         update_user(db_conn, existing_user['id'], last_login=datetime.now().isoformat())
-                        print(f"LDAP: Updated last login for user '{username}'")
+                        logging.info(f"LDAP: Updated last login for user '{username}'")
                         
                         # Check if user should have admin privileges
                         if is_admin_user and existing_user['role'] != 'admin':
                             update_user(db_conn, existing_user['id'], role='admin')
-                            print(f"LDAP: Assigned admin privileges to user '{username}'")
+                            logging.info(f"LDAP: Assigned admin privileges to user '{username}'")
                     except Exception as e:
-                        print(f"LDAP: Warning: Failed to update user '{username}': {e}")
+                        logging.warning(f"LDAP: Warning: Failed to update user '{username}': {e}")
             
             # Successful authentication and authorization
             # Get user role for cookie setting
@@ -203,19 +210,15 @@ class LoginHandler(BaseHandler):
         logging.info(f"Token comparison - expected first 10 chars: {normalized_access_token[:10] if len(normalized_access_token) >= 10 else normalized_access_token}")
         logging.info(f"Tokens match: {normalized_token == normalized_access_token}")
         
-        if normalized_token == normalized_access_token:
+        if secrets.compare_digest(normalized_token, normalized_access_token):
             logging.info(f"Token authentication successful, redirecting to: {next_url}")
             self.set_secure_cookie("user", "token_authenticated", httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
             self.set_secure_cookie("user_role", "admin", httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")  # Token users get admin role
             self.redirect(next_url)
             return
         else:
-            # Log the mismatch for debugging
-            logging.warning(f"Token authentication failed. Submitted token length: {len(normalized_token)}, Expected token length: {len(normalized_access_token)}")
-            if len(normalized_token) != len(normalized_access_token):
-                logging.warning(f"Token length mismatch - submitted: {len(normalized_token)}, expected: {len(normalized_access_token)}")
-            else:
-                logging.warning(f"Token length matches but content differs - first mismatch at position: {next((i for i, (a, b) in enumerate(zip(normalized_token, normalized_access_token)) if a != b), 'unknown')}")
+            # Log failure efficiently without revealing token details
+            logging.warning("Token authentication failed. Token mismatch.")
             self.render("login.html", error="Invalid credentials. Try again.", settings=self.settings, next_url=next_url)
 
 class AdminLoginHandler(BaseHandler):
@@ -286,15 +289,12 @@ class AdminLoginHandler(BaseHandler):
         # Debug logging (without exposing actual token values)
         logging.debug(f"Admin token auth attempt - submitted length: {len(normalized_token)}, expected length: {len(normalized_admin_token)}")
         
-        if normalized_token == normalized_admin_token:
+        if secrets.compare_digest(normalized_token, normalized_admin_token):
             logging.info("Admin token authentication successful")
             self.set_secure_cookie("admin", "authenticated", httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
             self.redirect("/admin")
         else:
-            # Log the mismatch for debugging (without exposing the actual tokens)
-            logging.warning(f"Admin token authentication failed. Submitted token length: {len(normalized_token)}, Expected token length: {len(normalized_admin_token)}")
-            if len(normalized_token) != len(normalized_admin_token):
-                logging.warning(f"Admin token length mismatch suggests incorrect token or copy error")
+            logging.warning("Admin token authentication failed.")
             self.render("admin_login.html", error="Invalid admin token.")
 
 class LogoutHandler(BaseHandler):

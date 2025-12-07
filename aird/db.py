@@ -599,11 +599,12 @@ def update_user(conn: sqlite3.Connection, user_id: int, **kwargs) -> bool:
         values = []
         
         for field, value in kwargs.items():
-            if field in valid_fields:
-                if field == 'password' and value:  # Special handling for password
-                    updates.append('password_hash = ?')
-                    values.append(hash_password(value))
-                elif field == 'active':
+            # Special handling for password - hash it before storing
+            if field == 'password' and value:
+                updates.append('password_hash = ?')
+                values.append(hash_password(value))
+            elif field in valid_fields:
+                if field == 'active':
                     updates.append('active = ?')
                     values.append(1 if value else 0)
                 else:
@@ -693,6 +694,7 @@ def get_ldap_config_by_id(conn: sqlite3.Connection, config_id: int) -> dict | No
                 "created_at": row[6],
                 "active": bool(row[7])
             }
+        return None
     except Exception:
         return None
 

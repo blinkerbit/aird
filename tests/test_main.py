@@ -363,6 +363,20 @@ class TestUpdateUser:
         result = _update_user(db_conn, user['id'], invalid_field="value")
         
         assert result is False
+    
+    def test_update_user_password(self, db_conn):
+        """Test updating user password via 'password' field"""
+        user = _create_user(db_conn, "testuser", "old_password")
+        old_hash = _get_user_by_username(db_conn, "testuser")['password_hash']
+        
+        result = _update_user(db_conn, user['id'], password="new_password")
+        
+        assert result is True
+        updated = _get_user_by_username(db_conn, "testuser")
+        # Password hash should have changed
+        assert updated['password_hash'] != old_hash
+        # New password should verify correctly
+        assert _verify_password("new_password", updated['password_hash']) is True
 
 
 class TestDeleteUser:

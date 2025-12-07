@@ -1,7 +1,7 @@
 import tornado.web
 import json
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import logging
 
@@ -58,7 +58,8 @@ class ShareCreateHandler(BaseHandler):
             raise tornado.web.HTTPError(403, "'_xsrf' argument missing from POST")
         
         # Compare tokens
-        if provided_token != cookie_token:
+        # Compare tokens using constant-time comparison
+        if not secrets.compare_digest(provided_token, cookie_token):
             raise tornado.web.HTTPError(403, "XSRF cookie does not match POST argument")
     
     @tornado.web.authenticated
@@ -165,7 +166,7 @@ class ShareCreateHandler(BaseHandler):
                         seen_paths.add(rel_path)
 
             secret_token = secrets.token_urlsafe(32) if not disable_token else None  # Generate secret token only if not disabled
-            created = datetime.utcnow().isoformat()
+            created = datetime.now(timezone.utc).isoformat()
             
             # Persist directly to database
             # Access DB_CONN from constants module to ensure we have the latest value
@@ -239,7 +240,8 @@ class ShareUpdateHandler(BaseHandler):
             raise tornado.web.HTTPError(403, "'_xsrf' argument missing from POST")
         
         # Compare tokens
-        if provided_token != cookie_token:
+        # Compare tokens using constant-time comparison
+        if not secrets.compare_digest(provided_token, cookie_token):
             raise tornado.web.HTTPError(403, "XSRF cookie does not match POST argument")
     
     @tornado.web.authenticated
@@ -484,7 +486,7 @@ class TokenVerificationHandler(BaseHandler):
                 self.write({"error": "Token is required"})
                 return
                 
-            if provided_token != stored_token:
+            if not secrets.compare_digest(provided_token, stored_token):
                 self.set_status(403)
                 self.write({"error": "Invalid token"})
                 return
@@ -530,7 +532,7 @@ class SharedListHandler(BaseHandler):
                 cookie_name = f"share_token_{sid}"
                 provided_token = self.get_cookie(cookie_name)
             
-            if not provided_token or provided_token != secret_token:
+            if not provided_token or not secrets.compare_digest(provided_token, secret_token):
                 # No valid token found, redirect to verification
                 self.redirect(f"/shared/{sid}/verify")
                 return
@@ -618,7 +620,7 @@ class SharedFileHandler(BaseHandler):
                 cookie_name = f"share_token_{sid}"
                 provided_token = self.get_cookie(cookie_name)
             
-            if not provided_token or provided_token != secret_token:
+            if not provided_token or not secrets.compare_digest(provided_token, secret_token):
                 self.set_status(403)
                 self.write("Access denied: Invalid or expired access token")
                 return

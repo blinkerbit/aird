@@ -784,7 +784,7 @@ def remove_share_cloud_dir(share_id: str) -> None:
 
 
 def download_cloud_item(share_id: str, item: dict) -> str:
-    from cloud import CloudProviderError, CLOUD_MANAGER
+    from aird.cloud import CloudProviderError, CLOUD_MANAGER
     provider_name = item.get("provider")
     file_id = item.get("id")
     if not provider_name or not file_id:
@@ -833,7 +833,7 @@ def download_cloud_item(share_id: str, item: dict) -> str:
 
 
 def download_cloud_items(share_id: str, items: list[dict]) -> list[str]:
-    from cloud import CloudProviderError
+    from aird.cloud import CloudProviderError
     if not items:
         return []
     downloaded: list[str] = []

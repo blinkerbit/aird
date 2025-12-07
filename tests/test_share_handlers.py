@@ -349,6 +349,11 @@ class TestSharedListHandler:
     def test_shared_list_requires_token_redirects(self):
         handler = prepare_handler(SharedListHandler(self.mock_app, self.mock_request))
         handler.redirect = MagicMock()
+        # Ensure get_cookie returns None (not a MagicMock) to simulate missing cookie
+        handler.get_cookie = MagicMock(return_value=None)
+        # Mock request.headers.get to return empty string for Authorization header
+        handler.request.headers = MagicMock()
+        handler.request.headers.get = MagicMock(return_value='')
 
         share_data = {'paths': ['test.txt'], 'share_type': 'static', 'secret_token': 'abc'}
         with patch_db_conn(MagicMock(), modules=['aird.handlers.share_handlers']), \
@@ -390,6 +395,11 @@ class TestSharedFileHandler:
         handler = prepare_handler(SharedFileHandler(self.mock_app, self.mock_request))
         handler.set_status = MagicMock()
         handler.write = MagicMock()
+        # Ensure get_cookie returns None (not a MagicMock)
+        handler.get_cookie = MagicMock(return_value=None)
+        # Mock request.headers.get to return empty string for Authorization header
+        handler.request.headers = MagicMock()
+        handler.request.headers.get = MagicMock(return_value='')
 
         share_data = {'paths': ['test.txt'], 'share_type': 'static', 'secret_token': 'secret'}
         with patch_db_conn(MagicMock(), modules=['aird.handlers.share_handlers']), \
