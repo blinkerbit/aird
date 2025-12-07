@@ -157,8 +157,9 @@ class UploadHandler(BaseHandler):
             shutil.move(self._temp_path, final_path_abs)
             self._moved = True
         except Exception as e:
+            logging.error(f"Upload save failed: {e}")
             self.set_status(500)
-            self.write(f"Failed to save upload: {e}")
+            self.write("Failed to save upload. Please try again.")
             return
 
         self.set_status(200)
@@ -304,8 +305,9 @@ class EditHandler(BaseHandler):
             else:
                 self.write("File saved successfully.")
         except Exception as e:
+            logging.error(f"File save error: {e}")
             self.set_status(500)
-            self.write(f"Error saving file: {e}")
+            self.write("Error saving file. Please try again.")
 
 class CloudUploadHandler(BaseHandler):
     @tornado.web.authenticated

@@ -383,10 +383,15 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
             token = auth_header.split(" ")[1]
             # Access token directly from module to ensure we have the latest value
             import aird.config as config_module
+            import secrets as secrets_module
             current_access_token = config_module.ACCESS_TOKEN
-            if current_access_token and token.strip().strip("'\"") == current_access_token.strip().strip("'\""):
-                # Return a generic user object for token-based access
-                return {"username": "token_user", "role": "admin"}
+            if current_access_token:
+                # Use constant-time comparison to prevent timing attacks
+                normalized_token = token.strip().strip("'\"")
+                normalized_access_token = current_access_token.strip().strip("'\"")
+                if secrets_module.compare_digest(normalized_token, normalized_access_token):
+                    # Return a generic user object for token-based access
+                    return {"username": "token_user", "role": "admin"}
         
         return None
 

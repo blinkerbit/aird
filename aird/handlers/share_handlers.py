@@ -188,8 +188,9 @@ class ShareCreateHandler(BaseHandler):
                 self.set_status(500)
                 self.write({"error": "Failed to create share"})
         except Exception as e:
+            logging.error(f"Share creation error: {e}")
             self.set_status(500)
-            self.write({"error": str(e)})
+            self.write({"error": "Failed to create share. Please try again."})
 
 class ShareRevokeHandler(BaseHandler):
     @tornado.web.authenticated
@@ -430,12 +431,13 @@ class ShareUpdateHandler(BaseHandler):
             self.write(response_data)
 
         except Exception as e:
+            logging.error(f"Share update error: {e}")
             if share_id and new_cloud_paths:
                 for rel_path in new_cloud_paths:
                     remove_cloud_file_if_exists(share_id, rel_path)
                 cleanup_share_cloud_dir_if_empty(share_id)
             self.set_status(500)
-            self.write({"error": str(e)})
+            self.write({"error": "Failed to update share. Please try again."})
 
 class TokenVerificationHandler(BaseHandler):
     def check_xsrf_cookie(self):

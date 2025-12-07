@@ -1307,7 +1307,12 @@ def main():
                     max_buffer_size=constants.MAX_FILE_SIZE,
                 )
                 logger.info(f"Serving HTTPS on 0.0.0.0 port {port} (https://0.0.0.0:{port}/) ...")
-                print(f"https://{config.HOSTNAME}:{port}/")
+                print(f"https://localhost:{port}/")
+                if config.HOSTNAME and config.HOSTNAME != 'localhost':
+                    print(f"https://{config.HOSTNAME}:{port}/")
+                fqdn = socket.getfqdn()
+                if fqdn and fqdn != config.HOSTNAME and fqdn != 'localhost':
+                    print(f"https://{fqdn}:{port}/")
             else:
                 app.listen(
                     port,
@@ -1315,7 +1320,12 @@ def main():
                     max_buffer_size=constants.MAX_FILE_SIZE,
                 )
                 logger.info(f"Serving HTTP on 0.0.0.0 port {port} (http://0.0.0.0:{port}/) ...")
-                print(f"http://{config.HOSTNAME}:{port}/")
+                print(f"http://localhost:{port}/")
+                if config.HOSTNAME and config.HOSTNAME != 'localhost':
+                    print(f"http://{config.HOSTNAME}:{port}/")
+                fqdn = socket.getfqdn()
+                if fqdn and fqdn != config.HOSTNAME and fqdn != 'localhost':
+                    print(f"http://{fqdn}:{port}/")
 
             # Setup periodic cleanup of expired shares
             def cleanup_expired_shares_periodic():

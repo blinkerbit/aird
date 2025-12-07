@@ -122,16 +122,35 @@ class LDAPLoginHandler(BaseHandler):
             self.render("login.html", error="Authentication failed. Please check your credentials.", settings=self.settings)
 
 class LoginHandler(BaseHandler):
+    def _is_safe_redirect_url(self, url: str) -> bool:
+        """Validate that a redirect URL is safe (relative path only, no external redirects)."""
+        if not url:
+            return False
+        # Must start with / and not with // (protocol-relative URL)
+        if not url.startswith('/') or url.startswith('//'):
+            return False
+        # Block URLs with protocol schemes
+        if ':' in url.split('/')[0]:
+            return False
+        return True
+    
+    def _get_safe_next_url(self) -> str:
+        """Get a validated next URL, defaulting to /files/ if invalid."""
+        next_url = self.get_argument("next", "/files/")
+        if self._is_safe_redirect_url(next_url):
+            return next_url
+        return "/files/"
+
     def get(self):
         if self.current_user:
             # Already logged in, redirect to intended destination or files page
-            next_url = self.get_argument("next", "/files/")
-            logging.info(f"User already authenticated, redirecting to: {next_url}")
+            next_url = self._get_safe_next_url()
+            logging.info(f"User already authenticated, redirecting to safe URL")
             self.redirect(next_url)
             return
         # Not logged in, show login form with next URL preserved
-        next_url = self.get_argument("next", "/files/")
-        logging.debug(f"Showing login form with next_url: {next_url}")
+        next_url = self._get_safe_next_url()
+        logging.debug("Showing login form")
         self.render("login.html", error=None, settings=self.settings, next_url=next_url)
 
     def post(self):
@@ -140,14 +159,12 @@ class LoginHandler(BaseHandler):
             username = self.get_argument("username", "").strip()
             password = self.get_argument("password", "").strip()
             token = self.get_argument("token", "").strip()
-            next_url = self.get_argument("next", "/files/")
+            next_url = self._get_safe_next_url()
             
-            # Comprehensive debug logging
-            logging.info(f"Login attempt - username: {bool(username)}, password: {bool(password)}, token: {bool(token)}")
-            if token:
-                logging.info(f"Token provided (length: {len(token)}, starts with: {token[:10] if len(token) >= 10 else token}...)")
+            # Safe logging without exposing sensitive data
+            logging.info(f"Login attempt - username provided: {bool(username)}, password provided: {bool(password)}, token provided: {bool(token)}")
         except Exception as e:
-            logging.error(f"Error parsing login form data: {e}", exc_info=True)
+            logging.error("Error parsing login form data", exc_info=True)
             self.render("login.html", error="Error processing login request. Please try again.", settings=self.settings, next_url="/files/")
             return
         
@@ -204,11 +221,8 @@ class LoginHandler(BaseHandler):
         normalized_token = token.strip().strip("'\"")
         normalized_access_token = current_access_token.strip().strip("'\"") if current_access_token else ""
         
-        # Detailed debug logging
-        logging.info(f"Token comparison - submitted length: {len(normalized_token)}, expected length: {len(normalized_access_token)}")
-        logging.info(f"Token comparison - submitted first 10 chars: {normalized_token[:10] if len(normalized_token) >= 10 else normalized_token}")
-        logging.info(f"Token comparison - expected first 10 chars: {normalized_access_token[:10] if len(normalized_access_token) >= 10 else normalized_access_token}")
-        logging.info(f"Tokens match: {normalized_token == normalized_access_token}")
+        # Safe logging without exposing token values
+        logging.debug(f"Token comparison - lengths match: {len(normalized_token) == len(normalized_access_token)}")
         
         if secrets.compare_digest(normalized_token, normalized_access_token):
             logging.info(f"Token authentication successful, redirecting to: {next_url}")

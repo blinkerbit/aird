@@ -36,6 +36,15 @@ Aird provides a comprehensive file management solution with real-time streaming,
 - **Share Management** - Create, update, and revoke shares with real-time updates
 - **Session Persistence** - Tokens stored in cookies and Authorization headers for seamless access
 
+### 🔀 **Peer-to-Peer (P2P) File Transfer**
+- **Direct Browser-to-Browser Transfer** - Share files directly between users without server storage
+- **WebRTC Technology** - Uses WebRTC for efficient, low-latency peer-to-peer connections
+- **QR Code Sharing** - Generate QR codes for easy share link distribution
+- **Anonymous Access** - Optional anonymous sharing - recipients don't need to log in
+- **Real-Time Progress** - Live transfer progress tracking for both sender and receiver
+- **Manual Download Control** - Receivers can select which files to download
+- **Admin Control** - Enable/disable P2P transfer feature from admin panel
+
 ### 🔌 **API-First Architecture**
 - **RESTful API** - Complete REST API for all file operations and management
 - **WebSocket Support** - Real-time communication for streaming and live updates
@@ -44,7 +53,7 @@ Aird provides a comprehensive file management solution with real-time streaming,
 - **Authentication Support** - Token-based and LDAP authentication for secure API access
 
 ### ⚙️ **Administration & Security**
-- **Feature Flags** - Granular control over file operations (upload, delete, rename, edit, download, share)
+- **Feature Flags** - Granular control over file operations (upload, delete, rename, edit, download, share, P2P transfer)
 - **User Management** - Database-based user authentication with role-based access control
 - **LDAP Integration** - Enterprise-grade authentication with Active Directory support
 - **Real-Time Configuration** - Changes apply instantly without server restart
@@ -56,7 +65,7 @@ Aird provides a comprehensive file management solution with real-time streaming,
 ### Installation
 
 ```bash
-# Install from PyPI
+# Install from PyPI (latest version: 0.4.6)
 pip install aird
 
 # Or install from source
@@ -81,6 +90,16 @@ aird --token your-secure-token
 aird --ldap --ldap-server ldap://your-server.com
 ```
 
+### Accessing Features
+
+Once Aird is running, access the web interface at `http://localhost:8000` (or your configured port):
+
+- **File Browser** - Navigate to `/files/` to browse and manage files
+- **P2P Transfer** - Click "🔀 P2P Transfer" in the navigation bar (if enabled)
+- **Super Search** - Click "🔍 Super Search" to search file contents
+- **File Sharing** - Click "🔗 Share Files" to create share links
+- **Admin Panel** - Navigate to `/admin` to manage features and users
+
 ### Configuration
 
 Create a `config.json` file for advanced configuration:
@@ -100,7 +119,8 @@ Create a `config.json` file for advanced configuration:
     "file_upload": true,
     "file_delete": true,
     "file_share": true,
-    "super_search": true
+    "super_search": true,
+    "p2p_transfer": true
   }
 }
 ```
@@ -173,6 +193,38 @@ const ws = new WebSocket('ws://localhost:8080/stream/path/to/logfile.log');
 ws.onmessage = function(event) {
     const data = JSON.parse(event.data);
     console.log('New line:', data.line);
+};
+```
+
+### P2P File Transfer
+```javascript
+// Connect to P2P signaling server
+const ws = new WebSocket('ws://localhost:8080/p2p/signal');
+
+// Create a room and share link
+ws.send(JSON.stringify({
+    type: 'create_room',
+    allow_anonymous: true,  // Optional: allow anonymous access
+    file_info: {
+        name: 'document.pdf',
+        size: 1024000,
+        type: 'application/pdf'
+    }
+}));
+
+// Join a room using share link
+ws.send(JSON.stringify({
+    type: 'join_room',
+    room_id: 'share-code-here'
+}));
+
+// WebRTC signaling (offer, answer, ICE candidates)
+ws.onmessage = function(event) {
+    const message = JSON.parse(event.data);
+    // Handle WebRTC signaling messages
+    if (message.type === 'offer') {
+        // Process WebRTC offer
+    }
 };
 ```
 
@@ -252,6 +304,14 @@ function addLogEntry(line, timestamp) {
 - User management with secure password hashing
 - Share management with automatic schema migrations
 
+### Peer-to-Peer File Transfer
+- **WebRTC Signaling** - Server acts as signaling server for WebRTC connections
+- **Direct Data Transfer** - File content transferred directly between browsers (no server storage)
+- **Room-Based Sessions** - Secure room IDs for pairing sender and receiver
+- **Anonymous Access** - Optional anonymous sharing without requiring login
+- **QR Code Integration** - Generate QR codes for easy share link distribution
+- **Feature Toggle** - Admin can enable/disable P2P transfer from admin panel
+
 ## 📱 Mobile & Accessibility
 
 - **Mobile-Responsive Design** - Optimized for smartphones and tablets
@@ -276,12 +336,14 @@ function addLogEntry(line, timestamp) {
 - **Log Monitoring** - Real-time monitoring of application logs
 - **File Collaboration** - Edit and share files in real-time
 - **Search Codebase** - Find patterns across entire codebases
+- **P2P File Sharing** - Share large files directly between team members without server storage
 
 ### System Administrators
 - **Server File Management** - Browse and manage server files remotely
 - **Log Analysis** - Stream and analyze system logs
 - **Configuration Management** - Edit configuration files safely
 - **Backup Monitoring** - Monitor backup files and logs
+- **Secure File Distribution** - Use P2P transfer for distributing files without server bandwidth
 
 ### Content Creators
 - **File Organization** - Organize and manage large file collections

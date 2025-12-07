@@ -2,6 +2,7 @@ import tornado.web
 import json
 import time
 import re
+import logging
 
 from aird.handlers.base_handler import BaseHandler
 from aird.db import (
@@ -313,7 +314,8 @@ class UserEditHandler(BaseHandler):
             self.set_status(400)
             self.write("Invalid request: Please provide a valid user ID")
         except Exception as e:
-            self.render("user_edit.html", user=user, error=f"Error updating user: {str(e)}")
+            logging.error(f"User update error: {e}")
+            self.render("user_edit.html", user=user, error="Error updating user. Please try again.")
 
 class UserDeleteHandler(BaseHandler):
     @tornado.web.authenticated
@@ -410,7 +412,8 @@ class LDAPConfigCreateHandler(BaseHandler):
         except ValueError as e:
             self.render("ldap_config_create.html", error=str(e))
         except Exception as e:
-            self.render("ldap_config_create.html", error=f"Error creating configuration: {str(e)}")
+            logging.error(f"LDAP config creation error: {e}")
+            self.render("ldap_config_create.html", error="Error creating configuration. Please try again.")
 
 class LDAPConfigEditHandler(BaseHandler):
     @tornado.web.authenticated
@@ -491,7 +494,8 @@ class LDAPConfigEditHandler(BaseHandler):
         except ValueError:
             self.write("Invalid request: Please provide a valid configuration ID")
         except Exception as e:
-            self.render("ldap_config_edit.html", config=config, error=f"Error updating configuration: {str(e)}")
+            logging.error(f"LDAP config update error: {e}")
+            self.render("ldap_config_edit.html", config=config, error="Error updating configuration. Please try again.")
 
 class LDAPConfigDeleteHandler(BaseHandler):
     @tornado.web.authenticated
