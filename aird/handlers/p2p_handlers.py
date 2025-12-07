@@ -9,7 +9,7 @@ import tornado.web
 import tornado.websocket
 
 from aird.handlers.base_handler import BaseHandler
-from aird.utils.util import is_valid_websocket_origin
+from aird.utils.util import is_valid_websocket_origin, is_feature_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +94,12 @@ class P2PTransferHandler(BaseHandler):
     """Handler for the P2P transfer page."""
     
     def get(self):
+        # Check if P2P transfer feature is enabled
+        if not is_feature_enabled("p2p_transfer", True):
+            self.set_status(403)
+            self.write("Feature disabled: P2P Transfer is currently disabled by administrator")
+            return
+        
         room_id = self.get_argument("room", None)
         current_user = self.get_current_user()
         
@@ -156,6 +162,16 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
     
     def open(self):
         logger.info("P2P WebSocket connection attempt")
+        
+        # Check if P2P transfer feature is enabled
+        if not is_feature_enabled("p2p_transfer", True):
+            logger.warning("P2P WebSocket: Feature is disabled")
+            self.write_message(json.dumps({
+                "type": "error",
+                "message": "P2P Transfer is currently disabled by administrator"
+            }))
+            self.close(code=1008, reason="Feature disabled")
+            return
         
         # Check for room_id parameter for anonymous access
         room_id = self.get_argument("room", None)

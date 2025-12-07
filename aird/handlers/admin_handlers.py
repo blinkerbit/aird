@@ -78,6 +78,7 @@ class AdminHandler(BaseHandler):
         FEATURE_FLAGS["file_share"] = self.get_argument("file_share", "off") == "on"
         FEATURE_FLAGS["super_search"] = self.get_argument("super_search", "off") == "on"
         FEATURE_FLAGS["compression"] = self.get_argument("compression", "off") == "on"
+        FEATURE_FLAGS["p2p_transfer"] = self.get_argument("p2p_transfer", "off") == "on"
         
         # Update WebSocket configuration
         websocket_config = {}

@@ -22,6 +22,7 @@ FEATURE_FLAGS = {
     "file_share": True,
     "compression": True,  # ✅ NEW: Enable gzip compression
     "super_search": True,  # ✅ NEW: Enable super search functionality
+    "p2p_transfer": True,  # ✅ NEW: Enable P2P file transfer
 }
 
 # WebSocket connection configuration

@@ -611,7 +611,9 @@
         {% if features.get('file_share') %}
         <a href="/share" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;{% if features.get('super_search') %}margin-left:8px;{% end %}">🔗 Share Files</a>
         {% end %}
+        {% if features.get('p2p_transfer') %}
         <a href="/p2p" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;margin-left:8px;">🔀 P2P Transfer</a>
+        {% end %}
         <a href="/logout" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;margin-left:8px;">↩ Logout</a>
         </div>
       </div>
