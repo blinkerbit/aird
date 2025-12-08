@@ -146,8 +146,8 @@ def init_config():
     token_provided_explicitly = bool(args.token or config.get("token") or os.environ.get("AIRD_ACCESS_TOKEN"))
     admin_token_provided_explicitly = bool(args.admin_token or config.get("admin_token"))
 
-    ACCESS_TOKEN = args.token or config.get("token") or os.environ.get("AIRD_ACCESS_TOKEN") or secrets.token_urlsafe(32)
-    ADMIN_TOKEN = args.admin_token or config.get("admin_token") or secrets.token_urlsafe(32)
+    ACCESS_TOKEN = args.token or config.get("token") or os.environ.get("AIRD_ACCESS_TOKEN") or secrets.token_urlsafe(64)
+    ADMIN_TOKEN = args.admin_token or config.get("admin_token") or secrets.token_urlsafe(64)
 
     LDAP_ENABLED = args.ldap or config.get("ldap", False)
     LDAP_SERVER = args.ldap_server or config.get("ldap_server")

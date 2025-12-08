@@ -58,9 +58,9 @@ class P2PRoomManager:
     
     def create_room(self, creator_id: str, allow_anonymous: bool = False) -> P2PRoom:
         """Create a new room with a unique ID."""
-        room_id = secrets.token_urlsafe(8)
+        room_id = secrets.token_urlsafe(64)
         while room_id in self.rooms:
-            room_id = secrets.token_urlsafe(8)
+            room_id = secrets.token_urlsafe(64)
         
         room = P2PRoom(room_id, creator_id, allow_anonymous=allow_anonymous)
         self.rooms[room_id] = room
@@ -186,7 +186,7 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
                     self.is_anonymous = True
                     self.pending_room_id = room_id
                     self.username = f"Guest_{secrets.token_hex(4)}"
-                    self.peer_id = secrets.token_urlsafe(12)
+                    self.peer_id = secrets.token_urlsafe(64)
                     
                     logger.info(f"P2P WebSocket opened for anonymous user: {self.username}, peer_id: {self.peer_id}")
                     
@@ -208,7 +208,7 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
             return
         
         self.username = user.get("username", "anonymous")
-        self.peer_id = secrets.token_urlsafe(12)
+        self.peer_id = secrets.token_urlsafe(64)
         
         logger.info(f"P2P WebSocket opened for user: {self.username}, peer_id: {self.peer_id}")
         

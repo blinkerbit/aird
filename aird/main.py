@@ -282,7 +282,7 @@ def _update_share(conn: sqlite3.Connection, sid: str, share_type: str = None, di
                 updates.append("secret_token = ?")
                 values.append(None)
             else:
-                new_token = secrets.token_urlsafe(32) if secret_token is None else secret_token
+                new_token = secrets.token_urlsafe(64) if secret_token is None else secret_token
                 updates.append("secret_token = ?")
                 values.append(new_token)
 

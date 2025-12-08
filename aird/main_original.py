@@ -641,7 +641,7 @@ def _update_share(conn: sqlite3.Connection, sid: str, share_type: str = None, di
                 updates.append("secret_token = ?")
                 values.append(None)
             else:
-                new_token = secrets.token_urlsafe(32) if secret_token is None else secret_token
+                new_token = secrets.token_urlsafe(64) if secret_token is None else secret_token
                 updates.append("secret_token = ?")
                 values.append(new_token)
 
@@ -4023,7 +4023,7 @@ class ShareCreateHandler(BaseHandler):
                             logging.error(f"Error scanning directory {candidate_path}: {e}")
                             continue
 
-            sid = secrets.token_urlsafe(24)  # Increase entropy to reduce guessing risk (Priority 2)
+            sid = secrets.token_urlsafe(64)  # Increase entropy to reduce guessing risk (Priority 2)
 
             if share_type == 'dynamic':
                 if remote_items:
@@ -4069,7 +4069,7 @@ class ShareCreateHandler(BaseHandler):
                         final_paths.append(rel_path)
                         seen_paths.add(rel_path)
 
-            secret_token = secrets.token_urlsafe(32) if not disable_token else None  # Generate secret token only if not disabled
+            secret_token = secrets.token_urlsafe(64) if not disable_token else None  # Generate secret token only if not disabled
             created = datetime.utcnow().isoformat()
             
             # Ensure database connection
@@ -4286,7 +4286,7 @@ class ShareUpdateHandler(BaseHandler):
                 update_fields['disable_token'] = True
             elif disable_token is False:
                 if share_data['secret_token'] is None:
-                    update_fields['secret_token'] = secrets.token_urlsafe(32)
+                    update_fields['secret_token'] = secrets.token_urlsafe(64)
                 else:
                     update_fields['secret_token'] = share_data['secret_token']
                 update_fields['disable_token'] = False
@@ -5230,8 +5230,8 @@ def main():
     token_provided_explicitly = bool(args.token or config.get("token") or os.environ.get("AIRD_ACCESS_TOKEN"))
     admin_token_provided_explicitly = bool(args.admin_token or config.get("admin_token"))
 
-    token = args.token or config.get("token") or os.environ.get("AIRD_ACCESS_TOKEN") or secrets.token_urlsafe(32)
-    admin_token = args.admin_token or config.get("admin_token") or secrets.token_urlsafe(32)
+    token = args.token or config.get("token") or os.environ.get("AIRD_ACCESS_TOKEN") or secrets.token_urlsafe(64)
+    admin_token = args.admin_token or config.get("admin_token") or secrets.token_urlsafe(64)
 
 
     ldap_enabled = args.ldap or config.get("ldap", False)
