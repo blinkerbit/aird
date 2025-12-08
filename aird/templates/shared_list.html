@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -78,6 +79,7 @@
         .name-col {
             width: 80%;
         }
+
         .actions-col {
             width: 20%;
             text-align: right;
@@ -176,12 +178,13 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
             <h1>📁 Shared Files</h1>
         </div>
-        
+
         <table class="file-table" id="fileTable">
             <thead>
                 <tr>
@@ -199,23 +202,26 @@
                         <span>{{ file_path.split('/')[-1] }}</span>
                     </td>
                     <td class="actions-cell" data-label="Download">
-                        <a href="/shared/{{ share_id }}/file/{{ file_path }}?download=1" class="action-link" title="Download">⬇️</a>
+                        <a href="/shared/{{ share_id }}/file/{{ file_path }}?download=1" class="action-link"
+                            title="Download">⬇️</a>
                     </td>
                 </tr>
                 {% end %}
                 {% else %}
-                <tr><td colspan="2" style="text-align: center; padding: 20px;">No files available</td></tr>
+                <tr>
+                    <td colspan="2" style="text-align: center; padding: 20px;">No files available</td>
+                </tr>
                 {% end %}
             </tbody>
         </table>
-        
+
     </div>
 
-    <script>
+    <script nonce="{{ csp_nonce }}">
         // Global token management for shared files
         let currentAuthToken = null;
         const shareId = '{{ share_id }}';
-        
+
         // Function to get stored auth token
         function getAuthToken() {
             if (!currentAuthToken) {
@@ -223,7 +229,7 @@
             }
             return currentAuthToken;
         }
-        
+
         // Function to set auth token
         function setAuthToken(token) {
             currentAuthToken = token;
@@ -231,7 +237,7 @@
             // Also set a cookie for server-side access
             document.cookie = `share_token_${shareId}=${token}; path=/; max-age=3600; SameSite=Lax`;
         }
-        
+
         // Enhanced fetch function that automatically includes auth token
         async function fetchWithAuth(url, options = {}) {
             const token = getAuthToken();
@@ -243,7 +249,7 @@
             }
             return fetch(url, options);
         }
-        
+
         // Function to get file icon based on extension
         function getFileIcon(filename) {
             const ext = filename.split('.').pop().toLowerCase();
@@ -257,7 +263,7 @@
             };
             return iconMap[ext] || '📄';
         }
-        
+
         // Function to format file size
         function formatFileSize(bytes) {
             if (bytes === 0) return '0 B';
@@ -266,7 +272,7 @@
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
         }
-        
+
         // Function to open file with authentication
         function openFileWithAuth(filePath) {
             const token = getAuthToken();
@@ -275,32 +281,32 @@
                 window.location.href = `/shared/${shareId}/verify`;
                 return;
             }
-            
+
             // Open file directly - the server will check the cookie
             const fileUrl = `/shared/${shareId}/file/${encodeURIComponent(filePath)}`;
             window.open(fileUrl, '_blank');
         }
-        
+
         // Function to render files in table format
         function renderFiles(files) {
             const tbody = document.getElementById('fileTableBody');
             tbody.innerHTML = '';
-            
+
             if (!files || files.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; padding: 20px;">No files available</td></tr>';
                 return;
             }
-            
+
             // Sort files: folders first, then files, both alphabetically
             const sortedFiles = files.sort((a, b) => {
                 // For shared files, we don't have actual folders, just file paths
                 // So we'll just sort alphabetically
                 return a.localeCompare(b);
             });
-            
+
             sortedFiles.forEach(filePath => {
                 const fileName = filePath.split('/').pop();
-                
+
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td class="name-cell" data-label="Name">
@@ -311,31 +317,33 @@
                         <a href="/shared/${shareId}/file/${encodeURIComponent(filePath)}?download=1" class="action-link" title="Download">⬇️</a>
                     </td>
                 `;
-                
+
                 tbody.appendChild(row);
             });
         }
-        
+
         // Check if we have a token on page load
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             const token = getAuthToken();
             if (!token) {
                 // No token available, redirect to verification
                 window.location.href = `/shared/${shareId}/verify`;
                 return;
             }
-            
+
             // Render files in table format
             try {
-                const files = {{ files_json }};
-                console.log('Files type:', typeof files);
-                console.log('Files length:', files ? files.length : 'undefined');
-                renderFiles(files);
-            } catch (error) {
-                console.error('Error processing files data:', error);
-                document.getElementById('fileTableBody').innerHTML = '<tr><td colspan="2" style="text-align: center; padding: 20px; color: red;">Error loading files data</td></tr>';
-            }
+                const files = {{ files_json }
+            };
+            console.log('Files type:', typeof files);
+            console.log('Files length:', files ? files.length : 'undefined');
+            renderFiles(files);
+        } catch (error) {
+            console.error('Error processing files data:', error);
+            document.getElementById('fileTableBody').innerHTML = '<tr><td colspan="2" style="text-align: center; padding: 20px; color: red;">Error loading files data</td></tr>';
+        }
         });
     </script>
 </body>
+
 </html>

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>{{ filename }}</title>
     <meta id="page-flags" data-open-editor="{{ open_editor }}">
@@ -9,19 +10,24 @@
             color: black;
             font-family: monospace;
         }
+
         .header {
             border-bottom: 2px solid black;
             padding: 10px 0;
             margin-bottom: 10px;
         }
+
         .breadcrumb a {
             color: black;
             text-decoration: none;
         }
+
         .breadcrumb a:hover {
             text-decoration: underline;
         }
-        .download-btn, button {
+
+        .download-btn,
+        button {
             display: inline-flex;
             align-items: center;
             padding: 6px 12px;
@@ -35,12 +41,15 @@
             margin: 0;
             position: relative;
         }
-        .download-btn:hover, button:hover {
+
+        .download-btn:hover,
+        button:hover {
             background-color: #f0f0f0;
         }
-        
+
         /* Tooltip styles for icon buttons */
-        .download-btn[title]:hover::after, button[title]:hover::after {
+        .download-btn[title]:hover::after,
+        button[title]:hover::after {
             content: attr(title);
             position: absolute;
             bottom: 100%;
@@ -56,7 +65,8 @@
             margin-bottom: 5px;
         }
 
-        .download-btn[title]:hover::before, button[title]:hover::before {
+        .download-btn[title]:hover::before,
+        button[title]:hover::before {
             content: '';
             position: absolute;
             bottom: 100%;
@@ -67,20 +77,24 @@
             z-index: 1000;
             margin-bottom: 1px;
         }
-        .toolbar { 
-            display: flex; 
-            align-items: center; 
-            justify-content: space-between; 
-            gap: 10px; 
-            flex-wrap: wrap; 
+
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
             margin: 10px 0;
             padding: 8px 0;
         }
-        .toolbar-left, .toolbar-right { 
-            display: flex; 
-            align-items: center; 
-            gap: 8px; 
+
+        .toolbar-left,
+        .toolbar-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
+
         .toolbar input[type="text"] {
             padding: 6px 8px;
             border: 1px solid #ccc;
@@ -88,27 +102,30 @@
             font-family: monospace;
             font-size: 12px;
         }
-        
+
         #stream-filter {
             min-width: 150px;
             margin-right: 8px;
         }
-        
+
         #stream-filter:focus {
             border-color: #0066cc;
             outline: none;
             box-shadow: 0 0 5px rgba(0, 102, 204, 0.3);
         }
+
         .line-numbers {
             text-align: right;
-            
+
             border-right: 1px solid #ccc;
             user-select: none;
         }
 
         /* Mobile responsive styles */
         @media (max-width: 768px) {
-            .download-btn, button {
+
+            .download-btn,
+            button {
                 font-size: 14px;
                 padding: 8px 10px;
                 touch-action: manipulation;
@@ -120,44 +137,54 @@
                 gap: 15px;
             }
 
-            .toolbar-left, .toolbar-right {
+            .toolbar-left,
+            .toolbar-right {
                 flex-wrap: wrap;
                 justify-content: center;
             }
 
             /* Increase tooltip size on mobile */
-            .download-btn[title]:hover::after, button[title]:hover::after {
+            .download-btn[title]:hover::after,
+            button[title]:hover::after {
                 font-size: 12px;
                 padding: 6px 10px;
             }
         }
+
         table {
             border-collapse: collapse;
             width: 100%;
         }
+
         td pre {
             margin: 0;
             padding: 0;
         }
+
         /* Hide line numbers when toggled */
         .line-numbers.hidden {
             display: none;
         }
+
         /* Ensure content takes full width when line numbers are hidden */
-        .line-numbers.hidden + td {
+        .line-numbers.hidden+td {
             padding-left: 0;
         }
+
         /* Ensure empty lines are visible */
         td pre {
             min-height: 1.2em;
         }
+
         #editor-container {
             display: flex;
             height: 60vh;
         }
+
         #line-numbers-editor {
             width: 40px;
-            padding: 5px 5px 5px 2px; /* top, right, bottom, left */
+            padding: 5px 5px 5px 2px;
+            /* top, right, bottom, left */
             text-align: right;
             background-color: #f0f0f0;
             color: #999;
@@ -169,9 +196,11 @@
             font-size: 1em;
             line-height: 1.2em;
         }
+
         #editor {
             width: calc(100% - 40px);
-            height: 100%; /* Fill the container */
+            height: 100%;
+            /* Fill the container */
             border: 1px solid #ccc;
             resize: none;
             font-family: monospace;
@@ -179,54 +208,78 @@
             line-height: 1.2em;
             padding: 5px;
         }
+
         .streaming-indicator span {
             animation: blink 1.4s infinite both;
         }
+
         .streaming-indicator span:nth-child(2) {
             animation-delay: 0.2s;
         }
+
         .streaming-indicator span:nth-child(3) {
             animation-delay: 0.4s;
         }
+
         @keyframes blink {
-            0%, 80%, 100% {
+
+            0%,
+            80%,
+            100% {
                 opacity: 0;
             }
+
             40% {
                 opacity: 1;
             }
         }
     </style>
 </head>
+
 <body>
     <div class="header" style="display:flex;align-items:center;justify-content:space-between;">
         <div class="breadcrumb">
             <a href="/files/">🏠 Home</a>
         </div>
         <div style="display: flex; align-items: center; gap: 10px;">
-            <a href="/profile" style="font-size: 12px; color: #666; text-decoration: none;">👤 {{ handler.get_display_username() }}</a>
+            <a href="/profile" style="font-size: 12px; color: #666; text-decoration: none;">👤 {{
+                handler.get_display_username() }}</a>
             <a href="/logout" class="download-btn">↩ Logout</a>
         </div>
     </div>
     <h2>{{ filename }}</h2>
-        <div class="toolbar">
-            <div class="toolbar-left">
-                <a href="/files/{{ path }}?download=1" class="download-btn" data-feature="file_download">⬇️ Download</a>
-                <button id="copy-btn">📋 Copy Content</button>
-                <button id="toggle-lines-btn">🔢 Hide Line Numbers</button>
-                <button id="edit-btn" data-feature="file_edit">📝 Edit</button>
-                <button id="save-btn" style="display:none;">💾 Save</button>
-            </div>
-            <div class="toolbar-right">
-                <input type="text" id="stream-filter" placeholder="Filter: error OR warning AND user123" title="Complex filters: 'term1 AND term2', 'term1 OR term2', 'quoted phrases', (grouping)">
-                <input type="text" id="last-n" inputmode="numeric" pattern="[0-9]*" placeholder="Last N (100)">
-                <button id="stream-btn">▶️ Stream</button>
-                <button id="stop-stream-btn" style="display:none;">⏹ Stop</button>
-            </div>
+    <div class="toolbar">
+        <div class="toolbar-left">
+            <a href="/files/{{ path }}?download=1" class="download-btn" data-feature="file_download">⬇️ Download</a>
+            <select id="encoding-select" title="File Encoding"
+                style="padding: 6px; border-radius: 4px; border: 1px solid black; font-size: 12px; font-family: monospace;">
+                <option value="utf-8">UTF-8</option>
+                <option value="windows-1252">Windows-1252</option>
+                <option value="iso-8859-1">ISO-8859-1</option>
+                <option value="utf-16le">UTF-16LE</option>
+                <option value="utf-16be">UTF-16BE</option>
+                <option value="shift_jis">Shift_JIS</option>
+                <option value="euc-jp">EUC-JP</option>
+                <option value="gb18030">GB18030</option>
+                <option value="big5">Big5</option>
+            </select>
+            <button id="copy-btn">📋 Copy Content</button>
+            <button id="toggle-lines-btn">🔢 Hide Line Numbers</button>
+            <button id="edit-btn" data-feature="file_edit">📝 Edit</button>
+            <button id="save-btn" style="display:none;">💾 Save</button>
         </div>
+        <div class="toolbar-right">
+            <input type="text" id="stream-filter" placeholder="Filter: error OR warning AND user123"
+                title="Complex filters: 'term1 AND term2', 'term1 OR term2', 'quoted phrases', (grouping)">
+            <input type="text" id="last-n" inputmode="numeric" pattern="[0-9]*" placeholder="Last N (100)">
+            <button id="stream-btn">▶️ Stream</button>
+            <button id="stop-stream-btn" style="display:none;">⏹ Stop</button>
+        </div>
+    </div>
 
     <!-- Filter Help Section -->
-    <div id="filter-help" style="margin: 10px 0; padding: 8px; border: 1px solid #e0e0e0; background-color: #f8f8ff; border-radius: 4px; font-size: 11px; display: none;">
+    <div id="filter-help"
+        style="margin: 10px 0; padding: 8px; border: 1px solid #e0e0e0; background-color: #f8f8ff; border-radius: 4px; font-size: 11px; display: none;">
         <strong>🔍 Filter Syntax Examples:</strong><br>
         <code>error</code> - Simple text match<br>
         <code>error OR warning</code> - Lines containing either term<br>
@@ -238,19 +291,23 @@
         <code>"ANDROID device"</code> - Use quotes to search for literal "AND"<br>
         <code>\ANDROID</code> - Use backslash to escape logical operators
     </div>
-    
+
     <div style="margin: 10px 0; padding: 10px; border: 1px solid #ccc; background-color: #f9f9f9;">
         <label for="start">Start:</label>
-        <input type="text" id="start" value="{{ start_line or 1 }}" style="width: 80px; margin-right: 10px;" title="Press Enter to submit">
+        <input type="text" id="start" value="{{ start_line or 1 }}" style="width: 80px; margin-right: 10px;"
+            title="Press Enter to submit">
         <label for="end">End:</label>
-        <input type="text" id="end" value="{{ end_line or '' }}" placeholder="End line" style="width: 80px; margin-right: 10px;" title="Press Enter to submit">
+        <input type="text" id="end" value="{{ end_line or '' }}" placeholder="End line"
+            style="width: 80px; margin-right: 10px;" title="Press Enter to submit">
         <button id="submit-btn">Submit</button>
-    <button id="show-all-btn">Fetch All Lines</button>
-    {% if start_line and end_line %}
-    <span style="margin-left: 10px; color: #0066cc;">Showing lines {{ start_line }} to {{ end_line }} ; reached EOF: {{ reached_EOF }}</span>
-    {% elif start_line %}
-    <span style="margin-left: 10px; color: #0066cc;">Showing entire file from line {{ start_line }} ; reached EOF: {{ reached_EOF }}</span>
-    {% end %}
+        <button id="show-all-btn">Fetch All Lines</button>
+        {% if start_line and end_line %}
+        <span style="margin-left: 10px; color: #0066cc;">Showing lines {{ start_line }} to {{ end_line }} ; reached EOF:
+            {{ reached_EOF }}</span>
+        {% elif start_line %}
+        <span style="margin-left: 10px; color: #0066cc;">Showing entire file from line {{ start_line }} ; reached EOF:
+            {{ reached_EOF }}</span>
+        {% end %}
     </div>
     <hr>
     <div id="editor-container" style="display:none;">
@@ -258,13 +315,10 @@
         <textarea id="editor">{% if open_editor %}{{ full_file_content }}{% end %}</textarea>
     </div>
     <table id="file-content">
-        <tbody>
-            {% for item in lines %}
+        <tbody id="file-content-body">
             <tr>
-                <td class="line-numbers">{{ item['n'] }}</td>
-                <td><pre>{{ item['text'] if item['text'] else '\u00A0' }}</pre></td>
+                <td colspan="2" style="padding: 20px; text-align: center; color: #666;">Loading file content...</td>
             </tr>
-            {% end %}
         </tbody>
         <tfoot id="streaming-indicator" style="display:none;">
             <tr>
@@ -275,319 +329,269 @@
             </tr>
         </tfoot>
     </table>
-    <script>
-    const openEditor = (document.getElementById('page-flags')?.dataset.openEditor || 'False') === 'True';
-    const streamBtn = document.getElementById('stream-btn');
-    const lastNInput = document.getElementById('last-n');
-    const stopStreamBtn = document.getElementById('stop-stream-btn');
-    const copyBtn = document.getElementById('copy-btn');
-    const toggleLinesBtn = document.getElementById('toggle-lines-btn');
-    const editBtn = document.getElementById('edit-btn');
-    const saveBtn = document.getElementById('save-btn');
-    const submitBtn = document.getElementById('submit-btn');
-    const showAllBtn = document.getElementById('show-all-btn');
-    const startLineInput = document.getElementById('start');
-    const endLineInput = document.getElementById('end');
-    const editorContainer = document.getElementById('editor-container');
-    const editor = document.getElementById('editor');
-    const lineNumbersEditor = document.getElementById('line-numbers-editor');
-    const tableBody = document.querySelector('#file-content tbody');
-    const streamingIndicator = document.getElementById('streaming-indicator');
-    let ws = null;
-    let originalContent = tableBody.innerHTML;
-    let lineCount = tableBody.rows.length;
-    let lineNumbersVisible = true;
+    <script nonce="{{ csp_nonce }}">
+        const openEditor = (document.getElementById('page-flags')?.dataset.openEditor || 'False') === 'True';
+        const streamBtn = document.getElementById('stream-btn');
+        const lastNInput = document.getElementById('last-n');
+        const stopStreamBtn = document.getElementById('stop-stream-btn');
+        const copyBtn = document.getElementById('copy-btn');
+        const toggleLinesBtn = document.getElementById('toggle-lines-btn');
+        const editBtn = document.getElementById('edit-btn');
+        const saveBtn = document.getElementById('save-btn');
+        const submitBtn = document.getElementById('submit-btn');
+        const showAllBtn = document.getElementById('show-all-btn');
+        const startLineInput = document.getElementById('start');
+        const endLineInput = document.getElementById('end');
+        const editorContainer = document.getElementById('editor-container');
+        const editor = document.getElementById('editor');
+        const lineNumbersEditor = document.getElementById('line-numbers-editor');
+        const tableBody = document.getElementById('file-content-body');
+        const streamingIndicator = document.getElementById('streaming-indicator');
+        const encodingSelect = document.getElementById('encoding-select');
+        let ws = null;
+        let lineNumbersVisible = true;
+        let rawFileContent = null;
 
-    const featureSocket = new WebSocket(`ws://${window.location.host}/features`);
-
-    featureSocket.onmessage = function(event) {
-        const features = JSON.parse(event.data);
-        updateFeatureVisibility(features);
-    };
-
-    function updateFeatureVisibility(features) {
-        document.querySelectorAll('[data-feature]').forEach(el => {
-            const feature = el.dataset.feature;
-            if (features[feature]) {
-                el.style.display = '';
-            } else {
-                el.style.display = 'none';
-            }
-        });
-    }
-
-    function updateLineNumbers() {
-        const lineCount = editor.value.split('\n').length;
-        const lines = Array.from({ length: lineCount }, (_, i) => i + 1).join('\n');
-        lineNumbersEditor.value = lines;
-        lineNumbersEditor.scrollTop = editor.scrollTop;
-    }
-
-    editor.addEventListener('scroll', () => {
-        lineNumbersEditor.scrollTop = editor.scrollTop;
-    });
-
-    editor.addEventListener('input', updateLineNumbers);
-
-    // Handle line range functionality
-    function applyLineRange() {
-        const startLine = parseInt(startLineInput.value);
-        const endLine = parseInt(endLineInput.value);
-        
-        if (!Number.isFinite(startLine) || !Number.isFinite(endLine) || startLine < 1) {
-            alert('Please enter valid numeric start and end values (start >= 1).');
-            return;
-        }
-        if (startLine > endLine) {
-            alert('Start line cannot be greater than end line');
-            return;
-        }
-        
-        const currentUrl = new URL(window.location);
-        currentUrl.searchParams.set('start_line', startLine);
-        currentUrl.searchParams.set('end_line', endLine);
-        window.location.href = currentUrl.toString();
-    }
-
-    submitBtn.onclick = applyLineRange;
-
-    // Allow Enter key to apply range
-    startLineInput.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            applyLineRange();
-        }
-    });
-
-    endLineInput.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            applyLineRange();
-        }
-    });
-
-    showAllBtn.onclick = function() {
-        const currentUrl = new URL(window.location);
-        currentUrl.searchParams.delete('start_line');
-        currentUrl.searchParams.delete('end_line');
-        window.location.href = currentUrl.toString();
-    };
-
-    // Update end line input when start line changes
-    // Keep fields sane locally but let server clamp to file length
-    startLineInput.addEventListener('input', function() {
-        const v = parseInt(this.value);
-        if (!Number.isFinite(v) || v < 1) this.value = 1;
-    });
-    endLineInput.addEventListener('input', function() {
-        const v = parseInt(this.value);
-        if (!Number.isFinite(v) || v < 1) this.value = 1;
-    });
-
-
-    editBtn.onclick = function() {
-        window.location.href = `/edit/{{ path }}`;
-    };
-
-    // CSRF Protection: Get XSRF token from cookie
-    function getXSRFToken() {
-        const match = document.cookie.match(/_xsrf=([^;]*)/);
-        return match ? decodeURIComponent(match[1]) : '';
-    }
-
-    saveBtn.onclick = function() {
-        const content = editor.value;
-        fetch('/edit', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-XSRFToken': getXSRFToken(),
-            },
-            body: `path={{ path }}&content=${encodeURIComponent(content)}`
-        })
-        .then(response => response.text())
-        .then(data => {
-            alert(data);
-            if (data === "File saved successfully.") {
-                window.location.reload();
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('An error occurred while saving the file.');
-        });
-    };
-
-    streamBtn.onclick = function() {
-        let url = `ws://${window.location.host}/stream/{{ path }}`;
-        const params = new URLSearchParams();
-        
-        const nVal = (lastNInput?.value || '').trim();
-        if (nVal && /^\d+$/.test(nVal)) {
-            params.append('n', nVal);
-        }
-        
-        const filterVal = (document.getElementById('stream-filter')?.value || '').trim();
-        if (filterVal) {
-            params.append('filter', filterVal);
-        }
-        
-        if (params.toString()) {
-            url += `?${params.toString()}`;
-        }
-        
-        ws = new WebSocket(url);
-        tableBody.innerHTML = '';
-    lineCount = (parseInt('{{ start_line or 1 }}') - 1) || 0;
-        streamBtn.style.display = 'none';
-        stopStreamBtn.style.display = '';
-        streamingIndicator.style.display = '';
-        ws.onmessage = function(event) {
-            // Server sends one line per message, including trailing \n
-            let line = event.data;
-            if (line.endsWith('\n')) line = line.slice(0, -1);
-
-            lineCount++;
-            const row = tableBody.insertRow();
-
-            // Always create both cells to maintain structure
-            const lineNumCell = row.insertCell(0);
-            const lineContentCell = row.insertCell(1);
-
-            lineNumCell.className = 'line-numbers';
-            lineNumCell.textContent = lineCount;
-            // Ensure empty lines are preserved by using non-breaking space if line is empty
-            lineContentCell.innerHTML = `<pre>${line || '\u00A0'}</pre>`;
-
-            // Apply line number visibility state to new rows
-            if (!lineNumbersVisible) {
-                lineNumCell.classList.add('hidden');
-            }
-
-            // Apply alternating row styling for dynamically added rows
-            if (lineCount % 2 === 1) {
-                row.style.backgroundColor = '#f8f8f8';
-            }
-
-            console.log(`Created row ${lineCount} with ${row.cells.length} cells, line numbers visible: ${lineNumbersVisible}, line content: "${line}"`);
-            window.scrollTo(0, document.body.scrollHeight);
-        };
-        ws.onclose = function() {
-            stopStreamBtn.style.display = 'none';
-            streamBtn.style.display = '';
-            streamingIndicator.style.display = 'none';
-            ws = null;
-        };
-    };
-
-    stopStreamBtn.onclick = function() {
-        if (ws) {
-            ws.close();
-        }
-    };
-
-    toggleLinesBtn.onclick = function() {
-        const lineNumberCells = document.querySelectorAll('.line-numbers');
-        lineNumbersVisible = !lineNumbersVisible;
-        
-        lineNumberCells.forEach(cell => {
-            if (lineNumbersVisible) {
-                cell.classList.remove('hidden');
-            } else {
-                cell.classList.add('hidden');
-            }
-        });
-        
-        // Reapply alternating row highlighting after toggling line numbers
-        const rows = tableBody.querySelectorAll('tr');
-        rows.forEach((row, index) => {
-            if (index % 2 === 0) {
-                row.style.backgroundColor = '';
-            } else {
-                row.style.backgroundColor = '#f8f8f8';
-            }
-        });
-        
-        console.log('Line numbers visible:', lineNumbersVisible);
-        console.log('Total rows:', rows.length);
-        
-        toggleLinesBtn.textContent = lineNumbersVisible ? 'Hide Line Numbers' : 'Show Line Numbers';
-    };
-
-    copyBtn.onclick = function () {
-        const content = Array.from(tableBody.rows).map(row => {
-            // Get the content cell - it's either cells[1] (with line numbers) or cells[0] (without line numbers)
-            const contentCell = lineNumbersVisible ? row.cells[1] : row.cells[0];
-            return contentCell.textContent;
-        }).join('\n');
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(content).then(() => {
-                alert('Content copied to clipboard!');
-            }).catch(err => {
-                console.error('Failed to copy content: ', err);
-            });
-        } else {
-            // Fallback for unsupported browsers
-            const textarea = document.createElement('textarea');
-            textarea.value = content;
-            document.body.appendChild(textarea);
-            textarea.select();
+        // Fetch file content
+        async function fetchFileContent() {
             try {
-                document.execCommand('copy');
-                alert('Content copied to clipboard!');
-            } catch (err) {
-                alert('Failed to copy content');
+                const response = await fetch('/files/{{ path }}?mode=raw');
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                rawFileContent = await response.arrayBuffer();
+                renderContent();
+            } catch (e) {
+                console.error("Fetch error:", e);
+                tableBody.innerHTML = `<tr><td colspan="2" style="color: red; padding: 10px;">Error loading file: ${e.message}</td></tr>`;
             }
-            document.body.removeChild(textarea);
         }
-    };
 
-    document.addEventListener('DOMContentLoaded', function() {
-        // Apply alternating row highlighting on page load
-        const rows = tableBody.querySelectorAll('tr');
-        rows.forEach((row, index) => {
-            if (index % 2 === 1) {
-                row.style.backgroundColor = '#f8f8f8';
+        function renderContent() {
+            if (!rawFileContent) return;
+
+            const encoding = encodingSelect.value;
+            let text = "";
+            try {
+                const decoder = new TextDecoder(encoding);
+                text = decoder.decode(rawFileContent);
+            } catch (e) {
+                console.error("Decoding error:", e);
+                text = "Error decoding text with " + encoding;
+            }
+
+            // Populate Editor if enabled
+            if (openEditor) {
+                editor.value = text;
+                updateLineNumbers();
+            }
+
+            const lines = text.split(/\r?\n/);
+            const totalLines = lines.length;
+
+            // Get range
+            const urlParams = new URLSearchParams(window.location.search);
+            let start = parseInt(urlParams.get('start_line'));
+            let end = parseInt(urlParams.get('end_line'));
+
+            if (isNaN(start)) start = 1;
+            if (isNaN(end)) end = totalLines;
+
+            // Update inputs
+            if (startLineInput) startLineInput.value = start;
+            if (endLineInput) endLineInput.value = end;
+
+            // Clamp
+            if (start < 1) start = 1;
+            if (end > totalLines) end = totalLines;
+
+            // Render Table
+            tableBody.innerHTML = '';
+            const fragment = document.createDocumentFragment();
+
+            for (let i = start - 1; i < end; i++) {
+                const tr = document.createElement('tr');
+                const tdNum = document.createElement('td');
+                tdNum.className = 'line-numbers';
+                if (!lineNumbersVisible) tdNum.classList.add('hidden');
+                tdNum.textContent = i + 1;
+
+                const tdContent = document.createElement('td');
+                const pre = document.createElement('pre');
+                pre.textContent = lines[i] || '\u00A0';
+                tdContent.appendChild(pre);
+
+                tr.appendChild(tdNum);
+                tr.appendChild(tdContent);
+                if ((i - start + 1) % 2 === 0) tr.style.backgroundColor = '#f8f8f8';
+
+                fragment.appendChild(tr);
+            }
+            tableBody.appendChild(fragment);
+        }
+
+        encodingSelect.addEventListener('change', renderContent);
+
+        const featureSocket = new WebSocket(`ws://${window.location.host}/features`);
+        featureSocket.onmessage = function (event) {
+            updateFeatureVisibility(JSON.parse(event.data));
+        };
+
+        function updateFeatureVisibility(features) {
+            document.querySelectorAll('[data-feature]').forEach(el => {
+                const feature = el.dataset.feature;
+                if (features[feature]) el.style.display = '';
+                else el.style.display = 'none';
+            });
+        }
+
+        function updateLineNumbers() {
+            const lineCount = editor.value.split('\n').length;
+            const lines = Array.from({ length: lineCount }, (_, i) => i + 1).join('\n');
+            lineNumbersEditor.value = lines;
+            lineNumbersEditor.scrollTop = editor.scrollTop;
+        }
+
+        editor.addEventListener('scroll', () => { lineNumbersEditor.scrollTop = editor.scrollTop; });
+        editor.addEventListener('input', updateLineNumbers);
+
+        function applyLineRange() {
+            const startLine = parseInt(startLineInput.value);
+            const endLine = parseInt(endLineInput.value);
+
+            if (!Number.isFinite(startLine) || !Number.isFinite(endLine) || startLine < 1) {
+                alert('Please enter valid numeric start and end values (start >= 1).');
+                return;
+            }
+            if (startLine > endLine) {
+                alert('Start line cannot be greater than end line');
+                return;
+            }
+
+            const currentUrl = new URL(window.location);
+            currentUrl.searchParams.set('start_line', startLine);
+            currentUrl.searchParams.set('end_line', endLine);
+            window.history.pushState({}, '', currentUrl);
+            renderContent();
+        }
+
+        submitBtn.onclick = applyLineRange;
+        startLineInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') applyLineRange(); });
+        endLineInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') applyLineRange(); });
+
+        showAllBtn.onclick = function () {
+            const currentUrl = new URL(window.location);
+            currentUrl.searchParams.delete('start_line');
+            currentUrl.searchParams.delete('end_line');
+            window.history.pushState({}, '', currentUrl);
+            renderContent();
+        };
+
+        editBtn.onclick = function () {
+            window.location.href = `/edit/{{ path }}`;
+        };
+
+        function getXSRFToken() {
+            const match = document.cookie.match(/_xsrf=([^;]*)/);
+            return match ? decodeURIComponent(match[1]) : '';
+        }
+
+        saveBtn.onclick = function () {
+            const content = editor.value;
+            fetch('/edit', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-XSRFToken': getXSRFToken(),
+                },
+                body: `path={{ path }}&content=${encodeURIComponent(content)}`
+            })
+                .then(response => response.text())
+                .then(data => {
+                    alert(data);
+                    if (data.includes("successfully")) window.location.reload();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('An error occurred while saving the file.');
+                });
+        };
+
+        streamBtn.onclick = function () {
+            let url = `ws://${window.location.host}/stream/{{ path }}`;
+            const params = new URLSearchParams();
+            const nVal = (lastNInput?.value || '').trim();
+            if (nVal && /^\d+$/.test(nVal)) params.append('n', nVal);
+            const filterVal = (document.getElementById('stream-filter')?.value || '').trim();
+            if (filterVal) params.append('filter', filterVal);
+            if (params.toString()) url += `?${params.toString()}`;
+
+            ws = new WebSocket(url);
+            tableBody.innerHTML = '';
+            let lineCount = 0;
+            streamBtn.style.display = 'none';
+            stopStreamBtn.style.display = '';
+            streamingIndicator.style.display = '';
+            ws.onmessage = function (event) {
+                let line = event.data;
+                if (line.endsWith('\n')) line = line.slice(0, -1);
+                lineCount++;
+                const row = tableBody.insertRow();
+                const lineNumCell = row.insertCell(0);
+                const lineContentCell = row.insertCell(1);
+                lineNumCell.className = 'line-numbers';
+                lineNumCell.textContent = lineCount;
+                lineContentCell.innerHTML = `<pre>${line || '\u00A0'}</pre>`;
+                if (!lineNumbersVisible) lineNumCell.classList.add('hidden');
+                if (lineCount % 2 === 0) row.style.backgroundColor = '#f8f8f8';
+                window.scrollTo(0, document.body.scrollHeight);
+            };
+            ws.onclose = () => {
+                stopStreamBtn.style.display = 'none';
+                streamBtn.style.display = '';
+                streamingIndicator.style.display = 'none';
+                ws = null;
+            };
+        };
+
+        stopStreamBtn.onclick = function () { if (ws) ws.close(); };
+
+        toggleLinesBtn.onclick = function () {
+            lineNumbersVisible = !lineNumbersVisible;
+            document.querySelectorAll('.line-numbers').forEach(cell => {
+                cell.classList.toggle('hidden', !lineNumbersVisible);
+            });
+            toggleLinesBtn.textContent = lineNumbersVisible ? 'Hide Line Numbers' : 'Show Line Numbers';
+        };
+
+        copyBtn.onclick = function () {
+            const text = Array.from(tableBody.querySelectorAll('tr')).map(tr => tr.cells[1]?.textContent).join('\n');
+            navigator.clipboard.writeText(text).then(() => alert('Copied!')).catch(e => alert('Failed copy'));
+        };
+
+        document.addEventListener('DOMContentLoaded', function () {
+            fetchFileContent();
+            if (openEditor) {
+                editorContainer.style.display = 'flex';
+                document.getElementById('file-content').style.display = 'none';
+            }
+
+            // Add filter help functionality
+            const filterInput = document.getElementById('stream-filter');
+            const filterHelp = document.getElementById('filter-help');
+            if (filterInput && filterHelp) {
+                filterInput.addEventListener('focus', () => filterHelp.style.display = 'block');
+                filterInput.addEventListener('blur', () => setTimeout(() => { if (!filterInput.value.trim()) filterHelp.style.display = 'none'; }, 200));
+                filterInput.addEventListener('input', () => {
+                    if (filterInput.value.trim()) filterHelp.style.display = 'block';
+                    else filterHelp.style.display = 'none';
+                });
+            }
+
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('stream')) {
+                streamBtn.click();
             }
         });
-        // Enforce numeric-only input
-        lastNInput?.addEventListener('input', () => {
-            lastNInput.value = lastNInput.value.replace(/[^0-9]/g, '');
-        });
-        
-        // Add filter help functionality
-        const filterInput = document.getElementById('stream-filter');
-        const filterHelp = document.getElementById('filter-help');
-        
-        if (filterInput && filterHelp) {
-            // Show help on focus
-            filterInput.addEventListener('focus', function() {
-                filterHelp.style.display = 'block';
-            });
-            
-            // Hide help when clicking outside or when input becomes empty
-            filterInput.addEventListener('blur', function() {
-                setTimeout(() => {
-                    if (!filterInput.value.trim()) {
-                        filterHelp.style.display = 'none';
-                    }
-                }, 200);
-            });
-            
-            // Toggle help visibility based on input content
-            filterInput.addEventListener('input', function() {
-                if (this.value.trim()) {
-                    filterHelp.style.display = 'block';
-                } else {
-                    filterHelp.style.display = 'none';
-                }
-            });
-        }
-        
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.has('stream')) {
-            streamBtn.click();
-        }
-    // Dedicated edit view now handles editor UI
-    });
     </script>
 </body>
+
 </html>

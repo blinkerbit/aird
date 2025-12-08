@@ -1,4 +1,5 @@
 
+import base64
 import json
 import secrets
 
@@ -7,15 +8,42 @@ import aird.config as config_module
 
 
 class BaseHandler(tornado.web.RequestHandler):
+    def prepare(self):
+        """Generate a unique nonce for this request for CSP."""
+        # Generate a cryptographically secure random nonce (16 bytes = 128 bits)
+        self._csp_nonce = base64.b64encode(secrets.token_bytes(16)).decode('utf-8')
+    
+    def get_csp_nonce(self):
+        """Return the CSP nonce for this request."""
+        if not hasattr(self, '_csp_nonce'):
+            self._csp_nonce = base64.b64encode(secrets.token_bytes(16)).decode('utf-8')
+        return self._csp_nonce
+    
     def set_default_headers(self):
         # Security headers
         self.set_header("X-Content-Type-Options", "nosniff")
         self.set_header("X-Frame-Options", "DENY")
         self.set_header("X-XSS-Protection", "1; mode=block")
         self.set_header("Referrer-Policy", "strict-origin-when-cross-origin")
-        # Content Security Policy
-        csp = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
+        # Note: CSP with nonce is set in prepare() after nonce generation
+    
+    def _set_csp_header(self):
+        """Set CSP header with the request-specific nonce."""
+        nonce = self.get_csp_nonce()
+        # Use nonce for scripts, keep unsafe-inline for styles (inline style attributes are common)
+        csp = f"default-src 'self'; script-src 'self' 'nonce-{nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
         self.set_header("Content-Security-Policy", csp)
+    
+    def render(self, template_name, **kwargs):
+        """Override render to set CSP header before rendering."""
+        self._set_csp_header()
+        super().render(template_name, **kwargs)
+    
+    def get_template_namespace(self):
+        """Add CSP nonce to template namespace so templates can use it."""
+        namespace = super().get_template_namespace()
+        namespace['csp_nonce'] = self.get_csp_nonce()
+        return namespace
 
     def get_current_user(self):
         # Check for user session from secure cookie

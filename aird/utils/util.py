@@ -9,6 +9,7 @@ import time
 from urllib.parse import urlparse
 import tornado.ioloop
 import mmap
+import chardet
 
 MMAP_MIN_SIZE = 1024 * 1024 # 1MB
 CHUNK_SIZE = 1024 * 1024 # 1MB
@@ -235,6 +236,14 @@ def is_within_root(path: str, root: str) -> bool:
     except Exception:
         return False
 
+def format_size(size: int) -> str:
+    """Format size in bytes to human readable string"""
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if size < 1024:
+            return f"{size:.2f} {unit}"
+        size /= 1024
+    return f"{size:.2f} PB"
+
 def is_valid_websocket_origin(handler, origin: str) -> bool:
     """Validate WebSocket origin.
     Accept same-host origins and common localhost variants. Allow both http/https and ws/wss schemes.
@@ -271,19 +280,12 @@ def is_valid_websocket_origin(handler, origin: str) -> bool:
         localhost_pair = origin_host in {"localhost", "127.0.0.1"} and req_host in {"localhost", "127.0.0.1"}
         if not (same_host or localhost_pair):
             return False
-
-        # Port check: must match if specified; if origin omits port, allow
-        if origin_port is not None and origin_port != req_port:
-            return False
-
         return True
     except Exception:
         return False
 
 class WebSocketConnectionManager:
-    """Base class for managing WebSocket connections with memory leak prevention"""
-    
-    def __init__(self, config_prefix: str, default_max_connections: int = 100, default_idle_timeout: int = 300):
+    def __init__(self, config_prefix="ws", default_max_connections=100, default_idle_timeout=60):
         self.connections: set = set()
         self.config_prefix = config_prefix
         self.default_max_connections = default_max_connections

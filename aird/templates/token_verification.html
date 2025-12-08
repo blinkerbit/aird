@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -139,6 +140,7 @@
     }
   </style>
 </head>
+
 <body>
   <div class="container">
     <div class="header">
@@ -154,7 +156,7 @@
         <label for="token">Secret Token:</label>
         <input type="text" id="token" name="token" placeholder="Enter the secret token" required autocomplete="off">
       </div>
-      
+
       <button type="submit" class="btn" id="submitBtn">Access Share</button>
     </form>
 
@@ -163,7 +165,7 @@
     </div>
   </div>
 
-  <script>
+  <script nonce="{{ csp_nonce }}">
     const form = document.getElementById('tokenForm');
     const tokenInput = document.getElementById('token');
     const submitBtn = document.getElementById('submitBtn');
@@ -174,9 +176,9 @@
     const pathParts = window.location.pathname.split('/');
     const shareId = pathParts[pathParts.length - 2];
 
-    form.addEventListener('submit', async function(e) {
+    form.addEventListener('submit', async function (e) {
       e.preventDefault();
-      
+
       const token = tokenInput.value.trim();
       if (!token) {
         showError('Please enter a secret token');
@@ -227,7 +229,7 @@
 
     // Global token management
     let currentAuthToken = null;
-    
+
     // Function to get stored auth token
     function getAuthToken() {
       if (!currentAuthToken) {
@@ -235,7 +237,7 @@
       }
       return currentAuthToken;
     }
-    
+
     // Function to set auth token
     function setAuthToken(token) {
       currentAuthToken = token;
@@ -243,7 +245,7 @@
       // Also set a cookie for server-side access
       document.cookie = `share_token_${shareId}=${token}; path=/; max-age=3600; SameSite=Lax`;
     }
-    
+
     // Enhanced fetch function that automatically includes auth token
     async function fetchWithAuth(url, options = {}) {
       const token = getAuthToken();
@@ -260,7 +262,7 @@
       try {
         // Store the token globally
         setAuthToken(token);
-        
+
         const response = await fetchWithAuth(`/shared/${shareId}`, {
           method: 'GET'
         });
@@ -286,4 +288,5 @@
     }
   </script>
 </body>
+
 </html>

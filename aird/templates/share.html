@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -226,11 +227,25 @@
       background: #e6f3ff;
     }
 
-    .select-col { width: 40px; }
-    .name-col { width: 50%; }
-    .size-col { width: 15%; }
-    .modified-col { width: 20%; }
-    .actions-col { width: 15%; }
+    .select-col {
+      width: 40px;
+    }
+
+    .name-col {
+      width: 50%;
+    }
+
+    .size-col {
+      width: 15%;
+    }
+
+    .modified-col {
+      width: 20%;
+    }
+
+    .actions-col {
+      width: 15%;
+    }
 
     .file-link {
       color: black;
@@ -455,509 +470,511 @@
       gap: 10px;
     }
 
-      .share-actions .btn {
-        font-size: 11px;
-        padding: 6px 10px;
-      }
-
-      /* Share Management Modal Styles */
-      .share-management-modal {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.6);
-        z-index: 1001;
-        display: none;
-        align-items: center;
-        justify-content: center;
-      }
-
-      .share-management-modal.show {
-        display: flex;
-      }
-
-      .share-management-content {
-        background: white;
-        border: 2px solid black;
-        border-radius: 8px;
-        max-width: 800px;
-        width: 95%;
-        max-height: 90vh;
-        overflow-y: auto;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-      }
-
-      .share-management-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 20px;
-        border-bottom: 1px solid #ddd;
-        background: #f9f9f9;
-      }
-
-      .share-management-title {
-        font-size: 20px;
-        font-weight: bold;
-        margin: 0;
-      }
-
-      .share-management-close {
-        background: none;
-        border: none;
-        font-size: 24px;
-        cursor: pointer;
-        padding: 5px;
-        width: 35px;
-        height: 35px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 50%;
-      }
-
-      .share-management-close:hover {
-        background: #e0e0e0;
-      }
-
-      .share-management-body {
-        padding: 20px;
-      }
-
-      .share-management-footer {
-        padding: 15px 20px;
-        border-top: 1px solid #ddd;
-        display: flex;
-        gap: 10px;
-        justify-content: flex-end;
-      }
-
-      .share-info-section {
-        margin-bottom: 25px;
-        padding: 15px;
-        border: 1px solid #ddd;
-        border-radius: 6px;
-        background: #fafafa;
-      }
-
-      .share-info-section h3 {
-        margin: 0 0 10px 0;
-        font-size: 16px;
-        color: #333;
-      }
-
-      .share-files-list {
-        max-height: 200px;
-        overflow-y: auto;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        background: white;
-      }
-
-      .share-file-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 8px 12px;
-        border-bottom: 1px solid #eee;
-        font-size: 13px;
-      }
-
-      .share-file-item:last-child {
-        border-bottom: none;
-      }
-
-      .share-file-item:hover {
-        background: #f5f5f5;
-      }
-
-      .share-file-remove {
-        background: #dc3545;
-        color: white;
-        border: none;
-        border-radius: 3px;
-        padding: 4px 8px;
-        font-size: 11px;
-        cursor: pointer;
-      }
-
-      .share-file-remove:hover {
-        background: #c82333;
-      }
-
-      .access-list-section {
-        margin-top: 20px;
-      }
-
-      .access-users-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-bottom: 15px;
-        min-height: 40px;
-        padding: 10px;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        background: white;
-      }
-
-      .access-user-tag {
-        display: inline-flex;
-        align-items: center;
-        background: #007bff;
-        color: white;
-        padding: 4px 8px;
-        border-radius: 15px;
-        font-size: 12px;
-        gap: 4px;
-      }
-
-      .access-user-remove {
-        background: none;
-        border: none;
-        color: white;
-        cursor: pointer;
-        font-size: 14px;
-        padding: 0;
-        margin-left: 4px;
-      }
-
-      .access-user-remove:hover {
-        color: #ccc;
-      }
-
-      .access-user-input-section {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 15px;
-      }
-
-      .access-user-input {
-        flex: 1;
-        padding: 8px;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        font-size: 13px;
-      }
-
-      .access-user-add {
-        background: #28a745;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 8px 12px;
-        cursor: pointer;
-        font-size: 13px;
-      }
-
-      .access-user-add:hover {
-        background: #218838;
-      }
-
-      .access-user-add:disabled {
-        background: #6c757d;
-        cursor: not-allowed;
-      }
-
-      .share-management-actions {
-        display: flex;
-        justify-content: flex-end;
-        gap: 10px;
-        padding-top: 20px;
-        border-top: 1px solid #ddd;
-      }
-
-      .share-management-save {
-        background: #28a745;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 10px 20px;
-        cursor: pointer;
-        font-size: 14px;
-      }
-
-      .share-management-save:hover {
-        background: #218838;
-      }
-
-      .share-management-cancel {
-        background: #6c757d;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 10px 20px;
-        cursor: pointer;
-        font-size: 14px;
-      }
-
-      .share-management-cancel:hover {
-        background: #5a6268;
-      }
-
-      .share-files-actions {
-        margin-top: 15px;
-        padding-top: 15px;
-        border-top: 1px solid #eee;
-      }
-
-      .share-files-actions .btn {
-        background: #007bff;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 8px 16px;
-        cursor: pointer;
-        font-size: 14px;
-      }
-
-      .share-files-actions .btn:hover {
-        background: #0056b3;
-      }
-
-      /* Custom dialog modal styles */
-      .custom-dialog-modal {
-        display: none;
-        position: fixed;
-        z-index: 2000;
-        left: 0;
-        top: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(0, 0, 0, 0.5);
-        align-items: center;
-        justify-content: center;
-      }
-
-      .custom-dialog-modal.show {
-        display: flex;
-      }
-
-      .custom-dialog-modal-content {
-        background-color: #fff;
-        padding: 25px;
-        border-radius: 8px;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-        width: 90%;
-        max-width: 400px;
-        text-align: center;
-      }
-
-      .custom-dialog-modal-content h2 {
-        margin-top: 0;
-        font-size: 1.25rem;
-      }
-
-      .custom-dialog-modal-content p {
-        margin: 15px 0;
-        font-size: 1rem;
-        color: #333;
-      }
-
-      .custom-dialog-input {
-        width: calc(100% - 20px);
-        padding: 10px;
-        margin-bottom: 20px;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        font-size: 14px;
-      }
-
-      .custom-dialog-buttons {
-        display: flex;
-        justify-content: center;
-        gap: 10px;
-      }
-
-      .custom-dialog-buttons button {
-        padding: 10px 20px;
-        border: none;
-        border-radius: 5px;
-        cursor: pointer;
-        font-weight: bold;
-        font-size: 14px;
-      }
-
-      .custom-dialog-buttons button#dialogConfirmBtn {
-        background-color: #007bff;
-        color: white;
-      }
-
-      .custom-dialog-buttons button#dialogConfirmBtn:hover {
-        background-color: #0056b3;
-      }
-
-      .custom-dialog-buttons button#dialogCancelBtn {
-        background-color: #ccc;
-        color: #333;
-      }
-
-      .custom-dialog-buttons button#dialogCancelBtn:hover {
-        background-color: #999;
-      }
-
-      /* Add Files Modal Styles */
-      .add-files-modal {
-        display: none;
-        position: fixed;
-        z-index: 2000;
-        left: 0;
-        top: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(0, 0, 0, 0.5);
-        align-items: center;
-        justify-content: center;
-      }
-
-      .add-files-modal.show {
-        display: flex;
-      }
-
-      .add-files-modal-content {
-        background-color: #fff;
-        padding: 20px;
-        border-radius: 8px;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-        width: 90%;
-        max-width: 800px;
-        max-height: 80vh;
-        overflow-y: auto;
-      }
-
-      .add-files-close {
-        color: #aaa;
-        float: right;
-        font-size: 28px;
-        font-weight: bold;
-        cursor: pointer;
-        line-height: 1;
-      }
-
-      .add-files-close:hover {
-        color: #000;
-      }
-
-      .add-files-body {
-        display: flex;
-        gap: 20px;
-        margin: 20px 0;
-      }
-
-      .file-browser {
-        flex: 2;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        overflow: hidden;
-      }
-
-      .file-browser-header {
-        background: #f8f9fa;
-        padding: 10px;
-        border-bottom: 1px solid #ddd;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-
-      .file-browser-content {
-        max-height: 300px;
-        overflow-y: auto;
-        padding: 10px;
-      }
-
-      .file-browser-item {
-        display: flex;
-        align-items: center;
-        padding: 8px;
-        cursor: pointer;
-        border-radius: 4px;
-        margin-bottom: 2px;
-      }
-
-      .file-browser-item:hover {
-        background: #f8f9fa;
-      }
-
-      .file-browser-item.selected {
-        background: #e3f2fd;
-      }
-
-      .file-browser-item input[type="checkbox"] {
-        margin-right: 8px;
-      }
-
-      .selected-files-preview {
-        flex: 1;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        padding: 15px;
-        background: #f8f9fa;
-      }
-
-      .selected-files-preview h4 {
-        margin: 0 0 10px 0;
-        font-size: 14px;
-        color: #333;
-      }
-
-      .selected-file-item {
-        background: #e3f2fd;
-        padding: 4px 8px;
-        margin: 2px 0;
-        border-radius: 3px;
-        font-size: 12px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-
-      .selected-file-item .remove-btn {
-        background: none;
-        border: none;
-        color: #666;
-        cursor: pointer;
-        font-size: 14px;
-        padding: 0;
-        width: 16px;
-        height: 16px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-
-      .add-files-actions {
-        display: flex;
-        justify-content: flex-end;
-        gap: 10px;
-        padding-top: 20px;
-        border-top: 1px solid #ddd;
-      }
-
-      .btn-secondary {
-        background: #6c757d;
-        color: white;
-      }
-
-      .btn-secondary:hover {
-        background: #5a6268;
-      }
+    .share-actions .btn {
+      font-size: 11px;
+      padding: 6px 10px;
+    }
+
+    /* Share Management Modal Styles */
+    .share-management-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 1001;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .share-management-modal.show {
+      display: flex;
+    }
+
+    .share-management-content {
+      background: white;
+      border: 2px solid black;
+      border-radius: 8px;
+      max-width: 800px;
+      width: 95%;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+    }
+
+    .share-management-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px;
+      border-bottom: 1px solid #ddd;
+      background: #f9f9f9;
+    }
+
+    .share-management-title {
+      font-size: 20px;
+      font-weight: bold;
+      margin: 0;
+    }
+
+    .share-management-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      padding: 5px;
+      width: 35px;
+      height: 35px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+    }
+
+    .share-management-close:hover {
+      background: #e0e0e0;
+    }
+
+    .share-management-body {
+      padding: 20px;
+    }
+
+    .share-management-footer {
+      padding: 15px 20px;
+      border-top: 1px solid #ddd;
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
+    .share-info-section {
+      margin-bottom: 25px;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      background: #fafafa;
+    }
+
+    .share-info-section h3 {
+      margin: 0 0 10px 0;
+      font-size: 16px;
+      color: #333;
+    }
+
+    .share-files-list {
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: white;
+    }
+
+    .share-file-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      border-bottom: 1px solid #eee;
+      font-size: 13px;
+    }
+
+    .share-file-item:last-child {
+      border-bottom: none;
+    }
+
+    .share-file-item:hover {
+      background: #f5f5f5;
+    }
+
+    .share-file-remove {
+      background: #dc3545;
+      color: white;
+      border: none;
+      border-radius: 3px;
+      padding: 4px 8px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .share-file-remove:hover {
+      background: #c82333;
+    }
+
+    .access-list-section {
+      margin-top: 20px;
+    }
+
+    .access-users-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 15px;
+      min-height: 40px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: white;
+    }
+
+    .access-user-tag {
+      display: inline-flex;
+      align-items: center;
+      background: #007bff;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 15px;
+      font-size: 12px;
+      gap: 4px;
+    }
+
+    .access-user-remove {
+      background: none;
+      border: none;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 0;
+      margin-left: 4px;
+    }
+
+    .access-user-remove:hover {
+      color: #ccc;
+    }
+
+    .access-user-input-section {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+
+    .access-user-input {
+      flex: 1;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+
+    .access-user-add {
+      background: #28a745;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .access-user-add:hover {
+      background: #218838;
+    }
+
+    .access-user-add:disabled {
+      background: #6c757d;
+      cursor: not-allowed;
+    }
+
+    .share-management-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding-top: 20px;
+      border-top: 1px solid #ddd;
+    }
+
+    .share-management-save {
+      background: #28a745;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 10px 20px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .share-management-save:hover {
+      background: #218838;
+    }
+
+    .share-management-cancel {
+      background: #6c757d;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 10px 20px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .share-management-cancel:hover {
+      background: #5a6268;
+    }
+
+    .share-files-actions {
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid #eee;
+    }
+
+    .share-files-actions .btn {
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 8px 16px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .share-files-actions .btn:hover {
+      background: #0056b3;
+    }
+
+    /* Custom dialog modal styles */
+    .custom-dialog-modal {
+      display: none;
+      position: fixed;
+      z-index: 2000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      align-items: center;
+      justify-content: center;
+    }
+
+    .custom-dialog-modal.show {
+      display: flex;
+    }
+
+    .custom-dialog-modal-content {
+      background-color: #fff;
+      padding: 25px;
+      border-radius: 8px;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+      width: 90%;
+      max-width: 400px;
+      text-align: center;
+    }
+
+    .custom-dialog-modal-content h2 {
+      margin-top: 0;
+      font-size: 1.25rem;
+    }
+
+    .custom-dialog-modal-content p {
+      margin: 15px 0;
+      font-size: 1rem;
+      color: #333;
+    }
+
+    .custom-dialog-input {
+      width: calc(100% - 20px);
+      padding: 10px;
+      margin-bottom: 20px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    .custom-dialog-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .custom-dialog-buttons button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    .custom-dialog-buttons button#dialogConfirmBtn {
+      background-color: #007bff;
+      color: white;
+    }
+
+    .custom-dialog-buttons button#dialogConfirmBtn:hover {
+      background-color: #0056b3;
+    }
+
+    .custom-dialog-buttons button#dialogCancelBtn {
+      background-color: #ccc;
+      color: #333;
+    }
+
+    .custom-dialog-buttons button#dialogCancelBtn:hover {
+      background-color: #999;
+    }
+
+    /* Add Files Modal Styles */
+    .add-files-modal {
+      display: none;
+      position: fixed;
+      z-index: 2000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      align-items: center;
+      justify-content: center;
+    }
+
+    .add-files-modal.show {
+      display: flex;
+    }
+
+    .add-files-modal-content {
+      background-color: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+      width: 90%;
+      max-width: 800px;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    .add-files-close {
+      color: #aaa;
+      float: right;
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
+      line-height: 1;
+    }
+
+    .add-files-close:hover {
+      color: #000;
+    }
+
+    .add-files-body {
+      display: flex;
+      gap: 20px;
+      margin: 20px 0;
+    }
+
+    .file-browser {
+      flex: 2;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .file-browser-header {
+      background: #f8f9fa;
+      padding: 10px;
+      border-bottom: 1px solid #ddd;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .file-browser-content {
+      max-height: 300px;
+      overflow-y: auto;
+      padding: 10px;
+    }
+
+    .file-browser-item {
+      display: flex;
+      align-items: center;
+      padding: 8px;
+      cursor: pointer;
+      border-radius: 4px;
+      margin-bottom: 2px;
+    }
+
+    .file-browser-item:hover {
+      background: #f8f9fa;
+    }
+
+    .file-browser-item.selected {
+      background: #e3f2fd;
+    }
+
+    .file-browser-item input[type="checkbox"] {
+      margin-right: 8px;
+    }
+
+    .selected-files-preview {
+      flex: 1;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 15px;
+      background: #f8f9fa;
+    }
+
+    .selected-files-preview h4 {
+      margin: 0 0 10px 0;
+      font-size: 14px;
+      color: #333;
+    }
+
+    .selected-file-item {
+      background: #e3f2fd;
+      padding: 4px 8px;
+      margin: 2px 0;
+      border-radius: 3px;
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .selected-file-item .remove-btn {
+      background: none;
+      border: none;
+      color: #666;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 0;
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .add-files-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding-top: 20px;
+      border-top: 1px solid #ddd;
+    }
+
+    .btn-secondary {
+      background: #6c757d;
+      color: white;
+    }
+
+    .btn-secondary:hover {
+      background: #5a6268;
+    }
   </style>
 </head>
+
 <body>
   <div class="container">
     <div class="header">
       <div>
         <h1>Share Files</h1>
         <div class="breadcrumb">
-          <a href="/files/">🏠 Home</a> / 
+          <a href="/files/">🏠 Home</a> /
           <span id="currentPath">Browse & Select Files</span>
         </div>
       </div>
       <div style="display: flex; align-items: center; gap: 10px;">
-        <a href="/profile" style="font-size: 12px; color: #666; margin-right: 15px; text-decoration: none;">👤 {{ handler.get_display_username() }}</a>
+        <a href="/profile" style="font-size: 12px; color: #666; margin-right: 15px; text-decoration: none;">👤 {{
+          handler.get_display_username() }}</a>
         <a href="/files/" class="btn">📁 Browse Files</a>
         <a href="/logout" class="btn">↩ Logout</a>
       </div>
@@ -971,7 +988,7 @@
       <div class="selected-files" id="selectedFiles">
         <em style="color: #666;">No files selected</em>
       </div>
-      
+
       <!-- User Access Control -->
       <div style="margin: 15px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa;">
         <div style="margin-bottom: 10px;">
@@ -994,10 +1011,11 @@
             <strong>Select Users:</strong>
           </div>
           <div style="margin-bottom: 8px;">
-            <input type="text" id="userSearchInput" placeholder="Type to search users..." 
-                   style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px;">
+            <input type="text" id="userSearchInput" placeholder="Type to search users..."
+              style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px;">
           </div>
-          <div id="userList" style="max-height: 120px; overflow-y: auto; border: 1px solid #ccc; padding: 8px; background: white;">
+          <div id="userList"
+            style="max-height: 120px; overflow-y: auto; border: 1px solid #ccc; padding: 8px; background: white;">
             <em style="color: #666;">Type to search for users...</em>
           </div>
           <div id="selectedUsers" style="margin-top: 8px; min-height: 20px;">
@@ -1008,7 +1026,7 @@
           </div>
         </div>
       </div>
-      
+
       <!-- Share Type Selection -->
       <div style="margin: 15px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa;">
         <div style="margin-bottom: 10px;">
@@ -1026,11 +1044,13 @@
             <span>Dynamic (Live folder sharing)</span>
           </label>
         </div>
-        <div id="shareTypeInfo" style="margin-top: 8px; padding: 8px; background: #e8f4fd; border-radius: 3px; font-size: 12px; color: #0066cc;">
-          <strong>Static Share:</strong> Creates a snapshot of all files at the time of sharing. New files added later won't appear in the share.
+        <div id="shareTypeInfo"
+          style="margin-top: 8px; padding: 8px; background: #e8f4fd; border-radius: 3px; font-size: 12px; color: #0066cc;">
+          <strong>Static Share:</strong> Creates a snapshot of all files at the time of sharing. New files added later
+          won't appear in the share.
         </div>
       </div>
-      
+
       <!-- Token Security -->
       <div style="margin: 15px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa;">
         <div style="margin-bottom: 10px;">
@@ -1042,11 +1062,12 @@
             <span>Disable Secret Token (Public Access)</span>
           </label>
         </div>
-        <div id="tokenInfo" style="margin-top: 8px; padding: 8px; background: #e8f4fd; border-radius: 3px; font-size: 12px; color: #0066cc;">
+        <div id="tokenInfo"
+          style="margin-top: 8px; padding: 8px; background: #e8f4fd; border-radius: 3px; font-size: 12px; color: #0066cc;">
           <strong>🔐 Token Enabled:</strong> Users will need to enter a secret token to access the shared files.
         </div>
       </div>
-      
+
       <!-- Expiry Date -->
       <div style="margin: 15px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa;">
         <div style="margin-bottom: 10px;">
@@ -1056,17 +1077,19 @@
           <label style="display: block; margin-bottom: 5px; font-size: 12px;">
             <strong>Share Expires On:</strong>
           </label>
-          <input type="datetime-local" id="expiryDate" 
-                 style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px;">
+          <input type="datetime-local" id="expiryDate"
+            style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px;">
           <div style="font-size: 11px; color: #666; margin-top: 3px;">
             Leave empty for no expiration. The share will automatically become inaccessible after this date/time.
           </div>
         </div>
-        <div style="margin-top: 8px; padding: 8px; background: #fff3cd; border-radius: 3px; font-size: 12px; color: #856404;">
-          <strong>⏰ Note:</strong> After expiration, users will receive a "share has expired" message when attempting to access it.
+        <div
+          style="margin-top: 8px; padding: 8px; background: #fff3cd; border-radius: 3px; font-size: 12px; color: #856404;">
+          <strong>⏰ Note:</strong> After expiration, users will receive a "share has expired" message when attempting to
+          access it.
         </div>
       </div>
-      
+
       <!-- File Filtering -->
       <div style="margin: 15px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa;">
         <div style="margin-bottom: 10px;">
@@ -1076,8 +1099,8 @@
           <label style="display: block; margin-bottom: 5px; font-size: 12px;">
             <strong>Allow List (Glob Patterns):</strong>
           </label>
-          <textarea id="allowList" placeholder="*.txt, *.pdf, images/*.jpg, documents/**" 
-                    style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px; height: 60px; resize: vertical;"></textarea>
+          <textarea id="allowList" placeholder="*.txt, *.pdf, images/*.jpg, documents/**"
+            style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px; height: 60px; resize: vertical;"></textarea>
           <div style="font-size: 11px; color: #666; margin-top: 3px;">
             Comma-separated glob patterns. If empty, all files are allowed (unless in avoid list).
           </div>
@@ -1086,20 +1109,22 @@
           <label style="display: block; margin-bottom: 5px; font-size: 12px;">
             <strong>Avoid List (Glob Patterns):</strong>
           </label>
-          <textarea id="avoidList" placeholder="*.tmp, *.log, temp/*, .git/**" 
-                    style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px; height: 60px; resize: vertical;"></textarea>
+          <textarea id="avoidList" placeholder="*.tmp, *.log, temp/*, .git/**"
+            style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px; height: 60px; resize: vertical;"></textarea>
           <div style="font-size: 11px; color: #666; margin-top: 3px;">
-            Comma-separated glob patterns. Files matching these patterns will be excluded (takes priority over allow list).
+            Comma-separated glob patterns. Files matching these patterns will be excluded (takes priority over allow
+            list).
           </div>
         </div>
-        <div style="margin-top: 8px; padding: 8px; background: #fff3cd; border-radius: 3px; font-size: 12px; color: #856404;">
+        <div
+          style="margin-top: 8px; padding: 8px; background: #fff3cd; border-radius: 3px; font-size: 12px; color: #856404;">
           <strong>💡 Examples:</strong><br>
           • Allow: <code>*.pdf, *.docx, images/*</code><br>
           • Avoid: <code>*.tmp, .git/**, temp/*</code><br>
           • Use <code>**</code> for recursive matching
         </div>
       </div>
-      
+
       <div class="action-buttons">
         <button class="btn primary" id="generateLink" disabled>Generate Share Link</button>
         <button class="btn" id="clearSelection">Clear Selection</button>
@@ -1150,74 +1175,74 @@
     </div>
   </div>
 
-    <!-- Cloud Browser Modal -->
-    <div id="cloudBrowserModal" class="popup-overlay">
-      <div class="popup-content cloud-browser-modal">
-        <div class="popup-header">
-          <h3 class="popup-title">Cloud Drives</h3>
-          <button class="popup-close" onclick="closeCloudBrowser()">&times;</button>
-        </div>
-        <div class="cloud-controls">
-          <label for="cloudProviderSelect">Provider:</label>
-          <select id="cloudProviderSelect"></select>
-          <button class="btn" type="button" id="cloudUpButton">⬆️ Up</button>
-        </div>
-        <div class="cloud-upload">
-          <input type="file" id="cloudUploadInput" title="Choose a file to upload to the selected cloud folder">
-          <button class="btn" type="button" id="cloudUploadButton">Upload to folder</button>
-        </div>
-        <div class="cloud-upload-status" id="cloudUploadStatus"></div>
-        <div class="cloud-path" id="cloudPathDisplay"></div>
-        <div class="cloud-status" id="cloudStatusMessage"></div>
-        <div class="cloud-table-wrapper">
-          <table class="file-table">
-            <thead>
-              <tr>
-                <th class="name-col">📁 Name</th>
-                <th class="size-col">📏 Size</th>
-                <th class="modified-col">🕒 Modified</th>
-                <th class="actions-col">⚡ Actions</th>
-              </tr>
-            </thead>
-            <tbody id="cloudFilesTableBody">
-              <tr>
-                <td colspan="4" class="loading">Loading...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+  <!-- Cloud Browser Modal -->
+  <div id="cloudBrowserModal" class="popup-overlay">
+    <div class="popup-content cloud-browser-modal">
+      <div class="popup-header">
+        <h3 class="popup-title">Cloud Drives</h3>
+        <button class="popup-close" id="cloudBrowserClose">&times;</button>
+      </div>
+      <div class="cloud-controls">
+        <label for="cloudProviderSelect">Provider:</label>
+        <select id="cloudProviderSelect"></select>
+        <button class="btn" type="button" id="cloudUpButton">⬆️ Up</button>
+      </div>
+      <div class="cloud-upload">
+        <input type="file" id="cloudUploadInput" title="Choose a file to upload to the selected cloud folder">
+        <button class="btn" type="button" id="cloudUploadButton">Upload to folder</button>
+      </div>
+      <div class="cloud-upload-status" id="cloudUploadStatus"></div>
+      <div class="cloud-path" id="cloudPathDisplay"></div>
+      <div class="cloud-status" id="cloudStatusMessage"></div>
+      <div class="cloud-table-wrapper">
+        <table class="file-table">
+          <thead>
+            <tr>
+              <th class="name-col">📁 Name</th>
+              <th class="size-col">📏 Size</th>
+              <th class="modified-col">🕒 Modified</th>
+              <th class="actions-col">⚡ Actions</th>
+            </tr>
+          </thead>
+          <tbody id="cloudFilesTableBody">
+            <tr>
+              <td colspan="4" class="loading">Loading...</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
+  </div>
 
-    <!-- Share Details Popup -->
-    <div id="sharePopup" class="popup-overlay">
-      <div class="popup-content">
-        <div class="popup-header">
-          <h3 class="popup-title">Share Details</h3>
-          <button class="popup-close" onclick="closeSharePopup()">&times;</button>
-        </div>
-        <div id="sharePopupContent">
-          <div class="loading">Loading share details...</div>
-        </div>
+  <!-- Share Details Popup -->
+  <div id="sharePopup" class="popup-overlay">
+    <div class="popup-content">
+      <div class="popup-header">
+        <h3 class="popup-title">Share Details</h3>
+        <button class="popup-close" id="sharePopupClose">&times;</button>
+      </div>
+      <div id="sharePopupContent">
+        <div class="loading">Loading share details...</div>
       </div>
     </div>
+  </div>
 
-    <!-- Share Management Modal -->
-    <div id="shareManagementModal" class="share-management-modal">
-      <div class="share-management-content">
-        <div class="share-management-header">
-          <h2 class="share-management-title">Manage Share</h2>
-          <button class="share-management-close" onclick="closeShareManagementModal()">&times;</button>
-        </div>
-        <div class="share-management-body" id="shareManagementBody">
-          <div class="loading">Loading share details...</div>
-        </div>
-        <div class="share-management-footer">
-          <button class="btn primary" id="updateShareBtn" onclick="updateShare()">Update Share</button>
-          <button class="btn" onclick="closeShareManagementModal()">Cancel</button>
-        </div>
+  <!-- Share Management Modal -->
+  <div id="shareManagementModal" class="share-management-modal">
+    <div class="share-management-content">
+      <div class="share-management-header">
+        <h2 class="share-management-title">Manage Share</h2>
+        <button class="share-management-close" id="shareManagementClose">&times;</button>
+      </div>
+      <div class="share-management-body" id="shareManagementBody">
+        <div class="loading">Loading share details...</div>
+      </div>
+      <div class="share-management-footer">
+        <button class="btn primary" id="updateShareBtn">Update Share</button>
+        <button class="btn" id="shareManagementCancel">Cancel</button>
       </div>
     </div>
+  </div>
 
   <div id="customDialogModal" class="custom-dialog-modal">
     <div class="custom-dialog-modal-content">
@@ -1236,12 +1261,12 @@
   <!-- Add Files Modal -->
   <div id="addFilesModal" class="add-files-modal">
     <div class="add-files-modal-content">
-      <span class="add-files-close" onclick="closeAddFilesModal()">&times;</span>
+      <span class="add-files-close" id="addFilesClose">&times;</span>
       <h2>Add Files to Share</h2>
       <div class="add-files-body">
         <div class="file-browser">
           <div class="file-browser-header">
-            <button class="btn" onclick="navigateUp()">↑ Up</button>
+            <button class="btn" id="navigateUpBtn">↑ Up</button>
             <span id="currentBrowsePath">Root Directory</span>
           </div>
           <div class="file-browser-content" id="fileBrowserContent">
@@ -1254,13 +1279,13 @@
         </div>
       </div>
       <div class="add-files-actions">
-        <button class="btn" onclick="addSelectedFilesToShare()">Add Selected Files</button>
-        <button class="btn btn-secondary" onclick="closeAddFilesModal()">Cancel</button>
+        <button class="btn" id="addSelectedFilesBtn">Add Selected Files</button>
+        <button class="btn btn-secondary" id="addFilesCancel">Cancel</button>
       </div>
     </div>
   </div>
 
-  <script>
+  <script nonce="{{ csp_nonce }}">
     let currentPath = '';
     let selectedFiles = new Set();
     let allFiles = [];
@@ -1307,7 +1332,7 @@
     function getFileIcon(filename) {
       const ext = filename.toLowerCase().split('.').pop();
       const lowerFilename = filename.toLowerCase();
-      
+
       // Special files by name - IDE-style
       if (['readme', 'readme.md', 'readme.txt'].includes(lowerFilename)) return '📖';
       if (['license', 'licence', 'copying'].includes(lowerFilename)) return '📜';
@@ -1315,7 +1340,7 @@
       if (['dockerfile', 'docker-compose.yml', 'docker-compose.yaml'].includes(lowerFilename)) return '🐳';
       if (['.gitignore', '.gitattributes', '.gitmodules'].includes(lowerFilename)) return '🔧';
       if (lowerFilename.startsWith('.env')) return '🔐';
-      
+
       const iconMap = {
         // Document files - IDE-style
         'txt': '📄', 'md': '📄', 'rst': '📄', 'text': '📄',
@@ -1323,12 +1348,12 @@
         'pdf': '📕',
         'xls': '📊', 'xlsx': '📊', 'ods': '📊', 'csv': '📊',
         'ppt': '📋', 'pptx': '📋', 'odp': '📋',
-        
+
         // Image files - IDE-style
         'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'bmp': '🖼️', 'webp': '🖼️', 'tiff': '🖼️', 'tif': '🖼️',
         'svg': '🎨', 'ico': '🎨',
         'psd': '🎭', 'ai': '🎭', 'sketch': '🎭',
-        
+
         // Programming files - IDE-style (VS Code inspired)
         'py': '🐍', 'pyw': '🐍', 'pyc': '🐍', 'pyo': '🐍',
         'js': '🟨', 'jsx': '🟨', 'ts': '🟨', 'tsx': '🟨', 'mjs': '🟨',
@@ -1348,7 +1373,7 @@
         'sh': '📟', 'bash': '📟', 'zsh': '📟', 'fish': '📟', 'bat': '📟', 'cmd': '📟', 'ps1': '📟',
         'lua': '🌙',
         'dart': '🎯',
-        
+
         // Web files - IDE-style
         'html': '🌐', 'htm': '🌐', 'xhtml': '🌐',
         'css': '🎨', 'scss': '🎨', 'sass': '🎨', 'less': '🎨',
@@ -1356,34 +1381,34 @@
         'json': '📋', 'jsonl': '📋',
         'yaml': '📄', 'yml': '📄',
         'toml': '⚙️', 'ini': '⚙️', 'cfg': '⚙️', 'conf': '⚙️',
-        
+
         // Archive files - IDE-style
         'zip': '🗜️', 'rar': '🗜️', '7z': '🗜️', 'tar': '🗜️', 'gz': '🗜️', 'bz2': '🗜️', 'xz': '🗜️', 'lz': '🗜️', 'lzma': '🗜️',
         'deb': '📦', 'rpm': '📦', 'pkg': '📦', 'dmg': '📦', 'msi': '📦', 'exe': '📦',
-        
+
         // Video files - IDE-style
         'mp4': '🎬', 'avi': '🎬', 'mkv': '🎬', 'mov': '🎬', 'wmv': '🎬', 'flv': '🎬', 'webm': '🎬', 'm4v': '🎬', '3gp': '🎬', 'ogv': '🎬', 'mpg': '🎬', 'mpeg': '🎬',
-        
+
         // Audio files - IDE-style
         'mp3': '🎵', 'wav': '🎵', 'flac': '🎵', 'aac': '🎵', 'ogg': '🎵', 'm4a': '🎵', 'wma': '🎵', 'opus': '🎵', 'aiff': '🎵',
-        
+
         // Font files - IDE-style
         'ttf': '🔤', 'otf': '🔤', 'woff': '🔤', 'woff2': '🔤', 'eot': '🔤',
-        
+
         // Database files - IDE-style
         'db': '🗃️', 'sqlite': '🗃️', 'sqlite3': '🗃️', 'mdb': '🗃️', 'accdb': '🗃️',
-        
+
         // Log files - IDE-style
         'log': '📜', 'out': '📜', 'err': '📜',
-        
+
         // Data files - IDE-style
         'sql': '🗄️',
         'parquet': '📊', 'avro': '📊', 'orc': '📊',
-        
+
         // Notebook files - IDE-style
         'ipynb': '📓'
       };
-      
+
       return iconMap[ext] || '📦';
     }
 
@@ -1872,7 +1897,7 @@
       });
     }
 
-    document.addEventListener('keydown', function(event) {
+    document.addEventListener('keydown', function (event) {
       if (event.key === 'Escape' && cloudElements.modal && cloudElements.modal.classList.contains('show')) {
         closeCloudBrowser();
       }
@@ -1958,12 +1983,12 @@
         elements.fileTableBody.innerHTML = '<tr><td colspan="5" class="loading">Loading...</td></tr>';
 
         console.log('Loading directory:', path);
-        
+
         // Use the API endpoint instead of parsing HTML
         const response = await fetch(`/api/files/${path}`);
-        
+
         console.log('API response status:', response.status);
-        
+
         if (response.ok) {
           const data = await response.json();
           console.log('API data:', data);
@@ -1974,7 +1999,7 @@
           console.error('API error:', errorText);
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
       } catch (error) {
         console.error('Error loading directory:', error);
         elements.fileTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: red;">Error loading files</td></tr>';
@@ -2007,7 +2032,7 @@
         const row = document.createElement('tr');
         const filePath = currentPath ? `${currentPath}/${file.name}` : file.name;
         const isSelected = selectedFiles.has(filePath);
-        
+
 
         if (file.is_dir) {
           const newPath = currentPath ? `${currentPath}/${file.name}` : file.name;
@@ -2058,62 +2083,62 @@
     }
 
     // CSRF Protection: Get XSRF token from cookie
-      function getXSRFToken() {
-        const match = document.cookie.match(/_xsrf=([^;]*)/);
-        return match ? decodeURIComponent(match[1]) : '';
-      }
+    function getXSRFToken() {
+      const match = document.cookie.match(/_xsrf=([^;]*)/);
+      return match ? decodeURIComponent(match[1]) : '';
+    }
 
-      // Share management functions
-      let currentShareData = null;
+    // Share management functions
+    let currentShareData = null;
 
-      async function manageShare(shareId) {
-        const modal = document.getElementById('shareManagementModal');
-        const body = document.getElementById('shareManagementBody');
+    async function manageShare(shareId) {
+      const modal = document.getElementById('shareManagementModal');
+      const body = document.getElementById('shareManagementBody');
 
-        modal.classList.add('show');
-        body.innerHTML = '<div class="loading">Loading share details...</div>';
+      modal.classList.add('show');
+      body.innerHTML = '<div class="loading">Loading share details...</div>';
 
-        try {
-          // Fetch details for the specific share
-          const detailsResponse = await fetch(`/api/share/details_by_id?id=${shareId}`, {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-XSRFToken': getXSRFToken()
-            }
-          });
-
-          const detailsData = await detailsResponse.json();
-
-          if (detailsData.error) {
-            body.innerHTML = `<div style="color: red; text-align: center; padding: 20px;">Error: ${detailsData.error}</div>`;
-            return;
+      try {
+        // Fetch details for the specific share
+        const detailsResponse = await fetch(`/api/share/details_by_id?id=${shareId}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-XSRFToken': getXSRFToken()
           }
-
-          currentShareData = detailsData.share;
-          console.log('Share data received:', currentShareData);
-          renderShareManagementModal(currentShareData);
-
-        } catch (error) {
-          console.error('Error loading share details:', error);
-          body.innerHTML = '<div style="color: red; text-align: center; padding: 20px;">Failed to load share details</div>';
-        }
-      }
-
-      function renderShareManagementModal(share) {
-        const body = document.getElementById('shareManagementBody');
-        const accessInfo = share.allowed_users ?
-          `Restricted (${share.allowed_users.length} user${share.allowed_users.length !== 1 ? 's' : ''})` :
-          'Public';
-        
-        console.log('Rendering share management modal with data:', {
-          share_type: share.share_type,
-          secret_token: share.secret_token ? 'present' : 'none',
-          allow_list: share.allow_list,
-          avoid_list: share.avoid_list
         });
 
-        body.innerHTML = `
+        const detailsData = await detailsResponse.json();
+
+        if (detailsData.error) {
+          body.innerHTML = `<div style="color: red; text-align: center; padding: 20px;">Error: ${detailsData.error}</div>`;
+          return;
+        }
+
+        currentShareData = detailsData.share;
+        console.log('Share data received:', currentShareData);
+        renderShareManagementModal(currentShareData);
+
+      } catch (error) {
+        console.error('Error loading share details:', error);
+        body.innerHTML = '<div style="color: red; text-align: center; padding: 20px;">Failed to load share details</div>';
+      }
+    }
+
+    function renderShareManagementModal(share) {
+      const body = document.getElementById('shareManagementBody');
+      const accessInfo = share.allowed_users ?
+        `Restricted (${share.allowed_users.length} user${share.allowed_users.length !== 1 ? 's' : ''})` :
+        'Public';
+
+      console.log('Rendering share management modal with data:', {
+        share_type: share.share_type,
+        secret_token: share.secret_token ? 'present' : 'none',
+        allow_list: share.allow_list,
+        avoid_list: share.avoid_list
+      });
+
+      body.innerHTML = `
           <div class="share-info-section">
             <h3>Share Information</h3>
             <div><strong>Share ID:</strong> <code>${share.id}</code></div>
@@ -2209,14 +2234,14 @@
             <h3>Access Control</h3>
             <div class="access-users-list" id="accessUsersList">
               ${share.allowed_users && share.allowed_users.length > 0 ?
-                share.allowed_users.map(user => `
+          share.allowed_users.map(user => `
                   <span class="access-user-tag">
                     ${user}
                     <button class="access-user-remove" onclick="removeUserFromShare('${user}')">&times;</button>
                   </span>
                 `).join('') :
-                '<div style="color: #666; font-style: italic;">No users specified (public access)</div>'
-              }
+          '<div style="color: #666; font-style: italic;">No users specified (public access)</div>'
+        }
             </div>
             <div class="access-user-input-section">
               <input type="text" class="access-user-input" id="newUserInput" placeholder="Enter username to add">
@@ -2229,14 +2254,14 @@
             <h3>Files in Share (${share.paths ? share.paths.length : 0})</h3>
             <div class="share-files-list" id="shareFilesList">
               ${share.paths && share.paths.length > 0 ?
-                share.paths.map(path => `
+          share.paths.map(path => `
                   <div class="share-file-item">
                     <span>${path}</span>
                     <button class="share-file-remove" onclick="removeFileFromShare('${path}')">Remove</button>
                   </div>
                 `).join('') :
-                '<div style="padding: 20px; text-align: center; color: #666;">No files in this share</div>'
-              }
+          '<div style="padding: 20px; text-align: center; color: #666;">No files in this share</div>'
+        }
             </div>
             <div class="share-files-actions">
               <button class="btn" onclick="showAddFilesModal()">Add Files</button>
@@ -2244,434 +2269,434 @@
           </div>
         `;
 
-        // Store current share data for updates
-        currentShareData = share;
+      // Store current share data for updates
+      currentShareData = share;
 
-        // Update modal title
-        document.querySelector('.share-management-title').textContent = `Manage Share: ${share.id}`;
-        
-        // Add event listeners for mutually exclusive checkboxes
-        setTimeout(() => {
-          const disableTokenCheckbox = document.getElementById('disableTokenEdit');
-          const enableTokenCheckbox = document.getElementById('enableTokenEdit');
-          
-          if (disableTokenCheckbox && enableTokenCheckbox) {
-            disableTokenCheckbox.addEventListener('change', function() {
-              if (this.checked) {
-                enableTokenCheckbox.checked = false;
-              }
-            });
-            
-            enableTokenCheckbox.addEventListener('change', function() {
-              if (this.checked) {
-                disableTokenCheckbox.checked = false;
-              }
-            });
-          }
-        }, 100);
+      // Update modal title
+      document.querySelector('.share-management-title').textContent = `Manage Share: ${share.id}`;
+
+      // Add event listeners for mutually exclusive checkboxes
+      setTimeout(() => {
+        const disableTokenCheckbox = document.getElementById('disableTokenEdit');
+        const enableTokenCheckbox = document.getElementById('enableTokenEdit');
+
+        if (disableTokenCheckbox && enableTokenCheckbox) {
+          disableTokenCheckbox.addEventListener('change', function () {
+            if (this.checked) {
+              enableTokenCheckbox.checked = false;
+            }
+          });
+
+          enableTokenCheckbox.addEventListener('change', function () {
+            if (this.checked) {
+              disableTokenCheckbox.checked = false;
+            }
+          });
+        }
+      }, 100);
+    }
+
+    async function updateShare() {
+      if (!currentShareData) {
+        showDialog('No share data available', 'Error');
+        return;
       }
 
-      async function updateShare() {
-        if (!currentShareData) {
-          showDialog('No share data available', 'Error');
-          return;
+      try {
+        // Get form values
+        const shareType = document.querySelector('input[name="shareTypeEdit"]:checked').value;
+        const disableToken = document.getElementById('disableTokenEdit').checked;
+        const enableToken = document.getElementById('enableTokenEdit').checked;
+        const allowListText = document.getElementById('allowListEdit').value.trim();
+        const avoidListText = document.getElementById('avoidListEdit').value.trim();
+
+        // Determine token setting
+        // If disableToken is checked, we want to disable the token (set to null)
+        // If enableToken is checked, we want to enable the token (generate new token)
+        // If neither is checked, we don't change the token setting
+        let tokenDisabled = null;
+        if (disableToken) {
+          tokenDisabled = true;  // Disable token (set to null)
+        } else if (enableToken) {
+          tokenDisabled = false; // Enable token (generate new token)
         }
+        // If neither is checked, tokenDisabled remains null (no change)
 
-        try {
-          // Get form values
-          const shareType = document.querySelector('input[name="shareTypeEdit"]:checked').value;
-          const disableToken = document.getElementById('disableTokenEdit').checked;
-          const enableToken = document.getElementById('enableTokenEdit').checked;
-          const allowListText = document.getElementById('allowListEdit').value.trim();
-          const avoidListText = document.getElementById('avoidListEdit').value.trim();
-          
-          // Determine token setting
-          // If disableToken is checked, we want to disable the token (set to null)
-          // If enableToken is checked, we want to enable the token (generate new token)
-          // If neither is checked, we don't change the token setting
-          let tokenDisabled = null;
-          if (disableToken) {
-            tokenDisabled = true;  // Disable token (set to null)
-          } else if (enableToken) {
-            tokenDisabled = false; // Enable token (generate new token)
-          }
-          // If neither is checked, tokenDisabled remains null (no change)
-          
-          const allowList = allowListText ? allowListText.split(',').map(s => s.trim()).filter(s => s) : [];
-          const avoidList = avoidListText ? avoidListText.split(',').map(s => s.trim()).filter(s => s) : [];
-          
-          // Get expiry date (store as system time)
-          const expiryDateInput = document.getElementById('expiryDateEdit').value;
-          const expiryDate = expiryDateInput ? new Date(expiryDateInput).toISOString().replace('Z', '') : null;
+        const allowList = allowListText ? allowListText.split(',').map(s => s.trim()).filter(s => s) : [];
+        const avoidList = avoidListText ? avoidListText.split(',').map(s => s.trim()).filter(s => s) : [];
 
-          console.log('Updating share with values:', {
+        // Get expiry date (store as system time)
+        const expiryDateInput = document.getElementById('expiryDateEdit').value;
+        const expiryDate = expiryDateInput ? new Date(expiryDateInput).toISOString().replace('Z', '') : null;
+
+        console.log('Updating share with values:', {
+          share_id: currentShareData.id,
+          share_type: shareType,
+          disable_token: tokenDisabled,
+          disableToken_checked: disableToken,
+          enableToken_checked: enableToken,
+          allow_list: allowList,
+          avoid_list: avoidList,
+          expiry_date: expiryDate
+        });
+
+        const response = await fetch('/share/update', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-XSRFToken': getXSRFToken()
+          },
+          body: JSON.stringify({
             share_id: currentShareData.id,
             share_type: shareType,
             disable_token: tokenDisabled,
-            disableToken_checked: disableToken,
-            enableToken_checked: enableToken,
             allow_list: allowList,
             avoid_list: avoidList,
             expiry_date: expiryDate
-          });
+          })
+        });
 
-          const response = await fetch('/share/update', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-XSRFToken': getXSRFToken()
-            },
-            body: JSON.stringify({
-              share_id: currentShareData.id,
-              share_type: shareType,
-              disable_token: tokenDisabled,
-              allow_list: allowList,
-              avoid_list: avoidList,
-              expiry_date: expiryDate
-            })
-          });
+        const data = await response.json();
 
+        if (data.error) {
+          showDialog('Error: ' + data.error, 'Error');
+        } else {
+          let message = 'Share updated successfully!';
+          if (data.new_token) {
+            message += `\n\nNew secret token: ${data.new_token}\n\nPlease save this token - it won't be shown again!`;
+          }
+          showDialog(message, 'Success');
+          closeShareManagementModal();
+          loadActiveShares();
+        }
+      } catch (error) {
+        console.error('Error updating share:', error);
+        showDialog('Failed to update share', 'Error');
+      }
+    }
+
+    function closeShareManagementModal() {
+      const modal = document.getElementById('shareManagementModal');
+      modal.classList.remove('show');
+      currentShareData = null;
+    }
+
+    // Add Files Modal Functions
+    let addFilesModalData = {
+      currentPath: '',
+      selectedFiles: new Set(),
+      allFiles: []
+    };
+
+    function showAddFilesModal() {
+      const modal = document.getElementById('addFilesModal');
+      modal.classList.add('show');
+      addFilesModalData.currentPath = '';
+      addFilesModalData.selectedFiles.clear();
+      loadFilesForAddModal();
+    }
+
+    function closeAddFilesModal() {
+      const modal = document.getElementById('addFilesModal');
+      modal.classList.remove('show');
+      addFilesModalData.selectedFiles.clear();
+      updateSelectedFilesPreview();
+    }
+
+    async function loadFilesForAddModal() {
+      const content = document.getElementById('fileBrowserContent');
+      const pathDisplay = document.getElementById('currentBrowsePath');
+
+      content.innerHTML = '<div class="loading">Loading files...</div>';
+      pathDisplay.textContent = addFilesModalData.currentPath || 'Root Directory';
+
+      try {
+        const apiPath = addFilesModalData.currentPath || '';
+        console.log('Loading files for path:', apiPath);
+        const response = await fetch(`/api/files/${apiPath}`);
+
+        if (response.ok) {
           const data = await response.json();
-          
-          if (data.error) {
-            showDialog('Error: ' + data.error, 'Error');
-          } else {
-            let message = 'Share updated successfully!';
-            if (data.new_token) {
-              message += `\n\nNew secret token: ${data.new_token}\n\nPlease save this token - it won't be shown again!`;
-            }
-            showDialog(message, 'Success');
-            closeShareManagementModal();
-            loadActiveShares();
-          }
-        } catch (error) {
-          console.error('Error updating share:', error);
-          showDialog('Failed to update share', 'Error');
+          console.log('API response:', data);
+
+          // Transform the API response to include full paths
+          addFilesModalData.allFiles = data.files.map(file => ({
+            ...file,
+            path: addFilesModalData.currentPath ? `${addFilesModalData.currentPath}/${file.name}` : file.name
+          }));
+
+          console.log('Transformed files:', addFilesModalData.allFiles);
+          renderFilesForAddModal();
+        } else {
+          const errorText = await response.text();
+          console.error('API error:', response.status, errorText);
+          content.innerHTML = `<div style="color: red; text-align: center; padding: 20px;">Error loading files: ${response.status}</div>`;
         }
+      } catch (error) {
+        console.error('Error loading files:', error);
+        content.innerHTML = '<div style="color: red; text-align: center; padding: 20px;">Error loading files</div>';
+      }
+    }
+
+    function renderFilesForAddModal() {
+      const content = document.getElementById('fileBrowserContent');
+      const files = addFilesModalData.allFiles;
+
+      console.log('Rendering files:', files);
+
+      if (!files || files.length === 0) {
+        content.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No files in this directory</div>';
+        return;
       }
 
-      function closeShareManagementModal() {
-        const modal = document.getElementById('shareManagementModal');
-        modal.classList.remove('show');
-        currentShareData = null;
-      }
+      content.innerHTML = files.map(file => {
+        const isSelected = addFilesModalData.selectedFiles.has(file.path);
+        const icon = file.is_dir ? '📁' : getFileIcon(file.name);
 
-      // Add Files Modal Functions
-      let addFilesModalData = {
-        currentPath: '',
-        selectedFiles: new Set(),
-        allFiles: []
-      };
+        console.log('Rendering file:', file.name, 'is_dir:', file.is_dir, 'path:', file.path);
 
-      function showAddFilesModal() {
-        const modal = document.getElementById('addFilesModal');
-        modal.classList.add('show');
-        addFilesModalData.currentPath = '';
-        addFilesModalData.selectedFiles.clear();
-        loadFilesForAddModal();
-      }
-
-      function closeAddFilesModal() {
-        const modal = document.getElementById('addFilesModal');
-        modal.classList.remove('show');
-        addFilesModalData.selectedFiles.clear();
-        updateSelectedFilesPreview();
-      }
-
-      async function loadFilesForAddModal() {
-        const content = document.getElementById('fileBrowserContent');
-        const pathDisplay = document.getElementById('currentBrowsePath');
-        
-        content.innerHTML = '<div class="loading">Loading files...</div>';
-        pathDisplay.textContent = addFilesModalData.currentPath || 'Root Directory';
-
-        try {
-          const apiPath = addFilesModalData.currentPath || '';
-          console.log('Loading files for path:', apiPath);
-          const response = await fetch(`/api/files/${apiPath}`);
-          
-          if (response.ok) {
-            const data = await response.json();
-            console.log('API response:', data);
-            
-            // Transform the API response to include full paths
-            addFilesModalData.allFiles = data.files.map(file => ({
-              ...file,
-              path: addFilesModalData.currentPath ? `${addFilesModalData.currentPath}/${file.name}` : file.name
-            }));
-            
-            console.log('Transformed files:', addFilesModalData.allFiles);
-            renderFilesForAddModal();
-          } else {
-            const errorText = await response.text();
-            console.error('API error:', response.status, errorText);
-            content.innerHTML = `<div style="color: red; text-align: center; padding: 20px;">Error loading files: ${response.status}</div>`;
-          }
-        } catch (error) {
-          console.error('Error loading files:', error);
-          content.innerHTML = '<div style="color: red; text-align: center; padding: 20px;">Error loading files</div>';
-        }
-      }
-
-      function renderFilesForAddModal() {
-        const content = document.getElementById('fileBrowserContent');
-        const files = addFilesModalData.allFiles;
-        
-        console.log('Rendering files:', files);
-        
-        if (!files || files.length === 0) {
-          content.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No files in this directory</div>';
-          return;
-        }
-
-        content.innerHTML = files.map(file => {
-          const isSelected = addFilesModalData.selectedFiles.has(file.path);
-          const icon = file.is_dir ? '📁' : getFileIcon(file.name);
-          
-          console.log('Rendering file:', file.name, 'is_dir:', file.is_dir, 'path:', file.path);
-          
-          if (file.is_dir) {
-            return `
+        if (file.is_dir) {
+          return `
               <div class="file-browser-item" onclick="navigateToDirectory('${file.path}')">
                 <span>${icon} ${file.name}</span>
               </div>
             `;
-          } else {
-            return `
+        } else {
+          return `
               <div class="file-browser-item ${isSelected ? 'selected' : ''}" onclick="toggleFileSelection('${file.path}')">
                 <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleFileSelection('${file.path}')">
                 <span>${icon} ${file.name}</span>
               </div>
             `;
-          }
-        }).join('');
+        }
+      }).join('');
+    }
+
+    function toggleFileSelection(filePath) {
+      console.log('Toggling file selection:', filePath);
+      if (addFilesModalData.selectedFiles.has(filePath)) {
+        addFilesModalData.selectedFiles.delete(filePath);
+        console.log('Removed from selection');
+      } else {
+        addFilesModalData.selectedFiles.add(filePath);
+        console.log('Added to selection');
+      }
+      console.log('Current selection:', Array.from(addFilesModalData.selectedFiles));
+      renderFilesForAddModal();
+      updateSelectedFilesPreview();
+    }
+
+    function updateSelectedFilesPreview() {
+      const preview = document.getElementById('selectedFilesPreview');
+      const selectedFiles = Array.from(addFilesModalData.selectedFiles);
+
+      if (selectedFiles.length === 0) {
+        preview.innerHTML = '<div style="color: #666; font-style: italic;">No files selected</div>';
+        return;
       }
 
-      function toggleFileSelection(filePath) {
-        console.log('Toggling file selection:', filePath);
-        if (addFilesModalData.selectedFiles.has(filePath)) {
-          addFilesModalData.selectedFiles.delete(filePath);
-          console.log('Removed from selection');
-        } else {
-          addFilesModalData.selectedFiles.add(filePath);
-          console.log('Added to selection');
-        }
-        console.log('Current selection:', Array.from(addFilesModalData.selectedFiles));
-        renderFilesForAddModal();
-        updateSelectedFilesPreview();
-      }
-
-      function updateSelectedFilesPreview() {
-        const preview = document.getElementById('selectedFilesPreview');
-        const selectedFiles = Array.from(addFilesModalData.selectedFiles);
-        
-        if (selectedFiles.length === 0) {
-          preview.innerHTML = '<div style="color: #666; font-style: italic;">No files selected</div>';
-          return;
-        }
-
-        preview.innerHTML = selectedFiles.map(filePath => {
-          const fileName = filePath.split('/').pop();
-          return `
+      preview.innerHTML = selectedFiles.map(filePath => {
+        const fileName = filePath.split('/').pop();
+        return `
             <div class="selected-file-item">
               <span>${fileName}</span>
               <button class="remove-btn" onclick="removeFromAddModalSelection('${filePath}')">&times;</button>
             </div>
           `;
-        }).join('');
-      }
+      }).join('');
+    }
 
-      function removeFromAddModalSelection(filePath) {
-        addFilesModalData.selectedFiles.delete(filePath);
-        renderFilesForAddModal();
-        updateSelectedFilesPreview();
-      }
+    function removeFromAddModalSelection(filePath) {
+      addFilesModalData.selectedFiles.delete(filePath);
+      renderFilesForAddModal();
+      updateSelectedFilesPreview();
+    }
 
-      function navigateUp() {
-        if (addFilesModalData.currentPath) {
-          const pathParts = addFilesModalData.currentPath.split('/').filter(part => part.length > 0);
-          pathParts.pop();
-          addFilesModalData.currentPath = pathParts.join('/');
-          console.log('Navigating up to:', addFilesModalData.currentPath);
-          loadFilesForAddModal();
-        }
-      }
-
-      function navigateToDirectory(dirPath) {
-        console.log('Navigating to directory:', dirPath);
-        addFilesModalData.currentPath = dirPath;
+    function navigateUp() {
+      if (addFilesModalData.currentPath) {
+        const pathParts = addFilesModalData.currentPath.split('/').filter(part => part.length > 0);
+        pathParts.pop();
+        addFilesModalData.currentPath = pathParts.join('/');
+        console.log('Navigating up to:', addFilesModalData.currentPath);
         loadFilesForAddModal();
       }
+    }
 
-      async function addSelectedFilesToShare() {
-        if (!currentShareData || addFilesModalData.selectedFiles.size === 0) {
-          showDialog('Please select files to add', 'No Files Selected');
-          return;
-        }
+    function navigateToDirectory(dirPath) {
+      console.log('Navigating to directory:', dirPath);
+      addFilesModalData.currentPath = dirPath;
+      loadFilesForAddModal();
+    }
 
-        const filesToAdd = Array.from(addFilesModalData.selectedFiles);
-        const currentPaths = currentShareData.paths || [];
-        const newPaths = [...currentPaths, ...filesToAdd];
-
-        try {
-          const response = await fetch('/share/update', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-XSRFToken': getXSRFToken()
-            },
-            body: JSON.stringify({
-              share_id: currentShareData.id,
-              paths: newPaths
-            })
-          });
-
-          const data = await response.json();
-
-          if (data.error) {
-            showDialog('Error adding files: ' + data.error, 'Error');
-          } else {
-            showDialog('Files added successfully!', 'Success');
-            closeAddFilesModal();
-            // Refresh the share management modal
-            manageShare(currentShareData.id);
-          }
-        } catch (error) {
-          console.error('Error adding files:', error);
-          showDialog('Failed to add files', 'Error');
-        }
+    async function addSelectedFilesToShare() {
+      if (!currentShareData || addFilesModalData.selectedFiles.size === 0) {
+        showDialog('Please select files to add', 'No Files Selected');
+        return;
       }
 
-      async function removeFileFromShare(filePath) {
-        if (!currentShareData) return;
+      const filesToAdd = Array.from(addFilesModalData.selectedFiles);
+      const currentPaths = currentShareData.paths || [];
+      const newPaths = [...currentPaths, ...filesToAdd];
 
-        const confirmed = await showDialog(`Remove "${filePath}" from this share?`, 'Confirm Removal', { showCancel: true });
-        if (!confirmed) return;
+      try {
+        const response = await fetch('/share/update', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-XSRFToken': getXSRFToken()
+          },
+          body: JSON.stringify({
+            share_id: currentShareData.id,
+            paths: newPaths
+          })
+        });
 
-        try {
-          const response = await fetch('/share/update', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-XSRFToken': getXSRFToken()
-            },
-            body: JSON.stringify({
-              share_id: currentShareData.id,
-              remove_files: [filePath]
-            })
-          });
+        const data = await response.json();
 
-          const data = await response.json();
-
-          if (data.error) {
-            showDialog('Error removing file: ' + data.error, 'Error');
-          } else {
-            showDialog('File removed successfully!', 'Success');
-            // Refresh the modal
-            manageShare(currentShareData.id);
-          }
-        } catch (error) {
-          console.error('Error removing file:', error);
-          showDialog('Failed to remove file', 'Error');
+        if (data.error) {
+          showDialog('Error adding files: ' + data.error, 'Error');
+        } else {
+          showDialog('Files added successfully!', 'Success');
+          closeAddFilesModal();
+          // Refresh the share management modal
+          manageShare(currentShareData.id);
         }
+      } catch (error) {
+        console.error('Error adding files:', error);
+        showDialog('Failed to add files', 'Error');
+      }
+    }
+
+    async function removeFileFromShare(filePath) {
+      if (!currentShareData) return;
+
+      const confirmed = await showDialog(`Remove "${filePath}" from this share?`, 'Confirm Removal', { showCancel: true });
+      if (!confirmed) return;
+
+      try {
+        const response = await fetch('/share/update', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-XSRFToken': getXSRFToken()
+          },
+          body: JSON.stringify({
+            share_id: currentShareData.id,
+            remove_files: [filePath]
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+          showDialog('Error removing file: ' + data.error, 'Error');
+        } else {
+          showDialog('File removed successfully!', 'Success');
+          // Refresh the modal
+          manageShare(currentShareData.id);
+        }
+      } catch (error) {
+        console.error('Error removing file:', error);
+        showDialog('Failed to remove file', 'Error');
+      }
+    }
+
+    async function addUserToShare() {
+      if (!currentShareData) return;
+
+      const input = document.getElementById('newUserInput');
+      const username = input.value.trim();
+
+      if (!username) {
+        showDialog('Please enter a username', 'Input Required');
+        return;
       }
 
-      async function addUserToShare() {
-        if (!currentShareData) return;
-
-        const input = document.getElementById('newUserInput');
-        const username = input.value.trim();
-
-        if (!username) {
-          showDialog('Please enter a username', 'Input Required');
-          return;
-        }
-
-        if (currentShareData.allowed_users && currentShareData.allowed_users.includes(username)) {
-          showDialog('User already has access', 'User Exists');
-          return;
-        }
-
-        try {
-          const response = await fetch('/share/update', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-XSRFToken': getXSRFToken()
-            },
-            body: JSON.stringify({
-              share_id: currentShareData.id,
-              allowed_users: [...currentShareData.allowed_users, username]
-            })
-          });
-
-          const data = await response.json();
-
-          if (data.error) {
-            showDialog('Error adding user: ' + data.error, 'Error');
-          } else {
-            showDialog('User added successfully!', 'Success');
-            input.value = '';
-            // Refresh the modal
-            manageShare(currentShareData.id);
-          }
-        } catch (error) {
-          console.error('Error adding user:', error);
-          showDialog('Failed to add user', 'Error');
-        }
+      if (currentShareData.allowed_users && currentShareData.allowed_users.includes(username)) {
+        showDialog('User already has access', 'User Exists');
+        return;
       }
 
-      async function removeUserFromShare(username) {
-        if (!currentShareData) return;
+      try {
+        const response = await fetch('/share/update', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-XSRFToken': getXSRFToken()
+          },
+          body: JSON.stringify({
+            share_id: currentShareData.id,
+            allowed_users: [...currentShareData.allowed_users, username]
+          })
+        });
 
-        const confirmed = await showDialog(`Remove access for "${username}"?`, 'Confirm Removal', { showCancel: true });
-        if (!confirmed) return;
+        const data = await response.json();
 
-        const currentUsers = currentShareData.allowed_users || [];
-        const updatedUsers = currentUsers.filter(u => u !== username);
-
-        try {
-          const response = await fetch('/share/update', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-XSRFToken': getXSRFToken()
-            },
-            body: JSON.stringify({
-              share_id: currentShareData.id,
-              allowed_users: updatedUsers
-            })
-          });
-
-          const data = await response.json();
-
-          if (data.error) {
-            showDialog('Error removing user: ' + data.error, 'Error');
-          } else {
-            showDialog('User access removed successfully!', 'Success');
-            // Refresh the modal
-            manageShare(currentShareData.id);
-          }
-        } catch (error) {
-          console.error('Error removing user:', error);
-          showDialog('Failed to remove user', 'Error');
+        if (data.error) {
+          showDialog('Error adding user: ' + data.error, 'Error');
+        } else {
+          showDialog('User added successfully!', 'Success');
+          input.value = '';
+          // Refresh the modal
+          manageShare(currentShareData.id);
         }
+      } catch (error) {
+        console.error('Error adding user:', error);
+        showDialog('Failed to add user', 'Error');
       }
+    }
 
-      // Close modal when clicking outside
-      document.addEventListener('click', function(event) {
-        const modal = document.getElementById('shareManagementModal');
-        if (event.target === modal) {
-          closeShareManagementModal();
-        }
-      });
+    async function removeUserFromShare(username) {
+      if (!currentShareData) return;
 
-      // Close modal with Escape key
-      document.addEventListener('keydown', function(event) {
-        if (event.key === 'Escape') {
-          closeShareManagementModal();
+      const confirmed = await showDialog(`Remove access for "${username}"?`, 'Confirm Removal', { showCancel: true });
+      if (!confirmed) return;
+
+      const currentUsers = currentShareData.allowed_users || [];
+      const updatedUsers = currentUsers.filter(u => u !== username);
+
+      try {
+        const response = await fetch('/share/update', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-XSRFToken': getXSRFToken()
+          },
+          body: JSON.stringify({
+            share_id: currentShareData.id,
+            allowed_users: updatedUsers
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+          showDialog('Error removing user: ' + data.error, 'Error');
+        } else {
+          showDialog('User access removed successfully!', 'Success');
+          // Refresh the modal
+          manageShare(currentShareData.id);
         }
-      });
+      } catch (error) {
+        console.error('Error removing user:', error);
+        showDialog('Failed to remove user', 'Error');
+      }
+    }
+
+    // Close modal when clicking outside
+    document.addEventListener('click', function (event) {
+      const modal = document.getElementById('shareManagementModal');
+      if (event.target === modal) {
+        closeShareManagementModal();
+      }
+    });
+
+    // Close modal with Escape key
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') {
+        closeShareManagementModal();
+      }
+    });
 
     // Share access editing functions
     async function editShareAccess(shareId, currentAllowedUsers) {
@@ -2724,7 +2749,7 @@
     function toggleUserSelectionPanel() {
       const accessType = document.querySelector('input[name="accessType"]:checked').value;
       const userSelection = document.getElementById('userSelection');
-      
+
       if (accessType === 'restricted') {
         userSelection.style.display = 'block';
         // Clear previous search and selections
@@ -2741,7 +2766,7 @@
     function toggleShareTypeInfo() {
       const shareType = document.querySelector('input[name="shareType"]:checked').value;
       const shareTypeInfo = document.getElementById('shareTypeInfo');
-      
+
       if (shareType === 'static') {
         shareTypeInfo.innerHTML = '<strong>Static Share:</strong> Creates a snapshot of all files at the time of sharing. New files added later won\'t appear in the share.';
         shareTypeInfo.style.background = '#e8f4fd';
@@ -2756,7 +2781,7 @@
     function toggleTokenInfo() {
       const disableToken = document.getElementById('disableToken').checked;
       const tokenInfo = document.getElementById('tokenInfo');
-      
+
       if (disableToken) {
         tokenInfo.innerHTML = '<strong>🌐 Public Access:</strong> Anyone with the link can access the shared files without entering a token.';
         tokenInfo.style.background = '#fff3cd';
@@ -2770,19 +2795,19 @@
 
     function setupUserSearch() {
       const searchInput = document.getElementById('userSearchInput');
-      searchInput.addEventListener('input', function() {
+      searchInput.addEventListener('input', function () {
         const query = this.value.trim();
-        
+
         // Clear previous timeout
         if (searchTimeout) {
           clearTimeout(searchTimeout);
         }
-        
+
         if (query.length < 1) {
           document.getElementById('userList').innerHTML = '<em style="color: #666;">Type to search for users...</em>';
           return;
         }
-        
+
         // Debounce search requests
         searchTimeout = setTimeout(() => {
           searchUsers(query);
@@ -2807,7 +2832,7 @@
 
     function renderUserList(users) {
       const userList = document.getElementById('userList');
-      
+
       if (users.length === 0) {
         userList.innerHTML = '<em style="color: #666;">No users found</em>';
         return;
@@ -2840,7 +2865,7 @@
 
     function updateSelectedUsersDisplay() {
       const selectedUsersList = document.getElementById('selectedUsersList');
-      
+
       if (selectedUsers.size === 0) {
         selectedUsersList.innerHTML = '<em style="color: #999; font-size: 11px;">No users selected</em>';
         return;
@@ -2854,7 +2879,7 @@
     function removeSelectedUser(username) {
       selectedUsers.delete(username);
       updateSelectedUsersDisplay();
-      
+
       // Update checkbox in search results if visible
       const checkbox = document.querySelector(`input[value="${username}"]`);
       if (checkbox) {
@@ -2874,13 +2899,13 @@
         const shareType = document.querySelector('input[name="shareType"]:checked').value;
         const allowedUsers = accessType === 'restricted' ? Array.from(selectedUsers) : [];
         const disableToken = document.getElementById('disableToken').checked;
-        
+
         // Get allow and avoid lists
         const allowListText = document.getElementById('allowList').value.trim();
         const avoidListText = document.getElementById('avoidList').value.trim();
         const allowList = allowListText ? allowListText.split(',').map(s => s.trim()).filter(s => s) : [];
         const avoidList = avoidListText ? avoidListText.split(',').map(s => s.trim()).filter(s => s) : [];
-        
+
         // Get expiry date (store as system time)
         const expiryDateInput = document.getElementById('expiryDate').value;
         const expiryDate = expiryDateInput ? new Date(expiryDateInput).toISOString().replace('Z', '') : null;
@@ -2917,21 +2942,21 @@
         });
 
         const data = await response.json();
-        
+
         if (data.error) {
           showDialog('Error: ' + data.error, 'Error');
         } else {
           const fullUrl = `${window.location.origin}${data.url}`;
-          const accessInfo = accessType === 'restricted' ? 
-            `<br><small>Access restricted to: ${allowedUsers.join(', ') || 'No users selected'}</small>` : 
+          const accessInfo = accessType === 'restricted' ?
+            `<br><small>Access restricted to: ${allowedUsers.join(', ') || 'No users selected'}</small>` :
             '<br><small>Public access (anyone with link)</small>';
-          const shareTypeInfo = shareType === 'dynamic' ? 
-            '<br><small>🔄 Dynamic share (live folder)</small>' : 
+          const shareTypeInfo = shareType === 'dynamic' ?
+            '<br><small>🔄 Dynamic share (live folder)</small>' :
             '<br><small>📸 Static share (snapshot)</small>';
-          const tokenInfo = disableToken ? 
-            '<br><small>🌐 Public access (no token required)</small>' : 
+          const tokenInfo = disableToken ?
+            '<br><small>🌐 Public access (no token required)</small>' :
             '<br><small>🔐 Token required</small>';
-          
+
           elements.shareResult.style.display = 'block';
           elements.shareResult.innerHTML = `
             <strong>Share link created:</strong><br>
@@ -2948,10 +2973,10 @@
             </div>`}
             ${accessInfo}
           `;
-          
+
           // Clear selection after successful share creation
           clearSelection();
-          
+
           // Reload active shares
           loadActiveShares();
         }
@@ -2968,17 +2993,17 @@
       try {
         const response = await fetch('/share/list');
         const data = await response.json();
-        
-        
+
+
         // Convert shares object to array
         const sharesArray = data.shares ? Object.keys(data.shares).map(id => ({
           id: id,
           ...data.shares[id],
           count: data.shares[id].paths ? data.shares[id].paths.length : 0
         })) : [];
-        
+
         elements.activeSharesCount.textContent = sharesArray.length;
-        
+
         if (sharesArray.length === 0) {
           elements.sharesTableBody.innerHTML = '<tr><td colspan="6" class="loading">No active shares</td></tr>';
           return;
@@ -2987,10 +3012,10 @@
         elements.sharesTableBody.innerHTML = '';
         sharesArray.forEach(share => {
           const row = document.createElement('tr');
-          const accessInfo = share.allowed_users ? 
-            `Restricted (${share.allowed_users.length} user${share.allowed_users.length !== 1 ? 's' : ''})` : 
+          const accessInfo = share.allowed_users ?
+            `Restricted (${share.allowed_users.length} user${share.allowed_users.length !== 1 ? 's' : ''})` :
             'Public';
-          
+
           row.innerHTML = `
             <td><code>${share.id}</code></td>
             <td>${share.count} file${share.count !== 1 ? 's' : ''}</td>
@@ -3042,7 +3067,7 @@
       document.body.appendChild(textArea);
       textArea.focus();
       textArea.select();
-      
+
       try {
         const successful = document.execCommand('copy');
         if (successful && btn) {
@@ -3079,7 +3104,7 @@
           },
           body: formData
         });
-        
+
         loadActiveShares();
       } catch (error) {
         console.error('Error revoking share:', error);
@@ -3095,28 +3120,28 @@
     async function showShareDetails(filePath) {
       const popup = document.getElementById('sharePopup');
       const content = document.getElementById('sharePopupContent');
-      
+
       // Show popup with loading state
       popup.classList.add('show');
       content.innerHTML = '<div class="loading">Loading share details...</div>';
-      
+
       try {
         const response = await fetch(`/api/share/details?path=${encodeURIComponent(filePath)}`);
         const data = await response.json();
-        
+
         if (data.error) {
           content.innerHTML = `<div style="color: red; text-align: center; padding: 20px;">Error: ${data.error}</div>`;
           return;
         }
-        
+
         if (data.shares.length === 0) {
           content.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">This file is not currently shared.</div>';
           return;
         }
-        
+
         // Update popup title with filename
         document.querySelector('.popup-title').textContent = `Share Details - ${filePath.split('/').pop()}`;
-        
+
         // Render share details
         content.innerHTML = data.shares.map(share => `
           <div class="share-item">
@@ -3147,7 +3172,7 @@
             </div>
           </div>
         `).join('');
-        
+
       } catch (error) {
         console.error('Error loading share details:', error);
         content.innerHTML = '<div style="color: red; text-align: center; padding: 20px;">Failed to load share details</div>';
@@ -3160,7 +3185,7 @@
     }
 
     // Close popup when clicking outside
-    document.addEventListener('click', function(event) {
+    document.addEventListener('click', function (event) {
       const popup = document.getElementById('sharePopup');
       if (event.target === popup) {
         closeSharePopup();
@@ -3168,7 +3193,7 @@
     });
 
     // Close popup with Escape key
-    document.addEventListener('keydown', function(event) {
+    document.addEventListener('keydown', function (event) {
       if (event.key === 'Escape') {
         closeSharePopup();
       }
@@ -3218,10 +3243,22 @@
       loadDirectory();
       loadActiveShares();
       setupUserSearch();
-      
+
       // Refresh active shares every 30 seconds
       setInterval(loadActiveShares, 30000);
+
+      // Event listeners for CSP compliance
+      document.getElementById('cloudBrowserClose')?.addEventListener('click', closeCloudBrowser);
+      document.getElementById('sharePopupClose')?.addEventListener('click', closeSharePopup);
+      document.getElementById('shareManagementClose')?.addEventListener('click', closeShareManagementModal);
+      document.getElementById('shareManagementCancel')?.addEventListener('click', closeShareManagementModal);
+      document.getElementById('updateShareBtn')?.addEventListener('click', updateShare);
+      document.getElementById('addFilesClose')?.addEventListener('click', closeAddFilesModal);
+      document.getElementById('navigateUpBtn')?.addEventListener('click', navigateUp);
+      document.getElementById('addSelectedFilesBtn')?.addEventListener('click', addSelectedFilesToShare);
+      document.getElementById('addFilesCancel')?.addEventListener('click', closeAddFilesModal);
     });
   </script>
 </body>
+
 </html>

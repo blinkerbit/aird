@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -242,14 +243,33 @@
             animation: pulse 2s infinite;
         }
 
-        .status-indicator.waiting .status-dot { background: #f59e0b; }
-        .status-indicator.connected .status-dot { background: #22c55e; }
-        .status-indicator.transferring .status-dot { background: #3b82f6; }
-        .status-indicator.error .status-dot { background: #ef4444; animation: none; }
+        .status-indicator.waiting .status-dot {
+            background: #f59e0b;
+        }
+
+        .status-indicator.connected .status-dot {
+            background: #22c55e;
+        }
+
+        .status-indicator.transferring .status-dot {
+            background: #3b82f6;
+        }
+
+        .status-indicator.error .status-dot {
+            background: #ef4444;
+            animation: none;
+        }
 
         @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
         }
 
         .file-info {
@@ -328,7 +348,8 @@
             background: white;
         }
 
-        .drop-zone:hover, .drop-zone.dragover {
+        .drop-zone:hover,
+        .drop-zone.dragover {
             border-color: #3b82f6;
             background: #eff6ff;
         }
@@ -354,9 +375,17 @@
             border-bottom: 1px solid #334155;
         }
 
-        .log-entry.error { color: #f87171; }
-        .log-entry.success { color: #4ade80; }
-        .log-entry.info { color: #60a5fa; }
+        .log-entry.error {
+            color: #f87171;
+        }
+
+        .log-entry.success {
+            color: #4ade80;
+        }
+
+        .log-entry.info {
+            color: #60a5fa;
+        }
 
         .received-file-item {
             display: flex;
@@ -429,7 +458,7 @@
             background: #f0f0f0;
             border-color: #ccc;
             transform: translateY(-1px);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
         .received-file-btn svg {
@@ -506,7 +535,7 @@
 
         .qr-code-container canvas {
             border: 4px solid white;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
             border-radius: 4px;
         }
 
@@ -542,39 +571,40 @@
             .mode-selector {
                 flex-direction: column;
             }
-            
+
             .share-code {
                 font-size: 20px;
                 letter-spacing: 2px;
             }
-            
+
             .received-file-item {
                 flex-wrap: wrap;
                 padding: 10px;
             }
-            
+
             .received-file-details {
                 flex: 1 1 calc(100% - 50px);
                 order: 1;
             }
-            
+
             .received-file-actions {
                 width: 100%;
                 order: 3;
                 margin-top: 10px;
                 justify-content: flex-end;
             }
-            
+
             .received-file-checkbox {
                 order: 0;
             }
-            
+
             .received-file-icon {
                 order: 0;
             }
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
@@ -600,16 +630,19 @@
             <h2>Select Transfer Mode</h2>
             {% if is_anonymous %}
             <div style="background: #fef3c7; color: #92400e; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
-                ⚠️ You are browsing as a guest. You can receive files but need to <a href="/login" style="color: #92400e; font-weight: bold;">log in</a> to share files.
+                ⚠️ You are browsing as a guest. You can receive files but need to <a href="/login"
+                    style="color: #92400e; font-weight: bold;">log in</a> to share files.
             </div>
             {% end %}
             <div class="mode-selector">
-                <div class="mode-btn {% if is_anonymous %}disabled{% end %}" id="send-mode-btn" onclick="{% if not is_anonymous %}selectMode('send'){% end %}" {% if is_anonymous %}style="opacity: 0.5; cursor: not-allowed;"{% end %}>
+                <div class="mode-btn {% if is_anonymous %}disabled{% end %}" id="send-mode-btn" {% if is_anonymous
+                    %}style="opacity: 0.5; cursor: not-allowed;" {% end %}>
                     <div class="mode-icon">📤</div>
                     <h3>Send File</h3>
-                    <p>{% if is_anonymous %}Login required to share files{% else %}Share a file with another user{% end %}</p>
+                    <p>{% if is_anonymous %}Login required to share files{% else %}Share a file with another user{% end
+                        %}</p>
                 </div>
-                <div class="mode-btn" id="receive-mode-btn" onclick="selectMode('receive')">
+                <div class="mode-btn" id="receive-mode-btn">
                     <div class="mode-icon">📥</div>
                     <h3>Receive File</h3>
                     <p>Enter a share code to receive a file</p>
@@ -620,7 +653,7 @@
         <!-- Send Mode Section -->
         <div class="section hidden" id="send-section">
             <h2>📤 Send File</h2>
-            
+
             <div id="send-status" class="status-indicator waiting">
                 <div class="status-dot"></div>
                 <span id="send-status-text">Select a file to share</span>
@@ -628,10 +661,11 @@
 
             <!-- File Selection -->
             <div id="file-selection">
-                <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+                <div class="drop-zone" id="drop-zone">
                     <div class="drop-zone-icon">📁</div>
                     <p><strong>Drop file here</strong> or click to select</p>
-                    <p style="font-size: 12px; color: #6b7280; margin-top: 10px;">Files transfer directly to the recipient - never stored on server</p>
+                    <p style="font-size: 12px; color: #6b7280; margin-top: 10px;">Files transfer directly to the
+                        recipient - never stored on server</p>
                 </div>
                 <input type="file" id="file-input" style="display: none;">
             </div>
@@ -658,17 +692,17 @@
                     <div class="share-code" id="share-code">------</div>
                     <div class="share-code-hint" id="share-code-hint">Share this code with the recipient</div>
                 </div>
-                
+
                 <!-- QR Code Display -->
                 <div class="qr-code-container" id="qr-code-container">
                     <canvas id="qr-code-canvas"></canvas>
                     <div class="qr-code-label">Scan to receive file</div>
                 </div>
-                
+
                 <div style="text-align: center; margin-top: 10px;">
-                    <button class="btn btn-secondary" onclick="copyShareCode()">📋 Copy Code</button>
-                    <button class="btn btn-secondary" onclick="copyShareLink()">🔗 Copy Link</button>
-                    <button class="qr-toggle-btn" onclick="toggleQRCode()" id="qr-toggle-btn">Hide QR</button>
+                    <button class="btn btn-secondary" id="copy-code-btn">📋 Copy Code</button>
+                    <button class="btn btn-secondary" id="copy-link-btn">🔗 Copy Link</button>
+                    <button class="qr-toggle-btn" id="qr-toggle-btn">Hide QR</button>
                 </div>
             </div>
 
@@ -695,15 +729,15 @@
             </div>
 
             <div style="margin-top: 15px;">
-                <button class="btn" id="create-room-btn" onclick="createRoom()" disabled>Create Share Link</button>
-                <button class="btn btn-secondary" onclick="cancelSend()">Cancel</button>
+                <button class="btn" id="create-room-btn" disabled>Create Share Link</button>
+                <button class="btn btn-secondary" id="cancel-send-btn">Cancel</button>
             </div>
         </div>
 
         <!-- Receive Mode Section -->
         <div class="section hidden" id="receive-section">
             <h2>📥 Receive File</h2>
-            
+
             <div id="receive-status" class="status-indicator waiting">
                 <div class="status-dot"></div>
                 <span id="receive-status-text">Enter share code to connect</span>
@@ -711,9 +745,9 @@
 
             <div class="form-group">
                 <label for="room-code-input">Share Code</label>
-                <input type="text" id="room-code-input" placeholder="Enter the share code" 
-                       style="text-transform: uppercase; letter-spacing: 2px; text-align: center; font-size: 18px;"
-                       maxlength="20">
+                <input type="text" id="room-code-input" placeholder="Enter the share code"
+                    style="text-transform: uppercase; letter-spacing: 2px; text-align: center; font-size: 18px;"
+                    maxlength="20">
             </div>
 
             <!-- Incoming File Info -->
@@ -746,27 +780,43 @@
             <!-- Received Files Section -->
             <div id="received-files-section" class="hidden" style="margin-top: 20px;">
                 <h3 style="font-size: 14px; margin-bottom: 10px; color: #166534;">
-                    <svg viewBox="0 0 24 24" style="width: 16px; height: 16px; stroke: #16a34a; stroke-width: 2; fill: none; vertical-align: middle; margin-right: 6px;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    <svg viewBox="0 0 24 24"
+                        style="width: 16px; height: 16px; stroke: #16a34a; stroke-width: 2; fill: none; vertical-align: middle; margin-right: 6px;">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                        <polyline points="22 4 12 14.01 9 11.01" />
+                    </svg>
                     Files Ready to Download
                 </h3>
-                <div id="received-files-list" style="background: white; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden;">
+                <div id="received-files-list"
+                    style="background: white; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden;">
                     <!-- Files will be added here dynamically -->
                 </div>
                 <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
-                    <button class="btn btn-icon-success" id="download-all-btn" onclick="downloadAllFiles()" style="display: inline-flex; align-items: center; gap: 8px;">
-                        <svg viewBox="0 0 24 24" style="width: 16px; height: 16px; stroke: currentColor; stroke-width: 2; fill: none;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <button class="btn btn-icon-success" id="download-all-btn"
+                        style="display: inline-flex; align-items: center; gap: 8px;">
+                        <svg viewBox="0 0 24 24"
+                            style="width: 16px; height: 16px; stroke: currentColor; stroke-width: 2; fill: none;">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
                         Download Selected
                     </button>
-                    <button class="btn btn-secondary" onclick="clearReceivedFiles()" style="display: inline-flex; align-items: center; gap: 8px;">
-                        <svg viewBox="0 0 24 24" style="width: 16px; height: 16px; stroke: currentColor; stroke-width: 2; fill: none;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    <button class="btn btn-secondary" id="clear-files-btn"
+                        style="display: inline-flex; align-items: center; gap: 8px;">
+                        <svg viewBox="0 0 24 24"
+                            style="width: 16px; height: 16px; stroke: currentColor; stroke-width: 2; fill: none;">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
                         Clear All
                     </button>
                 </div>
             </div>
 
             <div style="margin-top: 15px;">
-                <button class="btn" id="join-room-btn" onclick="joinRoom()">Connect</button>
-                <button class="btn btn-secondary" onclick="cancelReceive()">Cancel</button>
+                <button class="btn" id="join-room-btn">Connect</button>
+                <button class="btn btn-secondary" id="cancel-receive-btn">Cancel</button>
             </div>
         </div>
 
@@ -779,14 +829,16 @@
         </div>
     </div>
 
-    <script>
+    <script nonce="{{ csp_nonce }}">
+        const isAnonymous = {{ 'true' if is_anonymous else 'false' }};
+
         // =====================================================================
         // QR Code Generator (Lightweight inline implementation)
         // =====================================================================
-        const QRCode = (function() {
+        const QRCode = (function () {
             // QR Code Generator based on qr.js
             const EC_LEVEL = 1; // L=1, M=0, Q=3, H=2
-            
+
             function generateQR(text, typeNumber) {
                 typeNumber = typeNumber || 4;
                 const qr = createQRCode(typeNumber, EC_LEVEL);
@@ -794,19 +846,19 @@
                 qr.make();
                 return qr;
             }
-            
+
             function createQRCode(typeNumber, errorCorrectLevel) {
                 const PAD0 = 0xEC, PAD1 = 0x11;
                 const modules = [];
                 let moduleCount = 0;
                 let dataCache = null;
                 const dataList = [];
-                
+
                 const qr = {
-                    addData: function(data) {
+                    addData: function (data) {
                         dataList.push({ mode: 4, data: data }); // Mode 4 = byte mode
                     },
-                    make: function() {
+                    make: function () {
                         moduleCount = typeNumber * 4 + 17;
                         for (let i = 0; i < moduleCount; i++) {
                             modules[i] = [];
@@ -824,14 +876,14 @@
                         dataCache = createData(typeNumber, errorCorrectLevel, dataList);
                         mapData(dataCache, 0);
                     },
-                    isDark: function(row, col) {
+                    isDark: function (row, col) {
                         return modules[row][col];
                     },
-                    getModuleCount: function() {
+                    getModuleCount: function () {
                         return moduleCount;
                     }
                 };
-                
+
                 function setupPositionProbePattern(row, col) {
                     for (let r = -1; r <= 7; r++) {
                         if (row + r <= -1 || moduleCount <= row + r) continue;
@@ -847,7 +899,7 @@
                         }
                     }
                 }
-                
+
                 function setupPositionAdjustPattern() {
                     const pos = getPatternPosition(typeNumber);
                     for (let i = 0; i < pos.length; i++) {
@@ -866,7 +918,7 @@
                         }
                     }
                 }
-                
+
                 function setupTimingPattern() {
                     for (let i = 8; i < moduleCount - 8; i++) {
                         if (modules[i][6] !== null) continue;
@@ -874,7 +926,7 @@
                         modules[6][i] = (i % 2 === 0);
                     }
                 }
-                
+
                 function setupTypeInfo(test, maskPattern) {
                     const data = (errorCorrectLevel << 3) | maskPattern;
                     const bits = getBCHTypeInfo(data);
@@ -889,7 +941,7 @@
                     }
                     modules[moduleCount - 8][8] = !test;
                 }
-                
+
                 function setupTypeNumber(test) {
                     const bits = getBCHTypeNumber(typeNumber);
                     for (let i = 0; i < 18; i++) {
@@ -898,7 +950,7 @@
                         modules[i % 3 + moduleCount - 8 - 3][Math.floor(i / 3)] = mod;
                     }
                 }
-                
+
                 function mapData(data, maskPattern) {
                     let inc = -1, row = moduleCount - 1, bitIndex = 7, byteIndex = 0;
                     for (let col = moduleCount - 1; col > 0; col -= 2) {
@@ -922,10 +974,10 @@
                         }
                     }
                 }
-                
+
                 return qr;
             }
-            
+
             function getPatternPosition(typeNumber) {
                 const PATTERN_POSITION = [
                     [], [6, 18], [6, 22], [6, 26], [6, 30], [6, 34],
@@ -936,7 +988,7 @@
                 ];
                 return PATTERN_POSITION[typeNumber - 1] || [];
             }
-            
+
             function getBCHTypeInfo(data) {
                 let d = data << 10;
                 while (getBCHDigit(d) - getBCHDigit(1335) >= 0) {
@@ -944,7 +996,7 @@
                 }
                 return ((data << 10) | d) ^ 21522;
             }
-            
+
             function getBCHTypeNumber(data) {
                 let d = data << 12;
                 while (getBCHDigit(d) - getBCHDigit(7973) >= 0) {
@@ -952,13 +1004,13 @@
                 }
                 return (data << 12) | d;
             }
-            
+
             function getBCHDigit(data) {
                 let digit = 0;
                 while (data !== 0) { digit++; data >>>= 1; }
                 return digit;
             }
-            
+
             function getMask(maskPattern, i, j) {
                 switch (maskPattern) {
                     case 0: return (i + j) % 2 === 0;
@@ -972,11 +1024,11 @@
                     default: return false;
                 }
             }
-            
+
             function createData(typeNumber, errorCorrectLevel, dataList) {
                 const rsBlocks = getRSBlocks(typeNumber, errorCorrectLevel);
                 const buffer = createBitBuffer();
-                
+
                 for (let i = 0; i < dataList.length; i++) {
                     const data = dataList[i];
                     buffer.put(data.mode, 4);
@@ -985,46 +1037,46 @@
                         buffer.put(data.data.charCodeAt(j), 8);
                     }
                 }
-                
+
                 let totalDataCount = 0;
                 for (let i = 0; i < rsBlocks.length; i++) {
                     totalDataCount += rsBlocks[i].dataCount;
                 }
-                
+
                 if (buffer.getLengthInBits() > totalDataCount * 8) {
                     throw new Error('Data too long');
                 }
-                
+
                 if (buffer.getLengthInBits() + 4 <= totalDataCount * 8) {
                     buffer.put(0, 4);
                 }
-                
+
                 while (buffer.getLengthInBits() % 8 !== 0) {
                     buffer.putBit(false);
                 }
-                
+
                 while (true) {
                     if (buffer.getLengthInBits() >= totalDataCount * 8) break;
                     buffer.put(0xEC, 8);
                     if (buffer.getLengthInBits() >= totalDataCount * 8) break;
                     buffer.put(0x11, 8);
                 }
-                
+
                 return createBytes(buffer, rsBlocks);
             }
-            
+
             function createBitBuffer() {
                 const buffer = [];
                 let length = 0;
                 return {
-                    getBuffer: function() { return buffer; },
-                    getLengthInBits: function() { return length; },
-                    put: function(num, len) {
+                    getBuffer: function () { return buffer; },
+                    getLengthInBits: function () { return length; },
+                    put: function (num, len) {
                         for (let i = 0; i < len; i++) {
                             this.putBit(((num >>> (len - i - 1)) & 1) === 1);
                         }
                     },
-                    putBit: function(bit) {
+                    putBit: function (bit) {
                         const bufIndex = Math.floor(length / 8);
                         if (buffer.length <= bufIndex) buffer.push(0);
                         if (bit) buffer[bufIndex] |= (0x80 >>> (length % 8));
@@ -1032,7 +1084,7 @@
                     }
                 };
             }
-            
+
             function getRSBlocks(typeNumber, errorCorrectLevel) {
                 const RS_BLOCK_TABLE = [
                     [1, 26, 19], [1, 26, 16], [1, 26, 13], [1, 26, 9],
@@ -1055,18 +1107,18 @@
                 }
                 return list;
             }
-            
+
             function getLengthInBits(mode, type) {
                 if (type >= 1 && type < 10) return 8;
                 else if (type < 27) return 16;
                 else return 16;
             }
-            
+
             function createBytes(buffer, rsBlocks) {
                 let offset = 0;
                 let maxDcCount = 0, maxEcCount = 0;
                 const dcdata = [], ecdata = [];
-                
+
                 for (let r = 0; r < rsBlocks.length; r++) {
                     const dcCount = rsBlocks[r].dataCount;
                     const ecCount = rsBlocks[r].totalCount - dcCount;
@@ -1086,12 +1138,12 @@
                         ecdata[r][i] = (modIndex >= 0) ? modPoly.get(modIndex) : 0;
                     }
                 }
-                
+
                 let totalCodeCount = 0;
                 for (let i = 0; i < rsBlocks.length; i++) {
                     totalCodeCount += rsBlocks[i].totalCount;
                 }
-                
+
                 const data = [];
                 let index = 0;
                 for (let i = 0; i < maxDcCount; i++) {
@@ -1106,7 +1158,7 @@
                 }
                 return data;
             }
-            
+
             function createPolynomial(num, shift) {
                 let offset = 0;
                 while (offset < num.length && num[offset] === 0) offset++;
@@ -1115,9 +1167,9 @@
                     _num[i] = (i < num.length - offset) ? num[i + offset] : 0;
                 }
                 return {
-                    get: function(index) { return _num[index]; },
-                    getLength: function() { return _num.length; },
-                    mod: function(e) {
+                    get: function (index) { return _num[index]; },
+                    getLength: function () { return _num.length; },
+                    mod: function (e) {
                         if (_num.length - e.getLength() < 0) return this;
                         const ratio = glog(_num[0]) - glog(e.get(0));
                         const num = [];
@@ -1129,7 +1181,7 @@
                     }
                 };
             }
-            
+
             function getErrorCorrectPolynomial(errorCorrectLength) {
                 let a = createPolynomial([1], 0);
                 for (let i = 0; i < errorCorrectLength; i++) {
@@ -1137,7 +1189,7 @@
                 }
                 return a;
             }
-            
+
             function multiplyPolynomial(p1, p2) {
                 const num = [];
                 for (let i = 0; i < p1.getLength() + p2.getLength() - 1; i++) num[i] = 0;
@@ -1148,40 +1200,40 @@
                 }
                 return createPolynomial(num, 0);
             }
-            
+
             const EXP_TABLE = [], LOG_TABLE = [];
             for (let i = 0; i < 256; i++) {
                 EXP_TABLE[i] = (i < 8) ? (1 << i) : (EXP_TABLE[i - 4] ^ EXP_TABLE[i - 5] ^ EXP_TABLE[i - 6] ^ EXP_TABLE[i - 8]);
                 EXP_TABLE[i] &= 255;
             }
             for (let i = 0; i < 255; i++) LOG_TABLE[EXP_TABLE[i]] = i;
-            
+
             function glog(n) { return LOG_TABLE[n]; }
             function gexp(n) { return EXP_TABLE[n % 255]; }
-            
+
             return {
-                generate: function(text, canvas, cellSize, margin) {
+                generate: function (text, canvas, cellSize, margin) {
                     cellSize = cellSize || 4;
                     margin = margin || cellSize * 2;
-                    
+
                     // Auto-detect type number based on content length
                     let typeNumber = 4;
                     if (text.length > 50) typeNumber = 6;
                     if (text.length > 100) typeNumber = 8;
-                    
+
                     try {
                         const qr = generateQR(text, typeNumber);
                         const moduleCount = qr.getModuleCount();
                         const size = moduleCount * cellSize + margin * 2;
-                        
+
                         canvas.width = size;
                         canvas.height = size;
-                        
+
                         const ctx = canvas.getContext('2d');
                         ctx.fillStyle = '#ffffff';
                         ctx.fillRect(0, 0, size, size);
                         ctx.fillStyle = '#000000';
-                        
+
                         for (let row = 0; row < moduleCount; row++) {
                             for (let col = 0; col < moduleCount; col++) {
                                 if (qr.isDark(row, col)) {
@@ -1202,7 +1254,7 @@
                 }
             };
         })();
-        
+
         // =====================================================================
         // P2P Transfer Application
         // =====================================================================
@@ -1228,7 +1280,7 @@
         let expectedFileInfo = null;
         let transferStartTime = null;
         let isAnonymous = {{ "true" if is_anonymous else "false" }};
-        let pendingRoomId = {% if room_id %}"{{ room_id }}"{% else %}null{% end %};
+        let pendingRoomId = {% if room_id %}"{{ room_id }}"{% else %} null{% end %};
         let receivedFiles = []; // Array to store received files for manual download
 
         // Initialize
@@ -1236,7 +1288,7 @@
             initWebSocket();
             setupFileInput();
             setupDropZone();
-            
+
             // Check for room ID in URL or if anonymous user with pending room
             const urlParams = new URLSearchParams(window.location.search);
             const roomId = urlParams.get('room');
@@ -1250,25 +1302,25 @@
         function initWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             let wsUrl = `${protocol}//${window.location.host}/p2p/signal`;
-            
+
             // For anonymous users, pass the room ID in the WebSocket URL
             if (isAnonymous && pendingRoomId) {
                 wsUrl += `?room=${encodeURIComponent(pendingRoomId)}`;
             }
-            
+
             log(`Connecting to ${wsUrl}...`, 'info');
-            
+
             try {
                 ws = new WebSocket(wsUrl);
             } catch (e) {
                 log(`Failed to create WebSocket: ${e.message}`, 'error');
                 return;
             }
-            
+
             ws.onopen = () => {
                 log('Connected to signaling server', 'success');
             };
-            
+
             ws.onclose = (event) => {
                 log(`Disconnected from signaling server (code: ${event.code}, reason: ${event.reason || 'none'})`, 'error');
                 // Only reconnect if not a deliberate close or auth failure
@@ -1278,12 +1330,12 @@
                     log('This share link requires login. Please log in to receive the file.', 'error');
                 }
             };
-            
+
             ws.onerror = (error) => {
                 log('WebSocket connection error - check if server is running', 'error');
                 console.error('WebSocket error:', error);
             };
-            
+
             ws.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
@@ -1300,7 +1352,7 @@
                     myPeerId = data.peer_id;
                     isAnonymous = data.is_anonymous || false;
                     log(`Connected as ${data.username}${data.is_anonymous ? ' (guest)' : ''} (${data.peer_id.substring(0, 8)}...)`, 'info');
-                    
+
                     // Auto-join room for anonymous users
                     if (data.pending_room && isAnonymous) {
                         log(`Auto-joining room ${data.pending_room}...`, 'info');
@@ -1310,7 +1362,7 @@
                         }, 500);
                     }
                     break;
-                    
+
                 case 'room_created':
                     currentRoomId = data.room_id;
                     document.getElementById('share-code').textContent = data.room_id;
@@ -1323,14 +1375,14 @@
                     } else {
                         anonHint.innerHTML = 'Share this code with the recipient<br><span style="color: #94a3b8;">Recipients must be logged in</span>';
                     }
-                    
+
                     // Generate QR code for the share link
                     generateShareQRCode(data.room_id);
 
                     updateSendStatus('waiting', 'Waiting for recipient to connect...');
                     log(`Room created: ${data.room_id}${data.allow_anonymous ? ' (anonymous access enabled)' : ''}`, 'success');
                     break;
-                    
+
                 case 'room_joined':
                     currentRoomId = data.room_id;
                     if (data.file_info) {
@@ -1340,7 +1392,7 @@
                     updateReceiveStatus('waiting', 'Connected! Waiting for sender...');
                     log(`Joined room: ${data.room_id}`, 'success');
                     break;
-                    
+
                 case 'peer_joined':
                     log(`Peer joined: ${data.username}`, 'success');
                     updateSendStatus('connected', `Connected to ${data.username}`);
@@ -1349,31 +1401,31 @@
                         createPeerConnection(true);
                     }
                     break;
-                    
+
                 case 'peer_left':
                     log(`Peer left: ${data.username}`, 'info');
                     closePeerConnection();
                     break;
-                    
+
                 case 'offer':
                     log('Received connection offer', 'info');
                     handleOffer(data.sdp);
                     break;
-                    
+
                 case 'answer':
                     log('Received connection answer', 'info');
                     handleAnswer(data.sdp);
                     break;
-                    
+
                 case 'ice_candidate':
                     handleIceCandidate(data.candidate);
                     break;
-                    
+
                 case 'file_info_updated':
                     expectedFileInfo = data.file_info;
                     showReceiveFileInfo(data.file_info);
                     break;
-                    
+
                 case 'error':
                     log(`Error: ${data.message}`, 'error');
                     // Re-enable buttons on error
@@ -1386,7 +1438,7 @@
         function selectMode(mode) {
             currentMode = mode;
             document.getElementById('mode-section').classList.add('hidden');
-            
+
             if (mode === 'send') {
                 document.getElementById('send-section').classList.remove('hidden');
                 document.getElementById('receive-section').classList.add('hidden');
@@ -1410,16 +1462,16 @@
 
         function setupDropZone() {
             const dropZone = document.getElementById('drop-zone');
-            
+
             dropZone.addEventListener('dragover', (e) => {
                 e.preventDefault();
                 dropZone.classList.add('dragover');
             });
-            
+
             dropZone.addEventListener('dragleave', () => {
                 dropZone.classList.remove('dragover');
             });
-            
+
             dropZone.addEventListener('drop', (e) => {
                 e.preventDefault();
                 dropZone.classList.remove('dragover');
@@ -1453,29 +1505,29 @@
                 log('No file selected', 'error');
                 return;
             }
-            
+
             if (!ws || ws.readyState !== WebSocket.OPEN) {
                 log('Not connected to server. Reconnecting...', 'error');
                 initWebSocket();
                 setTimeout(createRoom, 1000);
                 return;
             }
-            
+
             const fileInfo = {
                 name: selectedFile.name,
                 size: selectedFile.size,
                 type: selectedFile.type
             };
-            
+
             const allowAnonymous = document.getElementById('allow-anonymous').checked;
-            
+
             log(`Creating share room${allowAnonymous ? ' (anonymous access enabled)' : ''}...`, 'info');
             ws.send(JSON.stringify({
                 type: 'create_room',
                 file_info: fileInfo,
                 allow_anonymous: allowAnonymous
             }));
-            
+
             document.getElementById('create-room-btn').disabled = true;
         }
 
@@ -1485,18 +1537,18 @@
                 log('Please enter a share code', 'error');
                 return;
             }
-            
+
             ws.send(JSON.stringify({
                 type: 'join_room',
                 room_id: roomCode
             }));
-            
+
             document.getElementById('join-room-btn').disabled = true;
         }
 
         function createPeerConnection(isInitiator) {
             peerConnection = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-            
+
             peerConnection.onicecandidate = (event) => {
                 if (event.candidate) {
                     ws.send(JSON.stringify({
@@ -1505,7 +1557,7 @@
                     }));
                 }
             };
-            
+
             peerConnection.onconnectionstatechange = () => {
                 log(`Connection state: ${peerConnection.connectionState}`, 'info');
                 if (peerConnection.connectionState === 'connected') {
@@ -1516,13 +1568,13 @@
                     }
                 }
             };
-            
+
             if (isInitiator) {
                 dataChannel = peerConnection.createDataChannel('fileTransfer', {
                     ordered: true
                 });
                 setupDataChannel();
-                
+
                 peerConnection.createOffer()
                     .then(offer => peerConnection.setLocalDescription(offer))
                     .then(() => {
@@ -1542,22 +1594,22 @@
 
         function setupDataChannel() {
             dataChannel.binaryType = 'arraybuffer';
-            
+
             dataChannel.onopen = () => {
                 log('Data channel opened', 'success');
                 if (currentMode === 'send') {
                     startFileSend();
                 }
             };
-            
+
             dataChannel.onclose = () => {
                 log('Data channel closed', 'info');
             };
-            
+
             dataChannel.onerror = (error) => {
                 log(`Data channel error: ${error}`, 'error');
             };
-            
+
             dataChannel.onmessage = (event) => {
                 if (currentMode === 'receive') {
                     handleReceivedData(event.data);
@@ -1567,11 +1619,11 @@
 
         async function handleOffer(sdp) {
             createPeerConnection(false);
-            
+
             await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
             const answer = await peerConnection.createAnswer();
             await peerConnection.setLocalDescription(answer);
-            
+
             ws.send(JSON.stringify({
                 type: 'answer',
                 sdp: peerConnection.localDescription
@@ -1591,33 +1643,33 @@
 
         async function startFileSend() {
             if (!selectedFile || !dataChannel) return;
-            
+
             updateSendStatus('transferring', 'Sending file...');
             document.getElementById('send-progress').classList.remove('hidden');
-            
+
             transferStartTime = Date.now();
             const reader = new FileReader();
             let offset = 0;
-            
+
             const sendNextChunk = () => {
                 const slice = selectedFile.slice(offset, offset + CHUNK_SIZE);
                 reader.readAsArrayBuffer(slice);
             };
-            
+
             reader.onload = (e) => {
                 if (dataChannel.bufferedAmount > CHUNK_SIZE * 10) {
                     // Wait for buffer to drain
                     setTimeout(() => reader.onload(e), 50);
                     return;
                 }
-                
+
                 dataChannel.send(e.target.result);
                 offset += e.target.result.byteLength;
-                
+
                 // Update progress
                 const progress = (offset / selectedFile.size) * 100;
                 updateSendProgress(progress, offset, selectedFile.size);
-                
+
                 if (offset < selectedFile.size) {
                     sendNextChunk();
                 } else {
@@ -1627,7 +1679,7 @@
                     log(`File transfer complete: ${selectedFile.name}`, 'success');
                 }
             };
-            
+
             // Send file info first
             dataChannel.send(JSON.stringify({
                 type: 'start',
@@ -1635,7 +1687,7 @@
                 size: selectedFile.size,
                 mime: selectedFile.type
             }));
-            
+
             sendNextChunk();
         }
 
@@ -1661,7 +1713,7 @@
             } else {
                 receivedChunks.push(data);
                 receivedSize += data.byteLength;
-                
+
                 if (expectedFileInfo) {
                     const progress = (receivedSize / expectedFileInfo.size) * 100;
                     updateReceiveProgress(progress, receivedSize, expectedFileInfo.size);
@@ -1671,7 +1723,7 @@
 
         function completeReceive() {
             const blob = new Blob(receivedChunks, { type: expectedFileInfo.mime || 'application/octet-stream' });
-            
+
             // Store the file for manual download (don't auto-download)
             const fileEntry = {
                 id: Date.now() + '_' + Math.random().toString(36).substr(2, 9),
@@ -1682,36 +1734,36 @@
                 url: URL.createObjectURL(blob),
                 receivedAt: new Date()
             };
-            
+
             receivedFiles.push(fileEntry);
-            
+
             // Hide progress bar after completion
             document.getElementById('receive-progress').classList.add('hidden');
-            
+
             updateReceiveStatus('connected', `File received! ${receivedFiles.length} file(s) ready to download.`);
             log(`File received: ${expectedFileInfo.name} - Ready to download`, 'success');
-            
+
             // Show the received files section and render the file list
             renderReceivedFiles();
-            
+
             // Reset for next transfer
             receivedChunks = [];
             receivedSize = 0;
             expectedFileInfo = null;
         }
-        
+
         function renderReceivedFiles() {
             const container = document.getElementById('received-files-list');
             const section = document.getElementById('received-files-section');
-            
+
             if (receivedFiles.length === 0) {
                 section.classList.add('hidden');
                 container.innerHTML = '';
                 return;
             }
-            
+
             section.classList.remove('hidden');
-            
+
             container.innerHTML = receivedFiles.map(file => `
                 <div class="received-file-item" data-file-id="${file.id}">
                     <input type="checkbox" class="received-file-checkbox" checked data-file-id="${file.id}">
@@ -1723,18 +1775,18 @@
                         </div>
                     </div>
                     <div class="received-file-actions">
-                        <button class="received-file-btn download" onclick="downloadFile('${file.id}')" title="Download">
+                        <button class="received-file-btn download" data-action="download" data-file-id="${file.id}" title="Download">
                             <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                             Download
                         </button>
-                        <button class="received-file-btn remove" onclick="removeFile('${file.id}')" title="Remove">
+                        <button class="received-file-btn remove" data-action="remove" data-file-id="${file.id}" title="Remove">
                             <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                         </button>
                     </div>
                 </div>
             `).join('');
         }
-        
+
         // SVG icons for different file types
         const FILE_ICONS = {
             image: '<svg viewBox="0 0 24 24" style="color: #0891b2;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
@@ -1747,7 +1799,7 @@
             code: '<svg viewBox="0 0 24 24" style="color: #6366f1;"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
             default: '<svg viewBox="0 0 24 24" style="color: #6b7280;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
         };
-        
+
         function getFileIcon(mime) {
             if (!mime) return FILE_ICONS.default;
             if (mime.startsWith('image/')) return FILE_ICONS.image;
@@ -1760,50 +1812,50 @@
             if (mime.includes('text') || mime.includes('document') || mime.includes('word')) return FILE_ICONS.document;
             return FILE_ICONS.default;
         }
-        
+
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
-        
+
         function downloadFile(fileId) {
             const file = receivedFiles.find(f => f.id === fileId);
             if (!file) {
                 log('File not found', 'error');
                 return;
             }
-            
+
             const a = document.createElement('a');
             a.href = file.url;
             a.download = file.name;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
-            
+
             log(`Downloaded: ${file.name}`, 'success');
         }
-        
+
         function downloadAllFiles() {
             // Get only checked files
             const checkboxes = document.querySelectorAll('.received-file-checkbox:checked');
             const selectedIds = Array.from(checkboxes).map(cb => cb.dataset.fileId);
-            
+
             if (selectedIds.length === 0) {
                 log('No files selected for download', 'error');
                 return;
             }
-            
+
             // Download each selected file with a small delay to prevent browser blocking
             selectedIds.forEach((fileId, index) => {
                 setTimeout(() => {
                     downloadFile(fileId);
                 }, index * 300);
             });
-            
+
             log(`Downloading ${selectedIds.length} file(s)...`, 'info');
         }
-        
+
         function removeFile(fileId) {
             const fileIndex = receivedFiles.findIndex(f => f.id === fileId);
             if (fileIndex !== -1) {
@@ -1814,7 +1866,7 @@
                 log(`Removed: ${file.name}`, 'info');
             }
         }
-        
+
         function clearReceivedFiles() {
             // Clean up all blob URLs
             receivedFiles.forEach(file => {
@@ -1829,10 +1881,10 @@
             const fill = document.getElementById('send-progress-fill');
             fill.style.width = `${percent}%`;
             fill.textContent = `${Math.round(percent)}%`;
-            
-            document.getElementById('send-progress-transferred').textContent = 
+
+            document.getElementById('send-progress-transferred').textContent =
                 `${formatBytes(transferred)} / ${formatBytes(total)}`;
-            
+
             const elapsed = (Date.now() - transferStartTime) / 1000;
             const speed = transferred / elapsed;
             document.getElementById('send-progress-speed').textContent = `${formatBytes(speed)}/s`;
@@ -1842,10 +1894,10 @@
             const fill = document.getElementById('receive-progress-fill');
             fill.style.width = `${percent}%`;
             fill.textContent = `${Math.round(percent)}%`;
-            
-            document.getElementById('receive-progress-transferred').textContent = 
+
+            document.getElementById('receive-progress-transferred').textContent =
                 `${formatBytes(transferred)} / ${formatBytes(total)}`;
-            
+
             const elapsed = (Date.now() - transferStartTime) / 1000;
             const speed = transferred / elapsed;
             document.getElementById('receive-progress-speed').textContent = `${formatBytes(speed)}/s`;
@@ -1881,12 +1933,12 @@
             const link = `${window.location.origin}/p2p?room=${code}`;
             copyToClipboard(link, 'Share link copied to clipboard');
         }
-        
+
         function generateShareQRCode(roomId) {
             const link = `${window.location.origin}/p2p?room=${roomId}`;
             const canvas = document.getElementById('qr-code-canvas');
             const container = document.getElementById('qr-code-container');
-            
+
             if (canvas && QRCode) {
                 const success = QRCode.generate(link, canvas, 5, 20);
                 if (success) {
@@ -1898,12 +1950,12 @@
                 }
             }
         }
-        
+
         let qrCodeVisible = true;
         function toggleQRCode() {
             const container = document.getElementById('qr-code-container');
             const btn = document.getElementById('qr-toggle-btn');
-            
+
             if (qrCodeVisible) {
                 container.style.display = 'none';
                 btn.textContent = 'Show QR';
@@ -1914,7 +1966,7 @@
                 qrCodeVisible = true;
             }
         }
-        
+
         function copyToClipboard(text, successMessage) {
             // Try modern clipboard API first
             if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1928,7 +1980,7 @@
                 fallbackCopyToClipboard(text, successMessage);
             }
         }
-        
+
         function fallbackCopyToClipboard(text, successMessage) {
             // Fallback using textarea element
             const textArea = document.createElement('textarea');
@@ -1939,7 +1991,7 @@
             document.body.appendChild(textArea);
             textArea.focus();
             textArea.select();
-            
+
             try {
                 const successful = document.execCommand('copy');
                 if (successful) {
@@ -1952,7 +2004,7 @@
                 // Last resort: show prompt
                 prompt('Copy this:', text);
             }
-            
+
             document.body.removeChild(textArea);
         }
 
@@ -1999,6 +2051,41 @@
             container.appendChild(entry);
             container.scrollTop = container.scrollHeight;
         }
+
+        // Event listeners for CSP compliance
+        document.addEventListener('DOMContentLoaded', function () {
+            document.getElementById('send-mode-btn')?.addEventListener('click', function () {
+                if (!isAnonymous) selectMode('send');
+            });
+            document.getElementById('receive-mode-btn')?.addEventListener('click', function () {
+                selectMode('receive');
+            });
+            document.getElementById('drop-zone')?.addEventListener('click', function () {
+                document.getElementById('file-input').click();
+            });
+            document.getElementById('copy-code-btn')?.addEventListener('click', copyShareCode);
+            document.getElementById('copy-link-btn')?.addEventListener('click', copyShareLink);
+            document.getElementById('qr-toggle-btn')?.addEventListener('click', toggleQRCode);
+            document.getElementById('create-room-btn')?.addEventListener('click', createRoom);
+            document.getElementById('cancel-send-btn')?.addEventListener('click', cancelSend);
+            document.getElementById('download-all-btn')?.addEventListener('click', downloadAllFiles);
+            document.getElementById('clear-files-btn')?.addEventListener('click', clearReceivedFiles);
+            document.getElementById('join-room-btn')?.addEventListener('click', joinRoom);
+            document.getElementById('cancel-receive-btn')?.addEventListener('click', cancelReceive);
+
+            // Event delegation for dynamically added received files
+            document.getElementById('received-files-list')?.addEventListener('click', function (e) {
+                const btn = e.target.closest('.received-file-btn');
+                if (!btn) return;
+                const fileId = btn.dataset.fileId;
+                if (btn.dataset.action === 'download') {
+                    downloadFile(fileId);
+                } else if (btn.dataset.action === 'remove') {
+                    removeFile(fileId);
+                }
+            });
+        });
     </script>
 </body>
+
 </html>

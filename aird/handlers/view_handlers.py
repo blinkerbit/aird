@@ -19,9 +19,10 @@ from aird.utils.util import (
     get_file_icon,
     join_path,
     is_feature_enabled,
+    format_size,
     get_current_feature_flags,
-    sanitize_cloud_filename,
     MMapFileHandler,
+    sanitize_cloud_filename
 )
 from aird.config import (
     ROOT_DIR,
@@ -30,6 +31,7 @@ from aird.config import (
     CLOUD_MANAGER,
 )
 import aird.constants as constants_module
+from aird.constants import CHUNK_SIZE
 from aird.cloud import CloudManager, CloudProviderError
 
 
@@ -128,8 +130,67 @@ class MainHandler(BaseHandler):
                 await handler.flush()
             return
 
-        # File viewing logic from the original MainHandler
-        # ...
+        # View logic
+        mode = handler.get_argument('mode', 'view')
+        
+        if mode == 'raw':
+             # Serve raw file content for client-side consumption
+            try:
+                # Guess MIME type
+                mime_type = "application/octet-stream"
+                try:
+                    guessed_type, _ = mimetypes.guess_type(abspath)
+                    if guessed_type:
+                        mime_type = guessed_type
+                except Exception:
+                    pass
+                
+                handler.set_header('Content-Type', mime_type)
+                handler.set_header('Content-Disposition', 'inline')
+                
+                # Serve file using mmap or async read
+                file_size = os.path.getsize(abspath)
+                if MMapFileHandler.should_use_mmap(file_size):
+                     async for chunk in MMapFileHandler.serve_file_chunk(abspath):
+                        handler.write(chunk)
+                        await handler.flush()
+                else:
+                    async with aiofiles.open(abspath, 'rb') as f:
+                        while True:
+                            chunk = await f.read(CHUNK_SIZE)
+                            if not chunk:
+                                break
+                            handler.write(chunk)
+                            await handler.flush()
+                return
+            except Exception as e:
+                logging.error(f"Error serving raw file: {str(e)}")
+                handler.set_status(500)
+                handler.write(f"Error serving raw file: {str(e)}")
+                return
+
+        # Template render logic (Client-side rendering)
+        # We don't read the file here anymore. The client will fetch it.
+        file_size = 0
+        try:
+            file_size = os.path.getsize(abspath)
+        except OSError:
+            pass
+            
+        rel_path = os.path.relpath(abspath, ROOT_DIR).replace('\\', '/')
+        
+        handler.render(
+            "file.html",
+            filename=filename,
+            path=rel_path,
+            lines=[], # Empty lines, client will populate
+            start_line=1,
+            end_line=0,
+            reached_EOF=False,
+            open_editor=handler.get_argument('open_editor', 'False'),
+            full_file_content="", # Empty content
+            file_size=file_size
+        )
 
 class EditViewHandler(BaseHandler):
     @tornado.web.authenticated

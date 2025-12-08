@@ -178,6 +178,74 @@ class TestMainHandler:
             assert files[0]['is_shared'] == True
             assert files[1]['is_shared'] == False
 
+    @pytest.mark.asyncio
+    async def test_serve_file_view(self):
+        handler = MainHandler(self.mock_app, self.mock_request)
+        handler._current_user = {'username': 'user'}
+        
+        # Mock get_argument to return None for 'download'
+        def get_arg(name, default=None):
+            if name == 'download': return None
+            if name == 'mode': return None
+            return default
+        handler.get_argument = get_arg
+        
+        with patch('os.path.abspath', return_value='/root/file.txt'), \
+             patch('aird.handlers.view_handlers.is_within_root', return_value=True), \
+             patch('os.path.isdir', return_value=False), \
+             patch('os.path.isfile', return_value=True), \
+             patch('os.path.getsize', return_value=100), \
+             patch('aird.handlers.view_handlers.ROOT_DIR', '/root'), \
+             patch.object(handler, 'render') as mock_render:
+            
+            # File fetching is now client-side, so serve_file just renders the template
+            
+            await handler.get("file.txt")
+            mock_render.assert_called()
+            # Verify render arguments
+            args = mock_render.call_args
+            assert args[0][0] == "file.html"
+            kwargs = args[1]
+            assert kwargs['lines'] == [] # Should be empty for client-side rendering
+            assert kwargs['file_size'] == 100
+
+    @pytest.mark.asyncio
+    async def test_serve_file_raw(self):
+        handler = MainHandler(self.mock_app, self.mock_request)
+        handler._current_user = {'username': 'user'}
+        
+        def get_arg(name, default=None):
+            if name == 'mode': return 'raw'
+            return default
+        handler.get_argument = get_arg
+        
+        with patch('os.path.abspath', return_value='/root/file.txt'), \
+             patch('aird.handlers.view_handlers.is_within_root', return_value=True), \
+             patch('os.path.isdir', return_value=False), \
+             patch('os.path.isfile', return_value=True), \
+             patch('os.path.getsize', return_value=100), \
+             patch('aird.handlers.view_handlers.MMapFileHandler.should_use_mmap', return_value=False), \
+             patch('mimetypes.guess_type', return_value=('text/plain', None)), \
+             patch('aiofiles.open', new_callable=MagicMock) as mock_open, \
+             patch('aird.handlers.view_handlers.ROOT_DIR', '/root'), \
+             patch.object(handler, 'write') as mock_write, \
+             patch.object(handler, 'flush', new_callable=AsyncMock), \
+             patch.object(handler, 'set_header'):
+            
+            mock_file = AsyncMock()
+            mock_file.read.side_effect = [b"content", b""]
+            
+            # Mock async context manager for aiofiles.open
+            mock_cm = MagicMock()
+            mock_cm.__aenter__ = AsyncMock(return_value=mock_file)
+            mock_cm.__aexit__ = AsyncMock(return_value=None)
+            mock_open.return_value = mock_cm
+            
+            await handler.get("file.txt")
+            
+            mock_write.assert_called_with(b"content")
+
+
 class TestEditViewHandler:
     def setup_method(self):
         self.mock_app = MagicMock()

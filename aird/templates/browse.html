@@ -1,1183 +1,1223 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Browse</title>
-    <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Browse</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: "Courier New", monospace;
+      background: white;
+      color: black;
+      line-height: 1.2;
+    }
+
+    .container {
+      max-width: 100%;
+      margin: 0 auto;
+      padding: 20px 10px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid black;
+      padding-bottom: 15px;
+      margin-bottom: 20px;
+    }
+
+    .header-left {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header h1 {
+      font-size: 24px;
+      font-weight: bold;
+    }
+
+    .breadcrumb {
+      margin-top: 10px;
+      font-size: 14px;
+      color: #666;
+    }
+
+    .breadcrumb a {
+      color: black;
+      text-decoration: none;
+    }
+
+    .breadcrumb a:hover {
+      text-decoration: underline;
+    }
+
+    .upload-zone {
+      border: 2px dashed #ccc;
+      padding: 20px;
+      text-align: center;
+      margin-bottom: 20px;
+      background: #f9f9f9;
+    }
+
+    .upload-zone.dragover {
+      border-color: black;
+      background: #f0f0f0;
+    }
+
+    .file-table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid black;
+      background: white;
+      table-layout: fixed;
+    }
+
+    .file-table th {
+      background: black;
+      color: white;
+      padding: 10px 12px;
+      text-align: left;
+      font-weight: bold;
+      border-bottom: 2px solid black;
+      position: relative;
+    }
+
+    .resizer {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 5px;
+      cursor: col-resize;
+      user-select: none;
+      height: 100%;
+    }
+
+    .file-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid #ddd;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .file-table tbody tr:hover {
+      background: #f5f5f5;
+    }
+
+    .file-table th,
+    .file-table td {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .name-col {
+      width: 50%;
+    }
+
+    .size-col {
+      width: 15%;
+    }
+
+    .modified-col {
+      width: 20%;
+    }
+
+    .actions-col {
+      width: 15%;
+      text-align: right;
+    }
+
+    .size-cell {
+      text-align: left;
+      font-family: monospace;
+      font-size: 12px;
+    }
+
+    .actions-cell {
+      text-align: right;
+    }
+
+    .modified-cell {
+      font-family: monospace;
+      font-size: 12px;
+      color: #666;
+    }
+
+    .file-link {
+      color: black;
+      text-decoration: none;
+      display: block;
+    }
+
+    .file-link:hover {
+      text-decoration: underline;
+    }
+
+    .shared-icon {
+      cursor: pointer;
+      color: #0066cc;
+      font-size: 14px;
+      transition: all 0.2s ease;
+      display: inline-block;
+      vertical-align: middle;
+      padding: 2px 4px;
+      border-radius: 3px;
+      background: rgba(0, 102, 204, 0.1);
+      margin-left: 8px;
+    }
+
+    .shared-icon:hover {
+      color: #004499;
+      transform: scale(1.2);
+      background: rgba(0, 102, 204, 0.2);
+    }
+
+    .file-icon {
+      margin-right: 8px;
+    }
+
+    /* Share Popup Styles */
+    .popup-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s ease;
+    }
+
+    .popup-overlay.show {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .popup-content {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.8);
+      background: white;
+      border: 2px solid black;
+      border-radius: 8px;
+      padding: 20px;
+      max-width: 500px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+      transition: all 0.3s ease;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    .popup-overlay.show .popup-content {
+      transform: translate(-50%, -50%) scale(1);
+    }
+
+    .popup-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #ccc;
+    }
+
+    .popup-title {
+      font-size: 18px;
+      font-weight: bold;
+      margin: 0;
+    }
+
+    .popup-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      padding: 0;
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .popup-close:hover {
+      background: #f0f0f0;
+      border-radius: 50%;
+    }
+
+    .share-item {
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 15px;
+      margin-bottom: 15px;
+      background: #fafafa;
+    }
+
+    .share-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .share-id {
+      font-family: monospace;
+      background: #e6f3ff;
+      padding: 4px 8px;
+      border-radius: 3px;
+      font-size: 12px;
+      margin-bottom: 8px;
+      display: inline-block;
+    }
+
+    .share-url {
+      margin-bottom: 10px;
+    }
+
+    .share-url a {
+      color: #0066cc;
+      text-decoration: none;
+      font-size: 14px;
+    }
+
+    .share-url a:hover {
+      text-decoration: underline;
+    }
+
+    .share-access {
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+
+    .share-access.public {
+      color: #4a934a;
+    }
+
+    .share-access.restricted {
+      color: #cc6600;
+    }
+
+    .share-users {
+      margin-top: 10px;
+    }
+
+    .share-users-title {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 5px;
+    }
+
+    .user-tag {
+      display: inline-block;
+      background: #e6f3ff;
+      color: #0066cc;
+      padding: 2px 6px;
+      margin: 2px;
+      border-radius: 3px;
+      font-size: 11px;
+    }
+
+    .share-actions {
+      margin-top: 15px;
+      display: flex;
+      gap: 10px;
+    }
+
+    .share-actions .btn {
+      font-size: 11px;
+      padding: 6px 10px;
+    }
+
+    .action-link {
+      color: #555;
+      text-decoration: none;
+      margin-right: 4px;
+      padding: 6px 8px;
+      border: 1px solid #e0e0e0;
+      background: #fafafa;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 32px;
+      height: 32px;
+      text-align: center;
+      position: relative;
+      border-radius: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .action-link:hover {
+      background: #f0f0f0;
+      border-color: #ccc;
+      text-decoration: none;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .action-link svg {
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
+    }
+
+    .action-link.download-btn {
+      color: #2563eb;
+      border-color: #bfdbfe;
+      background: #eff6ff;
+    }
+
+    .action-link.download-btn:hover {
+      background: #dbeafe;
+      border-color: #93c5fd;
+    }
+
+    .action-link.edit-btn {
+      color: #d97706;
+      border-color: #fde68a;
+      background: #fffbeb;
+    }
+
+    .action-link.edit-btn:hover {
+      background: #fef3c7;
+      border-color: #fcd34d;
+    }
+
+    .action-link.rename-btn {
+      color: #7c3aed;
+      border-color: #ddd6fe;
+      background: #f5f3ff;
+    }
+
+    .action-link.rename-btn:hover {
+      background: #ede9fe;
+      border-color: #c4b5fd;
+    }
+
+    .action-link.delete-btn {
+      color: #dc2626;
+      border-color: #fecaca;
+      background: #fef2f2;
+    }
+
+    .action-link.delete-btn:hover {
+      background: #fee2e2;
+      border-color: #fca5a5;
+    }
+
+    /* Tooltip styles for icon buttons */
+    .action-link[title]:hover::after {
+      content: attr(title);
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #333;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      white-space: nowrap;
+      z-index: 1000;
+      margin-bottom: 5px;
+    }
+
+    .action-link[title]:hover::before {
+      content: '';
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 4px solid transparent;
+      border-top-color: #333;
+      z-index: 1000;
+      margin-bottom: 1px;
+    }
+
+    .sort-header {
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .sort-header:hover {
+      background: #333;
+    }
+
+    /* Responsive design */
+    @media (max-width: 768px) {
+      .file-table thead {
+        display: none;
       }
 
-      body {
-        font-family: "Courier New", monospace;
-        background: white;
-        color: black;
-        line-height: 1.2;
-      }
-
-      .container {
-        max-width: 100%;
-        margin: 0 auto;
-        padding: 20px 10px;
-      }
-
-      .header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        border-bottom: 2px solid black;
-        padding-bottom: 15px;
-        margin-bottom: 20px;
-      }
-
-      .header-left {
-        display: flex;
-        flex-direction: column;
-      }
-
-      .header h1 {
-        font-size: 24px;
-        font-weight: bold;
-      }
-
-      .breadcrumb {
-        margin-top: 10px;
-        font-size: 14px;
-        color: #666;
-      }
-
-      .breadcrumb a {
-        color: black;
-        text-decoration: none;
-      }
-
-      .breadcrumb a:hover {
-        text-decoration: underline;
-      }
-
-      .upload-zone {
-        border: 2px dashed #ccc;
-        padding: 20px;
-        text-align: center;
-        margin-bottom: 20px;
-        background: #f9f9f9;
-      }
-
-      .upload-zone.dragover {
-        border-color: black;
-        background: #f0f0f0;
-      }
-
-      .file-table {
-        width: 100%;
-        border-collapse: collapse;
-        border: 1px solid black;
-        background: white;
-        table-layout: fixed;
-      }
-
-      .file-table th {
-        background: black;
-        color: white;
-        padding: 10px 12px;
-        text-align: left;
-        font-weight: bold;
-        border-bottom: 2px solid black;
-        position: relative;
-      }
-
-      .resizer {
-        position: absolute;
-        top: 0;
-        right: 0;
-        width: 5px;
-        cursor: col-resize;
-        user-select: none;
-        height: 100%;
-      }
-
+      .file-table,
+      .file-table tbody,
+      .file-table tr,
       .file-table td {
-        padding: 8px 12px;
-        border-bottom: 1px solid #ddd;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-      .file-table tbody tr:hover {
-        background: #f5f5f5;
-      }
-
-      .file-table th,
-      .file-table td {
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-      .name-col {
-        width: 50%;
-      }
-      .size-col {
-        width: 15%;
-      }
-      .modified-col {
-        width: 20%;
-      }
-      .actions-col {
-        width: 15%;
-        text-align: right;
-      }
-
-      .size-cell {
-        text-align: left;
-        font-family: monospace;
-        font-size: 12px;
-      }
-      .actions-cell {
-        text-align: right;
-      }
-
-      .modified-cell {
-        font-family: monospace;
-        font-size: 12px;
-        color: #666;
-      }
-
-      .file-link {
-        color: black;
-        text-decoration: none;
         display: block;
-      }
-
-      .file-link:hover {
-        text-decoration: underline;
-      }
-
-      .shared-icon {
-        cursor: pointer;
-        color: #0066cc;
-        font-size: 14px;
-        transition: all 0.2s ease;
-        display: inline-block;
-        vertical-align: middle;
-        padding: 2px 4px;
-        border-radius: 3px;
-        background: rgba(0, 102, 204, 0.1);
-        margin-left: 8px;
-      }
-
-      .shared-icon:hover {
-        color: #004499;
-        transform: scale(1.2);
-        background: rgba(0, 102, 204, 0.2);
-      }
-
-      .file-icon {
-        margin-right: 8px;
-      }
-
-      /* Share Popup Styles */
-      .popup-overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
         width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.5);
-        z-index: 1000;
-        opacity: 0;
-        visibility: hidden;
-        transition: all 0.3s ease;
       }
 
-      .popup-overlay.show {
-        opacity: 1;
-        visibility: visible;
-      }
-
-      .popup-content {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%) scale(0.8);
-        background: white;
-        border: 2px solid black;
-        border-radius: 8px;
-        padding: 20px;
-        max-width: 500px;
-        width: 90%;
-        max-height: 80vh;
-        overflow-y: auto;
-        transition: all 0.3s ease;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-      }
-
-      .popup-overlay.show .popup-content {
-        transform: translate(-50%, -50%) scale(1);
-      }
-
-      .popup-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 15px;
-        padding-bottom: 10px;
-        border-bottom: 1px solid #ccc;
-      }
-
-      .popup-title {
-        font-size: 18px;
-        font-weight: bold;
-        margin: 0;
-      }
-
-      .popup-close {
-        background: none;
-        border: none;
-        font-size: 24px;
-        cursor: pointer;
-        padding: 0;
-        width: 30px;
-        height: 30px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-
-      .popup-close:hover {
-        background: #f0f0f0;
-        border-radius: 50%;
-      }
-
-      .share-item {
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        padding: 15px;
-        margin-bottom: 15px;
-        background: #fafafa;
-      }
-
-      .share-item:last-child {
-        margin-bottom: 0;
-      }
-
-      .share-id {
-        font-family: monospace;
-        background: #e6f3ff;
-        padding: 4px 8px;
-        border-radius: 3px;
-        font-size: 12px;
-        margin-bottom: 8px;
-        display: inline-block;
-      }
-
-      .share-url {
-        margin-bottom: 10px;
-      }
-
-      .share-url a {
-        color: #0066cc;
-        text-decoration: none;
-        font-size: 14px;
-      }
-
-      .share-url a:hover {
-        text-decoration: underline;
-      }
-
-      .share-access {
-        margin-bottom: 10px;
-        font-size: 14px;
-      }
-
-      .share-access.public {
-        color: #4a934a;
-      }
-
-      .share-access.restricted {
-        color: #cc6600;
-      }
-
-      .share-users {
-        margin-top: 10px;
-      }
-
-      .share-users-title {
-        font-size: 12px;
-        color: #666;
-        margin-bottom: 5px;
-      }
-
-      .user-tag {
-        display: inline-block;
-        background: #e6f3ff;
-        color: #0066cc;
-        padding: 2px 6px;
-        margin: 2px;
-        border-radius: 3px;
-        font-size: 11px;
-      }
-
-      .share-actions {
-        margin-top: 15px;
-        display: flex;
-        gap: 10px;
-      }
-
-      .share-actions .btn {
-        font-size: 11px;
-        padding: 6px 10px;
-      }
-
+      /* Mobile-friendly action buttons */
       .action-link {
-        color: #555;
-        text-decoration: none;
-        margin-right: 4px;
-        padding: 6px 8px;
-        border: 1px solid #e0e0e0;
-        background: #fafafa;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-width: 32px;
-        height: 32px;
-        text-align: center;
-        position: relative;
-        border-radius: 6px;
-        transition: all 0.15s ease;
-      }
-
-      .action-link:hover {
-        background: #f0f0f0;
-        border-color: #ccc;
-        text-decoration: none;
-        transform: translateY(-1px);
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        padding: 8px 10px;
+        margin-right: 6px;
+        min-width: 40px;
+        height: 40px;
+        touch-action: manipulation;
       }
 
       .action-link svg {
-        width: 16px;
-        height: 16px;
-        stroke: currentColor;
-        stroke-width: 2;
-        fill: none;
+        width: 20px;
+        height: 20px;
       }
 
-      .action-link.download-btn { color: #2563eb; border-color: #bfdbfe; background: #eff6ff; }
-      .action-link.download-btn:hover { background: #dbeafe; border-color: #93c5fd; }
-
-      .action-link.edit-btn { color: #d97706; border-color: #fde68a; background: #fffbeb; }
-      .action-link.edit-btn:hover { background: #fef3c7; border-color: #fcd34d; }
-
-      .action-link.rename-btn { color: #7c3aed; border-color: #ddd6fe; background: #f5f3ff; }
-      .action-link.rename-btn:hover { background: #ede9fe; border-color: #c4b5fd; }
-
-      .action-link.delete-btn { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
-      .action-link.delete-btn:hover { background: #fee2e2; border-color: #fca5a5; }
-
-      /* Tooltip styles for icon buttons */
+      /* Increase tooltip size on mobile */
       .action-link[title]:hover::after {
-        content: attr(title);
-        position: absolute;
-        bottom: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        background: #333;
-        color: white;
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-size: 11px;
-        white-space: nowrap;
-        z-index: 1000;
-        margin-bottom: 5px;
+        font-size: 12px;
+        padding: 6px 10px;
       }
 
-      .action-link[title]:hover::before {
-        content: '';
-        position: absolute;
-        bottom: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        border: 4px solid transparent;
-        border-top-color: #333;
-        z-index: 1000;
-        margin-bottom: 1px;
-      }
-
-      .sort-header {
-        cursor: pointer;
-        user-select: none;
-      }
-
-      .sort-header:hover {
-        background: #333;
-      }
-
-      /* Responsive design */
-      @media (max-width: 768px) {
-        .file-table thead {
-          display: none;
-        }
-
-        .file-table,
-        .file-table tbody,
-        .file-table tr,
-        .file-table td {
-          display: block;
-          width: 100%;
-        }
-
-        /* Mobile-friendly action buttons */
-        .action-link {
-          padding: 8px 10px;
-          margin-right: 6px;
-          min-width: 40px;
-          height: 40px;
-          touch-action: manipulation;
-        }
-
-        .action-link svg {
-          width: 20px;
-          height: 20px;
-        }
-
-        /* Increase tooltip size on mobile */
-        .action-link[title]:hover::after {
-          font-size: 12px;
-          padding: 6px 10px;
-        }
-
-        .file-table tr {
-          margin-bottom: 15px;
-          border: 1px solid #ddd;
-          border-radius: 5px;
-          overflow: hidden;
-        }
-
-        .file-table td {
-          text-align: right;
-          padding-left: 50%;
-          position: relative;
-          border-bottom: 1px solid #eee;
-        }
-
-        .file-table td:last-child {
-          border-bottom: 0;
-        }
-
-        .file-table td::before {
-          content: attr(data-label);
-          position: absolute;
-          left: 10px;
-          width: 45%;
-          padding-right: 10px;
-          white-space: nowrap;
-          text-align: left;
-          font-weight: bold;
-        }
-
-        .name-cell {
-          padding-left: 10px !important;
-          text-align: left !important;
-          font-size: 1.1em;
-          font-weight: bold;
-          background: #f8f8f8;
-        }
-
-        .name-cell::before {
-          display: none;
-        }
-
-        .actions-cell {
-          padding-left: 10px !important;
-          text-align: left !important;
-        }
-
-        .actions-cell::before {
-          display: none;
-        }
-
-        .action-link {
-          display: inline-block;
-          margin: 5px 5px 5px 0;
-        }
-      }
-
-      /* Custom dialog modal styles */
-      .custom-dialog-modal {
-        display: none;
-        position: fixed;
-        z-index: 2000;
-        left: 0;
-        top: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(0, 0, 0, 0.5);
-        align-items: center;
-        justify-content: center;
-      }
-
-      .custom-dialog-modal.show {
-        display: flex;
-      }
-
-      .custom-dialog-modal-content {
-        background-color: #fff;
-        padding: 25px;
-        border-radius: 8px;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-        width: 90%;
-        max-width: 400px;
-        text-align: center;
-      }
-
-      .custom-dialog-modal-content h2 {
-        margin-top: 0;
-        font-size: 1.25rem;
-      }
-
-      .custom-dialog-modal-content p {
-        margin: 15px 0;
-        font-size: 1rem;
-        color: #333;
-      }
-
-      .custom-dialog-input {
-        width: calc(100% - 20px);
-        padding: 10px;
-        margin-bottom: 20px;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        font-size: 14px;
-      }
-
-      .custom-dialog-buttons {
-        display: flex;
-        justify-content: center;
-        gap: 10px;
-      }
-
-      .custom-dialog-buttons button {
-        padding: 10px 20px;
-        border: none;
+      .file-table tr {
+        margin-bottom: 15px;
+        border: 1px solid #ddd;
         border-radius: 5px;
-        cursor: pointer;
+        overflow: hidden;
+      }
+
+      .file-table td {
+        text-align: right;
+        padding-left: 50%;
+        position: relative;
+        border-bottom: 1px solid #eee;
+      }
+
+      .file-table td:last-child {
+        border-bottom: 0;
+      }
+
+      .file-table td::before {
+        content: attr(data-label);
+        position: absolute;
+        left: 10px;
+        width: 45%;
+        padding-right: 10px;
+        white-space: nowrap;
+        text-align: left;
         font-weight: bold;
-        font-size: 14px;
       }
 
-      .custom-dialog-buttons button#dialogConfirmBtn {
-        background-color: #007bff;
-        color: white;
+      .name-cell {
+        padding-left: 10px !important;
+        text-align: left !important;
+        font-size: 1.1em;
+        font-weight: bold;
+        background: #f8f8f8;
       }
 
-      .custom-dialog-buttons button#dialogConfirmBtn:hover {
-        background-color: #0056b3;
+      .name-cell::before {
+        display: none;
       }
 
-      .custom-dialog-buttons button#dialogCancelBtn {
-        background-color: #ccc;
-        color: #333;
+      .actions-cell {
+        padding-left: 10px !important;
+        text-align: left !important;
       }
 
-      .custom-dialog-buttons button#dialogCancelBtn:hover {
-        background-color: #999;
+      .actions-cell::before {
+        display: none;
       }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <div class="header">
-        <div class="header-left">
-          <h1>Aird</h1>
-          <div class="breadcrumb">
-            <a href="/files/">🏠 Home</a>
-            {% if current_user and current_path != "/" %} {% set path_parts = current_path.strip('/').split('/') %}
-            {% for i, part in enumerate(path_parts) %} 
-            {% set partial_path = '/files/' + '/'.join(path_parts[:i+1]) %} /
-            <a href="{{ partial_path }}">{{ part }}</a>
-            {% end %} {% end %}
-          </div>
+
+      .action-link {
+        display: inline-block;
+        margin: 5px 5px 5px 0;
+      }
+    }
+
+    /* Custom dialog modal styles */
+    .custom-dialog-modal {
+      display: none;
+      position: fixed;
+      z-index: 2000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      align-items: center;
+      justify-content: center;
+    }
+
+    .custom-dialog-modal.show {
+      display: flex;
+    }
+
+    .custom-dialog-modal-content {
+      background-color: #fff;
+      padding: 25px;
+      border-radius: 8px;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+      width: 90%;
+      max-width: 400px;
+      text-align: center;
+    }
+
+    .custom-dialog-modal-content h2 {
+      margin-top: 0;
+      font-size: 1.25rem;
+    }
+
+    .custom-dialog-modal-content p {
+      margin: 15px 0;
+      font-size: 1rem;
+      color: #333;
+    }
+
+    .custom-dialog-input {
+      width: calc(100% - 20px);
+      padding: 10px;
+      margin-bottom: 20px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    .custom-dialog-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .custom-dialog-buttons button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    .custom-dialog-buttons button#dialogConfirmBtn {
+      background-color: #007bff;
+      color: white;
+    }
+
+    .custom-dialog-buttons button#dialogConfirmBtn:hover {
+      background-color: #0056b3;
+    }
+
+    .custom-dialog-buttons button#dialogCancelBtn {
+      background-color: #ccc;
+      color: #333;
+    }
+
+    .custom-dialog-buttons button#dialogCancelBtn:hover {
+      background-color: #999;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-left">
+        <h1>Aird</h1>
+        <div class="breadcrumb">
+          <a href="/files/">🏠 Home</a>
+          {% if current_user and current_path != "/" %} {% set path_parts = current_path.strip('/').split('/') %}
+          {% for i, part in enumerate(path_parts) %}
+          {% set partial_path = '/files/' + '/'.join(path_parts[:i+1]) %} /
+          <a href="{{ partial_path }}">{{ part }}</a>
+          {% end %} {% end %}
         </div>
-        <div style="display: flex; align-items: center; gap: 10px;">
-        <a href="/profile" style="font-size: 12px; color: #666; margin-right: 15px; text-decoration: none;">👤 {{ handler.get_display_username() }}</a>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <a href="/profile" style="font-size: 12px; color: #666; margin-right: 15px; text-decoration: none;">👤 {{
+          handler.get_display_username() }}</a>
         {% if features.get('super_search') %}
-        <a href="/search?path={{ escape(current_path or '') }}" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;">🚀 Super Search</a>
+        <a href="/search?path={{ escape(current_path or '') }}"
+          style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;">🚀
+          Super Search</a>
         {% end %}
         {% if features.get('file_share') %}
-        <a href="/share" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;{% if features.get('super_search') %}margin-left:8px;{% end %}">🔗 Share Files</a>
+        <a href="/share"
+          style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;{% if features.get('super_search') %}margin-left:8px;{% end %}">🔗
+          Share Files</a>
         {% end %}
         {% if features.get('p2p_transfer') %}
-        <a href="/p2p" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;margin-left:8px;">🔀 P2P Transfer</a>
+        <a href="/p2p"
+          style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;margin-left:8px;">🔀
+          P2P Transfer</a>
         {% end %}
-        <a href="/logout" style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;margin-left:8px;">↩ Logout</a>
-        </div>
-      </div>
-
-      <!-- Upload Zone -->
-      {% if features['file_upload'] %}
-      <div class="upload-zone" id="uploadZone">
-        <p><strong>📁 Drop files here to upload</strong></p>
-        <p>Or click to select files</p>
-        <input type="file" id="fileInput" multiple style="display: none" />
-      </div>
-      <div id="progressContainer" style="display:none;width:100%;"></div>
-      {% end %}
-
-      <!-- File Listing Table -->
-      <table class="file-table" id="fileTable">
-        <thead>
-          <tr>
-            <th class="name-col sort-header" onclick="sortTable(0)">📄 Name<div class="resizer"></div></th>
-            <th class="size-col sort-header" onclick="sortTable(1)">📊 Size<div class="resizer"></div></th>
-            <th class="modified-col sort-header" onclick="sortTable(2)">
-              🕐 Modified<div class="resizer"></div>
-            </th>
-            <th class="actions-col">🛠️ Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <!-- Parent Directory Link -->
-          {% if current_path and current_path != "/" %}
-          <tr>
-            <td class="name-cell" data-label="Name">
-              <a href="/files/{{ parent_path or '' }}" class="file-link">
-                <span class="file-icon">📁</span>..
-              </a>
-            </td>
-            <td class="size-cell" data-label="Size">-</td>
-            <td class="modified-cell" data-label="Modified">-</td>
-            <td class="actions-cell" data-label="Actions">-</td>
-          </tr>
-          {% end %}
-
-          <!-- File and Directory Listings -->
-          {% for file in files %}
-          <tr class="file-row">
-            <td class="name-cell" data-label="Name">
-              {% if file['is_dir'] %}
-              <a
-                href="/files/{{ escape(join_path(current_path, file['name'])) }}"
-                class="file-link"
-              >
-                <span class="file-icon">📁</span>{{ escape(file['name']) }}
-                {% if file.get('is_shared') %}
-                <span class="shared-icon" title="Click to view share details" onclick="showShareDetails('{{ escape(join_path(current_path, file['name'])) }}'); event.stopPropagation(); return false;">🔗</span>
-                {% end %}
-              </a>
-              {% else %}
-              <a
-                href="/files/{{ escape(join_path(current_path, file['name'])) }}?start_line=1&end_line=100"
-                class="file-link"
-              >
-                <span class="file-icon">{{ get_file_icon(file["name"]) }}</span>{{
-                escape(file['name']) }}
-                {% if file.get('is_shared') %}
-                <span class="shared-icon" title="Click to view share details" onclick="showShareDetails('{{ escape(join_path(current_path, file['name'])) }}'); event.stopPropagation(); return false;">🔗</span>
-                {% end %}
-              </a>
-              {% end %}
-            </td>
-            <td class="size-cell" data-label="Size" data-bytes="{{ file.get('size_bytes', 0) }}">
-              {{ file.get('size_str', '-') }}
-            </td>
-            <td
-              class="modified-cell"
-              data-label="Modified"
-              data-timestamp="{{ file.get('modified_timestamp', 0) }}"
-            >
-              {{ file.get('modified', '-') }}
-            </td>
-            <td class="actions-cell" data-label="Actions">
-              {% if not file["is_dir"] %}
-                {% if features['file_download'] %}
-                <a
-                  href="/files/{{ escape(join_path(current_path, file['name'])) }}?download=1"
-                  class="action-link download-btn"
-                  title="Download"
-                  ><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></a>
-                {% end %}
-                {% if features['file_edit'] %}
-                <a
-                  href="/edit/{{ escape(join_path(current_path, file['name'])) }}"
-                  class="action-link edit-btn"
-                  title="Edit"
-                  ><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></a>
-                {% end %}
-              {% end %}
-              {% if features['file_rename'] %}
-              <a
-                href="#"
-                onclick="renameItem('{{ escape(join_path(current_path, file['name'])) }}')"
-                class="action-link rename-btn"
-                title="Rename"
-                ><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></a>
-              {% end %}
-              {% if features['file_delete'] %}
-              <a
-                href="#"
-                onclick="deleteItem('{{ escape(join_path(current_path, file['name'])) }}')"
-                class="action-link delete-btn"
-                title="Delete"
-                ><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></a>
-              {% end %}
-            </td>
-          </tr>
-          {% end %}
-
-          <!-- Empty Directory Message -->
-          {% if not files %}
-          <tr>
-            <td
-              colspan="4"
-              style="text-align: center; padding: 40px; color: #666"
-            >
-              📭 This directory is empty
-            </td>
-          </tr>
-          {% end %}
-        </tbody>
-      </table>
-
-    </div>
-
-    <!-- Custom dialog modal -->
-    <div id="customDialogModal" class="custom-dialog-modal">
-      <div class="custom-dialog-modal-content">
-        <h2 id="dialogTitle">Dialog</h2>
-        <p id="dialogMessage"></p>
-        <div id="dialogInputContainer" style="display: none;">
-          <input type="text" id="dialogInput" class="custom-dialog-input">
-        </div>
-        <div class="custom-dialog-buttons">
-          <button id="dialogConfirmBtn">Confirm</button>
-          <button id="dialogCancelBtn">Cancel</button>
-        </div>
+        <a href="/logout"
+          style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;margin-left:8px;">↩
+          Logout</a>
       </div>
     </div>
 
-    <script>
-      // Configurable constants
-      const RELOAD_DELAY_MS = 500;
-      const MIN_COLUMN_WIDTH = 50;
-      const MAX_FILE_SIZE = {{ max_file_size }};
+    <!-- Upload Zone -->
+    {% if features['file_upload'] %}
+    <div class="upload-zone" id="uploadZone">
+      <p><strong>📁 Drop files here to upload</strong></p>
+      <p>Or click to select files</p>
+      <input type="file" id="fileInput" multiple style="display: none" />
+    </div>
+    <div id="progressContainer" style="display:none;width:100%;"></div>
+    {% end %}
 
-      // Custom dialog function
-      function showDialog(message, title = 'Confirm', options = {}) {
-        return new Promise((resolve) => {
-          document.getElementById('dialogTitle').textContent = title;
-          document.getElementById('dialogMessage').textContent = message;
+    <!-- File Listing Table -->
+    <table class="file-table" id="fileTable">
+      <thead>
+        <tr>
+          <th class="name-col sort-header" data-sort-column="0">📄 Name<div class="resizer"></div>
+          </th>
+          <th class="size-col sort-header" data-sort-column="1">📊 Size<div class="resizer"></div>
+          </th>
+          <th class="modified-col sort-header" data-sort-column="2">
+            🕐 Modified<div class="resizer"></div>
+          </th>
+          <th class="actions-col">🛠️ Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Parent Directory Link -->
+        {% if current_path and current_path != "/" %}
+        <tr>
+          <td class="name-cell" data-label="Name">
+            <a href="/files/{{ parent_path or '' }}" class="file-link">
+              <span class="file-icon">📁</span>..
+            </a>
+          </td>
+          <td class="size-cell" data-label="Size">-</td>
+          <td class="modified-cell" data-label="Modified">-</td>
+          <td class="actions-cell" data-label="Actions">-</td>
+        </tr>
+        {% end %}
 
-          const confirmBtn = document.getElementById('dialogConfirmBtn');
-          const cancelBtn = document.getElementById('dialogCancelBtn');
-          const inputContainer = document.getElementById('dialogInputContainer');
-          const input = document.getElementById('dialogInput');
+        <!-- File and Directory Listings -->
+        {% for file in files %}
+        <tr class="file-row">
+          <td class="name-cell" data-label="Name">
+            {% if file['is_dir'] %}
+            <a href="/files/{{ escape(join_path(current_path, file['name'])) }}" class="file-link">
+              <span class="file-icon">📁</span>{{ escape(file['name']) }}
+              {% if file.get('is_shared') %}
+              <span class="shared-icon" title="Click to view share details"
+                data-share-path="{{ escape(join_path(current_path, file['name'])) }}">🔗</span>
+              {% end %}
+            </a>
+            {% else %}
+            <a href="/files/{{ escape(join_path(current_path, file['name'])) }}?start_line=1&end_line=100"
+              class="file-link">
+              <span class="file-icon">{{ get_file_icon(file["name"]) }}</span>{{
+              escape(file['name']) }}
+              {% if file.get('is_shared') %}
+              <span class="shared-icon" title="Click to view share details"
+                data-share-path="{{ escape(join_path(current_path, file['name'])) }}">🔗</span>
+              {% end %}
+            </a>
+            {% end %}
+          </td>
+          <td class="size-cell" data-label="Size" data-bytes="{{ file.get('size_bytes', 0) }}">
+            {{ file.get('size_str', '-') }}
+          </td>
+          <td class="modified-cell" data-label="Modified" data-timestamp="{{ file.get('modified_timestamp', 0) }}">
+            {{ file.get('modified', '-') }}
+          </td>
+          <td class="actions-cell" data-label="Actions">
+            {% if not file["is_dir"] %}
+            {% if features['file_download'] %}
+            <a href="/files/{{ escape(join_path(current_path, file['name'])) }}?download=1"
+              class="action-link download-btn" title="Download"><svg viewBox="0 0 24 24">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg></a>
+            {% end %}
+            {% if features['file_edit'] %}
+            <a href="/edit/{{ escape(join_path(current_path, file['name'])) }}" class="action-link edit-btn"
+              title="Edit"><svg viewBox="0 0 24 24">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg></a>
+            {% end %}
+            {% end %}
+            {% if features['file_rename'] %}
+            <a href="#" data-rename-path="{{ escape(join_path(current_path, file['name'])) }}"
+              class="action-link rename-btn" title="Rename"><svg viewBox="0 0 24 24">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg></a>
+            {% end %}
+            {% if features['file_delete'] %}
+            <a href="#" data-delete-path="{{ escape(join_path(current_path, file['name'])) }}"
+              class="action-link delete-btn" title="Delete"><svg viewBox="0 0 24 24">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                <line x1="10" y1="11" x2="10" y2="17" />
+                <line x1="14" y1="11" x2="14" y2="17" />
+              </svg></a>
+            {% end %}
+          </td>
+        </tr>
+        {% end %}
 
-          confirmBtn.textContent = options.confirmText || 'OK';
-          cancelBtn.style.display = options.showCancel ? 'inline-block' : 'none';
-          inputContainer.style.display = options.prompt ? 'block' : 'none';
-          input.value = options.prompt ? (options.defaultValue || '') : '';
+        <!-- Empty Directory Message -->
+        {% if not files %}
+        <tr>
+          <td colspan="4" style="text-align: center; padding: 40px; color: #666">
+            📭 This directory is empty
+          </td>
+        </tr>
+        {% end %}
+      </tbody>
+    </table>
 
-          document.getElementById('customDialogModal').classList.add('show');
+  </div>
 
-          if (options.prompt) {
-            input.focus();
-            input.select();
-          }
+  <!-- Custom dialog modal -->
+  <div id="customDialogModal" class="custom-dialog-modal">
+    <div class="custom-dialog-modal-content">
+      <h2 id="dialogTitle">Dialog</h2>
+      <p id="dialogMessage"></p>
+      <div id="dialogInputContainer" style="display: none;">
+        <input type="text" id="dialogInput" class="custom-dialog-input">
+      </div>
+      <div class="custom-dialog-buttons">
+        <button id="dialogConfirmBtn">Confirm</button>
+        <button id="dialogCancelBtn">Cancel</button>
+      </div>
+    </div>
+  </div>
 
-          confirmBtn.onclick = () => {
-            document.getElementById('customDialogModal').classList.remove('show');
-            resolve(options.prompt ? input.value : true);
+  <script nonce="{{ csp_nonce }}">
+    // Configurable constants
+    const RELOAD_DELAY_MS = 500;
+    const MIN_COLUMN_WIDTH = 50;
+    const MAX_FILE_SIZE = {{ max_file_size }};
+
+    // Custom dialog function
+    function showDialog(message, title = 'Confirm', options = {}) {
+      return new Promise((resolve) => {
+        document.getElementById('dialogTitle').textContent = title;
+        document.getElementById('dialogMessage').textContent = message;
+
+        const confirmBtn = document.getElementById('dialogConfirmBtn');
+        const cancelBtn = document.getElementById('dialogCancelBtn');
+        const inputContainer = document.getElementById('dialogInputContainer');
+        const input = document.getElementById('dialogInput');
+
+        confirmBtn.textContent = options.confirmText || 'OK';
+        cancelBtn.style.display = options.showCancel ? 'inline-block' : 'none';
+        inputContainer.style.display = options.prompt ? 'block' : 'none';
+        input.value = options.prompt ? (options.defaultValue || '') : '';
+
+        document.getElementById('customDialogModal').classList.add('show');
+
+        if (options.prompt) {
+          input.focus();
+          input.select();
+        }
+
+        confirmBtn.onclick = () => {
+          document.getElementById('customDialogModal').classList.remove('show');
+          resolve(options.prompt ? input.value : true);
+        };
+
+        cancelBtn.onclick = () => {
+          document.getElementById('customDialogModal').classList.remove('show');
+          resolve(options.prompt ? null : false);
+        };
+
+        // Handle Enter key for prompt
+        if (options.prompt) {
+          input.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+              confirmBtn.click();
+            } else if (e.key === 'Escape') {
+              cancelBtn.click();
+            }
           };
+        }
+      });
+    }
 
-          cancelBtn.onclick = () => {
-            document.getElementById('customDialogModal').classList.remove('show');
-            resolve(options.prompt ? null : false);
-          };
+    // File upload functionality
+    const uploadZone = document.getElementById("uploadZone");
+    const fileInput = document.getElementById("fileInput");
+    const progressContainer = document.getElementById("progressContainer");
+    let uploadQueue = [];
+    let isUploading = false;
+    let reloadTimer = null;
 
-          // Handle Enter key for prompt
-          if (options.prompt) {
-            input.onkeydown = (e) => {
-              if (e.key === 'Enter') {
-                confirmBtn.click();
-              } else if (e.key === 'Escape') {
-                cancelBtn.click();
-              }
-            };
+    uploadZone.addEventListener("click", () => fileInput.click());
+    uploadZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      uploadZone.classList.add("dragover");
+    });
+    uploadZone.addEventListener("dragleave", () => {
+      uploadZone.classList.remove("dragover");
+    });
+    uploadZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      uploadZone.classList.remove("dragover");
+      handleFiles(e.dataTransfer.files);
+    });
+
+    fileInput.addEventListener("change", (e) => {
+      handleFiles(e.target.files);
+    });
+
+    function handleFiles(files) {
+      if (files.length === 0) return;
+      const rejected = [];
+      for (const file of files) {
+        if (file.size > MAX_FILE_SIZE) {
+          rejected.push(file.name);
+          continue;
+        }
+
+        const item = document.createElement("div");
+        item.style.marginTop = "5px";
+        const nameEl = document.createElement("div");
+        nameEl.textContent = file.name;
+        const bar = document.createElement("progress");
+        bar.max = 100;
+        bar.value = 0;
+        bar.style.width = "100%";
+        const info = document.createElement("span");
+        info.style.display = "block";
+        info.style.fontSize = "12px";
+        const cancelBtn = document.createElement("button");
+        cancelBtn.textContent = "Cancel";
+        cancelBtn.style.marginTop = "2px";
+
+        item.appendChild(nameEl);
+        item.appendChild(bar);
+        item.appendChild(info);
+        item.appendChild(cancelBtn);
+        progressContainer.appendChild(item);
+
+        const queueItem = { file, bar, info, cancelBtn, item, xhr: null, start: null };
+
+        cancelBtn.addEventListener("click", () => {
+          if (queueItem.xhr) {
+            queueItem.xhr.abort();
+          } else {
+            const idx = uploadQueue.indexOf(queueItem);
+            if (idx !== -1) {
+              uploadQueue.splice(idx, 1);
+            }
+            progressContainer.removeChild(item);
+            if (progressContainer.children.length === 0) {
+              progressContainer.style.display = "none";
+            }
           }
         });
+
+        uploadQueue.push(queueItem);
       }
 
-      // File upload functionality
-      const uploadZone = document.getElementById("uploadZone");
-      const fileInput = document.getElementById("fileInput");
-      const progressContainer = document.getElementById("progressContainer");
-      let uploadQueue = [];
-      let isUploading = false;
-      let reloadTimer = null;
+      if (rejected.length > 0) {
+        const limitGB = (MAX_FILE_SIZE / (1024 * 1024 * 1024)).toFixed(2);
+        showDialog(`Files exceed the ${limitGB} GB limit: ${rejected.join(", ")}`, 'File Size Limit');
+      }
 
-      uploadZone.addEventListener("click", () => fileInput.click());
-      uploadZone.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        uploadZone.classList.add("dragover");
-      });
-      uploadZone.addEventListener("dragleave", () => {
-        uploadZone.classList.remove("dragover");
-      });
-      uploadZone.addEventListener("drop", (e) => {
-        e.preventDefault();
-        uploadZone.classList.remove("dragover");
-        handleFiles(e.dataTransfer.files);
-      });
+      fileInput.value = "";
+      clearTimeout(reloadTimer);
+      if (!isUploading && uploadQueue.length > 0) {
+        isUploading = true;
+        progressContainer.style.display = "block";
+        processQueue();
+      }
+    }
 
-      fileInput.addEventListener("change", (e) => {
-        handleFiles(e.target.files);
-      });
+    async function processQueue() {
+      if (uploadQueue.length === 0) {
+        isUploading = false;
+        if (progressContainer.children.length === 0) {
+          progressContainer.style.display = "none";
+        }
+        scheduleReload();
+        return;
+      }
 
-      function handleFiles(files) {
-        if (files.length === 0) return;
-        const rejected = [];
-        for (const file of files) {
-          if (file.size > MAX_FILE_SIZE) {
-            rejected.push(file.name);
-            continue;
+      const current = uploadQueue.shift();
+      try {
+        await uploadFile(current);
+      } catch (err) {
+        // error text already set in uploadFile
+      }
+
+      processQueue();
+    }
+
+    function scheduleReload() {
+      clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => {
+        if (uploadQueue.length === 0 && !isUploading) {
+          location.reload();
+        }
+      }, RELOAD_DELAY_MS);
+    }
+
+    // CSRF Protection: Get XSRF token from cookie
+    function getXSRFToken() {
+      const match = document.cookie.match(/_xsrf=([^;]*)/);
+      return match ? decodeURIComponent(match[1]) : '';
+    }
+
+    function formatBytes(bytes) {
+      const units = ["B", "KB", "MB", "GB", "TB"];
+      let i = 0;
+      while (bytes >= 1024 && i < units.length - 1) {
+        bytes /= 1024;
+        i++;
+      }
+      return `${bytes.toFixed(1)} ${units[i]}`;
+    }
+
+    function uploadFile(item) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        item.xhr = xhr;
+        item.start = Date.now();
+        xhr.open("POST", "/upload");
+
+        xhr.upload.addEventListener("progress", (e) => {
+          if (e.lengthComputable) {
+            const percent = (e.loaded / e.total) * 100;
+            const elapsed = (Date.now() - item.start) / 1000;
+            const speed = e.loaded / (elapsed || 1);
+            const remaining = e.total - e.loaded;
+            item.bar.value = percent;
+            item.info.textContent = `${Math.round(percent)}% - ${formatBytes(e.loaded)} of ${formatBytes(e.total)} (${formatBytes(remaining)} left) @ ${formatBytes(speed)}/s`;
           }
+        });
 
-          const item = document.createElement("div");
-          item.style.marginTop = "5px";
-          const nameEl = document.createElement("div");
-          nameEl.textContent = file.name;
-          const bar = document.createElement("progress");
-          bar.max = 100;
-          bar.value = 0;
-          bar.style.width = "100%";
-          const info = document.createElement("span");
-          info.style.display = "block";
-          info.style.fontSize = "12px";
-          const cancelBtn = document.createElement("button");
-          cancelBtn.textContent = "Cancel";
-          cancelBtn.style.marginTop = "2px";
+        xhr.addEventListener("load", () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            item.bar.value = 100;
+            item.info.textContent = "Completed";
+            item.cancelBtn.remove();
+            resolve();
+          } else {
+            item.info.textContent = "Failed";
+            item.cancelBtn.remove();
+            reject(new Error(xhr.responseText || `Upload of ${item.file.name} failed`));
+          }
+        });
 
-          item.appendChild(nameEl);
-          item.appendChild(bar);
-          item.appendChild(info);
-          item.appendChild(cancelBtn);
-          progressContainer.appendChild(item);
+        xhr.addEventListener("error", () => {
+          item.info.textContent = "Error";
+          item.cancelBtn.remove();
+          reject(new Error(`Upload of ${item.file.name} failed`));
+        });
 
-          const queueItem = { file, bar, info, cancelBtn, item, xhr: null, start: null };
+        xhr.addEventListener("abort", () => {
+          item.info.textContent = "Cancelled";
+          item.cancelBtn.remove();
+          reject(new Error(`Upload of ${item.file.name} cancelled`));
+        });
 
-          cancelBtn.addEventListener("click", () => {
-            if (queueItem.xhr) {
-              queueItem.xhr.abort();
-            } else {
-              const idx = uploadQueue.indexOf(queueItem);
-              if (idx !== -1) {
-                uploadQueue.splice(idx, 1);
-              }
-              progressContainer.removeChild(item);
-              if (progressContainer.children.length === 0) {
-                progressContainer.style.display = "none";
-              }
-            }
+        // Stream raw file bytes with headers the backend expects
+        xhr.setRequestHeader("X-Upload-Dir", encodeURIComponent('{{ current_path or "" }}'));
+        xhr.setRequestHeader("X-Upload-Filename", encodeURIComponent(item.file.name));
+        xhr.setRequestHeader("Content-Type", "application/octet-stream");
+        // CSRF Protection
+        const xsrfToken = getXSRFToken();
+        if (xsrfToken) {
+          xhr.setRequestHeader("X-XSRFToken", xsrfToken);
+        }
+
+        xhr.send(item.file);
+      });
+    }
+
+    // Rename functionality
+    async function renameItem(filepath) {
+      const newName = await showDialog("Enter new name:", "Rename File", { prompt: true, showCancel: true });
+      if (!newName) return;
+      const formData = new URLSearchParams();
+      formData.append("path", filepath);
+      formData.append("new_name", newName);
+      fetch("/rename", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-XSRFToken": getXSRFToken(),
+        },
+        body: formData.toString(),
+      })
+        .then((res) => {
+          if (res.ok) {
+            location.reload();
+          } else {
+            res.text().then((t) => showDialog("Rename failed: " + t, "Error"));
+          }
+        })
+        .catch((err) => showDialog("Rename failed: " + err.message, "Error"));
+    }
+
+    // Delete functionality
+    async function deleteItem(filepath) {
+      const confirmed = await showDialog("Are you sure you want to delete this item?", "Confirm Delete", { showCancel: true });
+      if (!confirmed) return;
+      const formData = new URLSearchParams();
+      formData.append("path", filepath);
+      fetch("/delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-XSRFToken": getXSRFToken(),
+        },
+        body: formData.toString(),
+      })
+        .then((res) => {
+          if (res.ok) {
+            location.reload();
+          } else {
+            res.text().then((t) => showDialog("Delete failed: " + t, "Error"));
+          }
+        })
+        .catch((err) => showDialog("Delete failed: " + err.message, "Error"));
+    }
+
+    function calculateSkipRows(allRows) {
+      // Skip parent directory link if present
+      if (
+        allRows.length > 0 &&
+        allRows[0].querySelector(".file-icon") &&
+        allRows[0].querySelector(".file-icon").textContent === "📁" &&
+        allRows[0].querySelector(".file-link") &&
+        allRows[0].querySelector(".file-link").textContent.trim() === ".."
+      ) {
+        return 1;
+      }
+      // Skip empty directory message
+      if (
+        allRows.length > 0 &&
+        allRows[0].children.length === 1 &&
+        allRows[0].children[0].textContent.includes("This directory is empty")
+      ) {
+        return 1;
+      }
+      return 0;
+    }
+
+    // Table sorting functionality
+    function sortTable(columnIndex) {
+      const table = document.getElementById("fileTable");
+      const tbody = table.querySelector("tbody");
+      const allRows = Array.from(tbody.querySelectorAll("tr"));
+      const skipRows = calculateSkipRows(allRows);
+      const rows = allRows.slice(skipRows);
+
+      rows.sort((a, b) => {
+        let aVal = a.children[columnIndex].textContent.trim();
+        let bVal = b.children[columnIndex].textContent.trim();
+
+        if (columnIndex === 1) {
+          // Size column
+          aVal = parseInt(a.children[columnIndex].dataset.bytes) || -1;
+          bVal = parseInt(b.children[columnIndex].dataset.bytes) || -1;
+          return bVal - aVal;
+        } else if (columnIndex === 2) {
+          // Modified column
+          aVal = parseInt(a.children[columnIndex].dataset.timestamp) || 0;
+          bVal = parseInt(b.children[columnIndex].dataset.timestamp) || 0;
+          return bVal - aVal;
+        }
+
+        const aIsDir =
+          a.children[0].querySelector(".file-icon").textContent === "📁";
+        const bIsDir =
+          b.children[0].querySelector(".file-icon").textContent === "📁";
+
+        if (aIsDir !== bIsDir) {
+          return bIsDir ? 1 : -1;
+        }
+
+        return aVal.localeCompare(bVal);
+      });
+
+      rows.forEach((row) => tbody.appendChild(row));
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      const table = document.getElementById('fileTable');
+      const resizers = table.querySelectorAll('.resizer');
+      let th = null;
+      let startX, startWidth;
+
+      resizers.forEach(resizer => {
+        resizer.addEventListener('mousedown', function (e) {
+          e.preventDefault();
+          th = e.target.parentElement;
+          startX = e.pageX;
+          startWidth = th.offsetWidth;
+
+          const headerCells = table.querySelectorAll('th');
+          headerCells.forEach(cell => {
+            cell.style.width = `${cell.offsetWidth}px`;
           });
 
-          uploadQueue.push(queueItem);
-        }
+          document.addEventListener('mousemove', mouseMove);
+          document.addEventListener('mouseup', mouseUp);
+        });
+      });
 
-        if (rejected.length > 0) {
-          const limitGB = (MAX_FILE_SIZE / (1024 * 1024 * 1024)).toFixed(2);
-          showDialog(`Files exceed the ${limitGB} GB limit: ${rejected.join(", ")}`, 'File Size Limit');
-        }
-
-        fileInput.value = "";
-        clearTimeout(reloadTimer);
-        if (!isUploading && uploadQueue.length > 0) {
-          isUploading = true;
-          progressContainer.style.display = "block";
-          processQueue();
+      function mouseMove(e) {
+        const width = startWidth + (e.pageX - startX);
+        if (width > MIN_COLUMN_WIDTH) { // Minimum width
+          th.style.width = width + 'px';
         }
       }
 
-      async function processQueue() {
-        if (uploadQueue.length === 0) {
-          isUploading = false;
-          if (progressContainer.children.length === 0) {
-            progressContainer.style.display = "none";
-          }
-          scheduleReload();
+      function mouseUp() {
+        document.removeEventListener('mousemove', mouseMove);
+        document.removeEventListener('mouseup', mouseUp);
+      }
+    });
+
+    // Share popup functions
+    async function showShareDetails(filePath) {
+      const popup = document.getElementById('sharePopup');
+      const content = document.getElementById('sharePopupContent');
+
+      // Show popup with loading state
+      popup.classList.add('show');
+      content.innerHTML = '<div class="loading">Loading share details...</div>';
+
+      try {
+        const response = await fetch(`/api/share/details?path=${encodeURIComponent(filePath)}`);
+        const data = await response.json();
+
+        if (data.error) {
+          content.innerHTML = `<div style="color: red; text-align: center; padding: 20px;">Error: ${data.error}</div>`;
           return;
         }
 
-        const current = uploadQueue.shift();
-        try {
-          await uploadFile(current);
-        } catch (err) {
-          // error text already set in uploadFile
+        if (data.shares.length === 0) {
+          content.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">This file is not currently shared.</div>';
+          return;
         }
 
-        processQueue();
-      }
+        // Update popup title with filename
+        document.querySelector('.popup-title').textContent = `Share Details - ${filePath.split('/').pop()}`;
 
-      function scheduleReload() {
-        clearTimeout(reloadTimer);
-        reloadTimer = setTimeout(() => {
-          if (uploadQueue.length === 0 && !isUploading) {
-            location.reload();
-          }
-        }, RELOAD_DELAY_MS);
-      }
-
-      // CSRF Protection: Get XSRF token from cookie
-      function getXSRFToken() {
-        const match = document.cookie.match(/_xsrf=([^;]*)/);
-        return match ? decodeURIComponent(match[1]) : '';
-      }
-
-      function formatBytes(bytes) {
-        const units = ["B", "KB", "MB", "GB", "TB"];
-        let i = 0;
-        while (bytes >= 1024 && i < units.length - 1) {
-          bytes /= 1024;
-          i++;
-        }
-        return `${bytes.toFixed(1)} ${units[i]}`;
-      }
-
-      function uploadFile(item) {
-        return new Promise((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          item.xhr = xhr;
-          item.start = Date.now();
-          xhr.open("POST", "/upload");
-
-          xhr.upload.addEventListener("progress", (e) => {
-            if (e.lengthComputable) {
-              const percent = (e.loaded / e.total) * 100;
-              const elapsed = (Date.now() - item.start) / 1000;
-              const speed = e.loaded / (elapsed || 1);
-              const remaining = e.total - e.loaded;
-              item.bar.value = percent;
-              item.info.textContent = `${Math.round(percent)}% - ${formatBytes(e.loaded)} of ${formatBytes(e.total)} (${formatBytes(remaining)} left) @ ${formatBytes(speed)}/s`;
-            }
-          });
-
-          xhr.addEventListener("load", () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              item.bar.value = 100;
-              item.info.textContent = "Completed";
-              item.cancelBtn.remove();
-              resolve();
-            } else {
-              item.info.textContent = "Failed";
-              item.cancelBtn.remove();
-              reject(new Error(xhr.responseText || `Upload of ${item.file.name} failed`));
-            }
-          });
-
-          xhr.addEventListener("error", () => {
-            item.info.textContent = "Error";
-            item.cancelBtn.remove();
-            reject(new Error(`Upload of ${item.file.name} failed`));
-          });
-
-          xhr.addEventListener("abort", () => {
-            item.info.textContent = "Cancelled";
-            item.cancelBtn.remove();
-            reject(new Error(`Upload of ${item.file.name} cancelled`));
-          });
-
-          // Stream raw file bytes with headers the backend expects
-          xhr.setRequestHeader("X-Upload-Dir", encodeURIComponent('{{ current_path or "" }}'));
-          xhr.setRequestHeader("X-Upload-Filename", encodeURIComponent(item.file.name));
-          xhr.setRequestHeader("Content-Type", "application/octet-stream");
-          // CSRF Protection
-          const xsrfToken = getXSRFToken();
-          if (xsrfToken) {
-            xhr.setRequestHeader("X-XSRFToken", xsrfToken);
-          }
-
-          xhr.send(item.file);
-        });
-      }
-
-      // Rename functionality
-      async function renameItem(filepath) {
-        const newName = await showDialog("Enter new name:", "Rename File", { prompt: true, showCancel: true });
-        if (!newName) return;
-        const formData = new URLSearchParams();
-        formData.append("path", filepath);
-        formData.append("new_name", newName);
-        fetch("/rename", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "X-XSRFToken": getXSRFToken(),
-          },
-          body: formData.toString(),
-        })
-          .then((res) => {
-            if (res.ok) {
-              location.reload();
-            } else {
-              res.text().then((t) => showDialog("Rename failed: " + t, "Error"));
-            }
-          })
-          .catch((err) => showDialog("Rename failed: " + err.message, "Error"));
-      }
-
-      // Delete functionality
-      async function deleteItem(filepath) {
-        const confirmed = await showDialog("Are you sure you want to delete this item?", "Confirm Delete", { showCancel: true });
-        if (!confirmed) return;
-        const formData = new URLSearchParams();
-        formData.append("path", filepath);
-        fetch("/delete", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "X-XSRFToken": getXSRFToken(),
-          },
-          body: formData.toString(),
-        })
-          .then((res) => {
-            if (res.ok) {
-              location.reload();
-            } else {
-              res.text().then((t) => showDialog("Delete failed: " + t, "Error"));
-            }
-          })
-          .catch((err) => showDialog("Delete failed: " + err.message, "Error"));
-      }
-
-      function calculateSkipRows(allRows) {
-        // Skip parent directory link if present
-        if (
-          allRows.length > 0 &&
-          allRows[0].querySelector(".file-icon") &&
-          allRows[0].querySelector(".file-icon").textContent === "📁" &&
-          allRows[0].querySelector(".file-link") &&
-          allRows[0].querySelector(".file-link").textContent.trim() === ".."
-        ) {
-          return 1;
-        }
-        // Skip empty directory message
-        if (
-          allRows.length > 0 &&
-          allRows[0].children.length === 1 &&
-          allRows[0].children[0].textContent.includes("This directory is empty")
-        ) {
-          return 1;
-        }
-        return 0;
-      }
-
-      // Table sorting functionality
-      function sortTable(columnIndex) {
-        const table = document.getElementById("fileTable");
-        const tbody = table.querySelector("tbody");
-        const allRows = Array.from(tbody.querySelectorAll("tr"));
-        const skipRows = calculateSkipRows(allRows);
-        const rows = allRows.slice(skipRows);
-
-        rows.sort((a, b) => {
-          let aVal = a.children[columnIndex].textContent.trim();
-          let bVal = b.children[columnIndex].textContent.trim();
-
-          if (columnIndex === 1) {
-            // Size column
-            aVal = parseInt(a.children[columnIndex].dataset.bytes) || -1;
-            bVal = parseInt(b.children[columnIndex].dataset.bytes) || -1;
-            return bVal - aVal;
-          } else if (columnIndex === 2) {
-            // Modified column
-            aVal = parseInt(a.children[columnIndex].dataset.timestamp) || 0;
-            bVal = parseInt(b.children[columnIndex].dataset.timestamp) || 0;
-            return bVal - aVal;
-          }
-
-          const aIsDir =
-            a.children[0].querySelector(".file-icon").textContent === "📁";
-          const bIsDir =
-            b.children[0].querySelector(".file-icon").textContent === "📁";
-
-          if (aIsDir !== bIsDir) {
-            return bIsDir ? 1 : -1;
-          }
-
-          return aVal.localeCompare(bVal);
-        });
-
-        rows.forEach((row) => tbody.appendChild(row));
-      }
-
-      document.addEventListener('DOMContentLoaded', function () {
-        const table = document.getElementById('fileTable');
-        const resizers = table.querySelectorAll('.resizer');
-        let th = null;
-        let startX, startWidth;
-
-        resizers.forEach(resizer => {
-          resizer.addEventListener('mousedown', function (e) {
-            e.preventDefault();
-            th = e.target.parentElement;
-            startX = e.pageX;
-            startWidth = th.offsetWidth;
-            
-            const headerCells = table.querySelectorAll('th');
-            headerCells.forEach(cell => {
-                cell.style.width = `${cell.offsetWidth}px`;
-            });
-
-            document.addEventListener('mousemove', mouseMove);
-            document.addEventListener('mouseup', mouseUp);
-          });
-        });
-
-        function mouseMove(e) {
-          const width = startWidth + (e.pageX - startX);
-          if (width > MIN_COLUMN_WIDTH) { // Minimum width
-            th.style.width = width + 'px';
-          }
-        }
-
-        function mouseUp() {
-          document.removeEventListener('mousemove', mouseMove);
-          document.removeEventListener('mouseup', mouseUp);
-        }
-      });
-
-      // Share popup functions
-      async function showShareDetails(filePath) {
-        const popup = document.getElementById('sharePopup');
-        const content = document.getElementById('sharePopupContent');
-
-        // Show popup with loading state
-        popup.classList.add('show');
-        content.innerHTML = '<div class="loading">Loading share details...</div>';
-
-        try {
-          const response = await fetch(`/api/share/details?path=${encodeURIComponent(filePath)}`);
-          const data = await response.json();
-
-          if (data.error) {
-            content.innerHTML = `<div style="color: red; text-align: center; padding: 20px;">Error: ${data.error}</div>`;
-            return;
-          }
-
-          if (data.shares.length === 0) {
-            content.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">This file is not currently shared.</div>';
-            return;
-          }
-
-          // Update popup title with filename
-          document.querySelector('.popup-title').textContent = `Share Details - ${filePath.split('/').pop()}`;
-
-          // Render share details
-          content.innerHTML = data.shares.map(share => `
+        // Render share details
+        content.innerHTML = data.shares.map(share => `
             <div class="share-item">
               <div class="share-id">${share.id}</div>
               <div class="share-url">
@@ -1200,126 +1240,169 @@
             </div>
           `).join('');
 
-        } catch (error) {
-          console.error('Error loading share details:', error);
-          content.innerHTML = '<div style="color: red; text-align: center; padding: 20px;">Failed to load share details</div>';
-        }
+      } catch (error) {
+        console.error('Error loading share details:', error);
+        content.innerHTML = '<div style="color: red; text-align: center; padding: 20px;">Failed to load share details</div>';
       }
+    }
 
-      function closeSharePopup() {
-        const popup = document.getElementById('sharePopup');
-        popup.classList.remove('show');
+    function closeSharePopup() {
+      const popup = document.getElementById('sharePopup');
+      popup.classList.remove('show');
+    }
+
+    // Close popup when clicking outside
+    document.addEventListener('click', function (event) {
+      const popup = document.getElementById('sharePopup');
+      if (event.target === popup) {
+        closeSharePopup();
       }
+    });
 
-      // Close popup when clicking outside
-      document.addEventListener('click', function(event) {
-        const popup = document.getElementById('sharePopup');
-        if (event.target === popup) {
-          closeSharePopup();
-        }
-      });
-
-      // Close popup with Escape key
-      document.addEventListener('keydown', function(event) {
-        if (event.key === 'Escape') {
-          closeSharePopup();
-        }
-      });
-
-      function copyToClipboard(text, btn) {
-        // Check if the modern clipboard API is available
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(() => {
-            // Visual feedback
-            if (btn) {
-              const originalText = btn.textContent;
-              btn.textContent = 'Copied!';
-              setTimeout(() => btn.textContent = originalText, 1500);
-            }
-          }).catch(err => {
-            console.error('Clipboard API failed: ', err);
-            // Fall back to the old method
-            fallbackCopyTextToClipboard(text, btn);
-          });
-        } else {
-          // Fallback for older browsers or non-HTTPS contexts
-          fallbackCopyTextToClipboard(text, btn);
-        }
+    // Close popup with Escape key
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') {
+        closeSharePopup();
       }
+    });
 
-      function fallbackCopyTextToClipboard(text, btn) {
-        const textArea = document.createElement('textarea');
-        textArea.value = text;
-        textArea.style.position = 'fixed';
-        textArea.style.top = '-9999px';
-        textArea.style.left = '-9999px';
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-
-        try {
-          const successful = document.execCommand('copy');
-          if (successful && btn) {
+    function copyToClipboard(text, btn) {
+      // Check if the modern clipboard API is available
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          // Visual feedback
+          if (btn) {
             const originalText = btn.textContent;
             btn.textContent = 'Copied!';
             setTimeout(() => btn.textContent = originalText, 1500);
-          } else if (!successful) {
-            console.error('Fallback copy command failed');
-            showDialog('Failed to copy to clipboard', 'Error');
           }
-        } catch (err) {
-          console.error('Fallback copy failed: ', err);
+        }).catch(err => {
+          console.error('Clipboard API failed: ', err);
+          // Fall back to the old method
+          fallbackCopyTextToClipboard(text, btn);
+        });
+      } else {
+        // Fallback for older browsers or non-HTTPS contexts
+        fallbackCopyTextToClipboard(text, btn);
+      }
+    }
+
+    function fallbackCopyTextToClipboard(text, btn) {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.top = '-9999px';
+      textArea.style.left = '-9999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+
+      try {
+        const successful = document.execCommand('copy');
+        if (successful && btn) {
+          const originalText = btn.textContent;
+          btn.textContent = 'Copied!';
+          setTimeout(() => btn.textContent = originalText, 1500);
+        } else if (!successful) {
+          console.error('Fallback copy command failed');
           showDialog('Failed to copy to clipboard', 'Error');
-        } finally {
-          document.body.removeChild(textArea);
         }
+      } catch (err) {
+        console.error('Fallback copy failed: ', err);
+        showDialog('Failed to copy to clipboard', 'Error');
+      } finally {
+        document.body.removeChild(textArea);
       }
+    }
 
-      function openShare(url) {
-        window.open(url, '_blank');
+    function openShare(url) {
+      window.open(url, '_blank');
+    }
+
+    async function revokeShare(shareId) {
+      const confirmed = await showDialog('Are you sure you want to revoke this share?', 'Confirm Revoke', { showCancel: true });
+      if (!confirmed) return;
+
+      try {
+        const formData = new URLSearchParams();
+        formData.append('id', shareId);
+        await fetch('/share/revoke', {
+          method: 'POST',
+          headers: {
+            'X-XSRFToken': getXSRFToken()
+          },
+          body: formData
+        });
+
+        // Close popup and refresh the page to update share status
+        closeSharePopup();
+        location.reload();
+      } catch (error) {
+        console.error('Error revoking share:', error);
+        showDialog('Failed to revoke share', 'Error');
       }
+    }
 
-      async function revokeShare(shareId) {
-        const confirmed = await showDialog('Are you sure you want to revoke this share?', 'Confirm Revoke', { showCancel: true });
-        if (!confirmed) return;
+    function getXSRFToken() {
+      const match = document.cookie.match(/_xsrf=([^;]*)/);
+      return match ? decodeURIComponent(match[1]) : '';
+    }
 
-        try {
-          const formData = new URLSearchParams();
-          formData.append('id', shareId);
-          await fetch('/share/revoke', {
-            method: 'POST',
-            headers: {
-              'X-XSRFToken': getXSRFToken()
-            },
-            body: formData
-          });
+    // Event delegation for CSP compliance - handle all clicks through event listeners
+    document.addEventListener('DOMContentLoaded', function () {
+      // Sort headers
+      document.querySelectorAll('[data-sort-column]').forEach(function (el) {
+        el.addEventListener('click', function () {
+          sortTable(parseInt(this.dataset.sortColumn));
+        });
+      });
 
-          // Close popup and refresh the page to update share status
+      // Shared icons
+      document.querySelectorAll('[data-share-path]').forEach(function (el) {
+        el.addEventListener('click', function (e) {
+          e.stopPropagation();
+          e.preventDefault();
+          showShareDetails(this.dataset.sharePath);
+        });
+      });
+
+      // Rename buttons
+      document.querySelectorAll('[data-rename-path]').forEach(function (el) {
+        el.addEventListener('click', function (e) {
+          e.preventDefault();
+          renameItem(this.dataset.renamePath);
+        });
+      });
+
+      // Delete buttons
+      document.querySelectorAll('[data-delete-path]').forEach(function (el) {
+        el.addEventListener('click', function (e) {
+          e.preventDefault();
+          deleteItem(this.dataset.deletePath);
+        });
+      });
+
+      // Popup close button
+      document.querySelectorAll('.popup-close').forEach(function (el) {
+        el.addEventListener('click', function () {
           closeSharePopup();
-          location.reload();
-        } catch (error) {
-          console.error('Error revoking share:', error);
-          showDialog('Failed to revoke share', 'Error');
-        }
-      }
+        });
+      });
+    });
+  </script>
 
-      function getXSRFToken() {
-        const match = document.cookie.match(/_xsrf=([^;]*)/);
-        return match ? decodeURIComponent(match[1]) : '';
-      }
-    </script>
-
-    <!-- Share Details Popup -->
-    <div id="sharePopup" class="popup-overlay">
-      <div class="popup-content">
-        <div class="popup-header">
-          <h3 class="popup-title">Share Details</h3>
-          <button class="popup-close" onclick="closeSharePopup()">&times;</button>
-        </div>
-        <div id="sharePopupContent">
-          <div class="loading">Loading share details...</div>
-        </div>
+  <!-- Share Details Popup -->
+  <div id="sharePopup" class="popup-overlay">
+    <div class="popup-content">
+      <div class="popup-header">
+        <h3 class="popup-title">Share Details</h3>
+        <button class="popup-close">&times;</button>
+      </div>
+      <div id="sharePopupContent">
+        <div class="loading">Loading share details...</div>
       </div>
     </div>
-  </body>
+  </div>
+</body>
+
 </html>
