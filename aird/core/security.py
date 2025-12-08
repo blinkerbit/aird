@@ -1,12 +1,37 @@
 """Security utilities for path validation and WebSocket origin checking."""
 
 import os
+import re
 from urllib.parse import urlparse
 
 
 def join_path(*parts):
     """Join path parts and normalize separators."""
     return os.path.join(*parts).replace("\\", "/")
+
+
+def validate_password(password: str) -> tuple[bool, str]:
+    """
+    Validate password strength.
+    Returns (is_valid, error_message)
+    Requires:
+    - Minimum 12 characters
+    - At least one uppercase letter
+    - At least one lowercase letter
+    - At least one number
+    - At least one special character
+    """
+    if len(password) < 12:
+        return False, "Password must be at least 12 characters long."
+    if not re.search(r'[A-Z]', password):
+        return False, "Password must contain at least one uppercase letter."
+    if not re.search(r'[a-z]', password):
+        return False, "Password must contain at least one lowercase letter."
+    if not re.search(r'\d', password):
+        return False, "Password must contain at least one number."
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
+        return False, "Password must contain at least one special character."
+    return True, ""
 
 
 def is_within_root(path: str, root: str) -> bool:

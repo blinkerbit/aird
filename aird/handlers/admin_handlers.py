@@ -26,6 +26,7 @@ from aird.constants import (
 )
 import aird.constants as constants_module
 from aird.utils.util import get_current_websocket_config
+from aird.core.security import validate_password
 
 
 class AdminHandler(BaseHandler):
@@ -186,8 +187,9 @@ class UserCreateHandler(BaseHandler):
             self.render("user_create.html", error="Username must be between 3 and 50 characters")
             return
             
-        if len(password) < 6:
-            self.render("user_create.html", error="Password must be at least 6 characters")
+        is_valid, error = validate_password(password)
+        if not is_valid:
+            self.render("user_create.html", error=error)
             return
             
         if role not in ['user', 'admin']:
@@ -277,9 +279,11 @@ class UserEditHandler(BaseHandler):
                 self.render("user_edit.html", user=user, error="Username must be between 3 and 50 characters")
                 return
                 
-            if password and len(password) < 6:
-                self.render("user_edit.html", user=user, error="Password must be at least 6 characters")
-                return
+            if password:
+                is_valid, error = validate_password(password)
+                if not is_valid:
+                    self.render("user_edit.html", user=user, error=error)
+                    return
                 
             if role not in ['user', 'admin']:
                 self.render("user_edit.html", user=user, error="Invalid role")

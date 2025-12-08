@@ -466,7 +466,7 @@ class TestUserCreateHandler:
         handler.request.method = "POST"
         handler.get_argument = MagicMock(side_effect=lambda key, default=None: {
             'username': 'newuser',
-            'password': 'securepass',
+            'password': 'SecurePass123!',
             'role': 'admin'
         }.get(key, default))
         with patch.object(handler, 'is_admin_user', return_value=True), \
@@ -474,7 +474,7 @@ class TestUserCreateHandler:
              patch('aird.handlers.admin_handlers.create_user') as mock_create_user, \
              patch.object(handler, 'redirect') as mock_redirect:
             handler.post()
-            mock_create_user.assert_called_once_with(mock_db_conn, 'newuser', 'securepass', 'admin')
+            mock_create_user.assert_called_once_with(mock_db_conn, 'newuser', 'SecurePass123!', 'admin')
             mock_redirect.assert_called_once_with("/admin/users")
 
     def test_get_admin_renders_form(self, mock_tornado_app, mock_tornado_request):
@@ -504,7 +504,7 @@ class TestUserCreateHandler:
         handler.request.method = "POST"
         handler.get_argument = MagicMock(side_effect=lambda key, default=None: {
             'username': '',
-            'password': 'securepass',
+            'password': 'SecurePass123!',
             'role': 'user'
         }.get(key, default))
         with patch.object(handler, 'is_admin_user', return_value=True), \
@@ -529,7 +529,7 @@ class TestUserCreateHandler:
              patch.object(handler, 'render') as mock_render:
             handler.post()
             mock_render.assert_called_once()
-            assert mock_render.call_args.kwargs['error'] == "Password must be at least 6 characters"
+            assert mock_render.call_args.kwargs['error'] == "Password must be at least 12 characters long."
 
     def test_post_invalid_role(self, mock_tornado_app, mock_tornado_request, mock_db_conn):
         handler = UserCreateHandler(mock_tornado_app, mock_tornado_request)
@@ -537,7 +537,7 @@ class TestUserCreateHandler:
         handler.request.method = "POST"
         handler.get_argument = MagicMock(side_effect=lambda key, default=None: {
             'username': 'newuser',
-            'password': 'securepass',
+            'password': 'SecurePass123!',
             'role': 'super'
         }.get(key, default))
         with patch.object(handler, 'is_admin_user', return_value=True), \
@@ -553,7 +553,7 @@ class TestUserCreateHandler:
         handler.request.method = "POST"
         handler.get_argument = MagicMock(side_effect=lambda key, default=None: {
             'username': 'bad!name',
-            'password': 'securepass',
+            'password': 'SecurePass123!',
             'role': 'user'
         }.get(key, default))
         with patch.object(handler, 'is_admin_user', return_value=True), \
@@ -569,7 +569,7 @@ class TestUserCreateHandler:
         handler.request.method = "POST"
         handler.get_argument = MagicMock(side_effect=lambda key, default=None: {
             'username': 'newuser',
-            'password': 'securepass',
+            'password': 'SecurePass123!',
             'role': 'user'
         }.get(key, default))
         with patch.object(handler, 'is_admin_user', return_value=True), \
@@ -586,7 +586,7 @@ class TestUserCreateHandler:
         handler.request.method = "POST"
         handler.get_argument = MagicMock(side_effect=lambda key, default=None: {
             'username': 'newuser',
-            'password': 'securepass',
+            'password': 'SecurePass123!',
             'role': 'user'
         }.get(key, default))
         with patch.object(handler, 'is_admin_user', return_value=True), \
@@ -734,7 +734,7 @@ class TestUserEditHandler:
              patch('aird.handlers.admin_handlers.get_all_users', return_value=[existing_user]), \
              patch.object(handler, 'render') as mock_render:
             handler.post("1")
-            assert mock_render.call_args.kwargs['error'] == "Password must be at least 6 characters"
+            assert mock_render.call_args.kwargs['error'] == "Password must be at least 12 characters long."
 
     def test_post_invalid_role_renders_error(self, mock_tornado_app, mock_tornado_request, mock_db_conn):
         handler = UserEditHandler(mock_tornado_app, mock_tornado_request)
@@ -779,7 +779,7 @@ class TestUserEditHandler:
         handler.request.method = "POST"
         handler.get_argument = MagicMock(side_effect=lambda key, default=None: {
             'username': 'user',
-            'password': 'newpass',
+            'password': 'SecurePass123!',
             'role': 'user',
             'active': 'on'
         }.get(key, default))

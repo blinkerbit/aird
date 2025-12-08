@@ -50,3 +50,7 @@ MMAP_MIN_SIZE = 1 * 1024 * 1024  # 1 MB
 CHUNK_SIZE = 64 * 1024  # 64 KB
 
 # SHARES = {}  # REMOVED: Using database-only persistence
+
+# Rate limiting
+LOGIN_RATE_LIMIT_ATTEMPTS = 5
+LOGIN_RATE_LIMIT_WINDOW = 300  # 5 minutes

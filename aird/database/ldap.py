@@ -42,7 +42,7 @@ def get_all_ldap_configs(conn: sqlite3.Connection) -> list[dict]:
     """Get all LDAP configurations"""
     try:
         rows = conn.execute(
-            "SELECT id, name, server, ldap_base_dn, ldap_member_attributes, user_template, created_at, active FROM ldap_configs ORDER BY created_at DESC"
+            "SELECT id, name, server, ldap_base_dn, ldap_member_attributes, user_template, created_at, active FROM ldap_configs ORDER BY created_at DESC, id DESC"
         ).fetchall()
         
         return [

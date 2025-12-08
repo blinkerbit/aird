@@ -110,3 +110,15 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "database: Database tests")
     config.addinivalue_line("markers", "security: Security tests")
     config.addinivalue_line("markers", "asyncio: Async tests")
+
+
+@pytest.fixture(autouse=True)
+def reset_login_rate_limit():
+    """Reset the global login rate limit counter before each test."""
+    try:
+        from aird.handlers.auth_handlers import _LOGIN_ATTEMPTS
+        _LOGIN_ATTEMPTS.clear()
+    except ImportError:
+        pass
+    yield
+

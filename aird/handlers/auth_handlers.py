@@ -5,6 +5,7 @@ from aird.handlers.base_handler import BaseHandler
 from datetime import datetime
 import secrets
 from ldap3 import Server, Connection
+from ldap3.utils.dn import escape_rdn 
 from ldap3.utils.conv import escape_filter_chars
 from aird.db import (
     get_user_by_username,
@@ -14,6 +15,25 @@ from aird.db import (
 )
 import aird.config as config_module
 import aird.constants as constants_module
+import time
+
+# IP -> (attempts, timestamp)
+_LOGIN_ATTEMPTS = {}
+
+def check_login_rate_limit(remote_ip):
+    now = time.time()
+    attempts, timestamp = _LOGIN_ATTEMPTS.get(remote_ip, (0, now))
+    
+    if now - timestamp > constants_module.LOGIN_RATE_LIMIT_WINDOW:
+        attempts = 0
+        timestamp = now
+    
+    if attempts >= constants_module.LOGIN_RATE_LIMIT_ATTEMPTS:
+        return False
+    
+    _LOGIN_ATTEMPTS[remote_ip] = (attempts + 1, timestamp)
+    return True
+
 
 
 class LDAPLoginHandler(BaseHandler):
@@ -24,6 +44,11 @@ class LDAPLoginHandler(BaseHandler):
         self.render("login.html", error=None, settings=self.settings)
 
     def post(self):
+        if not check_login_rate_limit(self.request.remote_ip):
+            self.set_status(429)
+            self.render("login.html", error="Too many login attempts. Please try again later.", settings=self.settings)
+            return
+
         # Input validation
         username = self.get_argument("username", "").strip()
         password = self.get_argument("password", "")
@@ -39,9 +64,10 @@ class LDAPLoginHandler(BaseHandler):
         
         try:
             server = Server(self.settings['ldap_server'])
-            # Bind with the provided password (no need to escape for bind DN if template handles it, 
-            # but usually username in DN is just placed. However, we are focusing on the search filter injection)
-            conn = Connection(server, user=self.settings['ldap_user_template'].format(username=username), password=password, auto_bind=True)
+            # Bind with the provided password
+            # Escape username for DN to prevent LDAP injection in the bind DN
+            username_dn_escaped = escape_rdn(username) 
+            conn = Connection(server, user=self.settings['ldap_user_template'].format(username=username_dn_escaped), password=password, auto_bind=True)
             
             # Escape username for search filter to prevent LDAP injection
             username_escaped = escape_filter_chars(username)
@@ -154,6 +180,11 @@ class LoginHandler(BaseHandler):
         self.render("login.html", error=None, settings=self.settings, next_url=next_url)
 
     def post(self):
+        if not check_login_rate_limit(self.request.remote_ip):
+            self.set_status(429)
+            self.render("login.html", error="Too many login attempts. Please try again later.", settings=self.settings, next_url=self._get_safe_next_url())
+            return
+
         try:
             # Check if it's username/password login or token login
             username = self.get_argument("username", "").strip()
@@ -243,6 +274,11 @@ class AdminLoginHandler(BaseHandler):
         self.render("admin_login.html", error=None)
 
     def post(self):
+        if not check_login_rate_limit(self.request.remote_ip):
+            self.set_status(429)
+            self.render("admin_login.html", error="Too many login attempts. Please try again later.")
+            return
+
         # Check if it's username/password login or token login
         username = self.get_argument("username", "").strip()
         password = self.get_argument("password", "").strip()
