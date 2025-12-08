@@ -281,7 +281,7 @@ class EditHandler(BaseHandler):
         if not is_within_root(str(abspath), ROOT_DIR):
             logging.warning(f"EditHandler: access denied for path {path}.")
             self.set_status(403)
-            self.write(f"Access denied: You don't have permission to perform this action for path {path}.")
+            self.write("Access denied: You don't have permission to perform this action.")
             return
             
         if not os.path.isfile(abspath):
@@ -294,10 +294,20 @@ class EditHandler(BaseHandler):
             # Safe write: write to temp file in same directory then replace atomically
             directory_name = os.path.dirname(abspath)
             os.makedirs(directory_name, exist_ok=True)
-            with tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=directory_name) as tmp:
-                tmp.write(content)
-                temp_path = tmp.name
-            os.replace(temp_path, abspath)
+            # Use delete=False to prevent file deletion before os.replace can use it
+            temp_fd = tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=directory_name, delete=False)
+            temp_path = temp_fd.name
+            try:
+                temp_fd.write(content)
+                temp_fd.close()
+                os.replace(temp_path, abspath)
+            except Exception:
+                # Clean up temp file on failure
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
+                raise
             self.set_status(200)
             # Respond JSON if requested
             if self.request.headers.get('Accept') == 'application/json':

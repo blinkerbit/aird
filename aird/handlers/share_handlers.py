@@ -440,10 +440,33 @@ class ShareUpdateHandler(BaseHandler):
             self.write({"error": "Failed to update share. Please try again."})
 
 class TokenVerificationHandler(BaseHandler):
+    # Rate limiting for token verification (IP -> (attempts, timestamp))
+    _TOKEN_VERIFY_ATTEMPTS = {}
+    _RATE_LIMIT_WINDOW = 300  # 5 minutes
+    _MAX_ATTEMPTS = 10  # Max 10 attempts per 5 minutes
+    
     def check_xsrf_cookie(self):
         """Disable CSRF protection for token verification endpoint.
-        This endpoint is meant to be accessed by external users without sessions."""
+        This endpoint is meant to be accessed by external users without sessions.
+        Rate limiting is used as an alternative protection measure."""
         pass
+    
+    def _check_rate_limit(self) -> bool:
+        """Check if the request is within rate limits. Returns True if allowed."""
+        import time
+        remote_ip = self.request.remote_ip
+        now = time.time()
+        attempts, timestamp = self._TOKEN_VERIFY_ATTEMPTS.get(remote_ip, (0, now))
+        
+        if now - timestamp > self._RATE_LIMIT_WINDOW:
+            attempts = 0
+            timestamp = now
+        
+        if attempts >= self._MAX_ATTEMPTS:
+            return False
+        
+        self._TOKEN_VERIFY_ATTEMPTS[remote_ip] = (attempts + 1, timestamp)
+        return True
     
     def get(self, sid):
         """Show token verification page"""
@@ -462,6 +485,12 @@ class TokenVerificationHandler(BaseHandler):
 
     def post(self, sid):
         """Verify token and grant access"""
+        # Rate limiting check
+        if not self._check_rate_limit():
+            self.set_status(429)
+            self.write({"error": "Too many attempts. Please try again later."})
+            return
+        
         db_conn = constants_module.DB_CONN
         if not db_conn:
             self.set_status(500)

@@ -572,9 +572,12 @@ def get_all_users(conn: sqlite3.Connection) -> list[dict]:
 def search_users(conn: sqlite3.Connection, query: str) -> list[dict]:
     """Search users by username (case-insensitive)"""
     try:
+        # Escape SQL LIKE wildcards to prevent injection/information leakage
+        # Replace % with \% and _ with \_ to treat them as literal characters
+        escaped_query = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         rows = conn.execute(
-            "SELECT id, username, role, created_at, active, last_login FROM users WHERE username LIKE ? AND active = 1 ORDER BY username LIMIT 20",
-            (f"%{query}%",)
+            "SELECT id, username, role, created_at, active, last_login FROM users WHERE username LIKE ? ESCAPE '\\' AND active = 1 ORDER BY username LIMIT 20",
+            (f"%{escaped_query}%",)
         ).fetchall()
         
         return [

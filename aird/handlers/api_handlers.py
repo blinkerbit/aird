@@ -387,8 +387,9 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
             current_access_token = config_module.ACCESS_TOKEN
             if current_access_token:
                 # Use constant-time comparison to prevent timing attacks
-                normalized_token = token.strip().strip("'\"")
-                normalized_access_token = current_access_token.strip().strip("'\"")
+                # Only strip whitespace to preserve token integrity
+                normalized_token = token.strip()
+                normalized_access_token = current_access_token.strip()
                 if secrets_module.compare_digest(normalized_token, normalized_access_token):
                     # Return a generic user object for token-based access
                     return {"username": "token_user", "role": "admin"}

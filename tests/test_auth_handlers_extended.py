@@ -229,7 +229,7 @@ class TestAdminLoginHandlerExtended:
             
             handler.post()
             mock_redirect.assert_called_with("/admin")
-            mock_cookie.assert_called_with("admin", "authenticated", httponly=True, secure=ANY, samesite="Strict")
+            mock_cookie.assert_called_with("admin", "authenticated", httponly=True, secure=ANY, samesite="Strict", expires_days=1)
 
     def test_post_admin_token_fail(self):
         handler = AdminLoginHandler(self.mock_app, self.mock_request)
@@ -288,7 +288,7 @@ class TestProfileHandlerExtended:
     def test_post_password_update_success(self):
         handler = ProfileHandler(self.mock_app, self.mock_request)
         handler.current_user = {'username': 'user', 'id': 1}
-        handler.get_argument = MagicMock(side_effect=lambda k, d=None: "newpass" if "password" in k else "")
+        handler.get_argument = MagicMock(side_effect=lambda k, d=None: "newpass12" if "password" in k else "")
         
         with patch('aird.handlers.auth_handlers.constants_module.DB_CONN', MagicMock()), \
              patch('aird.handlers.auth_handlers.get_user_by_username', return_value={'id': 1}), \

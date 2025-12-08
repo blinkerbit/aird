@@ -85,8 +85,9 @@ class BaseHandler(tornado.web.RequestHandler):
             current_access_token = config_module.ACCESS_TOKEN
             if current_access_token:
                 # Use constant-time comparison to prevent timing attacks
-                normalized_token = token.strip().strip("'\"")
-                normalized_access_token = current_access_token.strip().strip("'\"")
+                # Only strip whitespace to preserve token integrity
+                normalized_token = token.strip()
+                normalized_access_token = current_access_token.strip()
                 if secrets.compare_digest(normalized_token, normalized_access_token):
                     # Return a generic user object for token-based access
                     return {"username": "token_user", "role": "admin"}
@@ -126,8 +127,8 @@ class BaseHandler(tornado.web.RequestHandler):
             user = self.get_current_user()
             if isinstance(user, dict) and user.get('role') == 'admin':
                 return True
-            if isinstance(user, str) and 'admin' in user.lower():
-                return True
+            # Note: Removed dangerous string check that matched any username containing 'admin'
+            # Admin status should only be determined by role, not by username substring
         except Exception:
             pass
         try:

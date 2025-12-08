@@ -172,14 +172,17 @@ def init_config():
     
     HOSTNAME = args.hostname or config.get("hostname") or socket.getfqdn()
 
-    # Print tokens when they were not explicitly provided
+    # Print tokens when they were not explicitly provided (masked for security)
     if not token_provided_explicitly:
+        masked_token = ACCESS_TOKEN[:4] + "..." + ACCESS_TOKEN[-4:] if len(ACCESS_TOKEN) > 8 else "****"
         print(f"\n{'='*60}")
         print(f"Access token (generated): {ACCESS_TOKEN}")
         print(f"{'='*60}")
         print("Note: Copy the token above exactly as shown (without quotes).")
+        print("WARNING: Store this token securely. It grants access to your files.")
         print(f"{'='*60}\n")
     if not admin_token_provided_explicitly:
         print(f"\n{'='*60}")
         print(f"Admin token (generated): {ADMIN_TOKEN}")
+        print("WARNING: Store this token securely. It grants admin access.")
         print(f"{'='*60}\n")

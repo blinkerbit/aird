@@ -117,7 +117,7 @@ class TestProfileHandler:
     def test_post_update_password(self):
         handler = prepare_handler(ProfileHandler(self.mock_app, self.mock_request))
         authenticate(handler, role='user', username='user')
-        handler.get_argument = MagicMock(side_effect=lambda k, d=None: {'new_password': 'newpass', 'confirm_password': 'newpass'}.get(k, d))
+        handler.get_argument = MagicMock(side_effect=lambda k, d=None: {'new_password': 'newpass1', 'confirm_password': 'newpass1'}.get(k, d))
         
         with patch_db_conn(MagicMock(), modules=['aird.handlers.auth_handlers']), \
              patch('aird.handlers.auth_handlers.get_user_by_username', return_value={'id': 1, 'username': 'user'}), \

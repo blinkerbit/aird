@@ -139,8 +139,9 @@ class LDAPLoginHandler(BaseHandler):
                 if existing_user:
                     user_role = existing_user['role']
             
-            self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
-            self.set_secure_cookie("user_role", user_role, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
+            # Set cookies with 24-hour expiration for session security
+            self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict", expires_days=1)
+            self.set_secure_cookie("user_role", user_role, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict", expires_days=1)
             self.redirect("/files/")
             return
         except Exception:
@@ -214,8 +215,9 @@ class LoginHandler(BaseHandler):
                 user = authenticate_user(db_conn, username, password)
                 if user:
                     logging.info(f"Username/password authentication successful for user: {username}, redirecting to: {next_url}")
-                    self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
-                    self.set_secure_cookie("user_role", user['role'], httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
+                    # Set cookies with 24-hour expiration for session security
+                    self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict", expires_days=1)
+                    self.set_secure_cookie("user_role", user['role'], httponly=True, secure=(self.request.protocol == "https"), samesite="Strict", expires_days=1)
                     self.redirect(next_url)
                     return
                 else:
@@ -248,17 +250,19 @@ class LoginHandler(BaseHandler):
             self.render("login.html", error="Token authentication is not configured.", settings=self.settings, next_url=next_url)
             return
             
-        # Normalize token comparison - strip all whitespace and remove surrounding quotes
-        normalized_token = token.strip().strip("'\"")
-        normalized_access_token = current_access_token.strip().strip("'\"") if current_access_token else ""
+        # Normalize token comparison - only strip whitespace to preserve token integrity
+        # Note: Removed quote stripping as it could make 'token' and token match incorrectly
+        normalized_token = token.strip()
+        normalized_access_token = current_access_token.strip() if current_access_token else ""
         
         # Safe logging without exposing token values
         logging.debug(f"Token comparison - lengths match: {len(normalized_token) == len(normalized_access_token)}")
         
         if secrets.compare_digest(normalized_token, normalized_access_token):
             logging.info(f"Token authentication successful, redirecting to: {next_url}")
-            self.set_secure_cookie("user", "token_authenticated", httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
-            self.set_secure_cookie("user_role", "admin", httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")  # Token users get admin role
+            # Set cookies with 24-hour expiration for session security
+            self.set_secure_cookie("user", "token_authenticated", httponly=True, secure=(self.request.protocol == "https"), samesite="Strict", expires_days=1)
+            self.set_secure_cookie("user_role", "admin", httponly=True, secure=(self.request.protocol == "https"), samesite="Strict", expires_days=1)  # Token users get admin role
             self.redirect(next_url)
             return
         else:
@@ -297,9 +301,10 @@ class AdminLoginHandler(BaseHandler):
                 user = authenticate_user(db_conn, username, password)
                 if user and user['role'] == 'admin':
                     # Set both user and admin cookies for admin users
-                    self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
-                    self.set_secure_cookie("user_role", user['role'], httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
-                    self.set_secure_cookie("admin", "authenticated", httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")  # Also set admin cookie
+                    # Set cookies with 24-hour expiration for session security
+                    self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict", expires_days=1)
+                    self.set_secure_cookie("user_role", user['role'], httponly=True, secure=(self.request.protocol == "https"), samesite="Strict", expires_days=1)
+                    self.set_secure_cookie("admin", "authenticated", httponly=True, secure=(self.request.protocol == "https"), samesite="Strict", expires_days=1)  # Also set admin cookie
                     self.redirect("/admin")
                     return
                 elif user and user['role'] != 'admin':
@@ -332,16 +337,18 @@ class AdminLoginHandler(BaseHandler):
             self.render("admin_login.html", error="Admin token authentication is not configured.")
             return
             
-        # Normalize token comparison - strip all whitespace and remove surrounding quotes
-        normalized_token = token.strip().strip("'\"")
-        normalized_admin_token = current_admin_token.strip().strip("'\"") if current_admin_token else ""
+        # Normalize token comparison - only strip whitespace to preserve token integrity
+        # Note: Removed quote stripping as it could make 'token' and token match incorrectly
+        normalized_token = token.strip()
+        normalized_admin_token = current_admin_token.strip() if current_admin_token else ""
         
         # Debug logging (without exposing actual token values)
         logging.debug(f"Admin token auth attempt - submitted length: {len(normalized_token)}, expected length: {len(normalized_admin_token)}")
         
         if secrets.compare_digest(normalized_token, normalized_admin_token):
             logging.info("Admin token authentication successful")
-            self.set_secure_cookie("admin", "authenticated", httponly=True, secure=(self.request.protocol == "https"), samesite="Strict")
+            # Set cookie with 24-hour expiration for session security
+            self.set_secure_cookie("admin", "authenticated", httponly=True, secure=(self.request.protocol == "https"), samesite="Strict", expires_days=1)
             self.redirect("/admin")
         else:
             logging.warning("Admin token authentication failed.")
@@ -385,8 +392,8 @@ class ProfileHandler(BaseHandler):
             if new_password != confirm_password:
                 self.render("profile.html", user=self.current_user, error="Passwords do not match", success=None, ldap_enabled=ldap_enabled)
                 return
-            if len(new_password) < 6:
-                self.render("profile.html", user=self.current_user, error="Password must be at least 6 characters", success=None, ldap_enabled=ldap_enabled)
+            if len(new_password) < 8:
+                self.render("profile.html", user=self.current_user, error="Password must be at least 8 characters", success=None, ldap_enabled=ldap_enabled)
                 return
             
             try:
