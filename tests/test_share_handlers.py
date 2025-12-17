@@ -383,12 +383,12 @@ class TestSharedFileHandler:
              patch('os.path.abspath', return_value='/root/test.txt'), \
              patch('aird.handlers.share_handlers.is_within_root', return_value=True), \
              patch('os.path.isfile', return_value=True), \
-             patch('aird.handlers.share_handlers.FileHandler', create=True) as mock_file_handler:
+             patch('aird.handlers.share_handlers.MainHandler') as mock_main_handler:
 
-            mock_file_handler.serve_file = AsyncMock()
+            mock_main_handler.serve_file = AsyncMock()
 
             await handler.get("share1", "test.txt")
-            mock_file_handler.serve_file.assert_awaited_with(handler, '/root/test.txt')
+            mock_main_handler.serve_file.assert_awaited_with(handler, '/root/test.txt')
 
     @pytest.mark.asyncio
     async def test_shared_file_requires_token(self):

@@ -178,7 +178,7 @@ def init_config():
         print(f"\n{'='*60}")
         print(f"Access token (generated): {ACCESS_TOKEN}")
         print(f"{'='*60}")
-        print("Note: Copy the token above exactly as shown (without quotes).")
+        print("Note: Copy the token above exactly as shown .")
         print("WARNING: Store this token securely. It grants access to your files.")
         print(f"{'='*60}\n")
     if not admin_token_provided_explicitly:

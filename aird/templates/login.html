@@ -1,45 +1,268 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+
 <head>
-    <title>Login</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aird - Login</title>
     <style>
-        body {
-            background-color: white;
-            color: black;
-            font-family: monospace;
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #000000;
+            --border-color: #000000;
+            --accent-color: #000000;
+            --grid-color: #e5e5e5;
+            --error-color: #dc2626;
+            --shadow: 6px 6px 0px 0px rgba(0, 0, 0, 1);
+            --shadow-hover: 2px 2px 0px 0px rgba(0, 0, 0, 1);
+            --transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
-        input {
-            font-family: monospace;
-            border: 1px solid black;
-            padding: 5px;
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Courier New', Courier, monospace;
+            background-color: var(--bg-color);
+            background-image: radial-gradient(var(--grid-color) 1px, transparent 1px);
+            background-size: 20px 20px;
+            color: var(--text-color);
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .login-container {
+            width: 100%;
+            max-width: 400px;
+            padding: 20px;
+            perspective: 1000px;
+        }
+
+        .login-card {
+            background: white;
+            border: 2px solid var(--border-color);
+            padding: 40px;
+            box-shadow: var(--shadow);
+            transform-style: preserve-3d;
+            animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
+        @keyframes slideUp {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 32px;
+            font-weight: 700;
+            margin: 0 0 10px 0;
+            letter-spacing: -1px;
+            text-transform: uppercase;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid var(--border-color);
+            font-family: inherit;
+            font-size: 16px;
+            box-sizing: border-box;
+            outline: none;
+            transition: var(--transition);
+            background: rgba(255, 255, 255, 0.9);
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus {
+            box-shadow: 4px 4px 0px 0px rgba(0, 0, 0, 0.1);
+            transform: translate(-2px, -2px);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: var(--text-color);
+            color: var(--bg-color);
+            border: 2px solid var(--border-color);
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: bold;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: var(--transition);
+            position: relative;
+        }
+
+        .btn:hover {
+            transform: translate(2px, 2px);
+            box-shadow: none;
+            /* Shadow disappears on press feel */
+            background: #222;
+        }
+
+        .btn:active {
+            transform: translate(4px, 4px);
+        }
+
+        .sep {
+            display: flex;
+            align-items: center;
+            text-align: center;
+            margin: 20px 0;
+            color: #666;
+            font-size: 12px;
+        }
+
+        .sep::before,
+        .sep::after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .sep::before {
+            margin-right: 10px;
+        }
+
+        .sep::after {
+            margin-left: 10px;
+        }
+
+        .error-msg {
+            background-color: #fee2e2;
+            border: 1px solid var(--error-color);
+            color: var(--error-color);
+            padding: 10px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+        }
+
+        .error-msg svg {
+            margin-right: 8px;
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Micro-interactions */
+        input:not(:placeholder-shown) {
+            border-color: #000;
+        }
+
+        /* Responsive */
+        @media (max-width: 480px) {
+            .login-card {
+                padding: 20px;
+                box-shadow: 4px 4px 0px 0px rgba(0, 0, 0, 1);
+            }
         }
     </style>
 </head>
+
 <body>
-    <h2>Login</h2>
-    {% if error %}
-        <div style="color: red;">{{ escape(error) }}</div>
-    {% end %}
-    <form method="POST">
-        {% raw xsrf_form_html() %}
-        {% if next_url %}
-            <input type="hidden" name="next" value="{{ escape(next_url) }}">
-        {% end %}
-        {% if settings.get("ldap_server") %}
-            <div style="margin-bottom:8px; color:#333;">LDAP is enabled. Sign in with your username and password.</div>
-            <input type="text" name="username" placeholder="Enter username"><br><br>
-            <input type="password" name="password" placeholder="Enter password">
-        {% else %}
-            <div style="margin-bottom:8px; color:#333;">Sign in with your username and password, or use an access token.</div>
-            <div style="margin-bottom:10px;">
-                <input type="text" name="username" placeholder="Username (optional)"><br><br>
-                <input type="password" name="password" placeholder="Password (optional)"><br><br>
-                <div style="text-align: center; margin: 10px 0; color: #666;">— OR —</div>
-                <input type="password" name="token" placeholder="Access token">
+    <div class="login-container">
+        <div class="login-card">
+            <div class="header">
+                <h1>Aird</h1>
+                <div class="subtitle">Secure File Access</div>
             </div>
-        {% end %}
-        <br><br>
-        <input type="submit" value="Login">
-    </form>
+
+            {% if error %}
+            <div class="error-msg">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                {{ escape(error) }}
+            </div>
+            {% end %}
+
+            <form method="POST">
+                {% raw xsrf_form_html() %}
+                {% if next_url %}
+                <input type="hidden" name="next" value="{{ escape(next_url) }}">
+                {% end %}
+
+                {% if settings.get("ldap_server") %}
+                <div class="form-group">
+                    <label for="username">LDAP Username</label>
+                    <input type="text" id="username" name="username" placeholder="Enter username" required autofocus>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" placeholder="Enter password" required>
+                </div>
+                <button type="submit" class="btn">Sign In with LDAP</button>
+                {% else %}
+                <div class="subtitle">Sign in with your username and password</div>
+                <div class="form-group">
+                    <label for="username">Username (Optional)</label>
+                    <input type="text" id="username" name="username" placeholder="Username">
+                </div>
+                <div class="form-group">
+                    <label for="password">Password (Optional)</label>
+                    <input type="password" id="password" name="password" placeholder="Password">
+                </div>
+
+                <div class="sep">OR</div>
+
+                <div class="form-group">
+                    <label for="token">Access Token</label>
+                    <input type="password" id="token" name="token" placeholder="Enter your access token">
+                </div>
+
+                <button type="submit" class="btn">Login</button>
+                {% end %}
+            </form>
+        </div>
+    </div>
+
+    <script nonce="{{ csp_nonce }}">
+        // Simple entry animation for inputs
+        document.querySelectorAll('input').forEach((input, index) => {
+            input.style.opacity = '0';
+            input.style.transform = 'translateY(10px)';
+            setTimeout(() => {
+                input.style.transition = 'all 0.4s ease';
+                input.style.opacity = '1';
+                input.style.transform = 'translateY(0)';
+            }, 100 + (index * 50));
+        });
+    </script>
 </body>
+
 </html>

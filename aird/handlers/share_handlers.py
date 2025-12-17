@@ -28,6 +28,7 @@ from aird.utils.util import (
 from aird.config import ROOT_DIR
 import aird.constants as constants_module
 from aird.cloud import CloudProviderError
+from aird.handlers.view_handlers import MainHandler
 
 
 class ShareFilesHandler(BaseHandler):
@@ -710,4 +711,4 @@ class SharedFileHandler(BaseHandler):
             self.set_status(404)
             return
 
-        await FileHandler.serve_file(self, abspath)
+        await MainHandler.serve_file(self, abspath)

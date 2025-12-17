@@ -474,29 +474,52 @@ def save_websocket_config(conn: sqlite3.Connection, config: dict) -> None:
 # ------------------------
 
 def hash_password(password: str) -> str:
-    """Hash a password using Argon2 (Priority 1). Falls back to legacy only if Argon2 unavailable."""
+    """Hash a password using Argon2 (Priority 1). Falls back to Scrypt if Argon2 unavailable."""
     if ARGON2_AVAILABLE and PH is not None:
         return PH.hash(password)
-    # Legacy fallback (not recommended): salted SHA-256
-    salt = secrets.token_hex(32)
-    pwd_hash = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
-    return f"{salt}:{pwd_hash}"
+    # Fallback: Scrypt (better than SHA-256)
+    salt = secrets.token_hex(16)
+    key = hashlib.scrypt(password.encode('utf-8'), salt=salt.encode('utf-8'), n=16384, r=8, p=1, dklen=32)
+    return f"scrypt:{salt}:{key.hex()}"
 
 def verify_password(password: str, password_hash: str) -> bool:
-    """Verify password supporting Argon2 and legacy salted SHA-256."""
+    """Verify password supporting Argon2, Scrypt, and legacy salted SHA-256."""
+    if not password_hash:
+        return False
+
     # Try Argon2 first
-    if password_hash and password_hash.startswith("$argon2") and ARGON2_AVAILABLE and PH is not None:
-        try:
-            return PH.verify(password_hash, password)
-        except argon2_exceptions.VerifyMismatchError:
+    if password_hash.startswith("$argon2"):
+        if ARGON2_AVAILABLE and PH is not None:
+            try:
+                return PH.verify(password_hash, password)
+            except argon2_exceptions.VerifyMismatchError:
+                return False
+            except Exception:
+                return False
+        else:
+            # Argon2 hash but library not available
             return False
+
+    # Try Scrypt fallback
+    if password_hash.startswith("scrypt:"):
+        try:
+            parts = password_hash.split(':')
+            if len(parts) != 3:
+                return False
+            _, salt, stored_key_hex = parts
+            key = hashlib.scrypt(password.encode('utf-8'), salt=salt.encode('utf-8'), n=16384, r=8, p=1, dklen=32)
+            return secrets.compare_digest(key.hex(), stored_key_hex)
         except Exception:
             return False
+
     # Legacy format: salt:hash
     try:
-        salt, stored_hash = password_hash.split(':', 1)
+        parts = password_hash.split(':', 1)
+        if len(parts) != 2:
+            return False
+        salt, stored_hash = parts
         pwd_hash = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
-        return pwd_hash == stored_hash
+        return secrets.compare_digest(pwd_hash, stored_hash)
     except Exception:
         return False
 

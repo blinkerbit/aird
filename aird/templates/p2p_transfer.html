@@ -625,6 +625,21 @@
             </div>
         </div>
 
+        <!-- Session Warning Banner -->
+        <div id="session-warning"
+            style="display: none; background: #e0f2fe; color: #0369a1; padding: 12px; border-radius: 4px; margin-bottom: 20px; border-left: 4px solid #0284c7; align-items: center; gap: 10px;">
+            <svg viewBox="0 0 24 24"
+                style="width: 20px; height: 20px; stroke: currentColor; stroke-width: 2; fill: none; flex-shrink: 0;">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <div>
+                <strong>Important:</strong> Do not close this tab or browser window while a transfer is in progress. The
+                connection will be lost.
+            </div>
+        </div>
+
         <!-- Mode Selection -->
         <div class="section" id="mode-section">
             <h2>Select Transfer Mode</h2>
@@ -647,6 +662,36 @@
                     <h3>Receive File</h3>
                     <p>Enter a share code to receive a file</p>
                 </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 10px; font-size: 12px; color: #666;">
+                <p>💡 Tip: Use the <strong>Connection Settings</strong> below if you have trouble connecting.</p>
+            </div>
+
+            <!-- Connection Settings -->
+            <div style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px;">
+                <details>
+                    <summary style="cursor: pointer; font-size: 14px; font-weight: bold; color: #555;">⚙️ Connection
+                        Settings (Advanced)</summary>
+                    <div
+                        style="margin-top: 10px; padding: 10px; background: #fff; border: 1px solid #ddd; border-radius: 4px;">
+                        <div class="form-group">
+                            <label for="stun-server-select">STUN Server (NAT Traversal)</label>
+                            <select id="stun-server-select"
+                                style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace;">
+                                <option value="google" selected>Google (Default - Reliable)</option>
+                                <option value="mozilla">Mozilla Services</option>
+                                <option value="openstun">OpenSTUN (Ekiga)</option>
+                                <option value="blackberry">Blackberry VOIP</option>
+                                <option value="framasoft">Framasoft</option>
+                            </select>
+                            <p style="font-size: 11px; color: #666; margin-top: 5px;">
+                                If connection fails, try selecting a different STUN server. These servers help establish
+                                P2P connections across different networks.
+                            </p>
+                        </div>
+                    </div>
+                </details>
             </div>
         </div>
 
@@ -830,7 +875,7 @@
     </div>
 
     <script nonce="{{ csp_nonce }}">
-        const isAnonymous = {{ 'true' if is_anonymous else 'false' }};
+        let isAnonymous = {{ 'true' if is_anonymous else 'false' }};
 
         // =====================================================================
         // QR Code Generator (Lightweight inline implementation)
@@ -1261,11 +1306,32 @@
 
         // Configuration
         const CHUNK_SIZE = 16384; // 16KB chunks for WebRTC
-        const ICE_SERVERS = [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' }
-        ];
+
+        // Define available STUN server options
+        const STUN_OPTIONS = {
+            'google': [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' }
+            ],
+            'mozilla': [
+                { urls: 'stun:stun.services.mozilla.com' }
+            ],
+            'openstun': [
+                { urls: 'stun:stun.ekiga.net' }
+            ],
+            'blackberry': [
+                { urls: 'stun:stun.voip.blackberry.com:3478' }
+            ],
+            'framasoft': [
+                { urls: 'stun:stun.framasoft.org' }
+            ]
+        };
+
+        // Default to Google
+        let currentIceServers = STUN_OPTIONS['google'];
 
         // State
         let ws = null;
@@ -1279,7 +1345,6 @@
         let receivedSize = 0;
         let expectedFileInfo = null;
         let transferStartTime = null;
-        let isAnonymous = {{ "true" if is_anonymous else "false" }};
         let pendingRoomId = {% if room_id %}"{{ room_id }}"{% else %} null{% end %};
         let receivedFiles = []; // Array to store received files for manual download
 
@@ -1296,6 +1361,28 @@
                 selectMode('receive');
                 document.getElementById('room-code-input').value = roomId || pendingRoomId;
                 // For anonymous users, the auto-join happens after WebSocket connects
+            }
+
+            // Warn user before leaving if transfer is active
+            window.onbeforeunload = function (e) {
+                if ((peerConnection && peerConnection.connectionState === 'connected') ||
+                    (receivedChunks.length > 0 && receivedChunks.length * CHUNK_SIZE < (expectedFileInfo ? expectedFileInfo.size : 0))) {
+                    const confirmationMessage = 'A file transfer is in progress. If you leave this page, the transfer will be cancelled.';
+                    (e || window.event).returnValue = confirmationMessage;
+                    return confirmationMessage;
+                }
+            };
+
+            // Handle STUN server selection change
+            const stunSelect = document.getElementById('stun-server-select');
+            if (stunSelect) {
+                stunSelect.addEventListener('change', (e) => {
+                    const selected = e.target.value;
+                    if (STUN_OPTIONS[selected]) {
+                        currentIceServers = STUN_OPTIONS[selected];
+                        log(`STUN server changed to: ${selected}`, 'info');
+                    }
+                });
             }
         });
 
@@ -1400,11 +1487,13 @@
                     if (currentMode === 'send') {
                         createPeerConnection(true);
                     }
+                    document.getElementById('session-warning').style.display = 'flex';
                     break;
 
                 case 'peer_left':
                     log(`Peer left: ${data.username}`, 'info');
                     closePeerConnection();
+                    document.getElementById('session-warning').style.display = 'none';
                     break;
 
                 case 'offer':
@@ -1547,7 +1636,7 @@
         }
 
         function createPeerConnection(isInitiator) {
-            peerConnection = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+            peerConnection = new RTCPeerConnection({ iceServers: currentIceServers });
 
             peerConnection.onicecandidate = (event) => {
                 if (event.candidate) {

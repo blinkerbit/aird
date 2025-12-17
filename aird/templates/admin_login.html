@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Admin Login</title>
     <style>
@@ -10,6 +11,7 @@
             margin: 50px auto;
             max-width: 400px;
         }
+
         input {
             font-family: monospace;
             border: 1px solid black;
@@ -18,14 +20,17 @@
             box-sizing: border-box;
             margin: 5px 0;
         }
+
         .form-section {
             margin: 20px 0;
             padding: 20px;
             border: 1px solid #ccc;
         }
+
         .form-section h3 {
             margin-top: 0;
         }
+
         .or-separator {
             text-align: center;
             margin: 20px 0;
@@ -33,12 +38,13 @@
         }
     </style>
 </head>
+
 <body>
     <h2>Admin Login</h2>
     {% if error %}
-        <div style="color: red; margin: 10px 0;">{{ escape(error) }}</div>
+    <div style="color: red; margin: 10px 0;">{{ escape(error) }}</div>
     {% end %}
-    
+
     <!-- Username/Password Login -->
     <div class="form-section">
         <h3>Login with Admin Account</h3>
@@ -49,9 +55,9 @@
             <input type="submit" value="Login with Password">
         </form>
     </div>
-    
+
     <div class="or-separator">OR</div>
-    
+
     <!-- Token Login -->
     <div class="form-section">
         <h3>Login with Admin Token</h3>
@@ -62,4 +68,5 @@
         </form>
     </div>
 </body>
+
 </html>
