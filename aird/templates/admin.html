@@ -94,6 +94,20 @@
         </div>
 
         <div class="section">
+            <h3>Upload Settings</h3>
+            <p><em>Configure maximum file upload size. Changes take effect immediately for new uploads.</em></p>
+            <div class="config-group">
+                <div class="config-row">
+                    <label>Max File Size (MB):</label>
+                    <input type="number" name="max_file_size_mb"
+                           value="{{ upload_config.get('max_file_size_mb', 512) }}"
+                           min="1" max="10240" step="1">
+                    <span class="help-text">(1–10240 MB, default 512 MB)</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
             <h3>WebSocket Connection Settings</h3>
             <p><em>Configure connection limits and timeouts for WebSocket handlers. Changes take effect immediately.</em></p>
             

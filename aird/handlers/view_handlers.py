@@ -26,7 +26,6 @@ from aird.utils.util import (
 )
 from aird.config import (
     ROOT_DIR,
-    MAX_FILE_SIZE,
     MAX_READABLE_FILE_SIZE,
     CLOUD_MANAGER,
 )
@@ -77,7 +76,7 @@ class MainHandler(BaseHandler):
                 join_path=join_path,
                 get_file_icon=get_file_icon,
                 features=flags_for_template,
-                max_file_size=MAX_FILE_SIZE
+                max_file_size=constants_module.MAX_FILE_SIZE
             )
         elif os.path.isfile(abspath):
             await self.serve_file(self, abspath)

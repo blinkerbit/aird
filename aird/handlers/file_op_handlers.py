@@ -13,10 +13,10 @@ from aird.handlers.base_handler import BaseHandler
 from aird.utils.util import is_within_root, is_feature_enabled, sanitize_cloud_filename
 from aird.config import (
     ROOT_DIR,
-    MAX_FILE_SIZE,
     ALLOWED_UPLOAD_EXTENSIONS,
     CLOUD_MANAGER,
 )
+import aird.constants as constants_module
 from aird.cloud import CloudManager, CloudProviderError
 from io import BytesIO
 
@@ -64,7 +64,7 @@ class UploadHandler(BaseHandler):
             return
         # Track size to enforce limit at the end
         self._bytes_received += len(chunk)
-        if self._bytes_received > MAX_FILE_SIZE:
+        if self._bytes_received > constants_module.MAX_FILE_SIZE:
             self._too_large = True
             # We still accept the stream but won't persist it
             return
@@ -114,8 +114,9 @@ class UploadHandler(BaseHandler):
 
         # Enforce size limit
         if self._too_large:
+            limit_mb = constants_module.UPLOAD_CONFIG.get("max_file_size_mb", 512)
             self.set_status(413)
-            self.write("File too large: Please choose a file smaller than 512 MB")
+            self.write(f"File too large: Please choose a file smaller than {limit_mb} MB")
             return
 
         # Enhanced path validation
@@ -345,7 +346,7 @@ class CloudUploadHandler(BaseHandler):
         if size == 0:
             # Allow empty files but still enforce limit check below
             pass
-        if size > MAX_FILE_SIZE:
+        if size > constants_module.MAX_FILE_SIZE:
             self.set_status(413)
             self.write({"error": "File too large for upload"})
             return

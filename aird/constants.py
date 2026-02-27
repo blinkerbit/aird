@@ -35,8 +35,16 @@ WEBSOCKET_CONFIG = {
     "search_idle_timeout": 180,  # 3 minutes
 }
 
-# File operation constants
-MAX_FILE_SIZE = 512 * 1024 * 1024  # 512 MB
+# Upload configuration (admin-configurable, persisted to database)
+UPLOAD_CONFIG = {
+    "max_file_size_mb": 512,  # Default max upload file size in MB
+}
+
+# Hard ceiling for Tornado server — admin cannot exceed this
+MAX_UPLOAD_FILE_SIZE_HARD_LIMIT = 10 * 1024 * 1024 * 1024  # 10 GB
+
+# File operation constants (derived from UPLOAD_CONFIG at startup)
+MAX_FILE_SIZE = UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
 MAX_READABLE_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 ALLOWED_UPLOAD_EXTENSIONS = {
     ".txt", ".log", ".md", ".json", ".xml", ".yaml", ".yml", ".csv",

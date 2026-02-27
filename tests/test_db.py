@@ -19,6 +19,8 @@ from aird.db import (
     get_share_by_id,
     get_all_shares,
     get_shares_for_path,
+    load_upload_config,
+    save_upload_config,
     load_websocket_config,
     _load_websocket_config,
     save_websocket_config,
@@ -298,6 +300,55 @@ class TestWebsocketConfig:
         
         result = _load_websocket_config(db_conn)
         assert result == config
+
+
+class TestUploadConfig:
+    """Tests for upload configuration functions"""
+    
+    def test_load_empty_config(self, db_conn):
+        """Test loading upload config from empty table"""
+        result = load_upload_config(db_conn)
+        assert result == {}
+    
+    def test_save_and_load_config(self, db_conn):
+        """Test saving and loading upload config"""
+        config = {'max_file_size_mb': 1024}
+        save_upload_config(db_conn, config)
+        
+        result = load_upload_config(db_conn)
+        assert result == config
+    
+    def test_save_upload_config_updates_existing(self, db_conn):
+        """Test that saving updates existing config values"""
+        save_upload_config(db_conn, {'max_file_size_mb': 512})
+        save_upload_config(db_conn, {'max_file_size_mb': 1024})
+        
+        result = load_upload_config(db_conn)
+        assert result['max_file_size_mb'] == 1024
+    
+    def test_save_multiple_keys(self, db_conn):
+        """Test saving multiple config keys"""
+        config = {'max_file_size_mb': 256, 'other_key': 100}
+        save_upload_config(db_conn, config)
+        
+        result = load_upload_config(db_conn)
+        assert result['max_file_size_mb'] == 256
+        assert result['other_key'] == 100
+    
+    def test_load_upload_config_creates_table(self):
+        """Test that load_upload_config creates the table if it doesn't exist"""
+        conn = sqlite3.connect(":memory:")
+        result = load_upload_config(conn)
+        assert result == {}
+        conn.close()
+    
+    def test_save_upload_config_creates_table(self):
+        """Test that save_upload_config creates the table if it doesn't exist"""
+        conn = sqlite3.connect(":memory:")
+        save_upload_config(conn, {'max_file_size_mb': 512})
+        result = load_upload_config(conn)
+        assert result['max_file_size_mb'] == 512
+        conn.close()
 
 
 class TestPasswordHashing:

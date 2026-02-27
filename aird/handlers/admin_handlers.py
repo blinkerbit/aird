@@ -18,11 +18,13 @@ from aird.db import (
     delete_ldap_config,
     save_feature_flags,
     save_websocket_config,
+    save_upload_config,
     load_feature_flags,
 )
 from aird.constants import (
     FEATURE_FLAGS,
     WEBSOCKET_CONFIG,
+    UPLOAD_CONFIG,
 )
 import aird.constants as constants_module
 from aird.utils.util import get_current_websocket_config
@@ -63,6 +65,7 @@ class AdminHandler(BaseHandler):
         self.render("admin.html",
                    features=current_features,
                    websocket_config=current_websocket_config,
+                   upload_config=UPLOAD_CONFIG,
                    ldap_enabled=ldap_enabled)
 
     @tornado.web.authenticated
@@ -100,12 +103,21 @@ class AdminHandler(BaseHandler):
             # If parsing fails, use current values
             pass
         
-        # Persist both feature flags and WebSocket configuration
+        # Update upload configuration
+        try:
+            max_file_size_mb = max(1, min(10240, int(self.get_argument("max_file_size_mb", "512"))))
+            UPLOAD_CONFIG["max_file_size_mb"] = max_file_size_mb
+            constants_module.MAX_FILE_SIZE = max_file_size_mb * 1024 * 1024
+        except (ValueError, TypeError):
+            pass
+
+        # Persist feature flags, WebSocket, and upload configuration
         try:
             db_conn = constants_module.DB_CONN
             if db_conn is not None:
                 save_feature_flags(db_conn, FEATURE_FLAGS)
                 save_websocket_config(db_conn, WEBSOCKET_CONFIG)
+                save_upload_config(db_conn, UPLOAD_CONFIG)
         except Exception:
             pass
 

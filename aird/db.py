@@ -443,6 +443,28 @@ def get_shares_for_path(conn: sqlite3.Connection, file_path: str) -> list:
         print(f"Error getting shares for path {file_path}: {e}")
         return []
 
+def load_upload_config(conn: sqlite3.Connection) -> dict:
+    """Load upload configuration from SQLite database."""
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS upload_config (key TEXT PRIMARY KEY, value INTEGER)")
+        rows = conn.execute("SELECT key, value FROM upload_config").fetchall()
+        return {k: int(v) for (k, v) in rows}
+    except Exception:
+        return {}
+
+def save_upload_config(conn: sqlite3.Connection, config: dict) -> None:
+    """Save upload configuration to SQLite database."""
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS upload_config (key TEXT PRIMARY KEY, value INTEGER)")
+        with conn:
+            for key, value in config.items():
+                conn.execute(
+                    "INSERT OR REPLACE INTO upload_config (key, value) VALUES (?, ?)",
+                    (key, int(value)),
+                )
+    except Exception:
+        pass
+
 def load_websocket_config(conn: sqlite3.Connection) -> dict:
     """Load WebSocket configuration from SQLite database."""
     try:

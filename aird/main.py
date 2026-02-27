@@ -562,6 +562,28 @@ def _get_shares_for_path(conn: sqlite3.Connection, file_path: str) -> list:
         logger.error(f"Error getting shares for path {file_path}: {e}")
         return []
 
+def _load_upload_config(conn: sqlite3.Connection) -> dict:
+    """Load upload configuration from SQLite database."""
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS upload_config (key TEXT PRIMARY KEY, value INTEGER)")
+        rows = conn.execute("SELECT key, value FROM upload_config").fetchall()
+        return {k: int(v) for (k, v) in rows}
+    except Exception:
+        return {}
+
+def _save_upload_config(conn: sqlite3.Connection, config: dict) -> None:
+    """Save upload configuration to SQLite database."""
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS upload_config (key TEXT PRIMARY KEY, value INTEGER)")
+        with conn:
+            for key, value in config.items():
+                conn.execute(
+                    "INSERT OR REPLACE INTO upload_config (key, value) VALUES (?, ?)",
+                    (key, int(value)),
+                )
+    except Exception:
+        pass
+
 def _load_websocket_config(conn: sqlite3.Connection) -> dict:
     """Load WebSocket configuration from SQLite database."""
     try:
@@ -1096,8 +1118,8 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None, 
     settings["template_path"] = os.path.join(os.path.dirname(__file__), "templates")
     # Limit request size to avoid Tornado rejecting large uploads with
     # "Content-Length too long" before our handler can respond.
-    settings.setdefault("max_body_size", constants.MAX_FILE_SIZE)
-    settings.setdefault("max_buffer_size", constants.MAX_FILE_SIZE)
+    settings.setdefault("max_body_size", constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT)
+    settings.setdefault("max_buffer_size", constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT)
     
     if ldap_enabled:
         settings["ldap_server"] = ldap_server
@@ -1265,6 +1287,15 @@ def main():
         # Database-only persistence for shares
         logger.info("Shares are now persisted directly in database")
         
+        # Load persisted upload config and merge
+        persisted_upload_config = _load_upload_config(constants.DB_CONN)
+        if persisted_upload_config:
+            for k, v in persisted_upload_config.items():
+                constants.UPLOAD_CONFIG[k] = int(v)
+                logger.debug(f"Upload config '{k}' set to {int(v)} from database")
+        constants.MAX_FILE_SIZE = constants.UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
+        logger.info(f"Max upload file size: {constants.UPLOAD_CONFIG['max_file_size_mb']} MB")
+
         # Assign admin privileges to configured admin users
         _assign_admin_privileges(constants.DB_CONN, config.ADMIN_USERS)
 
@@ -1303,8 +1334,8 @@ def main():
                 app.listen(
                     port,
                     ssl_options=ssl_options,
-                    max_body_size=constants.MAX_FILE_SIZE,
-                    max_buffer_size=constants.MAX_FILE_SIZE,
+                    max_body_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
+                    max_buffer_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
                 )
                 logger.info(f"Serving HTTPS on 0.0.0.0 port {port} (https://0.0.0.0:{port}/) ...")
                 print(f"https://localhost:{port}/")
@@ -1316,8 +1347,8 @@ def main():
             else:
                 app.listen(
                     port,
-                    max_body_size=constants.MAX_FILE_SIZE,
-                    max_buffer_size=constants.MAX_FILE_SIZE,
+                    max_body_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
+                    max_buffer_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
                 )
                 logger.info(f"Serving HTTP on 0.0.0.0 port {port} (http://0.0.0.0:{port}/) ...")
                 print(f"http://localhost:{port}/")

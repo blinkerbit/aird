@@ -329,6 +329,304 @@ class TestAdminHandler:
 
 
 @pytest.mark.skipif(not AIRD_AVAILABLE, reason="aird.handlers.admin_handlers module not available")
+class TestAdminHandlerUploadConfig:
+    """Test AdminHandler upload configuration management"""
+    
+    def setup_method(self):
+        """Setup test fixtures"""
+        self.mock_app = MagicMock()
+        self.mock_request = MagicMock()
+        self.mock_app.settings = {
+            'cookie_secret': 'test_secret_key_for_testing',
+            'template_path': 'templates',
+            'debug': False,
+            'login_url': '/login',
+            'ldap_server': None
+        }
+        self.mock_request.connection = MagicMock()
+        self.mock_request.connection.context = MagicMock()
+        self.mock_request.protocol = "http"
+    
+    def test_get_passes_upload_config_to_template(self, mock_tornado_app, mock_tornado_request, mock_db_conn):
+        """Test AdminHandler GET passes upload_config to template"""
+        handler = AdminHandler(mock_tornado_app, mock_tornado_request)
+        
+        upload_config = {'max_file_size_mb': 512}
+        
+        with patch.object(handler, 'get_current_user', return_value={'username': 'admin', 'role': 'admin'}), \
+             patch.object(handler, 'is_admin_user', return_value=True), \
+             patch_db_conn(mock_db_conn), \
+             patch('aird.handlers.admin_handlers.FEATURE_FLAGS', {'file_upload': True}), \
+             patch('aird.handlers.admin_handlers.UPLOAD_CONFIG', upload_config), \
+             patch('aird.handlers.admin_handlers.load_feature_flags', return_value={'file_upload': True}), \
+             patch('aird.utils.util.get_current_websocket_config', return_value={}), \
+             patch.object(handler, 'render') as mock_render:
+            
+            handler.get()
+            
+            assert mock_render.called
+            call_args = mock_render.call_args
+            if call_args:
+                args, kwargs = call_args
+                assert args[0] == "admin.html"
+                assert 'upload_config' in kwargs
+                assert kwargs['upload_config']['max_file_size_mb'] == 512
+    
+    def test_post_updates_max_file_size(self, mock_tornado_app, mock_tornado_request, mock_db_conn):
+        """Test AdminHandler POST updates max file size"""
+        handler = AdminHandler(mock_tornado_app, mock_tornado_request)
+        
+        handler.get_argument = MagicMock(side_effect=lambda key, default="off": {
+            'file_upload': 'on',
+            'file_delete': 'on',
+            'file_rename': 'on',
+            'file_download': 'on',
+            'file_edit': 'on',
+            'file_share': 'on',
+            'super_search': 'on',
+            'compression': 'on',
+            'p2p_transfer': 'on',
+            'max_file_size_mb': '1024',
+            'feature_flags_max_connections': '50',
+            'feature_flags_idle_timeout': '600',
+            'file_streaming_max_connections': '200',
+            'file_streaming_idle_timeout': '300',
+            'search_max_connections': '100',
+            'search_idle_timeout': '180',
+        }.get(key, default))
+        
+        feature_flags = {}
+        websocket_config = {}
+        upload_config = {'max_file_size_mb': 512}
+        
+        with patch.object(handler, 'get_current_user', return_value={'username': 'admin', 'role': 'admin'}), \
+             patch.object(handler, 'is_admin_user', return_value=True), \
+             patch_db_conn(mock_db_conn), \
+             patch('aird.handlers.admin_handlers.FEATURE_FLAGS', feature_flags), \
+             patch('aird.handlers.admin_handlers.WEBSOCKET_CONFIG', websocket_config), \
+             patch('aird.handlers.admin_handlers.UPLOAD_CONFIG', upload_config), \
+             patch('aird.handlers.admin_handlers.save_feature_flags'), \
+             patch('aird.handlers.admin_handlers.save_websocket_config'), \
+             patch('aird.handlers.admin_handlers.save_upload_config') as mock_save_upload, \
+             patch('aird.handlers.api_handlers.FeatureFlagSocketHandler.send_updates'), \
+             patch.object(handler, 'redirect'):
+            
+            handler.post()
+            
+            assert upload_config['max_file_size_mb'] == 1024
+            mock_save_upload.assert_called_once()
+    
+    def test_post_clamps_max_file_size_upper_bound(self, mock_tornado_app, mock_tornado_request, mock_db_conn):
+        """Test AdminHandler POST clamps max_file_size_mb to 10240"""
+        handler = AdminHandler(mock_tornado_app, mock_tornado_request)
+        
+        handler.get_argument = MagicMock(side_effect=lambda key, default="off": {
+            'file_upload': 'on',
+            'file_delete': 'on',
+            'file_rename': 'on',
+            'file_download': 'on',
+            'file_edit': 'on',
+            'file_share': 'on',
+            'super_search': 'on',
+            'compression': 'on',
+            'p2p_transfer': 'on',
+            'max_file_size_mb': '99999',
+            'feature_flags_max_connections': '50',
+            'feature_flags_idle_timeout': '600',
+            'file_streaming_max_connections': '200',
+            'file_streaming_idle_timeout': '300',
+            'search_max_connections': '100',
+            'search_idle_timeout': '180',
+        }.get(key, default))
+        
+        upload_config = {'max_file_size_mb': 512}
+        
+        with patch.object(handler, 'get_current_user', return_value={'username': 'admin', 'role': 'admin'}), \
+             patch.object(handler, 'is_admin_user', return_value=True), \
+             patch_db_conn(mock_db_conn), \
+             patch('aird.handlers.admin_handlers.FEATURE_FLAGS', {}), \
+             patch('aird.handlers.admin_handlers.WEBSOCKET_CONFIG', {}), \
+             patch('aird.handlers.admin_handlers.UPLOAD_CONFIG', upload_config), \
+             patch('aird.handlers.admin_handlers.save_feature_flags'), \
+             patch('aird.handlers.admin_handlers.save_websocket_config'), \
+             patch('aird.handlers.admin_handlers.save_upload_config'), \
+             patch('aird.handlers.api_handlers.FeatureFlagSocketHandler.send_updates'), \
+             patch.object(handler, 'redirect'):
+            
+            handler.post()
+            
+            assert upload_config['max_file_size_mb'] == 10240
+    
+    def test_post_clamps_max_file_size_lower_bound(self, mock_tornado_app, mock_tornado_request, mock_db_conn):
+        """Test AdminHandler POST clamps max_file_size_mb to minimum of 1"""
+        handler = AdminHandler(mock_tornado_app, mock_tornado_request)
+        
+        handler.get_argument = MagicMock(side_effect=lambda key, default="off": {
+            'file_upload': 'on',
+            'file_delete': 'on',
+            'file_rename': 'on',
+            'file_download': 'on',
+            'file_edit': 'on',
+            'file_share': 'on',
+            'super_search': 'on',
+            'compression': 'on',
+            'p2p_transfer': 'on',
+            'max_file_size_mb': '0',
+            'feature_flags_max_connections': '50',
+            'feature_flags_idle_timeout': '600',
+            'file_streaming_max_connections': '200',
+            'file_streaming_idle_timeout': '300',
+            'search_max_connections': '100',
+            'search_idle_timeout': '180',
+        }.get(key, default))
+        
+        upload_config = {'max_file_size_mb': 512}
+        
+        with patch.object(handler, 'get_current_user', return_value={'username': 'admin', 'role': 'admin'}), \
+             patch.object(handler, 'is_admin_user', return_value=True), \
+             patch_db_conn(mock_db_conn), \
+             patch('aird.handlers.admin_handlers.FEATURE_FLAGS', {}), \
+             patch('aird.handlers.admin_handlers.WEBSOCKET_CONFIG', {}), \
+             patch('aird.handlers.admin_handlers.UPLOAD_CONFIG', upload_config), \
+             patch('aird.handlers.admin_handlers.save_feature_flags'), \
+             patch('aird.handlers.admin_handlers.save_websocket_config'), \
+             patch('aird.handlers.admin_handlers.save_upload_config'), \
+             patch('aird.handlers.api_handlers.FeatureFlagSocketHandler.send_updates'), \
+             patch.object(handler, 'redirect'):
+            
+            handler.post()
+            
+            assert upload_config['max_file_size_mb'] == 1
+    
+    def test_post_handles_invalid_max_file_size(self, mock_tornado_app, mock_tornado_request, mock_db_conn):
+        """Test AdminHandler POST handles invalid max_file_size_mb gracefully"""
+        handler = AdminHandler(mock_tornado_app, mock_tornado_request)
+        
+        handler.get_argument = MagicMock(side_effect=lambda key, default="off": {
+            'file_upload': 'on',
+            'file_delete': 'on',
+            'file_rename': 'on',
+            'file_download': 'on',
+            'file_edit': 'on',
+            'file_share': 'on',
+            'super_search': 'on',
+            'compression': 'on',
+            'p2p_transfer': 'on',
+            'max_file_size_mb': 'invalid',
+            'feature_flags_max_connections': '50',
+            'feature_flags_idle_timeout': '600',
+            'file_streaming_max_connections': '200',
+            'file_streaming_idle_timeout': '300',
+            'search_max_connections': '100',
+            'search_idle_timeout': '180',
+        }.get(key, default))
+        
+        upload_config = {'max_file_size_mb': 512}
+        
+        with patch.object(handler, 'get_current_user', return_value={'username': 'admin', 'role': 'admin'}), \
+             patch.object(handler, 'is_admin_user', return_value=True), \
+             patch_db_conn(mock_db_conn), \
+             patch('aird.handlers.admin_handlers.FEATURE_FLAGS', {}), \
+             patch('aird.handlers.admin_handlers.WEBSOCKET_CONFIG', {}), \
+             patch('aird.handlers.admin_handlers.UPLOAD_CONFIG', upload_config), \
+             patch('aird.handlers.admin_handlers.save_feature_flags'), \
+             patch('aird.handlers.admin_handlers.save_websocket_config'), \
+             patch('aird.handlers.admin_handlers.save_upload_config'), \
+             patch('aird.handlers.api_handlers.FeatureFlagSocketHandler.send_updates'), \
+             patch.object(handler, 'redirect') as mock_redirect:
+            
+            handler.post()
+            
+            # Should keep original value and still redirect
+            assert upload_config['max_file_size_mb'] == 512
+            mock_redirect.assert_called_once_with("/admin")
+    
+    def test_post_updates_constants_max_file_size(self, mock_tornado_app, mock_tornado_request, mock_db_conn):
+        """Test AdminHandler POST updates constants_module.MAX_FILE_SIZE"""
+        handler = AdminHandler(mock_tornado_app, mock_tornado_request)
+        
+        handler.get_argument = MagicMock(side_effect=lambda key, default="off": {
+            'file_upload': 'on',
+            'file_delete': 'on',
+            'file_rename': 'on',
+            'file_download': 'on',
+            'file_edit': 'on',
+            'file_share': 'on',
+            'super_search': 'on',
+            'compression': 'on',
+            'p2p_transfer': 'on',
+            'max_file_size_mb': '256',
+            'feature_flags_max_connections': '50',
+            'feature_flags_idle_timeout': '600',
+            'file_streaming_max_connections': '200',
+            'file_streaming_idle_timeout': '300',
+            'search_max_connections': '100',
+            'search_idle_timeout': '180',
+        }.get(key, default))
+        
+        upload_config = {'max_file_size_mb': 512}
+        
+        with patch.object(handler, 'get_current_user', return_value={'username': 'admin', 'role': 'admin'}), \
+             patch.object(handler, 'is_admin_user', return_value=True), \
+             patch_db_conn(mock_db_conn), \
+             patch('aird.handlers.admin_handlers.FEATURE_FLAGS', {}), \
+             patch('aird.handlers.admin_handlers.WEBSOCKET_CONFIG', {}), \
+             patch('aird.handlers.admin_handlers.UPLOAD_CONFIG', upload_config), \
+             patch('aird.handlers.admin_handlers.constants_module') as mock_constants, \
+             patch('aird.handlers.admin_handlers.save_feature_flags'), \
+             patch('aird.handlers.admin_handlers.save_websocket_config'), \
+             patch('aird.handlers.admin_handlers.save_upload_config'), \
+             patch('aird.handlers.api_handlers.FeatureFlagSocketHandler.send_updates'), \
+             patch.object(handler, 'redirect'):
+            
+            mock_constants.DB_CONN = mock_db_conn
+            handler.post()
+            
+            # Should update constants_module.MAX_FILE_SIZE to 256 MB in bytes
+            assert mock_constants.MAX_FILE_SIZE == 256 * 1024 * 1024
+    
+    def test_post_default_max_file_size_when_not_provided(self, mock_tornado_app, mock_tornado_request, mock_db_conn):
+        """Test AdminHandler POST uses default 512 when max_file_size_mb not in form"""
+        handler = AdminHandler(mock_tornado_app, mock_tornado_request)
+        
+        handler.get_argument = MagicMock(side_effect=lambda key, default="off": {
+            'file_upload': 'on',
+            'file_delete': 'on',
+            'file_rename': 'on',
+            'file_download': 'on',
+            'file_edit': 'on',
+            'file_share': 'on',
+            'super_search': 'on',
+            'compression': 'on',
+            'p2p_transfer': 'on',
+            'feature_flags_max_connections': '50',
+            'feature_flags_idle_timeout': '600',
+            'file_streaming_max_connections': '200',
+            'file_streaming_idle_timeout': '300',
+            'search_max_connections': '100',
+            'search_idle_timeout': '180',
+        }.get(key, default))
+        
+        upload_config = {'max_file_size_mb': 512}
+        
+        with patch.object(handler, 'get_current_user', return_value={'username': 'admin', 'role': 'admin'}), \
+             patch.object(handler, 'is_admin_user', return_value=True), \
+             patch_db_conn(mock_db_conn), \
+             patch('aird.handlers.admin_handlers.FEATURE_FLAGS', {}), \
+             patch('aird.handlers.admin_handlers.WEBSOCKET_CONFIG', {}), \
+             patch('aird.handlers.admin_handlers.UPLOAD_CONFIG', upload_config), \
+             patch('aird.handlers.admin_handlers.save_feature_flags'), \
+             patch('aird.handlers.admin_handlers.save_websocket_config'), \
+             patch('aird.handlers.admin_handlers.save_upload_config'), \
+             patch('aird.handlers.api_handlers.FeatureFlagSocketHandler.send_updates'), \
+             patch.object(handler, 'redirect'):
+            
+            handler.post()
+            
+            assert upload_config['max_file_size_mb'] == 512
+
+
+@pytest.mark.skipif(not AIRD_AVAILABLE, reason="aird.handlers.admin_handlers module not available")
 class TestWebSocketStatsHandler:
     """Test WebSocketStatsHandler functionality"""
     

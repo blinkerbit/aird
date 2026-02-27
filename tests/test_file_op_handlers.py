@@ -262,7 +262,7 @@ class TestUploadHandler:
         handler._writing = False
         handler._aiofile = AsyncMock()
         
-        with patch('aird.handlers.file_op_handlers.MAX_FILE_SIZE', 1000), \
+        with patch('aird.handlers.file_op_handlers.constants_module.MAX_FILE_SIZE', 1000), \
              patch('asyncio.create_task') as mock_create_task:
             handler.data_received(b'test data')
             
@@ -279,7 +279,7 @@ class TestUploadHandler:
         handler._buffer = []
         handler._writing = False
         
-        with patch('aird.handlers.file_op_handlers.MAX_FILE_SIZE', 1000):
+        with patch('aird.handlers.file_op_handlers.constants_module.MAX_FILE_SIZE', 1000):
             handler.data_received(b'x' * 200)  # Push over limit
             
         assert handler._too_large
@@ -323,6 +323,140 @@ class TestUploadHandler:
         
         # Should not raise
         handler.on_finish()
+
+class TestUploadHandlerDynamicMaxSize:
+    """Tests for dynamic max file size enforcement in UploadHandler"""
+
+    def setup_method(self):
+        self.mock_app = MagicMock()
+        self.mock_request = MagicMock()
+        self.mock_app.settings = {'cookie_secret': 'test_secret'}
+        self.mock_request.headers = {
+            'X-Upload-Dir': 'uploads',
+            'X-Upload-Filename': 'test.txt'
+        }
+
+    def _setup_handler_for_post(self, handler, filename='test.txt', upload_dir='uploads'):
+        handler._reject = False
+        handler._reject_reason = None
+        handler._temp_path = '/tmp/test_upload'
+        handler._moved = False
+        handler._too_large = False
+        handler._writer_task = None
+        handler._aiofile = AsyncMock()
+        handler._buffer = []
+        handler._writing = False
+        handler._bytes_received = 100
+        handler.upload_dir = upload_dir
+        handler.filename = filename
+
+    def test_data_received_uses_dynamic_max_file_size(self):
+        """Test data_received checks against constants_module.MAX_FILE_SIZE"""
+        handler = UploadHandler(self.mock_app, self.mock_request)
+        handler._reject = False
+        handler._bytes_received = 0
+        handler._too_large = False
+        handler._buffer = []
+        handler._writing = False
+
+        custom_limit = 10 * 1024 * 1024  # 10 MB
+
+        with patch('aird.handlers.file_op_handlers.constants_module') as mock_constants, \
+             patch('asyncio.create_task'):
+            mock_constants.MAX_FILE_SIZE = custom_limit
+
+            small_chunk = b'x' * (5 * 1024 * 1024)
+            handler.data_received(small_chunk)
+            assert handler._too_large is False
+
+            handler.data_received(small_chunk)
+            handler.data_received(small_chunk)
+            assert handler._too_large is True
+
+    def test_data_received_respects_larger_limit(self):
+        """Test data_received allows larger files when limit is increased"""
+        handler = UploadHandler(self.mock_app, self.mock_request)
+        handler._reject = False
+        handler._bytes_received = 0
+        handler._too_large = False
+        handler._buffer = []
+        handler._writing = False
+
+        large_limit = 2 * 1024 * 1024 * 1024  # 2 GB
+
+        with patch('aird.handlers.file_op_handlers.constants_module') as mock_constants, \
+             patch('asyncio.create_task'):
+            mock_constants.MAX_FILE_SIZE = large_limit
+
+            chunk = b'x' * (500 * 1024 * 1024)
+            handler.data_received(chunk)
+            assert handler._too_large is False
+            assert handler._bytes_received == 500 * 1024 * 1024
+
+    @pytest.mark.asyncio
+    async def test_too_large_error_shows_configured_limit(self):
+        """Test that 413 error message reflects the configured limit"""
+        handler = prepare_handler(UploadHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        self._setup_handler_for_post(handler)
+        handler._too_large = True
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('aird.handlers.file_op_handlers.constants_module') as mock_constants, \
+             patch.object(handler, 'set_status') as mock_set_status, \
+             patch.object(handler, 'write') as mock_write:
+
+            mock_constants.UPLOAD_CONFIG = {'max_file_size_mb': 256}
+
+            await handler.post()
+
+            mock_set_status.assert_called_with(413)
+            msg = mock_write.call_args[0][0]
+            assert "256" in msg
+            assert "too large" in msg.lower()
+
+    @pytest.mark.asyncio
+    async def test_too_large_error_shows_default_limit(self):
+        """Test that 413 error shows 512 MB when using default config"""
+        handler = prepare_handler(UploadHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        self._setup_handler_for_post(handler)
+        handler._too_large = True
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('aird.handlers.file_op_handlers.constants_module') as mock_constants, \
+             patch.object(handler, 'set_status') as mock_set_status, \
+             patch.object(handler, 'write') as mock_write:
+
+            mock_constants.UPLOAD_CONFIG = {'max_file_size_mb': 512}
+
+            await handler.post()
+
+            mock_set_status.assert_called_with(413)
+            msg = mock_write.call_args[0][0]
+            assert "512" in msg
+
+    @pytest.mark.asyncio
+    async def test_too_large_error_shows_custom_large_limit(self):
+        """Test that 413 error shows custom large limit (e.g. 2048 MB)"""
+        handler = prepare_handler(UploadHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        self._setup_handler_for_post(handler)
+        handler._too_large = True
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('aird.handlers.file_op_handlers.constants_module') as mock_constants, \
+             patch.object(handler, 'set_status') as mock_set_status, \
+             patch.object(handler, 'write') as mock_write:
+
+            mock_constants.UPLOAD_CONFIG = {'max_file_size_mb': 2048}
+
+            await handler.post()
+
+            mock_set_status.assert_called_with(413)
+            msg = mock_write.call_args[0][0]
+            assert "2048" in msg
+
 
 class TestDeleteHandler:
     def setup_method(self):
@@ -808,7 +942,7 @@ class TestCloudUploadHandler:
         mock_manager.get.return_value = mock_provider
         self.mock_app.settings['cloud_manager'] = mock_manager
         
-        with patch('aird.handlers.file_op_handlers.MAX_FILE_SIZE', 512 * 1024 * 1024), \
+        with patch('aird.handlers.file_op_handlers.constants_module.MAX_FILE_SIZE', 512 * 1024 * 1024), \
              patch.object(handler, 'set_status') as mock_set_status, \
              patch.object(handler, 'write') as mock_write:
             await handler.post("provider1")
