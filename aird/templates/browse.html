@@ -675,15 +675,38 @@
     <div id="progressContainer" style="display:none;width:100%;"></div>
     {% end %}
 
+    <!-- Toolbar: New folder + bulk actions -->
+    <div class="bulk-toolbar" id="bulkToolbar" style="display: none; margin-bottom: 12px; padding: 10px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; align-items: center; gap: 10px; flex-wrap: wrap;">
+      <span id="bulkCount" style="font-weight: bold;">0 selected</span>
+      {% if features.get('file_delete') %}
+      <button type="button" id="bulkDeleteBtn" class="bulk-btn" style="padding:6px 12px;border:1px solid #000;background:#fff;cursor:pointer;">Delete</button>
+      {% end %}
+      {% if features.get('file_rename') %}
+      <button type="button" id="bulkCopyBtn" class="bulk-btn" style="padding:6px 12px;border:1px solid #000;background:#fff;cursor:pointer;">Copy</button>
+      <button type="button" id="bulkMoveBtn" class="bulk-btn" style="padding:6px 12px;border:1px solid #000;background:#fff;cursor:pointer;">Move</button>
+      {% end %}
+      {% if features.get('file_share') %}
+      <button type="button" id="bulkAddToShareBtn" class="bulk-btn" style="padding:6px 12px;border:1px solid #000;background:#fff;cursor:pointer;">Add to share</button>
+      {% end %}
+    </div>
+    {% if features.get('folder_create') %}
+    <div style="margin-bottom: 10px;">
+      <button type="button" id="newFolderBtn" style="padding:6px 12px;border:1px solid #000;background:#fff;cursor:pointer;font-family:inherit;">📁 New folder</button>
+    </div>
+    {% end %}
+
     <!-- File Listing Table -->
     <table class="file-table" id="fileTable">
       <thead>
         <tr>
-          <th class="name-col sort-header" data-sort-column="0">📄 Name<div class="resizer"></div>
+          <th class="select-col" style="width: 32px; text-align: center;">
+            <input type="checkbox" id="selectAllCheckbox" title="Select all" />
           </th>
-          <th class="size-col sort-header" data-sort-column="1">📊 Size<div class="resizer"></div>
+          <th class="name-col sort-header" data-sort-column="1">📄 Name<div class="resizer"></div>
           </th>
-          <th class="modified-col sort-header" data-sort-column="2">
+          <th class="size-col sort-header" data-sort-column="2">📊 Size<div class="resizer"></div>
+          </th>
+          <th class="modified-col sort-header" data-sort-column="3">
             🕐 Modified<div class="resizer"></div>
           </th>
           <th class="actions-col">🛠️ Actions</th>
@@ -692,7 +715,8 @@
       <tbody>
         <!-- Parent Directory Link -->
         {% if current_path and current_path != "/" %}
-        <tr>
+        <tr class="file-row parent-row">
+          <td class="select-cell" data-label="Select"></td>
           <td class="name-cell" data-label="Name">
             <a href="/files/{{ parent_path or '' }}" class="file-link">
               <span class="file-icon">📁</span>..
@@ -706,7 +730,10 @@
 
         <!-- File and Directory Listings -->
         {% for file in files %}
-        <tr class="file-row">
+        <tr class="file-row" data-path="{{ escape(join_path(current_path, file['name'])) }}">
+          <td class="select-cell" data-label="Select">
+            <input type="checkbox" class="row-checkbox" data-path="{{ escape(join_path(current_path, file['name'])) }}" />
+          </td>
           <td class="name-cell" data-label="Name">
             {% if file['is_dir'] %}
             <a href="/files/{{ escape(join_path(current_path, file['name'])) }}" class="file-link">
@@ -775,7 +802,7 @@
         <!-- Empty Directory Message -->
         {% if not files %}
         <tr>
-          <td colspan="4" style="text-align: center; padding: 40px; color: #666">
+          <td colspan="5" style="text-align: center; padding: 40px; color: #666">
             📭 This directory is empty
           </td>
         </tr>
@@ -783,6 +810,21 @@
       </tbody>
     </table>
 
+  </div>
+
+  <!-- Share picker modal for bulk Add to share -->
+  <div id="sharePickerModal" class="custom-dialog-modal">
+    <div class="custom-dialog-modal-content">
+      <h2>Add to share</h2>
+      <p>Select a share to add the selected items to:</p>
+      <select id="sharePickerSelect" class="custom-dialog-input" style="width: 100%; margin-bottom: 15px;">
+        <option value="">Loading...</option>
+      </select>
+      <div class="custom-dialog-buttons">
+        <button id="sharePickerConfirm">Add</button>
+        <button id="sharePickerCancel">Cancel</button>
+      </div>
+    </div>
   </div>
 
   <!-- Custom dialog modal -->
@@ -800,6 +842,7 @@
     </div>
   </div>
 
+  <input type="hidden" id="currentPath" value="{{ current_path or '' }}" />
   <script nonce="{{ csp_nonce }}">
     // Configurable constants
     const RELOAD_DELAY_MS = 500;
@@ -1093,6 +1136,144 @@
         .catch((err) => showDialog("Delete failed: " + err.message, "Error"));
     }
 
+    function getSelectedPaths() {
+      return Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.dataset.path);
+    }
+
+    function updateBulkToolbar() {
+      const paths = getSelectedPaths();
+      const toolbar = document.getElementById('bulkToolbar');
+      const countEl = document.getElementById('bulkCount');
+      if (!toolbar || !countEl) return;
+      if (paths.length === 0) {
+        toolbar.style.display = 'none';
+      } else {
+        toolbar.style.display = 'flex';
+        countEl.textContent = paths.length + ' selected';
+      }
+      const selectAll = document.getElementById('selectAllCheckbox');
+      if (selectAll) {
+        const total = document.querySelectorAll('.row-checkbox').length;
+        selectAll.checked = total > 0 && paths.length === total;
+        selectAll.indeterminate = paths.length > 0 && paths.length < total;
+      }
+    }
+
+    async function newFolder() {
+      const currentPath = (document.getElementById('currentPath') || {}).value || '';
+      const name = await showDialog('Enter folder name:', 'New folder', { prompt: true, showCancel: true });
+      if (!name || !name.trim()) return;
+      const formData = new URLSearchParams();
+      formData.append('parent', currentPath);
+      formData.append('name', name.trim());
+      try {
+        const res = await fetch('/mkdir', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRFToken': getXSRFToken() },
+          body: formData.toString(),
+        });
+        if (res.ok) location.reload();
+        else showDialog('Create folder failed: ' + (await res.text()), 'Error');
+      } catch (e) {
+        showDialog('Create folder failed: ' + e.message, 'Error');
+      }
+    }
+
+    async function bulkDelete() {
+      const paths = getSelectedPaths();
+      if (paths.length === 0) return;
+      const confirmed = await showDialog('Delete ' + paths.length + ' item(s)? This cannot be undone.', 'Confirm bulk delete', { showCancel: true });
+      if (!confirmed) return;
+      try {
+        const res = await fetch('/api/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
+          body: JSON.stringify({ action: 'delete', paths }),
+        });
+        const data = await res.json();
+        if (data.ok) location.reload();
+        else showDialog(data.results && data.results.find(r => !r.ok) ? data.results.map(r => r.error).filter(Boolean).join('; ') : 'Bulk delete failed', 'Error');
+      } catch (e) {
+        showDialog('Bulk delete failed: ' + e.message, 'Error');
+      }
+    }
+
+    async function bulkCopy() {
+      const paths = getSelectedPaths();
+      if (paths.length === 0) return;
+      const dest = await showDialog('Destination folder path (e.g. target/ or target/sub):', 'Copy to', { prompt: true, showCancel: true, defaultValue: (document.getElementById('currentPath') || {}).value || '' });
+      if (dest == null || dest === '') return;
+      const destDir = dest.trim().replace(/^\/+|\/+$/g, '') || '';
+      let failed = 0;
+      for (const path of paths) {
+        const base = path.split('/').filter(Boolean).pop() || path;
+        const fullDest = destDir ? destDir + '/' + base : base;
+        const formData = new URLSearchParams();
+        formData.append('path', path);
+        formData.append('dest', fullDest);
+        const res = await fetch('/copy', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRFToken': getXSRFToken() }, body: formData.toString() });
+        if (!res.ok) failed++;
+      }
+      if (failed === 0) location.reload();
+      else showDialog(failed + ' of ' + paths.length + ' copy operation(s) failed.', 'Copy');
+    }
+
+    async function bulkMove() {
+      const paths = getSelectedPaths();
+      if (paths.length === 0) return;
+      const dest = await showDialog('Destination folder path (e.g. target/ or target/sub):', 'Move to', { prompt: true, showCancel: true, defaultValue: (document.getElementById('currentPath') || {}).value || '' });
+      if (dest == null || dest === '') return;
+      const destDir = dest.trim().replace(/^\/+|\/+$/g, '') || '';
+      let failed = 0;
+      for (const path of paths) {
+        const base = path.split('/').filter(Boolean).pop() || path;
+        const fullDest = destDir ? destDir + '/' + base : base;
+        const formData = new URLSearchParams();
+        formData.append('path', path);
+        formData.append('dest', fullDest);
+        const res = await fetch('/move', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRFToken': getXSRFToken() }, body: formData.toString() });
+        if (!res.ok) failed++;
+      }
+      if (failed === 0) location.reload();
+      else showDialog(failed + ' of ' + paths.length + ' move operation(s) failed.', 'Move');
+    }
+
+    async function bulkAddToShare() {
+      const paths = getSelectedPaths();
+      if (paths.length === 0) return;
+      const selectEl = document.getElementById('sharePickerSelect');
+      const modal = document.getElementById('sharePickerModal');
+      if (!selectEl || !modal) return;
+      selectEl.innerHTML = '<option value="">Loading...</option>';
+      modal.classList.add('show');
+      try {
+        const res = await fetch('/share/list');
+        const data = await res.json();
+        if (data.error) { showDialog(data.error, 'Error'); modal.classList.remove('show'); return; }
+        const shares = data.shares || {};
+        selectEl.innerHTML = Object.keys(shares).length ? Object.entries(shares).map(([id, s]) => '<option value="' + id + '">' + id + (s.paths && s.paths.length ? ' (' + s.paths.length + ' path(s))' : '') + '</option>').join('') : '<option value="">No shares</option>';
+      } catch (e) {
+        selectEl.innerHTML = '<option value="">Error loading shares</option>';
+      }
+      const shareId = await new Promise((resolve) => {
+        document.getElementById('sharePickerConfirm').onclick = () => { modal.classList.remove('show'); resolve(selectEl.value); };
+        document.getElementById('sharePickerCancel').onclick = () => { modal.classList.remove('show'); resolve(null); };
+      });
+      if (!shareId) return;
+      try {
+        const res = await fetch('/api/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
+          body: JSON.stringify({ action: 'add_to_share', share_id: shareId, paths }),
+        });
+        const data = await res.json();
+        if (data.ok) location.reload();
+        else showDialog(data.results && data.results.find(r => !r.ok) ? data.results.map(r => r.error).filter(Boolean).join('; ') : 'Add to share failed', 'Error');
+      } catch (e) {
+        showDialog('Add to share failed: ' + e.message, 'Error');
+      }
+    }
+
     function calculateSkipRows(allRows) {
       // Skip parent directory link if present
       if (
@@ -1139,10 +1320,11 @@
           return bVal - aVal;
         }
 
+        const nameCol = 1;
         const aIsDir =
-          a.children[0].querySelector(".file-icon").textContent === "📁";
+          a.children[nameCol] && a.children[nameCol].querySelector(".file-icon") && a.children[nameCol].querySelector(".file-icon").textContent === "📁";
         const bIsDir =
-          b.children[0].querySelector(".file-icon").textContent === "📁";
+          b.children[nameCol] && b.children[nameCol].querySelector(".file-icon") && b.children[nameCol].querySelector(".file-icon").textContent === "📁";
 
         if (aIsDir !== bIsDir) {
           return bIsDir ? 1 : -1;
@@ -1388,6 +1570,28 @@
           closeSharePopup();
         });
       });
+
+      // Select all checkbox
+      const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+      if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function () {
+          document.querySelectorAll('.row-checkbox').forEach(cb => { cb.checked = selectAllCheckbox.checked; });
+          updateBulkToolbar();
+        });
+      }
+      document.querySelectorAll('.row-checkbox').forEach(function (cb) {
+        cb.addEventListener('change', updateBulkToolbar);
+      });
+      const newFolderBtn = document.getElementById('newFolderBtn');
+      if (newFolderBtn) newFolderBtn.addEventListener('click', newFolder);
+      const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+      if (bulkDeleteBtn) bulkDeleteBtn.addEventListener('click', bulkDelete);
+      const bulkCopyBtn = document.getElementById('bulkCopyBtn');
+      if (bulkCopyBtn) bulkCopyBtn.addEventListener('click', bulkCopy);
+      const bulkMoveBtn = document.getElementById('bulkMoveBtn');
+      if (bulkMoveBtn) bulkMoveBtn.addEventListener('click', bulkMove);
+      const bulkAddToShareBtn = document.getElementById('bulkAddToShareBtn');
+      if (bulkAddToShareBtn) bulkAddToShareBtn.addEventListener('click', bulkAddToShare);
     });
   </script>
 

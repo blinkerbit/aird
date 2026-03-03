@@ -91,11 +91,19 @@
                 <input type="checkbox" name="p2p_transfer" {% if features.get('p2p_transfer') %}checked{% end %}>
                 Enable P2P Transfer
             </label><br>
+            <label>
+                <input type="checkbox" name="folder_create" {% if features.get('folder_create') %}checked{% end %}>
+                Enable Create Folder
+            </label><br>
+            <label>
+                <input type="checkbox" name="folder_delete" {% if features.get('folder_delete') %}checked{% end %}>
+                Enable Delete Folder
+            </label><br>
         </div>
 
         <div class="section">
             <h3>Upload Settings</h3>
-            <p><em>Configure maximum file upload size. Changes take effect immediately for new uploads.</em></p>
+            <p><em>Configure maximum file upload size and allowed file types. Changes take effect immediately for new uploads.</em></p>
             <div class="config-group">
                 <div class="config-row">
                     <label>Max File Size (MB):</label>
@@ -104,8 +112,38 @@
                            min="1" max="10240" step="1">
                     <span class="help-text">(1–10240 MB, default 512 MB)</span>
                 </div>
+                <div class="config-row" style="margin-top: 10px;">
+                    <label>
+                        <input type="checkbox" name="allow_all_file_types" id="allowAllFileTypes" {% if upload_config.get('allow_all_file_types', 0) %}checked{% end %}>
+                        Allow all file types
+                    </label>
+                    <span class="help-text">When unchecked, only selected types below are allowed. When checked, any file type can be uploaded.</span>
+                </div>
+                <div id="allowedExtensionsSection" class="config-group" style="margin-top: 12px; {% if upload_config.get('allow_all_file_types', 0) %}display: none;{% end %}">
+                    <h4 style="margin-bottom: 8px;">Allowed file types (when "Allow all file types" is unchecked)</h4>
+                    <p class="help-text" style="margin-bottom: 8px;">Select which extensions users can upload:</p>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px 16px;">
+                        {% for ext in available_extensions %}
+                        <label style="display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
+                            <input type="checkbox" name="allow_ext" value="{{ ext }}" {% if ext in allowed_extensions_current %}checked{% end %}>
+                            <code>{{ ext }}</code>
+                        </label>
+                        {% end %}
+                    </div>
+                </div>
             </div>
         </div>
+        <script nonce="{{ csp_nonce }}">
+            (function() {
+                var allowAll = document.getElementById('allowAllFileTypes');
+                var section = document.getElementById('allowedExtensionsSection');
+                if (allowAll && section) {
+                    allowAll.addEventListener('change', function() {
+                        section.style.display = this.checked ? 'none' : 'block';
+                    });
+                }
+            })();
+        </script>
 
         <div class="section">
             <h3>WebSocket Connection Settings</h3>
@@ -182,6 +220,8 @@
     <div style="margin: 20px 0;">
         <a href="/files/" style="margin-right: 20px;">📁 Files</a>
         <a href="/admin/websocket-stats" target="_blank" style="margin-right: 20px;">📈 View WebSocket Statistics</a>
+        <a href="/admin/audit" style="margin-right: 20px;">📋 Audit Log</a>
+        <a href="/admin/network-shares" style="margin-right: 20px;">🌐 Network Shares</a>
         <a href="/logout">Logout</a>
     </div>
 </body>

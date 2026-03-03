@@ -71,11 +71,25 @@
       margin-left: 10px;
     }
 
-    .editor-wrap {
+    .editor-wrap, .preview-wrap {
       display: flex;
       height: calc(100vh - 60px);
       margin: 10px 14px;
     }
+    .preview-wrap {
+      overflow: auto;
+      padding: 10px 14px;
+    }
+    .markdown-preview {
+      max-width: 800px;
+      font-family: inherit;
+      line-height: 1.5;
+    }
+    .markdown-preview h1, .markdown-preview h2, .markdown-preview h3 { margin-top: 1em; margin-bottom: 0.5em; }
+    .markdown-preview pre { background: #f5f5f5; padding: 10px; overflow: auto; border: 1px solid #ddd; }
+    .markdown-preview code { background: #f5f5f5; padding: 2px 4px; }
+    .markdown-preview blockquote { border-left: 4px solid #ccc; margin: 0; padding-left: 1em; color: #555; }
+    button.active-tab { background-color: #ddd; }
 
     /* Line numbers gutter styled similar to file view */
     .gutter {
@@ -131,6 +145,10 @@
     <div class="btns">
       <a href="/profile" style="font-size: 12px; color: #666; margin-right: 15px; text-decoration: none;">👤 {{
         handler.get_display_username() }}</a>
+      {% if is_markdown %}
+      <button id="tabEdit" type="button">Edit</button>
+      <button id="tabPreview" type="button">Preview</button>
+      {% end %}
       <button id="backBtn">Back</button>
       <button id="saveBtn">Save (Ctrl/Cmd+S)</button>
       <a href="/logout"
@@ -139,10 +157,16 @@
       <span id="status" class="status"></span>
     </div>
   </header>
+  {% if is_markdown %}
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" nonce="{{ csp_nonce }}"></script>
+  {% end %}
   <input type="hidden" id="path" value="/{{ path }}" />
-  <div class="editor-wrap">
+  <div class="editor-wrap" id="editorWrap">
     <div id="gutter" class="gutter"></div>
     <textarea id="editor" spellcheck="false" wrap="off">{{ full_file_content }}</textarea>
+  </div>
+  <div id="previewWrap" class="preview-wrap" style="display: none;">
+    <div id="markdownPreview" class="markdown-preview"></div>
   </div>
 
   <script nonce="{{ csp_nonce }}">
@@ -240,7 +264,38 @@
     document.getElementById('backBtn').addEventListener('click', function () {
       history.back();
     });
+
+    {% if is_markdown %}
+    (function() {
+      const editorWrap = document.getElementById('editorWrap');
+      const previewWrap = document.getElementById('previewWrap');
+      const tabEdit = document.getElementById('tabEdit');
+      const tabPreview = document.getElementById('tabPreview');
+      const previewEl = document.getElementById('markdownPreview');
+      function showEdit() {
+        editorWrap.style.display = 'flex';
+        previewWrap.style.display = 'none';
+        if (tabEdit) tabEdit.classList.add('active-tab');
+        if (tabPreview) tabPreview.classList.remove('active-tab');
+      }
+      function showPreview() {
+        editorWrap.style.display = 'none';
+        previewWrap.style.display = 'flex';
+        if (tabPreview) tabPreview.classList.add('active-tab');
+        if (tabEdit) tabEdit.classList.remove('active-tab');
+        if (typeof marked !== 'undefined' && previewEl) {
+          previewEl.innerHTML = marked.parse(editor.value);
+        }
+      }
+      if (tabEdit) {
+        tabEdit.classList.add('active-tab');
+        tabEdit.addEventListener('click', showEdit);
+      }
+      if (tabPreview) tabPreview.addEventListener('click', showPreview);
+    })();
+    {% end %}
   </script>
+    {% end %}
 </body>
 
 </html>

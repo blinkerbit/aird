@@ -36,10 +36,12 @@ aird/handlers/api_handlers.py
 aird/handlers/auth_handlers.py
 aird/handlers/base_handler.py
 aird/handlers/file_op_handlers.py
+aird/handlers/health_handler.py
 aird/handlers/p2p_handlers.py
 aird/handlers/share_handlers.py
 aird/handlers/view_handlers.py
 aird/templates/admin.html
+aird/templates/admin_audit.html
 aird/templates/admin_ldap.html
 aird/templates/admin_login.html
 aird/templates/admin_users.html
@@ -52,6 +54,7 @@ aird/templates/ldap_config_create.html
 aird/templates/ldap_config_edit.html
 aird/templates/login.html
 aird/templates/p2p_transfer.html
+aird/templates/pdf_preview.html
 aird/templates/profile.html
 aird/templates/share.html
 aird/templates/shared_list.html
@@ -77,12 +80,15 @@ tests/test_database_feature_flags.py
 tests/test_database_ldap.py
 tests/test_database_shares.py
 tests/test_database_users.py
+tests/test_database_users_hashing.py
 tests/test_db.py
 tests/test_file_op_handlers.py
 tests/test_filter_expression.py
 tests/test_main.py
 tests/test_mmap_handler.py
 tests/test_p2p_handlers.py
+tests/test_password_hashing.py
+tests/test_rate_limit.py
 tests/test_security.py
 tests/test_share_handlers.py
 tests/test_super_search_handler.py

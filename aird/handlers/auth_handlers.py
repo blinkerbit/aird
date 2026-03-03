@@ -12,6 +12,7 @@ from aird.db import (
     create_user,
     update_user,
     authenticate_user,
+    log_audit,
 )
 import aird.config as config_module
 import aird.constants as constants_module
@@ -142,6 +143,7 @@ class LDAPLoginHandler(BaseHandler):
             # Set cookies with 24-hour expiration for session security
             self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict", expires_days=1)
             self.set_secure_cookie("user_role", user_role, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict", expires_days=1)
+            log_audit(constants_module.DB_CONN, "login", username=username, ip=self.request.remote_ip)
             self.redirect("/files/")
             return
         except Exception:
@@ -215,6 +217,7 @@ class LoginHandler(BaseHandler):
                 user = authenticate_user(db_conn, username, password)
                 if user:
                     logging.info(f"Username/password authentication successful for user: {username}, redirecting to: {next_url}")
+                    log_audit(db_conn, "login", username=username, ip=self.request.remote_ip)
                     # Set cookies with 24-hour expiration for session security
                     self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict", expires_days=1)
                     self.set_secure_cookie("user_role", user['role'], httponly=True, secure=(self.request.protocol == "https"), samesite="Strict", expires_days=1)
@@ -260,6 +263,7 @@ class LoginHandler(BaseHandler):
         
         if secrets.compare_digest(normalized_token, normalized_access_token):
             logging.info(f"Token authentication successful, redirecting to: {next_url}")
+            log_audit(constants_module.DB_CONN, "login", username="token_authenticated", ip=self.request.remote_ip)
             # Set cookies with 24-hour expiration for session security
             self.set_secure_cookie("user", "token_authenticated", httponly=True, secure=(self.request.protocol == "https"), samesite="Strict", expires_days=1)
             self.set_secure_cookie("user_role", "admin", httponly=True, secure=(self.request.protocol == "https"), samesite="Strict", expires_days=1)  # Token users get admin role
@@ -300,6 +304,7 @@ class AdminLoginHandler(BaseHandler):
             try:
                 user = authenticate_user(db_conn, username, password)
                 if user and user['role'] == 'admin':
+                    log_audit(db_conn, "admin_login", username=username, ip=self.request.remote_ip)
                     # Set both user and admin cookies for admin users
                     # Set cookies with 24-hour expiration for session security
                     self.set_secure_cookie("user", username, httponly=True, secure=(self.request.protocol == "https"), samesite="Strict", expires_days=1)
@@ -347,6 +352,7 @@ class AdminLoginHandler(BaseHandler):
         
         if secrets.compare_digest(normalized_token, normalized_admin_token):
             logging.info("Admin token authentication successful")
+            log_audit(constants_module.DB_CONN, "admin_login", username="admin_token", ip=self.request.remote_ip)
             # Set cookie with 24-hour expiration for session security
             self.set_secure_cookie("admin", "authenticated", httponly=True, secure=(self.request.protocol == "https"), samesite="Strict", expires_days=1)
             self.redirect("/admin")

@@ -3,6 +3,7 @@ ldap3>=2.9.1
 aiofiles>=23.0.0
 argon2-cffi>=23.1.0
 requests>=2.31.0
+chardet>=5.0.0
 
 [test]
 pytest>=8.3.3
