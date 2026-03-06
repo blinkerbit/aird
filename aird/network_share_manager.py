@@ -1,4 +1,4 @@
-"""Manages embedded SMB (impacket) and WebDAV (WsgiDAV+cheroot) servers."""
+"""Manages embedded SMB (pysmbserver, SMB1/2) and WebDAV (WsgiDAV+cheroot, Class 2) servers."""
 
 import logging
 import os
@@ -7,7 +7,6 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Lazy imports to avoid hard failure if deps are missing
 _SMB_AVAILABLE = False
 _WEBDAV_AVAILABLE = False
 
@@ -146,6 +145,7 @@ class NetworkShareManager:
         folder = share["folder_path"]
         username = share["username"]
         password = share["password"]
+        read_only = bool(share.get("read_only"))
 
         def _run() -> None:
             try:
@@ -157,6 +157,32 @@ class NetworkShareManager:
                         "user_mapping": {
                             "*": {username: {"password": password}},
                         },
+                    },
+                    "fs_dav_provider": {
+                        "readonly": read_only,
+                    },
+                    "http_authenticator": {
+                        "domain_controller": None,
+                        "accept_basic": True,
+                        "accept_digest": True,
+                        "default_to_digest": True,
+                    },
+                    "lock_storage": True,
+                    "property_manager": True,
+                    "hotfixes": {
+                        "emulate_win32_lastmod": True,
+                        "re_encode_path_info": True,
+                        "unquote_path_info": False,
+                        "win_accept_anonymous_options": True,
+                    },
+                    "dir_browser": {
+                        "enable": True,
+                        "response_trailer": "",
+                        "show_user": True,
+                        "show_logout": True,
+                        "davmount": False,
+                        "ms_sharepoint_support": True,
+                        "libre_office_support": True,
                     },
                     "verbose": 1,
                 }
