@@ -527,7 +527,17 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
                             continue
                         
                         files_searched += 1
-                        
+
+                        # Stream the file name being scanned to the client
+                        try:
+                            self.write_message(json.dumps({
+                                'type': 'scanning',
+                                'file_path': rel_path_str,
+                                'files_searched': files_searched,
+                            }))
+                        except Exception:
+                            pass
+
                         # Try to read and search file content
                         try:
                             # Check file size before reading
@@ -555,7 +565,7 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
                         continue
                 
                 # Yield control periodically to avoid blocking and check authentication
-                if files_searched % 100 == 0:
+                if files_searched % 20 == 0:
                     await asyncio.sleep(0)
                     # Periodically validate authentication during long searches
                     if not self.get_current_user():
@@ -571,14 +581,15 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
             # Send completion message
             if matches == 0:
                 self.write_message(json.dumps({
-                    'type': 'no_matches',
-                    'files_searched': files_searched
+                    'type': 'no_files',
+                    'message': f'No matches found in {files_searched} files.',
+                    'files_searched': files_searched,
                 }))
             else:
                 self.write_message(json.dumps({
-                    'type': 'done',
+                    'type': 'search_complete',
                     'matches': matches,
-                    'files_searched': files_searched
+                    'files_searched': files_searched,
                 }))
                 
         except asyncio.CancelledError:

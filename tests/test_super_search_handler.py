@@ -112,10 +112,12 @@ class TestSuperSearchWebSocketHandler:
             
             await handler.perform_search("*.txt", "foo")
             
-            # Check for no_matches message
             calls = handler.write_message.call_args_list
-            no_match_call = next((c for c in calls if 'no_matches' in c[0][0]), None)
+            no_match_call = next((c for c in calls if 'no_files' in c[0][0]), None)
             assert no_match_call is not None
+            data = json.loads(no_match_call[0][0])
+            assert data['type'] == 'no_files'
+            assert 'files_searched' in data
 
     @pytest.mark.asyncio
     async def test_search_cancellation(self):
@@ -126,7 +128,179 @@ class TestSuperSearchWebSocketHandler:
         
         await handler.perform_search("*.txt", "foo")
         
-        # Should send cancelled message
         calls = handler.write_message.call_args_list
         cancelled_call = next((c for c in calls if 'cancelled' in c[0][0]), None)
         assert cancelled_call is not None
+
+    # ----------------------------------------------------------------
+    # Scanning ticker & completion message tests
+    # ----------------------------------------------------------------
+
+    def _setup_handler_with_fs(self, walk_return, file_lines=None, file_size=100):
+        """Helper: create a handler with mocked file system."""
+        handler = SuperSearchWebSocketHandler(self.mock_app, self.mock_request)
+        handler.get_current_user = MagicMock(return_value={'username': 'user'})
+        handler.write_message = MagicMock()
+
+        mock_file_path = MagicMock()
+        mock_file_path.stat.return_value.st_size = file_size
+
+        def make_rel(root):
+            """Return a mock that stringifies to the filename part."""
+            result = MagicMock()
+            result.__str__ = lambda s: mock_file_path._current_name
+            return result
+
+        mock_file_path.relative_to = make_rel
+
+        root_mock = MagicMock()
+        root_mock.resolve.return_value = root_mock
+
+        def truediv(_, name):
+            mock_file_path._current_name = name
+            return mock_file_path
+
+        root_mock.__truediv__ = truediv
+
+        path_cls = MagicMock(return_value=root_mock)
+
+        mock_open = MagicMock()
+        mock_file = MagicMock()
+        mock_file.__enter__ = MagicMock(return_value=iter(file_lines or []))
+        mock_file.__exit__ = MagicMock(return_value=False)
+        mock_open.return_value = mock_file
+
+        return handler, walk_return, path_cls, mock_open
+
+    def _get_messages(self, handler, msg_type=None):
+        """Extract parsed JSON messages from write_message calls, optionally filtered by type."""
+        msgs = []
+        for c in handler.write_message.call_args_list:
+            try:
+                data = json.loads(c[0][0])
+                if msg_type is None or data.get('type') == msg_type:
+                    msgs.append(data)
+            except (json.JSONDecodeError, IndexError):
+                pass
+        return msgs
+
+    @pytest.mark.asyncio
+    async def test_scanning_message_sent_for_each_matching_file(self):
+        """Backend sends a 'scanning' message for every file that matches the glob."""
+        handler, walk_return, path_cls, mock_open = self._setup_handler_with_fs(
+            walk_return=[('/root', [], ['a.txt', 'b.txt', 'c.py'])],
+            file_lines=["nothing here\n"],
+        )
+
+        with patch('os.walk', return_value=walk_return), \
+             patch('aird.handlers.api_handlers.pathlib.Path', path_cls), \
+             patch('builtins.open', mock_open):
+            await handler.perform_search("*.txt", "needle")
+
+        scanning_msgs = self._get_messages(handler, 'scanning')
+        assert len(scanning_msgs) == 2
+        scanned_paths = [m['file_path'] for m in scanning_msgs]
+        assert 'a.txt' in scanned_paths
+        assert 'b.txt' in scanned_paths
+
+    @pytest.mark.asyncio
+    async def test_scanning_message_contains_files_searched_counter(self):
+        handler, walk_return, path_cls, mock_open = self._setup_handler_with_fs(
+            walk_return=[('/root', [], ['x.txt', 'y.txt'])],
+            file_lines=["no match\n"],
+        )
+
+        with patch('os.walk', return_value=walk_return), \
+             patch('aird.handlers.api_handlers.pathlib.Path', path_cls), \
+             patch('builtins.open', mock_open):
+            await handler.perform_search("*.txt", "needle")
+
+        scanning_msgs = self._get_messages(handler, 'scanning')
+        counters = [m['files_searched'] for m in scanning_msgs]
+        assert counters == [1, 2]
+
+    @pytest.mark.asyncio
+    async def test_scanning_not_sent_for_non_matching_files(self):
+        """Files that don't match the glob should not produce scanning messages."""
+        handler, walk_return, path_cls, mock_open = self._setup_handler_with_fs(
+            walk_return=[('/root', [], ['readme.md', 'notes.md'])],
+            file_lines=[],
+        )
+
+        with patch('os.walk', return_value=walk_return), \
+             patch('aird.handlers.api_handlers.pathlib.Path', path_cls), \
+             patch('builtins.open', mock_open):
+            await handler.perform_search("*.txt", "needle")
+
+        scanning_msgs = self._get_messages(handler, 'scanning')
+        assert len(scanning_msgs) == 0
+
+    @pytest.mark.asyncio
+    async def test_search_complete_message_on_matches(self):
+        handler, walk_return, path_cls, mock_open = self._setup_handler_with_fs(
+            walk_return=[('/root', [], ['data.txt'])],
+            file_lines=["hello needle world\n"],
+        )
+
+        with patch('os.walk', return_value=walk_return), \
+             patch('aird.handlers.api_handlers.pathlib.Path', path_cls), \
+             patch('builtins.open', mock_open):
+            await handler.perform_search("*.txt", "needle")
+
+        complete_msgs = self._get_messages(handler, 'search_complete')
+        assert len(complete_msgs) == 1
+        assert complete_msgs[0]['matches'] == 1
+        assert complete_msgs[0]['files_searched'] == 1
+
+    @pytest.mark.asyncio
+    async def test_no_files_message_when_zero_matches(self):
+        handler, walk_return, path_cls, mock_open = self._setup_handler_with_fs(
+            walk_return=[('/root', [], ['data.txt'])],
+            file_lines=["nothing relevant\n"],
+        )
+
+        with patch('os.walk', return_value=walk_return), \
+             patch('aird.handlers.api_handlers.pathlib.Path', path_cls), \
+             patch('builtins.open', mock_open):
+            await handler.perform_search("*.txt", "needle")
+
+        no_files_msgs = self._get_messages(handler, 'no_files')
+        assert len(no_files_msgs) == 1
+        assert no_files_msgs[0]['files_searched'] == 1
+        assert 'message' in no_files_msgs[0]
+
+    @pytest.mark.asyncio
+    async def test_message_order_scanning_before_match(self):
+        """For a matching file, scanning message should appear before the match message."""
+        handler, walk_return, path_cls, mock_open = self._setup_handler_with_fs(
+            walk_return=[('/root', [], ['log.txt'])],
+            file_lines=["found needle here\n"],
+        )
+
+        with patch('os.walk', return_value=walk_return), \
+             patch('aird.handlers.api_handlers.pathlib.Path', path_cls), \
+             patch('builtins.open', mock_open):
+            await handler.perform_search("*.txt", "needle")
+
+        all_msgs = self._get_messages(handler)
+        types = [m['type'] for m in all_msgs]
+        scanning_idx = types.index('scanning')
+        match_idx = types.index('match')
+        assert scanning_idx < match_idx
+
+    @pytest.mark.asyncio
+    async def test_search_start_is_first_message(self):
+        handler, walk_return, path_cls, mock_open = self._setup_handler_with_fs(
+            walk_return=[('/root', [], ['f.txt'])],
+            file_lines=["line\n"],
+        )
+
+        with patch('os.walk', return_value=walk_return), \
+             patch('aird.handlers.api_handlers.pathlib.Path', path_cls), \
+             patch('builtins.open', mock_open):
+            await handler.perform_search("*.txt", "needle")
+
+        all_msgs = self._get_messages(handler)
+        assert all_msgs[0]['type'] == 'search_start'
+        assert all_msgs[0]['pattern'] == '*.txt'
+        assert all_msgs[0]['search_text'] == 'needle'

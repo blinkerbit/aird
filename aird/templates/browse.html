@@ -1415,9 +1415,9 @@
                 </div>
               ` : ''}
               <div class="share-actions">
-                <button class="btn" onclick="copyToClipboard('${window.location.origin}${share.url}', this)">Copy Link</button>
-                <button class="btn" onclick="openShare('${share.url}')">Open Share</button>
-                <button class="btn" onclick="revokeShare('${share.id}')">Revoke</button>
+                <button class="btn" data-action="copyToClipboard" data-text="${window.location.origin}${share.url}">Copy Link</button>
+                <button class="btn" data-action="openShare" data-url="${share.url}">Open Share</button>
+                <button class="btn" data-action="revokeShare" data-id="${share.id}">Revoke</button>
               </div>
             </div>
           `).join('');
@@ -1592,6 +1592,23 @@
       if (bulkMoveBtn) bulkMoveBtn.addEventListener('click', bulkMove);
       const bulkAddToShareBtn = document.getElementById('bulkAddToShareBtn');
       if (bulkAddToShareBtn) bulkAddToShareBtn.addEventListener('click', bulkAddToShare);
+
+      // Event delegation for dynamically generated share popup buttons
+      document.addEventListener('click', function (e) {
+        const el = e.target.closest('[data-action]');
+        if (!el) return;
+        const action = el.dataset.action;
+        if (action === 'copyToClipboard') {
+          e.preventDefault();
+          copyToClipboard(el.dataset.text, el);
+        } else if (action === 'openShare') {
+          e.preventDefault();
+          openShare(el.dataset.url);
+        } else if (action === 'revokeShare') {
+          e.preventDefault();
+          revokeShare(el.dataset.id);
+        }
+      });
     });
   </script>
 

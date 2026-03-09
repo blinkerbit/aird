@@ -18,7 +18,7 @@ except ImportError:
 
 setup(
     name='aird',
-    version="0.4.9",
+    version="0.4.10",
     packages=find_packages(),
     package_data={'aird': ['templates/*.html']},
     rust_extensions=rust_extensions,
