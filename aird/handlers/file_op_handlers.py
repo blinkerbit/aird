@@ -223,7 +223,7 @@ class CreateFolderHandler(BaseHandler):
             self.set_header("Content-Type", "application/json")
             self.write({"ok": True, "path": (parent + "/" + name) if parent else name})
             return
-        self.redirect("/files/" + (parent + "/" + name) if parent else name + "/")
+        self.redirect("/files/" + ((parent + "/" + name) if parent else name) + "/")
 
 
 def path_to_rel(abspath):
