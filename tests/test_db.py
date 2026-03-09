@@ -9,7 +9,6 @@ from unittest.mock import patch, MagicMock
 from aird.db import (
     init_db,
     load_feature_flags,
-    _load_feature_flags,
     save_feature_flags,
     insert_share,
     delete_share,
@@ -22,7 +21,6 @@ from aird.db import (
     load_upload_config,
     save_upload_config,
     load_websocket_config,
-    _load_websocket_config,
     save_websocket_config,
     hash_password,
     verify_password,
@@ -129,13 +127,6 @@ class TestFeatureFlags:
         result = load_feature_flags(db_conn)
         assert result == flags
     
-    def test_load_feature_flags_wrapper(self, db_conn):
-        """Test that _load_feature_flags delegates to load_feature_flags"""
-        flags = {'test_flag': True}
-        save_feature_flags(db_conn, flags)
-        
-        result = _load_feature_flags(db_conn)
-        assert result == flags
     
     def test_save_feature_flags_updates_existing(self, db_conn):
         """Test that saving updates existing flags"""
@@ -293,13 +284,7 @@ class TestWebsocketConfig:
         result = load_websocket_config(db_conn)
         assert result == config
     
-    def test_load_websocket_config_wrapper(self, db_conn):
-        """Test wrapper function"""
-        config = {'key1': 50}
-        save_websocket_config(db_conn, config)
-        
-        result = _load_websocket_config(db_conn)
-        assert result == config
+
 
 
 class TestUploadConfig:

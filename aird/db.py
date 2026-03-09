@@ -30,6 +30,7 @@ DB_CONN = None
 DB_PATH = "aird.db"
 PRAGMA_TABLE_INFO = "PRAGMA table_info(shares)"
 
+
 def init_db(conn: sqlite3.Connection) -> None:
     conn.execute("""
         CREATE TABLE IF NOT EXISTS feature_flags (
@@ -134,11 +135,6 @@ def load_feature_flags(conn: sqlite3.Connection) -> dict:
         return {k: bool(v) for (k, v) in rows}
     except Exception:
         return {}
-
-
-def _load_feature_flags(conn: sqlite3.Connection) -> dict:
-    """Compatibility wrapper used by util.py; delegates to load_feature_flags."""
-    return load_feature_flags(conn)
 
 
 def save_feature_flags(conn: sqlite3.Connection, flags: dict) -> None:
@@ -631,11 +627,6 @@ def load_websocket_config(conn: sqlite3.Connection) -> dict:
         return {k: int(v) for (k, v) in rows}
     except Exception:
         return {}
-
-
-def _load_websocket_config(conn: sqlite3.Connection) -> dict:
-    """Compatibility wrapper used by util.py; delegates to load_websocket_config."""
-    return load_websocket_config(conn)
 
 
 def save_websocket_config(conn: sqlite3.Connection, config: dict) -> None:
@@ -1367,7 +1358,7 @@ def sync_ldap_users(conn: sqlite3.Connection) -> dict:
         return {"status": "error", "message": str(e)}
 
 
-def extract_username_from_dn(dn: str, user_template: str) -> str|None:
+def extract_username_from_dn(dn: str, user_template: str) -> str | None:
     """Extract username from LDAP DN using the user template"""
     try:
         # Simple template matching - can be enhanced for more complex patterns

@@ -948,7 +948,7 @@ class TestUserEditHandler:
              patch.object(handler, 'write') as mock_write:
             handler.get("1")
             mock_status.assert_called_once_with(500)
-            assert "Database connection error" in mock_write.call_args[0][0]
+            mock_write.assert_called_with({"error": "Database connection not available"})
 
     def test_get_invalid_user_id_returns_400(self, mock_tornado_app, mock_tornado_request, mock_db_conn):
         handler = UserEditHandler(mock_tornado_app, mock_tornado_request)
@@ -982,7 +982,7 @@ class TestUserEditHandler:
              patch.object(handler, 'write') as mock_write:
             handler.post("1")
             mock_status.assert_called_once_with(500)
-            assert "Database connection error" in mock_write.call_args[0][0]
+            mock_write.assert_called_with({"error": "Database connection not available"})
 
     def test_post_user_not_found_returns_404(self, mock_tornado_app, mock_tornado_request, mock_db_conn):
         handler = UserEditHandler(mock_tornado_app, mock_tornado_request)
@@ -1187,7 +1187,7 @@ class TestUserDeleteHandler:
              patch.object(handler, 'write') as mock_write:
             handler.post()
             mock_status.assert_called_once_with(500)
-            assert "Database connection error" in mock_write.call_args[0][0]
+            mock_write.assert_called_with({"error": "Database connection not available"})
 
     def test_post_delete_user_returns_false(self, mock_tornado_app, mock_tornado_request, mock_db_conn):
         handler = UserDeleteHandler(mock_tornado_app, mock_tornado_request)
@@ -1257,9 +1257,11 @@ class TestLDAPConfigCreateHandler:
         handler.get_argument = MagicMock(return_value="")
         with patch.object(handler, 'is_admin_user', return_value=True), \
              patch_db_conn(None), \
-             patch.object(handler, 'render') as mock_render:
+             patch.object(handler, 'set_status') as mock_status, \
+             patch.object(handler, 'write') as mock_write:
             handler.post()
-            mock_render.assert_called_once()
+            mock_status.assert_called_once_with(500)
+            mock_write.assert_called_with({"error": "Database connection not available"})
 
     def test_post_creates_configuration(self, mock_tornado_app, mock_tornado_request, mock_db_conn):
         handler = LDAPConfigCreateHandler(mock_tornado_app, mock_tornado_request)
@@ -1411,7 +1413,7 @@ class TestLDAPConfigEditHandler:
              patch.object(handler, 'write') as mock_write:
             handler.get("1")
             mock_status.assert_called_once_with(500)
-            assert "Database connection error" in mock_write.call_args[0][0]
+            mock_write.assert_called_with({"error": "Database connection not available"})
 
     def test_get_invalid_id_returns_error(self, mock_tornado_app, mock_tornado_request, mock_db_conn):
         handler = LDAPConfigEditHandler(mock_tornado_app, mock_tornado_request)
@@ -1443,7 +1445,7 @@ class TestLDAPConfigEditHandler:
              patch.object(handler, 'write') as mock_write:
             handler.post("1")
             mock_status.assert_called_once_with(500)
-            assert "Database connection error" in mock_write.call_args[0][0]
+            mock_write.assert_called_with({"error": "Database connection not available"})
 
     def test_post_returns_404_when_config_missing(self, mock_tornado_app, mock_tornado_request, mock_db_conn):
         handler = LDAPConfigEditHandler(mock_tornado_app, mock_tornado_request)
@@ -1572,7 +1574,7 @@ class TestLDAPConfigDeleteHandler:
              patch.object(handler, 'write') as mock_write:
             handler.post()
             mock_status.assert_called_once_with(500)
-            assert "Database connection error" in mock_write.call_args[0][0]
+            mock_write.assert_called_with({"error": "Database connection not available"})
 
     def test_post_delete_returns_false(self, mock_tornado_app, mock_tornado_request, mock_db_conn):
         handler = LDAPConfigDeleteHandler(mock_tornado_app, mock_tornado_request)

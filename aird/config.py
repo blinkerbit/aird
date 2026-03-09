@@ -71,9 +71,11 @@ def _configure_cloud_providers(config: dict | None) -> None:
         gdrive_config.get("root_id") or os.environ.get("AIRD_GDRIVE_ROOT_ID") or "root"
     )
     include_shared = gdrive_config.get("include_shared_drives", True)
+    gd_credentials_file = gdrive_config.get("credentials_file")
+    gd_token_file = gdrive_config.get("token_file")
 
-    if gdrive_token:
-        try:
+    try:
+        if gdrive_token:
             CLOUD_MANAGER.register(
                 GoogleDriveProvider(
                     gdrive_token,
@@ -81,8 +83,19 @@ def _configure_cloud_providers(config: dict | None) -> None:
                     include_shared_drives=bool(include_shared),
                 )
             )
-        except CloudProviderError as exc:
-            logging.error("Failed to configure Google Drive provider: %s", exc)
+        elif gd_credentials_file:
+            CLOUD_MANAGER.register(
+                GoogleDriveProvider(
+                    credentials_file=gd_credentials_file,
+                    token_file=gd_token_file,
+                    root_id=gdrive_root,
+                    include_shared_drives=bool(include_shared),
+                )
+            )
+    except CloudProviderError as exc:
+        logging.error("Failed to configure Google Drive provider: %s", exc)
+    except Exception as exc:
+        logging.error("Unexpected error configuring Google Drive provider: %s", exc)
 
     # OneDrive configuration
     onedrive_config = config.get("one_drive")
@@ -98,12 +111,28 @@ def _configure_cloud_providers(config: dict | None) -> None:
     drive_id = onedrive_config.get("drive_id") or os.environ.get(
         "AIRD_ONEDRIVE_DRIVE_ID"
     )
+    od_client_id = onedrive_config.get("client_id")
+    od_client_secret = onedrive_config.get("client_secret")
+    od_redirect_uri = onedrive_config.get("redirect_uri")
+    od_token_file = onedrive_config.get("token_file")
 
-    if onedrive_token:
-        try:
+    try:
+        if onedrive_token:
             CLOUD_MANAGER.register(OneDriveProvider(onedrive_token, drive_id=drive_id))
-        except CloudProviderError as exc:
-            logging.error("Failed to configure OneDrive provider: %s", exc)
+        elif od_client_id and od_redirect_uri:
+            CLOUD_MANAGER.register(
+                OneDriveProvider(
+                    client_id=od_client_id,
+                    client_secret=od_client_secret,
+                    redirect_uri=od_redirect_uri,
+                    token_file=od_token_file,
+                    drive_id=drive_id,
+                )
+            )
+    except CloudProviderError as exc:
+        logging.error("Failed to configure OneDrive provider: %s", exc)
+    except Exception as exc:
+        logging.error("Unexpected error configuring OneDrive provider: %s", exc)
 
     if not CLOUD_MANAGER.has_providers():
         logging.info("No cloud providers configured")

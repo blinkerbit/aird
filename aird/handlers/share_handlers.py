@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import os
 import logging
 
-from aird.handlers.base_handler import BaseHandler
+from aird.handlers.base_handler import BaseHandler, XSRFTokenMixin
 from aird.db import (
     insert_share,
     delete_share,
@@ -46,26 +46,7 @@ class ShareFilesHandler(BaseHandler):
         self.render("share.html", shares={})
 
 
-class ShareCreateHandler(BaseHandler):
-    def check_xsrf_cookie(self):
-        """Override CSRF check to support X-XSRFToken header for JSON requests"""
-        # Get token from cookie (expected value)
-        cookie_token = self.get_cookie("_xsrf")
-        if not cookie_token:
-            raise tornado.web.HTTPError(403, "'_xsrf' argument missing from POST")
-
-        # Get token from header or POST data
-        provided_token = self.request.headers.get("X-XSRFToken")
-        if not provided_token:
-            # Fallback to POST argument for form submissions
-            provided_token = self.get_argument("_xsrf", None)
-        if not provided_token:
-            raise tornado.web.HTTPError(403, "'_xsrf' argument missing from POST")
-
-        # Compare tokens
-        # Compare tokens using constant-time comparison
-        if not secrets.compare_digest(provided_token, cookie_token):
-            raise tornado.web.HTTPError(403, "XSRF cookie does not match POST argument")
+class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
 
     @tornado.web.authenticated
     def post(self):
@@ -270,26 +251,7 @@ class ShareRevokeHandler(BaseHandler):
         self.redirect("/share")
 
 
-class ShareUpdateHandler(BaseHandler):
-    def check_xsrf_cookie(self):
-        """Override CSRF check to support X-XSRFToken header for JSON requests"""
-        # Get token from cookie (expected value)
-        cookie_token = self.get_cookie("_xsrf")
-        if not cookie_token:
-            raise tornado.web.HTTPError(403, "'_xsrf' argument missing from POST")
-
-        # Get token from header or POST data
-        provided_token = self.request.headers.get("X-XSRFToken")
-        if not provided_token:
-            # Fallback to POST argument for form submissions
-            provided_token = self.get_argument("_xsrf", None)
-        if not provided_token:
-            raise tornado.web.HTTPError(403, "'_xsrf' argument missing from POST")
-
-        # Compare tokens
-        # Compare tokens using constant-time comparison
-        if not secrets.compare_digest(provided_token, cookie_token):
-            raise tornado.web.HTTPError(403, "XSRF cookie does not match POST argument")
+class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
 
     @tornado.web.authenticated
     def post(self):

@@ -29,15 +29,12 @@ from aird.utils.util import (
     remove_cloud_file_if_exists,
     cleanup_share_cloud_dir_if_empty,
     remove_share_cloud_dir,
-    parse_expression,
-    evaluate_expression,
     get_current_feature_flags,
     get_current_websocket_config,
     is_feature_enabled,
-    MMapFileHandler,
-    MMAP_MIN_SIZE,
-    CHUNK_SIZE,
 )
+from aird.core.mmap_handler import MMapFileHandler
+from aird.constants import MMAP_MIN_SIZE, CHUNK_SIZE
 
 
 class TestGetFileIcon:
@@ -296,8 +293,8 @@ class TestCloudRootDir:
     
     def test_cloud_root_dir_exists(self):
         """Test that cloud_root_dir returns a path"""
-        with patch('aird.utils.util.ROOT_DIR', '/test/root'), \
-             patch('aird.utils.util.CLOUD_SHARE_FOLDER', 'cloud_shares'):
+        with patch('aird.core.file_operations.ROOT_DIR', '/test/root'), \
+             patch('aird.core.file_operations.CLOUD_SHARE_FOLDER', 'cloud_shares'):
             result = cloud_root_dir()
             assert isinstance(result, str)
             assert len(result) > 0
@@ -310,7 +307,7 @@ class TestEnsureShareCloudDir:
     def test_ensure_share_cloud_dir_creates_directory(self):
         """Test that ensure_share_cloud_dir creates directory"""
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch('aird.utils.util.cloud_root_dir', return_value=temp_dir):
+            with patch('aird.core.file_operations.cloud_root_dir', return_value=temp_dir):
                 result = ensure_share_cloud_dir("test_share_123")
                 
                 assert os.path.exists(result)
@@ -354,74 +351,53 @@ class TestIsCloudRelativePath:
     
     def test_is_cloud_relative_path_valid(self):
         """Test valid cloud relative path"""
-        with patch('aird.utils.util.CLOUD_SHARE_FOLDER', 'cloud_shares'):
+        with patch('aird.core.file_operations.CLOUD_SHARE_FOLDER', 'cloud_shares'):
             result = is_cloud_relative_path("share123", "cloud_shares/share123/file.txt")
             assert result is True
     
     def test_is_cloud_relative_path_invalid(self):
         """Test invalid cloud relative path"""
-        with patch('aird.utils.util.CLOUD_SHARE_FOLDER', 'cloud_shares'):
+        with patch('aird.core.file_operations.CLOUD_SHARE_FOLDER', 'cloud_shares'):
             result = is_cloud_relative_path("share123", "file.txt")
             assert result is False
     
     def test_is_cloud_relative_path_wrong_share_id(self):
         """Test path with wrong share_id"""
-        with patch('aird.utils.util.CLOUD_SHARE_FOLDER', 'cloud_shares'):
+        with patch('aird.core.file_operations.CLOUD_SHARE_FOLDER', 'cloud_shares'):
             result = is_cloud_relative_path("share123", "cloud_shares/share456/file.txt")
             assert result is False
     
     def test_is_cloud_relative_path_normalizes_backslashes(self):
         """Test that backslashes are normalized to forward slashes"""
-        with patch('aird.utils.util.CLOUD_SHARE_FOLDER', 'cloud_shares'):
+        with patch('aird.core.file_operations.CLOUD_SHARE_FOLDER', 'cloud_shares'):
             result = is_cloud_relative_path("share123", "cloud_shares\\share123\\file.txt")
             assert result is True
 
 
-class TestParseExpression:
-    """Tests for parse_expression function"""
-    
-    def test_parse_simple_expression(self):
-        """Test parsing simple expression"""
-        result = parse_expression("hello")
-        assert result is not None
-        assert result == {'raw': 'hello'}
-    
-    def test_parse_complex_expression(self):
-        """Test parsing complex expression"""
-        result = parse_expression("hello AND world")
-        assert result is not None
-        assert result == {'raw': 'hello AND world'}
-    
-    def test_parse_empty_expression(self):
-        """Test parsing empty expression"""
-        result = parse_expression("")
-        assert result == {'raw': ''}
+class TestFilterExpressionAsExpression:
+    """Tests for FilterExpression (replaces old parse_expression/evaluate_expression tests)"""
 
+    def test_simple_expression(self):
+        """Test simple expression matching"""
+        fe = FilterExpression("hello")
+        assert fe.matches("hello world") is True
+        assert fe.matches("goodbye") is False
 
-class TestEvaluateExpression:
-    """Tests for evaluate_expression function"""
-    
-    def test_evaluate_term_expression(self):
-        """Test evaluating term expression"""
-        parsed = {'raw': 'hello'}
-        assert evaluate_expression("hello world", parsed) is True
-        assert evaluate_expression("goodbye", parsed) is False
-    
-    def test_evaluate_empty_expression(self):
-        """Test evaluating empty expression matches all"""
-        parsed = {'raw': ''}
-        assert evaluate_expression("anything", parsed) is True
-    
-    def test_evaluate_case_insensitive(self):
+    def test_complex_expression(self):
+        """Test complex AND expression"""
+        fe = FilterExpression("hello AND world")
+        assert fe.matches("hello world") is True
+        assert fe.matches("hello") is False
+
+    def test_empty_expression_matches_all(self):
+        """Test that empty expression matches everything"""
+        fe = FilterExpression("")
+        assert fe.matches("anything") is True
+
+    def test_case_insensitive(self):
         """Test that evaluation is case insensitive"""
-        parsed = {'raw': 'HELLO'}
-        assert evaluate_expression("hello world", parsed) is True
-    
-    def test_evaluate_no_raw_key(self):
-        """Test evaluating expression without raw key"""
-        parsed = {}
-        # Should return True when raw is empty/missing
-        assert evaluate_expression("anything", parsed) is True
+        fe = FilterExpression("HELLO")
+        assert fe.matches("hello world") is True
 
 
 class TestGetCurrentFeatureFlags:
@@ -444,7 +420,7 @@ class TestGetCurrentFeatureFlags:
         try:
             with patch('aird.utils.util.FEATURE_FLAGS', {'mem_flag': True}), \
                  patch('aird.utils.util.constants_module.DB_CONN', conn), \
-                 patch('aird.utils.util._load_feature_flags', return_value={'db_flag': True}):
+                 patch('aird.utils.util.load_feature_flags', return_value={'db_flag': True}):
                 result = get_current_feature_flags()
                 assert 'mem_flag' in result
                 assert result['mem_flag'] is True
@@ -473,7 +449,7 @@ class TestGetCurrentWebsocketConfig:
         try:
             with patch('aird.utils.util.WEBSOCKET_CONFIG', {'timeout': 30}), \
                  patch('aird.utils.util.DB_CONN', conn), \
-                 patch('aird.utils.util._load_websocket_config', return_value={'max_connections': 100}):
+                 patch('aird.utils.util.load_websocket_config', return_value={'max_connections': 100}):
                 result = get_current_websocket_config()
                 assert result['max_connections'] == 100
                 assert result['timeout'] == 30
@@ -791,8 +767,8 @@ class TestRemoveCloudFileIfExists:
                 f.write("test")
             
             relative_path = 'cloud_shares/share123/test.txt'
-            with patch('aird.utils.util.ROOT_DIR', temp_dir), \
-                 patch('aird.utils.util.CLOUD_SHARE_FOLDER', 'cloud_shares'):
+            with patch('aird.core.file_operations.ROOT_DIR', temp_dir), \
+                 patch('aird.core.file_operations.CLOUD_SHARE_FOLDER', 'cloud_shares'):
                 remove_cloud_file_if_exists('share123', relative_path)
             
             assert not os.path.exists(file_path)
@@ -821,7 +797,7 @@ class TestCleanupShareCloudDirIfEmpty:
     def test_cleanup_empty_directory(self):
         """Test that empty cloud directory is removed"""
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch('aird.utils.util.cloud_root_dir', return_value=temp_dir):
+            with patch('aird.core.file_operations.cloud_root_dir', return_value=temp_dir):
                 share_dir = os.path.join(temp_dir, 'share123')
                 os.makedirs(share_dir)
                 
@@ -832,7 +808,7 @@ class TestCleanupShareCloudDirIfEmpty:
     def test_keep_nonempty_directory(self):
         """Test that non-empty directory is not removed"""
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch('aird.utils.util.cloud_root_dir', return_value=temp_dir):
+            with patch('aird.core.file_operations.cloud_root_dir', return_value=temp_dir):
                 share_dir = os.path.join(temp_dir, 'share123')
                 os.makedirs(share_dir)
                 
@@ -851,7 +827,7 @@ class TestRemoveShareCloudDir:
     def test_remove_share_cloud_dir(self):
         """Test removing entire cloud share directory"""
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch('aird.utils.util.cloud_root_dir', return_value=temp_dir):
+            with patch('aird.core.file_operations.cloud_root_dir', return_value=temp_dir):
                 share_dir = os.path.join(temp_dir, 'share123')
                 os.makedirs(share_dir)
                 

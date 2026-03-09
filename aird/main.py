@@ -23,6 +23,7 @@ from aird.db import (
     load_allowed_extensions,
     save_allowed_extensions,
     get_all_network_shares,
+    load_feature_flags,
 )
 from aird.network_share_manager import NetworkShareManager
 from aird.handlers.admin_handlers import (
@@ -238,26 +239,6 @@ def _init_db(conn: sqlite3.Connection) -> None:
         cursor.execute("ALTER TABLE shares ADD COLUMN expiry_date TEXT")
 
     conn.commit()
-
-
-def _load_feature_flags(conn: sqlite3.Connection) -> dict:
-    try:
-        rows = conn.execute("SELECT key, value FROM feature_flags").fetchall()
-        return {k: bool(v) for (k, v) in rows}
-    except Exception:
-        return {}
-
-
-def _save_feature_flags(conn: sqlite3.Connection, flags: dict) -> None:
-    try:
-        with conn:
-            for k, v in flags.items():
-                conn.execute(
-                    "REPLACE INTO feature_flags (key, value) VALUES (?, ?)",
-                    (k, 1 if v else 0),
-                )
-    except Exception:
-        pass
 
 
 def _insert_share(
@@ -693,34 +674,6 @@ def _save_upload_config(conn: sqlite3.Connection, config: dict) -> None:
             for key, value in config.items():
                 conn.execute(
                     "INSERT OR REPLACE INTO upload_config (key, value) VALUES (?, ?)",
-                    (key, int(value)),
-                )
-    except Exception:
-        pass
-
-
-def _load_websocket_config(conn: sqlite3.Connection) -> dict:
-    """Load WebSocket configuration from SQLite database."""
-    try:
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS websocket_config (key TEXT PRIMARY KEY, value INTEGER)"
-        )
-        rows = conn.execute("SELECT key, value FROM websocket_config").fetchall()
-        return {k: int(v) for (k, v) in rows}
-    except Exception:
-        return {}
-
-
-def _save_websocket_config(conn: sqlite3.Connection, config: dict) -> None:
-    """Save WebSocket configuration to SQLite database."""
-    try:
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS websocket_config (key TEXT PRIMARY KEY, value INTEGER)"
-        )
-        with conn:
-            for key, value in config.items():
-                conn.execute(
-                    "INSERT OR REPLACE INTO websocket_config (key, value) VALUES (?, ?)",
                     (key, int(value)),
                 )
     except Exception:
@@ -1217,7 +1170,7 @@ def _sync_ldap_users(conn: sqlite3.Connection) -> dict:
         return {"status": "error", "message": str(e)}
 
 
-def _extract_username_from_dn(dn: str, user_template: str) -> str|None:
+def _extract_username_from_dn(dn: str, user_template: str) -> str | None:
     """Extract username from LDAP DN using the user template"""
     try:
         # Simple template matching - can be enhanced for more complex patterns
@@ -1511,7 +1464,7 @@ def main():
         constants.DB_CONN = sqlite3.connect(constants.DB_PATH, check_same_thread=False)
         _init_db(constants.DB_CONN)
         # Load persisted feature flags and merge
-        persisted_flags = _load_feature_flags(constants.DB_CONN)
+        persisted_flags = load_feature_flags(constants.DB_CONN)
         if persisted_flags:
             for k, v in persisted_flags.items():
                 constants.FEATURE_FLAGS[k] = bool(v)

@@ -3,7 +3,6 @@
 import asyncio
 import os
 import mmap
-from datetime import datetime
 
 import aiofiles
 from aird.constants import MMAP_MIN_SIZE, CHUNK_SIZE
@@ -220,50 +219,3 @@ def _search_mmap_file(
                 current_pos = newline_pos + 1
                 line_number += 1
     return results
-
-
-def get_files_in_directory(path="."):
-    """Get all files in a directory with metadata."""
-    files = []
-    for entry in os.scandir(path):
-        stat = entry.stat()
-        files.append(
-            {
-                "name": entry.name,
-                "is_dir": entry.is_dir(),
-                "size_bytes": stat.st_size,
-                "size_str": (
-                    f"{stat.st_size / 1024:.2f} KB" if not entry.is_dir() else "-"
-                ),
-                "modified": datetime.fromtimestamp(stat.st_mtime).strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                ),
-                "modified_timestamp": int(stat.st_mtime),
-            }
-        )
-    return files
-
-
-def is_video_file(filename):
-    """Check if file is a supported video format"""
-    ext = os.path.splitext(filename)[1].lower()
-    video_extensions = {
-        ".mp4",
-        ".avi",
-        ".mkv",
-        ".mov",
-        ".wmv",
-        ".flv",
-        ".webm",
-        ".m4v",
-        ".3gp",
-        ".ogv",
-    }
-    return ext in video_extensions
-
-
-def is_audio_file(filename):
-    """Check if file is a supported audio format"""
-    ext = os.path.splitext(filename)[1].lower()
-    audio_extensions = {".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma"}
-    return ext in audio_extensions

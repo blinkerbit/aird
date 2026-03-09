@@ -6,7 +6,7 @@ import shutil
 import fnmatch
 from aird.constants import ROOT_DIR, CLOUD_SHARE_FOLDER, CLOUD_MANAGER
 from aird.core.security import is_within_root
-from aird.cloud import CloudProviderError, GoogleDriveProvider, OneDriveProvider
+from aird.cloud import CloudProviderError
 
 
 def get_all_files_recursive(root_path: str, base_path: str = "") -> list:
@@ -180,46 +180,3 @@ def download_cloud_items(share_id: str, items: list[dict]) -> list[str]:
         except CloudProviderError as e:
             print(f"Failed to download cloud item: {e}")
     return relative_paths
-
-
-def configure_cloud_providers(config: dict | None) -> None:
-    """Configure cloud providers from config"""
-    if not config:
-        return
-
-    gd_config = config.get("google_drive")
-    if gd_config and gd_config.get("enabled"):
-        credentials_file = gd_config.get("credentials_file")
-        token_file = gd_config.get("token_file")
-        if credentials_file:
-            try:
-                gd = GoogleDriveProvider(
-                    credentials_file=credentials_file, token_file=token_file
-                )
-                CLOUD_MANAGER.register(gd)
-                print("[OK] Google Drive provider registered successfully")
-            except Exception as e:
-                print(f"[WARN] Failed to register Google Drive provider: {e}")
-        else:
-            print("[WARN] Google Drive enabled but missing 'credentials_file'")
-
-    od_config = config.get("onedrive")
-    if od_config and od_config.get("enabled"):
-        client_id = od_config.get("client_id")
-        client_secret = od_config.get("client_secret")
-        redirect_uri = od_config.get("redirect_uri")
-        token_file = od_config.get("token_file")
-        if client_id and redirect_uri:
-            try:
-                od = OneDriveProvider(
-                    client_id=client_id,
-                    client_secret=client_secret,
-                    redirect_uri=redirect_uri,
-                    token_file=token_file,
-                )
-                CLOUD_MANAGER.register(od)
-                print("[OK] OneDrive provider registered successfully")
-            except Exception as e:
-                print(f"[WARN] Failed to register OneDrive provider: {e}")
-        else:
-            print("[WARN] OneDrive enabled but missing 'client_id' or 'redirect_uri'")

@@ -55,17 +55,13 @@ from aird.constants.admin import (
     CONTENT_TYPE_JSON,
     DATABASE_NOT_AVAILABLE,
     DB_UNAVAILABLE,
-    ERROR_CREATE_CONFIG,
     ERROR_UPDATE_CONFIG,
     ERROR_UPDATE_USER,
     FAILED_CREATE_USER,
-    FAILED_UPDATE_CONFIG,
     FAILED_UPDATE_USER,
-    FORBIDDEN,
     HTTP_BAD_REQUEST,
     HTTP_FORBIDDEN,
     HTTP_INTERNAL_ERROR,
-    HTTP_NOT_FOUND,
     INVALID_CONFIG_ID,
     INVALID_ROLE,
     INVALID_USER_ID,
@@ -78,12 +74,10 @@ from aird.constants.admin import (
     ERR_ALL_FIELDS_REQUIRED,
     ERR_DB_UNAVAILABLE,
     ERR_FAILED_CREATE_SHARE,
-    ERR_FOLDER_NOT_EXIST,
     ERR_INVALID_PROTOCOL,
     ERR_PORT_RANGE,
     URL_ADMIN_NETWORK_SHARES,
     URL_ADMIN_USERS,
-    USERNAME_FORMAT,
     USERNAME_LENGTH,
     USERNAME_PASSWORD_REQUIRED,
     USERNAME_REQUIRED,
@@ -96,14 +90,13 @@ from aird.constants.admin import (
 import aird.constants as constants_module
 from aird.utils.util import get_current_websocket_config
 from aird.core.security import validate_password
+from aird.handlers.base_handler import require_admin, require_db
 
 
 class AdminHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_admin(redirect_url=URL_ADMIN_LOGIN)
     def get(self):
-        if not self.is_admin_user():
-            self.redirect(URL_ADMIN_LOGIN)
-            return
 
         # Get current feature flags from SQLite for consistency
         current_features = {}
@@ -148,11 +141,8 @@ class AdminHandler(BaseHandler):
         )
 
     @tornado.web.authenticated
+    @require_admin(deny_status=HTTP_FORBIDDEN, deny_body=ACCESS_DENIED)
     def post(self):
-        if not self.is_admin_user():
-            self.set_status(HTTP_FORBIDDEN)
-            self.write(ACCESS_DENIED)
-            return
 
         FEATURE_FLAGS["file_upload"] = self.get_argument("file_upload", "off") == "on"
         FEATURE_FLAGS["file_delete"] = self.get_argument("file_delete", "off") == "on"
@@ -249,12 +239,9 @@ class AdminHandler(BaseHandler):
 
 class WebSocketStatsHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_admin(deny_status=HTTP_FORBIDDEN, deny_body="Forbidden")
     def get(self):
         """Return WebSocket connection statistics"""
-        if not self.is_admin_user():
-            self.set_status(HTTP_FORBIDDEN)
-            self.write("Forbidden")
-            return
 
         stats = {
             "feature_flags": FeatureFlagSocketHandler.connection_manager.get_stats(),
@@ -269,11 +256,9 @@ class WebSocketStatsHandler(BaseHandler):
 
 class AdminAuditHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_admin(redirect_url=URL_ADMIN_LOGIN)
     def get(self):
         """Display audit log (admin only). ?format=csv for export."""
-        if not self.is_admin_user():
-            self.redirect(URL_ADMIN_LOGIN)
-            return
         db_conn = constants_module.DB_CONN
         limit = min(1000, max(1, int(self.get_argument("limit", "500"))))
         offset = max(0, int(self.get_argument("offset", "0")))
@@ -309,11 +294,9 @@ class AdminAuditHandler(BaseHandler):
 
 class AdminUsersHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_admin(redirect_url=URL_ADMIN_LOGIN)
     def get(self):
         """Display user management interface"""
-        if not self.is_admin_user():
-            self.redirect(URL_ADMIN_LOGIN)
-            return
 
         users = []
         db_conn = constants_module.DB_CONN
@@ -325,22 +308,16 @@ class AdminUsersHandler(BaseHandler):
 
 class UserCreateHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_admin(deny_status=HTTP_FORBIDDEN, deny_body=ACCESS_DENIED)
     def get(self):
         """Show create user form"""
-        if not self.is_admin_user():
-            self.set_status(HTTP_FORBIDDEN)
-            self.write(ACCESS_DENIED)
-            return
 
         self.render(TEMPLATE_USER_CREATE, error=None)
 
     @tornado.web.authenticated
+    @require_admin(deny_status=HTTP_FORBIDDEN, deny_body=ACCESS_DENIED)
     def post(self):
         """Create a new user"""
-        if not self.is_admin_user():
-            self.set_status(HTTP_FORBIDDEN)
-            self.write(ACCESS_DENIED)
-            return
 
         db_conn = constants_module.DB_CONN
         if db_conn is None:
@@ -357,9 +334,7 @@ class UserCreateHandler(BaseHandler):
             return
 
         if len(username) < 3 or len(username) > 50:
-            self.render(
-                TEMPLATE_USER_CREATE, error=USERNAME_LENGTH
-            )
+            self.render(TEMPLATE_USER_CREATE, error=USERNAME_LENGTH)
             return
 
         is_valid, error = validate_password(password)
@@ -390,23 +365,17 @@ class UserCreateHandler(BaseHandler):
 
 class UserEditHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_admin(deny_status=HTTP_FORBIDDEN, deny_body=ACCESS_DENIED)
+    @require_db
     def get(self, user_id):
         """Show edit user form"""
-        if not self.is_admin_user():
-            self.set_status(HTTP_FORBIDDEN)
-            self.write(ACCESS_DENIED)
-            return
 
-        db_conn = constants_module.DB_CONN
-        if db_conn is None:
-            self.set_status(HTTP_INTERNAL_ERROR)
-            self.write(DB_UNAVAILABLE)
-            return
+
 
         try:
             user_id = int(user_id)
             # Get user by ID
-            users = get_all_users(db_conn)
+            users = get_all_users(self.db_conn)
             user = next((u for u in users if u["id"] == user_id), None)
 
             if not user:
@@ -420,23 +389,17 @@ class UserEditHandler(BaseHandler):
             self.write(INVALID_USER_ID)
 
     @tornado.web.authenticated
+    @require_admin(deny_status=HTTP_FORBIDDEN, deny_body=ACCESS_DENIED)
+    @require_db
     def post(self, user_id):
         """Update user information"""
-        if not self.is_admin_user():
-            self.set_status(HTTP_FORBIDDEN)
-            self.write(ACCESS_DENIED)
-            return
 
-        db_conn = constants_module.DB_CONN
-        if db_conn is None:
-            self.set_status(HTTP_INTERNAL_ERROR)
-            self.write(DB_UNAVAILABLE)
-            return
+
 
         try:
             user_id = int(user_id)
             # Get existing user
-            users = get_all_users(db_conn)
+            users = get_all_users(self.db_conn)
             user = next((u for u in users if u["id"] == user_id), None)
 
             if not user:
@@ -496,7 +459,7 @@ class UserEditHandler(BaseHandler):
             if password:  # Only update password if provided
                 update_data["password"] = password
 
-            if update_user(db_conn, user_id, **update_data):
+            if update_user(self.db_conn, user_id, **update_data):
                 self.redirect(URL_ADMIN_USERS)
             else:
                 self.render(TEMPLATE_USER_EDIT, user=user, error=FAILED_UPDATE_USER)
@@ -515,18 +478,12 @@ class UserEditHandler(BaseHandler):
 
 class UserDeleteHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_admin(deny_status=HTTP_FORBIDDEN, deny_body=ACCESS_DENIED)
+    @require_db
     def post(self):
         """Delete a user"""
-        if not self.is_admin_user():
-            self.set_status(HTTP_FORBIDDEN)
-            self.write(ACCESS_DENIED)
-            return
 
-        db_conn = constants_module.DB_CONN
-        if db_conn is None:
-            self.set_status(HTTP_INTERNAL_ERROR)
-            self.write(DB_UNAVAILABLE)
-            return
+
 
         try:
             user_id = int(self.get_argument("user_id", "0"))
@@ -536,7 +493,7 @@ class UserDeleteHandler(BaseHandler):
                 self.write(INVALID_USER_ID_SHORT)
                 return
 
-            if delete_user(db_conn, user_id):
+            if delete_user(self.db_conn, user_id):
                 self.redirect(URL_ADMIN_USERS)
             else:
                 self.set_status(404)
@@ -549,11 +506,9 @@ class UserDeleteHandler(BaseHandler):
 
 class LDAPConfigHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_admin(redirect_url=URL_ADMIN_LOGIN)
     def get(self):
         """Display LDAP configuration management interface"""
-        if not self.is_admin_user():
-            self.redirect(URL_ADMIN_LOGIN)
-            return
 
         configs = []
         sync_logs = []
@@ -567,27 +522,19 @@ class LDAPConfigHandler(BaseHandler):
 
 class LDAPConfigCreateHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_admin(deny_status=HTTP_FORBIDDEN, deny_body=ACCESS_DENIED)
     def get(self):
         """Show create LDAP configuration form"""
-        if not self.is_admin_user():
-            self.set_status(HTTP_FORBIDDEN)
-            self.write(ACCESS_DENIED)
-            return
 
         self.render(TEMPLATE_LDAP_CONFIG_CREATE, error=None)
 
     @tornado.web.authenticated
+    @require_admin(deny_status=HTTP_FORBIDDEN, deny_body=ACCESS_DENIED)
+    @require_db
     def post(self):
         """Create a new LDAP configuration"""
-        if not self.is_admin_user():
-            self.set_status(HTTP_FORBIDDEN)
-            self.write(ACCESS_DENIED)
-            return
 
-        db_conn = constants_module.DB_CONN
-        if db_conn is None:
-            self.render(TEMPLATE_LDAP_CONFIG_CREATE, error=DATABASE_NOT_AVAILABLE)
-            return
+
 
         name = self.get_argument("name", "").strip()
         server = self.get_argument("server", "").strip()
@@ -611,7 +558,7 @@ class LDAPConfigCreateHandler(BaseHandler):
 
         try:
             create_ldap_config(
-                db_conn,
+                self.db_conn,
                 name,
                 server,
                 ldap_base_dn,
@@ -631,22 +578,16 @@ class LDAPConfigCreateHandler(BaseHandler):
 
 class LDAPConfigEditHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_admin(deny_status=HTTP_FORBIDDEN, deny_body=ACCESS_DENIED)
+    @require_db
     def get(self, config_id):
         """Show edit LDAP configuration form"""
-        if not self.is_admin_user():
-            self.set_status(HTTP_FORBIDDEN)
-            self.write(ACCESS_DENIED)
-            return
 
-        db_conn = constants_module.DB_CONN
-        if db_conn is None:
-            self.set_status(HTTP_INTERNAL_ERROR)
-            self.write(DB_UNAVAILABLE)
-            return
+
 
         try:
             config_id = int(config_id)
-            config = get_ldap_config_by_id(db_conn, config_id)
+            config = get_ldap_config_by_id(self.db_conn, config_id)
 
             if not config:
                 self.set_status(404)
@@ -658,22 +599,16 @@ class LDAPConfigEditHandler(BaseHandler):
             self.write(INVALID_CONFIG_ID)
 
     @tornado.web.authenticated
+    @require_admin(deny_status=HTTP_FORBIDDEN, deny_body=ACCESS_DENIED)
+    @require_db
     def post(self, config_id):
         """Update LDAP configuration"""
-        if not self.is_admin_user():
-            self.set_status(HTTP_FORBIDDEN)
-            self.write(ACCESS_DENIED)
-            return
 
-        db_conn = constants_module.DB_CONN
-        if db_conn is None:
-            self.set_status(HTTP_INTERNAL_ERROR)
-            self.write(DB_UNAVAILABLE)
-            return
+
 
         try:
             config_id = int(config_id)
-            config = get_ldap_config_by_id(db_conn, config_id)
+            config = get_ldap_config_by_id(self.db_conn, config_id)
 
             if not config:
                 self.set_status(404)
@@ -708,7 +643,7 @@ class LDAPConfigEditHandler(BaseHandler):
 
             # Update configuration
             if update_ldap_config(
-                db_conn,
+                self.db_conn,
                 config_id,
                 name=name,
                 server=server,
@@ -738,18 +673,12 @@ class LDAPConfigEditHandler(BaseHandler):
 
 class LDAPConfigDeleteHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_admin(deny_status=HTTP_FORBIDDEN, deny_body=ACCESS_DENIED)
+    @require_db
     def post(self):
         """Delete LDAP configuration"""
-        if not self.is_admin_user():
-            self.set_status(HTTP_FORBIDDEN)
-            self.write(ACCESS_DENIED)
-            return
 
-        db_conn = constants_module.DB_CONN
-        if db_conn is None:
-            self.set_status(HTTP_INTERNAL_ERROR)
-            self.write(DB_UNAVAILABLE)
-            return
+
 
         try:
             config_id = int(self.get_argument("config_id", "0"))
@@ -759,7 +688,7 @@ class LDAPConfigDeleteHandler(BaseHandler):
                 self.write(INVALID_CONFIG_ID)
                 return
 
-            if delete_ldap_config(db_conn, config_id):
+            if delete_ldap_config(self.db_conn, config_id):
                 self.redirect(URL_ADMIN_LDAP)
             else:
                 self.set_status(404)
@@ -772,11 +701,8 @@ class LDAPConfigDeleteHandler(BaseHandler):
 
 class LDAPSyncHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_admin(deny_status=HTTP_FORBIDDEN, deny_body={"error": ACCESS_DENIED_JSON})
     def post(self):
-        if not self.is_admin_user():
-            self.set_status(HTTP_FORBIDDEN)
-            self.write({"error": ACCESS_DENIED_JSON})
-            return
 
         # In a real application, you would trigger the LDAP sync here.
         # For now, we'll just return a success message.
@@ -790,10 +716,8 @@ class LDAPSyncHandler(BaseHandler):
 
 class AdminNetworkSharesHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_admin(redirect_url=URL_ADMIN_LOGIN)
     def get(self):
-        if not self.is_admin_user():
-            self.redirect(URL_ADMIN_LOGIN)
-            return
         db_conn = constants_module.DB_CONN
         shares = get_all_network_shares(db_conn) if db_conn else []
         mgr = constants_module.NETWORK_SHARE_MANAGER
@@ -815,10 +739,8 @@ class AdminNetworkSharesHandler(BaseHandler):
         )
 
     @tornado.web.authenticated
+    @require_admin(deny_status=HTTP_FORBIDDEN)
     def post(self):
-        if not self.is_admin_user():
-            self.set_status(HTTP_FORBIDDEN)
-            return
         db_conn = constants_module.DB_CONN
         if db_conn is None:
             self.redirect(f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_DB_UNAVAILABLE}")
@@ -837,22 +759,16 @@ class AdminNetworkSharesHandler(BaseHandler):
             port = 8443
 
         if not name or not folder_path or not username or not password:
-            self.redirect(
-                f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_ALL_FIELDS_REQUIRED}"
-            )
+            self.redirect(f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_ALL_FIELDS_REQUIRED}")
             return
         if protocol not in ("smb", "webdav"):
-            self.redirect(
-                f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_INVALID_PROTOCOL}"
-            )
+            self.redirect(f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_INVALID_PROTOCOL}")
             return
         if not os.path.isdir(folder_path):
             self.redirect("/admin/network-shares?error=Folder+does+not+exist")
             return
         if port < 1 or port > 65535:
-            self.redirect(
-                f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_PORT_RANGE}"
-            )
+            self.redirect(f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_PORT_RANGE}")
             return
 
         share_id = _secrets.token_urlsafe(8)
@@ -868,9 +784,7 @@ class AdminNetworkSharesHandler(BaseHandler):
             read_only,
         )
         if not ok:
-            self.redirect(
-                f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_FAILED_CREATE_SHARE}"
-            )
+            self.redirect(f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_FAILED_CREATE_SHARE}")
             return
 
         log_audit(
@@ -900,10 +814,8 @@ class AdminNetworkSharesHandler(BaseHandler):
 
 class AdminNetworkShareDeleteHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_admin(deny_status=HTTP_FORBIDDEN)
     def post(self):
-        if not self.is_admin_user():
-            self.set_status(HTTP_FORBIDDEN)
-            return
         db_conn = constants_module.DB_CONN
         share_id = self.get_argument("share_id", "").strip()
         if not share_id or db_conn is None:
@@ -927,10 +839,8 @@ class AdminNetworkShareDeleteHandler(BaseHandler):
 
 class AdminNetworkShareToggleHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_admin(deny_status=HTTP_FORBIDDEN)
     def post(self):
-        if not self.is_admin_user():
-            self.set_status(HTTP_FORBIDDEN)
-            return
         db_conn = constants_module.DB_CONN
         share_id = self.get_argument("share_id", "").strip()
         if not share_id or db_conn is None:

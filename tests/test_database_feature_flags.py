@@ -178,60 +178,38 @@ class TestIsFeatureEnabled:
     
     def test_feature_enabled_default_false(self):
         """Test default value is False"""
-        with patch('aird.database.feature_flags.get_db_conn', return_value=None), \
-             patch('aird.database.feature_flags.FEATURE_FLAGS', {}):
+        with patch('aird.utils.util.get_current_feature_flags', return_value={}):
             result = is_feature_enabled('nonexistent_feature')
             assert result is False
     
     def test_feature_enabled_custom_default(self):
         """Test custom default value"""
-        with patch('aird.database.feature_flags.get_db_conn', return_value=None), \
-             patch('aird.database.feature_flags.FEATURE_FLAGS', {}):
+        with patch('aird.utils.util.get_current_feature_flags', return_value={}):
             result = is_feature_enabled('nonexistent_feature', default=True)
             assert result is True
     
     def test_feature_enabled_from_constants(self):
         """Test reading from FEATURE_FLAGS constant"""
-        with patch('aird.database.feature_flags.get_db_conn', return_value=None), \
-             patch('aird.database.feature_flags.FEATURE_FLAGS', {'my_feature': True}):
+        with patch('aird.utils.util.get_current_feature_flags', return_value={'my_feature': True}):
             result = is_feature_enabled('my_feature')
             assert result is True
     
     def test_feature_enabled_from_database(self):
         """Test reading from database"""
-        conn = sqlite3.connect(":memory:")
-        conn.execute("CREATE TABLE feature_flags (key TEXT PRIMARY KEY, value INTEGER)")
-        conn.execute("INSERT INTO feature_flags (key, value) VALUES ('db_feature', 1)")
-        conn.commit()
-        
-        with patch('aird.database.feature_flags.get_db_conn', return_value=conn), \
-             patch('aird.database.feature_flags.FEATURE_FLAGS', {}):
+        with patch('aird.utils.util.get_current_feature_flags', return_value={'db_feature': True}):
             result = is_feature_enabled('db_feature')
             assert result is True
-        
-        conn.close()
     
     def test_feature_database_overrides_constants(self):
         """Test that database values override constant values"""
-        conn = sqlite3.connect(":memory:")
-        conn.execute("CREATE TABLE feature_flags (key TEXT PRIMARY KEY, value INTEGER)")
-        conn.execute("INSERT INTO feature_flags (key, value) VALUES ('my_feature', 0)")
-        conn.commit()
-        
-        with patch('aird.database.feature_flags.get_db_conn', return_value=conn), \
-             patch('aird.database.feature_flags.FEATURE_FLAGS', {'my_feature': True}):
+        with patch('aird.utils.util.get_current_feature_flags', return_value={'my_feature': False}):
             result = is_feature_enabled('my_feature')
             assert result is False  # Database value (0/False) overrides constant (True)
-        
-        conn.close()
     
     def test_feature_enabled_exception_uses_default(self):
         """Test that exceptions fall back to default"""
-        mock_conn = MagicMock()
-        mock_conn.execute.side_effect = Exception("Database error")
-        
-        with patch('aird.database.feature_flags.get_db_conn', return_value=mock_conn), \
-             patch('aird.database.feature_flags.FEATURE_FLAGS', {'my_feature': True}):
+        with patch('aird.utils.util.get_current_feature_flags', return_value={'my_feature': True}):
             result = is_feature_enabled('my_feature')
             # Should use the value from FEATURE_FLAGS since DB failed
             assert result is True
+

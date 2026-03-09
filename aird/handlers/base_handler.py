@@ -1,12 +1,186 @@
 import base64
+import functools
 import json
+import logging
 import secrets
 
 import tornado.web
+import tornado.websocket
 
 import aird.config as config_module
 import aird.constants as constants_module
 from aird.db import get_user_by_username
+
+
+# ---------------------------------------------------------------------------
+# Decorators for common guard patterns
+# ---------------------------------------------------------------------------
+
+
+def require_db(method):
+    """Decorator: ensures ``constants_module.DB_CONN`` is available.
+
+    If the connection is ``None`` the handler returns **500** with a JSON
+    error body and the wrapped method is never called.  The resolved
+    connection is stored on ``self.db_conn`` for convenience.
+    """
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        db_conn = constants_module.DB_CONN
+        if db_conn is None:
+            self.set_status(500)
+            self.write({"error": "Database connection not available"})
+            return
+        self.db_conn = db_conn
+        return method(self, *args, **kwargs)
+
+    return wrapper
+
+
+def require_admin(
+    deny_status=403,
+    deny_body="Access denied",
+    redirect_url=None,
+):
+    """Decorator factory: ensures the current user is an admin.
+
+    Parameters
+    ----------
+    deny_status : int
+        HTTP status code when the user is not an admin (ignored when
+        *redirect_url* is set).
+    deny_body : str | dict
+        Response body when the user is not an admin (ignored when
+        *redirect_url* is set).
+    redirect_url : str | None
+        If set, redirect non-admin users instead of returning an error
+        response.
+    """
+
+    def decorator(method):
+        @functools.wraps(method)
+        def wrapper(self, *args, **kwargs):
+            if not self.is_admin_user():
+                if redirect_url:
+                    self.redirect(redirect_url)
+                else:
+                    self.set_status(deny_status)
+                    self.write(deny_body)
+                return
+            return method(self, *args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+# ---------------------------------------------------------------------------
+# Mixin for WebSocket handlers using WebSocketConnectionManager
+# ---------------------------------------------------------------------------
+
+
+class ManagedWebSocketMixin:
+    """Mixin that centralises add/remove connection-manager boiler-plate.
+
+    Subclasses must define a class-level ``connection_manager`` attribute
+    (a :class:`~aird.utils.util.WebSocketConnectionManager` instance).
+
+    Call ``self.register_connection()`` from ``open()``; it sends the
+    "connection limit exceeded" message and closes when the limit is
+    reached, returning ``False`` so the caller can bail out.
+
+    ``on_close`` is automatically handled — it calls
+    ``remove_connection`` for you.  Override ``on_close`` if you need
+    extra cleanup, but remember to call ``super().on_close()``.
+    """
+
+    def register_connection(self) -> bool:
+        """Try to register this connection. Returns True on success."""
+        if not self.connection_manager.add_connection(self):
+            self.write_message(
+                json.dumps(
+                    {
+                        "type": "error",
+                        "message": "Connection limit exceeded. Please try again later.",
+                    }
+                )
+            )
+            self.close(code=1013, reason="Connection limit exceeded")
+            return False
+        return True
+
+    def on_close(self):
+        self.connection_manager.remove_connection(self)
+
+
+class XSRFTokenMixin:
+    """Mixin for handlers that need X-XSRFToken header support for JSON requests."""
+
+    def check_xsrf_cookie(self):
+        """Override CSRF check to support X-XSRFToken header for JSON requests"""
+        # Get token from cookie (expected value)
+        cookie_token = self.get_cookie("_xsrf")
+        if not cookie_token:
+            raise tornado.web.HTTPError(403, "'_xsrf' argument missing from POST")
+
+        # Get token from header or POST data
+        provided_token = self.request.headers.get("X-XSRFToken")
+        if not provided_token:
+            # Fallback to POST argument for form submissions
+            provided_token = self.get_argument("_xsrf", None)
+        if not provided_token:
+            raise tornado.web.HTTPError(403, "'_xsrf' argument missing from POST")
+
+        # Compare tokens using constant-time comparison
+        if not secrets.compare_digest(provided_token, cookie_token):
+            raise tornado.web.HTTPError(403, "XSRF cookie does not match POST argument")
+
+
+def authenticate_handler(handler):
+    """Shared authentication logic for both HTTP and WebSocket handlers.
+
+    Checks secure cookie and Bearer token auth. Returns a user dict or None.
+    The *handler* must support get_secure_cookie() and request.headers.
+    """
+    user_json = handler.get_secure_cookie("user")
+    if user_json:
+        try:
+            try:
+                user_data = json.loads(user_json)
+                username = user_data.get("username", "")
+            except (json.JSONDecodeError, TypeError):
+                username = (
+                    user_json.decode("utf-8")
+                    if isinstance(user_json, bytes)
+                    else str(user_json)
+                )
+
+            db_conn = constants_module.DB_CONN
+            if db_conn:
+                user = get_user_by_username(db_conn, username)
+                if user:
+                    return user
+            if username == "token_authenticated":
+                return {"username": "token_user", "role": "admin"}
+        except Exception:
+            if isinstance(user_json, bytes):
+                user_str = user_json.decode("utf-8", errors="ignore")
+                if user_str == "token_authenticated":
+                    return {"username": "token_user", "role": "admin"}
+            return None
+
+    auth_header = handler.request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        current_access_token = config_module.ACCESS_TOKEN
+        if current_access_token:
+            normalized_token = token.strip()
+            normalized_access_token = current_access_token.strip()
+            if secrets.compare_digest(normalized_token, normalized_access_token):
+                return {"username": "token_user", "role": "admin"}
+
+    return None
 
 
 class BaseHandler(tornado.web.RequestHandler):
@@ -48,55 +222,7 @@ class BaseHandler(tornado.web.RequestHandler):
         return namespace
 
     def get_current_user(self):
-        # Check for user session from secure cookie
-        user_json = self.get_secure_cookie("user")
-        if user_json:
-            try:
-                # Handle both JSON-encoded user data and plain string usernames
-                try:
-                    user_data = json.loads(user_json)
-                    username = user_data.get("username", "")
-                except (json.JSONDecodeError, TypeError):
-                    # If it's not JSON, treat it as a plain username string
-                    username = (
-                        user_json.decode("utf-8")
-                        if isinstance(user_json, bytes)
-                        else str(user_json)
-                    )
-
-                # Re-verify user from DB to ensure they are still valid
-                db_conn = constants_module.DB_CONN
-                if db_conn:
-                    user = get_user_by_username(db_conn, username)
-                    if user:
-                        return user
-                # If DB check fails but we have a username, return basic user info for token-authenticated users
-                if username == "token_authenticated":
-                    return {"username": "token_user", "role": "admin"}
-            except Exception:
-                # If cookie parsing fails, check if it's a token-authenticated user
-                if isinstance(user_json, bytes):
-                    user_str = user_json.decode("utf-8", errors="ignore")
-                    if user_str == "token_authenticated":
-                        return {"username": "token_user", "role": "admin"}
-                return None
-
-        # Fallback to token-based authentication from Authorization header
-        auth_header = self.request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            token = auth_header.split(" ")[1]
-            # Access token directly from module to ensure we have the latest value
-            current_access_token = config_module.ACCESS_TOKEN
-            if current_access_token:
-                # Use constant-time comparison to prevent timing attacks
-                # Only strip whitespace to preserve token integrity
-                normalized_token = token.strip()
-                normalized_access_token = current_access_token.strip()
-                if secrets.compare_digest(normalized_token, normalized_access_token):
-                    # Return a generic user object for token-based access
-                    return {"username": "token_user", "role": "admin"}
-
-        return None
+        return authenticate_handler(self)
 
     def write_error(self, status_code, **kwargs):
         # Custom error page rendering

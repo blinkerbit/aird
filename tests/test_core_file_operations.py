@@ -15,7 +15,6 @@ from aird.core.file_operations import (
     remove_share_cloud_dir,
     download_cloud_item,
     download_cloud_items,
-    configure_cloud_providers,
 )
 from aird.constants import ROOT_DIR, CLOUD_SHARE_FOLDER
 from aird.cloud import CloudProviderError
@@ -205,28 +204,3 @@ class TestFileOperations:
             assert paths == ['path1']
             mock_print.assert_called()
 
-    # --- Configure Cloud Providers ---
-    def test_configure_cloud_providers(self):
-        config = {
-            "google_drive": {"enabled": True, "credentials_file": "creds.json"},
-            "onedrive": {"enabled": True, "client_id": "id", "redirect_uri": "uri"}
-        }
-        
-        with patch('aird.core.file_operations.GoogleDriveProvider') as mock_gd, \
-             patch('aird.core.file_operations.OneDriveProvider') as mock_od, \
-             patch('aird.core.file_operations.CLOUD_MANAGER') as mock_cm:
-            
-            configure_cloud_providers(config)
-            assert mock_cm.register.call_count == 2
-            mock_gd.assert_called()
-            mock_od.assert_called()
-
-    def test_configure_cloud_providers_missing_config(self):
-        config = {
-            "google_drive": {"enabled": True}, # Missing creds
-            "onedrive": {"enabled": True} # Missing client_id
-        }
-        with patch('builtins.print') as mock_print:
-            configure_cloud_providers(config)
-            # Should print warnings
-            assert mock_print.call_count >= 2

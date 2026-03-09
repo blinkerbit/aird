@@ -141,7 +141,7 @@ class TestUserSearchAPIHandler:
         with patch_db_conn(None, modules=['aird.handlers.api_handlers']):
             handler.get()
             handler.set_status.assert_called_with(500)
-            handler.write.assert_called_with({"error": "Database not available"})
+            handler.write.assert_called_with({"error": "Database connection not available"})
 
     def test_returns_empty_for_short_query(self):
         handler = make_request_handler(UserSearchAPIHandler)
@@ -279,9 +279,7 @@ class TestFeatureFlagSocketHandler:
     def test_open_sends_current_flags(self):
         handler = make_ws_handler(FeatureFlagSocketHandler)
         with patch.object(FeatureFlagSocketHandler.connection_manager, 'add_connection', return_value=True), \
-             patch('aird.handlers.api_handlers.FEATURE_FLAGS', {'in_memory': True}), \
-             patch_db_conn(MagicMock(), modules=['aird.handlers.api_handlers']), \
-             patch('aird.handlers.api_handlers.load_feature_flags', return_value={'persisted': False}):
+             patch('aird.handlers.api_handlers.get_current_feature_flags', return_value={'in_memory': True, 'persisted': False}):
             
             # Mock authentication
             handler.get_current_user = MagicMock(return_value={'username': 'admin'})
@@ -301,9 +299,7 @@ class TestFeatureFlagSocketHandler:
             handler.close.assert_called_with(code=1013, reason="Connection limit exceeded")
 
     def test_send_updates_merges_flags(self):
-        with patch('aird.handlers.api_handlers.FEATURE_FLAGS', {'feature_a': True}), \
-             patch_db_conn(MagicMock(), modules=['aird.handlers.api_handlers']), \
-             patch('aird.handlers.api_handlers.load_feature_flags', return_value={'feature_b': False}), \
+        with patch('aird.handlers.api_handlers.get_current_feature_flags', return_value={'feature_a': True, 'feature_b': False}), \
              patch.object(FeatureFlagSocketHandler.connection_manager, 'broadcast_message') as mock_broadcast:
             FeatureFlagSocketHandler.send_updates()
             payload = json.loads(mock_broadcast.call_args[0][0])
@@ -349,7 +345,7 @@ class TestWebSocketStatsHandler:
         handler.is_admin_user = MagicMock(return_value=False)
         handler.get()
         handler.set_status.assert_called_with(403)
-        handler.write.assert_called_with("Access denied: You don't have permission to perform this action")
+        handler.write.assert_called_with("Access denied")
 
     def test_returns_stats(self):
         handler = make_request_handler(WebSocketStatsHandler)

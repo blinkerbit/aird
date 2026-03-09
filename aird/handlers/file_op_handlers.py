@@ -81,6 +81,7 @@ from io import BytesIO
 HEADER_APPLICATION_JSON = "application/json"
 FILES_URL_STRING = "/files/"
 
+
 @tornado.web.stream_request_body
 class UploadHandler(BaseHandler):
     async def prepare(self):
@@ -308,7 +309,9 @@ class CreateFolderHandler(BaseHandler):
             self.set_header("Content-Type", HEADER_APPLICATION_JSON)
             self.write({"ok": True, "path": (parent + "/" + name) if parent else name})
             return
-        self.redirect(FILES_URL_STRING + ((parent + "/" + name) if parent else name) + "/")
+        self.redirect(
+            FILES_URL_STRING + ((parent + "/" + name) if parent else name) + "/"
+        )
 
 
 def path_to_rel(abspath):
@@ -487,7 +490,9 @@ class CopyHandler(BaseHandler):
             self.write({"ok": True})
             return
         self.redirect(
-            FILES_URL_STRING + os.path.dirname(dest) if os.path.dirname(dest) else FILES_URL_STRING
+            FILES_URL_STRING + os.path.dirname(dest)
+            if os.path.dirname(dest)
+            else FILES_URL_STRING
         )
 
 
@@ -539,7 +544,9 @@ class MoveHandler(BaseHandler):
             self.write({"ok": True})
             return
         self.redirect(
-            FILES_URL_STRING + os.path.dirname(dest) if os.path.dirname(dest) else FILES_URL_STRING
+            FILES_URL_STRING + os.path.dirname(dest)
+            if os.path.dirname(dest)
+            else FILES_URL_STRING
         )
 
 

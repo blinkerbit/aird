@@ -81,6 +81,9 @@ def patch_db_conn(value, modules=None):
         "aird.handlers.view_handlers",
     ]
     modules = modules or default_modules
+    # Always include base_handler since require_db reads from it
+    if "aird.handlers.base_handler" not in modules:
+        modules.append("aird.handlers.base_handler")
     for module in modules:
         targets.append(f"{module}.constants_module.DB_CONN")
         # Some modules reference DB_CONN directly

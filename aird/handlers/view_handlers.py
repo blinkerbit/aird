@@ -19,9 +19,10 @@ from aird.utils.util import (
     join_path,
     is_feature_enabled,
     get_current_feature_flags,
-    MMapFileHandler,
     sanitize_cloud_filename,
+    augment_with_shared_status,
 )
+from aird.core.mmap_handler import MMapFileHandler
 from aird.config import (
     ROOT_DIR,
     MAX_READABLE_FILE_SIZE,
@@ -50,21 +51,12 @@ class MainHandler(BaseHandler):
             return
 
         if os.path.isdir(abspath):
-            # Collect all shared paths from database
-            all_shared_paths = set()
-            db_conn = constants_module.DB_CONN
-            if db_conn:
-                all_shares = get_all_shares(db_conn)
-                for share in all_shares.values():
-                    for p in share.get("paths", []):
-                        all_shared_paths.add(p)
-
             files = get_files_in_directory(abspath)
 
             # Augment file data with shared status
-            for file_info in files:
-                full_path = join_path(path, file_info["name"])
-                file_info["is_shared"] = full_path in all_shared_paths
+            db_conn = constants_module.DB_CONN
+            if db_conn:
+                augment_with_shared_status(files, path, get_all_shares(db_conn))
 
             parent_path = os.path.dirname(path) if path else None
             # Use SQLite-backed flags for template
@@ -300,12 +292,26 @@ class EditViewHandler(BaseHandler):
         )
 
 
-class CloudProvidersHandler(BaseHandler):
-    @tornado.web.authenticated
-    def get(self):
+class CloudProviderMixin:
+    def get_cloud_provider(self, provider_name: str):
         manager: CloudManager = self.application.settings.get(
             "cloud_manager", CLOUD_MANAGER
         )
+        provider = manager.get(provider_name)
+        if not provider:
+            self.set_status(404)
+            self.write({"error": "Provider not configured"})
+            return None
+        return provider
+
+    def get_cloud_manager(self):
+        return self.application.settings.get("cloud_manager", CLOUD_MANAGER)
+
+
+class CloudProvidersHandler(BaseHandler, CloudProviderMixin):
+    @tornado.web.authenticated
+    def get(self):
+        manager: CloudManager = self.get_cloud_manager()
         providers = [
             {
                 "name": provider.name,
@@ -317,16 +323,11 @@ class CloudProvidersHandler(BaseHandler):
         self.write({"providers": providers})
 
 
-class CloudFilesHandler(BaseHandler):
+class CloudFilesHandler(BaseHandler, CloudProviderMixin):
     @tornado.web.authenticated
     async def get(self, provider_name: str):
-        manager: CloudManager = self.application.settings.get(
-            "cloud_manager", CLOUD_MANAGER
-        )
-        provider = manager.get(provider_name)
+        provider = self.get_cloud_provider(provider_name)
         if not provider:
-            self.set_status(404)
-            self.write({"error": "Provider not configured"})
             return
 
         folder_id = self.get_query_argument("folder", provider.root_identifier)
@@ -354,16 +355,11 @@ class CloudFilesHandler(BaseHandler):
         self.write(payload)
 
 
-class CloudDownloadHandler(BaseHandler):
+class CloudDownloadHandler(BaseHandler, CloudProviderMixin):
     @tornado.web.authenticated
     async def get(self, provider_name: str):
-        manager: CloudManager = self.application.settings.get(
-            "cloud_manager", CLOUD_MANAGER
-        )
-        provider = manager.get(provider_name)
+        provider = self.get_cloud_provider(provider_name)
         if not provider:
-            self.set_status(404)
-            self.write({"error": "Provider not configured"})
             return
 
         file_id = self.get_query_argument("file_id", "").strip()

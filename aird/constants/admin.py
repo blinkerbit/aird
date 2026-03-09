@@ -26,9 +26,7 @@ FORBIDDEN = "Forbidden"
 ACCESS_DENIED_JSON = "Access denied"
 DB_UNAVAILABLE = "Service temporarily unavailable: Database connection error"
 USER_NOT_FOUND = "User not found: The requested user does not exist"
-CONFIG_NOT_FOUND = (
-    "Configuration not found: The requested configuration does not exist"
-)
+CONFIG_NOT_FOUND = "Configuration not found: The requested configuration does not exist"
 INVALID_USER_ID = "Invalid request: Please provide a valid user ID"
 INVALID_USER_ID_SHORT = "Invalid user ID"
 INVALID_CONFIG_ID = "Invalid request: Please provide a valid configuration ID"
@@ -36,9 +34,7 @@ DATABASE_NOT_AVAILABLE = "Database not available"
 USERNAME_PASSWORD_REQUIRED = "Username and password are required"
 USERNAME_LENGTH = "Username must be between 3 and 50 characters"
 INVALID_ROLE = "Invalid role"
-USERNAME_FORMAT = (
-    "Username can only contain letters, numbers, underscores, and hyphens"
-)
+USERNAME_FORMAT = "Username can only contain letters, numbers, underscores, and hyphens"
 FAILED_CREATE_USER = "Failed to create user"
 USERNAME_REQUIRED = "Username is required"
 LDAP_PASSWORD_CHANGE = (

@@ -5,8 +5,8 @@ import os
 import tempfile
 from unittest.mock import patch, MagicMock
 
-from aird.core.mmap_handler import (
-    MMapFileHandler,
+from aird.core.mmap_handler import MMapFileHandler
+from aird.utils.util import (
     get_files_in_directory,
     is_video_file,
     is_audio_file,

@@ -3,24 +3,27 @@ import json
 import logging
 import os
 import pathlib
-import secrets
 import time
 import tornado.escape
 import tornado.web
 import tornado.websocket
 import asyncio
+import aiofiles
 from collections import deque
 from urllib.parse import unquote
 
-import aird.config as config_module
 import aird.constants as constants_module
-from aird.constants import FEATURE_FLAGS
-from aird.handlers.base_handler import BaseHandler
+
+from aird.handlers.base_handler import (
+    BaseHandler,
+    ManagedWebSocketMixin,
+    authenticate_handler,
+    require_admin,
+    require_db,
+)
 from aird.db import (
     get_share_by_id,
     get_all_shares,
-    get_user_by_username,
-    load_feature_flags,
     search_users,
     get_shares_for_path,
 )
@@ -31,10 +34,11 @@ from aird.utils.util import (
     is_audio_file,
     WebSocketConnectionManager,
     is_valid_websocket_origin,
-    parse_expression,
-    evaluate_expression,
     is_feature_enabled,
+    get_current_feature_flags,
+    augment_with_shared_status,
 )
+from aird.core.filter_expression import FilterExpression
 from aird.config import (
     ROOT_DIR,
     MAX_READABLE_FILE_SIZE,
@@ -42,7 +46,7 @@ from aird.config import (
 from aird.core.mmap_handler import MMapFileHandler
 
 
-class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):
+class FeatureFlagSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandler):
     # Use connection manager with configurable limits for feature flags
     connection_manager = WebSocketConnectionManager(
         "feature_flags", default_max_connections=50, default_idle_timeout=600
@@ -53,78 +57,29 @@ class FeatureFlagSocketHandler(tornado.websocket.WebSocketHandler):
             self.close(code=1008, reason="Authentication required")
             return
 
-        if not self.connection_manager.add_connection(self):
-            self.write_message(
-                json.dumps(
-                    {"error": "Connection limit exceeded. Please try again later."}
-                )
-            )
-            self.close(code=1013, reason="Connection limit exceeded")
+        if not self.register_connection():
             return
 
         # Load current feature flags from SQLite and send to client
         current_flags = self._get_current_feature_flags()
         self.write_message(json.dumps(current_flags))
 
-    def on_close(self):
-        FeatureFlagSocketHandler.connection_manager.remove_connection(self)
-
     def check_origin(self, origin):
         # Improved origin validation (Priority 2)
         return is_valid_websocket_origin(self, origin)
 
     def _get_current_feature_flags(self):
-        """Get current feature flags.
-        Returns flags with in-memory changes taking precedence over DB (for real-time updates).
-        """
-        # Start with in-memory flags (which may have just been updated)
-        current_flags = FEATURE_FLAGS.copy()
-
-        # Merge with DB values, but in-memory takes precedence for keys that exist in both
-        db_conn = constants_module.DB_CONN
-        if db_conn is not None:
-            try:
-                persisted = load_feature_flags(db_conn)
-                if persisted:
-                    # Start with DB values as base
-                    merged = persisted.copy()
-                    # Then overlay in-memory changes (in-memory takes precedence)
-                    for k, v in current_flags.items():
-                        merged[k] = bool(v)
-                    return merged
-            except Exception:
-                pass
-
-        # Fallback to in-memory flags
-        return current_flags
+        """Get current feature flags using the consolidated implementation."""
+        return get_current_feature_flags()
 
     @classmethod
     def send_updates(cls):
-        """Send feature flag updates to all connected clients.
-        Uses in-memory flags merged with DB to ensure real-time updates are reflected.
-        """
-        # Start with in-memory flags (which may have just been updated)
-        current_flags = FEATURE_FLAGS.copy()
-
-        # Merge with DB values, but in-memory takes precedence for keys that exist in both
-        db_conn = constants_module.DB_CONN
-        if db_conn is not None:
-            try:
-                persisted = load_feature_flags(db_conn)
-                if persisted:
-                    # Start with DB values as base
-                    merged = persisted.copy()
-                    # Then overlay in-memory changes (in-memory takes precedence)
-                    for k, v in current_flags.items():
-                        merged[k] = bool(v)
-                    current_flags = merged
-            except Exception:
-                pass
-
+        """Send feature flag updates to all connected clients."""
+        current_flags = get_current_feature_flags()
         cls.connection_manager.broadcast_message(json.dumps(current_flags))
 
 
-class FileStreamHandler(tornado.websocket.WebSocketHandler):
+class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandler):
     # Use connection manager with configurable limits for file streaming
     connection_manager = WebSocketConnectionManager(
         "file_streaming", default_max_connections=200, default_idle_timeout=300
@@ -148,16 +103,7 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
             self.close(code=1008, reason="Authentication required")
             return
 
-        if not self.connection_manager.add_connection(self):
-            self.write_message(
-                json.dumps(
-                    {
-                        "type": "error",
-                        "message": "Connection limit exceeded. Please try again later.",
-                    }
-                )
-            )
-            self.close(code=1013, reason="Connection limit exceeded")
+        if not self.register_connection():
             return
 
         self.file_path = os.path.abspath(os.path.join(ROOT_DIR, unquote(path)))
@@ -167,12 +113,17 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
             self.close(code=1003, reason="File not found")
             return
 
-        # Initialize with last N lines
+        # Initialize with last N lines (async, non-blocking)
         try:
-            with open(self.file_path, "r", encoding="utf-8", errors="replace") as f:
-                self.line_buffer.extend(f)
+            async with aiofiles.open(
+                self.file_path, "r", encoding="utf-8", errors="replace"
+            ) as f:
+                lines = await f.readlines()
+            self.line_buffer.extend(lines)
             for line in self.line_buffer:
-                self.write_message(json.dumps({"type": "line", "data": line.strip()}))
+                await self.write_message(
+                    json.dumps({"type": "line", "data": line.strip()})
+                )
         except Exception:
             pass
 
@@ -247,30 +198,30 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
 
     async def stream_file(self):
         try:
-            with open(
+            async with aiofiles.open(
                 self.file_path, "r", encoding="utf-8", errors="replace"
             ) as self.file:
-                self.file.seek(0, 2)  # Go to the end of the file
+                await self.file.seek(0, 2)  # Go to the end of the file
                 while self.is_streaming:
-                    line = self.file.readline()
+                    line = await self.file.readline()
                     if not line:
                         await asyncio.sleep(0.1)
                         continue
 
                     if self.filter_expression:
                         try:
-                            parsed_expr = parse_expression(self.filter_expression)
-                            if evaluate_expression(line, parsed_expr):
-                                self.write_message(
+                            expr = FilterExpression(self.filter_expression)
+                            if expr.matches(line):
+                                await self.write_message(
                                     json.dumps({"type": "line", "data": line.strip()})
                                 )
                         except Exception:
-                            # If filter is invalid, ignore it
-                            self.write_message(
+                            # If filter is invalid, send line anyway
+                            await self.write_message(
                                 json.dumps({"type": "line", "data": line.strip()})
                             )
                     else:
-                        self.write_message(
+                        await self.write_message(
                             json.dumps({"type": "line", "data": line.strip()})
                         )
 
@@ -280,7 +231,9 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
             pass
         except Exception as e:
             try:
-                self.write_message(json.dumps({"type": "error", "message": str(e)}))
+                await self.write_message(
+                    json.dumps({"type": "error", "message": str(e)})
+                )
             except tornado.websocket.WebSocketClosedError:
                 pass
 
@@ -292,7 +245,7 @@ class FileStreamHandler(tornado.websocket.WebSocketHandler):
                 self.file.close()
         except Exception:
             pass
-        self.connection_manager.remove_connection(self)
+        super().on_close()
 
     def check_origin(self, origin):
         return is_valid_websocket_origin(self, origin)
@@ -314,19 +267,9 @@ class FileListAPIHandler(BaseHandler):
             files = get_files_in_directory(abspath)
 
             # Augment file data with shared status
-            all_shared_paths = set()
             db_conn = constants_module.DB_CONN
             if db_conn:
-                all_shares = get_all_shares(db_conn)
-                for share in all_shares.values():
-                    for p in share.get("paths", []):
-                        all_shared_paths.add(p)
-
-            for file_info in files:
-                file_info["is_shared"] = (
-                    os.path.join(path, file_info["name"]).replace("\\", "/")
-                    in all_shared_paths
-                )
+                augment_with_shared_status(files, path, get_all_shares(db_conn))
 
             result = {
                 "path": path,
@@ -359,7 +302,7 @@ class SuperSearchHandler(BaseHandler):
         self.render("super_search.html", current_path=current_path)
 
 
-class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
+class SuperSearchWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandler):
     # Use connection manager with configurable limits for search
     connection_manager = WebSocketConnectionManager(
         "search", default_max_connections=100, default_idle_timeout=180
@@ -372,55 +315,7 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
 
     def get_current_user(self):
         """Authenticate user for WebSocket connection"""
-        # Check for user session from secure cookie (same as BaseHandler)
-        user_json = self.get_secure_cookie("user")
-        if user_json:
-            try:
-                # Handle both JSON-encoded user data and plain string usernames
-                try:
-                    user_data = json.loads(user_json)
-                    username = user_data.get("username", "")
-                except (json.JSONDecodeError, TypeError):
-                    # If it's not JSON, treat it as a plain username string
-                    username = (
-                        user_json.decode("utf-8")
-                        if isinstance(user_json, bytes)
-                        else str(user_json)
-                    )
-
-                # Re-verify user from DB to ensure they are still valid
-                db_conn = constants_module.DB_CONN
-                if db_conn:
-                    user = get_user_by_username(db_conn, username)
-                    if user:
-                        return user
-                # If DB check fails but we have a username, return basic user info for token-authenticated users
-                if username == "token_authenticated":
-                    return {"username": "token_user", "role": "admin"}
-            except Exception:
-                # If cookie parsing fails, check if it's a token-authenticated user
-                if isinstance(user_json, bytes):
-                    user_str = user_json.decode("utf-8", errors="ignore")
-                    if user_str == "token_authenticated":
-                        return {"username": "token_user", "role": "admin"}
-                return None
-
-        # Fallback to token-based authentication from Authorization header
-        auth_header = self.request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            token = auth_header.split(" ")[1]
-            # Access token directly from module to ensure we have the latest value
-            current_access_token = config_module.ACCESS_TOKEN
-            if current_access_token:
-                # Use constant-time comparison to prevent timing attacks
-                # Only strip whitespace to preserve token integrity
-                normalized_token = token.strip()
-                normalized_access_token = current_access_token.strip()
-                if secrets.compare_digest(normalized_token, normalized_access_token):
-                    # Return a generic user object for token-based access
-                    return {"username": "token_user", "role": "admin"}
-
-        return None
+        return authenticate_handler(self)
 
     def open(self):
         user = self.get_current_user()
@@ -449,16 +344,7 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
             f"SuperSearchWebSocket: User authenticated - {user.get('username', 'unknown')}"
         )
 
-        if not self.connection_manager.add_connection(self):
-            self.write_message(
-                json.dumps(
-                    {
-                        "type": "error",
-                        "message": "Connection limit exceeded. Please try again later.",
-                    }
-                )
-            )
-            self.close(code=1013, reason="Connection limit exceeded")
+        if not self.register_connection():
             return
 
     async def on_message(self, message):
@@ -715,7 +601,7 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
     def on_close(self):
         if self.search_task:
             self.stop_event.set()
-        self.connection_manager.remove_connection(self)
+        super().on_close()
 
     def check_origin(self, origin):
         return is_valid_websocket_origin(self, origin)
@@ -723,13 +609,9 @@ class SuperSearchWebSocketHandler(tornado.websocket.WebSocketHandler):
 
 class UserSearchAPIHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_db
     def get(self):
         """Search users by username (for share access control)"""
-        db_conn = constants_module.DB_CONN
-        if db_conn is None:
-            self.set_status(500)
-            self.write({"error": "Database not available"})
-            return
 
         query = self.get_argument("q", "").strip()
         if len(query) < 1:
@@ -737,7 +619,7 @@ class UserSearchAPIHandler(BaseHandler):
             return
 
         try:
-            users = search_users(db_conn, query)
+            users = search_users(self.db_conn, query)
             self.write({"users": users})
         except Exception as e:
             self.set_status(500)
@@ -853,14 +735,9 @@ class ShareListAPIHandler(BaseHandler):
 
 class WebSocketStatsHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_admin()
     def get(self):
         """Return WebSocket connection statistics"""
-        if not self.is_admin_user():
-            self.set_status(403)
-            self.write(
-                "Access denied: You don't have permission to perform this action"
-            )
-            return
 
         stats = {
             "feature_flags": FeatureFlagSocketHandler.connection_manager.get_stats(),

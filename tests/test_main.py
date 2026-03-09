@@ -12,8 +12,6 @@ from unittest.mock import patch, MagicMock
 from aird.main import (
     _get_data_dir,
     _init_db,
-    _load_feature_flags,
-    _save_feature_flags,
     _is_share_expired,
     _cleanup_expired_shares,
     _hash_password,
@@ -124,52 +122,7 @@ class TestInitDb:
         conn.close()
 
 
-class TestLoadFeatureFlags:
-    """Tests for _load_feature_flags function"""
-    
-    def test_load_empty_flags(self, db_conn):
-        """Test loading when no flags exist"""
-        result = _load_feature_flags(db_conn)
-        assert result == {}
-    
-    def test_load_existing_flags(self, db_conn):
-        """Test loading existing feature flags"""
-        db_conn.execute("INSERT INTO feature_flags (key, value) VALUES ('flag1', 1)")
-        db_conn.execute("INSERT INTO feature_flags (key, value) VALUES ('flag2', 0)")
-        db_conn.commit()
-        
-        result = _load_feature_flags(db_conn)
-        assert result == {'flag1': True, 'flag2': False}
-    
-    def test_load_flags_exception_returns_empty(self):
-        """Test that exceptions return empty dict"""
-        mock_conn = MagicMock()
-        mock_conn.execute.side_effect = Exception("Database error")
-        
-        result = _load_feature_flags(mock_conn)
-        assert result == {}
 
-
-class TestSaveFeatureFlags:
-    """Tests for _save_feature_flags function"""
-    
-    def test_save_new_flags(self, db_conn):
-        """Test saving new feature flags"""
-        flags = {'flag1': True, 'flag2': False}
-        _save_feature_flags(db_conn, flags)
-        
-        result = _load_feature_flags(db_conn)
-        assert result == flags
-    
-    def test_save_updates_existing_flags(self, db_conn):
-        """Test that saving updates existing flags"""
-        db_conn.execute("INSERT INTO feature_flags (key, value) VALUES ('flag1', 0)")
-        db_conn.commit()
-        
-        _save_feature_flags(db_conn, {'flag1': True})
-        
-        result = _load_feature_flags(db_conn)
-        assert result['flag1'] is True
 
 
 class TestIsShareExpired:
@@ -497,8 +450,6 @@ from aird.main import (
     _get_shares_for_path,
     _load_upload_config,
     _save_upload_config,
-    _load_websocket_config,
-    _save_websocket_config,
     _create_ldap_config,
     _get_all_ldap_configs,
     _get_ldap_config_by_id,
@@ -665,16 +616,6 @@ class TestUploadConfigMain:
         _save_upload_config(db_conn, {'max_size': 256})
         _save_upload_config(db_conn, {'max_size': 1024})
         assert _load_upload_config(db_conn) == {'max_size': 1024}
-
-
-class TestWebsocketConfigMain:
-    def test_load_empty(self, db_conn):
-        assert _load_websocket_config(db_conn) == {}
-
-    def test_save_and_load(self, db_conn):
-        _save_websocket_config(db_conn, {'max_conn': 100})
-        result = _load_websocket_config(db_conn)
-        assert result == {'max_conn': 100}
 
 
 class TestLdapConfigMain:
