@@ -26,7 +26,6 @@ from aird.utils.util import (
 )
 from aird.config import (
     ROOT_DIR,
-    MAX_FILE_SIZE,
     MAX_READABLE_FILE_SIZE,
     CLOUD_MANAGER,
 )
@@ -77,7 +76,7 @@ class MainHandler(BaseHandler):
                 join_path=join_path,
                 get_file_icon=get_file_icon,
                 features=flags_for_template,
-                max_file_size=MAX_FILE_SIZE
+                max_file_size=constants_module.MAX_FILE_SIZE
             )
         elif os.path.isfile(abspath):
             await self.serve_file(self, abspath)
@@ -169,6 +168,14 @@ class MainHandler(BaseHandler):
                 handler.write(f"Error serving raw file: {str(e)}")
                 return
 
+        # PDF in-browser preview
+        if filename.lower().endswith('.pdf'):
+            rel_path = os.path.relpath(abspath, ROOT_DIR).replace('\\', '/')
+            pdf_url = handler.request.path + '?mode=raw'
+            pdf_download_url = handler.request.path + '?download=1'
+            handler.render("pdf_preview.html", filename=filename, path=rel_path, pdf_url=pdf_url, pdf_download_url=pdf_download_url)
+            return
+
         # Template render logic (Client-side rendering)
         # We don't read the file here anymore. The client will fetch it.
         file_size = 0
@@ -246,6 +253,7 @@ class EditViewHandler(BaseHandler):
                 full_file_content = await f.read()
                 
         total_lines = full_file_content.count('\n') + 1 if full_file_content else 0
+        is_markdown = filename.lower().endswith('.md')
 
         self.render(
             "edit.html",
@@ -254,6 +262,7 @@ class EditViewHandler(BaseHandler):
             full_file_content=full_file_content,
             total_lines=total_lines,
             features=get_current_feature_flags(),
+            is_markdown=is_markdown,
         )
 
 class CloudProvidersHandler(BaseHandler):

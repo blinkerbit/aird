@@ -289,6 +289,19 @@
       width: 0%;
     }
 
+    .scanning-ticker {
+      font-size: 12px;
+      color: #555;
+      height: 18px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      margin-top: 4px;
+      font-family: "Courier New", monospace;
+      direction: rtl;
+      text-align: left;
+    }
+
     .results {
       border: 1px solid black;
       background: white;
@@ -500,6 +513,7 @@
         <div id="progressFill" class="progress-fill"></div>
       </div>
       <div id="progressText" style="font-size: 12px; color: #666;"></div>
+      <div id="scanningTicker" class="scanning-ticker"></div>
     </div>
 
     <div id="results" class="results" style="display: none;">
@@ -532,6 +546,7 @@
         this.progressContainer = document.getElementById('progressContainer');
         this.progressFill = document.getElementById('progressFill');
         this.progressText = document.getElementById('progressText');
+        this.scanningTicker = document.getElementById('scanningTicker');
         this.resultsDiv = document.getElementById('results');
         this.resultsContent = document.getElementById('resultsContent');
         this.statsDiv = document.getElementById('stats');
@@ -733,33 +748,31 @@
           case 'search_start':
             this.showStatus(`Searching for "${data.search_text}" in files matching "${data.pattern}"...`, 'searching');
             this.progressContainer.style.display = 'block';
+            this.scanningTicker.textContent = '';
             break;
 
-          case 'file_start':
-            this.processedFiles = data.progress.current;
-            this.totalFiles = data.progress.total;
-            this.updateProgress();
-            this.showStatus(`Processing file ${data.progress.current} of ${data.progress.total}: ${data.file_path}`, 'searching');
+          case 'scanning':
+            this.processedFiles = data.files_searched;
+            this.scanningTicker.textContent = '\u25B6 ' + data.file_path;
+            this.progressText.textContent = `${data.files_searched} files scanned`;
             break;
 
           case 'match':
             this.addMatch(data);
             break;
 
-          case 'file_end':
-            // File processing complete
-            break;
-
           case 'search_complete':
-            this.showStatus(`Search completed. Found ${this.totalMatches} matches in ${this.processedFiles} files.`, 'success');
+            this.showStatus(`Search completed. Found ${this.totalMatches} matches across ${this.results.size} files (${data.files_searched} files scanned).`, 'success');
             this.progressContainer.style.display = 'none';
+            this.scanningTicker.textContent = '';
             this.isSearching = false;
             this.updateButtons();
             break;
 
           case 'no_files':
-            this.showStatus(data.message, 'success');
+            this.showStatus(data.message || `No matches found (${data.files_searched} files scanned).`, 'success');
             this.progressContainer.style.display = 'none';
+            this.scanningTicker.textContent = '';
             this.isSearching = false;
             this.updateButtons();
             break;
@@ -879,11 +892,7 @@
       }
 
       updateProgress() {
-        if (this.totalFiles > 0) {
-          const percentage = (this.processedFiles / this.totalFiles) * 100;
-          this.progressFill.style.width = `${percentage}%`;
-          this.progressText.textContent = `Processing file ${this.processedFiles} of ${this.totalFiles}`;
-        }
+        this.progressText.textContent = `${this.processedFiles} files scanned`;
       }
 
       updateStats() {
@@ -900,6 +909,7 @@
         this.updateButtons();
         this.showStatus('Search cancelled.', 'error');
         this.progressContainer.style.display = 'none';
+        this.scanningTicker.textContent = '';
       }
 
       clearResults() {
@@ -912,6 +922,7 @@
         this.resultsDiv.style.display = 'none';
         this.progressContainer.style.display = 'none';
         this.progressFill.style.width = '0%';
+        this.scanningTicker.textContent = '';
       }
 
       updateButtons() {

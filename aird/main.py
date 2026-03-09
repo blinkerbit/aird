@@ -36,12 +36,18 @@ import tornado.websocket
 
 import aird.constants as constants
 import aird.config as config
+from aird.db import load_allowed_extensions, save_allowed_extensions, get_all_network_shares
+from aird.network_share_manager import NetworkShareManager
 
 # Set up module logger
 logger = logging.getLogger(__name__)
 
 from aird.handlers.admin_handlers import (
+    AdminAuditHandler,
     AdminHandler,
+    AdminNetworkShareDeleteHandler,
+    AdminNetworkSharesHandler,
+    AdminNetworkShareToggleHandler,
     AdminUsersHandler,
     LDAPConfigCreateHandler,
     LDAPConfigDeleteHandler,
@@ -74,11 +80,16 @@ from aird.handlers.auth_handlers import (
 from aird.handlers.base_handler import BaseHandler
 from aird.handlers.file_op_handlers import (
     CloudUploadHandler,
+    CopyHandler,
+    CreateFolderHandler,
     DeleteHandler,
     EditHandler,
+    MoveHandler,
+    BulkHandler,
     RenameHandler,
     UploadHandler,
 )
+from aird.handlers.health_handler import HealthHandler
 from aird.handlers.share_handlers import (
     ShareCreateHandler,
     ShareFilesHandler,
@@ -200,6 +211,35 @@ def _init_db(conn: sqlite3.Connection) -> None:
             status TEXT NOT NULL,
             error_message TEXT,
             FOREIGN KEY (config_id) REFERENCES ldap_configs (id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            username TEXT,
+            action TEXT NOT NULL,
+            details TEXT,
+            ip TEXT
+        )
+        """
+    )
+    conn.execute("CREATE TABLE IF NOT EXISTS upload_allowed_extensions (ext TEXT PRIMARY KEY)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS network_shares (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            folder_path TEXT NOT NULL,
+            protocol TEXT NOT NULL DEFAULT 'webdav',
+            port INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            password TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            read_only INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
@@ -561,6 +601,28 @@ def _get_shares_for_path(conn: sqlite3.Connection, file_path: str) -> list:
     except Exception as e:
         logger.error(f"Error getting shares for path {file_path}: {e}")
         return []
+
+def _load_upload_config(conn: sqlite3.Connection) -> dict:
+    """Load upload configuration from SQLite database."""
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS upload_config (key TEXT PRIMARY KEY, value INTEGER)")
+        rows = conn.execute("SELECT key, value FROM upload_config").fetchall()
+        return {k: int(v) for (k, v) in rows}
+    except Exception:
+        return {}
+
+def _save_upload_config(conn: sqlite3.Connection, config: dict) -> None:
+    """Save upload configuration to SQLite database."""
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS upload_config (key TEXT PRIMARY KEY, value INTEGER)")
+        with conn:
+            for key, value in config.items():
+                conn.execute(
+                    "INSERT OR REPLACE INTO upload_config (key, value) VALUES (?, ?)",
+                    (key, int(value)),
+                )
+    except Exception:
+        pass
 
 def _load_websocket_config(conn: sqlite3.Connection) -> dict:
     """Load WebSocket configuration from SQLite database."""
@@ -1096,8 +1158,8 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None, 
     settings["template_path"] = os.path.join(os.path.dirname(__file__), "templates")
     # Limit request size to avoid Tornado rejecting large uploads with
     # "Content-Length too long" before our handler can respond.
-    settings.setdefault("max_body_size", constants.MAX_FILE_SIZE)
-    settings.setdefault("max_buffer_size", constants.MAX_FILE_SIZE)
+    settings.setdefault("max_body_size", constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT)
+    settings.setdefault("max_buffer_size", constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT)
     
     if ldap_enabled:
         settings["ldap_server"] = ldap_server
@@ -1119,6 +1181,7 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None, 
     # Build routes list
     routes = [
         (r"/", RootHandler),
+        (r"/health", HealthHandler),
         (r"/login", login_handler),
         (r"/logout", LogoutHandler),
         (r"/profile", ProfileHandler),
@@ -1129,11 +1192,19 @@ def make_app(settings, ldap_enabled=False, ldap_server=None, ldap_base_dn=None, 
         (r"/admin/users/edit/([0-9]+)", UserEditHandler),
         (r"/admin/users/delete", UserDeleteHandler),
         (r"/admin/websocket-stats", WebSocketStatsHandler),
+        (r"/admin/audit", AdminAuditHandler),
+        (r"/admin/network-shares", AdminNetworkSharesHandler),
+        (r"/admin/network-shares/delete", AdminNetworkShareDeleteHandler),
+        (r"/admin/network-shares/toggle", AdminNetworkShareToggleHandler),
         (r"/stream/(.*)", FileStreamHandler),
         (r"/features", FeatureFlagSocketHandler),
         (r"/upload", UploadHandler),
+        (r"/mkdir", CreateFolderHandler),
         (r"/delete", DeleteHandler),
         (r"/rename", RenameHandler),
+        (r"/copy", CopyHandler),
+        (r"/move", MoveHandler),
+        (r"/api/bulk", BulkHandler),
         (r"/edit/(.*)", EditViewHandler),
         (r"/edit", EditHandler),
         (r"/api/files/(.*)", FileListAPIHandler),
@@ -1265,8 +1336,34 @@ def main():
         # Database-only persistence for shares
         logger.info("Shares are now persisted directly in database")
         
+        # Load persisted upload config and merge
+        persisted_upload_config = _load_upload_config(constants.DB_CONN)
+        if persisted_upload_config:
+            for k, v in persisted_upload_config.items():
+                constants.UPLOAD_CONFIG[k] = int(v)
+                logger.debug(f"Upload config '{k}' set to {int(v)} from database")
+        constants.MAX_FILE_SIZE = constants.UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
+        logger.info(f"Max upload file size: {constants.UPLOAD_CONFIG['max_file_size_mb']} MB")
+        # Load allowed upload extensions (when "allow all" is off)
+        constants.UPLOAD_ALLOWED_EXTENSIONS = load_allowed_extensions(constants.DB_CONN)
+        if not constants.UPLOAD_ALLOWED_EXTENSIONS:
+            constants.UPLOAD_ALLOWED_EXTENSIONS = set(constants.ALLOWED_UPLOAD_EXTENSIONS)
+            save_allowed_extensions(constants.DB_CONN, constants.UPLOAD_ALLOWED_EXTENSIONS)
+            logger.info("Seeded upload allowed extensions from defaults")
+
         # Assign admin privileges to configured admin users
         _assign_admin_privileges(constants.DB_CONN, config.ADMIN_USERS)
+
+        # Initialize network share manager and auto-start enabled shares
+        constants.NETWORK_SHARE_MANAGER = NetworkShareManager()
+        try:
+            enabled_shares = [s for s in get_all_network_shares(constants.DB_CONN) if s.get("enabled")]
+            for share in enabled_shares:
+                constants.NETWORK_SHARE_MANAGER.start_share(share)
+            if enabled_shares:
+                logger.info("Auto-started %d network share(s)", len(enabled_shares))
+        except Exception as ns_err:
+            logger.warning("Failed to auto-start network shares: %s", ns_err)
 
         # Ensure database connection is working
         if constants.DB_CONN is None:
@@ -1303,8 +1400,8 @@ def main():
                 app.listen(
                     port,
                     ssl_options=ssl_options,
-                    max_body_size=constants.MAX_FILE_SIZE,
-                    max_buffer_size=constants.MAX_FILE_SIZE,
+                    max_body_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
+                    max_buffer_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
                 )
                 logger.info(f"Serving HTTPS on 0.0.0.0 port {port} (https://0.0.0.0:{port}/) ...")
                 print(f"https://localhost:{port}/")
@@ -1316,8 +1413,8 @@ def main():
             else:
                 app.listen(
                     port,
-                    max_body_size=constants.MAX_FILE_SIZE,
-                    max_buffer_size=constants.MAX_FILE_SIZE,
+                    max_body_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
+                    max_buffer_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
                 )
                 logger.info(f"Serving HTTP on 0.0.0.0 port {port} (http://0.0.0.0:{port}/) ...")
                 print(f"http://localhost:{port}/")

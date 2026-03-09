@@ -13,6 +13,7 @@ from aird.db import (
     get_share_by_id,
     update_share,
     is_share_expired,
+    log_audit,
 )
 from aird.utils.util import (
     is_within_root,
@@ -180,6 +181,7 @@ class ShareCreateHandler(BaseHandler):
             success = insert_share(db_conn, sid, created, final_paths, allowed_users if allowed_users else None, secret_token, share_type, allow_list if allow_list else None, avoid_list if avoid_list else None, expiry_date)
             if success:
                 logging.info(f"Share {sid} created successfully in database")
+                log_audit(db_conn, "share_create", username=self.get_display_username(), details=f"share_id={sid} paths={len(final_paths)}", ip=self.request.remote_ip)
                 response_data = {"id": sid, "url": f"/shared/{sid}"}
                 if not disable_token:
                     response_data["secret_token"] = secret_token
@@ -211,6 +213,7 @@ class ShareRevokeHandler(BaseHandler):
                 self.write({"error": "Database connection not available"})
                 return
             delete_share(db_conn, sid)
+            log_audit(db_conn, "share_revoke", username=self.get_display_username(), details=f"share_id={sid}", ip=self.request.remote_ip)
             logging.info(f"Share {sid} deleted from database")
         except Exception as e:
             logging.error(f"Failed to delete share {sid}: {e}")

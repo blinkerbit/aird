@@ -20,9 +20,11 @@ FEATURE_FLAGS = {
     "file_download": True,
     "file_edit": True,
     "file_share": True,
-    "compression": True,  # ✅ NEW: Enable gzip compression
-    "super_search": True,  # ✅ NEW: Enable super search functionality
-    "p2p_transfer": True,  # ✅ NEW: Enable P2P file transfer
+    "compression": True,
+    "super_search": True,
+    "p2p_transfer": True,
+    "folder_create": True,
+    "folder_delete": True,
 }
 
 # WebSocket connection configuration
@@ -35,21 +37,36 @@ WEBSOCKET_CONFIG = {
     "search_idle_timeout": 180,  # 3 minutes
 }
 
-# File operation constants
-MAX_FILE_SIZE = 512 * 1024 * 1024  # 512 MB
+# Upload configuration (admin-configurable, persisted to database)
+UPLOAD_CONFIG = {
+    "max_file_size_mb": 512,  # Default max upload file size in MB
+    "allow_all_file_types": 0,  # 0 = use whitelist below, 1 = allow any extension
+}
+
+# Hard ceiling for Tornado server — admin cannot exceed this
+MAX_UPLOAD_FILE_SIZE_HARD_LIMIT = 10 * 1024 * 1024 * 1024  # 10 GB
+
+# File operation constants (derived from UPLOAD_CONFIG at startup)
+MAX_FILE_SIZE = UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
 MAX_READABLE_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+# Default whitelist for uploads; also used as the list of options in admin when "allow all" is off
 ALLOWED_UPLOAD_EXTENSIONS = {
     ".txt", ".log", ".md", ".json", ".xml", ".yaml", ".yml", ".csv",
     ".jpg", ".jpeg", ".png", ".gif", ".ico",
     ".mp4", ".webm", ".ogg", ".mp3", ".wav",
     ".pdf", ".zip", ".gz", ".tar", ".bz2",
 }
+# Runtime set of allowed extensions (loaded from DB; used when allow_all_file_types is off)
+UPLOAD_ALLOWED_EXTENSIONS = set(ALLOWED_UPLOAD_EXTENSIONS)
 
 # Mmap constants
 MMAP_MIN_SIZE = 1 * 1024 * 1024  # 1 MB
 CHUNK_SIZE = 64 * 1024  # 64 KB
 
 # SHARES = {}  # REMOVED: Using database-only persistence
+
+# Network share manager (set at startup)
+NETWORK_SHARE_MANAGER = None
 
 # Rate limiting
 LOGIN_RATE_LIMIT_ATTEMPTS = 5

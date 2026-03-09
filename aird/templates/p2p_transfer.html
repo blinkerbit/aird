@@ -192,13 +192,17 @@
             border-radius: 8px;
             text-align: center;
             margin: 15px 0;
+            overflow: hidden;
         }
 
         .share-code {
-            font-size: 28px;
+            font-size: 18px;
             font-weight: bold;
-            letter-spacing: 4px;
+            letter-spacing: 1px;
             font-family: monospace;
+            word-break: break-all;
+            overflow-wrap: break-word;
+            max-width: 100%;
         }
 
         .share-code-hint {
@@ -573,8 +577,8 @@
             }
 
             .share-code {
-                font-size: 20px;
-                letter-spacing: 2px;
+                font-size: 14px;
+                letter-spacing: 0;
             }
 
             .received-file-item {

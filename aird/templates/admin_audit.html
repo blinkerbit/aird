@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Audit Log</title>
+    <style>
+        body { font-family: monospace; margin: 20px; background: #fff; color: #000; }
+        h2 { margin-bottom: 10px; }
+        table { border-collapse: collapse; width: 100%; margin-top: 15px; }
+        th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: left; }
+        th { background: #000; color: #fff; }
+        tr:nth-child(even) { background: #f5f5f5; }
+        .meta { margin: 10px 0; color: #666; font-size: 12px; }
+        a { color: #00f; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <h2>Audit Log</h2>
+    <div class="meta">
+        <a href="/admin">← Admin</a> &nbsp;|&nbsp;
+        <a href="/admin/audit?format=csv">Export CSV</a>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Time (UTC)</th>
+                <th>User</th>
+                <th>Action</th>
+                <th>Details</th>
+                <th>IP</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in logs %}
+            <tr>
+                <td>{{ r.get('id') }}</td>
+                <td>{{ r.get('created_at', '') }}</td>
+                <td>{{ r.get('username') or '-' }}</td>
+                <td>{{ r.get('action') or '-' }}</td>
+                <td>{{ r.get('details') or '-' }}</td>
+                <td>{{ r.get('ip') or '-' }}</td>
+            </tr>
+            {% end %}
+        </tbody>
+    </table>
+    <p class="meta">Showing {{ logs_count }} entries (limit={{ limit }}, offset={{ offset }})</p>
+</body>
+</html>

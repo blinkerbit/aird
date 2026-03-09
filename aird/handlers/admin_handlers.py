@@ -1,8 +1,14 @@
-import tornado.web
-import json
-import time
-import re
+import csv
+import io
 import logging
+import os
+import re
+import secrets as _secrets
+import socket as _socket
+import time
+
+import json
+import tornado.web
 
 from aird.handlers.base_handler import BaseHandler
 from aird.db import (
@@ -18,11 +24,21 @@ from aird.db import (
     delete_ldap_config,
     save_feature_flags,
     save_websocket_config,
+    save_upload_config,
     load_feature_flags,
+    get_audit_logs,
+    load_allowed_extensions,
+    save_allowed_extensions,
+    create_network_share,
+    get_all_network_shares,
+    update_network_share,
+    delete_network_share,
+    log_audit,
 )
 from aird.constants import (
     FEATURE_FLAGS,
     WEBSOCKET_CONFIG,
+    UPLOAD_CONFIG,
 )
 import aird.constants as constants_module
 from aird.utils.util import get_current_websocket_config
@@ -59,11 +75,18 @@ class AdminHandler(BaseHandler):
         
         # Check if LDAP is enabled
         ldap_enabled = self.settings.get('ldap_server') is not None
+        # For "allowed file types" UI: list of options and currently allowed set
+        db_conn = constants_module.DB_CONN
+        allowed_current = load_allowed_extensions(db_conn) if db_conn else set(constants_module.UPLOAD_ALLOWED_EXTENSIONS)
+        available_extensions = sorted(constants_module.ALLOWED_UPLOAD_EXTENSIONS)
         
         self.render("admin.html",
                    features=current_features,
                    websocket_config=current_websocket_config,
-                   ldap_enabled=ldap_enabled)
+                   upload_config=UPLOAD_CONFIG,
+                   ldap_enabled=ldap_enabled,
+                   available_extensions=available_extensions,
+                   allowed_extensions_current=allowed_current)
 
     @tornado.web.authenticated
     def post(self):
@@ -81,6 +104,8 @@ class AdminHandler(BaseHandler):
         FEATURE_FLAGS["super_search"] = self.get_argument("super_search", "off") == "on"
         FEATURE_FLAGS["compression"] = self.get_argument("compression", "off") == "on"
         FEATURE_FLAGS["p2p_transfer"] = self.get_argument("p2p_transfer", "off") == "on"
+        FEATURE_FLAGS["folder_create"] = self.get_argument("folder_create", "off") == "on"
+        FEATURE_FLAGS["folder_delete"] = self.get_argument("folder_delete", "off") == "on"
         
         # Update WebSocket configuration
         websocket_config = {}
@@ -100,12 +125,27 @@ class AdminHandler(BaseHandler):
             # If parsing fails, use current values
             pass
         
-        # Persist both feature flags and WebSocket configuration
+        # Update upload configuration
+        try:
+            max_file_size_mb = max(1, min(10240, int(self.get_argument("max_file_size_mb", "512"))))
+            UPLOAD_CONFIG["max_file_size_mb"] = max_file_size_mb
+            constants_module.MAX_FILE_SIZE = max_file_size_mb * 1024 * 1024
+            UPLOAD_CONFIG["allow_all_file_types"] = 1 if self.get_argument("allow_all_file_types", "off") == "on" else 0
+        except (ValueError, TypeError):
+            pass
+
+        # Persist feature flags, WebSocket, and upload configuration
         try:
             db_conn = constants_module.DB_CONN
             if db_conn is not None:
                 save_feature_flags(db_conn, FEATURE_FLAGS)
                 save_websocket_config(db_conn, WEBSOCKET_CONFIG)
+                save_upload_config(db_conn, UPLOAD_CONFIG)
+                # When "allow all file types" is off, persist selected extensions from checkboxes
+                if not UPLOAD_CONFIG.get("allow_all_file_types"):
+                    selected_extensions = {e for e in self.get_arguments("allow_ext") if e and e.startswith(".")}
+                    save_allowed_extensions(db_conn, selected_extensions)
+                    constants_module.UPLOAD_ALLOWED_EXTENSIONS = selected_extensions
         except Exception:
             pass
 
@@ -134,6 +174,32 @@ class WebSocketStatsHandler(BaseHandler):
         
         self.set_header('Content-Type', 'application/json')
         self.write(json.dumps(stats, indent=2))
+
+
+class AdminAuditHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        """Display audit log (admin only). ?format=csv for export."""
+        if not self.is_admin_user():
+            self.redirect("/admin/login")
+            return
+        db_conn = constants_module.DB_CONN
+        limit = min(1000, max(1, int(self.get_argument("limit", "500"))))
+        offset = max(0, int(self.get_argument("offset", "0")))
+        if self.get_argument("format", "") == "csv":
+            self.set_header("Content-Type", "text/csv")
+            self.set_header("Content-Disposition", "attachment; filename=audit_log.csv")
+            rows = get_audit_logs(db_conn, limit=10000, offset=0)
+            buf = io.StringIO()
+            w = csv.writer(buf)
+            w.writerow(["id", "created_at", "username", "action", "details", "ip"])
+            for r in rows:
+                w.writerow([r.get("id"), r.get("created_at"), r.get("username") or "", r.get("action") or "", r.get("details") or "", r.get("ip") or ""])
+            self.write(buf.getvalue())
+            return
+        logs = get_audit_logs(db_conn, limit=limit, offset=offset)
+        self.render("admin_audit.html", logs=logs, limit=limit, offset=offset, logs_count=len(logs))
+
 
 class AdminUsersHandler(BaseHandler):
     @tornado.web.authenticated
@@ -545,4 +611,149 @@ class LDAPSyncHandler(BaseHandler):
         # In a real application, you would trigger the LDAP sync here.
         # For now, we'll just return a success message.
         self.write({"status": "Sync started"})
+
+
+# -------------------------------------------------------
+# Network Shares (SMB / WebDAV)
+# -------------------------------------------------------
+
+
+class AdminNetworkSharesHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        if not self.is_admin_user():
+            self.redirect("/admin/login")
+            return
+        db_conn = constants_module.DB_CONN
+        shares = get_all_network_shares(db_conn) if db_conn else []
+        mgr = constants_module.NETWORK_SHARE_MANAGER
+        for s in shares:
+            s["running"] = mgr.is_running(s["id"]) if mgr else False
+        error = self.get_argument("error", None)
+        # Resolve a network-reachable address for mount commands
+        server_host = _socket.getfqdn()
+        if server_host in ("localhost", "localhost.localdomain", ""):
+            try:
+                server_host = _socket.gethostbyname(_socket.gethostname())
+            except Exception:
+                server_host = "127.0.0.1"
+        self.render("admin_network_shares.html", shares=shares, error=error, server_host=server_host)
+
+    @tornado.web.authenticated
+    def post(self):
+        if not self.is_admin_user():
+            self.set_status(403)
+            return
+        db_conn = constants_module.DB_CONN
+        if db_conn is None:
+            self.redirect("/admin/network-shares?error=Database+unavailable")
+            return
+
+        name = self.get_argument("name", "").strip()
+        folder_path = self.get_argument("folder_path", "").strip()
+        protocol = self.get_argument("protocol", "webdav").strip().lower()
+        username = self.get_argument("share_username", "").strip()
+        password = self.get_argument("share_password", "").strip()
+        read_only = self.get_argument("read_only", "off") == "on"
+
+        try:
+            port = int(self.get_argument("port", "8443"))
+        except (ValueError, TypeError):
+            port = 8443
+
+        if not name or not folder_path or not username or not password:
+            self.redirect("/admin/network-shares?error=All+fields+are+required")
+            return
+        if protocol not in ("smb", "webdav"):
+            self.redirect("/admin/network-shares?error=Invalid+protocol")
+            return
+        if not os.path.isdir(folder_path):
+            self.redirect("/admin/network-shares?error=Folder+does+not+exist")
+            return
+        if port < 1 or port > 65535:
+            self.redirect("/admin/network-shares?error=Port+must+be+1-65535")
+            return
+
+        share_id = _secrets.token_urlsafe(8)
+        ok = create_network_share(db_conn, share_id, name, folder_path, protocol, port,
+                                  username, password, read_only)
+        if not ok:
+            self.redirect("/admin/network-shares?error=Failed+to+create+share")
+            return
+
+        log_audit(db_conn, "network_share_create",
+                  username=self.get_display_username(),
+                  details=f"name={name} protocol={protocol} port={port} folder={folder_path}",
+                  ip=self.request.remote_ip)
+
+        mgr = constants_module.NETWORK_SHARE_MANAGER
+        if mgr:
+            share_dict = {
+                "id": share_id, "name": name, "folder_path": folder_path,
+                "protocol": protocol, "port": port, "username": username,
+                "password": password, "read_only": read_only,
+            }
+            mgr.start_share(share_dict)
+
+        self.redirect("/admin/network-shares")
+
+
+class AdminNetworkShareDeleteHandler(BaseHandler):
+    @tornado.web.authenticated
+    def post(self):
+        if not self.is_admin_user():
+            self.set_status(403)
+            return
+        db_conn = constants_module.DB_CONN
+        share_id = self.get_argument("share_id", "").strip()
+        if not share_id or db_conn is None:
+            self.redirect("/admin/network-shares")
+            return
+
+        mgr = constants_module.NETWORK_SHARE_MANAGER
+        if mgr:
+            mgr.stop_share(share_id)
+
+        delete_network_share(db_conn, share_id)
+        log_audit(db_conn, "network_share_delete",
+                  username=self.get_display_username(),
+                  details=f"share_id={share_id}",
+                  ip=self.request.remote_ip)
+        self.redirect("/admin/network-shares")
+
+
+class AdminNetworkShareToggleHandler(BaseHandler):
+    @tornado.web.authenticated
+    def post(self):
+        if not self.is_admin_user():
+            self.set_status(403)
+            return
+        db_conn = constants_module.DB_CONN
+        share_id = self.get_argument("share_id", "").strip()
+        if not share_id or db_conn is None:
+            self.redirect("/admin/network-shares")
+            return
+
+        shares = get_all_network_shares(db_conn)
+        share = next((s for s in shares if s["id"] == share_id), None)
+        if share is None:
+            self.redirect("/admin/network-shares")
+            return
+
+        new_enabled = not share["enabled"]
+        update_network_share(db_conn, share_id, enabled=new_enabled)
+
+        mgr = constants_module.NETWORK_SHARE_MANAGER
+        if mgr:
+            if new_enabled:
+                mgr.start_share({**share, "enabled": True})
+            else:
+                mgr.stop_share(share_id)
+
+        action = "enabled" if new_enabled else "disabled"
+        log_audit(db_conn, "network_share_toggle",
+                  username=self.get_display_username(),
+                  details=f"share_id={share_id} action={action}",
+                  ip=self.request.remote_ip)
+        self.redirect("/admin/network-shares")
 

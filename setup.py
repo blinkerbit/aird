@@ -18,7 +18,7 @@ except ImportError:
 
 setup(
     name='aird',
-    version="0.4.7.dev0",
+    version="0.4.10",
     packages=find_packages(),
     package_data={'aird': ['templates/*.html']},
     rust_extensions=rust_extensions,
@@ -33,6 +33,10 @@ setup(
         'aiofiles>=23.0.0',
         'argon2-cffi>=23.1.0',
         'requests>=2.31.0',
+        'chardet>=5.0.0',
+        'pysmbserver>=0.1.0',
+        'wsgidav>=4.3.0',
+        'cheroot>=10.0.0',
     ] + rust_dependencies,
     extras_require={
         'test': [

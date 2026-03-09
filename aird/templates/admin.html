@@ -3,172 +3,379 @@
 <head>
     <title>Admin Panel</title>
     <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            background-color: white;
-            color: black;
-            font-family: monospace;
-            margin: 20px;
+            background: #f5f5f5;
+            color: #1a1a1a;
+            font-family: "Courier New", monospace;
+            line-height: 1.5;
         }
-        input {
-            font-family: monospace;
-        }
-        .section {
-            margin: 20px 0;
-            padding: 15px;
-            border: 1px solid #ccc;
-            background-color: #f9f9f9;
-        }
-        .config-group {
-            margin: 10px 0;
-            padding: 10px;
-            background-color: #fff;
-            border: 1px solid #ddd;
-        }
-        .config-row {
-            margin: 5px 0;
+        .topbar {
+            background: #1a1a1a;
+            color: #fff;
+            padding: 14px 24px;
             display: flex;
+            justify-content: space-between;
             align-items: center;
         }
-        .config-row label {
+        .topbar h1 { font-size: 18px; font-weight: bold; }
+        .topbar-right { display: flex; align-items: center; gap: 16px; font-size: 12px; }
+        .topbar-right a { color: #ccc; text-decoration: none; }
+        .topbar-right a:hover { color: #fff; }
+
+        .nav-strip {
+            background: #2d2d2d;
+            padding: 0 24px;
+            display: flex;
+            gap: 0;
+            overflow-x: auto;
+        }
+        .nav-strip a {
+            color: #bbb;
+            text-decoration: none;
+            padding: 10px 16px;
+            font-size: 12px;
+            white-space: nowrap;
+            border-bottom: 2px solid transparent;
+            transition: all 0.15s;
+        }
+        .nav-strip a:hover { color: #fff; background: #3a3a3a; border-bottom-color: #666; }
+
+        .page { max-width: 960px; margin: 24px auto; padding: 0 16px; }
+
+        .card {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        .card-header {
+            background: #fafafa;
+            border-bottom: 1px solid #ddd;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .card-header h2 { font-size: 14px; font-weight: bold; }
+        .card-body { padding: 20px; }
+
+        .flag-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 8px 24px;
+        }
+        .flag-grid label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 0;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .flag-grid input[type="checkbox"] { transform: scale(1.1); }
+
+        .field-group { margin-bottom: 16px; }
+        .field-group:last-child { margin-bottom: 0; }
+        .field-row {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+        }
+        .field-row label {
             display: inline-block;
             width: 200px;
-            margin-right: 10px;
+            font-size: 13px;
+            flex-shrink: 0;
         }
-        .config-row input[type="number"] {
-            width: 80px;
-            margin-right: 10px;
+        .field-row input[type="number"] {
+            width: 90px;
+            padding: 4px 8px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-family: inherit;
+            font-size: 13px;
         }
-        .help-text {
-            font-size: 0.9em;
-            color: #666;
-            margin-left: 5px;
+        .help { font-size: 11px; color: #888; margin-left: 10px; }
+
+        .ws-section { border: 1px solid #eee; border-radius: 4px; padding: 14px; margin-bottom: 12px; background: #fcfcfc; }
+        .ws-section:last-child { margin-bottom: 0; }
+        .ws-section h4 { font-size: 13px; margin-bottom: 10px; color: #333; }
+
+        .ext-section { border: 1px solid #eee; border-radius: 4px; padding: 14px; margin-top: 12px; background: #fcfcfc; }
+        .ext-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px 18px;
+        }
+        .ext-grid label {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        .ext-grid code { background: #f0f0f0; padding: 1px 4px; border-radius: 2px; font-size: 11px; }
+
+        .btn {
+            display: inline-block;
+            padding: 8px 20px;
+            border: 1px solid #1a1a1a;
+            background: #1a1a1a;
+            color: #fff;
+            font-family: inherit;
+            font-size: 13px;
+            cursor: pointer;
+            border-radius: 4px;
+            text-decoration: none;
+            transition: background 0.15s;
+        }
+        .btn:hover { background: #333; }
+        .btn-outline {
+            background: #fff;
+            color: #1a1a1a;
+            border: 1px solid #ccc;
+        }
+        .btn-outline:hover { background: #f0f0f0; }
+        .btn-blue { background: #2563eb; border-color: #2563eb; color: #fff; }
+        .btn-blue:hover { background: #1d4ed8; }
+        .btn-green { background: #16a34a; border-color: #16a34a; color: #fff; }
+        .btn-green:hover { background: #15803d; }
+
+        .link-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .link-grid a {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-decoration: none;
+            color: #333;
+            font-size: 12px;
+            background: #fff;
+            transition: all 0.15s;
+        }
+        .link-grid a:hover { border-color: #999; background: #f5f5f5; }
+
+        .save-bar {
+            position: sticky;
+            bottom: 0;
+            background: #fff;
+            border-top: 1px solid #ddd;
+            padding: 12px 20px;
+            text-align: right;
+            border-radius: 0 0 6px 6px;
+        }
+
+        @media (max-width: 600px) {
+            .flag-grid { grid-template-columns: 1fr; }
+            .field-row { flex-wrap: wrap; }
+            .field-row label { width: 100%; margin-bottom: 4px; }
+            .nav-strip { padding: 0 8px; }
+            .page { padding: 0 8px; }
         }
     </style>
 </head>
 <body>
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-        <h2>Admin Panel</h2>
-        <a href="/profile" style="font-size: 12px; color: #666; text-decoration: none;">👤 {{ handler.get_display_username() }}</a>
+    <div class="topbar">
+        <h1>Admin Panel</h1>
+        <div class="topbar-right">
+            <a href="/profile">{{ handler.get_display_username() }}</a>
+            <a href="/files/">Files</a>
+            <a href="/logout">Logout</a>
+        </div>
     </div>
-    <form method="POST">
-        {% raw xsrf_form_html() %}
-        
-        <div class="section">
-            <h3>Feature Flags</h3>
-            <label>
-                <input type="checkbox" name="file_upload" {% if features.get('file_upload') %}checked{% end %}>
-                Enable File Upload
-            </label><br>
-            <label>
-                <input type="checkbox" name="file_delete" {% if features.get('file_delete') %}checked{% end %}>
-                Enable File Delete
-            </label><br>
-            <label>
-                <input type="checkbox" name="file_rename" {% if features.get('file_rename') %}checked{% end %}>
-                Enable File Rename
-            </label><br>
-            <label>
-                <input type="checkbox" name="file_download" {% if features.get('file_download') %}checked{% end %}>
-                Enable File Download
-            </label><br>
-            <label>
-                <input type="checkbox" name="file_edit" {% if features.get('file_edit') %}checked{% end %}>
-                Enable File Edit
-            </label><br>
-            <label>
-                <input type="checkbox" name="file_share" {% if features.get('file_share') %}checked{% end %}>
-                Enable File Share
-            </label><br>
-            <label>
-                <input type="checkbox" name="super_search" {% if features.get('super_search') %}checked{% end %}>
-                Enable Super Search
-            </label><br>
-            <label>
-                <input type="checkbox" name="compression" {% if features.get('compression') %}checked{% end %}>
-                Enable Gzip Compression
-            </label><br>
-            <label>
-                <input type="checkbox" name="p2p_transfer" {% if features.get('p2p_transfer') %}checked{% end %}>
-                Enable P2P Transfer
-            </label><br>
-        </div>
 
-        <div class="section">
-            <h3>WebSocket Connection Settings</h3>
-            <p><em>Configure connection limits and timeouts for WebSocket handlers. Changes take effect immediately.</em></p>
-            
-            <div class="config-group">
-                <h4>Feature Flags WebSocket</h4>
-                <div class="config-row">
-                    <label>Max Connections:</label>
-                    <input type="number" name="feature_flags_max_connections" 
-                           value="{{ websocket_config.get('feature_flags_max_connections', 50) }}" 
-                           min="1" max="1000">
-                    <span class="help-text">(1-1000, low traffic handler)</span>
-                </div>
-                <div class="config-row">
-                    <label>Idle Timeout (seconds):</label>
-                    <input type="number" name="feature_flags_idle_timeout" 
-                           value="{{ websocket_config.get('feature_flags_idle_timeout', 600) }}" 
-                           min="30" max="7200">
-                    <span class="help-text">(30-7200, admin connections can be longer)</span>
-                </div>
-            </div>
-
-            <div class="config-group">
-                <h4>File Streaming WebSocket</h4>
-                <div class="config-row">
-                    <label>Max Connections:</label>
-                    <input type="number" name="file_streaming_max_connections" 
-                           value="{{ websocket_config.get('file_streaming_max_connections', 200) }}" 
-                           min="1" max="1000">
-                    <span class="help-text">(1-1000, high traffic handler)</span>
-                </div>
-                <div class="config-row">
-                    <label>Idle Timeout (seconds):</label>
-                    <input type="number" name="file_streaming_idle_timeout" 
-                           value="{{ websocket_config.get('file_streaming_idle_timeout', 300) }}" 
-                           min="30" max="7200">
-                    <span class="help-text">(30-7200, streaming sessions)</span>
-                </div>
-            </div>
-
-            <div class="config-group">
-                <h4>Search WebSocket</h4>
-                <div class="config-row">
-                    <label>Max Connections:</label>
-                    <input type="number" name="search_max_connections" 
-                           value="{{ websocket_config.get('search_max_connections', 100) }}" 
-                           min="1" max="1000">
-                    <span class="help-text">(1-1000, moderate traffic handler)</span>
-                </div>
-                <div class="config-row">
-                    <label>Idle Timeout (seconds):</label>
-                    <input type="number" name="search_idle_timeout" 
-                           value="{{ websocket_config.get('search_idle_timeout', 180) }}" 
-                           min="30" max="7200">
-                    <span class="help-text">(30-7200, search operations)</span>
-                </div>
-            </div>
-        </div>
-
-        <br>
-        <input type="submit" value="Save Configuration">
-    </form>
-    <br>
-    <div class="section">
-        <h3>User Management</h3>
-        <p><em>Manage system users and their access permissions.</em></p>
-        <a href="/admin/users" style="display: inline-block; padding: 8px 16px; background-color: #007bff; color: white; text-decoration: none; border: 1px solid #007bff; margin-right: 10px;">👥 Manage Users</a>
+    <div class="nav-strip">
+        <a href="/admin/users">Users</a>
         {% if ldap_enabled %}
-        <a href="/admin/ldap" style="display: inline-block; padding: 8px 16px; background-color: #28a745; color: white; text-decoration: none; border: 1px solid #28a745; margin-right: 10px;">🔗 LDAP Management</a>
+        <a href="/admin/ldap">LDAP</a>
         {% end %}
+        <a href="/admin/audit">Audit Log</a>
+        <a href="/admin/network-shares">Network Shares</a>
+        <a href="/admin/websocket-stats" target="_blank">WebSocket Stats</a>
     </div>
-    
-    <div style="margin: 20px 0;">
-        <a href="/files/" style="margin-right: 20px;">📁 Files</a>
-        <a href="/admin/websocket-stats" target="_blank" style="margin-right: 20px;">📈 View WebSocket Statistics</a>
-        <a href="/logout">Logout</a>
+
+    <div class="page">
+        <form method="POST">
+            {% raw xsrf_form_html() %}
+
+            <!-- Feature Flags -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>Feature Flags</h2>
+                </div>
+                <div class="card-body">
+                    <div class="flag-grid">
+                        <label>
+                            <input type="checkbox" name="file_upload" {% if features.get('file_upload') %}checked{% end %}>
+                            File Upload
+                        </label>
+                        <label>
+                            <input type="checkbox" name="file_download" {% if features.get('file_download') %}checked{% end %}>
+                            File Download
+                        </label>
+                        <label>
+                            <input type="checkbox" name="file_edit" {% if features.get('file_edit') %}checked{% end %}>
+                            File Edit
+                        </label>
+                        <label>
+                            <input type="checkbox" name="file_rename" {% if features.get('file_rename') %}checked{% end %}>
+                            File Rename
+                        </label>
+                        <label>
+                            <input type="checkbox" name="file_delete" {% if features.get('file_delete') %}checked{% end %}>
+                            File Delete
+                        </label>
+                        <label>
+                            <input type="checkbox" name="file_share" {% if features.get('file_share') %}checked{% end %}>
+                            File Share
+                        </label>
+                        <label>
+                            <input type="checkbox" name="folder_create" {% if features.get('folder_create') %}checked{% end %}>
+                            Create Folder
+                        </label>
+                        <label>
+                            <input type="checkbox" name="folder_delete" {% if features.get('folder_delete') %}checked{% end %}>
+                            Delete Folder
+                        </label>
+                        <label>
+                            <input type="checkbox" name="super_search" {% if features.get('super_search') %}checked{% end %}>
+                            Super Search
+                        </label>
+                        <label>
+                            <input type="checkbox" name="p2p_transfer" {% if features.get('p2p_transfer') %}checked{% end %}>
+                            P2P Transfer
+                        </label>
+                        <label>
+                            <input type="checkbox" name="compression" {% if features.get('compression') %}checked{% end %}>
+                            Gzip Compression
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Upload Settings -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>Upload Settings</h2>
+                </div>
+                <div class="card-body">
+                    <div class="field-row">
+                        <label>Max File Size (MB):</label>
+                        <input type="number" name="max_file_size_mb"
+                               value="{{ upload_config.get('max_file_size_mb', 512) }}"
+                               min="1" max="10240" step="1">
+                        <span class="help">1 &ndash; 10240 MB, default 512</span>
+                    </div>
+                    <div class="field-row" style="margin-top: 12px;">
+                        <label style="width: auto;">
+                            <input type="checkbox" name="allow_all_file_types" id="allowAllFileTypes"
+                                   {% if upload_config.get('allow_all_file_types', 0) %}checked{% end %}>
+                            Allow all file types
+                        </label>
+                        <span class="help">When unchecked, only selected types below are allowed.</span>
+                    </div>
+                    <div id="allowedExtensionsSection" class="ext-section"
+                         style="{% if upload_config.get('allow_all_file_types', 0) %}display: none;{% end %}">
+                        <div style="font-size: 12px; color: #666; margin-bottom: 8px;">Allowed extensions:</div>
+                        <div class="ext-grid">
+                            {% for ext in available_extensions %}
+                            <label>
+                                <input type="checkbox" name="allow_ext" value="{{ ext }}"
+                                       {% if ext in allowed_extensions_current %}checked{% end %}>
+                                <code>{{ ext }}</code>
+                            </label>
+                            {% end %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- WebSocket Settings -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>WebSocket Connections</h2>
+                </div>
+                <div class="card-body">
+                    <div class="ws-section">
+                        <h4>Feature Flags</h4>
+                        <div class="field-row">
+                            <label>Max Connections:</label>
+                            <input type="number" name="feature_flags_max_connections"
+                                   value="{{ websocket_config.get('feature_flags_max_connections', 50) }}"
+                                   min="1" max="1000">
+                            <span class="help">1&ndash;1000</span>
+                        </div>
+                        <div class="field-row">
+                            <label>Idle Timeout (sec):</label>
+                            <input type="number" name="feature_flags_idle_timeout"
+                                   value="{{ websocket_config.get('feature_flags_idle_timeout', 600) }}"
+                                   min="30" max="7200">
+                            <span class="help">30&ndash;7200</span>
+                        </div>
+                    </div>
+
+                    <div class="ws-section">
+                        <h4>File Streaming</h4>
+                        <div class="field-row">
+                            <label>Max Connections:</label>
+                            <input type="number" name="file_streaming_max_connections"
+                                   value="{{ websocket_config.get('file_streaming_max_connections', 200) }}"
+                                   min="1" max="1000">
+                            <span class="help">1&ndash;1000</span>
+                        </div>
+                        <div class="field-row">
+                            <label>Idle Timeout (sec):</label>
+                            <input type="number" name="file_streaming_idle_timeout"
+                                   value="{{ websocket_config.get('file_streaming_idle_timeout', 300) }}"
+                                   min="30" max="7200">
+                            <span class="help">30&ndash;7200</span>
+                        </div>
+                    </div>
+
+                    <div class="ws-section">
+                        <h4>Search</h4>
+                        <div class="field-row">
+                            <label>Max Connections:</label>
+                            <input type="number" name="search_max_connections"
+                                   value="{{ websocket_config.get('search_max_connections', 100) }}"
+                                   min="1" max="1000">
+                            <span class="help">1&ndash;1000</span>
+                        </div>
+                        <div class="field-row">
+                            <label>Idle Timeout (sec):</label>
+                            <input type="number" name="search_idle_timeout"
+                                   value="{{ websocket_config.get('search_idle_timeout', 180) }}"
+                                   min="30" max="7200">
+                            <span class="help">30&ndash;7200</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="save-bar">
+                    <button type="submit" class="btn">Save Configuration</button>
+                </div>
+            </div>
+        </form>
     </div>
+
+    <script nonce="{{ csp_nonce }}">
+    (function() {
+        var allowAll = document.getElementById('allowAllFileTypes');
+        var section = document.getElementById('allowedExtensionsSection');
+        if (allowAll && section) {
+            allowAll.addEventListener('change', function() {
+                section.style.display = this.checked ? 'none' : 'block';
+            });
+        }
+    })();
+    </script>
 </body>
 </html>

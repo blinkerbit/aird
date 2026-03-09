@@ -996,13 +996,13 @@
         </div>
         <div style="margin-bottom: 10px;">
           <label style="display: flex; align-items: center; gap: 8px;">
-            <input type="radio" name="accessType" value="public" checked onchange="toggleUserSelectionPanel()">
+            <input type="radio" name="accessType" value="public" checked>
             <span>Public (Anyone with link can access)</span>
           </label>
         </div>
         <div style="margin-bottom: 10px;">
           <label style="display: flex; align-items: center; gap: 8px;">
-            <input type="radio" name="accessType" value="restricted" onchange="toggleUserSelectionPanel()">
+            <input type="radio" name="accessType" value="restricted">
             <span>Restricted (Only selected users can access)</span>
           </label>
         </div>
@@ -1034,13 +1034,13 @@
         </div>
         <div style="margin-bottom: 10px;">
           <label style="display: flex; align-items: center; gap: 8px;">
-            <input type="radio" name="shareType" value="static" checked onchange="toggleShareTypeInfo()">
+            <input type="radio" name="shareType" value="static" checked>
             <span>Static (Snapshot of current files)</span>
           </label>
         </div>
         <div style="margin-bottom: 10px;">
           <label style="display: flex; align-items: center; gap: 8px;">
-            <input type="radio" name="shareType" value="dynamic" onchange="toggleShareTypeInfo()">
+            <input type="radio" name="shareType" value="dynamic">
             <span>Dynamic (Live folder sharing)</span>
           </label>
         </div>
@@ -1058,7 +1058,7 @@
         </div>
         <div style="margin-bottom: 10px;">
           <label style="display: flex; align-items: center; gap: 8px;">
-            <input type="checkbox" id="disableToken" onchange="toggleTokenInfo()">
+            <input type="checkbox" id="disableToken">
             <span>Disable Secret Token (Public Access)</span>
           </label>
         </div>
@@ -1928,7 +1928,7 @@
             }
 
             const safeKey = file.replace(/'/g, "\\'");
-            return `<span class="selected-file" onclick="removeFromSelection('${safeKey}')">${icon} ${escapeHtml(label)} ×</span>`;
+            return `<span class="selected-file" data-action="removeFromSelection" data-path="${safeKey}">${icon} ${escapeHtml(label)} ×</span>`;
           })
           .join('');
       }
@@ -2014,13 +2014,12 @@
 
       elements.fileTableBody.innerHTML = '';
 
-      // Parent directory link
       if (currentPath) {
         const parentPath = currentPath.split('/').filter(p => p).slice(0, -1).join('/');
         const row = document.createElement('tr');
         row.innerHTML = `
           <td></td>
-          <td><a href="#" onclick="loadDirectory('${parentPath}')" class="file-link"><span class="file-icon">📁</span>..</a></td>
+          <td><a href="#" class="file-link" data-action="loadDirectory" data-path="${parentPath}"><span class="file-icon">📁</span>..</a></td>
           <td>-</td>
           <td>-</td>
           <td>-</td>
@@ -2033,46 +2032,45 @@
         const filePath = currentPath ? `${currentPath}/${file.name}` : file.name;
         const isSelected = selectedFiles.has(filePath);
 
-
         if (file.is_dir) {
           const newPath = currentPath ? `${currentPath}/${file.name}` : file.name;
           row.innerHTML = `
             <td style="text-align: center;">
-              <input type="checkbox" value="${filePath}" ${isSelected ? 'checked' : ''} 
-                     onchange="this.checked ? addToSelection('${filePath}') : removeFromSelection('${filePath}')">
+              <input type="checkbox" value="${filePath}" ${isSelected ? 'checked' : ''}
+                     data-action="toggleSelection" data-path="${filePath}">
             </td>
             <td>
               <div style="display: flex; align-items: center; gap: 8px;">
-                <a href="#" onclick="loadDirectory('${newPath}')" class="file-link">
+                <a href="#" class="file-link" data-action="loadDirectory" data-path="${newPath}">
                   <span class="file-icon">📁</span>${file.name}
                 </a>
-                ${file.is_shared ? '<span class="shared-icon" title="Click to view share details" onclick="showShareDetails(\'' + filePath + '\'); event.stopPropagation();" style="cursor: pointer; color: #0066cc;">🔗</span>' : ''}
+                ${file.is_shared ? `<span class="shared-icon" title="Click to view share details" data-action="showShareDetails" data-path="${filePath}" style="cursor: pointer; color: #0066cc;">🔗</span>` : ''}
               </div>
             </td>
             <td>-</td>
             <td>${file.modified || '-'}</td>
             <td>
-              <button class="btn" onclick="loadDirectory('${newPath}')">Open</button>
+              <button class="btn" data-action="loadDirectory" data-path="${newPath}">Open</button>
             </td>
           `;
         } else {
           row.innerHTML = `
             <td style="text-align: center;">
-              <input type="checkbox" value="${filePath}" ${isSelected ? 'checked' : ''} 
-                     onchange="this.checked ? addToSelection('${filePath}') : removeFromSelection('${filePath}')">
+              <input type="checkbox" value="${filePath}" ${isSelected ? 'checked' : ''}
+                     data-action="toggleSelection" data-path="${filePath}">
             </td>
             <td>
               <div style="display: flex; align-items: center; gap: 8px;">
-                <span class="file-link" style="cursor: pointer;" onclick="previewFile('${filePath}')">
+                <span class="file-link" style="cursor: pointer;" data-action="previewFile" data-path="${filePath}">
                   <span class="file-icon">${getFileIcon(file.name)}</span>${file.name}
                 </span>
-                ${file.is_shared ? '<span class="shared-icon" title="Click to view share details" onclick="showShareDetails(\'' + filePath + '\'); event.stopPropagation();" style="cursor: pointer; color: #0066cc;">🔗</span>' : ''}
+                ${file.is_shared ? `<span class="shared-icon" title="Click to view share details" data-action="showShareDetails" data-path="${filePath}" style="cursor: pointer; color: #0066cc;">🔗</span>` : ''}
               </div>
             </td>
             <td>${file.size_str || '-'}</td>
             <td>${file.modified || '-'}</td>
             <td>
-              <button class="btn" onclick="previewFile('${filePath}')">Preview</button>
+              <button class="btn" data-action="previewFile" data-path="${filePath}">Preview</button>
             </td>
           `;
         }
@@ -2149,7 +2147,7 @@
             <div style="margin-top: 15px;">
               <strong>🔐 Secret Token:</strong><br>
               <code style="background: #f0f0f0; padding: 4px 8px; border-radius: 3px; font-family: monospace; font-size: 12px; word-break: break-all; display: inline-block; margin: 5px 0;">${share.secret_token}</code>
-              <button class="btn" onclick="copyToClipboard('${share.secret_token}', this)" style="margin-left: 10px; font-size: 11px; padding: 4px 8px;">Copy Token</button>
+              <button class="btn" data-action="copyToClipboard" data-text="${share.secret_token}" style="margin-left: 10px; font-size: 11px; padding: 4px 8px;">Copy Token</button>
               <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 8px; border-radius: 4px; font-size: 11px; color: #856404; margin-top: 8px;">
                 <strong>⚠️ Important:</strong> Users need this token to access the share.
               </div>
@@ -2237,7 +2235,7 @@
           share.allowed_users.map(user => `
                   <span class="access-user-tag">
                     ${user}
-                    <button class="access-user-remove" onclick="removeUserFromShare('${user}')">&times;</button>
+                    <button class="access-user-remove" data-action="removeUserFromShare" data-user="${user}">&times;</button>
                   </span>
                 `).join('') :
           '<div style="color: #666; font-style: italic;">No users specified (public access)</div>'
@@ -2245,7 +2243,7 @@
             </div>
             <div class="access-user-input-section">
               <input type="text" class="access-user-input" id="newUserInput" placeholder="Enter username to add">
-              <button class="access-user-add" id="addUserBtn" onclick="addUserToShare()">Add User</button>
+              <button class="access-user-add" id="addUserBtn" data-action="addUserToShare">Add User</button>
             </div>
           </div>
 
@@ -2257,14 +2255,14 @@
           share.paths.map(path => `
                   <div class="share-file-item">
                     <span>${path}</span>
-                    <button class="share-file-remove" onclick="removeFileFromShare('${path}')">Remove</button>
+                    <button class="share-file-remove" data-action="removeFileFromShare" data-path="${path}">Remove</button>
                   </div>
                 `).join('') :
           '<div style="padding: 20px; text-align: center; color: #666;">No files in this share</div>'
         }
             </div>
             <div class="share-files-actions">
-              <button class="btn" onclick="showAddFilesModal()">Add Files</button>
+              <button class="btn" data-action="showAddFilesModal">Add Files</button>
             </div>
           </div>
         `;
@@ -2457,14 +2455,14 @@
 
         if (file.is_dir) {
           return `
-              <div class="file-browser-item" onclick="navigateToDirectory('${file.path}')">
+              <div class="file-browser-item" data-action="navigateToDirectory" data-path="${file.path}">
                 <span>${icon} ${file.name}</span>
               </div>
             `;
         } else {
           return `
-              <div class="file-browser-item ${isSelected ? 'selected' : ''}" onclick="toggleFileSelection('${file.path}')">
-                <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleFileSelection('${file.path}')">
+              <div class="file-browser-item ${isSelected ? 'selected' : ''}" data-action="toggleFileSelection" data-path="${file.path}">
+                <input type="checkbox" ${isSelected ? 'checked' : ''} data-action="toggleFileSelection" data-path="${file.path}">
                 <span>${icon} ${file.name}</span>
               </div>
             `;
@@ -2500,7 +2498,7 @@
         return `
             <div class="selected-file-item">
               <span>${fileName}</span>
-              <button class="remove-btn" onclick="removeFromAddModalSelection('${filePath}')">&times;</button>
+              <button class="remove-btn" data-action="removeFromAddModalSelection" data-path="${filePath}">&times;</button>
             </div>
           `;
       }).join('');
@@ -2846,7 +2844,7 @@
         userDiv.innerHTML = `
           <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
             <input type="checkbox" value="${user.username}" ${isSelected ? 'checked' : ''}
-                   onchange="toggleUserSelection('${user.username}')">
+                   data-action="toggleUserSelection" data-user="${user.username}">
             <span>${user.username} ${user.role === 'admin' ? '(Admin)' : ''}</span>
           </label>
         `;
@@ -2872,7 +2870,7 @@
       }
 
       selectedUsersList.innerHTML = Array.from(selectedUsers)
-        .map(username => `<span style="display: inline-block; background: #e6f3ff; color: #0066cc; padding: 2px 6px; margin: 2px; border-radius: 3px; font-size: 11px; cursor: pointer;" onclick="removeSelectedUser('${username}')">${username} ×</span>`)
+        .map(username => `<span style="display: inline-block; background: #e6f3ff; color: #0066cc; padding: 2px 6px; margin: 2px; border-radius: 3px; font-size: 11px; cursor: pointer;" data-action="removeSelectedUser" data-user="${username}">${username} ×</span>`)
         .join('');
     }
 
@@ -2961,12 +2959,12 @@
           elements.shareResult.innerHTML = `
             <strong>Share link created:</strong><br>
             <a href="${data.url}" target="_blank">${data.url}</a>
-            <button class="btn" onclick="copyToClipboard('${fullUrl}', this)" style="margin-left: 10px;">Copy Link</button>
+            <button class="btn" data-action="copyToClipboard" data-text="${fullUrl}" style="margin-left: 10px;">Copy Link</button>
             ${accessInfo}${shareTypeInfo}${tokenInfo}
             <br><br>
             ${disableToken ? '' : `<strong>🔐 Secret Token:</strong><br>
             <code style="background: #f0f0f0; padding: 4px 8px; border-radius: 3px; font-family: monospace; font-size: 12px; word-break: break-all;">${data.secret_token}</code>
-            <button class="btn" onclick="copyToClipboard('${data.secret_token}', this)" style="margin-left: 10px;">Copy Token</button>
+            <button class="btn" data-action="copyToClipboard" data-text="${data.secret_token}" style="margin-left: 10px;">Copy Token</button>
             <br><br>
             <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 4px; font-size: 12px; color: #856404;">
               <strong>⚠️ Important:</strong> Share this secret token with users who need access. They will need to enter this token to view the shared files.
@@ -3022,11 +3020,11 @@
             <td>${accessInfo}</td>
             <td>Just now</td>
             <td>
-              <button class="btn" onclick="copyToClipboard('${window.location.origin}/shared/${share.id}', this)">Copy Link</button>
-              ${share.secret_token ? `<button class="btn" onclick="copyToClipboard('${share.secret_token}', this)" title="Copy Secret Token">Copy Token</button>` : ''}
-              <button class="btn" onclick="openShare('/shared/${share.id}')">Open</button>
-              <button class="btn" onclick="manageShare('${share.id}')">Manage</button>
-              <button class="btn" onclick="revokeShare('${share.id}')">Revoke</button>
+              <button class="btn" data-action="copyToClipboard" data-text="${window.location.origin}/shared/${share.id}">Copy Link</button>
+              ${share.secret_token ? `<button class="btn" data-action="copyToClipboard" data-text="${share.secret_token}" title="Copy Secret Token">Copy Token</button>` : ''}
+              <button class="btn" data-action="openShare" data-url="/shared/${share.id}">Open</button>
+              <button class="btn" data-action="manageShare" data-id="${share.id}">Manage</button>
+              <button class="btn" data-action="revokeShare" data-id="${share.id}">Revoke</button>
             </td>
           `;
           elements.sharesTableBody.appendChild(row);
@@ -3156,7 +3154,7 @@
               <div style="margin: 10px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
                 <strong>🔐 Secret Token:</strong><br>
                 <code style="background: #e9ecef; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 11px; word-break: break-all;">${share.secret_token}</code>
-                <button class="btn" onclick="copyToClipboard('${share.secret_token}', this)" style="margin-left: 8px; font-size: 10px; padding: 2px 6px;">Copy</button>
+                <button class="btn" data-action="copyToClipboard" data-text="${share.secret_token}" style="margin-left: 8px; font-size: 10px; padding: 2px 6px;">Copy</button>
               </div>
             ` : ''}
             ${share.allowed_users ? `
@@ -3166,9 +3164,9 @@
               </div>
             ` : ''}
             <div class="share-actions">
-              <button class="btn" onclick="copyToClipboard('${window.location.origin}${share.url}', this)">Copy Link</button>
-              <button class="btn" onclick="openShare('${share.url}')">Open Share</button>
-              <button class="btn" onclick="revokeShare('${share.id}')">Revoke</button>
+              <button class="btn" data-action="copyToClipboard" data-text="${window.location.origin}${share.url}">Copy Link</button>
+              <button class="btn" data-action="openShare" data-url="${share.url}">Open Share</button>
+              <button class="btn" data-action="revokeShare" data-id="${share.id}">Revoke</button>
             </div>
           </div>
         `).join('');
@@ -3247,7 +3245,7 @@
       // Refresh active shares every 30 seconds
       setInterval(loadActiveShares, 30000);
 
-      // Event listeners for CSP compliance
+      // Event listeners for CSP compliance - static elements
       document.getElementById('cloudBrowserClose')?.addEventListener('click', closeCloudBrowser);
       document.getElementById('sharePopupClose')?.addEventListener('click', closeSharePopup);
       document.getElementById('shareManagementClose')?.addEventListener('click', closeShareManagementModal);
@@ -3257,6 +3255,108 @@
       document.getElementById('navigateUpBtn')?.addEventListener('click', navigateUp);
       document.getElementById('addSelectedFilesBtn')?.addEventListener('click', addSelectedFilesToShare);
       document.getElementById('addFilesCancel')?.addEventListener('click', closeAddFilesModal);
+
+      // Static form controls
+      document.querySelectorAll('input[name="accessType"]').forEach(r => r.addEventListener('change', toggleUserSelectionPanel));
+      document.querySelectorAll('input[name="shareType"]').forEach(r => r.addEventListener('change', toggleShareTypeInfo));
+      document.getElementById('disableToken')?.addEventListener('change', toggleTokenInfo);
+
+      // Global event delegation for all data-action elements
+      document.addEventListener('click', function (e) {
+        const el = e.target.closest('[data-action]');
+        if (!el) return;
+        const action = el.dataset.action;
+
+        switch (action) {
+          case 'removeFromSelection':
+            e.preventDefault();
+            removeFromSelection(el.dataset.path);
+            break;
+          case 'loadDirectory':
+            e.preventDefault();
+            loadDirectory(el.dataset.path);
+            break;
+          case 'previewFile':
+            e.preventDefault();
+            previewFile(el.dataset.path);
+            break;
+          case 'showShareDetails':
+            e.preventDefault();
+            e.stopPropagation();
+            showShareDetails(el.dataset.path);
+            break;
+          case 'copyToClipboard':
+            e.preventDefault();
+            copyToClipboard(el.dataset.text, el);
+            break;
+          case 'openShare':
+            e.preventDefault();
+            openShare(el.dataset.url);
+            break;
+          case 'manageShare':
+            e.preventDefault();
+            manageShare(el.dataset.id);
+            break;
+          case 'revokeShare':
+            e.preventDefault();
+            revokeShare(el.dataset.id);
+            break;
+          case 'removeUserFromShare':
+            e.preventDefault();
+            removeUserFromShare(el.dataset.user);
+            break;
+          case 'addUserToShare':
+            e.preventDefault();
+            addUserToShare();
+            break;
+          case 'removeFileFromShare':
+            e.preventDefault();
+            removeFileFromShare(el.dataset.path);
+            break;
+          case 'showAddFilesModal':
+            e.preventDefault();
+            showAddFilesModal();
+            break;
+          case 'navigateToDirectory':
+            e.preventDefault();
+            navigateToDirectory(el.dataset.path);
+            break;
+          case 'toggleFileSelection':
+            toggleFileSelection(el.dataset.path);
+            break;
+          case 'removeFromAddModalSelection':
+            e.preventDefault();
+            removeFromAddModalSelection(el.dataset.path);
+            break;
+          case 'removeSelectedUser':
+            e.preventDefault();
+            removeSelectedUser(el.dataset.user);
+            break;
+        }
+      });
+
+      // Separate change handler for checkboxes with data-action
+      document.addEventListener('change', function (e) {
+        const el = e.target.closest('[data-action]');
+        if (!el) return;
+        const action = el.dataset.action;
+
+        switch (action) {
+          case 'toggleSelection':
+            if (el.checked) {
+              addToSelection(el.dataset.path);
+            } else {
+              removeFromSelection(el.dataset.path);
+            }
+            break;
+          case 'toggleUserSelection':
+            toggleUserSelection(el.dataset.user);
+            break;
+          case 'toggleFileSelection':
+            toggleFileSelection(el.dataset.path);
+            break;
+        }
+      });
     });
   </script>
 </body>
