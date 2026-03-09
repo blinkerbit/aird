@@ -12,6 +12,7 @@ _WEBDAV_AVAILABLE = False
 
 try:
     from pysmbserver.smbserver import SimpleSMBServer as PySMBServer
+
     _SMB_AVAILABLE = True
 except Exception:
     pass
@@ -19,6 +20,7 @@ except Exception:
 try:
     from wsgidav.wsgidav_app import WsgiDAVApp
     from cheroot import wsgi as cheroot_wsgi
+
     _WEBDAV_AVAILABLE = True
 except Exception:
     pass
@@ -120,7 +122,12 @@ class NetworkShareManager:
                 with self._lock:
                     if sid in self._servers:
                         self._servers[sid]["server"] = server
-                logger.info("SMB share '%s' listening on port %d (folder: %s)", share_name, port, folder)
+                logger.info(
+                    "SMB share '%s' listening on port %d (folder: %s)",
+                    share_name,
+                    port,
+                    folder,
+                )
                 server.start()
             except Exception:
                 logger.exception("SMB share '%s' crashed", share_name)
@@ -191,7 +198,12 @@ class NetworkShareManager:
                 with self._lock:
                     if sid in self._servers:
                         self._servers[sid]["server"] = srv
-                logger.info("WebDAV share '%s' listening on port %d (folder: %s)", share["name"], port, folder)
+                logger.info(
+                    "WebDAV share '%s' listening on port %d (folder: %s)",
+                    share["name"],
+                    port,
+                    folder,
+                )
                 srv.start()
             except Exception:
                 logger.exception("WebDAV share '%s' crashed", share["name"])

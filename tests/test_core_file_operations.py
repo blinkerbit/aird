@@ -212,8 +212,8 @@ class TestFileOperations:
             "onedrive": {"enabled": True, "client_id": "id", "redirect_uri": "uri"}
         }
         
-        with patch('aird.cloud.GoogleDriveProvider') as mock_gd, \
-             patch('aird.cloud.OneDriveProvider') as mock_od, \
+        with patch('aird.core.file_operations.GoogleDriveProvider') as mock_gd, \
+             patch('aird.core.file_operations.OneDriveProvider') as mock_od, \
              patch('aird.core.file_operations.CLOUD_MANAGER') as mock_cm:
             
             configure_cloud_providers(config)

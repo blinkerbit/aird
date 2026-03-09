@@ -296,21 +296,12 @@ class TestCloudRootDir:
     
     def test_cloud_root_dir_exists(self):
         """Test that cloud_root_dir returns a path"""
-        # Import constants module to patch it
-        import aird.constants
-        original_root = aird.constants.ROOT_DIR
-        original_folder = aird.constants.CLOUD_SHARE_FOLDER
-        
-        try:
-            aird.constants.ROOT_DIR = '/test/root'
-            aird.constants.CLOUD_SHARE_FOLDER = 'cloud_shares'
+        with patch('aird.utils.util.ROOT_DIR', '/test/root'), \
+             patch('aird.utils.util.CLOUD_SHARE_FOLDER', 'cloud_shares'):
             result = cloud_root_dir()
             assert isinstance(result, str)
             assert len(result) > 0
             assert 'cloud_shares' in result
-        finally:
-            aird.constants.ROOT_DIR = original_root
-            aird.constants.CLOUD_SHARE_FOLDER = original_folder
 
 
 class TestEnsureShareCloudDir:
@@ -363,53 +354,27 @@ class TestIsCloudRelativePath:
     
     def test_is_cloud_relative_path_valid(self):
         """Test valid cloud relative path"""
-        # Import constants module to patch it
-        import aird.constants
-        original_folder = aird.constants.CLOUD_SHARE_FOLDER
-        
-        try:
-            aird.constants.CLOUD_SHARE_FOLDER = 'cloud_shares'
-            # The function checks if path starts with CLOUD_SHARE_FOLDER/share_id/
+        with patch('aird.utils.util.CLOUD_SHARE_FOLDER', 'cloud_shares'):
             result = is_cloud_relative_path("share123", "cloud_shares/share123/file.txt")
             assert result is True
-        finally:
-            aird.constants.CLOUD_SHARE_FOLDER = original_folder
     
     def test_is_cloud_relative_path_invalid(self):
         """Test invalid cloud relative path"""
-        import aird.constants
-        original_folder = aird.constants.CLOUD_SHARE_FOLDER
-        
-        try:
-            aird.constants.CLOUD_SHARE_FOLDER = 'cloud_shares'
+        with patch('aird.utils.util.CLOUD_SHARE_FOLDER', 'cloud_shares'):
             result = is_cloud_relative_path("share123", "file.txt")
             assert result is False
-        finally:
-            aird.constants.CLOUD_SHARE_FOLDER = original_folder
     
     def test_is_cloud_relative_path_wrong_share_id(self):
         """Test path with wrong share_id"""
-        import aird.constants
-        original_folder = aird.constants.CLOUD_SHARE_FOLDER
-        
-        try:
-            aird.constants.CLOUD_SHARE_FOLDER = 'cloud_shares'
+        with patch('aird.utils.util.CLOUD_SHARE_FOLDER', 'cloud_shares'):
             result = is_cloud_relative_path("share123", "cloud_shares/share456/file.txt")
             assert result is False
-        finally:
-            aird.constants.CLOUD_SHARE_FOLDER = original_folder
     
     def test_is_cloud_relative_path_normalizes_backslashes(self):
         """Test that backslashes are normalized to forward slashes"""
-        import aird.constants
-        original_folder = aird.constants.CLOUD_SHARE_FOLDER
-        
-        try:
-            aird.constants.CLOUD_SHARE_FOLDER = 'cloud_shares'
+        with patch('aird.utils.util.CLOUD_SHARE_FOLDER', 'cloud_shares'):
             result = is_cloud_relative_path("share123", "cloud_shares\\share123\\file.txt")
             assert result is True
-        finally:
-            aird.constants.CLOUD_SHARE_FOLDER = original_folder
 
 
 class TestParseExpression:
@@ -464,19 +429,10 @@ class TestGetCurrentFeatureFlags:
     
     def test_get_current_feature_flags_from_constants(self):
         """Test getting feature flags from constants when DB is None"""
-        # Import constants module to patch it
-        import aird.constants
-        original_flags = aird.constants.FEATURE_FLAGS.copy()
-        original_conn = aird.constants.DB_CONN
-        
-        try:
-            aird.constants.FEATURE_FLAGS = {'flag1': True}
-            aird.constants.DB_CONN = None
+        with patch('aird.utils.util.FEATURE_FLAGS', {'flag1': True}), \
+             patch('aird.utils.util.constants_module.DB_CONN', None):
             result = get_current_feature_flags()
             assert result == {'flag1': True}
-        finally:
-            aird.constants.FEATURE_FLAGS = original_flags
-            aird.constants.DB_CONN = original_conn
     
     def test_get_current_feature_flags_from_db(self):
         """Test getting feature flags from database"""
@@ -485,24 +441,15 @@ class TestGetCurrentFeatureFlags:
         conn.execute("INSERT INTO feature_flags (key, value) VALUES ('db_flag', 1)")
         conn.commit()
         
-        import aird.constants
-        import aird.db
-        original_flags = aird.constants.FEATURE_FLAGS.copy()
-        original_conn = aird.constants.DB_CONN
-        
         try:
-            aird.constants.FEATURE_FLAGS = {'mem_flag': True}
-            aird.constants.DB_CONN = conn
-            # Mock the _load_feature_flags function - it's imported inside get_current_feature_flags
-            with patch('aird.db._load_feature_flags', return_value={'db_flag': True}):
+            with patch('aird.utils.util.FEATURE_FLAGS', {'mem_flag': True}), \
+                 patch('aird.utils.util.constants_module.DB_CONN', conn), \
+                 patch('aird.utils.util._load_feature_flags', return_value={'db_flag': True}):
                 result = get_current_feature_flags()
-                # Should merge DB and memory flags - in-memory takes precedence
                 assert 'mem_flag' in result
                 assert result['mem_flag'] is True
                 assert 'db_flag' in result
         finally:
-            aird.constants.FEATURE_FLAGS = original_flags
-            aird.constants.DB_CONN = original_conn
             conn.close()
 
 
@@ -511,20 +458,10 @@ class TestGetCurrentWebsocketConfig:
     
     def test_get_current_websocket_config_from_constants(self):
         """Test getting websocket config from constants when DB is None"""
-        # Import modules to patch them
-        import aird.constants
-        import aird.db
-        original_config = aird.constants.WEBSOCKET_CONFIG.copy()
-        original_conn = aird.db.DB_CONN
-        
-        try:
-            aird.constants.WEBSOCKET_CONFIG = {'max_connections': 50}
-            aird.db.DB_CONN = None
+        with patch('aird.utils.util.WEBSOCKET_CONFIG', {'max_connections': 50}), \
+             patch('aird.utils.util.DB_CONN', None):
             result = get_current_websocket_config()
             assert result == {'max_connections': 50}
-        finally:
-            aird.constants.WEBSOCKET_CONFIG = original_config
-            aird.db.DB_CONN = original_conn
     
     def test_get_current_websocket_config_from_db(self):
         """Test getting websocket config from database"""
@@ -533,23 +470,14 @@ class TestGetCurrentWebsocketConfig:
         conn.execute("INSERT INTO websocket_config (key, value) VALUES ('max_connections', 100)")
         conn.commit()
         
-        import aird.constants
-        import aird.db
-        original_config = aird.constants.WEBSOCKET_CONFIG.copy()
-        original_conn = aird.db.DB_CONN
-        
         try:
-            aird.constants.WEBSOCKET_CONFIG = {'timeout': 30}
-            aird.db.DB_CONN = conn
-            # Mock the _load_websocket_config function
-            with patch('aird.db._load_websocket_config', return_value={'max_connections': 100}):
+            with patch('aird.utils.util.WEBSOCKET_CONFIG', {'timeout': 30}), \
+                 patch('aird.utils.util.DB_CONN', conn), \
+                 patch('aird.utils.util._load_websocket_config', return_value={'max_connections': 100}):
                 result = get_current_websocket_config()
-                # DB values override constants
                 assert result['max_connections'] == 100
-                assert result['timeout'] == 30  # From constants
+                assert result['timeout'] == 30
         finally:
-            aird.constants.WEBSOCKET_CONFIG = original_config
-            aird.db.DB_CONN = original_conn
             conn.close()
 
 
@@ -855,28 +783,19 @@ class TestRemoveCloudFileIfExists:
     def test_remove_existing_cloud_file(self):
         """Test removing an existing cloud file"""
         with tempfile.TemporaryDirectory() as temp_dir:
-            import aird.constants
-            original_root = aird.constants.ROOT_DIR
-            original_folder = aird.constants.CLOUD_SHARE_FOLDER
+            # Create the cloud file
+            share_dir = os.path.join(temp_dir, 'cloud_shares', 'share123')
+            os.makedirs(share_dir, exist_ok=True)
+            file_path = os.path.join(share_dir, 'test.txt')
+            with open(file_path, 'w') as f:
+                f.write("test")
             
-            try:
-                aird.constants.ROOT_DIR = temp_dir
-                aird.constants.CLOUD_SHARE_FOLDER = 'cloud_shares'
-                
-                # Create the cloud file
-                share_dir = os.path.join(temp_dir, 'cloud_shares', 'share123')
-                os.makedirs(share_dir, exist_ok=True)
-                file_path = os.path.join(share_dir, 'test.txt')
-                with open(file_path, 'w') as f:
-                    f.write("test")
-                
-                relative_path = 'cloud_shares/share123/test.txt'
+            relative_path = 'cloud_shares/share123/test.txt'
+            with patch('aird.utils.util.ROOT_DIR', temp_dir), \
+                 patch('aird.utils.util.CLOUD_SHARE_FOLDER', 'cloud_shares'):
                 remove_cloud_file_if_exists('share123', relative_path)
-                
-                assert not os.path.exists(file_path)
-            finally:
-                aird.constants.ROOT_DIR = original_root
-                aird.constants.CLOUD_SHARE_FOLDER = original_folder
+            
+            assert not os.path.exists(file_path)
     
     def test_remove_nonexistent_file_no_error(self):
         """Test that removing non-existent file doesn't raise error"""
@@ -1123,3 +1042,194 @@ class TestFilterExpressionEdgeCases:
         """Test expressions with extra whitespace"""
         fe = FilterExpression("  hello   AND   world  ")
         assert fe.matches("hello world") is True
+
+
+from aird.utils.util import format_size
+
+
+class TestFormatSize:
+    def test_bytes(self):
+        assert format_size(500) == "500.00 B"
+
+    def test_zero(self):
+        assert format_size(0) == "0.00 B"
+
+    def test_kilobytes(self):
+        assert format_size(1024) == "1.00 KB"
+
+    def test_megabytes(self):
+        assert format_size(1024 * 1024) == "1.00 MB"
+
+    def test_gigabytes(self):
+        assert format_size(1024 ** 3) == "1.00 GB"
+
+    def test_terabytes(self):
+        assert format_size(1024 ** 4) == "1.00 TB"
+
+    def test_petabytes(self):
+        assert format_size(1024 ** 5) == "1.00 PB"
+
+
+class TestIsValidWebsocketOriginEdgeCases:
+    def create_mock_handler(self, host="localhost:8000", protocol="http"):
+        handler = MagicMock()
+        handler.request.host = host
+        handler.request.protocol = protocol
+        return handler
+
+    def test_none_origin(self):
+        handler = self.create_mock_handler()
+        assert is_valid_websocket_origin(handler, None) is False
+
+    def test_missing_host(self):
+        handler = self.create_mock_handler()
+        assert is_valid_websocket_origin(handler, "http://") is False
+
+    def test_disallowed_scheme(self):
+        handler = self.create_mock_handler()
+        assert is_valid_websocket_origin(handler, "ftp://localhost:8000") is False
+
+    def test_localhost_127_equivalence(self):
+        handler = self.create_mock_handler(host="127.0.0.1:8000")
+        assert is_valid_websocket_origin(handler, "http://localhost:8000") is True
+
+    def test_wss_scheme(self):
+        handler = self.create_mock_handler(host="example.com:443", protocol="https")
+        assert is_valid_websocket_origin(handler, "wss://example.com:443") is True
+
+
+class TestIsWithinRootEdgeCases:
+    def test_exception_returns_false(self):
+        with patch('os.path.realpath', side_effect=OSError("bad")):
+            assert is_within_root("/invalid", "/root") is False
+
+
+class TestWebSocketConnectionManagerExtended:
+    @patch('aird.utils.util.tornado.ioloop.IOLoop')
+    def test_cleanup_dead_connections(self, mock_ioloop):
+        mock_ioloop.current.return_value = MagicMock()
+        manager = WebSocketConnectionManager("test")
+        dead = MagicMock()
+        dead.ws_connection = None
+        manager.add_connection(dead)
+        manager.cleanup_dead_connections()
+        assert dead not in manager.connections
+
+    @patch('aird.utils.util.tornado.ioloop.IOLoop')
+    def test_cleanup_idle_connections(self, mock_ioloop):
+        mock_ioloop.current.return_value = MagicMock()
+        manager = WebSocketConnectionManager("test", default_idle_timeout=0)
+        conn = MagicMock()
+        manager.add_connection(conn)
+        manager.last_activity[conn] = 0
+        manager.cleanup_idle_connections()
+        assert conn not in manager.connections
+
+    @patch('aird.utils.util.tornado.ioloop.IOLoop')
+    def test_get_stats_empty(self, mock_ioloop):
+        mock_ioloop.current.return_value = MagicMock()
+        manager = WebSocketConnectionManager("test")
+        stats = manager.get_stats()
+        assert stats['active_connections'] == 0
+        assert stats['average_connection_age'] == 0
+        assert stats['oldest_connection_age'] == 0
+
+    @patch('aird.utils.util.tornado.ioloop.IOLoop')
+    def test_broadcast_removes_dead(self, mock_ioloop):
+        mock_ioloop.current.return_value = MagicMock()
+        manager = WebSocketConnectionManager("test")
+        dead = MagicMock()
+        dead.write_message.side_effect = Exception("closed")
+        manager.add_connection(dead)
+        manager.broadcast_message("hello")
+        assert dead not in manager.connections
+
+
+class TestGetAllFilesRecursiveEdgeCases:
+    def test_permission_error(self):
+        with patch('os.listdir', side_effect=PermissionError("no access")):
+            result = get_all_files_recursive("/forbidden")
+            assert result == []
+
+
+class TestFilterFilesEmptyInput:
+    def test_empty_files_returns_empty(self):
+        assert filter_files_by_patterns([]) == []
+
+
+class TestAdditionalFileIconCoverage:
+    def test_pyc_icon(self):
+        assert "🐍" in get_file_icon("module.pyc")
+
+    def test_pyo_icon(self):
+        assert "🐍" in get_file_icon("module.pyo")
+
+    def test_csv_icon(self):
+        assert get_file_icon("data.csv") == "📊"
+
+    def test_jsonl_icon(self):
+        assert get_file_icon("data.jsonl") == "📋"
+
+    def test_toml_icon(self):
+        assert "⚙️" in get_file_icon("config.toml")
+
+    def test_ini_icon(self):
+        assert "⚙️" in get_file_icon("settings.ini")
+
+    def test_parquet_icon(self):
+        assert get_file_icon("data.parquet") == "📊"
+
+    def test_sql_icon(self):
+        assert get_file_icon("schema.sql") == "🗄️"
+
+    def test_log_icon(self):
+        assert get_file_icon("app.log") == "📜"
+
+    def test_font_icon(self):
+        assert get_file_icon("font.ttf") == "🔤"
+
+    def test_shell_icon(self):
+        assert get_file_icon("run.sh") == "📟"
+
+    def test_rust_icon(self):
+        assert get_file_icon("lib.rs") == "🦀"
+
+    def test_dart_icon(self):
+        assert get_file_icon("main.dart") == "🎯"
+
+    def test_lua_icon(self):
+        assert get_file_icon("init.lua") == "🌙"
+
+    def test_swift_icon(self):
+        assert get_file_icon("app.swift") == "🦉"
+
+    def test_php_icon(self):
+        assert get_file_icon("index.php") == "🐘"
+
+    def test_ruby_icon(self):
+        assert get_file_icon("app.rb") == "💎"
+
+    def test_java_icon(self):
+        assert get_file_icon("Main.java") == "☕"
+
+    def test_cpp_icon(self):
+        assert "⚙️" in get_file_icon("main.cpp")
+
+    def test_exe_icon(self):
+        assert get_file_icon("setup.exe") == "📦"
+
+    def test_doc_icon(self):
+        assert get_file_icon("report.docx") == "📝"
+
+    def test_ppt_icon(self):
+        assert get_file_icon("slides.pptx") == "📋"
+
+
+class TestSanitizeCloudFilenameEdgeCases:
+    def test_all_dots_returns_default(self):
+        result = sanitize_cloud_filename("...")
+        assert result == "cloud_file"
+
+    def test_all_underscores_returns_default(self):
+        result = sanitize_cloud_filename("___")
+        assert result == "cloud_file"

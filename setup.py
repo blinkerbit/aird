@@ -45,6 +45,7 @@ setup(
             'pytest-mock>=3.14.0',
             'pytest-cov>=6.0.0',
             'pytest-tornado>=0.8.1',
+            'pytest-xdist>=3.5.0',
             'coverage>=7.6.9',
             'mock>=5.1.0',
         ],

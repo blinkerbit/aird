@@ -23,11 +23,11 @@ def validate_password(password: str) -> tuple[bool, str]:
     """
     if len(password) < 12:
         return False, "Password must be at least 12 characters long."
-    if not re.search(r'[A-Z]', password):
+    if not re.search(r"[A-Z]", password):
         return False, "Password must contain at least one uppercase letter."
-    if not re.search(r'[a-z]', password):
+    if not re.search(r"[a-z]", password):
         return False, "Password must contain at least one lowercase letter."
-    if not re.search(r'\d', password):
+    if not re.search(r"\d", password):
         return False, "Password must contain at least one number."
     if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
         return False, "Password must contain at least one special character."
@@ -62,7 +62,9 @@ def is_valid_websocket_origin(handler, origin: str) -> bool:
         expected_scheme = "https" if handler.request.protocol == "https" else "http"
         if origin_scheme not in (expected_scheme, expected_scheme + "s"):
             # Allow ws/wss equivalents to http/https
-            if not (origin_scheme in ("ws", "wss") and expected_scheme in ("http", "https")):
+            if not (
+                origin_scheme in ("ws", "wss") and expected_scheme in ("http", "https")
+            ):
                 return False
         if origin_host != req_host:
             # Allow localhost in development if explicitly enabled

@@ -24,7 +24,7 @@ class TestSuperSearchWebSocketHandler:
         
         # Mock DB user check
         with patch('aird.handlers.api_handlers.constants_module.DB_CONN', MagicMock()), \
-             patch('aird.db.get_user_by_username', return_value={'username': 'user'}):
+             patch('aird.handlers.api_handlers.get_user_by_username', return_value={'username': 'user'}):
             
             user = handler.get_current_user()
             assert user['username'] == 'user'
@@ -193,7 +193,7 @@ class TestSuperSearchWebSocketHandler:
         )
 
         with patch('os.walk', return_value=walk_return), \
-             patch('aird.handlers.api_handlers.pathlib.Path', path_cls), \
+             patch('pathlib.Path', path_cls), \
              patch('builtins.open', mock_open):
             await handler.perform_search("*.txt", "needle")
 
@@ -211,7 +211,7 @@ class TestSuperSearchWebSocketHandler:
         )
 
         with patch('os.walk', return_value=walk_return), \
-             patch('aird.handlers.api_handlers.pathlib.Path', path_cls), \
+             patch('pathlib.Path', path_cls), \
              patch('builtins.open', mock_open):
             await handler.perform_search("*.txt", "needle")
 
@@ -228,7 +228,7 @@ class TestSuperSearchWebSocketHandler:
         )
 
         with patch('os.walk', return_value=walk_return), \
-             patch('aird.handlers.api_handlers.pathlib.Path', path_cls), \
+             patch('pathlib.Path', path_cls), \
              patch('builtins.open', mock_open):
             await handler.perform_search("*.txt", "needle")
 
@@ -243,7 +243,7 @@ class TestSuperSearchWebSocketHandler:
         )
 
         with patch('os.walk', return_value=walk_return), \
-             patch('aird.handlers.api_handlers.pathlib.Path', path_cls), \
+             patch('pathlib.Path', path_cls), \
              patch('builtins.open', mock_open):
             await handler.perform_search("*.txt", "needle")
 
@@ -260,7 +260,7 @@ class TestSuperSearchWebSocketHandler:
         )
 
         with patch('os.walk', return_value=walk_return), \
-             patch('aird.handlers.api_handlers.pathlib.Path', path_cls), \
+             patch('pathlib.Path', path_cls), \
              patch('builtins.open', mock_open):
             await handler.perform_search("*.txt", "needle")
 
@@ -278,7 +278,7 @@ class TestSuperSearchWebSocketHandler:
         )
 
         with patch('os.walk', return_value=walk_return), \
-             patch('aird.handlers.api_handlers.pathlib.Path', path_cls), \
+             patch('pathlib.Path', path_cls), \
              patch('builtins.open', mock_open):
             await handler.perform_search("*.txt", "needle")
 
@@ -296,7 +296,7 @@ class TestSuperSearchWebSocketHandler:
         )
 
         with patch('os.walk', return_value=walk_return), \
-             patch('aird.handlers.api_handlers.pathlib.Path', path_cls), \
+             patch('pathlib.Path', path_cls), \
              patch('builtins.open', mock_open):
             await handler.perform_search("*.txt", "needle")
 

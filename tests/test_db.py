@@ -642,3 +642,237 @@ class TestAssignAdminPrivileges:
         """Test with None"""
         # Should not raise
         assign_admin_privileges(db_conn, None)
+
+    def test_assign_skips_non_string(self, db_conn):
+        assign_admin_privileges(db_conn, [123, None, ""])
+
+    def test_assign_already_admin(self, db_conn):
+        create_user(db_conn, "adminuser", "pass", role="admin")
+        assign_admin_privileges(db_conn, ["adminuser"])
+        user = get_user_by_username(db_conn, "adminuser")
+        assert user['role'] == "admin"
+
+
+from aird.db import (
+    load_allowed_extensions,
+    save_allowed_extensions,
+    create_network_share,
+    get_all_network_shares,
+    get_network_share,
+    update_network_share,
+    delete_network_share,
+    log_audit,
+    get_audit_logs,
+)
+
+
+class TestAllowedExtensions:
+    def test_load_empty(self, db_conn):
+        result = load_allowed_extensions(db_conn)
+        assert result == set()
+
+    def test_save_and_load(self, db_conn):
+        save_allowed_extensions(db_conn, {'.txt', '.pdf', '.jpg'})
+        result = load_allowed_extensions(db_conn)
+        assert result == {'.txt', '.pdf', '.jpg'}
+
+    def test_save_replaces(self, db_conn):
+        save_allowed_extensions(db_conn, {'.txt', '.pdf'})
+        save_allowed_extensions(db_conn, {'.jpg'})
+        result = load_allowed_extensions(db_conn)
+        assert result == {'.jpg'}
+
+    def test_save_filters_invalid(self, db_conn):
+        save_allowed_extensions(db_conn, {'txt', 123, '', None, '.pdf'})
+        result = load_allowed_extensions(db_conn)
+        assert result == {'.pdf'}
+
+    def test_load_with_closed_conn(self):
+        conn = sqlite3.connect(":memory:")
+        conn.close()
+        result = load_allowed_extensions(conn)
+        assert result == set()
+
+
+class TestNetworkSharesCRUD:
+    def test_create_and_get(self, db_conn):
+        ok = create_network_share(db_conn, "ns1", "Share1", "/data", "webdav", 8080, "user", "pass")
+        assert ok is True
+        share = get_network_share(db_conn, "ns1")
+        assert share is not None
+        assert share['name'] == "Share1"
+        assert share['port'] == 8080
+        assert share['read_only'] is False
+
+    def test_create_read_only(self, db_conn):
+        create_network_share(db_conn, "ns2", "RO", "/data", "smb", 445, "u", "p", read_only=True)
+        share = get_network_share(db_conn, "ns2")
+        assert share['read_only'] is True
+
+    def test_get_all(self, db_conn):
+        create_network_share(db_conn, "a", "A", "/a", "webdav", 80, "u", "p")
+        create_network_share(db_conn, "b", "B", "/b", "smb", 445, "u", "p")
+        shares = get_all_network_shares(db_conn)
+        assert len(shares) == 2
+
+    def test_get_nonexistent(self, db_conn):
+        assert get_network_share(db_conn, "nope") is None
+
+    def test_update(self, db_conn):
+        create_network_share(db_conn, "ns1", "Old", "/data", "webdav", 80, "u", "p")
+        ok = update_network_share(db_conn, "ns1", name="New", port=9090)
+        assert ok is True
+        share = get_network_share(db_conn, "ns1")
+        assert share['name'] == "New"
+        assert share['port'] == 9090
+
+    def test_update_no_valid_fields(self, db_conn):
+        create_network_share(db_conn, "ns1", "X", "/x", "webdav", 80, "u", "p")
+        assert update_network_share(db_conn, "ns1", bad_field="value") is False
+
+    def test_update_boolean_fields(self, db_conn):
+        create_network_share(db_conn, "ns1", "X", "/x", "webdav", 80, "u", "p")
+        update_network_share(db_conn, "ns1", enabled=False, read_only=True)
+        share = get_network_share(db_conn, "ns1")
+        assert share['enabled'] is False
+        assert share['read_only'] is True
+
+    def test_delete(self, db_conn):
+        create_network_share(db_conn, "ns1", "X", "/x", "webdav", 80, "u", "p")
+        assert delete_network_share(db_conn, "ns1") is True
+        assert get_network_share(db_conn, "ns1") is None
+
+    def test_delete_nonexistent(self, db_conn):
+        assert delete_network_share(db_conn, "nope") is False
+
+    def test_create_duplicate(self, db_conn):
+        create_network_share(db_conn, "ns1", "X", "/x", "webdav", 80, "u", "p")
+        ok = create_network_share(db_conn, "ns1", "Y", "/y", "smb", 445, "u2", "p2")
+        assert ok is False
+
+
+class TestAuditLog:
+    def test_log_and_get(self, db_conn):
+        log_audit(db_conn, "file_upload", username="admin", details="test.txt", ip="127.0.0.1")
+        logs = get_audit_logs(db_conn)
+        assert len(logs) == 1
+        assert logs[0]['action'] == "file_upload"
+        assert logs[0]['username'] == "admin"
+
+    def test_log_none_conn(self):
+        log_audit(None, "test")
+
+    def test_get_none_conn(self):
+        assert get_audit_logs(None) == []
+
+    def test_get_with_limit(self, db_conn):
+        for i in range(10):
+            log_audit(db_conn, f"action_{i}")
+        logs = get_audit_logs(db_conn, limit=3)
+        assert len(logs) == 3
+
+    def test_get_with_offset(self, db_conn):
+        for i in range(5):
+            log_audit(db_conn, f"action_{i}")
+        logs = get_audit_logs(db_conn, limit=2, offset=3)
+        assert len(logs) == 2
+
+
+class TestPasswordEdgeCases:
+    def test_verify_empty_hash(self):
+        assert verify_password("password", "") is False
+
+    def test_verify_scrypt_format(self):
+        import hashlib
+        import secrets as s
+        salt = s.token_hex(16)
+        key = hashlib.scrypt("mypass".encode(), salt=salt.encode(), n=16384, r=8, p=1, dklen=32)
+        scrypt_hash = f"scrypt:{salt}:{key.hex()}"
+        assert verify_password("mypass", scrypt_hash) is True
+        assert verify_password("wrong", scrypt_hash) is False
+
+    def test_verify_scrypt_malformed(self):
+        assert verify_password("pass", "scrypt:onlyonepart") is False
+
+    def test_verify_legacy_malformed(self):
+        assert verify_password("pass", "nocolon") is False
+
+    def test_hash_scrypt_fallback(self):
+        with patch('aird.db.ARGON2_AVAILABLE', False), \
+             patch('aird.db.PH', None):
+            h = hash_password("test")
+            assert h.startswith("scrypt:")
+            assert verify_password("test", h) is True
+
+
+class TestUpdateShareEdgeCases:
+    def test_custom_secret_token(self, db_conn):
+        insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        update_share(db_conn, "s1", secret_token="custom_token")
+        share = get_share_by_id(db_conn, "s1")
+        assert share['secret_token'] == "custom_token"
+
+    def test_update_allowed_users_and_paths(self, db_conn):
+        insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        update_share(db_conn, "s1", allowed_users=["u1"], paths=["/b", "/c"])
+        share = get_share_by_id(db_conn, "s1")
+        assert share['allowed_users'] == ["u1"]
+        assert share['paths'] == ["/b", "/c"]
+
+    def test_update_allow_avoid_expiry(self, db_conn):
+        insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        update_share(db_conn, "s1", allow_list=["*.txt"], avoid_list=["*.log"], expiry_date="2025-12-31")
+        share = get_share_by_id(db_conn, "s1")
+        assert share['allow_list'] == ["*.txt"]
+        assert share['avoid_list'] == ["*.log"]
+        assert share['expiry_date'] == "2025-12-31"
+
+
+class TestAuthenticateEdgeCases:
+    def test_inactive_user(self, db_conn):
+        user = create_user(db_conn, "inactive", "pass123")
+        update_user(db_conn, user['id'], active=False)
+        result = authenticate_user(db_conn, "inactive", "pass123")
+        assert result is None
+
+
+class TestFeatureFlagEdgeCases:
+    def test_load_on_error(self):
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = Exception("boom")
+        assert load_feature_flags(mock_conn) == {}
+
+    def test_save_on_error(self):
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(side_effect=Exception("boom"))
+        save_feature_flags(mock_conn, {"a": True})
+
+
+class TestCleanupExpiredEdgeCases:
+    def test_exception_returns_zero(self):
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = Exception("boom")
+        assert cleanup_expired_shares(mock_conn) == 0
+
+    def test_is_share_expired_bad_format(self):
+        assert is_share_expired("not-a-date") is False
+
+
+class TestShareByIdEdgeCases:
+    def test_exception_returns_none(self):
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = Exception("boom")
+        assert get_share_by_id(mock_conn, "x") is None
+
+    def test_not_found(self, db_conn):
+        assert get_share_by_id(db_conn, "nonexistent") is None
+
+    def test_get_all_shares_exception(self):
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = Exception("boom")
+        assert get_all_shares(mock_conn) == {}
+
+    def test_get_shares_for_path_exception(self):
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = Exception("boom")
+        assert get_shares_for_path(mock_conn, "/x") == []

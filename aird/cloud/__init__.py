@@ -1,4 +1,5 @@
 """Cloud storage provider integrations for Aird."""
+
 from __future__ import annotations
 
 import base64
@@ -94,10 +95,14 @@ class CloudProvider:
     def root_identifier(self) -> str:
         return "root"
 
-    def list_files(self, folder_id: str | None = None) -> List[CloudFile]:  # pragma: no cover - interface
+    def list_files(
+        self, folder_id: str | None = None
+    ) -> List[CloudFile]:  # pragma: no cover - interface
         raise NotImplementedError
 
-    def download_file(self, file_id: str) -> CloudDownload:  # pragma: no cover - interface
+    def download_file(
+        self, file_id: str
+    ) -> CloudDownload:  # pragma: no cover - interface
         raise NotImplementedError
 
     def upload_file(
@@ -141,7 +146,13 @@ class GoogleDriveProvider(CloudProvider):
     name = "gdrive"
     label = "Google Drive"
 
-    def __init__(self, access_token: str, *, root_id: str = "root", include_shared_drives: bool = True) -> None:
+    def __init__(
+        self,
+        access_token: str,
+        *,
+        root_id: str = "root",
+        include_shared_drives: bool = True,
+    ) -> None:
         if not access_token:
             raise CloudProviderError("Google Drive access token is required")
         self._token = access_token
@@ -167,11 +178,13 @@ class GoogleDriveProvider(CloudProvider):
             "pageSize": 1000,
         }
         if self._include_shared_drives:
-            params.update({
-                "corpora": "allDrives",
-                "supportsAllDrives": "true",
-                "includeItemsFromAllDrives": "true",
-            })
+            params.update(
+                {
+                    "corpora": "allDrives",
+                    "supportsAllDrives": "true",
+                    "includeItemsFromAllDrives": "true",
+                }
+            )
         try:
             response = requests.get(
                 f"{self._base_url}/files",
@@ -225,7 +238,9 @@ class GoogleDriveProvider(CloudProvider):
         if mime == "application/vnd.google-apps.folder":
             raise CloudProviderError("Folders cannot be downloaded from Google Drive")
         if mime.startswith("application/vnd.google-apps."):
-            raise CloudProviderError("Google Docs formats are not supported for direct download")
+            raise CloudProviderError(
+                "Google Docs formats are not supported for direct download"
+            )
 
         try:
             download_resp = requests.get(
@@ -243,7 +258,9 @@ class GoogleDriveProvider(CloudProvider):
             )
         size = None
         try:
-            size = int(metadata.get("size")) if metadata.get("size") is not None else None
+            size = (
+                int(metadata.get("size")) if metadata.get("size") is not None else None
+            )
         except (TypeError, ValueError):
             size = None
         return CloudDownload(
@@ -272,7 +289,9 @@ class GoogleDriveProvider(CloudProvider):
                 size = stream.tell()
                 stream.seek(current)
             except Exception:
-                raise CloudProviderError("Unable to determine upload size for Google Drive")
+                raise CloudProviderError(
+                    "Unable to determine upload size for Google Drive"
+                )
 
         if size < 0:
             raise CloudProviderError("Invalid upload size for Google Drive")
@@ -378,7 +397,9 @@ class GoogleDriveProvider(CloudProvider):
                     timeout=120,
                 )
             except requests.RequestException as exc:
-                raise CloudProviderError(f"Google Drive chunk upload failed: {exc}") from exc
+                raise CloudProviderError(
+                    f"Google Drive chunk upload failed: {exc}"
+                ) from exc
 
             if upload_resp.status_code in (200, 201):
                 payload = upload_resp.json()
@@ -476,7 +497,9 @@ class OneDriveProvider(CloudProvider):
             raise CloudProviderError("Folders cannot be downloaded from OneDrive")
         download_url = metadata.get("@microsoft.graph.downloadUrl")
         if not download_url:
-            raise CloudProviderError("Download URL not available for this OneDrive item")
+            raise CloudProviderError(
+                "Download URL not available for this OneDrive item"
+            )
         try:
             response = requests.get(download_url, stream=True, timeout=60)
         except requests.RequestException as exc:
@@ -567,7 +590,9 @@ class OneDriveProvider(CloudProvider):
         if not parent_id or parent_id == "root":
             session_url = f"{self._base_url}/root:/{safe_name}:/createUploadSession"
         else:
-            session_url = f"{self._base_url}/items/{parent_id}:/{safe_name}:/createUploadSession"
+            session_url = (
+                f"{self._base_url}/items/{parent_id}:/{safe_name}:/createUploadSession"
+            )
 
         try:
             session_resp = requests.post(
@@ -612,7 +637,9 @@ class OneDriveProvider(CloudProvider):
                     timeout=120,
                 )
             except requests.RequestException as exc:
-                raise CloudProviderError(f"OneDrive chunk upload failed: {exc}") from exc
+                raise CloudProviderError(
+                    f"OneDrive chunk upload failed: {exc}"
+                ) from exc
 
             if upload_resp.status_code in (200, 201):
                 payload = upload_resp.json()

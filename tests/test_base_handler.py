@@ -21,7 +21,7 @@ class TestBaseHandler:
         db_conn = MagicMock()
         with patch.object(handler, 'get_secure_cookie', return_value=json.dumps(user_data).encode('utf-8')), \
              patch_db_conn(db_conn, modules=['aird.handlers.base_handler']), \
-             patch('aird.db.get_user_by_username', return_value=user_data):
+             patch('aird.handlers.base_handler.get_user_by_username', return_value=user_data):
             
             user = handler.get_current_user()
             assert user['username'] == 'testuser'

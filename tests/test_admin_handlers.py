@@ -681,9 +681,9 @@ class TestWebSocketStatsHandler:
         
         with patch.object(handler, 'get_current_user', return_value={'username': 'admin', 'role': 'admin'}), \
              patch.object(handler, 'is_admin_user', return_value=True), \
-             patch('aird.handlers.api_handlers.FeatureFlagSocketHandler') as mock_feature_handler, \
-             patch('aird.handlers.api_handlers.FileStreamHandler') as mock_stream_handler, \
-             patch('aird.handlers.api_handlers.SuperSearchWebSocketHandler') as mock_search_handler, \
+             patch('aird.handlers.admin_handlers.FeatureFlagSocketHandler') as mock_feature_handler, \
+             patch('aird.handlers.admin_handlers.FileStreamHandler') as mock_stream_handler, \
+             patch('aird.handlers.admin_handlers.SuperSearchWebSocketHandler') as mock_search_handler, \
              patch.object(handler, 'set_header') as mock_set_header, \
              patch.object(handler, 'write') as mock_write:
             

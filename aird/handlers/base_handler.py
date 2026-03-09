@@ -1,24 +1,26 @@
-
 import base64
 import json
 import secrets
 
-from aird.utils.util import *
+import tornado.web
+
 import aird.config as config_module
+import aird.constants as constants_module
+from aird.db import get_user_by_username
 
 
 class BaseHandler(tornado.web.RequestHandler):
     def prepare(self):
         """Generate a unique nonce for this request for CSP."""
         # Generate a cryptographically secure random nonce (16 bytes = 128 bits)
-        self._csp_nonce = base64.b64encode(secrets.token_bytes(16)).decode('utf-8')
-    
+        self._csp_nonce = base64.b64encode(secrets.token_bytes(16)).decode("utf-8")
+
     def get_csp_nonce(self):
         """Return the CSP nonce for this request."""
-        if not hasattr(self, '_csp_nonce'):
-            self._csp_nonce = base64.b64encode(secrets.token_bytes(16)).decode('utf-8')
+        if not hasattr(self, "_csp_nonce"):
+            self._csp_nonce = base64.b64encode(secrets.token_bytes(16)).decode("utf-8")
         return self._csp_nonce
-    
+
     def set_default_headers(self):
         # Security headers
         self.set_header("X-Content-Type-Options", "nosniff")
@@ -26,23 +28,23 @@ class BaseHandler(tornado.web.RequestHandler):
         self.set_header("X-XSS-Protection", "1; mode=block")
         self.set_header("Referrer-Policy", "strict-origin-when-cross-origin")
         # Note: CSP with nonce is set in prepare() after nonce generation
-    
+
     def _set_csp_header(self):
         """Set CSP header with the request-specific nonce."""
         nonce = self.get_csp_nonce()
         # Use nonce for scripts, keep unsafe-inline for styles (inline style attributes are common)
         csp = f"default-src 'self'; script-src 'self' 'nonce-{nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
         self.set_header("Content-Security-Policy", csp)
-    
+
     def render(self, template_name, **kwargs):
         """Override render to set CSP header before rendering."""
         self._set_csp_header()
         super().render(template_name, **kwargs)
-    
+
     def get_template_namespace(self):
         """Add CSP nonce to template namespace so templates can use it."""
         namespace = super().get_template_namespace()
-        namespace['csp_nonce'] = self.get_csp_nonce()
+        namespace["csp_nonce"] = self.get_csp_nonce()
         return namespace
 
     def get_current_user(self):
@@ -50,16 +52,18 @@ class BaseHandler(tornado.web.RequestHandler):
         user_json = self.get_secure_cookie("user")
         if user_json:
             try:
-                from aird.db import get_user_by_username
-                import aird.constants as constants_module
                 # Handle both JSON-encoded user data and plain string usernames
                 try:
                     user_data = json.loads(user_json)
                     username = user_data.get("username", "")
                 except (json.JSONDecodeError, TypeError):
                     # If it's not JSON, treat it as a plain username string
-                    username = user_json.decode('utf-8') if isinstance(user_json, bytes) else str(user_json)
-                
+                    username = (
+                        user_json.decode("utf-8")
+                        if isinstance(user_json, bytes)
+                        else str(user_json)
+                    )
+
                 # Re-verify user from DB to ensure they are still valid
                 db_conn = constants_module.DB_CONN
                 if db_conn:
@@ -72,11 +76,11 @@ class BaseHandler(tornado.web.RequestHandler):
             except Exception:
                 # If cookie parsing fails, check if it's a token-authenticated user
                 if isinstance(user_json, bytes):
-                    user_str = user_json.decode('utf-8', errors='ignore')
+                    user_str = user_json.decode("utf-8", errors="ignore")
                     if user_str == "token_authenticated":
                         return {"username": "token_user", "role": "admin"}
                 return None
-        
+
         # Fallback to token-based authentication from Authorization header
         auth_header = self.request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
@@ -91,7 +95,7 @@ class BaseHandler(tornado.web.RequestHandler):
                 if secrets.compare_digest(normalized_token, normalized_access_token):
                     # Return a generic user object for token-based access
                     return {"username": "token_user", "role": "admin"}
-        
+
         return None
 
     def write_error(self, status_code, **kwargs):
@@ -104,7 +108,9 @@ class BaseHandler(tornado.web.RequestHandler):
             )
         except Exception:
             # Fallback if template rendering fails
-            self.write(f"<html><body><h1>Error {status_code}</h1><p>{self._reason}</p></body></html>")
+            self.write(
+                f"<html><body><h1>Error {status_code}</h1><p>{self._reason}</p></body></html>"
+            )
 
     def on_finish(self):
         # Ensure cleanup logic is robust
@@ -118,37 +124,37 @@ class BaseHandler(tornado.web.RequestHandler):
         Checks the user object (if provided by get_current_user) and an 'admin' secure cookie.
         """
         try:
-            if hasattr(self, 'get_current_admin'):
+            if hasattr(self, "get_current_admin"):
                 try:
                     if self.get_current_admin():
                         return True
                 except Exception:
                     pass
             user = self.get_current_user()
-            if isinstance(user, dict) and user.get('role') == 'admin':
+            if isinstance(user, dict) and user.get("role") == "admin":
                 return True
             # Note: Removed dangerous string check that matched any username containing 'admin'
             # Admin status should only be determined by role, not by username substring
         except Exception:
             pass
         try:
-            return bool(self.get_secure_cookie('admin'))
+            return bool(self.get_secure_cookie("admin"))
         except Exception:
             return False
-    
+
     def get_display_username(self) -> str:
         """Get username for display purposes"""
         user = self.get_current_user()
         if user:
             # Handle dict user objects (from get_current_user)
             if isinstance(user, dict):
-                username = user.get('username', '')
-                role = user.get('role', '')
-                
+                username = user.get("username", "")
+                role = user.get("role", "")
+
                 # Handle token-authenticated users
                 if username == "token_user" or username == "token_authenticated":
                     return "Admin (Token)"
-                
+
                 # Show role for regular users
                 if role == "admin":
                     return f"{username} (Admin)"
@@ -156,31 +162,30 @@ class BaseHandler(tornado.web.RequestHandler):
                     return f"{username} (User)"
                 else:
                     return username or "Guest"
-            
+
             # Handle string/bytes usernames (legacy support)
             if isinstance(user, bytes):
-                user_str = user.decode('utf-8', errors='ignore')
+                user_str = user.decode("utf-8", errors="ignore")
             else:
                 user_str = str(user)
-            
+
             # Check for token-authenticated users
             if user_str == "token_authenticated" or user_str == "authenticated":
                 return "Admin (Token)"
-            
+
             # Try to get role from cookie
             role_cookie = self.get_secure_cookie("user_role")
             if role_cookie:
                 if isinstance(role_cookie, bytes):
-                    role = role_cookie.decode('utf-8', errors='ignore')
+                    role = role_cookie.decode("utf-8", errors="ignore")
                 else:
                     role = str(role_cookie)
-                
+
                 if role == "admin":
                     return f"{user_str} (Admin)"
                 elif role:
                     return f"{user_str} (User)"
-            
-            return user_str
-        
-        return "Guest"
 
+            return user_str
+
+        return "Guest"

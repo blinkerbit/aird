@@ -17,8 +17,8 @@ class TestGetCurrentWebsocketConfig:
         mock_conn = MagicMock()
         expected_config = {'preview_max_connections': 50, 'preview_idle_timeout': 120}
         
-        with patch('aird.database.db.get_db_conn', return_value=mock_conn), \
-             patch('aird.database.feature_flags.load_websocket_config', return_value=expected_config):
+        with patch('aird.core.websocket_manager.get_db_conn', return_value=mock_conn), \
+             patch('aird.core.websocket_manager.load_websocket_config', return_value=expected_config):
             result = get_current_websocket_config()
             assert result == expected_config
 
@@ -26,7 +26,7 @@ class TestGetCurrentWebsocketConfig:
         """Should return empty dict when no database connection"""
         from aird.core.websocket_manager import get_current_websocket_config
         
-        with patch('aird.database.db.get_db_conn', return_value=None):
+        with patch('aird.core.websocket_manager.get_db_conn', return_value=None):
             result = get_current_websocket_config()
             assert result == {}
 

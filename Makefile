@@ -1,15 +1,16 @@
 # Makefile for aird project
 
-.PHONY: help install test test-coverage test-verbose test-quick lint clean build docs
+.PHONY: help install test test-coverage test-verbose test-quick test-serial lint clean build docs
 
 # Default target
 help:
 	@echo "Available targets:"
 	@echo "  install       - Install the package and test dependencies"
-	@echo "  test          - Run all unit tests"
+	@echo "  test          - Run all unit tests (parallel)"
+	@echo "  test-serial   - Run all unit tests (single process)"
 	@echo "  test-coverage - Run tests with coverage reporting"
-	@echo "  test-verbose  - Run tests with verbose output"
-	@echo "  test-quick    - Run tests without coverage (faster)"
+	@echo "  test-verbose  - Run tests with verbose output (parallel)"
+	@echo "  test-quick    - Run tests without coverage (parallel, minimal output)"
 	@echo "  lint          - Run code linting"
 	@echo "  clean         - Clean up generated files"
 	@echo "  build         - Build the package"
@@ -19,21 +20,25 @@ help:
 install:
 	pip install -e .[test]
 
-# Run all tests
+# Run all tests in parallel
 test:
+	python -m pytest tests/ -n auto -q
+
+# Run all tests serially (useful for debugging flaky tests)
+test-serial:
 	python run_tests.py --all
 
-# Run tests with coverage
+# Run tests with coverage (serial — coverage needs single process)
 test-coverage:
 	python run_tests.py --coverage --html
 
-# Run tests with verbose output
+# Run tests with verbose output in parallel
 test-verbose:
-	python run_tests.py --verbose
+	python -m pytest tests/ -n auto -v
 
-# Run tests quickly (no coverage)
+# Run tests quickly in parallel (no coverage, minimal output)
 test-quick:
-	python -m pytest tests/ -v
+	python -m pytest tests/ -n auto -q --no-header
 
 # Run linting
 lint:

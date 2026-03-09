@@ -517,6 +517,7 @@ class TestDeleteHandler:
              patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
              patch('os.path.isdir', return_value=True), \
              patch('os.path.isfile', return_value=False), \
+             patch('os.listdir', return_value=[]), \
              patch('shutil.rmtree') as mock_rmtree, \
              patch.object(handler, 'redirect') as mock_redirect:
             
@@ -1071,3 +1072,663 @@ class TestCloudUploadHandler:
              patch.object(handler, 'write') as mock_write:
             await handler.post("provider1")
             mock_write.assert_called()
+
+
+from aird.handlers.file_op_handlers import (
+    CreateFolderHandler, CopyHandler, MoveHandler, BulkHandler, path_to_rel
+)
+
+
+class TestPathToRel:
+    def test_normal_path(self):
+        with patch('aird.handlers.file_op_handlers.ROOT_DIR', '/root'):
+            with patch('os.path.relpath', return_value='subdir/file.txt'):
+                assert path_to_rel('/root/subdir/file.txt') == 'subdir/file.txt'
+
+    def test_backslash_replaced(self):
+        with patch('aird.handlers.file_op_handlers.ROOT_DIR', 'C:\\root'):
+            with patch('os.path.relpath', return_value='subdir\\file.txt'):
+                assert path_to_rel('C:\\root\\subdir\\file.txt') == 'subdir/file.txt'
+
+    def test_exception_returns_original(self):
+        with patch('aird.handlers.file_op_handlers.ROOT_DIR', '/root'):
+            with patch('os.path.relpath', side_effect=ValueError("error")):
+                assert path_to_rel('/some/path') == '/some/path'
+
+
+class TestCreateFolderHandler:
+    def setup_method(self):
+        self.mock_app = MagicMock()
+        self.mock_request = MagicMock()
+        self.mock_app.settings = {'cookie_secret': 'test_secret'}
+        self.mock_request.headers = {}
+
+    def test_create_folder_success(self):
+        handler = prepare_handler(CreateFolderHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'parent': 'docs', 'name': 'newfolder'}.get(k, d))
+        handler.request.headers = {}
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.exists', return_value=False), \
+             patch('os.makedirs'), \
+             patch.object(handler, 'redirect') as mock_redirect:
+            handler.post()
+            mock_redirect.assert_called_once()
+            assert '/files/' in mock_redirect.call_args[0][0]
+
+    def test_create_folder_feature_disabled(self):
+        handler = prepare_handler(CreateFolderHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=False), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(403)
+
+    def test_create_folder_invalid_name_empty(self):
+        handler = prepare_handler(CreateFolderHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'parent': '', 'name': ''}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(400)
+
+    def test_create_folder_invalid_name_dot(self):
+        handler = prepare_handler(CreateFolderHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'parent': '', 'name': '..'}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(400)
+
+    def test_create_folder_name_with_slash(self):
+        handler = prepare_handler(CreateFolderHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'parent': '', 'name': 'a/b'}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(400)
+
+    def test_create_folder_name_too_long(self):
+        handler = prepare_handler(CreateFolderHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'parent': '', 'name': 'a' * 256}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(400)
+
+    def test_create_folder_outside_root(self):
+        handler = prepare_handler(CreateFolderHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'parent': '../..', 'name': 'evil'}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=False), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(403)
+
+    def test_create_folder_already_exists(self):
+        handler = prepare_handler(CreateFolderHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'parent': '', 'name': 'existing'}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.exists', return_value=True), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(409)
+
+    def test_create_folder_makedirs_error(self):
+        handler = prepare_handler(CreateFolderHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'parent': '', 'name': 'newfolder'}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.exists', return_value=False), \
+             patch('os.makedirs', side_effect=OSError("disk full")), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(500)
+
+    def test_create_folder_json_response(self):
+        handler = prepare_handler(CreateFolderHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'parent': 'docs', 'name': 'sub'}.get(k, d))
+        handler.request.headers = {'Accept': 'application/json'}
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.exists', return_value=False), \
+             patch('os.makedirs'), \
+             patch.object(handler, 'write') as mock_write:
+            handler.post()
+            result = mock_write.call_args[0][0]
+            assert result['ok'] is True
+            assert result['path'] == 'docs/sub'
+
+    def test_create_folder_at_root_json(self):
+        handler = prepare_handler(CreateFolderHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'parent': '', 'name': 'rootfolder'}.get(k, d))
+        handler.request.headers = {'Accept': 'application/json'}
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.exists', return_value=False), \
+             patch('os.makedirs'), \
+             patch.object(handler, 'write') as mock_write:
+            handler.post()
+            result = mock_write.call_args[0][0]
+            assert result['path'] == 'rootfolder'
+
+
+class TestCopyHandler:
+    def setup_method(self):
+        self.mock_app = MagicMock()
+        self.mock_request = MagicMock()
+        self.mock_app.settings = {'cookie_secret': 'test_secret'}
+        self.mock_request.headers = {}
+
+    def test_copy_file_success(self):
+        handler = prepare_handler(CopyHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'path': 'a.txt', 'dest': 'b.txt'}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.exists', side_effect=[True, False]), \
+             patch('os.path.isdir', return_value=False), \
+             patch('shutil.copy2') as mock_copy, \
+             patch.object(handler, 'redirect'):
+            handler.post()
+            mock_copy.assert_called_once()
+
+    def test_copy_directory_success(self):
+        handler = prepare_handler(CopyHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'path': 'dir1', 'dest': 'dir2'}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.exists', side_effect=[True, False]), \
+             patch('os.path.isdir', return_value=True), \
+             patch('shutil.copytree') as mock_copytree, \
+             patch.object(handler, 'redirect'):
+            handler.post()
+            mock_copytree.assert_called_once()
+
+    def test_copy_feature_disabled(self):
+        handler = prepare_handler(CopyHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=False), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(403)
+
+    def test_copy_missing_path(self):
+        handler = prepare_handler(CopyHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'path': '', 'dest': 'b.txt'}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(400)
+
+    def test_copy_source_not_found(self):
+        handler = prepare_handler(CopyHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'path': 'gone.txt', 'dest': 'b.txt'}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.exists', return_value=False), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(404)
+
+    def test_copy_dest_exists(self):
+        handler = prepare_handler(CopyHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'path': 'a.txt', 'dest': 'b.txt'}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.exists', return_value=True), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(409)
+
+    def test_copy_os_error(self):
+        handler = prepare_handler(CopyHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'path': 'a.txt', 'dest': 'b.txt'}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.exists', side_effect=[True, False]), \
+             patch('os.path.isdir', return_value=False), \
+             patch('shutil.copy2', side_effect=OSError("fail")), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(500)
+
+    def test_copy_json_response(self):
+        handler = prepare_handler(CopyHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'path': 'a.txt', 'dest': 'b.txt'}.get(k, d))
+        handler.request.headers = {'Accept': 'application/json'}
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.exists', side_effect=[True, False]), \
+             patch('os.path.isdir', return_value=False), \
+             patch('shutil.copy2'), \
+             patch.object(handler, 'write') as mock_write:
+            handler.post()
+            assert mock_write.call_args[0][0] == {"ok": True}
+
+    def test_copy_access_denied(self):
+        handler = prepare_handler(CopyHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'path': 'a.txt', 'dest': 'b.txt'}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=False), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(403)
+
+
+class TestMoveHandler:
+    def setup_method(self):
+        self.mock_app = MagicMock()
+        self.mock_request = MagicMock()
+        self.mock_app.settings = {'cookie_secret': 'test_secret'}
+        self.mock_request.headers = {}
+
+    def test_move_success(self):
+        handler = prepare_handler(MoveHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'path': 'a.txt', 'dest': 'b.txt'}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.exists', side_effect=[True, False]), \
+             patch('shutil.move') as mock_move, \
+             patch.object(handler, 'redirect'):
+            handler.post()
+            mock_move.assert_called_once()
+
+    def test_move_feature_disabled(self):
+        handler = prepare_handler(MoveHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=False), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(403)
+
+    def test_move_missing_args(self):
+        handler = prepare_handler(MoveHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'path': '', 'dest': ''}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(400)
+
+    def test_move_access_denied(self):
+        handler = prepare_handler(MoveHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'path': 'a.txt', 'dest': 'b.txt'}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=False), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(403)
+
+    def test_move_source_not_found(self):
+        handler = prepare_handler(MoveHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'path': 'a.txt', 'dest': 'b.txt'}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.exists', return_value=False), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(404)
+
+    def test_move_dest_exists(self):
+        handler = prepare_handler(MoveHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'path': 'a.txt', 'dest': 'b.txt'}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.exists', return_value=True), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(409)
+
+    def test_move_os_error(self):
+        handler = prepare_handler(MoveHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'path': 'a.txt', 'dest': 'b.txt'}.get(k, d))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.exists', side_effect=[True, False]), \
+             patch('shutil.move', side_effect=OSError("fail")), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(500)
+
+    def test_move_json_response(self):
+        handler = prepare_handler(MoveHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d='': {'path': 'a.txt', 'dest': 'b.txt'}.get(k, d))
+        handler.request.headers = {'Accept': 'application/json'}
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.exists', side_effect=[True, False]), \
+             patch('shutil.move'), \
+             patch.object(handler, 'write') as mock_write:
+            handler.post()
+            assert mock_write.call_args[0][0] == {"ok": True}
+
+
+class TestBulkHandler:
+    def setup_method(self):
+        self.mock_app = MagicMock()
+        self.mock_request = MagicMock()
+        self.mock_app.settings = {'cookie_secret': 'test_secret'}
+        self.mock_request.headers = {}
+
+    def test_bulk_invalid_json(self):
+        handler = prepare_handler(BulkHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.request.body = b'not json'
+
+        with patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(400)
+
+    def test_bulk_missing_paths(self):
+        handler = prepare_handler(BulkHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.request.body = json.dumps({"action": "delete"}).encode()
+
+        with patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(400)
+
+    def test_bulk_empty_paths(self):
+        handler = prepare_handler(BulkHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.request.body = json.dumps({"action": "delete", "paths": []}).encode()
+
+        with patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(400)
+
+    def test_bulk_delete_file_success(self):
+        handler = prepare_handler(BulkHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.request.body = json.dumps({"action": "delete", "paths": ["file.txt"]}).encode()
+
+        with patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('os.path.exists', return_value=True), \
+             patch('os.path.isdir', return_value=False), \
+             patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.remove'), \
+             patch.object(handler, 'write') as mock_write:
+            handler.post()
+            result = mock_write.call_args[0][0]
+            assert result['ok'] is True
+            assert result['results'][0]['ok'] is True
+
+    def test_bulk_unsupported_action(self):
+        handler = prepare_handler(BulkHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.request.body = json.dumps({"action": "unknown", "paths": ["file.txt"]}).encode()
+
+        with patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('os.path.exists', return_value=True), \
+             patch.object(handler, 'write') as mock_write:
+            handler.post()
+            result = mock_write.call_args[0][0]
+            assert result['ok'] is False
+            assert 'unsupported' in result['results'][0]['error']
+
+    def test_bulk_non_string_path(self):
+        handler = prepare_handler(BulkHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.request.body = json.dumps({"action": "delete", "paths": [123]}).encode()
+
+        with patch.object(handler, 'write') as mock_write:
+            handler.post()
+            result = mock_write.call_args[0][0]
+            assert result['results'][0]['ok'] is False
+            assert 'invalid path' in result['results'][0]['error']
+
+    def test_bulk_path_outside_root(self):
+        handler = prepare_handler(BulkHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.request.body = json.dumps({"action": "delete", "paths": ["../../etc/passwd"]}).encode()
+
+        with patch('aird.handlers.file_op_handlers.is_within_root', return_value=False), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch.object(handler, 'write') as mock_write:
+            handler.post()
+            result = mock_write.call_args[0][0]
+            assert 'access denied' in result['results'][0]['error']
+
+    def test_bulk_path_not_found(self):
+        handler = prepare_handler(BulkHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.request.body = json.dumps({"action": "delete", "paths": ["gone.txt"]}).encode()
+
+        with patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('os.path.exists', return_value=False), \
+             patch.object(handler, 'write') as mock_write:
+            handler.post()
+            result = mock_write.call_args[0][0]
+            assert 'not found' in result['results'][0]['error']
+
+    def test_bulk_delete_folder_disabled(self):
+        handler = prepare_handler(BulkHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.request.body = json.dumps({"action": "delete", "paths": ["mydir"]}).encode()
+
+        with patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('os.path.exists', return_value=True), \
+             patch('os.path.isdir', return_value=True), \
+             patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=False), \
+             patch.object(handler, 'write') as mock_write:
+            handler.post()
+            result = mock_write.call_args[0][0]
+            assert 'folder delete disabled' in result['results'][0]['error']
+
+    def test_bulk_add_to_share(self):
+        handler = prepare_handler(BulkHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.request.body = json.dumps({
+            "action": "add_to_share",
+            "paths": ["file.txt"],
+            "share_id": "share123"
+        }).encode()
+
+        mock_share = {"paths": ["other.txt"]}
+        with patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('os.path.exists', return_value=True), \
+             patch('aird.handlers.file_op_handlers.get_share_by_id', return_value=mock_share), \
+             patch('aird.handlers.file_op_handlers.update_share', return_value=True), \
+             patch('aird.handlers.file_op_handlers.constants_module') as mock_const, \
+             patch.object(handler, 'write') as mock_write:
+            mock_const.DB_CONN = MagicMock()
+            handler.post()
+            result = mock_write.call_args[0][0]
+            assert result['results'][0]['ok'] is True
+
+    def test_bulk_add_to_share_missing_id(self):
+        handler = prepare_handler(BulkHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.request.body = json.dumps({
+            "action": "add_to_share",
+            "paths": ["file.txt"]
+        }).encode()
+
+        with patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('os.path.exists', return_value=True), \
+             patch.object(handler, 'write') as mock_write:
+            handler.post()
+            result = mock_write.call_args[0][0]
+            assert 'share_id required' in result['results'][0]['error']
+
+
+class TestDeleteHandlerAdditional:
+    def setup_method(self):
+        self.mock_app = MagicMock()
+        self.mock_request = MagicMock()
+        self.mock_app.settings = {'cookie_secret': 'test_secret'}
+        self.mock_request.headers = {}
+
+    def test_delete_folder_feature_disabled(self):
+        handler = prepare_handler(DeleteHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(return_value="mydir")
+
+        def is_enabled_side_effect(key, default=True):
+            if key == 'folder_delete':
+                return False
+            return True
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', side_effect=is_enabled_side_effect), \
+             patch('os.path.abspath', return_value='/root/mydir'), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.isdir', return_value=True), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(403)
+
+    def test_delete_file_feature_disabled(self):
+        handler = prepare_handler(DeleteHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(return_value="file.txt")
+
+        def is_enabled_side_effect(key, default=True):
+            if key == 'file_delete':
+                return False
+            return True
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', side_effect=is_enabled_side_effect), \
+             patch('os.path.abspath', return_value='/root/file.txt'), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.isdir', return_value=False), \
+             patch('os.path.isfile', return_value=True), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(403)
+
+    def test_delete_non_empty_folder_no_recursive(self):
+        handler = prepare_handler(DeleteHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d=None: {'path': 'mydir', 'recursive': '0'}.get(k, d or ''))
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', return_value='/root/mydir'), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.isdir', return_value=True), \
+             patch('os.path.isfile', return_value=False), \
+             patch('os.listdir', return_value=['child.txt']), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(400)
+
+    def test_delete_not_found(self):
+        handler = prepare_handler(DeleteHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(return_value="ghost.txt")
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', return_value='/root/ghost.txt'), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.isdir', return_value=False), \
+             patch('os.path.isfile', return_value=False), \
+             patch.object(handler, 'set_status') as mock_status:
+            handler.post()
+            mock_status.assert_called_with(404)
+
+    def test_delete_json_response(self):
+        handler = prepare_handler(DeleteHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(return_value="file.txt")
+        handler.request.headers = {'Accept': 'application/json'}
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', return_value='/root/file.txt'), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.isfile', return_value=True), \
+             patch('os.remove'), \
+             patch.object(handler, 'write') as mock_write:
+            handler.post()
+            assert mock_write.call_args[0][0] == {"ok": True}
+
+    def test_rename_json_response(self):
+        handler = prepare_handler(RenameHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role='user')
+        handler.get_argument = MagicMock(side_effect=lambda k, d=None: {'path': 'old.txt', 'new_name': 'new.txt'}.get(k, d))
+        handler.request.headers = {'Accept': 'application/json'}
+
+        with patch('aird.handlers.file_op_handlers.is_feature_enabled', return_value=True), \
+             patch('os.path.abspath', side_effect=lambda p: p), \
+             patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
+             patch('os.path.exists', return_value=True), \
+             patch('os.rename'), \
+             patch.object(handler, 'write') as mock_write:
+            handler.post()
+            assert mock_write.call_args[0][0] == {"ok": True}

@@ -160,10 +160,11 @@ class TestModuleLevelVariables:
         assert config.CLOUD_MANAGER is not None
 
 
+@patch('aird.config.socket.getfqdn', return_value='test.local')
 class TestInitConfig:
     """Tests for init_config function"""
     
-    def test_init_config_with_config_file(self):
+    def test_init_config_with_config_file(self, _mock_fqdn):
         """Test init_config with a config file"""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             config_data = {
@@ -200,7 +201,7 @@ class TestInitConfig:
         finally:
             os.unlink(config_file)
     
-    def test_init_config_command_line_args(self):
+    def test_init_config_command_line_args(self, _mock_fqdn):
         """Test init_config with command line arguments"""
         with patch('sys.argv', ['test', '--root', '/cli/root', '--port', '8080', '--token', 'cli_token']):
             from aird import config
@@ -215,7 +216,7 @@ class TestInitConfig:
             assert config.PORT == 8080
             assert config.ACCESS_TOKEN == 'cli_token'
     
-    def test_init_config_ldap_settings(self):
+    def test_init_config_ldap_settings(self, _mock_fqdn):
         """Test init_config with LDAP settings"""
         with patch('sys.argv', [
             'test',
@@ -234,7 +235,7 @@ class TestInitConfig:
             assert config.LDAP_SERVER == 'ldap.example.com'
             assert config.LDAP_BASE_DN == 'dc=example,dc=com'
     
-    def test_init_config_ssl_settings(self):
+    def test_init_config_ssl_settings(self, _mock_fqdn):
         """Test init_config with SSL settings"""
         with patch('sys.argv', [
             'test',
@@ -250,7 +251,7 @@ class TestInitConfig:
             assert config.SSL_CERT == '/path/to/cert.pem'
             assert config.SSL_KEY == '/path/to/key.pem'
     
-    def test_init_config_generates_tokens_if_not_provided(self):
+    def test_init_config_generates_tokens_if_not_provided(self, _mock_fqdn):
         """Test that tokens are generated if not provided"""
         with patch('sys.argv', ['test']):
             from aird import config
@@ -270,7 +271,7 @@ class TestInitConfig:
                 assert config.ADMIN_TOKEN is not None
                 assert len(config.ADMIN_TOKEN) > 0
     
-    def test_init_config_ldap_attributes_from_string(self):
+    def test_init_config_ldap_attributes_from_string(self, _mock_fqdn):
         """Test that LDAP attributes can be provided as comma-separated string"""
         with patch('sys.argv', [
             'test',
@@ -283,7 +284,7 @@ class TestInitConfig:
             
             assert config.LDAP_ATTRIBUTES == ['cn', 'mail', 'uid']
     
-    def test_init_config_env_token(self):
+    def test_init_config_env_token(self, _mock_fqdn):
         """Test that token can be provided via environment variable"""
         with patch('sys.argv', ['test']):
             with patch.dict(os.environ, {'AIRD_ACCESS_TOKEN': 'env_token_value'}):
@@ -294,7 +295,7 @@ class TestInitConfig:
                 
                 assert config.ACCESS_TOKEN == 'env_token_value'
     
-    def test_init_config_default_port(self):
+    def test_init_config_default_port(self, _mock_fqdn):
         """Test that default port is 8000"""
         with patch('sys.argv', ['test']):
             from aird import config
@@ -304,7 +305,7 @@ class TestInitConfig:
             
             assert config.PORT == 8000
     
-    def test_init_config_hostname(self):
+    def test_init_config_hostname(self, _mock_fqdn):
         """Test hostname configuration"""
         with patch('sys.argv', ['test', '--hostname', 'custom.host.com']):
             from aird import config
@@ -314,7 +315,7 @@ class TestInitConfig:
             
             assert config.HOSTNAME == 'custom.host.com'
     
-    def test_init_config_admin_users(self):
+    def test_init_config_admin_users(self, _mock_fqdn):
         """Test admin_users configuration from config file"""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             config_data = {

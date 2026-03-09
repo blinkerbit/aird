@@ -2,6 +2,9 @@
 
 import sqlite3
 
+from aird.constants import FEATURE_FLAGS
+from aird.database.db import get_db_conn
+
 
 def load_feature_flags(conn: sqlite3.Connection) -> dict:
     """Load feature flags from the database."""
@@ -28,7 +31,9 @@ def save_feature_flags(conn: sqlite3.Connection, flags: dict) -> None:
 def load_websocket_config(conn: sqlite3.Connection) -> dict:
     """Load WebSocket configuration from SQLite database."""
     try:
-        conn.execute("CREATE TABLE IF NOT EXISTS websocket_config (key TEXT PRIMARY KEY, value INTEGER)")
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS websocket_config (key TEXT PRIMARY KEY, value INTEGER)"
+        )
         rows = conn.execute("SELECT key, value FROM websocket_config").fetchall()
         return {k: int(v) for (k, v) in rows}
     except Exception:
@@ -38,7 +43,9 @@ def load_websocket_config(conn: sqlite3.Connection) -> dict:
 def save_websocket_config(conn: sqlite3.Connection, config: dict) -> None:
     """Save WebSocket configuration to SQLite database."""
     try:
-        conn.execute("CREATE TABLE IF NOT EXISTS websocket_config (key TEXT PRIMARY KEY, value INTEGER)")
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS websocket_config (key TEXT PRIMARY KEY, value INTEGER)"
+        )
         with conn:
             for key, value in config.items():
                 conn.execute(
@@ -51,9 +58,6 @@ def save_websocket_config(conn: sqlite3.Connection, config: dict) -> None:
 
 def is_feature_enabled(key: str, default: bool = False) -> bool:
     """Check if a feature flag is enabled."""
-    from aird.database.db import get_db_conn
-    from aird.constants import FEATURE_FLAGS
-    
     current = FEATURE_FLAGS.copy()
     conn = get_db_conn()
     if conn is not None:

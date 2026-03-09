@@ -4,7 +4,6 @@ import os
 import sys
 import sqlite3
 
-
 # Global database connection
 _DB_CONN = None
 _DB_PATH = None
@@ -13,13 +12,19 @@ _DB_PATH = None
 def get_data_dir() -> str:
     """Return OS-appropriate data directory for storing the SQLite DB."""
     try:
-        if os.name == 'nt':  # Windows
-            base = os.environ.get('LOCALAPPDATA') or os.environ.get('APPDATA') or os.path.expanduser('~\\AppData\\Local')
-        elif sys.platform == 'darwin':  # macOS
-            base = os.path.expanduser('~/Library/Application Support')
+        if os.name == "nt":  # Windows
+            base = (
+                os.environ.get("LOCALAPPDATA")
+                or os.environ.get("APPDATA")
+                or os.path.expanduser("~\\AppData\\Local")
+            )
+        elif sys.platform == "darwin":  # macOS
+            base = os.path.expanduser("~/Library/Application Support")
         else:  # Linux and others
-            base = os.environ.get('XDG_DATA_HOME') or os.path.expanduser('~/.local/share')
-        data_dir = os.path.join(base, 'aird')
+            base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser(
+                "~/.local/share"
+            )
+        data_dir = os.path.join(base, "aird")
         os.makedirs(data_dir, exist_ok=True)
         return data_dir
     except Exception:
@@ -29,26 +34,21 @@ def get_data_dir() -> str:
 
 def init_db(conn: sqlite3.Connection) -> None:
     """Initialize database tables and migrations."""
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS feature_flags (
             key TEXT PRIMARY KEY,
             value INTEGER NOT NULL
         )
-        """
-    )
-    conn.execute(
-        """
+        """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS shares (
             id TEXT PRIMARY KEY,
             created TEXT NOT NULL,
             paths TEXT NOT NULL,
             allowed_users TEXT
         )
-        """
-    )
-    conn.execute(
-        """
+        """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
@@ -58,10 +58,8 @@ def init_db(conn: sqlite3.Connection) -> None:
             active INTEGER NOT NULL DEFAULT 1,
             last_login TEXT
         )
-        """
-    )
-    conn.execute(
-        """
+        """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS ldap_configs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL,
@@ -72,10 +70,8 @@ def init_db(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL,
             active INTEGER NOT NULL DEFAULT 1
         )
-        """
-    )
-    conn.execute(
-        """
+        """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS ldap_sync_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             config_id INTEGER NOT NULL,
@@ -88,8 +84,7 @@ def init_db(conn: sqlite3.Connection) -> None:
             error_message TEXT,
             FOREIGN KEY (config_id) REFERENCES ldap_configs (id)
         )
-        """
-    )
+        """)
 
     # Migration for shares table
     cursor = conn.cursor()

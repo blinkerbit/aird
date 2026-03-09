@@ -1,17 +1,16 @@
 """User management database functions."""
 
 import secrets
-import json
 import logging
 import sqlite3
 import hashlib
 from datetime import datetime
 
-
 # Import password hashing dependencies
 try:
     from argon2 import PasswordHasher
     from argon2 import exceptions as argon2_exceptions
+
     ARGON2_AVAILABLE = True
     PH = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
 except Exception:
@@ -25,7 +24,9 @@ def hash_password(password: str) -> str:
         return PH.hash(password)
     # Fallback: Scrypt (better than SHA-256)
     salt = secrets.token_hex(16)
-    key = hashlib.scrypt(password.encode('utf-8'), salt=salt.encode('utf-8'), n=16384, r=8, p=1, dklen=32)
+    key = hashlib.scrypt(
+        password.encode("utf-8"), salt=salt.encode("utf-8"), n=16384, r=8, p=1, dklen=32
+    )
     return f"scrypt:{salt}:{key.hex()}"
 
 
@@ -45,51 +46,60 @@ def verify_password(password: str, password_hash: str) -> bool:
                 return False
         else:
             return False
-            
+
     # Try Scrypt fallback
     if password_hash.startswith("scrypt:"):
         try:
-            parts = password_hash.split(':')
+            parts = password_hash.split(":")
             if len(parts) != 3:
                 return False
             _, salt, stored_key_hex = parts
-            key = hashlib.scrypt(password.encode('utf-8'), salt=salt.encode('utf-8'), n=16384, r=8, p=1, dklen=32)
+            key = hashlib.scrypt(
+                password.encode("utf-8"),
+                salt=salt.encode("utf-8"),
+                n=16384,
+                r=8,
+                p=1,
+                dklen=32,
+            )
             return secrets.compare_digest(key.hex(), stored_key_hex)
         except Exception:
             return False
 
     # Legacy format: salt:hash
     try:
-        parts = password_hash.split(':', 1)
+        parts = password_hash.split(":", 1)
         if len(parts) != 2:
             return False
         salt, stored_hash = parts
-        pwd_hash = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
+        pwd_hash = hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
         return secrets.compare_digest(pwd_hash, stored_hash)
     except Exception:
         return False
 
 
-def create_user(conn: sqlite3.Connection, username: str, password: str, role: str = 'user') -> dict:
+def create_user(
+    conn: sqlite3.Connection, username: str, password: str, role: str = "user"
+) -> dict:
     """Create a new user in the database"""
     try:
         password_hash = hash_password(password)
         created_at = datetime.now().isoformat()
-        
+
         with conn:
             cursor = conn.execute(
                 "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
-                (username, password_hash, role, created_at)
+                (username, password_hash, role, created_at),
             )
             user_id = cursor.lastrowid
-            
+
         return {
             "id": user_id,
             "username": username,
             "role": role,
             "created_at": created_at,
             "active": True,
-            "last_login": None
+            "last_login": None,
         }
     except sqlite3.IntegrityError:
         raise ValueError(f"Username '{username}' already exists")
@@ -102,9 +112,9 @@ def get_user_by_username(conn: sqlite3.Connection, username: str) -> dict | None
     try:
         row = conn.execute(
             "SELECT id, username, password_hash, role, created_at, active, last_login FROM users WHERE username = ?",
-            (username,)
+            (username,),
         ).fetchone()
-        
+
         if row:
             return {
                 "id": row[0],
@@ -113,7 +123,7 @@ def get_user_by_username(conn: sqlite3.Connection, username: str) -> dict | None
                 "role": row[3],
                 "created_at": row[4],
                 "active": bool(row[5]),
-                "last_login": row[6]
+                "last_login": row[6],
             }
         return None
     except Exception:
@@ -126,7 +136,7 @@ def get_all_users(conn: sqlite3.Connection) -> list[dict]:
         rows = conn.execute(
             "SELECT id, username, role, created_at, active, last_login FROM users ORDER BY created_at DESC"
         ).fetchall()
-        
+
         return [
             {
                 "id": row[0],
@@ -134,7 +144,7 @@ def get_all_users(conn: sqlite3.Connection) -> list[dict]:
                 "role": row[2],
                 "created_at": row[3],
                 "active": bool(row[4]),
-                "last_login": row[5]
+                "last_login": row[5],
             }
             for row in rows
         ]
@@ -147,9 +157,9 @@ def search_users(conn: sqlite3.Connection, query: str) -> list[dict]:
     try:
         rows = conn.execute(
             "SELECT id, username, role, created_at, active, last_login FROM users WHERE username LIKE ? AND active = 1 ORDER BY username LIMIT 20",
-            (f"%{query}%",)
+            (f"%{query}%",),
         ).fetchall()
-        
+
         return [
             {
                 "id": row[0],
@@ -157,7 +167,7 @@ def search_users(conn: sqlite3.Connection, query: str) -> list[dict]:
                 "role": row[2],
                 "created_at": row[3],
                 "active": bool(row[4]),
-                "last_login": row[5]
+                "last_login": row[5],
             }
             for row in rows
         ]
@@ -168,28 +178,35 @@ def search_users(conn: sqlite3.Connection, query: str) -> list[dict]:
 def update_user(conn: sqlite3.Connection, user_id: int, **kwargs) -> bool:
     """Update user information"""
     try:
-        valid_fields = ['username', 'password', 'password_hash', 'role', 'active', 'last_login']
+        valid_fields = [
+            "username",
+            "password",
+            "password_hash",
+            "role",
+            "active",
+            "last_login",
+        ]
         updates = []
         values = []
-        
+
         for field, value in kwargs.items():
             if field in valid_fields:
-                if field == 'password' and value:  # Special handling for password
-                    updates.append('password_hash = ?')
+                if field == "password" and value:  # Special handling for password
+                    updates.append("password_hash = ?")
                     values.append(hash_password(value))
-                elif field == 'active':
-                    updates.append('active = ?')
+                elif field == "active":
+                    updates.append("active = ?")
                     values.append(1 if value else 0)
                 else:
-                    updates.append(f'{field} = ?')
+                    updates.append(f"{field} = ?")
                     values.append(value)
-        
+
         if not updates:
             return False
-            
+
         values.append(user_id)
         query = f"UPDATE users SET {', '.join(updates)} WHERE id = ?"
-        
+
         with conn:
             conn.execute(query, values)
         return True
@@ -207,17 +224,19 @@ def delete_user(conn: sqlite3.Connection, user_id: int) -> bool:
         return False
 
 
-def authenticate_user(conn: sqlite3.Connection, username: str, password: str) -> dict | None:
+def authenticate_user(
+    conn: sqlite3.Connection, username: str, password: str
+) -> dict | None:
     """Authenticate a user and return user data if successful"""
     user = get_user_by_username(conn, username)
-    if not user or not user.get('active'):
+    if not user or not user.get("active"):
         return None
-    
-    if verify_password(password, user['password_hash']):
+
+    if verify_password(password, user["password_hash"]):
         # Update last login time
-        update_user(conn, user['id'], last_login=datetime.now().isoformat())
+        update_user(conn, user["id"], last_login=datetime.now().isoformat())
         return user
-    
+
     return None
 
 
@@ -225,12 +244,12 @@ def assign_admin_privileges(conn: sqlite3.Connection, admin_users: list) -> None
     """Assign admin role to specified users"""
     if not admin_users:
         return
-    
+
     for username in admin_users:
         try:
             user = get_user_by_username(conn, username)
-            if user and user['role'] != 'admin':
-                update_user(conn, user['id'], role='admin')
+            if user and user["role"] != "admin":
+                update_user(conn, user["id"], role="admin")
                 logging.info(f"Assigned admin privileges to user: {username}")
         except Exception as e:
             logging.error(f"Failed to assign admin privileges to {username}: {e}")

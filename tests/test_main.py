@@ -482,3 +482,333 @@ class TestExtractUsernameFromDn:
         result = _extract_username_from_dn(dn, template)
         # Should return None if no uid/cn/sAMAccountName found
         assert result is None
+
+    def test_extract_no_username_in_template(self):
+        result = _extract_username_from_dn("uid=john,dc=com", "static_template")
+        assert result is None
+
+
+from aird.main import (
+    _insert_share,
+    _delete_share,
+    _update_share,
+    _get_share_by_id,
+    _get_all_shares,
+    _get_shares_for_path,
+    _load_upload_config,
+    _save_upload_config,
+    _load_websocket_config,
+    _save_websocket_config,
+    _create_ldap_config,
+    _get_all_ldap_configs,
+    _get_ldap_config_by_id,
+    _update_ldap_config,
+    _delete_ldap_config,
+    _log_ldap_sync,
+    _get_ldap_sync_logs,
+    make_app,
+    print_banner,
+)
+
+
+class TestInsertShare:
+    def test_insert_basic(self, db_conn):
+        ok = _insert_share(db_conn, "s1", "2024-01-01", ["/a.txt"])
+        assert ok is True
+        share = _get_share_by_id(db_conn, "s1")
+        assert share is not None
+        assert share['paths'] == ["/a.txt"]
+
+    def test_insert_with_all_options(self, db_conn):
+        ok = _insert_share(
+            db_conn, "s2", "2024-01-01", ["/b.txt"],
+            allowed_users=["u1"], secret_token="tok",
+            share_type="dynamic", allow_list=["*.txt"],
+            avoid_list=["*.log"], expiry_date="2025-12-31"
+        )
+        assert ok is True
+        share = _get_share_by_id(db_conn, "s2")
+        assert share['allowed_users'] == ["u1"]
+        assert share['secret_token'] == "tok"
+        assert share['share_type'] == "dynamic"
+
+    def test_insert_exception(self):
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(side_effect=Exception("fail"))
+        mock_conn.__exit__ = MagicMock(return_value=False)
+        ok = _insert_share(mock_conn, "s1", "2024", ["/x"])
+        assert ok is False
+
+
+class TestDeleteShare:
+    def test_delete_existing(self, db_conn):
+        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        _delete_share(db_conn, "s1")
+        assert _get_share_by_id(db_conn, "s1") is None
+
+    def test_delete_nonexistent(self, db_conn):
+        _delete_share(db_conn, "nope")
+
+
+class TestUpdateShareMain:
+    def test_update_share_type(self, db_conn):
+        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        ok = _update_share(db_conn, "s1", share_type="dynamic")
+        assert ok is True
+        share = _get_share_by_id(db_conn, "s1")
+        assert share['share_type'] == "dynamic"
+
+    def test_update_disable_token(self, db_conn):
+        _insert_share(db_conn, "s1", "2024-01-01", ["/a"], secret_token="old")
+        _update_share(db_conn, "s1", disable_token=True)
+        share = _get_share_by_id(db_conn, "s1")
+        assert share['secret_token'] is None
+
+    def test_update_custom_token(self, db_conn):
+        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        _update_share(db_conn, "s1", secret_token="custom")
+        share = _get_share_by_id(db_conn, "s1")
+        assert share['secret_token'] == "custom"
+
+    def test_update_regenerate_token(self, db_conn):
+        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        _update_share(db_conn, "s1", disable_token=False)
+        share = _get_share_by_id(db_conn, "s1")
+        assert share['secret_token'] is not None and len(share['secret_token']) > 10
+
+    def test_update_allow_avoid_lists(self, db_conn):
+        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        _update_share(db_conn, "s1", allow_list=["*.txt"], avoid_list=["*.log"])
+        share = _get_share_by_id(db_conn, "s1")
+        assert share['allow_list'] == ["*.txt"]
+        assert share['avoid_list'] == ["*.log"]
+
+    def test_update_expiry_date(self, db_conn):
+        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        _update_share(db_conn, "s1", expiry_date="2025-06-30")
+        share = _get_share_by_id(db_conn, "s1")
+        assert share['expiry_date'] == "2025-06-30"
+
+    def test_update_legacy_fields(self, db_conn):
+        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        _update_share(db_conn, "s1", allowed_users=["alice"], paths=["/b"])
+        share = _get_share_by_id(db_conn, "s1")
+        assert share['allowed_users'] == ["alice"]
+        assert share['paths'] == ["/b"]
+
+    def test_update_no_changes(self, db_conn):
+        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        assert _update_share(db_conn, "s1") is False
+
+
+class TestGetShareById:
+    def test_found(self, db_conn):
+        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        share = _get_share_by_id(db_conn, "s1")
+        assert share['id'] == "s1"
+
+    def test_not_found(self, db_conn):
+        assert _get_share_by_id(db_conn, "nope") is None
+
+    def test_exception(self):
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = Exception("fail")
+        assert _get_share_by_id(mock_conn, "x") is None
+
+
+class TestGetAllSharesMain:
+    def test_multiple(self, db_conn):
+        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        _insert_share(db_conn, "s2", "2024-01-02", ["/b"])
+        shares = _get_all_shares(db_conn)
+        assert len(shares) == 2
+        assert "s1" in shares
+        assert "s2" in shares
+
+    def test_empty(self, db_conn):
+        assert _get_all_shares(db_conn) == {}
+
+    def test_exception(self):
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = Exception("fail")
+        assert _get_all_shares(mock_conn) == {}
+
+
+class TestGetSharesForPath:
+    def test_matching(self, db_conn):
+        _insert_share(db_conn, "s1", "2024-01-01", ["/a.txt", "/b.txt"])
+        _insert_share(db_conn, "s2", "2024-01-02", ["/c.txt"])
+        result = _get_shares_for_path(db_conn, "/a.txt")
+        assert len(result) == 1
+        assert result[0]['id'] == "s1"
+
+    def test_no_match(self, db_conn):
+        _insert_share(db_conn, "s1", "2024-01-01", ["/a.txt"])
+        assert _get_shares_for_path(db_conn, "/nope.txt") == []
+
+    def test_exception(self):
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = Exception("fail")
+        assert _get_shares_for_path(mock_conn, "/x") == []
+
+
+class TestUploadConfigMain:
+    def test_load_empty(self, db_conn):
+        assert _load_upload_config(db_conn) == {}
+
+    def test_save_and_load(self, db_conn):
+        _save_upload_config(db_conn, {'max_size': 512})
+        result = _load_upload_config(db_conn)
+        assert result == {'max_size': 512}
+
+    def test_save_replaces(self, db_conn):
+        _save_upload_config(db_conn, {'max_size': 256})
+        _save_upload_config(db_conn, {'max_size': 1024})
+        assert _load_upload_config(db_conn) == {'max_size': 1024}
+
+
+class TestWebsocketConfigMain:
+    def test_load_empty(self, db_conn):
+        assert _load_websocket_config(db_conn) == {}
+
+    def test_save_and_load(self, db_conn):
+        _save_websocket_config(db_conn, {'max_conn': 100})
+        result = _load_websocket_config(db_conn)
+        assert result == {'max_conn': 100}
+
+
+class TestLdapConfigMain:
+    def test_create(self, db_conn):
+        config = _create_ldap_config(db_conn, "Test", "ldap://a", "dc=a", "member", "uid={username}")
+        assert config['name'] == "Test"
+        assert config['active'] is True
+
+    def test_create_duplicate(self, db_conn):
+        _create_ldap_config(db_conn, "Test", "ldap://a", "dc=a", "member", "uid={u}")
+        with pytest.raises(ValueError):
+            _create_ldap_config(db_conn, "Test", "ldap://b", "dc=b", "member", "uid={u}")
+
+    def test_get_all(self, db_conn):
+        _create_ldap_config(db_conn, "C1", "ldap://a", "dc=a", "member", "uid={u}")
+        _create_ldap_config(db_conn, "C2", "ldap://b", "dc=b", "member", "uid={u}")
+        configs = _get_all_ldap_configs(db_conn)
+        assert len(configs) == 2
+
+    def test_get_by_id(self, db_conn):
+        config = _create_ldap_config(db_conn, "Test", "ldap://a", "dc=a", "member", "uid={u}")
+        result = _get_ldap_config_by_id(db_conn, config['id'])
+        assert result['name'] == "Test"
+
+    def test_get_by_id_not_found(self, db_conn):
+        assert _get_ldap_config_by_id(db_conn, 99999) is None
+
+    def test_update(self, db_conn):
+        config = _create_ldap_config(db_conn, "Test", "ldap://a", "dc=a", "member", "uid={u}")
+        ok = _update_ldap_config(db_conn, config['id'], server="ldap://new")
+        assert ok is True
+        updated = _get_ldap_config_by_id(db_conn, config['id'])
+        assert updated['server'] == "ldap://new"
+
+    def test_update_active(self, db_conn):
+        config = _create_ldap_config(db_conn, "Test", "ldap://a", "dc=a", "member", "uid={u}")
+        _update_ldap_config(db_conn, config['id'], active=False)
+        updated = _get_ldap_config_by_id(db_conn, config['id'])
+        assert updated['active'] is False
+
+    def test_update_no_fields(self, db_conn):
+        config = _create_ldap_config(db_conn, "Test", "ldap://a", "dc=a", "member", "uid={u}")
+        assert _update_ldap_config(db_conn, config['id'], bad_field="x") is False
+
+    def test_delete(self, db_conn):
+        config = _create_ldap_config(db_conn, "Test", "ldap://a", "dc=a", "member", "uid={u}")
+        assert _delete_ldap_config(db_conn, config['id']) is True
+        assert _get_ldap_config_by_id(db_conn, config['id']) is None
+
+    def test_delete_not_found(self, db_conn):
+        assert _delete_ldap_config(db_conn, 99999) is False
+
+
+class TestLdapSyncLogMain:
+    def test_log_and_get(self, db_conn):
+        config = _create_ldap_config(db_conn, "Test", "ldap://a", "dc=a", "member", "uid={u}")
+        _log_ldap_sync(db_conn, config['id'], "manual", 10, 5, 2, "success")
+        logs = _get_ldap_sync_logs(db_conn)
+        assert len(logs) == 1
+        assert logs[0]['users_found'] == 10
+
+    def test_log_with_error(self, db_conn):
+        config = _create_ldap_config(db_conn, "Test", "ldap://a", "dc=a", "member", "uid={u}")
+        _log_ldap_sync(db_conn, config['id'], "auto", 0, 0, 0, "error", "bind failed")
+        logs = _get_ldap_sync_logs(db_conn)
+        assert logs[0]['error_message'] == "bind failed"
+
+    def test_get_empty(self, db_conn):
+        assert _get_ldap_sync_logs(db_conn) == []
+
+
+class TestMakeApp:
+    def test_basic_app(self):
+        import aird.constants as constants
+        settings = {
+            'cookie_secret': 'test',
+            'xsrf_cookies': False,
+        }
+        app = make_app(settings)
+        assert app is not None
+
+    def test_with_ldap(self):
+        import aird.constants as constants
+        settings = {
+            'cookie_secret': 'test',
+            'xsrf_cookies': False,
+        }
+        app = make_app(
+            settings,
+            ldap_enabled=True,
+            ldap_server="ldap://test",
+            ldap_base_dn="dc=test",
+            ldap_user_template="uid={u}",
+        )
+        assert app is not None
+        assert settings.get('ldap_server') == "ldap://test"
+
+    def test_with_admin_users(self):
+        settings = {
+            'cookie_secret': 'test',
+            'xsrf_cookies': False,
+        }
+        app = make_app(settings, admin_users=["admin1"])
+        assert settings.get('admin_users') == ["admin1"]
+
+
+class TestPrintBanner:
+    def test_no_error(self):
+        print_banner()
+
+
+class TestAuthenticateInactiveUser:
+    def test_inactive_returns_none(self, db_conn):
+        _create_user(db_conn, "inactive", "pass123")
+        _update_user(db_conn, 1, active=False)
+        result = _authenticate_user(db_conn, "inactive", "pass123")
+        assert result is None
+
+
+class TestAssignAdminEdgeCases:
+    def test_skips_invalid_entries(self, db_conn):
+        _create_user(db_conn, "validuser", "pass")
+        _assign_admin_privileges(db_conn, [None, "", 123, "validuser"])
+        user = _get_user_by_username(db_conn, "validuser")
+        assert user['role'] == "admin"
+
+    def test_already_admin_no_change(self, db_conn):
+        _create_user(db_conn, "admin", "pass", role="admin")
+        _assign_admin_privileges(db_conn, ["admin"])
+        user = _get_user_by_username(db_conn, "admin")
+        assert user['role'] == "admin"
+
+    def test_none_conn(self):
+        _assign_admin_privileges(None, ["user"])
+
+    def test_none_admin_users(self, db_conn):
+        _assign_admin_privileges(db_conn, None)

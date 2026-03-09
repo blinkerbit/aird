@@ -178,22 +178,22 @@ class TestIsFeatureEnabled:
     
     def test_feature_enabled_default_false(self):
         """Test default value is False"""
-        with patch('aird.database.db.get_db_conn', return_value=None), \
-             patch('aird.constants.FEATURE_FLAGS', {}):
+        with patch('aird.database.feature_flags.get_db_conn', return_value=None), \
+             patch('aird.database.feature_flags.FEATURE_FLAGS', {}):
             result = is_feature_enabled('nonexistent_feature')
             assert result is False
     
     def test_feature_enabled_custom_default(self):
         """Test custom default value"""
-        with patch('aird.database.db.get_db_conn', return_value=None), \
-             patch('aird.constants.FEATURE_FLAGS', {}):
+        with patch('aird.database.feature_flags.get_db_conn', return_value=None), \
+             patch('aird.database.feature_flags.FEATURE_FLAGS', {}):
             result = is_feature_enabled('nonexistent_feature', default=True)
             assert result is True
     
     def test_feature_enabled_from_constants(self):
         """Test reading from FEATURE_FLAGS constant"""
-        with patch('aird.database.db.get_db_conn', return_value=None), \
-             patch('aird.constants.FEATURE_FLAGS', {'my_feature': True}):
+        with patch('aird.database.feature_flags.get_db_conn', return_value=None), \
+             patch('aird.database.feature_flags.FEATURE_FLAGS', {'my_feature': True}):
             result = is_feature_enabled('my_feature')
             assert result is True
     
@@ -204,8 +204,8 @@ class TestIsFeatureEnabled:
         conn.execute("INSERT INTO feature_flags (key, value) VALUES ('db_feature', 1)")
         conn.commit()
         
-        with patch('aird.database.db.get_db_conn', return_value=conn), \
-             patch('aird.constants.FEATURE_FLAGS', {}):
+        with patch('aird.database.feature_flags.get_db_conn', return_value=conn), \
+             patch('aird.database.feature_flags.FEATURE_FLAGS', {}):
             result = is_feature_enabled('db_feature')
             assert result is True
         
@@ -218,8 +218,8 @@ class TestIsFeatureEnabled:
         conn.execute("INSERT INTO feature_flags (key, value) VALUES ('my_feature', 0)")
         conn.commit()
         
-        with patch('aird.database.db.get_db_conn', return_value=conn), \
-             patch('aird.constants.FEATURE_FLAGS', {'my_feature': True}):
+        with patch('aird.database.feature_flags.get_db_conn', return_value=conn), \
+             patch('aird.database.feature_flags.FEATURE_FLAGS', {'my_feature': True}):
             result = is_feature_enabled('my_feature')
             assert result is False  # Database value (0/False) overrides constant (True)
         
@@ -230,8 +230,8 @@ class TestIsFeatureEnabled:
         mock_conn = MagicMock()
         mock_conn.execute.side_effect = Exception("Database error")
         
-        with patch('aird.database.db.get_db_conn', return_value=mock_conn), \
-             patch('aird.constants.FEATURE_FLAGS', {'my_feature': True}):
+        with patch('aird.database.feature_flags.get_db_conn', return_value=mock_conn), \
+             patch('aird.database.feature_flags.FEATURE_FLAGS', {'my_feature': True}):
             result = is_feature_enabled('my_feature')
             # Should use the value from FEATURE_FLAGS since DB failed
             assert result is True

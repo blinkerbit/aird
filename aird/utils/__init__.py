@@ -1,7 +1,1 @@
 """Utility functions for Aird."""
-
-
-
-
-
-

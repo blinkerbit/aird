@@ -332,10 +332,10 @@ class TestBaseHandlerExtended:
     def test_get_current_user_token_authenticated_bytes(self):
         handler = BaseHandler(self.mock_app, self.mock_request)
         handler.get_secure_cookie = MagicMock(return_value=b"token_authenticated")
-        
+
         # Mock DB to fail or return None
-        with patch('aird.constants.DB_CONN', MagicMock()), \
-             patch('aird.db.get_user_by_username', side_effect=Exception("DB Error")):
+        with patch('aird.handlers.base_handler.constants_module.DB_CONN', MagicMock()), \
+             patch('aird.handlers.base_handler.get_user_by_username', side_effect=Exception("DB Error")):
             
             user = handler.get_current_user()
             assert user == {"username": "token_user", "role": "admin"}
