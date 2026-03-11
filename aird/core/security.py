@@ -3,6 +3,7 @@
 import os
 import re
 from urllib.parse import urlparse
+from aird.constants import FEATURE_FLAGS
 
 
 def join_path(*parts):
@@ -21,6 +22,9 @@ def validate_password(password: str) -> tuple[bool, str]:
     - At least one number
     - At least one special character
     """
+    if FEATURE_FLAGS.get("allow_simple_passwords", False):
+        return True, ""
+
     if len(password) < 12:
         return False, "Password must be at least 12 characters long."
     if not re.search(r"[A-Z]", password):

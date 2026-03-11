@@ -117,8 +117,8 @@
             {% if not settings.get('ldap_server') %}
             <div class="form-group">
                 <label for="password">New Password:</label>
-                <input type="password" id="password" name="password" minlength="6">
-                <div class="help-text">Leave blank to keep current password, minimum 6 characters if changing</div>
+                <input type="password" id="password" name="password">
+                <div class="help-text">Leave blank to keep current password. Check admin settings for complexity requirements</div>
             </div>
             {% else %}
             <div class="form-group">

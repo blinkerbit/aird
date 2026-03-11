@@ -54,14 +54,12 @@ from aird.constants.admin import (
     CONTENT_TYPE_CSV,
     CONTENT_TYPE_JSON,
     DATABASE_NOT_AVAILABLE,
-    DB_UNAVAILABLE,
     ERROR_UPDATE_CONFIG,
     ERROR_UPDATE_USER,
     FAILED_CREATE_USER,
     FAILED_UPDATE_USER,
     HTTP_BAD_REQUEST,
     HTTP_FORBIDDEN,
-    HTTP_INTERNAL_ERROR,
     INVALID_CONFIG_ID,
     INVALID_ROLE,
     INVALID_USER_ID,
@@ -160,6 +158,9 @@ class AdminHandler(BaseHandler):
         )
         FEATURE_FLAGS["folder_delete"] = (
             self.get_argument("folder_delete", "off") == "on"
+        )
+        FEATURE_FLAGS["allow_simple_passwords"] = (
+            self.get_argument("allow_simple_passwords", "off") == "on"
         )
 
         # Update WebSocket configuration
@@ -370,8 +371,6 @@ class UserEditHandler(BaseHandler):
     def get(self, user_id):
         """Show edit user form"""
 
-
-
         try:
             user_id = int(user_id)
             # Get user by ID
@@ -393,8 +392,6 @@ class UserEditHandler(BaseHandler):
     @require_db
     def post(self, user_id):
         """Update user information"""
-
-
 
         try:
             user_id = int(user_id)
@@ -483,8 +480,6 @@ class UserDeleteHandler(BaseHandler):
     def post(self):
         """Delete a user"""
 
-
-
         try:
             user_id = int(self.get_argument("user_id", "0"))
 
@@ -534,8 +529,6 @@ class LDAPConfigCreateHandler(BaseHandler):
     def post(self):
         """Create a new LDAP configuration"""
 
-
-
         name = self.get_argument("name", "").strip()
         server = self.get_argument("server", "").strip()
         ldap_base_dn = self.get_argument("ldap_base_dn", "").strip()
@@ -583,8 +576,6 @@ class LDAPConfigEditHandler(BaseHandler):
     def get(self, config_id):
         """Show edit LDAP configuration form"""
 
-
-
         try:
             config_id = int(config_id)
             config = get_ldap_config_by_id(self.db_conn, config_id)
@@ -603,8 +594,6 @@ class LDAPConfigEditHandler(BaseHandler):
     @require_db
     def post(self, config_id):
         """Update LDAP configuration"""
-
-
 
         try:
             config_id = int(config_id)
@@ -677,8 +666,6 @@ class LDAPConfigDeleteHandler(BaseHandler):
     @require_db
     def post(self):
         """Delete LDAP configuration"""
-
-
 
         try:
             config_id = int(self.get_argument("config_id", "0"))

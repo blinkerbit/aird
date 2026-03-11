@@ -35,7 +35,7 @@ class TestCloudFile:
             name="test.txt",
             is_dir=False,
             size=1024,
-            modified="2024-01-01T00:00:00Z"
+            modified="2024-01-01T00:00:00Z",
         )
         assert cloud_file.id == "123"
         assert cloud_file.name == "test.txt"
@@ -57,7 +57,7 @@ class TestCloudFile:
             name="doc.pdf",
             is_dir=False,
             size=2048,
-            modified="2024-06-15T12:30:00Z"
+            modified="2024-06-15T12:30:00Z",
         )
         result = cloud_file.to_dict()
         assert result == {
@@ -65,7 +65,7 @@ class TestCloudFile:
             "name": "doc.pdf",
             "is_dir": False,
             "size": 2048,
-            "modified": "2024-06-15T12:30:00Z"
+            "modified": "2024-06-15T12:30:00Z",
         }
 
     def test_to_dict_with_none_values(self):
@@ -80,11 +80,11 @@ class TestCloudDownload:
         mock_response = MagicMock()
         mock_response.headers = {
             "Content-Type": "application/pdf",
-            "Content-Length": "1024"
+            "Content-Length": "1024",
         }
-        
+
         download = CloudDownload("test.pdf", mock_response)
-        
+
         assert download.name == "test.pdf"
         assert download.content_type == "application/pdf"
         assert download.content_length == 1024
@@ -92,28 +92,28 @@ class TestCloudDownload:
     def test_initialization_with_explicit_values(self):
         mock_response = MagicMock()
         mock_response.headers = {}
-        
+
         download = CloudDownload(
             "test.pdf",
             mock_response,
             content_type="application/octet-stream",
-            content_length=2048
+            content_length=2048,
         )
-        
+
         assert download.content_type == "application/octet-stream"
         assert download.content_length == 2048
 
     def test_initialization_invalid_content_length(self):
         mock_response = MagicMock()
         mock_response.headers = {"Content-Length": "invalid"}
-        
+
         download = CloudDownload("test.pdf", mock_response)
         assert download.content_length is None
 
     def test_initialization_none_content_length(self):
         mock_response = MagicMock()
         mock_response.headers = {}
-        
+
         download = CloudDownload("test.pdf", mock_response)
         assert download.content_length is None
 
@@ -121,20 +121,20 @@ class TestCloudDownload:
         mock_response = MagicMock()
         mock_response.iter_content.return_value = [b"chunk1", b"chunk2", b"", b"chunk3"]
         mock_response.headers = {}
-        
+
         download = CloudDownload("test.pdf", mock_response)
         chunks = list(download.iter_chunks(chunk_size=1024))
-        
+
         assert chunks == [b"chunk1", b"chunk2", b"chunk3"]
         mock_response.iter_content.assert_called_with(chunk_size=1024)
 
     def test_close(self):
         mock_response = MagicMock()
         mock_response.headers = {}
-        
+
         download = CloudDownload("test.pdf", mock_response)
         download.close()
-        
+
         mock_response.close.assert_called_once()
 
 
@@ -143,7 +143,7 @@ class TestCloudProvider:
         provider = CloudProvider()
         provider.name = "test_provider"
         provider.label = "Test Provider"
-        
+
         result = provider.metadata()
         assert result == {"name": "test_provider", "label": "Test Provider"}
 
@@ -178,9 +178,9 @@ class TestCloudManager:
         manager = CloudManager()
         mock_provider = MagicMock()
         mock_provider.name = "test"
-        
+
         manager.register(mock_provider)
-        
+
         assert manager.has_providers()
         assert manager.get("test") == mock_provider
 
@@ -188,13 +188,13 @@ class TestCloudManager:
         manager = CloudManager()
         mock_provider = MagicMock()
         mock_provider.name = ""
-        
+
         with pytest.raises(ValueError, match="Provider must define a name"):
             manager.register(mock_provider)
 
     def test_register_none_provider(self):
         manager = CloudManager()
-        
+
         with pytest.raises(ValueError, match="Provider must define a name"):
             manager.register(None)
 
@@ -208,10 +208,10 @@ class TestCloudManager:
         provider1.name = "provider1"
         provider2 = MagicMock()
         provider2.name = "provider2"
-        
+
         manager.register(provider1)
         manager.register(provider2)
-        
+
         providers = manager.list_providers()
         assert len(providers) == 2
         assert provider1 in providers
@@ -221,10 +221,10 @@ class TestCloudManager:
         manager = CloudManager()
         mock_provider = MagicMock()
         mock_provider.name = "test"
-        
+
         manager.register(mock_provider)
         assert manager.has_providers()
-        
+
         manager.reset()
         assert not manager.has_providers()
         assert manager.get("test") is None
@@ -261,15 +261,24 @@ class TestGoogleDriveProvider:
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "files": [
-                {"id": "1", "name": "file.txt", "mimeType": "text/plain", "size": "100"},
-                {"id": "2", "name": "folder", "mimeType": "application/vnd.google-apps.folder"},
+                {
+                    "id": "1",
+                    "name": "file.txt",
+                    "mimeType": "text/plain",
+                    "size": "100",
+                },
+                {
+                    "id": "2",
+                    "name": "folder",
+                    "mimeType": "application/vnd.google-apps.folder",
+                },
             ]
         }
         mock_get.return_value = mock_response
-        
+
         provider = GoogleDriveProvider("test_token")
         files = provider.list_files()
-        
+
         assert len(files) == 2
         assert files[0].name == "file.txt"
         assert files[0].is_dir is False
@@ -283,10 +292,10 @@ class TestGoogleDriveProvider:
         mock_response.status_code = 200
         mock_response.json.return_value = {"files": []}
         mock_get.return_value = mock_response
-        
+
         provider = GoogleDriveProvider("test_token")
         provider.list_files("custom_folder_id")
-        
+
         call_args = mock_get.call_args
         assert "'custom_folder_id' in parents" in call_args[1]["params"]["q"]
 
@@ -296,18 +305,19 @@ class TestGoogleDriveProvider:
         mock_response.status_code = 200
         mock_response.json.return_value = {"files": []}
         mock_get.return_value = mock_response
-        
+
         provider = GoogleDriveProvider("test_token", include_shared_drives=False)
         provider.list_files()
-        
+
         call_args = mock_get.call_args
         assert "corpora" not in call_args[1]["params"]
 
     @patch("aird.cloud.requests.get")
     def test_list_files_request_error(self, mock_get):
         import requests
+
         mock_get.side_effect = requests.RequestException("Network error")
-        
+
         provider = GoogleDriveProvider("test_token")
         with pytest.raises(CloudProviderError, match="request failed"):
             provider.list_files()
@@ -318,7 +328,7 @@ class TestGoogleDriveProvider:
         mock_response.status_code = 401
         mock_response.text = "Unauthorized"
         mock_get.return_value = mock_response
-        
+
         provider = GoogleDriveProvider("test_token")
         with pytest.raises(CloudProviderError, match="list failed"):
             provider.list_files()
@@ -331,18 +341,18 @@ class TestGoogleDriveProvider:
             "id": "123",
             "name": "document.pdf",
             "mimeType": "application/pdf",
-            "size": "1024"
+            "size": "1024",
         }
-        
+
         mock_download_response = MagicMock()
         mock_download_response.status_code = 200
         mock_download_response.headers = {"Content-Type": "application/pdf"}
-        
+
         mock_get.side_effect = [mock_meta_response, mock_download_response]
-        
+
         provider = GoogleDriveProvider("test_token")
         download = provider.download_file("123")
-        
+
         assert download.name == "document.pdf"
         assert download.content_length == 1024
 
@@ -353,10 +363,10 @@ class TestGoogleDriveProvider:
         mock_response.json.return_value = {
             "id": "123",
             "name": "folder",
-            "mimeType": "application/vnd.google-apps.folder"
+            "mimeType": "application/vnd.google-apps.folder",
         }
         mock_get.return_value = mock_response
-        
+
         provider = GoogleDriveProvider("test_token")
         with pytest.raises(CloudProviderError, match="Folders cannot be downloaded"):
             provider.download_file("123")
@@ -368,10 +378,10 @@ class TestGoogleDriveProvider:
         mock_response.json.return_value = {
             "id": "123",
             "name": "doc",
-            "mimeType": "application/vnd.google-apps.document"
+            "mimeType": "application/vnd.google-apps.document",
         }
         mock_get.return_value = mock_response
-        
+
         provider = GoogleDriveProvider("test_token")
         with pytest.raises(CloudProviderError, match="Google Docs formats"):
             provider.download_file("123")
@@ -381,7 +391,7 @@ class TestGoogleDriveProvider:
         mock_response = MagicMock()
         mock_response.status_code = 404
         mock_get.return_value = mock_response
-        
+
         provider = GoogleDriveProvider("test_token")
         with pytest.raises(CloudProviderError, match="metadata fetch failed"):
             provider.download_file("123")
@@ -393,14 +403,14 @@ class TestGoogleDriveProvider:
         mock_meta_response.json.return_value = {
             "id": "123",
             "name": "file.txt",
-            "mimeType": "text/plain"
+            "mimeType": "text/plain",
         }
-        
+
         mock_download_response = MagicMock()
         mock_download_response.status_code = 500
-        
+
         mock_get.side_effect = [mock_meta_response, mock_download_response]
-        
+
         provider = GoogleDriveProvider("test_token")
         with pytest.raises(CloudProviderError, match="download failed"):
             provider.download_file("123")
@@ -408,8 +418,9 @@ class TestGoogleDriveProvider:
     @patch("aird.cloud.requests.get")
     def test_download_file_request_exception(self, mock_get):
         import requests
+
         mock_get.side_effect = requests.RequestException("Network error")
-        
+
         provider = GoogleDriveProvider("test_token")
         with pytest.raises(CloudProviderError, match="request failed"):
             provider.download_file("123")
@@ -421,14 +432,14 @@ class TestGoogleDriveProvider:
         mock_response.json.return_value = {
             "id": "new_file_id",
             "name": "uploaded.txt",
-            "size": "100"
+            "size": "100",
         }
         mock_post.return_value = mock_response
-        
+
         provider = GoogleDriveProvider("test_token")
         stream = BytesIO(b"test content")
         result = provider.upload_file(stream, name="uploaded.txt", size=12)
-        
+
         assert result.id == "new_file_id"
         assert result.name == "uploaded.txt"
 
@@ -452,11 +463,11 @@ class TestGoogleDriveProvider:
         mock_response.status_code = 200
         mock_response.json.return_value = {"id": "1", "name": "test.txt"}
         mock_post.return_value = mock_response
-        
+
         provider = GoogleDriveProvider("test_token")
         stream = BytesIO(b"test content")
         provider.upload_file(stream, name="test.txt")  # size not provided
-        
+
         mock_post.assert_called_once()
 
     @patch("aird.cloud.requests.post")
@@ -465,18 +476,19 @@ class TestGoogleDriveProvider:
         mock_response.status_code = 200
         mock_response.json.return_value = {"id": "1", "name": "test.txt"}
         mock_post.return_value = mock_response
-        
+
         provider = GoogleDriveProvider("test_token")
         stream = BytesIO(b"test")
         provider.upload_file(stream, name="test.txt", parent_id="parent123", size=4)
-        
+
         mock_post.assert_called_once()
 
     @patch("aird.cloud.requests.post")
     def test_upload_file_request_error(self, mock_post):
         import requests
+
         mock_post.side_effect = requests.RequestException("Network error")
-        
+
         provider = GoogleDriveProvider("test_token")
         stream = BytesIO(b"test")
         with pytest.raises(CloudProviderError, match="upload failed"):
@@ -488,7 +500,7 @@ class TestGoogleDriveProvider:
         mock_response.status_code = 403
         mock_response.text = "Forbidden"
         mock_post.return_value = mock_response
-        
+
         provider = GoogleDriveProvider("test_token")
         stream = BytesIO(b"test")
         with pytest.raises(CloudProviderError, match="upload failed"):
@@ -499,35 +511,35 @@ class TestGoogleDriveProvider:
     def test_upload_file_resumable_success(self, mock_post, mock_put):
         # Large file that requires resumable upload
         large_content = b"x" * (6 * 1024 * 1024)  # 6MB
-        
+
         mock_init_response = MagicMock()
         mock_init_response.status_code = 200
         mock_init_response.headers = {"Location": "https://upload.url"}
         mock_post.return_value = mock_init_response
-        
+
         mock_upload_response = MagicMock()
         mock_upload_response.status_code = 200
         mock_upload_response.json.return_value = {
             "id": "large_file_id",
-            "name": "large.bin"
+            "name": "large.bin",
         }
         mock_put.return_value = mock_upload_response
-        
+
         provider = GoogleDriveProvider("test_token")
         stream = BytesIO(large_content)
         result = provider.upload_file(stream, name="large.bin", size=len(large_content))
-        
+
         assert result.id == "large_file_id"
 
     @patch("aird.cloud.requests.post")
     def test_upload_file_resumable_init_error(self, mock_post):
         large_content = b"x" * (6 * 1024 * 1024)
-        
+
         mock_response = MagicMock()
         mock_response.status_code = 500
         mock_response.text = "Server error"
         mock_post.return_value = mock_response
-        
+
         provider = GoogleDriveProvider("test_token")
         stream = BytesIO(large_content)
         with pytest.raises(CloudProviderError, match="upload init failed"):
@@ -536,12 +548,12 @@ class TestGoogleDriveProvider:
     @patch("aird.cloud.requests.post")
     def test_upload_file_resumable_no_location(self, mock_post):
         large_content = b"x" * (6 * 1024 * 1024)
-        
+
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.headers = {}  # No Location header
         mock_post.return_value = mock_response
-        
+
         provider = GoogleDriveProvider("test_token")
         stream = BytesIO(large_content)
         with pytest.raises(CloudProviderError, match="did not provide an upload URL"):
@@ -552,43 +564,43 @@ class TestGoogleDriveProvider:
     def test_upload_file_resumable_chunk_308(self, mock_post, mock_put):
         """Test resumable upload with 308 (Resume Incomplete) responses"""
         large_content = b"x" * (6 * 1024 * 1024)
-        
+
         mock_init_response = MagicMock()
         mock_init_response.status_code = 200
         mock_init_response.headers = {"Location": "https://upload.url"}
         mock_post.return_value = mock_init_response
-        
+
         # First chunk returns 308, second returns 200
         mock_308 = MagicMock()
         mock_308.status_code = 308
-        
+
         mock_200 = MagicMock()
         mock_200.status_code = 200
         mock_200.json.return_value = {"id": "1", "name": "large.bin"}
-        
+
         mock_put.side_effect = [mock_308, mock_200]
-        
+
         provider = GoogleDriveProvider("test_token")
         stream = BytesIO(large_content)
         result = provider.upload_file(stream, name="large.bin", size=len(large_content))
-        
+
         assert result.id == "1"
 
     @patch("aird.cloud.requests.put")
     @patch("aird.cloud.requests.post")
     def test_upload_file_resumable_chunk_error(self, mock_post, mock_put):
         large_content = b"x" * (6 * 1024 * 1024)
-        
+
         mock_init_response = MagicMock()
         mock_init_response.status_code = 200
         mock_init_response.headers = {"Location": "https://upload.url"}
         mock_post.return_value = mock_init_response
-        
+
         mock_error = MagicMock()
         mock_error.status_code = 500
         mock_error.text = "Server error"
         mock_put.return_value = mock_error
-        
+
         provider = GoogleDriveProvider("test_token")
         stream = BytesIO(large_content)
         with pytest.raises(CloudProviderError, match="upload failed"):
@@ -626,16 +638,16 @@ class TestOneDriveProvider:
             ]
         }
         mock_get.return_value = mock_response
-        
+
         provider = OneDriveProvider("test_token")
         files = provider.list_files()
-        
+
         assert len(files) == 2
         assert files[0].name == "file.txt"
         assert files[0].is_dir is False
         assert files[1].name == "folder"
         assert files[1].is_dir is True
-        
+
         # Should use root URL
         call_url = mock_get.call_args[0][0]
         assert "/root/children" in call_url
@@ -646,18 +658,19 @@ class TestOneDriveProvider:
         mock_response.status_code = 200
         mock_response.json.return_value = {"value": []}
         mock_get.return_value = mock_response
-        
+
         provider = OneDriveProvider("test_token")
         provider.list_files("custom_folder_id")
-        
+
         call_url = mock_get.call_args[0][0]
         assert "/items/custom_folder_id/children" in call_url
 
     @patch("aird.cloud.requests.get")
     def test_list_files_request_error(self, mock_get):
         import requests
+
         mock_get.side_effect = requests.RequestException("Network error")
-        
+
         provider = OneDriveProvider("test_token")
         with pytest.raises(CloudProviderError, match="request failed"):
             provider.list_files()
@@ -668,7 +681,7 @@ class TestOneDriveProvider:
         mock_response.status_code = 401
         mock_response.text = "Unauthorized"
         mock_get.return_value = mock_response
-        
+
         provider = OneDriveProvider("test_token")
         with pytest.raises(CloudProviderError, match="list failed"):
             provider.list_files()
@@ -681,18 +694,18 @@ class TestOneDriveProvider:
             "name": "document.pdf",
             "size": 1024,
             "@microsoft.graph.downloadUrl": "https://download.url",
-            "file": {}
+            "file": {},
         }
-        
+
         mock_download_response = MagicMock()
         mock_download_response.status_code = 200
         mock_download_response.headers = {"Content-Type": "application/pdf"}
-        
+
         mock_get.side_effect = [mock_meta_response, mock_download_response]
-        
+
         provider = OneDriveProvider("test_token")
         download = provider.download_file("123")
-        
+
         assert download.name == "document.pdf"
         assert download.content_length == 1024
 
@@ -700,12 +713,9 @@ class TestOneDriveProvider:
     def test_download_file_folder_error(self, mock_get):
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "name": "folder",
-            "folder": {}
-        }
+        mock_response.json.return_value = {"name": "folder", "folder": {}}
         mock_get.return_value = mock_response
-        
+
         provider = OneDriveProvider("test_token")
         with pytest.raises(CloudProviderError, match="Folders cannot be downloaded"):
             provider.download_file("123")
@@ -716,11 +726,11 @@ class TestOneDriveProvider:
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "name": "file.txt",
-            "file": {}
+            "file": {},
             # No @microsoft.graph.downloadUrl
         }
         mock_get.return_value = mock_response
-        
+
         provider = OneDriveProvider("test_token")
         with pytest.raises(CloudProviderError, match="Download URL not available"):
             provider.download_file("123")
@@ -730,7 +740,7 @@ class TestOneDriveProvider:
         mock_response = MagicMock()
         mock_response.status_code = 404
         mock_get.return_value = mock_response
-        
+
         provider = OneDriveProvider("test_token")
         with pytest.raises(CloudProviderError, match="metadata fetch failed"):
             provider.download_file("123")
@@ -742,14 +752,14 @@ class TestOneDriveProvider:
         mock_meta_response.json.return_value = {
             "name": "file.txt",
             "@microsoft.graph.downloadUrl": "https://download.url",
-            "file": {}
+            "file": {},
         }
-        
+
         mock_download_response = MagicMock()
         mock_download_response.status_code = 500
-        
+
         mock_get.side_effect = [mock_meta_response, mock_download_response]
-        
+
         provider = OneDriveProvider("test_token")
         with pytest.raises(CloudProviderError, match="download failed"):
             provider.download_file("123")
@@ -761,14 +771,14 @@ class TestOneDriveProvider:
         mock_response.json.return_value = {
             "id": "new_file_id",
             "name": "uploaded.txt",
-            "size": 100
+            "size": 100,
         }
         mock_put.return_value = mock_response
-        
+
         provider = OneDriveProvider("test_token")
         stream = BytesIO(b"test content")
         result = provider.upload_file(stream, name="uploaded.txt", size=12)
-        
+
         assert result.id == "new_file_id"
         assert result.name == "uploaded.txt"
 
@@ -778,11 +788,11 @@ class TestOneDriveProvider:
         mock_response.status_code = 201
         mock_response.json.return_value = {"id": "1", "name": "test.txt"}
         mock_put.return_value = mock_response
-        
+
         provider = OneDriveProvider("test_token")
         stream = BytesIO(b"test")
         provider.upload_file(stream, name="test.txt", parent_id="parent123", size=4)
-        
+
         call_url = mock_put.call_args[0][0]
         assert "/items/parent123:" in call_url
 
@@ -803,8 +813,9 @@ class TestOneDriveProvider:
     @patch("aird.cloud.requests.put")
     def test_upload_file_request_error(self, mock_put):
         import requests
+
         mock_put.side_effect = requests.RequestException("Network error")
-        
+
         provider = OneDriveProvider("test_token")
         stream = BytesIO(b"test")
         with pytest.raises(CloudProviderError, match="upload failed"):
@@ -816,7 +827,7 @@ class TestOneDriveProvider:
         mock_response.status_code = 403
         mock_response.text = "Forbidden"
         mock_put.return_value = mock_response
-        
+
         provider = OneDriveProvider("test_token")
         stream = BytesIO(b"test")
         with pytest.raises(CloudProviderError, match="upload failed"):
@@ -826,35 +837,35 @@ class TestOneDriveProvider:
     @patch("aird.cloud.requests.post")
     def test_upload_file_resumable_success(self, mock_post, mock_put):
         large_content = b"x" * (5 * 1024 * 1024)  # 5MB (over 4MB limit)
-        
+
         mock_session_response = MagicMock()
         mock_session_response.status_code = 200
         mock_session_response.json.return_value = {"uploadUrl": "https://upload.url"}
         mock_post.return_value = mock_session_response
-        
+
         mock_upload_response = MagicMock()
         mock_upload_response.status_code = 201
         mock_upload_response.json.return_value = {
             "id": "large_file_id",
-            "name": "large.bin"
+            "name": "large.bin",
         }
         mock_put.return_value = mock_upload_response
-        
+
         provider = OneDriveProvider("test_token")
         stream = BytesIO(large_content)
         result = provider.upload_file(stream, name="large.bin", size=len(large_content))
-        
+
         assert result.id == "large_file_id"
 
     @patch("aird.cloud.requests.post")
     def test_upload_file_session_error(self, mock_post):
         large_content = b"x" * (5 * 1024 * 1024)
-        
+
         mock_response = MagicMock()
         mock_response.status_code = 500
         mock_response.text = "Server error"
         mock_post.return_value = mock_response
-        
+
         provider = OneDriveProvider("test_token")
         stream = BytesIO(large_content)
         with pytest.raises(CloudProviderError, match="session failed"):
@@ -863,12 +874,12 @@ class TestOneDriveProvider:
     @patch("aird.cloud.requests.post")
     def test_upload_file_session_no_url(self, mock_post):
         large_content = b"x" * (5 * 1024 * 1024)
-        
+
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {}  # No uploadUrl
         mock_post.return_value = mock_response
-        
+
         provider = OneDriveProvider("test_token")
         stream = BytesIO(large_content)
         with pytest.raises(CloudProviderError, match="did not provide an upload URL"):
@@ -879,43 +890,43 @@ class TestOneDriveProvider:
     def test_upload_file_resumable_chunk_202(self, mock_post, mock_put):
         """Test resumable upload with 202 (Accepted) responses"""
         large_content = b"x" * (5 * 1024 * 1024)
-        
+
         mock_session_response = MagicMock()
         mock_session_response.status_code = 200
         mock_session_response.json.return_value = {"uploadUrl": "https://upload.url"}
         mock_post.return_value = mock_session_response
-        
+
         # First chunk returns 202, second returns 201
         mock_202 = MagicMock()
         mock_202.status_code = 202
-        
+
         mock_201 = MagicMock()
         mock_201.status_code = 201
         mock_201.json.return_value = {"id": "1", "name": "large.bin"}
-        
+
         mock_put.side_effect = [mock_202, mock_201]
-        
+
         provider = OneDriveProvider("test_token")
         stream = BytesIO(large_content)
         result = provider.upload_file(stream, name="large.bin", size=len(large_content))
-        
+
         assert result.id == "1"
 
     @patch("aird.cloud.requests.put")
     @patch("aird.cloud.requests.post")
     def test_upload_file_resumable_chunk_error(self, mock_post, mock_put):
         large_content = b"x" * (5 * 1024 * 1024)
-        
+
         mock_session_response = MagicMock()
         mock_session_response.status_code = 200
         mock_session_response.json.return_value = {"uploadUrl": "https://upload.url"}
         mock_post.return_value = mock_session_response
-        
+
         mock_error = MagicMock()
         mock_error.status_code = 500
         mock_error.text = "Server error"
         mock_put.return_value = mock_error
-        
+
         provider = OneDriveProvider("test_token")
         stream = BytesIO(large_content)
         with pytest.raises(CloudProviderError, match="upload failed"):

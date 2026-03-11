@@ -13,14 +13,17 @@ import logging
 from aird.handlers.base_handler import BaseHandler
 from aird.db import get_all_shares
 from aird.utils.util import (
-    is_within_root,
     get_files_in_directory,
     get_file_icon,
-    join_path,
     is_feature_enabled,
     get_current_feature_flags,
     sanitize_cloud_filename,
     augment_with_shared_status,
+)
+from aird.core.security import (  # noqa: F401
+    is_within_root,
+    is_valid_websocket_origin,
+    join_path,
 )
 from aird.core.mmap_handler import MMapFileHandler
 from aird.config import (
@@ -29,6 +32,9 @@ from aird.config import (
     CLOUD_MANAGER,
 )
 import aird.constants as constants_module
+from aird.handlers.constants import (
+    APPLICATION_OCTET_STREAM,
+)
 from aird.constants import CHUNK_SIZE
 from aird.cloud import CloudManager, CloudProviderError
 
@@ -96,7 +102,7 @@ class MainHandler(BaseHandler):
 
             # Guess MIME type
             mime_type, _ = mimetypes.guess_type(abspath)
-            mime_type = mime_type or "application/octet-stream"
+            mime_type = mime_type or APPLICATION_OCTET_STREAM
             handler.set_header("Content-Type", mime_type)
 
             # Check for compressible types
@@ -143,7 +149,7 @@ class MainHandler(BaseHandler):
             # Serve raw file content for client-side consumption
             try:
                 # Guess MIME type
-                mime_type = "application/octet-stream"
+                mime_type = APPLICATION_OCTET_STREAM
                 try:
                     guessed_type, _ = mimetypes.guess_type(abspath)
                     if guessed_type:
@@ -389,7 +395,7 @@ class CloudDownloadHandler(BaseHandler, CloudProviderMixin):
             filename = f"{provider_name}-file"
 
         self.set_header(
-            "Content-Type", download.content_type or "application/octet-stream"
+            "Content-Type", download.content_type or APPLICATION_OCTET_STREAM
         )
         disposition_name = filename.replace('"', "_")
         self.set_header(

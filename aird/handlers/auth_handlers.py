@@ -13,8 +13,19 @@ from aird.db import (
     authenticate_user,
     log_audit,
 )
+from aird.core.security import validate_password
 import aird.config as config_module
 import aird.constants as constants_module
+from aird.handlers.constants import (
+    TOO_MANY_LOGIN_ATTEMPTS_MSG,
+    INVALID_INPUT_LENGTH_MSG,
+    INVALID_USERNAME_OR_PASSWORD_MSG,
+    ADMIN_URL,
+    ADMIN_LOGIN_TEMPLATE,
+    PROFILE_TEMPLATE,
+    FILES_BASE_URL,
+    LOGIN_HTML,
+)
 import time
 
 # IP -> (attempts, timestamp)
@@ -39,16 +50,16 @@ def check_login_rate_limit(remote_ip):
 class LDAPLoginHandler(BaseHandler):
     def get(self):
         if self.current_user:
-            self.redirect("/files/")
+            self.redirect(FILES_BASE_URL)
             return
-        self.render("login.html", error=None, settings=self.settings)
+        self.render(LOGIN_HTML, error=None, settings=self.settings)
 
     def post(self):
         if not check_login_rate_limit(self.request.remote_ip):
             self.set_status(429)
             self.render(
-                "login.html",
-                error="Too many login attempts. Please try again later.",
+                LOGIN_HTML,
+                error=TOO_MANY_LOGIN_ATTEMPTS_MSG,
                 settings=self.settings,
             )
             return
@@ -59,7 +70,7 @@ class LDAPLoginHandler(BaseHandler):
 
         if not username or not password:
             self.render(
-                "login.html",
+                LOGIN_HTML,
                 error="Username and password are required.",
                 settings=self.settings,
             )
@@ -68,7 +79,7 @@ class LDAPLoginHandler(BaseHandler):
         # Basic input length validation
         if len(username) > 256 or len(password) > 256:
             self.render(
-                "login.html", error="Invalid input length.", settings=self.settings
+                LOGIN_HTML, error=INVALID_INPUT_LENGTH_MSG, settings=self.settings
             )
             return
 
@@ -119,7 +130,7 @@ class LDAPLoginHandler(BaseHandler):
 
                 if not authorized:
                     self.render(
-                        "login.html",
+                        LOGIN_HTML,
                         error="Access denied. You do not have permission to access this system.",
                         settings=self.settings,
                     )
@@ -199,12 +210,12 @@ class LDAPLoginHandler(BaseHandler):
                 username=username,
                 ip=self.request.remote_ip,
             )
-            self.redirect("/files/")
+            self.redirect(FILES_BASE_URL)
             return
         except Exception:
             # Generic error message to prevent information disclosure
             self.render(
-                "login.html",
+                LOGIN_HTML,
                 error="Authentication failed. Please check your credentials.",
                 settings=self.settings,
             )
@@ -225,10 +236,10 @@ class LoginHandler(BaseHandler):
 
     def _get_safe_next_url(self) -> str:
         """Get a validated next URL, defaulting to /files/ if invalid."""
-        next_url = self.get_argument("next", "/files/")
+        next_url = self.get_argument("next", FILES_BASE_URL)
         if self._is_safe_redirect_url(next_url):
             return next_url
-        return "/files/"
+        return FILES_BASE_URL
 
     def get(self):
         if self.current_user:
@@ -240,14 +251,14 @@ class LoginHandler(BaseHandler):
         # Not logged in, show login form with next URL preserved
         next_url = self._get_safe_next_url()
         logging.debug("Showing login form")
-        self.render("login.html", error=None, settings=self.settings, next_url=next_url)
+        self.render(LOGIN_HTML, error=None, settings=self.settings, next_url=next_url)
 
     def post(self):
         if not check_login_rate_limit(self.request.remote_ip):
             self.set_status(429)
             self.render(
-                "login.html",
-                error="Too many login attempts. Please try again later.",
+                LOGIN_HTML,
+                error=TOO_MANY_LOGIN_ATTEMPTS_MSG,
                 settings=self.settings,
                 next_url=self._get_safe_next_url(),
             )
@@ -267,10 +278,10 @@ class LoginHandler(BaseHandler):
         except Exception:
             logging.error("Error parsing login form data", exc_info=True)
             self.render(
-                "login.html",
+                LOGIN_HTML,
                 error="Error processing login request. Please try again.",
                 settings=self.settings,
-                next_url="/files/",
+                next_url=FILES_BASE_URL,
             )
             return
 
@@ -282,8 +293,8 @@ class LoginHandler(BaseHandler):
             # Input validation
             if len(username) > 256 or len(password) > 256:
                 self.render(
-                    "login.html",
-                    error="Invalid input length.",
+                    LOGIN_HTML,
+                    error=INVALID_INPUT_LENGTH_MSG,
                     settings=self.settings,
                     next_url=next_url,
                 )
@@ -325,8 +336,8 @@ class LoginHandler(BaseHandler):
                         f"Username/password authentication failed for user: {username}"
                     )
                     self.render(
-                        "login.html",
-                        error="Invalid username or password.",
+                        LOGIN_HTML,
+                        error=INVALID_USERNAME_OR_PASSWORD_MSG,
                         settings=self.settings,
                         next_url=next_url,
                     )
@@ -337,7 +348,7 @@ class LoginHandler(BaseHandler):
                     exc_info=True,
                 )
                 self.render(
-                    "login.html",
+                    LOGIN_HTML,
                     error="Authentication failed. Please try again.",
                     settings=self.settings,
                     next_url=next_url,
@@ -348,14 +359,14 @@ class LoginHandler(BaseHandler):
         if not token:
             if username or password:
                 self.render(
-                    "login.html",
-                    error="Invalid username or password.",
+                    LOGIN_HTML,
+                    error=INVALID_USERNAME_OR_PASSWORD_MSG,
                     settings=self.settings,
                     next_url=next_url,
                 )
             else:
                 self.render(
-                    "login.html",
+                    LOGIN_HTML,
                     error="Username/password or token is required.",
                     settings=self.settings,
                     next_url=next_url,
@@ -364,7 +375,7 @@ class LoginHandler(BaseHandler):
 
         if len(token) > 512:  # Reasonable token length limit
             self.render(
-                "login.html",
+                LOGIN_HTML,
                 error="Invalid token.",
                 settings=self.settings,
                 next_url=next_url,
@@ -382,7 +393,7 @@ class LoginHandler(BaseHandler):
                 "ACCESS_TOKEN is not configured. Cannot authenticate with token."
             )
             self.render(
-                "login.html",
+                LOGIN_HTML,
                 error="Token authentication is not configured.",
                 settings=self.settings,
                 next_url=next_url,
@@ -432,7 +443,7 @@ class LoginHandler(BaseHandler):
             # Log failure efficiently without revealing token details
             logging.warning("Token authentication failed. Token mismatch.")
             self.render(
-                "login.html",
+                LOGIN_HTML,
                 error="Invalid credentials. Try again.",
                 settings=self.settings,
                 next_url=next_url,
@@ -442,16 +453,16 @@ class LoginHandler(BaseHandler):
 class AdminLoginHandler(BaseHandler):
     def get(self):
         if self.is_admin_user():
-            self.redirect("/admin")
+            self.redirect(ADMIN_URL)
             return
-        self.render("admin_login.html", error=None)
+        self.render(ADMIN_LOGIN_TEMPLATE, error=None)
 
     def post(self):
         if not check_login_rate_limit(self.request.remote_ip):
             self.set_status(429)
             self.render(
-                "admin_login.html",
-                error="Too many login attempts. Please try again later.",
+                ADMIN_LOGIN_TEMPLATE,
+                error=TOO_MANY_LOGIN_ATTEMPTS_MSG,
             )
             return
 
@@ -466,7 +477,7 @@ class AdminLoginHandler(BaseHandler):
         if username and password and db_conn is not None:
             # Input validation
             if len(username) > 256 or len(password) > 256:
-                self.render("admin_login.html", error="Invalid input length.")
+                self.render(ADMIN_LOGIN_TEMPLATE, error=INVALID_INPUT_LENGTH_MSG)
                 return
 
             try:
@@ -504,37 +515,41 @@ class AdminLoginHandler(BaseHandler):
                         samesite="Strict",
                         expires_days=1,
                     )  # Also set admin cookie
-                    self.redirect("/admin")
+                    self.redirect(ADMIN_URL)
                     return
                 elif user and user["role"] != "admin":
                     self.render(
-                        "admin_login.html",
+                        ADMIN_LOGIN_TEMPLATE,
                         error="Access denied. Admin privileges required.",
                     )
                     return
                 else:
                     self.render(
-                        "admin_login.html", error="Invalid username or password."
+                        ADMIN_LOGIN_TEMPLATE, error=INVALID_USERNAME_OR_PASSWORD_MSG
                     )
                     return
             except Exception:
                 self.render(
-                    "admin_login.html", error="Authentication failed. Please try again."
+                    ADMIN_LOGIN_TEMPLATE,
+                    error="Authentication failed. Please try again.",
                 )
                 return
 
         # Fallback to token authentication
         if not token:
             if username or password:
-                self.render("admin_login.html", error="Invalid username or password.")
+                self.render(
+                    ADMIN_LOGIN_TEMPLATE, error=INVALID_USERNAME_OR_PASSWORD_MSG
+                )
             else:
                 self.render(
-                    "admin_login.html", error="Username/password or token is required."
+                    ADMIN_LOGIN_TEMPLATE,
+                    error="Username/password or token is required.",
                 )
             return
 
         if len(token) > 512:  # Reasonable token length limit
-            self.render("admin_login.html", error="Invalid token.")
+            self.render(ADMIN_LOGIN_TEMPLATE, error="Invalid token.")
             return
 
         # Check if ADMIN_TOKEN is configured
@@ -545,7 +560,7 @@ class AdminLoginHandler(BaseHandler):
                 "ADMIN_TOKEN is not configured. Cannot authenticate with token."
             )
             self.render(
-                "admin_login.html",
+                ADMIN_LOGIN_TEMPLATE,
                 error="Admin token authentication is not configured.",
             )
             return
@@ -579,10 +594,10 @@ class AdminLoginHandler(BaseHandler):
                 samesite="Strict",
                 expires_days=1,
             )
-            self.redirect("/admin")
+            self.redirect(ADMIN_URL)
         else:
             logging.warning("Admin token authentication failed.")
-            self.render("admin_login.html", error="Invalid admin token.")
+            self.render(ADMIN_LOGIN_TEMPLATE, error="Invalid admin token.")
 
 
 class LogoutHandler(BaseHandler):
@@ -600,7 +615,7 @@ class ProfileHandler(BaseHandler):
         # Check if LDAP is enabled
         ldap_enabled = self.settings.get("ldap_server") is not None
         self.render(
-            "profile.html",
+            PROFILE_TEMPLATE,
             user=self.current_user,
             error=None,
             success=None,
@@ -616,7 +631,7 @@ class ProfileHandler(BaseHandler):
         db_conn = self.db_conn
         if not db_conn:
             self.render(
-                "profile.html",
+                PROFILE_TEMPLATE,
                 user=self.current_user,
                 error="Database connection not available",
                 success=None,
@@ -627,7 +642,7 @@ class ProfileHandler(BaseHandler):
         user = get_user_by_username(db_conn, self.current_user["username"])
         if not user:
             self.render(
-                "profile.html",
+                PROFILE_TEMPLATE,
                 user=self.current_user,
                 error="User not found",
                 success=None,
@@ -641,18 +656,19 @@ class ProfileHandler(BaseHandler):
         if new_password:
             if new_password != confirm_password:
                 self.render(
-                    "profile.html",
+                    PROFILE_TEMPLATE,
                     user=self.current_user,
                     error="Passwords do not match",
                     success=None,
                     ldap_enabled=ldap_enabled,
                 )
                 return
-            if len(new_password) < 8:
+            is_valid, error_msg = validate_password(new_password)
+            if not is_valid:
                 self.render(
-                    "profile.html",
+                    PROFILE_TEMPLATE,
                     user=self.current_user,
-                    error="Password must be at least 8 characters",
+                    error=error_msg,
                     success=None,
                     ldap_enabled=ldap_enabled,
                 )
@@ -661,7 +677,7 @@ class ProfileHandler(BaseHandler):
             try:
                 update_user(db_conn, user["id"], password=new_password)
                 self.render(
-                    "profile.html",
+                    PROFILE_TEMPLATE,
                     user=self.current_user,
                     success="Password updated successfully",
                     error=None,
@@ -669,7 +685,7 @@ class ProfileHandler(BaseHandler):
                 )
             except Exception as e:
                 self.render(
-                    "profile.html",
+                    PROFILE_TEMPLATE,
                     user=self.current_user,
                     error=f"Error updating password: {e}",
                     success=None,
@@ -677,7 +693,7 @@ class ProfileHandler(BaseHandler):
                 )
         else:
             self.render(
-                "profile.html",
+                PROFILE_TEMPLATE,
                 user=self.current_user,
                 error=None,
                 success=None,

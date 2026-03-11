@@ -10,7 +10,8 @@ import tornado.web
 import tornado.websocket
 
 from aird.handlers.base_handler import BaseHandler
-from aird.utils.util import is_valid_websocket_origin, is_feature_enabled
+from aird.core.security import is_valid_websocket_origin
+from aird.utils.util import is_feature_enabled
 
 logger = logging.getLogger(__name__)
 

@@ -4,12 +4,10 @@ Tests for the network share feature: DB CRUD, NetworkShareManager, and admin han
 
 import os
 import sqlite3
-import tempfile
 import threading
-import time
 
 import pytest
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 from aird.db import (
     init_db,
@@ -28,6 +26,7 @@ try:
         AdminNetworkShareToggleHandler,
     )
     from tests.handler_helpers import authenticate, patch_db_conn
+
     HANDLERS_AVAILABLE = True
 except ImportError:
     HANDLERS_AVAILABLE = False
@@ -36,6 +35,7 @@ except ImportError:
 # ----------------------------------------------------------------
 # Fixtures
 # ----------------------------------------------------------------
+
 
 @pytest.fixture
 def db():
@@ -73,6 +73,7 @@ def sample_share(share_dir):
 # ================================================================
 # DB CRUD tests
 # ================================================================
+
 
 class TestNetworkShareDB:
 
@@ -172,18 +173,24 @@ class TestNetworkShareDB:
         assert get_network_share(db, "s10")["username"] == "newuser"
 
     def test_create_with_special_chars_in_name(self, db, share_dir):
-        ok = create_network_share(db, "sp1", "My Share (Dev) #1!", share_dir, "webdav", 8443, "u", "p")
+        ok = create_network_share(
+            db, "sp1", "My Share (Dev) #1!", share_dir, "webdav", 8443, "u", "p"
+        )
         assert ok is True
         assert get_network_share(db, "sp1")["name"] == "My Share (Dev) #1!"
 
     def test_create_preserves_unicode_name(self, db, share_dir):
-        ok = create_network_share(db, "uni1", "\u203a\u00e9l\u00e8ve", share_dir, "webdav", 8443, "u", "p")
+        ok = create_network_share(
+            db, "uni1", "\u203a\u00e9l\u00e8ve", share_dir, "webdav", 8443, "u", "p"
+        )
         assert ok is True
         assert get_network_share(db, "uni1")["name"] == "\u203a\u00e9l\u00e8ve"
 
     def test_get_all_returns_sorted_by_created_desc(self, db, share_dir):
         create_network_share(db, "first", "First", share_dir, "webdav", 8001, "u", "p")
-        create_network_share(db, "second", "Second", share_dir, "webdav", 8002, "u", "p")
+        create_network_share(
+            db, "second", "Second", share_dir, "webdav", 8002, "u", "p"
+        )
         shares = get_all_network_shares(db)
         assert shares[0]["id"] == "second"
         assert shares[1]["id"] == "first"
@@ -238,6 +245,7 @@ class TestNetworkShareDB:
 # NetworkShareManager tests
 # ================================================================
 
+
 class TestNetworkShareManager:
 
     def test_init(self):
@@ -266,7 +274,11 @@ class TestNetworkShareManager:
         mgr = NetworkShareManager()
         alive_thread = MagicMock()
         alive_thread.is_alive.return_value = True
-        mgr._servers["test-share-1"] = {"thread": alive_thread, "server": None, "share": sample_share}
+        mgr._servers["test-share-1"] = {
+            "thread": alive_thread,
+            "server": None,
+            "share": sample_share,
+        }
         assert mgr.start_share(sample_share) is False
 
     def test_start_share_cleans_dead_thread(self, sample_share):
@@ -274,7 +286,11 @@ class TestNetworkShareManager:
         mgr = NetworkShareManager()
         dead_thread = MagicMock()
         dead_thread.is_alive.return_value = False
-        mgr._servers["test-share-1"] = {"thread": dead_thread, "server": None, "share": sample_share}
+        mgr._servers["test-share-1"] = {
+            "thread": dead_thread,
+            "server": None,
+            "share": sample_share,
+        }
 
         with patch.object(mgr, "_start_webdav", return_value=True) as mock_start:
             result = mgr.start_share(sample_share)
@@ -285,7 +301,11 @@ class TestNetworkShareManager:
         mgr = NetworkShareManager()
         mock_server = MagicMock()
         mock_thread = MagicMock()
-        mgr._servers["test-share-1"] = {"thread": mock_thread, "server": mock_server, "share": sample_share}
+        mgr._servers["test-share-1"] = {
+            "thread": mock_thread,
+            "server": mock_server,
+            "share": sample_share,
+        }
         assert mgr.stop_share("test-share-1") is True
         mock_server.stop.assert_called_once()
         assert "test-share-1" not in mgr._servers
@@ -294,7 +314,11 @@ class TestNetworkShareManager:
         mgr = NetworkShareManager()
         for i in range(3):
             sid = f"share-{i}"
-            mgr._servers[sid] = {"thread": MagicMock(), "server": MagicMock(), "share": {**sample_share, "id": sid}}
+            mgr._servers[sid] = {
+                "thread": MagicMock(),
+                "server": MagicMock(),
+                "share": {**sample_share, "id": sid},
+            }
         mgr.stop_all()
         assert mgr._servers == {}
 
@@ -311,9 +335,9 @@ class TestNetworkShareManager:
 
     def test_start_webdav_creates_thread(self, sample_share):
         mgr = NetworkShareManager()
-        with patch("aird.network_share_manager._WEBDAV_AVAILABLE", True), \
-             patch("aird.network_share_manager.WsgiDAVApp"), \
-             patch("aird.network_share_manager.cheroot_wsgi"):
+        with patch("aird.network_share_manager._WEBDAV_AVAILABLE", True), patch(
+            "aird.network_share_manager.WsgiDAVApp"
+        ), patch("aird.network_share_manager.cheroot_wsgi"):
             result = mgr._start_webdav(sample_share)
         assert result is True
         assert "test-share-1" in mgr._servers
@@ -324,8 +348,9 @@ class TestNetworkShareManager:
     def test_start_smb_creates_thread(self, sample_share):
         mgr = NetworkShareManager()
         smb_share = {**sample_share, "protocol": "smb"}
-        with patch("aird.network_share_manager._SMB_AVAILABLE", True), \
-             patch("aird.network_share_manager.PySMBServer"):
+        with patch("aird.network_share_manager._SMB_AVAILABLE", True), patch(
+            "aird.network_share_manager.PySMBServer"
+        ):
             result = mgr._start_smb(smb_share)
         assert result is True
         assert "test-share-1" in mgr._servers
@@ -389,7 +414,11 @@ class TestNetworkShareManager:
         mgr = NetworkShareManager()
         bad_server = MagicMock()
         bad_server.stop.side_effect = RuntimeError("shutdown error")
-        mgr._servers["test-share-1"] = {"thread": MagicMock(), "server": bad_server, "share": sample_share}
+        mgr._servers["test-share-1"] = {
+            "thread": MagicMock(),
+            "server": bad_server,
+            "share": sample_share,
+        }
         assert mgr.stop_share("test-share-1") is True
         assert "test-share-1" not in mgr._servers
 
@@ -466,7 +495,11 @@ class TestNetworkShareManager:
             sid = f"share-{i}"
             srv = MagicMock()
             servers.append(srv)
-            mgr._servers[sid] = {"thread": MagicMock(), "server": srv, "share": {**sample_share, "id": sid}}
+            mgr._servers[sid] = {
+                "thread": MagicMock(),
+                "server": srv,
+                "share": {**sample_share, "id": sid},
+            }
         mgr.stop_all()
         for srv in servers:
             srv.stop.assert_called_once()
@@ -474,9 +507,9 @@ class TestNetworkShareManager:
     def test_start_webdav_read_only_flag_passed(self, sample_share):
         mgr = NetworkShareManager()
         ro_share = {**sample_share, "read_only": True}
-        with patch("aird.network_share_manager._WEBDAV_AVAILABLE", True), \
-             patch("aird.network_share_manager.WsgiDAVApp") as mock_app, \
-             patch("aird.network_share_manager.cheroot_wsgi"):
+        with patch("aird.network_share_manager._WEBDAV_AVAILABLE", True), patch(
+            "aird.network_share_manager.WsgiDAVApp"
+        ) as mock_app, patch("aird.network_share_manager.cheroot_wsgi"):
             mgr._start_webdav(ro_share)
         config_passed = mock_app.call_args[0][0]
         assert config_passed["fs_dav_provider"]["readonly"] is True
@@ -486,12 +519,15 @@ class TestNetworkShareManager:
 # Admin handler tests
 # ================================================================
 
+
 @pytest.mark.skipif(not HANDLERS_AVAILABLE, reason="handler imports not available")
 class TestAdminNetworkShareHandlers:
 
     @pytest.fixture(autouse=True)
     def _mock_getfqdn(self):
-        with patch('aird.handlers.admin_handlers._socket.getfqdn', return_value='test.local'):
+        with patch(
+            "aird.handlers.admin_handlers._socket.getfqdn", return_value="test.local"
+        ):
             yield
 
     def _make_handler(self, handler_cls, app, request):
@@ -505,17 +541,20 @@ class TestAdminNetworkShareHandlers:
     def test_get_redirects_non_admin(self, mock_tornado_app, mock_tornado_request):
         handler = AdminNetworkSharesHandler(mock_tornado_app, mock_tornado_request)
         authenticate(handler, role="user")
-        with patch.object(handler, "is_admin_user", return_value=False), \
-             patch.object(handler, "redirect") as mock_redir:
+        with patch.object(handler, "is_admin_user", return_value=False), patch.object(
+            handler, "redirect"
+        ) as mock_redir:
             handler.get()
             mock_redir.assert_called_once_with("/admin/login")
 
     def test_get_renders_template(self, mock_tornado_app, mock_tornado_request, db):
-        handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
-        with patch_db_conn(db), \
-             patch.object(handler, "render") as mock_render, \
-             patch.object(handler, "get_argument", return_value=None):
-            mock_tornado_app.settings['network_share_manager'] = None
+        handler = self._make_handler(
+            AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request
+        )
+        with patch_db_conn(db), patch.object(
+            handler, "render"
+        ) as mock_render, patch.object(handler, "get_argument", return_value=None):
+            mock_tornado_app.settings["network_share_manager"] = None
             handler.get()
             assert mock_render.called
             args, kwargs = mock_render.call_args
@@ -524,15 +563,19 @@ class TestAdminNetworkShareHandlers:
             assert "server_host" in kwargs
             assert "error" in kwargs
 
-    def test_get_includes_running_status(self, mock_tornado_app, mock_tornado_request, db, share_dir):
+    def test_get_includes_running_status(
+        self, mock_tornado_app, mock_tornado_request, db, share_dir
+    ):
         create_network_share(db, "s1", "S1", share_dir, "webdav", 8443, "u", "p")
-        handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
+        handler = self._make_handler(
+            AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request
+        )
         mock_mgr = MagicMock()
         mock_mgr.is_running.return_value = True
-        mock_tornado_app.settings['network_share_manager'] = mock_mgr
-        with patch_db_conn(db), \
-             patch.object(handler, "render") as mock_render, \
-             patch.object(handler, "get_argument", return_value=None):
+        mock_tornado_app.settings["network_share_manager"] = mock_mgr
+        with patch_db_conn(db), patch.object(
+            handler, "render"
+        ) as mock_render, patch.object(handler, "get_argument", return_value=None):
             handler.get()
             shares_passed = mock_render.call_args[1]["shares"]
             assert shares_passed[0]["running"] is True
@@ -542,60 +585,112 @@ class TestAdminNetworkShareHandlers:
     def test_post_redirects_non_admin(self, mock_tornado_app, mock_tornado_request):
         handler = AdminNetworkSharesHandler(mock_tornado_app, mock_tornado_request)
         authenticate(handler, role="user")
-        with patch.object(handler, "is_admin_user", return_value=False), \
-             patch.object(handler, "set_status") as mock_status:
+        with patch.object(handler, "is_admin_user", return_value=False), patch.object(
+            handler, "set_status"
+        ) as mock_status:
             handler.post()
             mock_status.assert_called_with(403)
 
-    def test_post_validates_required_fields(self, mock_tornado_app, mock_tornado_request, db):
-        handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
+    def test_post_validates_required_fields(
+        self, mock_tornado_app, mock_tornado_request, db
+    ):
+        handler = self._make_handler(
+            AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request
+        )
+
         def get_arg(name, default=""):
-            return {"name": "TestShare", "folder_path": "", "protocol": "webdav",
-                    "share_username": "u", "share_password": "p",
-                    "port": "8443", "read_only": "off"}.get(name, default)
-        with patch_db_conn(db), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "redirect") as mock_redir:
+            return {
+                "name": "TestShare",
+                "folder_path": "",
+                "protocol": "webdav",
+                "share_username": "u",
+                "share_password": "p",
+                "port": "8443",
+                "read_only": "off",
+            }.get(name, default)
+
+        with patch_db_conn(db), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(handler, "redirect") as mock_redir:
             handler.post()
             mock_redir.assert_called_once()
             assert "required" in mock_redir.call_args[0][0]
 
-    def test_post_validates_protocol(self, mock_tornado_app, mock_tornado_request, db, share_dir):
-        handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
+    def test_post_validates_protocol(
+        self, mock_tornado_app, mock_tornado_request, db, share_dir
+    ):
+        handler = self._make_handler(
+            AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request
+        )
+
         def get_arg(name, default=""):
-            return {"name": "S", "folder_path": share_dir, "protocol": "ftp",
-                    "share_username": "u", "share_password": "p",
-                    "port": "8443", "read_only": "off"}.get(name, default)
-        with patch_db_conn(db), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "redirect") as mock_redir:
+            return {
+                "name": "S",
+                "folder_path": share_dir,
+                "protocol": "ftp",
+                "share_username": "u",
+                "share_password": "p",
+                "port": "8443",
+                "read_only": "off",
+            }.get(name, default)
+
+        with patch_db_conn(db), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(handler, "redirect") as mock_redir:
             handler.post()
             assert "Invalid+protocol" in mock_redir.call_args[0][0]
 
-    def test_post_validates_folder_exists(self, mock_tornado_app, mock_tornado_request, db):
-        handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
+    def test_post_validates_folder_exists(
+        self, mock_tornado_app, mock_tornado_request, db
+    ):
+        handler = self._make_handler(
+            AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request
+        )
+
         def get_arg(name, default=""):
-            return {"name": "S", "folder_path": "/no/such/dir", "protocol": "webdav",
-                    "share_username": "u", "share_password": "p",
-                    "port": "8443", "read_only": "off"}.get(name, default)
-        with patch_db_conn(db), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "redirect") as mock_redir:
+            return {
+                "name": "S",
+                "folder_path": "/no/such/dir",
+                "protocol": "webdav",
+                "share_username": "u",
+                "share_password": "p",
+                "port": "8443",
+                "read_only": "off",
+            }.get(name, default)
+
+        with patch_db_conn(db), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(handler, "redirect") as mock_redir:
             handler.post()
             assert "Folder+does+not+exist" in mock_redir.call_args[0][0]
 
-    def test_post_creates_share_successfully(self, mock_tornado_app, mock_tornado_request, db, share_dir):
-        handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
+    def test_post_creates_share_successfully(
+        self, mock_tornado_app, mock_tornado_request, db, share_dir
+    ):
+        handler = self._make_handler(
+            AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request
+        )
+
         def get_arg(name, default=""):
-            return {"name": "NewShare", "folder_path": share_dir, "protocol": "webdav",
-                    "share_username": "admin", "share_password": "pass123",
-                    "port": "9999", "read_only": "off"}.get(name, default)
+            return {
+                "name": "NewShare",
+                "folder_path": share_dir,
+                "protocol": "webdav",
+                "share_username": "admin",
+                "share_password": "pass123",
+                "port": "9999",
+                "read_only": "off",
+            }.get(name, default)
+
         mock_mgr = MagicMock()
-        mock_tornado_app.settings['network_share_manager'] = mock_mgr
-        with patch_db_conn(db), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "get_display_username", return_value="admin (Admin)"), \
-             patch.object(handler, "redirect") as mock_redir:
+        mock_tornado_app.settings["network_share_manager"] = mock_mgr
+        with patch_db_conn(db), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(
+            handler, "get_display_username", return_value="admin (Admin)"
+        ), patch.object(
+            handler, "redirect"
+        ) as mock_redir:
             handler.post()
             mock_redir.assert_called_with("/admin/network-shares")
             shares = get_all_network_shares(db)
@@ -606,17 +701,26 @@ class TestAdminNetworkShareHandlers:
 
     # -- AdminNetworkShareDeleteHandler --
 
-    def test_delete_stops_and_removes(self, mock_tornado_app, mock_tornado_request, db, share_dir):
+    def test_delete_stops_and_removes(
+        self, mock_tornado_app, mock_tornado_request, db, share_dir
+    ):
         create_network_share(db, "del1", "D", share_dir, "webdav", 8443, "u", "p")
-        handler = self._make_handler(AdminNetworkShareDeleteHandler, mock_tornado_app, mock_tornado_request)
+        handler = self._make_handler(
+            AdminNetworkShareDeleteHandler, mock_tornado_app, mock_tornado_request
+        )
         mock_mgr = MagicMock()
-        mock_tornado_app.settings['network_share_manager'] = mock_mgr
+        mock_tornado_app.settings["network_share_manager"] = mock_mgr
+
         def get_arg(name, default=""):
             return {"share_id": "del1"}.get(name, default)
-        with patch_db_conn(db), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "get_display_username", return_value="admin"), \
-             patch.object(handler, "redirect") as mock_redir:
+
+        with patch_db_conn(db), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(
+            handler, "get_display_username", return_value="admin"
+        ), patch.object(
+            handler, "redirect"
+        ) as mock_redir:
             handler.post()
             mock_mgr.stop_share.assert_called_once_with("del1")
             assert get_network_share(db, "del1") is None
@@ -625,61 +729,86 @@ class TestAdminNetworkShareHandlers:
     def test_delete_non_admin(self, mock_tornado_app, mock_tornado_request):
         handler = AdminNetworkShareDeleteHandler(mock_tornado_app, mock_tornado_request)
         authenticate(handler, role="user")
-        with patch.object(handler, "is_admin_user", return_value=False), \
-             patch.object(handler, "set_status") as mock_status:
+        with patch.object(handler, "is_admin_user", return_value=False), patch.object(
+            handler, "set_status"
+        ) as mock_status:
             handler.post()
             mock_status.assert_called_with(403)
 
     # -- AdminNetworkShareToggleHandler --
 
-    def test_toggle_disables_share(self, mock_tornado_app, mock_tornado_request, db, share_dir):
+    def test_toggle_disables_share(
+        self, mock_tornado_app, mock_tornado_request, db, share_dir
+    ):
         create_network_share(db, "tog1", "T", share_dir, "webdav", 8443, "u", "p")
-        handler = self._make_handler(AdminNetworkShareToggleHandler, mock_tornado_app, mock_tornado_request)
+        handler = self._make_handler(
+            AdminNetworkShareToggleHandler, mock_tornado_app, mock_tornado_request
+        )
         mock_mgr = MagicMock()
-        mock_tornado_app.settings['network_share_manager'] = mock_mgr
+        mock_tornado_app.settings["network_share_manager"] = mock_mgr
+
         def get_arg(name, default=""):
             return {"share_id": "tog1"}.get(name, default)
-        with patch_db_conn(db), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "get_display_username", return_value="admin"), \
-             patch.object(handler, "redirect"):
+
+        with patch_db_conn(db), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(
+            handler, "get_display_username", return_value="admin"
+        ), patch.object(
+            handler, "redirect"
+        ):
             handler.post()
             s = get_network_share(db, "tog1")
             assert s["enabled"] is False
             mock_mgr.stop_share.assert_called_once_with("tog1")
 
-    def test_toggle_enables_share(self, mock_tornado_app, mock_tornado_request, db, share_dir):
+    def test_toggle_enables_share(
+        self, mock_tornado_app, mock_tornado_request, db, share_dir
+    ):
         create_network_share(db, "tog2", "T", share_dir, "webdav", 8443, "u", "p")
         update_network_share(db, "tog2", enabled=False)
-        handler = self._make_handler(AdminNetworkShareToggleHandler, mock_tornado_app, mock_tornado_request)
+        handler = self._make_handler(
+            AdminNetworkShareToggleHandler, mock_tornado_app, mock_tornado_request
+        )
         mock_mgr = MagicMock()
-        mock_tornado_app.settings['network_share_manager'] = mock_mgr
+        mock_tornado_app.settings["network_share_manager"] = mock_mgr
+
         def get_arg(name, default=""):
             return {"share_id": "tog2"}.get(name, default)
-        with patch_db_conn(db), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "get_display_username", return_value="admin"), \
-             patch.object(handler, "redirect"):
+
+        with patch_db_conn(db), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(
+            handler, "get_display_username", return_value="admin"
+        ), patch.object(
+            handler, "redirect"
+        ):
             handler.post()
             s = get_network_share(db, "tog2")
             assert s["enabled"] is True
             mock_mgr.start_share.assert_called_once()
 
     def test_toggle_nonexistent_share(self, mock_tornado_app, mock_tornado_request, db):
-        handler = self._make_handler(AdminNetworkShareToggleHandler, mock_tornado_app, mock_tornado_request)
+        handler = self._make_handler(
+            AdminNetworkShareToggleHandler, mock_tornado_app, mock_tornado_request
+        )
+
         def get_arg(name, default=""):
             return {"share_id": "nope"}.get(name, default)
-        with patch_db_conn(db), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "redirect") as mock_redir:
+
+        with patch_db_conn(db), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(handler, "redirect") as mock_redir:
             handler.post()
             mock_redir.assert_called_with("/admin/network-shares")
 
     # -- POST: database unavailable --
 
     def test_post_db_unavailable(self, mock_tornado_app, mock_tornado_request):
-        handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
-        mock_tornado_app.settings['db_conn'] = None
+        handler = self._make_handler(
+            AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request
+        )
+        mock_tornado_app.settings["db_conn"] = None
         with patch.object(handler, "redirect") as mock_redir:
             handler.post()
             mock_redir.assert_called_once()
@@ -687,18 +816,33 @@ class TestAdminNetworkShareHandlers:
 
     # -- POST: invalid port (non-numeric) --
 
-    def test_post_invalid_port_uses_default(self, mock_tornado_app, mock_tornado_request, db, share_dir):
-        handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
+    def test_post_invalid_port_uses_default(
+        self, mock_tornado_app, mock_tornado_request, db, share_dir
+    ):
+        handler = self._make_handler(
+            AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request
+        )
+
         def get_arg(name, default=""):
-            return {"name": "S", "folder_path": share_dir, "protocol": "webdav",
-                    "share_username": "u", "share_password": "p",
-                    "port": "notanumber", "read_only": "off"}.get(name, default)
+            return {
+                "name": "S",
+                "folder_path": share_dir,
+                "protocol": "webdav",
+                "share_username": "u",
+                "share_password": "p",
+                "port": "notanumber",
+                "read_only": "off",
+            }.get(name, default)
+
         mock_mgr = MagicMock()
-        mock_tornado_app.settings['network_share_manager'] = mock_mgr
-        with patch_db_conn(db), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "get_display_username", return_value="admin"), \
-             patch.object(handler, "redirect") as mock_redir:
+        mock_tornado_app.settings["network_share_manager"] = mock_mgr
+        with patch_db_conn(db), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(
+            handler, "get_display_username", return_value="admin"
+        ), patch.object(
+            handler, "redirect"
+        ) as mock_redir:
             handler.post()
             mock_redir.assert_called_with("/admin/network-shares")
             shares = get_all_network_shares(db)
@@ -707,59 +851,111 @@ class TestAdminNetworkShareHandlers:
 
     # -- POST: port out of range --
 
-    def test_post_port_out_of_range_zero(self, mock_tornado_app, mock_tornado_request, db, share_dir):
-        handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
+    def test_post_port_out_of_range_zero(
+        self, mock_tornado_app, mock_tornado_request, db, share_dir
+    ):
+        handler = self._make_handler(
+            AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request
+        )
+
         def get_arg(name, default=""):
-            return {"name": "S", "folder_path": share_dir, "protocol": "webdav",
-                    "share_username": "u", "share_password": "p",
-                    "port": "0", "read_only": "off"}.get(name, default)
-        with patch_db_conn(db), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "redirect") as mock_redir:
+            return {
+                "name": "S",
+                "folder_path": share_dir,
+                "protocol": "webdav",
+                "share_username": "u",
+                "share_password": "p",
+                "port": "0",
+                "read_only": "off",
+            }.get(name, default)
+
+        with patch_db_conn(db), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(handler, "redirect") as mock_redir:
             handler.post()
             assert "Port+must+be+1-65535" in mock_redir.call_args[0][0]
 
-    def test_post_port_out_of_range_too_high(self, mock_tornado_app, mock_tornado_request, db, share_dir):
-        handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
+    def test_post_port_out_of_range_too_high(
+        self, mock_tornado_app, mock_tornado_request, db, share_dir
+    ):
+        handler = self._make_handler(
+            AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request
+        )
+
         def get_arg(name, default=""):
-            return {"name": "S", "folder_path": share_dir, "protocol": "webdav",
-                    "share_username": "u", "share_password": "p",
-                    "port": "70000", "read_only": "off"}.get(name, default)
-        with patch_db_conn(db), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "redirect") as mock_redir:
+            return {
+                "name": "S",
+                "folder_path": share_dir,
+                "protocol": "webdav",
+                "share_username": "u",
+                "share_password": "p",
+                "port": "70000",
+                "read_only": "off",
+            }.get(name, default)
+
+        with patch_db_conn(db), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(handler, "redirect") as mock_redir:
             handler.post()
             assert "Port+must+be+1-65535" in mock_redir.call_args[0][0]
 
     # -- POST: create_network_share failure --
 
-    def test_post_create_db_failure(self, mock_tornado_app, mock_tornado_request, db, share_dir):
-        handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
+    def test_post_create_db_failure(
+        self, mock_tornado_app, mock_tornado_request, db, share_dir
+    ):
+        handler = self._make_handler(
+            AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request
+        )
+
         def get_arg(name, default=""):
-            return {"name": "S", "folder_path": share_dir, "protocol": "webdav",
-                    "share_username": "u", "share_password": "p",
-                    "port": "8443", "read_only": "off"}.get(name, default)
-        with patch_db_conn(db), \
-             patch("aird.handlers.admin_handlers.create_network_share", return_value=False), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "redirect") as mock_redir:
+            return {
+                "name": "S",
+                "folder_path": share_dir,
+                "protocol": "webdav",
+                "share_username": "u",
+                "share_password": "p",
+                "port": "8443",
+                "read_only": "off",
+            }.get(name, default)
+
+        with patch_db_conn(db), patch(
+            "aird.handlers.admin_handlers.create_network_share", return_value=False
+        ), patch.object(handler, "get_argument", side_effect=get_arg), patch.object(
+            handler, "redirect"
+        ) as mock_redir:
             handler.post()
             assert "Failed+to+create+share" in mock_redir.call_args[0][0]
 
     # -- POST: read_only checkbox on --
 
-    def test_post_read_only_on(self, mock_tornado_app, mock_tornado_request, db, share_dir):
-        handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
+    def test_post_read_only_on(
+        self, mock_tornado_app, mock_tornado_request, db, share_dir
+    ):
+        handler = self._make_handler(
+            AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request
+        )
+
         def get_arg(name, default=""):
-            return {"name": "RO", "folder_path": share_dir, "protocol": "webdav",
-                    "share_username": "u", "share_password": "p",
-                    "port": "8443", "read_only": "on"}.get(name, default)
+            return {
+                "name": "RO",
+                "folder_path": share_dir,
+                "protocol": "webdav",
+                "share_username": "u",
+                "share_password": "p",
+                "port": "8443",
+                "read_only": "on",
+            }.get(name, default)
+
         mock_mgr = MagicMock()
-        mock_tornado_app.settings['network_share_manager'] = mock_mgr
-        with patch_db_conn(db), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "get_display_username", return_value="admin"), \
-             patch.object(handler, "redirect"):
+        mock_tornado_app.settings["network_share_manager"] = mock_mgr
+        with patch_db_conn(db), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(
+            handler, "get_display_username", return_value="admin"
+        ), patch.object(
+            handler, "redirect"
+        ):
             handler.post()
             shares = get_all_network_shares(db)
             assert len(shares) == 1
@@ -769,35 +965,65 @@ class TestAdminNetworkShareHandlers:
 
     # -- POST: no manager available --
 
-    def test_post_creates_share_without_manager(self, mock_tornado_app, mock_tornado_request, db, share_dir):
-        handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
+    def test_post_creates_share_without_manager(
+        self, mock_tornado_app, mock_tornado_request, db, share_dir
+    ):
+        handler = self._make_handler(
+            AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request
+        )
+
         def get_arg(name, default=""):
-            return {"name": "NoMgr", "folder_path": share_dir, "protocol": "webdav",
-                    "share_username": "u", "share_password": "p",
-                    "port": "8443", "read_only": "off"}.get(name, default)
-        with patch_db_conn(db), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "get_display_username", return_value="admin"), \
-             patch.object(handler, "redirect") as mock_redir:
-            mock_tornado_app.settings['network_share_manager'] = None
+            return {
+                "name": "NoMgr",
+                "folder_path": share_dir,
+                "protocol": "webdav",
+                "share_username": "u",
+                "share_password": "p",
+                "port": "8443",
+                "read_only": "off",
+            }.get(name, default)
+
+        with patch_db_conn(db), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(
+            handler, "get_display_username", return_value="admin"
+        ), patch.object(
+            handler, "redirect"
+        ) as mock_redir:
+            mock_tornado_app.settings["network_share_manager"] = None
             handler.post()
             mock_redir.assert_called_with("/admin/network-shares")
             assert len(get_all_network_shares(db)) == 1
 
     # -- POST: SMB protocol --
 
-    def test_post_smb_protocol(self, mock_tornado_app, mock_tornado_request, db, share_dir):
-        handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
+    def test_post_smb_protocol(
+        self, mock_tornado_app, mock_tornado_request, db, share_dir
+    ):
+        handler = self._make_handler(
+            AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request
+        )
+
         def get_arg(name, default=""):
-            return {"name": "SMBShare", "folder_path": share_dir, "protocol": "smb",
-                    "share_username": "u", "share_password": "p",
-                    "port": "4455", "read_only": "off"}.get(name, default)
+            return {
+                "name": "SMBShare",
+                "folder_path": share_dir,
+                "protocol": "smb",
+                "share_username": "u",
+                "share_password": "p",
+                "port": "4455",
+                "read_only": "off",
+            }.get(name, default)
+
         mock_mgr = MagicMock()
-        mock_tornado_app.settings['network_share_manager'] = mock_mgr
-        with patch_db_conn(db), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "get_display_username", return_value="admin"), \
-             patch.object(handler, "redirect"):
+        mock_tornado_app.settings["network_share_manager"] = mock_mgr
+        with patch_db_conn(db), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(
+            handler, "get_display_username", return_value="admin"
+        ), patch.object(
+            handler, "redirect"
+        ):
             handler.post()
             shares = get_all_network_shares(db)
             assert shares[0]["protocol"] == "smb"
@@ -805,35 +1031,53 @@ class TestAdminNetworkShareHandlers:
     # -- DELETE: empty share_id --
 
     def test_delete_empty_share_id(self, mock_tornado_app, mock_tornado_request, db):
-        handler = self._make_handler(AdminNetworkShareDeleteHandler, mock_tornado_app, mock_tornado_request)
+        handler = self._make_handler(
+            AdminNetworkShareDeleteHandler, mock_tornado_app, mock_tornado_request
+        )
+
         def get_arg(name, default=""):
             return {"share_id": ""}.get(name, default)
-        with patch_db_conn(db), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "redirect") as mock_redir:
+
+        with patch_db_conn(db), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(handler, "redirect") as mock_redir:
             handler.post()
             mock_redir.assert_called_with("/admin/network-shares")
 
     def test_delete_no_db(self, mock_tornado_app, mock_tornado_request):
-        handler = self._make_handler(AdminNetworkShareDeleteHandler, mock_tornado_app, mock_tornado_request)
+        handler = self._make_handler(
+            AdminNetworkShareDeleteHandler, mock_tornado_app, mock_tornado_request
+        )
+
         def get_arg(name, default=""):
             return {"share_id": "some-id"}.get(name, default)
-        mock_tornado_app.settings['db_conn'] = None
-        with patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "redirect") as mock_redir:
+
+        mock_tornado_app.settings["db_conn"] = None
+        with patch.object(handler, "get_argument", side_effect=get_arg), patch.object(
+            handler, "redirect"
+        ) as mock_redir:
             handler.post()
             mock_redir.assert_called_with("/admin/network-shares")
 
-    def test_delete_without_manager(self, mock_tornado_app, mock_tornado_request, db, share_dir):
+    def test_delete_without_manager(
+        self, mock_tornado_app, mock_tornado_request, db, share_dir
+    ):
         create_network_share(db, "del2", "D", share_dir, "webdav", 8443, "u", "p")
-        handler = self._make_handler(AdminNetworkShareDeleteHandler, mock_tornado_app, mock_tornado_request)
+        handler = self._make_handler(
+            AdminNetworkShareDeleteHandler, mock_tornado_app, mock_tornado_request
+        )
+
         def get_arg(name, default=""):
             return {"share_id": "del2"}.get(name, default)
-        with patch_db_conn(db), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "get_display_username", return_value="admin"), \
-             patch.object(handler, "redirect") as mock_redir:
-            mock_tornado_app.settings['network_share_manager'] = None
+
+        with patch_db_conn(db), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(
+            handler, "get_display_username", return_value="admin"
+        ), patch.object(
+            handler, "redirect"
+        ) as mock_redir:
+            mock_tornado_app.settings["network_share_manager"] = None
             handler.post()
             assert get_network_share(db, "del2") is None
             mock_redir.assert_called_with("/admin/network-shares")
@@ -843,41 +1087,54 @@ class TestAdminNetworkShareHandlers:
     def test_toggle_non_admin(self, mock_tornado_app, mock_tornado_request):
         handler = AdminNetworkShareToggleHandler(mock_tornado_app, mock_tornado_request)
         authenticate(handler, role="user")
-        with patch.object(handler, "is_admin_user", return_value=False), \
-             patch.object(handler, "set_status") as mock_status:
+        with patch.object(handler, "is_admin_user", return_value=False), patch.object(
+            handler, "set_status"
+        ) as mock_status:
             handler.post()
             mock_status.assert_called_with(403)
 
     # -- TOGGLE: empty share_id --
 
     def test_toggle_empty_share_id(self, mock_tornado_app, mock_tornado_request, db):
-        handler = self._make_handler(AdminNetworkShareToggleHandler, mock_tornado_app, mock_tornado_request)
+        handler = self._make_handler(
+            AdminNetworkShareToggleHandler, mock_tornado_app, mock_tornado_request
+        )
+
         def get_arg(name, default=""):
             return {"share_id": ""}.get(name, default)
-        with patch_db_conn(db), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "redirect") as mock_redir:
+
+        with patch_db_conn(db), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(handler, "redirect") as mock_redir:
             handler.post()
             mock_redir.assert_called_with("/admin/network-shares")
 
     def test_toggle_no_db(self, mock_tornado_app, mock_tornado_request):
-        handler = self._make_handler(AdminNetworkShareToggleHandler, mock_tornado_app, mock_tornado_request)
+        handler = self._make_handler(
+            AdminNetworkShareToggleHandler, mock_tornado_app, mock_tornado_request
+        )
+
         def get_arg(name, default=""):
             return {"share_id": "any"}.get(name, default)
-        mock_tornado_app.settings['db_conn'] = None
-        with patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "redirect") as mock_redir:
+
+        mock_tornado_app.settings["db_conn"] = None
+        with patch.object(handler, "get_argument", side_effect=get_arg), patch.object(
+            handler, "redirect"
+        ) as mock_redir:
             handler.post()
             mock_redir.assert_called_with("/admin/network-shares")
 
     # -- GET: db_conn is None --
 
     def test_get_no_db(self, mock_tornado_app, mock_tornado_request):
-        handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
-        mock_tornado_app.settings['network_share_manager'] = None
-        mock_tornado_app.settings['db_conn'] = None
-        with patch.object(handler, "render") as mock_render, \
-             patch.object(handler, "get_argument", return_value=None):
+        handler = self._make_handler(
+            AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request
+        )
+        mock_tornado_app.settings["network_share_manager"] = None
+        mock_tornado_app.settings["db_conn"] = None
+        with patch.object(handler, "render") as mock_render, patch.object(
+            handler, "get_argument", return_value=None
+        ):
             handler.get()
             assert mock_render.called
             shares_passed = mock_render.call_args[1]["shares"]
@@ -886,25 +1143,38 @@ class TestAdminNetworkShareHandlers:
     # -- GET: error query parameter forwarded --
 
     def test_get_forwards_error_param(self, mock_tornado_app, mock_tornado_request, db):
-        handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
-        mock_tornado_app.settings['network_share_manager'] = None
-        with patch_db_conn(db), \
-             patch.object(handler, "render") as mock_render, \
-             patch.object(handler, "get_argument", return_value="Something+went+wrong"):
+        handler = self._make_handler(
+            AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request
+        )
+        mock_tornado_app.settings["network_share_manager"] = None
+        with patch_db_conn(db), patch.object(
+            handler, "render"
+        ) as mock_render, patch.object(
+            handler, "get_argument", return_value="Something+went+wrong"
+        ):
             handler.get()
             assert mock_render.call_args[1]["error"] == "Something+went+wrong"
 
     # -- TOGGLE: without manager --
 
-    def test_toggle_disables_without_manager(self, mock_tornado_app, mock_tornado_request, db, share_dir):
+    def test_toggle_disables_without_manager(
+        self, mock_tornado_app, mock_tornado_request, db, share_dir
+    ):
         create_network_share(db, "tog3", "T", share_dir, "webdav", 8443, "u", "p")
-        handler = self._make_handler(AdminNetworkShareToggleHandler, mock_tornado_app, mock_tornado_request)
+        handler = self._make_handler(
+            AdminNetworkShareToggleHandler, mock_tornado_app, mock_tornado_request
+        )
+
         def get_arg(name, default=""):
             return {"share_id": "tog3"}.get(name, default)
-        mock_tornado_app.settings['network_share_manager'] = None
-        with patch_db_conn(db), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
-             patch.object(handler, "get_display_username", return_value="admin"), \
-             patch.object(handler, "redirect"):
+
+        mock_tornado_app.settings["network_share_manager"] = None
+        with patch_db_conn(db), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(
+            handler, "get_display_username", return_value="admin"
+        ), patch.object(
+            handler, "redirect"
+        ):
             handler.post()
             assert get_network_share(db, "tog3")["enabled"] is False

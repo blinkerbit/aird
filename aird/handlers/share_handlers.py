@@ -15,8 +15,8 @@ from aird.db import (
     is_share_expired,
     log_audit,
 )
+
 from aird.utils.util import (
-    is_within_root,
     get_all_files_recursive,
     filter_files_by_patterns,
     is_cloud_relative_path,
@@ -26,8 +26,15 @@ from aird.utils.util import (
     download_cloud_items,
     is_feature_enabled,
 )
+from aird.core.security import (
+    is_within_root,
+)
+from aird.handlers.constants import (
+    FS_DISABLED_MSG,
+    ACCESS_TOKEN_INVALID_OR_EXPIRED,
+    INVALID_SHARE_LINK,
+)
 from aird.config import ROOT_DIR
-import aird.constants as constants_module
 from aird.cloud import CloudProviderError
 from aird.handlers.view_handlers import MainHandler
 
@@ -53,7 +60,7 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
     def post(self):
         if not is_feature_enabled("file_share", True):
             self.set_status(403)
-            self.write({"error": "File sharing is disabled"})
+            self.write({"error": FS_DISABLED_MSG})
             return
         try:
             data = json.loads(self.request.body or b"{}")
@@ -211,7 +218,7 @@ class ShareRevokeHandler(BaseHandler):
     def post(self):
         if not is_feature_enabled("file_share", True):
             self.set_status(403)
-            self.write({"error": "File sharing is disabled"})
+            self.write({"error": FS_DISABLED_MSG})
             return
         sid = self.get_argument("id", "")
 
@@ -248,7 +255,7 @@ class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
         """Update share access list"""
         if not is_feature_enabled("file_share", True):
             self.set_status(403)
-            self.write({"error": "File sharing is disabled"})
+            self.write({"error": FS_DISABLED_MSG})
             return
 
         share_id = None
@@ -483,9 +490,7 @@ class TokenVerificationHandler(BaseHandler):
         share = get_share_by_id(self.db_conn, sid)
         if not share:
             self.set_status(404)
-            self.write(
-                "Invalid share link: The requested share does not exist or has been removed"
-            )
+            self.write(INVALID_SHARE_LINK)
             return
 
         self.render("token_verification.html", share_id=sid)
@@ -539,9 +544,7 @@ class SharedListHandler(BaseHandler):
         share = get_share_by_id(self.db_conn, sid)
         if not share:
             self.set_status(404)
-            self.write(
-                "Invalid share link: The requested share does not exist or has been removed"
-            )
+            self.write(INVALID_SHARE_LINK)
             return
 
         # Check if share has expired
@@ -592,7 +595,7 @@ class SharedListHandler(BaseHandler):
             # Check if current user is in allowed users list
             if current_user not in allowed_users:
                 self.set_status(403)
-                self.write("Access denied: Invalid or expired access token")
+                self.write(ACCESS_TOKEN_INVALID_OR_EXPIRED)
                 return
 
         # Handle dynamic vs static shares
@@ -644,9 +647,7 @@ class SharedFileHandler(BaseHandler):
         share = get_share_by_id(self.db_conn, sid)
         if not share:
             self.set_status(404)
-            self.write(
-                "Invalid share link: The requested share does not exist or has been removed"
-            )
+            self.write(INVALID_SHARE_LINK)
             return
 
         # Check if share has expired
@@ -674,7 +675,7 @@ class SharedFileHandler(BaseHandler):
                 provided_token, secret_token
             ):
                 self.set_status(403)
-                self.write("Access denied: Invalid or expired access token")
+                self.write(ACCESS_TOKEN_INVALID_OR_EXPIRED)
                 return
 
         # Check if share has user restrictions
@@ -693,7 +694,7 @@ class SharedFileHandler(BaseHandler):
 
             if current_user not in allowed_users:
                 self.set_status(403)
-                self.write("Access denied: Invalid or expired access token")
+                self.write(ACCESS_TOKEN_INVALID_OR_EXPIRED)
                 return
 
         share_type = share.get("share_type", "static")

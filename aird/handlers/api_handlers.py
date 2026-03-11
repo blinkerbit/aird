@@ -14,8 +14,13 @@ import aiofiles
 from collections import deque
 from urllib.parse import unquote
 
-import aird.constants as constants_module
-
+from aird.handlers.constants import (
+    AUTH_REQUIRED,
+    AUTH_EXPIRED,
+    REDIRECT_SEARCH,
+    FILESHARE_DISABLED_MSG,
+    DB_NOT_AVAILABLE_MSG,
+)
 from aird.handlers.base_handler import (
     BaseHandler,
     ManagedWebSocketMixin,
@@ -29,16 +34,19 @@ from aird.db import (
     search_users,
     get_shares_for_path,
 )
+
 from aird.utils.util import (
-    is_within_root,
     get_files_in_directory,
     is_video_file,
     is_audio_file,
     WebSocketConnectionManager,
-    is_valid_websocket_origin,
     is_feature_enabled,
     get_current_feature_flags,
     augment_with_shared_status,
+)
+from aird.core.security import (
+    is_within_root,
+    is_valid_websocket_origin,
 )
 from aird.core.filter_expression import FilterExpression
 from aird.config import (
@@ -48,7 +56,9 @@ from aird.config import (
 from aird.core.mmap_handler import MMapFileHandler
 
 
-class FeatureFlagSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandler):
+class FeatureFlagSocketHandler(
+    ManagedWebSocketMixin, tornado.websocket.WebSocketHandler
+):
     # Use connection manager with configurable limits for feature flags
     connection_manager = WebSocketConnectionManager(
         "feature_flags", default_max_connections=50, default_idle_timeout=600
@@ -56,7 +66,7 @@ class FeatureFlagSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocke
 
     def open(self):
         if not self.get_current_user():
-            self.close(code=1008, reason="Authentication required")
+            self.close(code=1008, reason=AUTH_REQUIRED)
             return
 
         if not self.register_connection():
@@ -102,7 +112,7 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
 
     async def open(self, path):
         if not self.get_current_user():
-            self.close(code=1008, reason="Authentication required")
+            self.close(code=1008, reason=AUTH_REQUIRED)
             return
 
         if not self.register_connection():
@@ -125,7 +135,7 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
 
         self.line_buffer = deque(maxlen=n_lines)
         self.filter_expression = self.get_argument("filter", None)
-        
+
         expr = None
         if self.filter_expression:
             try:
@@ -148,9 +158,7 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
                 )
         except Exception as e:
             logging.error(f"Error reading file: {self.file_path}", exc_info=True)
-            self.write_message(
-                json.dumps({"type": "error", "message": str(e)})
-            )
+            self.write_message(json.dumps({"type": "error", "message": str(e)}))
             return
 
         self.is_streaming = True
@@ -213,19 +221,29 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
                 )
                 return
             try:
-                content_type = mimetypes.guess_type(abs_path)[0] or "application/octet-stream"
+                content_type = (
+                    mimetypes.guess_type(abs_path)[0] or "application/octet-stream"
+                )
                 file_size = os.path.getsize(abs_path)
-                await self.write_message(json.dumps({
-                    "type": "stream_start",
-                    "file_path": rel_path,
-                    "content_type": content_type,
-                    "size": file_size
-                }))
+                await self.write_message(
+                    json.dumps(
+                        {
+                            "type": "stream_start",
+                            "file_path": rel_path,
+                            "content_type": content_type,
+                            "size": file_size,
+                        }
+                    )
+                )
                 async for chunk in MMapFileHandler.serve_file_chunk(abs_path):
-                    await self.write_message(json.dumps({
-                        "type": "stream_data",
-                        "data": base64.b64encode(chunk).decode("ascii")
-                    }))
+                    await self.write_message(
+                        json.dumps(
+                            {
+                                "type": "stream_data",
+                                "data": base64.b64encode(chunk).decode("ascii"),
+                            }
+                        )
+                    )
                 await self.write_message(json.dumps({"type": "stream_end"}))
             except Exception as e:
                 self.write_message(json.dumps({"type": "error", "message": str(e)}))
@@ -260,7 +278,9 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
                             try:
                                 if expr.matches(line):
                                     await self.write_message(
-                                        json.dumps({"type": "line", "data": line.strip()})
+                                        json.dumps(
+                                            {"type": "line", "data": line.strip()}
+                                        )
                                     )
                             except Exception:
                                 await self.write_message(
@@ -353,7 +373,9 @@ class SuperSearchHandler(BaseHandler):
         self.render("super_search.html", current_path=current_path)
 
 
-class SuperSearchWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandler):
+class SuperSearchWebSocketHandler(
+    ManagedWebSocketMixin, tornado.websocket.WebSocketHandler
+):
     # Use connection manager with configurable limits for search
     connection_manager = WebSocketConnectionManager(
         "search", default_max_connections=100, default_idle_timeout=180
@@ -388,7 +410,7 @@ class SuperSearchWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSo
                 )
             except Exception:
                 pass
-            self.close(code=1008, reason="Authentication required")
+            self.close(code=1008, reason=AUTH_REQUIRED)
             return
 
         logging.info(
@@ -409,12 +431,12 @@ class SuperSearchWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSo
                 json.dumps(
                     {
                         "type": "auth_required",
-                        "message": "Your session has expired. Please log in again.",
-                        "redirect": "/login?next=/search",
+                        "message": AUTH_EXPIRED,
+                        "redirect": REDIRECT_SEARCH,
                     }
                 )
             )
-            self.close(code=1008, reason="Authentication expired")
+            self.close(code=1008, reason=AUTH_EXPIRED)
             return
 
         try:
@@ -447,12 +469,12 @@ class SuperSearchWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSo
                 json.dumps(
                     {
                         "type": "auth_required",
-                        "message": "Your session has expired. Please log in again.",
-                        "redirect": "/login?next=/search",
+                        "message": AUTH_EXPIRED,
+                        "redirect": REDIRECT_SEARCH,
                     }
                 )
             )
-            self.close(code=1008, reason="Authentication expired")
+            self.close(code=1008, reason=AUTH_EXPIRED)
             return
 
         if self.search_task and not self.search_task.done():
@@ -489,8 +511,8 @@ class SuperSearchWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSo
                 json.dumps(
                     {
                         "type": "auth_required",
-                        "message": "Your session has expired. Please log in again.",
-                        "redirect": "/login?next=/search",
+                        "message": AUTH_EXPIRED,
+                        "redirect": REDIRECT_SEARCH,
                     }
                 )
             )
@@ -597,11 +619,11 @@ class SuperSearchWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSo
                                 {
                                     "type": "auth_required",
                                     "message": "Your session expired during search. Please log in again.",
-                                    "redirect": "/login?next=/search",
+                                    "redirect": REDIRECT_SEARCH,
                                 }
                             )
                         )
-                        self.close(code=1008, reason="Authentication expired")
+                        self.close(code=1008, reason=AUTH_EXPIRED)
                         return
 
             # Send completion message
@@ -683,7 +705,7 @@ class ShareDetailsAPIHandler(BaseHandler):
         """Get share details for a specific file"""
         if not is_feature_enabled("file_share", True):
             self.set_status(403)
-            self.write({"error": "File sharing is disabled"})
+            self.write({"error": FILESHARE_DISABLED_MSG})
             return
 
         file_path = self.get_argument("path", "").strip()
@@ -697,7 +719,7 @@ class ShareDetailsAPIHandler(BaseHandler):
             db_conn = self.db_conn
             if not db_conn:
                 self.set_status(500)
-                self.write({"error": "Database connection not available"})
+                self.write({"error": DB_NOT_AVAILABLE_MSG})
                 return
             matching_shares = get_shares_for_path(db_conn, file_path)
 
@@ -726,7 +748,7 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
         """Get share details for a specific share ID"""
         if not is_feature_enabled("file_share", True):
             self.set_status(403)
-            self.write({"error": "File sharing is disabled"})
+            self.write({"error": FILESHARE_DISABLED_MSG})
             return
 
         share_id = self.get_argument("id", "").strip()
@@ -739,7 +761,7 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
             db_conn = self.db_conn
             if not db_conn:
                 self.set_status(500)
-                self.write({"error": "Database connection not available"})
+                self.write({"error": DB_NOT_AVAILABLE_MSG})
                 return
             share = get_share_by_id(db_conn, share_id)
             if not share:
@@ -772,13 +794,13 @@ class ShareListAPIHandler(BaseHandler):
     def get(self):
         if not is_feature_enabled("file_share", True):
             self.set_status(403)
-            self.write({"error": "File sharing is disabled"})
+            self.write({"error": FILESHARE_DISABLED_MSG})
             return
 
         db_conn = self.db_conn
         if not db_conn:
             self.set_status(500)
-            self.write({"error": "Database connection not available"})
+            self.write({"error": DB_NOT_AVAILABLE_MSG})
             return
         shares = get_all_shares(db_conn)
         self.write({"shares": shares})

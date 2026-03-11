@@ -35,6 +35,7 @@ FEATURE_FLAGS = {
     "p2p_transfer": True,
     "folder_create": True,
     "folder_delete": True,
+    "allow_simple_passwords": False,
 }
 
 # WebSocket connection configuration

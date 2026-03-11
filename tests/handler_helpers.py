@@ -89,11 +89,15 @@ def patch_db_conn(value, modules=None):
     try:
         for target in targets:
             patches.append(patch(target, value, create=True))
-        
+
         # Patch the BaseHandler property correctly
-        prop_patch = patch("aird.handlers.base_handler.BaseHandler.db_conn", new_callable=PropertyMock, return_value=value)
+        prop_patch = patch(
+            "aird.handlers.base_handler.BaseHandler.db_conn",
+            new_callable=PropertyMock,
+            return_value=value,
+        )
         patches.append(prop_patch)
-                
+
         for p in patches:
             try:
                 p.start()
@@ -105,4 +109,3 @@ def patch_db_conn(value, modules=None):
     finally:
         for p in reversed(active_patches):
             p.stop()
-

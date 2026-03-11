@@ -209,7 +209,7 @@ def get_ldap_sync_logs(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
         return []
 
 
-def extract_username_from_dn(dn: str, user_template: str) -> str:
+def extract_username_from_dn(dn: str, user_template: str) -> str | None:
     """Extract username from LDAP DN using the user template"""
     try:
         if "{username}" in user_template:

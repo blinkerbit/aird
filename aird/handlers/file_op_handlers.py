@@ -10,7 +10,12 @@ import asyncio
 import aiofiles
 
 from aird.handlers.base_handler import BaseHandler
-from aird.utils.util import is_within_root, is_feature_enabled, sanitize_cloud_filename
+from aird.utils.util import sanitize_cloud_filename, is_feature_enabled
+from aird.core.security import (  # noqa: F401
+    is_within_root,
+    is_valid_websocket_origin,
+    join_path,
+)
 from aird.db import log_audit
 import aird.constants as constants_module
 from aird.constants.file_ops import (
