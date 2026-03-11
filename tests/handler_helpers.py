@@ -67,26 +67,21 @@ def authenticate(handler, role="admin", username=None):
 @contextmanager
 def patch_db_conn(value, modules=None):
     """
-    Patch DB_CONN in aird.constants and common handler modules.
-    Extra module paths can be provided via `modules`.
+    Patch DB_CONN in aird.constants and BaseHandler property.
+    We patch BaseHandler.db_conn using PropertyMock so all handlers
+    reading self.db_conn get the mocked connection.
+    Extra module paths can be provided via `modules` for legacy compatibility.
     """
-    targets = ["aird.constants.DB_CONN"]
-    default_modules = [
-        "aird.handlers.admin_handlers",
-        "aird.handlers.api_handlers",
-        "aird.handlers.auth_handlers",
-        "aird.handlers.base_handler",
-        "aird.handlers.file_op_handlers",
-        "aird.handlers.share_handlers",
-        "aird.handlers.view_handlers",
+    from unittest.mock import PropertyMock
+
+    targets = [
+        "aird.constants.DB_CONN",
+        "aird.handlers.base_handler.constants_module.DB_CONN",
     ]
-    modules = modules or default_modules
-    # Always include base_handler since require_db reads from it
-    if "aird.handlers.base_handler" not in modules:
-        modules.append("aird.handlers.base_handler")
+
+    modules = modules or []
     for module in modules:
         targets.append(f"{module}.constants_module.DB_CONN")
-        # Some modules reference DB_CONN directly
         targets.append(f"{module}.DB_CONN")
 
     patches = []
@@ -94,6 +89,11 @@ def patch_db_conn(value, modules=None):
     try:
         for target in targets:
             patches.append(patch(target, value, create=True))
+        
+        # Patch the BaseHandler property correctly
+        prop_patch = patch("aird.handlers.base_handler.BaseHandler.db_conn", new_callable=PropertyMock, return_value=value)
+        patches.append(prop_patch)
+                
         for p in patches:
             try:
                 p.start()

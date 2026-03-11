@@ -233,7 +233,7 @@ class UploadHandler(BaseHandler):
             return
 
         log_audit(
-            constants_module.DB_CONN,
+            self.db_conn,
             "file_upload",
             username=self.get_display_username(),
             details=path_to_rel(final_path_abs),
@@ -299,7 +299,7 @@ class CreateFolderHandler(BaseHandler):
             else None
         )
         log_audit(
-            constants_module.DB_CONN,
+            self.db_conn,
             "folder_create",
             username=username,
             details=path_to_rel(new_dir_abs),
@@ -343,7 +343,7 @@ class DeleteHandler(BaseHandler):
                 return
             shutil.rmtree(abspath)
             log_audit(
-                constants_module.DB_CONN,
+                self.db_conn,
                 "folder_delete",
                 username=self.get_display_username(),
                 details=path_to_rel(abspath),
@@ -356,7 +356,7 @@ class DeleteHandler(BaseHandler):
                 return
             os.remove(abspath)
             log_audit(
-                constants_module.DB_CONN,
+                self.db_conn,
                 "file_delete",
                 username=self.get_display_username(),
                 details=path_to_rel(abspath),
@@ -425,7 +425,7 @@ class RenameHandler(BaseHandler):
             return
 
         log_audit(
-            constants_module.DB_CONN,
+            self.db_conn,
             "rename",
             username=self.get_display_username(),
             details=f"{path} -> {new_name}",
@@ -479,7 +479,7 @@ class CopyHandler(BaseHandler):
             self.write(COPY_FAILED)
             return
         log_audit(
-            constants_module.DB_CONN,
+            self.db_conn,
             "copy",
             username=self.get_display_username(),
             details=f"{path} -> {dest}",
@@ -533,7 +533,7 @@ class MoveHandler(BaseHandler):
             self.write(MOVE_FAILED)
             return
         log_audit(
-            constants_module.DB_CONN,
+            self.db_conn,
             "move",
             username=self.get_display_username(),
             details=f"{path} -> {dest}",
@@ -596,7 +596,7 @@ class BulkHandler(BaseHandler):
                         try:
                             shutil.rmtree(abspath)
                             log_audit(
-                                constants_module.DB_CONN,
+                                self.db_conn,
                                 "folder_delete",
                                 username=self.get_display_username(),
                                 details=path_to_rel(abspath),
@@ -611,7 +611,7 @@ class BulkHandler(BaseHandler):
                         try:
                             os.remove(abspath)
                             log_audit(
-                                constants_module.DB_CONN,
+                                self.db_conn,
                                 "file_delete",
                                 username=self.get_display_username(),
                                 details=path_to_rel(abspath),
@@ -624,7 +624,7 @@ class BulkHandler(BaseHandler):
                 if not share_id:
                     err = SHARE_ID_REQUIRED
                 else:
-                    conn = constants_module.DB_CONN
+                    conn = self.db_conn
                     if not conn:
                         err = DATABASE_UNAVAILABLE
                     else:
@@ -638,7 +638,7 @@ class BulkHandler(BaseHandler):
                                 paths_list.append(rel)
                                 if update_share(conn, share_id, paths=paths_list):
                                     log_audit(
-                                        constants_module.DB_CONN,
+                                        self.db_conn,
                                         "share_update",
                                         username=self.get_display_username(),
                                         details=f"add path to {share_id}: {rel}",
@@ -719,7 +719,7 @@ class EditHandler(BaseHandler):
                     pass
                 raise
             log_audit(
-                constants_module.DB_CONN,
+                self.db_conn,
                 "file_edit",
                 username=self.get_display_username(),
                 details=path_to_rel(str(abspath)),

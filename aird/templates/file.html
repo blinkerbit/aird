@@ -531,18 +531,39 @@
             stopStreamBtn.style.display = '';
             streamingIndicator.style.display = '';
             ws.onmessage = function (event) {
-                let line = event.data;
-                if (line.endsWith('\n')) line = line.slice(0, -1);
-                lineCount++;
-                const row = tableBody.insertRow();
-                const lineNumCell = row.insertCell(0);
-                const lineContentCell = row.insertCell(1);
-                lineNumCell.className = 'line-numbers';
-                lineNumCell.textContent = lineCount;
-                lineContentCell.innerHTML = `<pre>${line || '\u00A0'}</pre>`;
-                if (!lineNumbersVisible) lineNumCell.classList.add('hidden');
-                if (lineCount % 2 === 0) row.style.backgroundColor = '#f8f8f8';
-                window.scrollTo(0, document.body.scrollHeight);
+                try {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === 'error') {
+                        console.error('Stream error:', msg.message);
+                        return;
+                    }
+                    if (msg.type !== 'line') return;
+                    let line = msg.data || '';
+                    lineCount++;
+                    const row = tableBody.insertRow();
+                    const lineNumCell = row.insertCell(0);
+                    const lineContentCell = row.insertCell(1);
+                    lineNumCell.className = 'line-numbers';
+                    lineNumCell.textContent = lineCount;
+                    lineContentCell.innerHTML = `<pre>${line || '\u00A0'}</pre>`;
+                    if (!lineNumbersVisible) lineNumCell.classList.add('hidden');
+                    if (lineCount % 2 === 0) row.style.backgroundColor = '#f8f8f8';
+                    window.scrollTo(0, document.body.scrollHeight);
+                } catch (e) {
+                    // Fallback: treat as raw text
+                    let line = event.data;
+                    if (line.endsWith('\n')) line = line.slice(0, -1);
+                    lineCount++;
+                    const row = tableBody.insertRow();
+                    const lineNumCell = row.insertCell(0);
+                    const lineContentCell = row.insertCell(1);
+                    lineNumCell.className = 'line-numbers';
+                    lineNumCell.textContent = lineCount;
+                    lineContentCell.innerHTML = `<pre>${line || '\u00A0'}</pre>`;
+                    if (!lineNumbersVisible) lineNumCell.classList.add('hidden');
+                    if (lineCount % 2 === 0) row.style.backgroundColor = '#f8f8f8';
+                    window.scrollTo(0, document.body.scrollHeight);
+                }
             };
             ws.onclose = () => {
                 stopStreamBtn.style.display = 'none';

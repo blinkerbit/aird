@@ -18,21 +18,18 @@ from aird.db import get_user_by_username
 
 
 def require_db(method):
-    """Decorator: ensures ``constants_module.DB_CONN`` is available.
+    """Decorator: ensures database connection is available via settings.
 
     If the connection is ``None`` the handler returns **500** with a JSON
-    error body and the wrapped method is never called.  The resolved
-    connection is stored on ``self.db_conn`` for convenience.
+    error body and the wrapped method is never called.
     """
 
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
-        db_conn = constants_module.DB_CONN
-        if db_conn is None:
+        if self.db_conn is None:
             self.set_status(500)
             self.write({"error": "Database connection not available"})
             return
-        self.db_conn = db_conn
         return method(self, *args, **kwargs)
 
     return wrapper
@@ -113,6 +110,10 @@ class ManagedWebSocketMixin:
     def on_close(self):
         self.connection_manager.remove_connection(self)
 
+    def get_current_user(self):
+        # WebSocket handler doesn't have a default auth mechanism, so we explicitly call authenticate_handler
+        return authenticate_handler(self)
+
 
 class XSRFTokenMixin:
     """Mixin for handlers that need X-XSRFToken header support for JSON requests."""
@@ -156,7 +157,7 @@ def authenticate_handler(handler):
                     else str(user_json)
                 )
 
-            db_conn = constants_module.DB_CONN
+            db_conn = handler.settings.get("db_conn")
             if db_conn:
                 user = get_user_by_username(db_conn, username)
                 if user:
@@ -184,6 +185,22 @@ def authenticate_handler(handler):
 
 
 class BaseHandler(tornado.web.RequestHandler):
+    @property
+    def db_conn(self):
+        return self.settings.get("db_conn")
+
+    @property
+    def feature_flags(self):
+        return self.settings.get("feature_flags", {})
+
+    @property
+    def cloud_manager(self):
+        return self.settings.get("cloud_manager")
+
+    @property
+    def network_share_manager(self):
+        return self.settings.get("network_share_manager")
+
     def prepare(self):
         """Generate a unique nonce for this request for CSP."""
         # Generate a cryptographically secure random nonce (16 bytes = 128 bits)
@@ -207,7 +224,13 @@ class BaseHandler(tornado.web.RequestHandler):
         """Set CSP header with the request-specific nonce."""
         nonce = self.get_csp_nonce()
         # Use nonce for scripts, keep unsafe-inline for styles (inline style attributes are common)
-        csp = f"default-src 'self'; script-src 'self' 'nonce-{nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
+        csp = (
+            f"default-src 'self'; "
+            f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
+            f"style-src 'self' 'unsafe-inline'; "
+            f"img-src 'self' data:; "
+            f"connect-src 'self' ws: wss:;"
+        )
         self.set_header("Content-Security-Policy", csp)
 
     def render(self, template_name, **kwargs):

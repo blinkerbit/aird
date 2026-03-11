@@ -50,7 +50,7 @@ class TestShareCreateHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {'cookie_secret': 'test_secret'}
+        self.mock_app.settings = {'cookie_secret': 'test_secret', 'db_conn': MagicMock()}
 
     def _build_handler(self, body):
         handler = prepare_handler(ShareCreateHandler(self.mock_app, self.mock_request))
@@ -132,12 +132,12 @@ class TestShareCreateHandler:
 
     def test_create_share_db_missing(self):
         handler = self._build_handler({'paths': ['file.txt']})
+        self.mock_app.settings['db_conn'] = None
 
         with patch('aird.handlers.share_handlers.is_feature_enabled', return_value=True), \
              patch('os.path.abspath', return_value='/root/file.txt'), \
              patch('aird.handlers.share_handlers.is_within_root', return_value=True), \
              patch('os.path.isfile', return_value=True), \
-             patch_db_conn(None, modules=['aird.handlers.share_handlers']), \
              patch.object(handler, 'write') as mock_write:
 
             handler.post()
@@ -149,7 +149,7 @@ class TestShareRevokeHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {'cookie_secret': 'test_secret'}
+        self.mock_app.settings = {'cookie_secret': 'test_secret', 'db_conn': MagicMock()}
 
     def test_revoke_share_redirect(self):
         handler = prepare_handler(ShareRevokeHandler(self.mock_app, self.mock_request))
@@ -186,7 +186,7 @@ class TestShareUpdateHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {'cookie_secret': 'test_secret'}
+        self.mock_app.settings = {'cookie_secret': 'test_secret', 'db_conn': MagicMock()}
 
     def _build_handler(self, body):
         handler = prepare_handler(ShareUpdateHandler(self.mock_app, self.mock_request))
@@ -272,7 +272,7 @@ class TestTokenVerificationHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {'cookie_secret': 'test_secret'}
+        self.mock_app.settings = {'cookie_secret': 'test_secret', 'db_conn': MagicMock()}
 
     def test_verify_token_success(self):
         handler = prepare_handler(TokenVerificationHandler(self.mock_app, self.mock_request))
@@ -316,7 +316,7 @@ class TestSharedListHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {'cookie_secret': 'test_secret'}
+        self.mock_app.settings = {'cookie_secret': 'test_secret', 'db_conn': MagicMock()}
 
     def test_get_shared_list_static(self):
         handler = prepare_handler(SharedListHandler(self.mock_app, self.mock_request))
@@ -368,7 +368,7 @@ class TestSharedFileHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {'cookie_secret': 'test_secret'}
+        self.mock_app.settings = {'cookie_secret': 'test_secret', 'db_conn': MagicMock()}
 
     @pytest.mark.asyncio
     async def test_get_shared_file_success(self):

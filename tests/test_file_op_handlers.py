@@ -1601,14 +1601,13 @@ class TestBulkHandler:
         }).encode()
 
         mock_share = {"paths": ["other.txt"]}
+        self.mock_app.settings['db_conn'] = MagicMock()
         with patch('aird.handlers.file_op_handlers.is_within_root', return_value=True), \
              patch('os.path.abspath', side_effect=lambda p: p), \
              patch('os.path.exists', return_value=True), \
              patch('aird.handlers.file_op_handlers.get_share_by_id', return_value=mock_share), \
              patch('aird.handlers.file_op_handlers.update_share', return_value=True), \
-             patch('aird.handlers.file_op_handlers.constants_module') as mock_const, \
              patch.object(handler, 'write') as mock_write:
-            mock_const.DB_CONN = MagicMock()
             handler.post()
             result = mock_write.call_args[0][0]
             assert result['results'][0]['ok'] is True

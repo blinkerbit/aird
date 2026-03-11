@@ -127,7 +127,7 @@ class LDAPLoginHandler(BaseHandler):
             # If no attribute maps are configured, all LDAP users are authorized
 
             # Only create/update user in Aird's database after successful authorization
-            db_conn = constants_module.DB_CONN
+            db_conn = self.db_conn
             if db_conn:
                 existing_user = get_user_by_username(db_conn, username)
                 admin_users = self.settings.get("admin_users", [])
@@ -170,7 +170,7 @@ class LDAPLoginHandler(BaseHandler):
             # Successful authentication and authorization
             # Get user role for cookie setting
             user_role = "admin" if is_admin_user else "user"
-            db_conn = constants_module.DB_CONN
+            db_conn = self.db_conn
             if db_conn:
                 existing_user = get_user_by_username(db_conn, username)
                 if existing_user:
@@ -194,7 +194,7 @@ class LDAPLoginHandler(BaseHandler):
                 expires_days=1,
             )
             log_audit(
-                constants_module.DB_CONN,
+                self.db_conn,
                 "login",
                 username=username,
                 ip=self.request.remote_ip,
@@ -276,7 +276,7 @@ class LoginHandler(BaseHandler):
 
         # Try username/password authentication first (if both provided)
         # Access DB_CONN from constants module to ensure we have the latest value
-        db_conn = constants_module.DB_CONN
+        db_conn = self.db_conn
         logging.info(f"DB_CONN available: {db_conn is not None}")
         if username and password and db_conn is not None:
             # Input validation
@@ -404,7 +404,7 @@ class LoginHandler(BaseHandler):
         if secrets.compare_digest(normalized_token, normalized_access_token):
             logging.info(f"Token authentication successful, redirecting to: {next_url}")
             log_audit(
-                constants_module.DB_CONN,
+                self.db_conn,
                 "login",
                 username="token_authenticated",
                 ip=self.request.remote_ip,
@@ -462,7 +462,7 @@ class AdminLoginHandler(BaseHandler):
 
         # Try username/password authentication first (if both provided)
         # Access DB_CONN from constants module to ensure we have the latest value
-        db_conn = constants_module.DB_CONN
+        db_conn = self.db_conn
         if username and password and db_conn is not None:
             # Input validation
             if len(username) > 256 or len(password) > 256:
@@ -565,7 +565,7 @@ class AdminLoginHandler(BaseHandler):
         if secrets.compare_digest(normalized_token, normalized_admin_token):
             logging.info("Admin token authentication successful")
             log_audit(
-                constants_module.DB_CONN,
+                self.db_conn,
                 "admin_login",
                 username="admin_token",
                 ip=self.request.remote_ip,
@@ -613,7 +613,7 @@ class ProfileHandler(BaseHandler):
         ldap_enabled = self.settings.get("ldap_server") is not None
 
         # Get current user from DB
-        db_conn = constants_module.DB_CONN
+        db_conn = self.db_conn
         if not db_conn:
             self.render(
                 "profile.html",

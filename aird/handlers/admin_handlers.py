@@ -100,7 +100,7 @@ class AdminHandler(BaseHandler):
 
         # Get current feature flags from SQLite for consistency
         current_features = {}
-        db_conn = constants_module.DB_CONN
+        db_conn = self.db_conn
         if db_conn is not None:
             try:
                 persisted_flags = load_feature_flags(db_conn)
@@ -122,7 +122,7 @@ class AdminHandler(BaseHandler):
         # Check if LDAP is enabled
         ldap_enabled = self.settings.get("ldap_server") is not None
         # For "allowed file types" UI: list of options and currently allowed set
-        db_conn = constants_module.DB_CONN
+        db_conn = self.db_conn
         allowed_current = (
             load_allowed_extensions(db_conn)
             if db_conn
@@ -216,7 +216,7 @@ class AdminHandler(BaseHandler):
 
         # Persist feature flags, WebSocket, and upload configuration
         try:
-            db_conn = constants_module.DB_CONN
+            db_conn = self.db_conn
             if db_conn is not None:
                 save_feature_flags(db_conn, FEATURE_FLAGS)
                 save_websocket_config(db_conn, WEBSOCKET_CONFIG)
@@ -259,7 +259,7 @@ class AdminAuditHandler(BaseHandler):
     @require_admin(redirect_url=URL_ADMIN_LOGIN)
     def get(self):
         """Display audit log (admin only). ?format=csv for export."""
-        db_conn = constants_module.DB_CONN
+        db_conn = self.db_conn
         limit = min(1000, max(1, int(self.get_argument("limit", "500"))))
         offset = max(0, int(self.get_argument("offset", "0")))
         if self.get_argument("format", "") == "csv":
@@ -299,7 +299,7 @@ class AdminUsersHandler(BaseHandler):
         """Display user management interface"""
 
         users = []
-        db_conn = constants_module.DB_CONN
+        db_conn = self.db_conn
         if db_conn is not None:
             users = get_all_users(db_conn)
 
@@ -319,7 +319,7 @@ class UserCreateHandler(BaseHandler):
     def post(self):
         """Create a new user"""
 
-        db_conn = constants_module.DB_CONN
+        db_conn = self.db_conn
         if db_conn is None:
             self.render(TEMPLATE_USER_CREATE, error=DATABASE_NOT_AVAILABLE)
             return
@@ -512,7 +512,7 @@ class LDAPConfigHandler(BaseHandler):
 
         configs = []
         sync_logs = []
-        db_conn = constants_module.DB_CONN
+        db_conn = self.db_conn
         if db_conn is not None:
             configs = get_all_ldap_configs(db_conn)
             sync_logs = get_ldap_sync_logs(db_conn, limit=20)
@@ -718,9 +718,9 @@ class AdminNetworkSharesHandler(BaseHandler):
     @tornado.web.authenticated
     @require_admin(redirect_url=URL_ADMIN_LOGIN)
     def get(self):
-        db_conn = constants_module.DB_CONN
+        db_conn = self.db_conn
         shares = get_all_network_shares(db_conn) if db_conn else []
-        mgr = constants_module.NETWORK_SHARE_MANAGER
+        mgr = self.network_share_manager
         for s in shares:
             s["running"] = mgr.is_running(s["id"]) if mgr else False
         error = self.get_argument("error", None)
@@ -741,7 +741,7 @@ class AdminNetworkSharesHandler(BaseHandler):
     @tornado.web.authenticated
     @require_admin(deny_status=HTTP_FORBIDDEN)
     def post(self):
-        db_conn = constants_module.DB_CONN
+        db_conn = self.db_conn
         if db_conn is None:
             self.redirect(f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_DB_UNAVAILABLE}")
             return
@@ -795,7 +795,7 @@ class AdminNetworkSharesHandler(BaseHandler):
             ip=self.request.remote_ip,
         )
 
-        mgr = constants_module.NETWORK_SHARE_MANAGER
+        mgr = self.network_share_manager
         if mgr:
             share_dict = {
                 "id": share_id,
@@ -816,13 +816,13 @@ class AdminNetworkShareDeleteHandler(BaseHandler):
     @tornado.web.authenticated
     @require_admin(deny_status=HTTP_FORBIDDEN)
     def post(self):
-        db_conn = constants_module.DB_CONN
+        db_conn = self.db_conn
         share_id = self.get_argument("share_id", "").strip()
         if not share_id or db_conn is None:
             self.redirect(URL_ADMIN_NETWORK_SHARES)
             return
 
-        mgr = constants_module.NETWORK_SHARE_MANAGER
+        mgr = self.network_share_manager
         if mgr:
             mgr.stop_share(share_id)
 
@@ -841,7 +841,7 @@ class AdminNetworkShareToggleHandler(BaseHandler):
     @tornado.web.authenticated
     @require_admin(deny_status=HTTP_FORBIDDEN)
     def post(self):
-        db_conn = constants_module.DB_CONN
+        db_conn = self.db_conn
         share_id = self.get_argument("share_id", "").strip()
         if not share_id or db_conn is None:
             self.redirect(URL_ADMIN_NETWORK_SHARES)
@@ -856,7 +856,7 @@ class AdminNetworkShareToggleHandler(BaseHandler):
         new_enabled = not share["enabled"]
         update_network_share(db_conn, share_id, enabled=new_enabled)
 
-        mgr = constants_module.NETWORK_SHARE_MANAGER
+        mgr = self.network_share_manager
         if mgr:
             if new_enabled:
                 mgr.start_share({**share, "enabled": True})

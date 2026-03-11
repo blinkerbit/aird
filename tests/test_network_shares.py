@@ -513,9 +513,9 @@ class TestAdminNetworkShareHandlers:
     def test_get_renders_template(self, mock_tornado_app, mock_tornado_request, db):
         handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
         with patch_db_conn(db), \
-             patch("aird.handlers.admin_handlers.constants_module.NETWORK_SHARE_MANAGER", None), \
              patch.object(handler, "render") as mock_render, \
              patch.object(handler, "get_argument", return_value=None):
+            mock_tornado_app.settings['network_share_manager'] = None
             handler.get()
             assert mock_render.called
             args, kwargs = mock_render.call_args
@@ -529,8 +529,8 @@ class TestAdminNetworkShareHandlers:
         handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
         mock_mgr = MagicMock()
         mock_mgr.is_running.return_value = True
+        mock_tornado_app.settings['network_share_manager'] = mock_mgr
         with patch_db_conn(db), \
-             patch("aird.handlers.admin_handlers.constants_module.NETWORK_SHARE_MANAGER", mock_mgr), \
              patch.object(handler, "render") as mock_render, \
              patch.object(handler, "get_argument", return_value=None):
             handler.get()
@@ -591,8 +591,8 @@ class TestAdminNetworkShareHandlers:
                     "share_username": "admin", "share_password": "pass123",
                     "port": "9999", "read_only": "off"}.get(name, default)
         mock_mgr = MagicMock()
+        mock_tornado_app.settings['network_share_manager'] = mock_mgr
         with patch_db_conn(db), \
-             patch("aird.handlers.admin_handlers.constants_module.NETWORK_SHARE_MANAGER", mock_mgr), \
              patch.object(handler, "get_argument", side_effect=get_arg), \
              patch.object(handler, "get_display_username", return_value="admin (Admin)"), \
              patch.object(handler, "redirect") as mock_redir:
@@ -610,10 +610,10 @@ class TestAdminNetworkShareHandlers:
         create_network_share(db, "del1", "D", share_dir, "webdav", 8443, "u", "p")
         handler = self._make_handler(AdminNetworkShareDeleteHandler, mock_tornado_app, mock_tornado_request)
         mock_mgr = MagicMock()
+        mock_tornado_app.settings['network_share_manager'] = mock_mgr
         def get_arg(name, default=""):
             return {"share_id": "del1"}.get(name, default)
         with patch_db_conn(db), \
-             patch("aird.handlers.admin_handlers.constants_module.NETWORK_SHARE_MANAGER", mock_mgr), \
              patch.object(handler, "get_argument", side_effect=get_arg), \
              patch.object(handler, "get_display_username", return_value="admin"), \
              patch.object(handler, "redirect") as mock_redir:
@@ -636,10 +636,10 @@ class TestAdminNetworkShareHandlers:
         create_network_share(db, "tog1", "T", share_dir, "webdav", 8443, "u", "p")
         handler = self._make_handler(AdminNetworkShareToggleHandler, mock_tornado_app, mock_tornado_request)
         mock_mgr = MagicMock()
+        mock_tornado_app.settings['network_share_manager'] = mock_mgr
         def get_arg(name, default=""):
             return {"share_id": "tog1"}.get(name, default)
         with patch_db_conn(db), \
-             patch("aird.handlers.admin_handlers.constants_module.NETWORK_SHARE_MANAGER", mock_mgr), \
              patch.object(handler, "get_argument", side_effect=get_arg), \
              patch.object(handler, "get_display_username", return_value="admin"), \
              patch.object(handler, "redirect"):
@@ -653,10 +653,10 @@ class TestAdminNetworkShareHandlers:
         update_network_share(db, "tog2", enabled=False)
         handler = self._make_handler(AdminNetworkShareToggleHandler, mock_tornado_app, mock_tornado_request)
         mock_mgr = MagicMock()
+        mock_tornado_app.settings['network_share_manager'] = mock_mgr
         def get_arg(name, default=""):
             return {"share_id": "tog2"}.get(name, default)
         with patch_db_conn(db), \
-             patch("aird.handlers.admin_handlers.constants_module.NETWORK_SHARE_MANAGER", mock_mgr), \
              patch.object(handler, "get_argument", side_effect=get_arg), \
              patch.object(handler, "get_display_username", return_value="admin"), \
              patch.object(handler, "redirect"):
@@ -679,8 +679,8 @@ class TestAdminNetworkShareHandlers:
 
     def test_post_db_unavailable(self, mock_tornado_app, mock_tornado_request):
         handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
-        with patch("aird.handlers.admin_handlers.constants_module.DB_CONN", None), \
-             patch.object(handler, "redirect") as mock_redir:
+        mock_tornado_app.settings['db_conn'] = None
+        with patch.object(handler, "redirect") as mock_redir:
             handler.post()
             mock_redir.assert_called_once()
             assert "Database+unavailable" in mock_redir.call_args[0][0]
@@ -694,8 +694,8 @@ class TestAdminNetworkShareHandlers:
                     "share_username": "u", "share_password": "p",
                     "port": "notanumber", "read_only": "off"}.get(name, default)
         mock_mgr = MagicMock()
+        mock_tornado_app.settings['network_share_manager'] = mock_mgr
         with patch_db_conn(db), \
-             patch("aird.handlers.admin_handlers.constants_module.NETWORK_SHARE_MANAGER", mock_mgr), \
              patch.object(handler, "get_argument", side_effect=get_arg), \
              patch.object(handler, "get_display_username", return_value="admin"), \
              patch.object(handler, "redirect") as mock_redir:
@@ -755,8 +755,8 @@ class TestAdminNetworkShareHandlers:
                     "share_username": "u", "share_password": "p",
                     "port": "8443", "read_only": "on"}.get(name, default)
         mock_mgr = MagicMock()
+        mock_tornado_app.settings['network_share_manager'] = mock_mgr
         with patch_db_conn(db), \
-             patch("aird.handlers.admin_handlers.constants_module.NETWORK_SHARE_MANAGER", mock_mgr), \
              patch.object(handler, "get_argument", side_effect=get_arg), \
              patch.object(handler, "get_display_username", return_value="admin"), \
              patch.object(handler, "redirect"):
@@ -776,10 +776,10 @@ class TestAdminNetworkShareHandlers:
                     "share_username": "u", "share_password": "p",
                     "port": "8443", "read_only": "off"}.get(name, default)
         with patch_db_conn(db), \
-             patch("aird.handlers.admin_handlers.constants_module.NETWORK_SHARE_MANAGER", None), \
              patch.object(handler, "get_argument", side_effect=get_arg), \
              patch.object(handler, "get_display_username", return_value="admin"), \
              patch.object(handler, "redirect") as mock_redir:
+            mock_tornado_app.settings['network_share_manager'] = None
             handler.post()
             mock_redir.assert_called_with("/admin/network-shares")
             assert len(get_all_network_shares(db)) == 1
@@ -793,8 +793,8 @@ class TestAdminNetworkShareHandlers:
                     "share_username": "u", "share_password": "p",
                     "port": "4455", "read_only": "off"}.get(name, default)
         mock_mgr = MagicMock()
+        mock_tornado_app.settings['network_share_manager'] = mock_mgr
         with patch_db_conn(db), \
-             patch("aird.handlers.admin_handlers.constants_module.NETWORK_SHARE_MANAGER", mock_mgr), \
              patch.object(handler, "get_argument", side_effect=get_arg), \
              patch.object(handler, "get_display_username", return_value="admin"), \
              patch.object(handler, "redirect"):
@@ -818,8 +818,8 @@ class TestAdminNetworkShareHandlers:
         handler = self._make_handler(AdminNetworkShareDeleteHandler, mock_tornado_app, mock_tornado_request)
         def get_arg(name, default=""):
             return {"share_id": "some-id"}.get(name, default)
-        with patch("aird.handlers.admin_handlers.constants_module.DB_CONN", None), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
+        mock_tornado_app.settings['db_conn'] = None
+        with patch.object(handler, "get_argument", side_effect=get_arg), \
              patch.object(handler, "redirect") as mock_redir:
             handler.post()
             mock_redir.assert_called_with("/admin/network-shares")
@@ -830,10 +830,10 @@ class TestAdminNetworkShareHandlers:
         def get_arg(name, default=""):
             return {"share_id": "del2"}.get(name, default)
         with patch_db_conn(db), \
-             patch("aird.handlers.admin_handlers.constants_module.NETWORK_SHARE_MANAGER", None), \
              patch.object(handler, "get_argument", side_effect=get_arg), \
              patch.object(handler, "get_display_username", return_value="admin"), \
              patch.object(handler, "redirect") as mock_redir:
+            mock_tornado_app.settings['network_share_manager'] = None
             handler.post()
             assert get_network_share(db, "del2") is None
             mock_redir.assert_called_with("/admin/network-shares")
@@ -864,8 +864,8 @@ class TestAdminNetworkShareHandlers:
         handler = self._make_handler(AdminNetworkShareToggleHandler, mock_tornado_app, mock_tornado_request)
         def get_arg(name, default=""):
             return {"share_id": "any"}.get(name, default)
-        with patch("aird.handlers.admin_handlers.constants_module.DB_CONN", None), \
-             patch.object(handler, "get_argument", side_effect=get_arg), \
+        mock_tornado_app.settings['db_conn'] = None
+        with patch.object(handler, "get_argument", side_effect=get_arg), \
              patch.object(handler, "redirect") as mock_redir:
             handler.post()
             mock_redir.assert_called_with("/admin/network-shares")
@@ -874,9 +874,9 @@ class TestAdminNetworkShareHandlers:
 
     def test_get_no_db(self, mock_tornado_app, mock_tornado_request):
         handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
-        with patch("aird.handlers.admin_handlers.constants_module.DB_CONN", None), \
-             patch("aird.handlers.admin_handlers.constants_module.NETWORK_SHARE_MANAGER", None), \
-             patch.object(handler, "render") as mock_render, \
+        mock_tornado_app.settings['network_share_manager'] = None
+        mock_tornado_app.settings['db_conn'] = None
+        with patch.object(handler, "render") as mock_render, \
              patch.object(handler, "get_argument", return_value=None):
             handler.get()
             assert mock_render.called
@@ -887,8 +887,8 @@ class TestAdminNetworkShareHandlers:
 
     def test_get_forwards_error_param(self, mock_tornado_app, mock_tornado_request, db):
         handler = self._make_handler(AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request)
+        mock_tornado_app.settings['network_share_manager'] = None
         with patch_db_conn(db), \
-             patch("aird.handlers.admin_handlers.constants_module.NETWORK_SHARE_MANAGER", None), \
              patch.object(handler, "render") as mock_render, \
              patch.object(handler, "get_argument", return_value="Something+went+wrong"):
             handler.get()
@@ -901,8 +901,8 @@ class TestAdminNetworkShareHandlers:
         handler = self._make_handler(AdminNetworkShareToggleHandler, mock_tornado_app, mock_tornado_request)
         def get_arg(name, default=""):
             return {"share_id": "tog3"}.get(name, default)
+        mock_tornado_app.settings['network_share_manager'] = None
         with patch_db_conn(db), \
-             patch("aird.handlers.admin_handlers.constants_module.NETWORK_SHARE_MANAGER", None), \
              patch.object(handler, "get_argument", side_effect=get_arg), \
              patch.object(handler, "get_display_username", return_value="admin"), \
              patch.object(handler, "redirect"):

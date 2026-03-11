@@ -54,7 +54,7 @@ class MainHandler(BaseHandler):
             files = get_files_in_directory(abspath)
 
             # Augment file data with shared status
-            db_conn = constants_module.DB_CONN
+            db_conn = self.db_conn
             if db_conn:
                 augment_with_shared_status(files, path, get_all_shares(db_conn))
 

@@ -333,8 +333,7 @@
 
             // Render files in table format
             try {
-                const files = {{ files_json }
-            };
+                const files = {{ files_json }};
             console.log('Files type:', typeof files);
             console.log('Files length:', files ? files.length : 'undefined');
             renderFiles(files);

@@ -34,12 +34,11 @@ class TestMainHandler:
         with patch('os.path.abspath', return_value='/root/dir'), \
              patch('aird.handlers.view_handlers.is_within_root', return_value=True), \
              patch('os.path.isdir', return_value=True), \
-             patch('aird.handlers.view_handlers.constants_module.DB_CONN', MagicMock()), \
              patch('aird.handlers.view_handlers.get_all_shares', return_value={}), \
              patch('aird.handlers.view_handlers.get_files_in_directory', return_value=[]), \
              patch('aird.handlers.view_handlers.get_current_feature_flags', return_value={}), \
              patch.object(handler, 'render') as mock_render:
-            
+            self.mock_app.settings['db_conn'] = MagicMock()
             await handler.get("dir")
             mock_render.assert_called()
             assert mock_render.call_args[0][0] == "browse.html"
@@ -163,13 +162,12 @@ class TestMainHandler:
         with patch('os.path.abspath', return_value='/root/dir'), \
              patch('aird.handlers.view_handlers.is_within_root', return_value=True), \
              patch('os.path.isdir', return_value=True), \
-             patch('aird.handlers.view_handlers.constants_module.DB_CONN', MagicMock()), \
              patch('aird.handlers.view_handlers.get_all_shares', return_value={'share1': {'paths': ['dir/file1']}}), \
              patch('aird.handlers.view_handlers.get_files_in_directory', return_value=[{'name': 'file1'}, {'name': 'file2'}]), \
              patch('aird.handlers.view_handlers.join_path', side_effect=lambda p, n: f"{p}/{n}" if p else n), \
              patch('aird.handlers.view_handlers.get_current_feature_flags', return_value={}), \
              patch.object(handler, 'render') as mock_render:
-            
+            self.mock_app.settings['db_conn'] = MagicMock()
             await handler.get("dir")
             mock_render.assert_called()
             files = mock_render.call_args[1]['files']

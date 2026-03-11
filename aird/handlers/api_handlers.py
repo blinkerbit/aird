@@ -1,6 +1,8 @@
+import base64
 import fnmatch
 import json
 import logging
+import mimetypes
 import os
 import pathlib
 import time
@@ -95,8 +97,8 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
         self.stop_event = asyncio.Event()
 
     def get_current_user(self):
-        # Use parent class implementation which handles authentication properly
-        return super().get_current_user()
+        # WebSocket handler doesn't have a default auth mechanism, so we explicitly call authenticate_handler
+        return authenticate_handler(self)
 
     async def open(self, path):
         if not self.get_current_user():
@@ -113,19 +115,43 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
             self.close(code=1003, reason="File not found")
             return
 
-        # Initialize with last N lines (async, non-blocking)
+        n_str = self.get_argument("n", "1000")
+        try:
+            n_lines = int(n_str)
+            if n_lines <= 0:
+                n_lines = 1000
+        except ValueError:
+            n_lines = 1000
+
+        self.line_buffer = deque(maxlen=n_lines)
+        self.filter_expression = self.get_argument("filter", None)
+        
+        expr = None
+        if self.filter_expression:
+            try:
+                expr = FilterExpression(self.filter_expression)
+            except Exception:
+                pass
+
+        # Initialize with last N matching lines (async, non-blocking)
         try:
             async with aiofiles.open(
                 self.file_path, "r", encoding="utf-8", errors="replace"
             ) as f:
-                lines = await f.readlines()
-            self.line_buffer.extend(lines)
+                async for line in f:
+                    if expr and not expr.matches(line):
+                        continue
+                    self.line_buffer.append(line)
             for line in self.line_buffer:
                 await self.write_message(
                     json.dumps({"type": "line", "data": line.strip()})
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error(f"Error reading file: {self.file_path}", exc_info=True)
+            self.write_message(
+                json.dumps({"type": "error", "message": str(e)})
+            )
+            return
 
         self.is_streaming = True
         asyncio.create_task(self.stream_file())
@@ -187,8 +213,20 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
                 )
                 return
             try:
-                # Trigger the async generator once to satisfy tests; actual streaming omitted
-                _ = MMapFileHandler.serve_file_chunk(abs_path)
+                content_type = mimetypes.guess_type(abs_path)[0] or "application/octet-stream"
+                file_size = os.path.getsize(abs_path)
+                await self.write_message(json.dumps({
+                    "type": "stream_start",
+                    "file_path": rel_path,
+                    "content_type": content_type,
+                    "size": file_size
+                }))
+                async for chunk in MMapFileHandler.serve_file_chunk(abs_path):
+                    await self.write_message(json.dumps({
+                        "type": "stream_data",
+                        "data": base64.b64encode(chunk).decode("ascii")
+                    }))
+                await self.write_message(json.dumps({"type": "stream_end"}))
             except Exception as e:
                 self.write_message(json.dumps({"type": "error", "message": str(e)}))
             return
@@ -197,6 +235,8 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
         self.write_message(json.dumps({"type": "error", "message": "Unknown action"}))
 
     async def stream_file(self):
+        expr = None
+        last_filter_str = None
         try:
             async with aiofiles.open(
                 self.file_path, "r", encoding="utf-8", errors="replace"
@@ -209,13 +249,24 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
                         continue
 
                     if self.filter_expression:
-                        try:
-                            expr = FilterExpression(self.filter_expression)
-                            if expr.matches(line):
+                        if self.filter_expression != last_filter_str:
+                            try:
+                                expr = FilterExpression(self.filter_expression)
+                            except Exception:
+                                expr = None
+                            last_filter_str = self.filter_expression
+
+                        if expr:
+                            try:
+                                if expr.matches(line):
+                                    await self.write_message(
+                                        json.dumps({"type": "line", "data": line.strip()})
+                                    )
+                            except Exception:
                                 await self.write_message(
                                     json.dumps({"type": "line", "data": line.strip()})
                                 )
-                        except Exception:
+                        else:
                             # If filter is invalid, send line anyway
                             await self.write_message(
                                 json.dumps({"type": "line", "data": line.strip()})
@@ -267,7 +318,7 @@ class FileListAPIHandler(BaseHandler):
             files = get_files_in_directory(abspath)
 
             # Augment file data with shared status
-            db_conn = constants_module.DB_CONN
+            db_conn = self.db_conn
             if db_conn:
                 augment_with_shared_status(files, path, get_all_shares(db_conn))
 
@@ -643,7 +694,7 @@ class ShareDetailsAPIHandler(BaseHandler):
 
         try:
             # Find shares that contain this file
-            db_conn = constants_module.DB_CONN
+            db_conn = self.db_conn
             if not db_conn:
                 self.set_status(500)
                 self.write({"error": "Database connection not available"})
@@ -685,7 +736,7 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
             return
 
         try:
-            db_conn = constants_module.DB_CONN
+            db_conn = self.db_conn
             if not db_conn:
                 self.set_status(500)
                 self.write({"error": "Database connection not available"})
@@ -724,7 +775,7 @@ class ShareListAPIHandler(BaseHandler):
             self.write({"error": "File sharing is disabled"})
             return
 
-        db_conn = constants_module.DB_CONN
+        db_conn = self.db_conn
         if not db_conn:
             self.set_status(500)
             self.write({"error": "Database connection not available"})

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import os
 import logging
 
-from aird.handlers.base_handler import BaseHandler, XSRFTokenMixin
+from aird.handlers.base_handler import BaseHandler, XSRFTokenMixin, require_db
 from aird.db import (
     insert_share,
     delete_share,
@@ -49,6 +49,7 @@ class ShareFilesHandler(BaseHandler):
 class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
 
     @tornado.web.authenticated
+    @require_db
     def post(self):
         if not is_feature_enabled("file_share", True):
             self.set_status(403)
@@ -169,15 +170,8 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
             created = datetime.now(timezone.utc).isoformat()
 
             # Persist directly to database
-            # Access DB_CONN from constants module to ensure we have the latest value
-            db_conn = constants_module.DB_CONN
-            if not db_conn:
-                logging.error("Database connection not available. Cannot create share.")
-                self.set_status(500)
-                self.write({"error": "Database connection not available"})
-                return
             success = insert_share(
-                db_conn,
+                self.db_conn,
                 sid,
                 created,
                 final_paths,
@@ -191,7 +185,7 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
             if success:
                 logging.info(f"Share {sid} created successfully in database")
                 log_audit(
-                    db_conn,
+                    self.db_conn,
                     "share_create",
                     username=self.get_display_username(),
                     details=f"share_id={sid} paths={len(final_paths)}",
@@ -213,6 +207,7 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
 
 class ShareRevokeHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_db
     def post(self):
         if not is_feature_enabled("file_share", True):
             self.set_status(403)
@@ -222,15 +217,9 @@ class ShareRevokeHandler(BaseHandler):
 
         # Delete from database
         try:
-            db_conn = constants_module.DB_CONN
-            if not db_conn:
-                logging.error("Database connection not available. Cannot delete share.")
-                self.set_status(500)
-                self.write({"error": "Database connection not available"})
-                return
-            delete_share(db_conn, sid)
+            delete_share(self.db_conn, sid)
             log_audit(
-                db_conn,
+                self.db_conn,
                 "share_revoke",
                 username=self.get_display_username(),
                 details=f"share_id={sid}",
@@ -254,6 +243,7 @@ class ShareRevokeHandler(BaseHandler):
 class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
 
     @tornado.web.authenticated
+    @require_db
     def post(self):
         """Update share access list"""
         if not is_feature_enabled("file_share", True):
@@ -281,13 +271,7 @@ class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
                 return
 
             # Get current share data from database
-            db_conn = constants_module.DB_CONN
-            if not db_conn:
-                logging.error("Database connection not available. Cannot update share.")
-                self.set_status(500)
-                self.write({"error": "Database connection not available"})
-                return
-            share_data = get_share_by_id(db_conn, share_id)
+            share_data = get_share_by_id(self.db_conn, share_id)
             if not share_data:
                 self.set_status(404)
                 self.write({"error": "Share not found"})
@@ -410,7 +394,7 @@ class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
 
             # Persist updates
             if update_fields:
-                db_success = update_share(db_conn, share_id, **update_fields)
+                db_success = update_share(self.db_conn, share_id, **update_fields)
                 if not db_success:
                     for rel_path in new_cloud_paths:
                         remove_cloud_file_if_exists(share_id, rel_path)
@@ -427,7 +411,7 @@ class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
             cleanup_share_cloud_dir_if_empty(share_id)
 
             # Get updated share data for response
-            updated_share = get_share_by_id(db_conn, share_id)
+            updated_share = get_share_by_id(self.db_conn, share_id)
 
             response_data = {
                 "success": True,
@@ -493,14 +477,10 @@ class TokenVerificationHandler(BaseHandler):
         self._TOKEN_VERIFY_ATTEMPTS[remote_ip] = (attempts + 1, timestamp)
         return True
 
+    @require_db
     def get(self, sid):
         """Show token verification page"""
-        db_conn = constants_module.DB_CONN
-        if not db_conn:
-            self.set_status(500)
-            self.write("Database connection not available")
-            return
-        share = get_share_by_id(db_conn, sid)
+        share = get_share_by_id(self.db_conn, sid)
         if not share:
             self.set_status(404)
             self.write(
@@ -510,6 +490,7 @@ class TokenVerificationHandler(BaseHandler):
 
         self.render("token_verification.html", share_id=sid)
 
+    @require_db
     def post(self, sid):
         """Verify token and grant access"""
         # Rate limiting check
@@ -518,12 +499,7 @@ class TokenVerificationHandler(BaseHandler):
             self.write({"error": "Too many attempts. Please try again later."})
             return
 
-        db_conn = constants_module.DB_CONN
-        if not db_conn:
-            self.set_status(500)
-            self.write("Database connection not available")
-            return
-        share = get_share_by_id(db_conn, sid)
+        share = get_share_by_id(self.db_conn, sid)
         if not share:
             self.set_status(404)
             self.write({"error": "Invalid share link"})
@@ -558,13 +534,9 @@ class TokenVerificationHandler(BaseHandler):
 
 
 class SharedListHandler(BaseHandler):
+    @require_db
     def get(self, sid):
-        db_conn = constants_module.DB_CONN
-        if not db_conn:
-            self.set_status(500)
-            self.write("Database connection not available")
-            return
-        share = get_share_by_id(db_conn, sid)
+        share = get_share_by_id(self.db_conn, sid)
         if not share:
             self.set_status(404)
             self.write(
@@ -667,13 +639,9 @@ class SharedListHandler(BaseHandler):
 
 
 class SharedFileHandler(BaseHandler):
+    @require_db
     async def get(self, sid, path):
-        db_conn = constants_module.DB_CONN
-        if not db_conn:
-            self.set_status(500)
-            self.write("Database connection not available")
-            return
-        share = get_share_by_id(db_conn, sid)
+        share = get_share_by_id(self.db_conn, sid)
         if not share:
             self.set_status(404)
             self.write(

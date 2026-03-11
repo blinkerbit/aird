@@ -57,9 +57,9 @@ class TestLDAPLoginHandlerExtended:
             mock_conn_cls.return_value = mock_conn
             mock_conn.entries = [{'member': 'cn=admin,dc=example,dc=com'}] # Authorized
             
-            # Mock DB interactions
-            with patch('aird.handlers.auth_handlers.constants_module.DB_CONN', MagicMock()), \
-                 patch('aird.handlers.auth_handlers.get_user_by_username', return_value=None), \
+            # Mock DB interactions - inject db_conn via settings
+            self.mock_app.settings['db_conn'] = MagicMock()
+            with patch('aird.handlers.auth_handlers.get_user_by_username', return_value=None), \
                  patch('aird.handlers.auth_handlers.create_user', side_effect=Exception("DB Error")), \
                  patch.object(handler, 'set_secure_cookie') as mock_cookie, \
                  patch.object(handler, 'redirect') as mock_redirect:
@@ -80,9 +80,9 @@ class TestLDAPLoginHandlerExtended:
             mock_conn_cls.return_value = mock_conn
             mock_conn.entries = [{'member': 'cn=admin,dc=example,dc=com'}] # Authorized
             
-            # Mock DB interactions
-            with patch('aird.handlers.auth_handlers.constants_module.DB_CONN', MagicMock()), \
-                 patch('aird.handlers.auth_handlers.get_user_by_username', return_value={'id': 1, 'role': 'user'}), \
+            # Mock DB interactions - inject db_conn via settings
+            self.mock_app.settings['db_conn'] = MagicMock()
+            with patch('aird.handlers.auth_handlers.get_user_by_username', return_value={'id': 1, 'role': 'user'}), \
                  patch('aird.handlers.auth_handlers.update_user', side_effect=Exception("DB Error")), \
                  patch.object(handler, 'set_secure_cookie') as mock_cookie, \
                  patch.object(handler, 'redirect') as mock_redirect:
@@ -101,8 +101,8 @@ class TestLDAPLoginHandlerExtended:
             mock_conn_cls.return_value = mock_conn
             mock_conn.entries = [{'member': 'cn=admin,dc=example,dc=com'}]
             
-            with patch('aird.handlers.auth_handlers.constants_module.DB_CONN', MagicMock()), \
-                 patch('aird.handlers.auth_handlers.get_user_by_username', side_effect=[None, {'role': 'user'}]), \
+            self.mock_app.settings['db_conn'] = MagicMock()
+            with patch('aird.handlers.auth_handlers.get_user_by_username', side_effect=[None, {'role': 'user'}]), \
                  patch('aird.handlers.auth_handlers.create_user') as mock_create, \
                  patch.object(handler, 'set_secure_cookie') as mock_cookie, \
                  patch.object(handler, 'redirect') as mock_redirect:
@@ -123,8 +123,8 @@ class TestLDAPLoginHandlerExtended:
             mock_conn_cls.return_value = mock_conn
             mock_conn.entries = [{'member': 'cn=admin,dc=example,dc=com'}]
             
-            with patch('aird.handlers.auth_handlers.constants_module.DB_CONN', MagicMock()), \
-                 patch('aird.handlers.auth_handlers.get_user_by_username', return_value={'id': 1, 'role': 'user'}), \
+            self.mock_app.settings['db_conn'] = MagicMock()
+            with patch('aird.handlers.auth_handlers.get_user_by_username', return_value={'id': 1, 'role': 'user'}), \
                  patch('aird.handlers.auth_handlers.update_user') as mock_update, \
                  patch.object(handler, 'set_secure_cookie') as mock_cookie, \
                  patch.object(handler, 'redirect') as mock_redirect:
@@ -245,8 +245,8 @@ class TestAdminLoginHandlerExtended:
         handler = AdminLoginHandler(self.mock_app, self.mock_request)
         handler.get_argument = MagicMock(side_effect=lambda k, d=None: "admin" if k == "username" else "pass")
         
-        with patch('aird.handlers.auth_handlers.constants_module.DB_CONN', MagicMock()), \
-             patch('aird.handlers.auth_handlers.authenticate_user', return_value={'role': 'admin'}), \
+        self.mock_app.settings['db_conn'] = MagicMock()
+        with patch('aird.handlers.auth_handlers.authenticate_user', return_value={'role': 'admin'}), \
              patch.object(handler, 'set_secure_cookie') as mock_cookie, \
              patch.object(handler, 'redirect') as mock_redirect:
             
@@ -257,8 +257,8 @@ class TestAdminLoginHandlerExtended:
         handler = AdminLoginHandler(self.mock_app, self.mock_request)
         handler.get_argument = MagicMock(side_effect=lambda k, d=None: "user" if k == "username" else "pass")
         
-        with patch('aird.handlers.auth_handlers.constants_module.DB_CONN', MagicMock()), \
-             patch('aird.handlers.auth_handlers.authenticate_user', return_value={'role': 'user'}), \
+        self.mock_app.settings['db_conn'] = MagicMock()
+        with patch('aird.handlers.auth_handlers.authenticate_user', return_value={'role': 'user'}), \
              patch.object(handler, 'render') as mock_render:
             
             handler.post()
@@ -290,8 +290,8 @@ class TestProfileHandlerExtended:
         handler.current_user = {'username': 'user', 'id': 1}
         handler.get_argument = MagicMock(side_effect=lambda k, d=None: "newpass12" if "password" in k else "")
         
-        with patch('aird.handlers.auth_handlers.constants_module.DB_CONN', MagicMock()), \
-             patch('aird.handlers.auth_handlers.get_user_by_username', return_value={'id': 1}), \
+        self.mock_app.settings['db_conn'] = MagicMock()
+        with patch('aird.handlers.auth_handlers.get_user_by_username', return_value={'id': 1}), \
              patch('aird.handlers.auth_handlers.update_user') as mock_update, \
              patch.object(handler, 'render') as mock_render:
             
@@ -308,8 +308,8 @@ class TestProfileHandlerExtended:
             return ""
         handler.get_argument = MagicMock(side_effect=get_arg)
         
-        with patch('aird.handlers.auth_handlers.constants_module.DB_CONN', MagicMock()), \
-             patch('aird.handlers.auth_handlers.get_user_by_username', return_value={'id': 1}), \
+        self.mock_app.settings['db_conn'] = MagicMock()
+        with patch('aird.handlers.auth_handlers.get_user_by_username', return_value={'id': 1}), \
              patch.object(handler, 'render') as mock_render:
             
             handler.post()

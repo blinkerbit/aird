@@ -1306,6 +1306,13 @@ def make_app(
     if admin_users:
         settings["admin_users"] = admin_users
 
+    # Inject global dependencies into application settings
+    import aird.constants as constants_module
+    settings["db_conn"] = constants_module.DB_CONN
+    settings["feature_flags"] = constants_module.FEATURE_FLAGS
+    settings["cloud_manager"] = constants_module.CLOUD_MANAGER
+    settings["network_share_manager"] = constants_module.NETWORK_SHARE_MANAGER
+
     if ldap_enabled:
         login_handler = LDAPLoginHandler
     else:

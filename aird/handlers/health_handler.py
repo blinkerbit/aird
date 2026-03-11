@@ -1,5 +1,4 @@
 """Health check endpoint for load balancers and monitoring."""
-
 import tornado.web
 import aird.constants as constants_module
 

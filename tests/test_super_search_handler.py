@@ -23,8 +23,8 @@ class TestSuperSearchWebSocketHandler:
         handler.get_secure_cookie = MagicMock(return_value=json.dumps({'username': 'user'}).encode())
         
         # Mock DB user check
-        with patch('aird.handlers.base_handler.constants_module.DB_CONN', MagicMock()), \
-             patch('aird.handlers.base_handler.get_user_by_username', return_value={'username': 'user'}):
+        self.mock_app.settings['db_conn'] = MagicMock()
+        with patch('aird.handlers.base_handler.get_user_by_username', return_value={'username': 'user'}):
             
             user = handler.get_current_user()
             assert user['username'] == 'user'
