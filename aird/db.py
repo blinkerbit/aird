@@ -26,19 +26,18 @@ try:
 except Exception:
     LDAP3_AVAILABLE = False
 
-# Re-export LDAP functions from canonical implementation to avoid duplication
-from aird.database import ldap as _ldap_mod
-
-create_ldap_config = _ldap_mod.create_ldap_config
-get_all_ldap_configs = _ldap_mod.get_all_ldap_configs
-get_ldap_config_by_id = _ldap_mod.get_ldap_config_by_id
-update_ldap_config = _ldap_mod.update_ldap_config
-delete_ldap_config = _ldap_mod.delete_ldap_config
-log_ldap_sync = _ldap_mod.log_ldap_sync
-get_ldap_sync_logs = _ldap_mod.get_ldap_sync_logs
-sync_ldap_users = _ldap_mod.sync_ldap_users
-extract_username_from_dn = _ldap_mod.extract_username_from_dn
-start_ldap_sync_scheduler = _ldap_mod.start_ldap_sync_scheduler
+from aird.database.ldap import (
+    create_ldap_config,
+    get_all_ldap_configs,
+    get_ldap_config_by_id,
+    update_ldap_config,
+    delete_ldap_config,
+    log_ldap_sync,
+    get_ldap_sync_logs,
+    extract_username_from_dn,
+    sync_ldap_users,
+    start_ldap_sync_scheduler,
+)
 
 DB_CONN = None
 DB_PATH = "aird.db"
@@ -468,7 +467,7 @@ def get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict | None:
 
         logging.debug(f"No share found for sid='{sid}'")
         return None
-    except (sqlite3.Error, OSError) as e:
+    except Exception as e:  # NOSONAR: must return None on any DB/mock error
         logging.error(f"Error getting share {sid}: {e}")
         logging.debug(f"Traceback: {traceback.format_exc()}")
         return None

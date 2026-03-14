@@ -215,7 +215,7 @@ def extract_username_from_dn(dn: str, user_template: str) -> str | None:
             for part in parts:
                 if "=" in part:
                     key, value = part.split("=", 1)
-                    if key.strip() in ["uid", "cn", "sAMAccountName"]:
+                    if key.strip().lower() in ["uid", "cn", "samaccountname"]:
                         return value.strip()
         return None
     except Exception:
