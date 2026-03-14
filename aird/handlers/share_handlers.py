@@ -38,6 +38,412 @@ from aird.config import ROOT_DIR
 from aird.cloud import CloudProviderError
 from aird.handlers.view_handlers import MainHandler
 
+# ---------------------------------------------------------------------------
+# Helpers for share creation (reduce cognitive complexity)
+# ---------------------------------------------------------------------------
+
+
+def _normalize_path_entry(entry):
+    """Extract local path from entry; return (path_str, is_cloud). (None, True) for cloud."""
+    if isinstance(entry, dict):
+        if entry.get("type") == "cloud":
+            return (None, True)
+        if entry.get("type") == "local":
+            entry = entry.get("path")
+    if not isinstance(entry, str):
+        return (None, False)
+    s = entry.strip()
+    return (s if s else None, False)
+
+
+def _add_local_path(ap, path_str, share_type, valid_paths, dynamic_folders):
+    """Add a single local path (file or dir) to valid_paths/dynamic_folders."""
+    if os.path.isfile(ap):
+        valid_paths.append(path_str)
+    elif os.path.isdir(ap):
+        if share_type == "dynamic":
+            dynamic_folders.append(path_str)
+            logging.debug("Added dynamic folder: %s", path_str)
+        else:
+            try:
+                all_files = get_all_files_recursive(ap, path_str)
+                valid_paths.extend(all_files)
+                logging.debug(
+                    "Added %s files from directory: %s", len(all_files), path_str
+                )
+            except Exception as e:
+                logging.error("Error scanning directory %s: %s", path_str, e)
+
+
+def _collect_paths_from_request(paths, share_type):
+    """Parse paths from request; return (valid_paths, dynamic_folders, remote_items)."""
+    valid_paths = []
+    dynamic_folders = []
+    remote_items = []
+    for entry in paths:
+        path_str, is_cloud = _normalize_path_entry(entry)
+        if is_cloud:
+            if isinstance(entry, dict):
+                remote_items.append(entry)
+            continue
+        if not path_str:
+            continue
+        ap = os.path.abspath(os.path.join(ROOT_DIR, path_str))
+        if not is_within_root(ap, ROOT_DIR):
+            continue
+        _add_local_path(ap, path_str, share_type, valid_paths, dynamic_folders)
+    return valid_paths, dynamic_folders, remote_items
+
+
+def _resolve_final_paths_dynamic(dynamic_folders, remote_items, sid):
+    """Return (final_paths, error) for dynamic share. error is (status, body) or None."""
+    if remote_items:
+        remove_share_cloud_dir(sid)
+        return (
+            None,
+            (400, {"error": "Cloud files are not supported in dynamic shares"}),
+        )
+    if not dynamic_folders:
+        remove_share_cloud_dir(sid)
+        return (None, (400, {"error": "No valid directories for dynamic share"}))
+    return (dynamic_folders, None)
+
+
+def _resolve_final_paths_static(valid_paths, remote_items, sid):
+    """Return (final_paths, error) for static share. error is (status, body) or None."""
+    combined_paths = list(valid_paths)
+    if remote_items:
+        try:
+            cloud_paths = download_cloud_items(sid, remote_items)
+            combined_paths.extend(cloud_paths)
+        except CloudProviderError as cloud_error:
+            remove_share_cloud_dir(sid)
+            return (None, (400, {"error": str(cloud_error)}))
+        except Exception:
+            remove_share_cloud_dir(sid)
+            logging.exception("Failed to download cloud files for share %s", sid)
+            return (None, (500, {"error": "Failed to download cloud files"}))
+    if not combined_paths:
+        remove_share_cloud_dir(sid)
+        return (None, (400, {"error": "No valid files or directories"}))
+    seen_paths = set()
+    final_paths = []
+    for rel_path in combined_paths:
+        if rel_path not in seen_paths:
+            final_paths.append(rel_path)
+            seen_paths.add(rel_path)
+    return (final_paths, None)
+
+
+# ---------------------------------------------------------------------------
+# Helpers for share list/file access (token and user checks)
+# ---------------------------------------------------------------------------
+
+
+def _get_provided_token(share_id, request, get_cookie):
+    """Extract token from Authorization header or cookie. Return None if missing."""
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header[7:]
+    return get_cookie(f"share_token_{share_id}")
+
+
+def _is_token_valid(share, share_id, request, get_cookie):
+    """Return True if share has no token or provided token matches."""
+    secret_token = share.get("secret_token")
+    if not secret_token:
+        return True
+    provided = _get_provided_token(share_id, request, get_cookie)
+    return bool(provided and secrets.compare_digest(provided, secret_token))
+
+
+def _is_user_allowed(share, get_secure_cookie):
+    """Return (True, None) if allowed, else (False, (status, body))."""
+    allowed_users = share.get("allowed_users")
+    if not allowed_users:
+        return (True, None)
+    current_user = get_secure_cookie("user")
+    if not current_user:
+        return (
+            False,
+            (401, "Authentication required: Please provide a valid access token"),
+        )
+    if isinstance(current_user, bytes):
+        current_user = current_user.decode("utf-8")
+    if current_user not in allowed_users:
+        return (False, (403, ACCESS_TOKEN_INVALID_OR_EXPIRED))
+    return (True, None)
+
+
+def _get_share_file_list(share):
+    """Return list of file paths for the share (dynamic or static)."""
+    share_type = share.get("share_type", "static")
+    allow_list = share.get("allow_list", [])
+    avoid_list = share.get("avoid_list", [])
+    if share_type == "dynamic":
+        dynamic_files = []
+        for folder_path in share["paths"]:
+            try:
+                full_path = os.path.abspath(os.path.join(ROOT_DIR, folder_path))
+                if os.path.isdir(full_path) and is_within_root(full_path, ROOT_DIR):
+                    all_files = get_all_files_recursive(full_path, folder_path)
+                    dynamic_files.extend(all_files)
+            except Exception:
+                continue
+        return filter_files_by_patterns(dynamic_files, allow_list, avoid_list)
+    return filter_files_by_patterns(share["paths"], allow_list, avoid_list)
+
+
+def _is_path_in_share(share, path):
+    """Return True if path is allowed for this share (dynamic or static)."""
+    share_type = share.get("share_type", "static")
+    allow_list = share.get("allow_list", [])
+    avoid_list = share.get("avoid_list", [])
+    if share_type == "dynamic":
+        for folder_path in share["paths"]:
+            try:
+                full_folder_path = os.path.abspath(os.path.join(ROOT_DIR, folder_path))
+                full_file_path = os.path.abspath(os.path.join(ROOT_DIR, path))
+                if (
+                    os.path.isdir(full_folder_path)
+                    and is_within_root(full_file_path, full_folder_path)
+                    and filter_files_by_patterns([path], allow_list, avoid_list)
+                ):
+                    return True
+            except Exception:
+                continue
+        return False
+    filtered_paths = filter_files_by_patterns(share["paths"], allow_list, avoid_list)
+    return path in filtered_paths
+
+
+# ---------------------------------------------------------------------------
+# Helpers for share update (path processing and token updates)
+# ---------------------------------------------------------------------------
+
+
+def _parse_path_entries_for_update(paths):
+    """Parse path entries into (processed_paths, remote_items)."""
+    remote_items = []
+    processed_paths: list[str] = []
+    for entry in paths:
+        path_str, is_cloud = _normalize_path_entry(entry)
+        if is_cloud and isinstance(entry, dict):
+            remote_items.append(entry)
+            continue
+        if path_str:
+            processed_paths.append(path_str)
+    return processed_paths, remote_items
+
+
+def _parse_paths_for_update(paths, share_id, requested_share_type, current_paths):
+    """Parse paths list from update request. Return (deduped_paths, new_cloud_paths, cloud_to_remove, error)."""
+    processed_paths, remote_items = _parse_path_entries_for_update(paths)
+
+    if requested_share_type == "dynamic" and remote_items:
+        return (
+            None,
+            [],
+            [],
+            (400, {"error": "Cloud files are not supported in dynamic shares"}),
+        )
+
+    new_cloud_paths: list[str] = []
+    if remote_items:
+        try:
+            downloaded_paths = download_cloud_items(share_id, remote_items)
+            processed_paths.extend(downloaded_paths)
+            new_cloud_paths.extend(downloaded_paths)
+        except CloudProviderError as cloud_error:
+            return (None, [], [], (400, {"error": str(cloud_error)}))
+        except Exception:
+            logging.exception("Failed to download cloud files for share %s", share_id)
+            return (None, [], [], (500, {"error": "Failed to download cloud files"}))
+
+    seen_paths = set()
+    deduped_paths = []
+    for rel_path in processed_paths:
+        if rel_path not in seen_paths:
+            deduped_paths.append(rel_path)
+            seen_paths.add(rel_path)
+    removed_via_override = [
+        p
+        for p in current_paths
+        if p not in deduped_paths and is_cloud_relative_path(share_id, p)
+    ]
+    return (deduped_paths, new_cloud_paths, removed_via_override, None)
+
+
+def _build_token_update_fields(disable_token, share_data):
+    """Return dict of secret_token and disable_token for update_share."""
+    if disable_token is True:
+        return {"secret_token": None, "disable_token": True}
+    if disable_token is False:
+        st = share_data.get("secret_token")
+        return {
+            "secret_token": secrets.token_urlsafe(64) if st is None else st,
+            "disable_token": False,
+        }
+    return {}
+
+
+def _validate_share_update_request(db_conn, data):
+    """Validate update request and load share. Return (share_id, share_data) or (None, None, status, body)."""
+    share_id = data.get("share_id")
+    if not share_id:
+        return (None, None, 400, {"error": "Share ID is required"})
+    share_data = get_share_by_id(db_conn, share_id)
+    if not share_data:
+        return (None, None, 404, {"error": "Share not found"})
+    return (share_id, share_data, None, None)
+
+
+def _build_share_update_response(updated_share, share_id, db_success, data):
+    """Build JSON response dict for share update."""
+    out = {"success": True, "share_id": share_id, "db_persisted": db_success}
+    if data.get("allowed_users") is not None:
+        out["allowed_users"] = updated_share.get("allowed_users")
+    if data.get("remove_files"):
+        out["removed_files"] = data["remove_files"]
+        out["remaining_files"] = updated_share.get("paths", [])
+    if data.get("paths") is not None:
+        out["updated_paths"] = updated_share.get("paths", [])
+    if data.get("share_type") is not None:
+        out["share_type"] = updated_share.get("share_type")
+    if data.get("expiry_date") is not None:
+        out["expiry_date"] = updated_share.get("expiry_date")
+    if (
+        data.get("disable_token") is False
+        and updated_share
+        and updated_share.get("secret_token")
+    ):
+        out["new_token"] = updated_share.get("secret_token")
+    return out
+
+
+def _apply_remove_files(
+    share_id, remove_files, current_paths, update_fields, cloud_paths_to_remove
+):
+    """Apply remove_files to update_fields and cloud_paths_to_remove."""
+    if not remove_files:
+        return
+    update_fields["paths"] = [p for p in current_paths if p not in remove_files]
+    cloud_paths_to_remove.extend(
+        [p for p in remove_files if is_cloud_relative_path(share_id, p)]
+    )
+    logging.debug("Removing files %s from share %s", remove_files, share_id)
+
+
+def _apply_paths_update(
+    share_id,
+    paths,
+    requested_share_type,
+    current_paths,
+    update_fields,
+    cloud_paths_to_remove,
+    new_cloud_paths,
+):
+    """Apply paths update. Return None on success, (status, body) on error."""
+    if paths is None:
+        return None
+    deduped_paths, ncp, removed_cloud, err = _parse_paths_for_update(
+        paths, share_id, requested_share_type, current_paths
+    )
+    if err is not None:
+        return err
+    update_fields["paths"] = deduped_paths
+    cloud_paths_to_remove.extend(removed_cloud)
+    new_cloud_paths.extend(ncp)
+    logging.debug("Updating paths for share %s: %s", share_id, deduped_paths)
+    return None
+
+
+def _execute_share_update(db_conn, share_id, share_data, data):
+    """Perform share update. Return (response_data, None, []) or (None, (status, body), new_cloud_paths)."""
+    current_paths = share_data.get("paths", []) or []
+    requested_share_type = (
+        data.get("share_type")
+        if data.get("share_type") is not None
+        else share_data.get("share_type", "static")
+    )
+    if requested_share_type == "dynamic" and any(
+        is_cloud_relative_path(share_id, p) for p in current_paths
+    ):
+        return (
+            None,
+            (400, {"error": "Remove cloud files before switching to a dynamic share"}),
+            [],
+        )
+
+    update_fields, cloud_paths_to_remove, new_cloud_paths, err = (
+        _compute_share_update_fields(
+            share_id, share_data, data, current_paths, requested_share_type
+        )
+    )
+    if err is not None:
+        return (None, err, new_cloud_paths)
+    if update_fields:
+        db_success = update_share(db_conn, share_id, **update_fields)
+        if not db_success:
+            for rel_path in new_cloud_paths:
+                remove_cloud_file_if_exists(share_id, rel_path)
+            cleanup_share_cloud_dir_if_empty(share_id)
+            return (None, (500, {"error": "Failed to update share"}), new_cloud_paths)
+    else:
+        db_success = True
+    for rel_path in set(cloud_paths_to_remove):
+        remove_cloud_file_if_exists(share_id, rel_path)
+    cleanup_share_cloud_dir_if_empty(share_id)
+    updated_share = get_share_by_id(db_conn, share_id)
+    return (
+        _build_share_update_response(updated_share, share_id, db_success, data),
+        None,
+        [],
+    )
+
+
+def _apply_metadata_updates(data, share_data, update_fields):
+    """Apply allowed_users, token, allow_list, avoid_list, expiry_date to update_fields."""
+    if data.get("allowed_users") is not None:
+        update_fields["allowed_users"] = data.get("allowed_users") or None
+    update_fields.update(
+        _build_token_update_fields(data.get("disable_token"), share_data)
+    )
+    for key in ("allow_list", "avoid_list", "expiry_date"):
+        if data.get(key) is not None:
+            update_fields[key] = data.get(key)
+
+
+def _compute_share_update_fields(
+    share_id, share_data, data, current_paths, requested_share_type
+):
+    """Compute update_fields, cloud_paths_to_remove, new_cloud_paths. Return (update_fields, cloud_to_remove, new_cloud, error)."""
+    update_fields = {}
+    cloud_paths_to_remove = []
+    new_cloud_paths = []
+    if data.get("share_type") is not None:
+        update_fields["share_type"] = data.get("share_type")
+    _apply_remove_files(
+        share_id,
+        data.get("remove_files", []),
+        current_paths,
+        update_fields,
+        cloud_paths_to_remove,
+    )
+    path_err = _apply_paths_update(
+        share_id,
+        data.get("paths"),
+        requested_share_type,
+        current_paths,
+        update_fields,
+        cloud_paths_to_remove,
+        new_cloud_paths,
+    )
+    if path_err is not None:
+        return (None, [], [], path_err)
+    _apply_metadata_updates(data, share_data, update_fields)
+    return (update_fields, cloud_paths_to_remove, new_cloud_paths, None)
+
 
 class ShareFilesHandler(BaseHandler):
     @tornado.web.authenticated
@@ -66,117 +472,34 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
             data = json.loads(self.request.body or b"{}")
             paths = data.get("paths", [])
             allowed_users = data.get("allowed_users", [])
-            share_type = data.get(
-                "share_type", "static"
-            )  # Default to static for backward compatibility
+            share_type = data.get("share_type", "static")
             allow_list = data.get("allow_list", [])
             avoid_list = data.get("avoid_list", [])
             disable_token = data.get("disable_token", False)
             expiry_date = data.get("expiry_date", None)
 
-            valid_paths = []
-            dynamic_folders = []  # Store folders for dynamic shares
-            remote_items = []
-
-            for entry in paths:
-                candidate_path = entry
-                if isinstance(entry, dict):
-                    entry_type = entry.get("type")
-                    if entry_type == "cloud":
-                        remote_items.append(entry)
-                        continue
-                    if entry_type == "local":
-                        candidate_path = entry.get("path")
-                if not isinstance(candidate_path, str):
-                    continue
-                candidate_path = candidate_path.strip()
-                if not candidate_path:
-                    continue
-
-                ap = os.path.abspath(os.path.join(ROOT_DIR, candidate_path))
-                if not is_within_root(ap, ROOT_DIR):
-                    continue
-
-                if os.path.isfile(ap):
-                    # It's a file, add it directly
-                    valid_paths.append(candidate_path)
-                elif os.path.isdir(ap):
-                    if share_type == "dynamic":
-                        # For dynamic shares, store the folder path
-                        dynamic_folders.append(candidate_path)
-                        logging.debug(f"Added dynamic folder: {candidate_path}")
-                    else:
-                        # For static shares, recursively get all files
-                        try:
-                            all_files = get_all_files_recursive(ap, candidate_path)
-                            valid_paths.extend(all_files)
-                            logging.debug(
-                                f"Added {len(all_files)} files from directory: {candidate_path}"
-                            )
-                        except Exception as e:
-                            logging.error(
-                                f"Error scanning directory {candidate_path}: {e}"
-                            )
-                            continue
-
-            sid = secrets.token_urlsafe(
-                64
-            )  # Increase entropy to reduce guessing risk (Priority 2)
+            valid_paths, dynamic_folders, remote_items = _collect_paths_from_request(
+                paths, share_type
+            )
+            sid = secrets.token_urlsafe(64)
 
             if share_type == "dynamic":
-                if remote_items:
-                    self.set_status(400)
-                    self.write(
-                        {"error": "Cloud files are not supported in dynamic shares"}
-                    )
-                    remove_share_cloud_dir(sid)
-                    return
-                if not dynamic_folders:
-                    self.set_status(400)
-                    self.write({"error": "No valid directories for dynamic share"})
-                    remove_share_cloud_dir(sid)
-                    return
-                # For dynamic shares, store the folder paths
-                final_paths = dynamic_folders
+                final_paths, err = _resolve_final_paths_dynamic(
+                    dynamic_folders, remote_items, sid
+                )
             else:
-                combined_paths = list(valid_paths)
-                if remote_items:
-                    try:
-                        cloud_paths = download_cloud_items(sid, remote_items)
-                        combined_paths.extend(cloud_paths)
-                    except CloudProviderError as cloud_error:
-                        remove_share_cloud_dir(sid)
-                        self.set_status(400)
-                        self.write({"error": str(cloud_error)})
-                        return
-                    except Exception:
-                        remove_share_cloud_dir(sid)
-                        logging.exception(
-                            "Failed to download cloud files for share %s", sid
-                        )
-                        self.set_status(500)
-                        self.write({"error": "Failed to download cloud files"})
-                        return
+                final_paths, err = _resolve_final_paths_static(
+                    valid_paths, remote_items, sid
+                )
 
-                if not combined_paths:
-                    remove_share_cloud_dir(sid)
-                    self.set_status(400)
-                    self.write({"error": "No valid files or directories"})
-                    return
+            if err is not None:
+                status, body = err
+                self.set_status(status)
+                self.write(body)
+                return
 
-                seen_paths = set()
-                final_paths = []
-                for rel_path in combined_paths:
-                    if rel_path not in seen_paths:
-                        final_paths.append(rel_path)
-                        seen_paths.add(rel_path)
-
-            secret_token = (
-                secrets.token_urlsafe(64) if not disable_token else None
-            )  # Generate secret token only if not disabled
+            secret_token = secrets.token_urlsafe(64) if not disable_token else None
             created = datetime.now(timezone.utc).isoformat()
-
-            # Persist directly to database
             success = insert_share(
                 self.db_conn,
                 sid,
@@ -190,7 +513,7 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
                 expiry_date,
             )
             if success:
-                logging.info(f"Share {sid} created successfully in database")
+                logging.info("Share %s created successfully in database", sid)
                 log_audit(
                     self.db_conn,
                     "share_create",
@@ -203,11 +526,11 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
                     response_data["secret_token"] = secret_token
                 self.write(response_data)
             else:
-                logging.error(f"Failed to create share {sid} in database")
+                logging.error("Failed to create share %s in database", sid)
                 self.set_status(500)
                 self.write({"error": "Failed to create share"})
         except Exception as e:
-            logging.error(f"Share creation error: {e}")
+            logging.error("Share creation error: %s", e)
             self.set_status(500)
             self.write({"error": "Failed to create share. Please try again."})
 
@@ -262,192 +585,25 @@ class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
         new_cloud_paths: list[str] = []
         try:
             data = json.loads(self.request.body or b"{}")
-            share_id = data.get("share_id")
-            allowed_users = data.get("allowed_users")
-            remove_files = data.get("remove_files", [])
-            paths = data.get("paths")  # New: support for updating entire paths list
-            disable_token = data.get("disable_token")
-            allow_list = data.get("allow_list")
-            avoid_list = data.get("avoid_list")
-            share_type = data.get("share_type")
-            expiry_date = data.get("expiry_date")
-
-            if not share_id:
-                self.set_status(400)
-                self.write({"error": "Share ID is required"})
-                return
-
-            # Get current share data from database
-            share_data = get_share_by_id(self.db_conn, share_id)
-            if not share_data:
-                self.set_status(404)
-                self.write({"error": "Share not found"})
-                return
-
-            current_paths = share_data.get("paths", []) or []
-            requested_share_type = (
-                share_type
-                if share_type is not None
-                else share_data.get("share_type", "static")
+            share_id, share_data, err_status, err_body = _validate_share_update_request(
+                self.db_conn, data
             )
-
-            if requested_share_type == "dynamic" and any(
-                is_cloud_relative_path(share_id, path) for path in current_paths
-            ):
-                self.set_status(400)
-                self.write(
-                    {"error": "Remove cloud files before switching to a dynamic share"}
-                )
+            if err_status is not None:
+                self.set_status(err_status)
+                self.write(err_body)
                 return
 
-            update_fields: dict[str, object] = {}
-            cloud_paths_to_remove: list[str] = []
-
-            if share_type is not None:
-                update_fields["share_type"] = share_type
-
-            # Handle file removal requests
-            if remove_files:
-                updated_paths = [p for p in current_paths if p not in remove_files]
-                update_fields["paths"] = updated_paths
-                cloud_paths_to_remove.extend(
-                    [p for p in remove_files if is_cloud_relative_path(share_id, p)]
-                )
-                logging.debug(f"Removing files {remove_files} from share {share_id}")
-
-            # Handle complete paths update (for adding files)
-            if paths is not None:
-                remote_items = []
-                processed_paths: list[str] = []
-
-                for entry in paths:
-                    candidate_path = entry
-                    if isinstance(entry, dict):
-                        entry_type = entry.get("type")
-                        if entry_type == "cloud":
-                            remote_items.append(entry)
-                            continue
-                        if entry_type == "local":
-                            candidate_path = entry.get("path")
-                    if not isinstance(candidate_path, str):
-                        continue
-                    cleaned = candidate_path.strip()
-                    if not cleaned:
-                        continue
-                    processed_paths.append(cleaned)
-
-                if requested_share_type == "dynamic" and remote_items:
-                    self.set_status(400)
-                    self.write(
-                        {"error": "Cloud files are not supported in dynamic shares"}
-                    )
-                    return
-
-                if remote_items:
-                    try:
-                        downloaded_paths = download_cloud_items(share_id, remote_items)
-                        processed_paths.extend(downloaded_paths)
-                        new_cloud_paths.extend(downloaded_paths)
-                    except CloudProviderError as cloud_error:
-                        self.set_status(400)
-                        self.write({"error": str(cloud_error)})
-                        return
-                    except Exception:
-                        logging.exception(
-                            "Failed to download cloud files for share %s", share_id
-                        )
-                        self.set_status(500)
-                        self.write({"error": "Failed to download cloud files"})
-                        return
-
-                seen_paths = set()
-                deduped_paths: list[str] = []
-                for rel_path in processed_paths:
-                    if rel_path not in seen_paths:
-                        deduped_paths.append(rel_path)
-                        seen_paths.add(rel_path)
-
-                update_fields["paths"] = deduped_paths
-                removed_via_override = [
-                    p
-                    for p in current_paths
-                    if p not in deduped_paths and is_cloud_relative_path(share_id, p)
-                ]
-                cloud_paths_to_remove.extend(removed_via_override)
-                logging.debug(f"Updating paths for share {share_id}: {deduped_paths}")
-
-            # Update allowed users if provided
-            if allowed_users is not None:
-                update_fields["allowed_users"] = (
-                    allowed_users if allowed_users else None
-                )
-
-            if disable_token is True:
-                update_fields["secret_token"] = None
-                update_fields["disable_token"] = True
-            elif disable_token is False:
-                if share_data["secret_token"] is None:
-                    update_fields["secret_token"] = secrets.token_urlsafe(64)
-                else:
-                    update_fields["secret_token"] = share_data["secret_token"]
-                update_fields["disable_token"] = False
-
-            if allow_list is not None:
-                update_fields["allow_list"] = allow_list
-            if avoid_list is not None:
-                update_fields["avoid_list"] = avoid_list
-            if expiry_date is not None:
-                update_fields["expiry_date"] = expiry_date
-
-            # Persist updates
-            if update_fields:
-                db_success = update_share(self.db_conn, share_id, **update_fields)
-                if not db_success:
-                    for rel_path in new_cloud_paths:
-                        remove_cloud_file_if_exists(share_id, rel_path)
-                    cleanup_share_cloud_dir_if_empty(share_id)
-                    self.set_status(500)
-                    self.write({"error": "Failed to update share"})
-                    return
-            else:
-                db_success = True  # No updates needed
-
-            if cloud_paths_to_remove:
-                for rel_path in set(cloud_paths_to_remove):
-                    remove_cloud_file_if_exists(share_id, rel_path)
-            cleanup_share_cloud_dir_if_empty(share_id)
-
-            # Get updated share data for response
-            updated_share = get_share_by_id(self.db_conn, share_id)
-
-            response_data = {
-                "success": True,
-                "share_id": share_id,
-                "db_persisted": db_success,
-            }
-
-            if allowed_users is not None:
-                response_data["allowed_users"] = updated_share.get("allowed_users")
-            if remove_files:
-                response_data["removed_files"] = remove_files
-                response_data["remaining_files"] = updated_share.get("paths", [])
-            if paths is not None:
-                response_data["updated_paths"] = updated_share.get("paths", [])
-            if share_type is not None:
-                response_data["share_type"] = updated_share.get("share_type")
-            if expiry_date is not None:
-                response_data["expiry_date"] = updated_share.get("expiry_date")
-            if (
-                disable_token is False
-                and updated_share
-                and updated_share.get("secret_token")
-            ):
-                response_data["new_token"] = updated_share.get("secret_token")
-
+            response_data, err, new_cloud_paths = _execute_share_update(
+                self.db_conn, share_id, share_data, data
+            )
+            if err is not None:
+                self.set_status(err[0])
+                self.write(err[1])
+                return
             self.write(response_data)
 
         except Exception as e:
-            logging.error(f"Share update error: {e}")
+            logging.error("Share update error: %s", e)
             if share_id and new_cloud_paths:
                 for rel_path in new_cloud_paths:
                     remove_cloud_file_if_exists(share_id, rel_path)
@@ -546,99 +702,25 @@ class SharedListHandler(BaseHandler):
             self.set_status(404)
             self.write(INVALID_SHARE_LINK)
             return
-
-        # Check if share has expired
-        expiry_date = share.get("expiry_date")
-        if is_share_expired(expiry_date):
-            self.set_status(410)  # Gone
+        if is_share_expired(share.get("expiry_date")):
+            self.set_status(410)
             self.write("Share expired: This share is no longer available")
             return
-
-        # Check if share requires token verification
-        secret_token = share.get("secret_token")
-        if secret_token:
-            # Check for Authorization header first
-            auth_header = self.request.headers.get("Authorization", "")
-            provided_token = None
-
-            if auth_header.startswith("Bearer "):
-                provided_token = auth_header[7:]  # Remove 'Bearer ' prefix
-            else:
-                # Check for cookie as fallback
-                cookie_name = f"share_token_{sid}"
-                provided_token = self.get_cookie(cookie_name)
-
-            if not provided_token or not secrets.compare_digest(
-                provided_token, secret_token
-            ):
-                # No valid token found, redirect to verification
-                self.redirect(f"/shared/{sid}/verify")
-                return
-        # If secret_token is None or empty, no token verification is required
-
-        # Check if share has user restrictions
-        allowed_users = share.get("allowed_users")
-        if allowed_users:
-            # Get current user from cookie
-            current_user = self.get_secure_cookie("user")
-            if not current_user:
-                self.set_status(401)
-                self.write(
-                    "Authentication required: Please provide a valid access token"
-                )
-                return
-
-            # Decode username if it's bytes
-            if isinstance(current_user, bytes):
-                current_user = current_user.decode("utf-8")
-
-            # Check if current user is in allowed users list
-            if current_user not in allowed_users:
-                self.set_status(403)
-                self.write(ACCESS_TOKEN_INVALID_OR_EXPIRED)
-                return
-
-        # Handle dynamic vs static shares
-        share_type = share.get("share_type", "static")
-        allow_list = share.get("allow_list", [])
-        avoid_list = share.get("avoid_list", [])
-
-        if share_type == "dynamic":
-            # For dynamic shares, scan the folders in real-time
-            dynamic_files = []
-            for folder_path in share["paths"]:
-                try:
-                    full_path = os.path.abspath(os.path.join(ROOT_DIR, folder_path))
-                    if os.path.isdir(full_path) and is_within_root(full_path, ROOT_DIR):
-                        # Recursively scan the folder for current files
-                        all_files = get_all_files_recursive(full_path, folder_path)
-                        dynamic_files.extend(all_files)
-                except Exception:
-                    continue
-
-            # Apply allow/avoid list filtering
-            filtered_files = filter_files_by_patterns(
-                dynamic_files, allow_list, avoid_list
-            )
-            self.render(
-                "shared_list.html",
-                share_id=sid,
-                files=filtered_files,
-                files_json=json.dumps(filtered_files),
-            )
-        else:
-            # For static shares, use the stored paths
-
-            # Apply allow/avoid list filtering to static shares
-            filtered_files = filter_files_by_patterns(
-                share["paths"], allow_list, avoid_list
-            )
-            self.render(
-                "shared_list.html",
-                share_id=sid,
-                files=filtered_files,
-                files_json=json.dumps(filtered_files),
-            )
+        if not _is_token_valid(share, sid, self.request, self.get_cookie):
+            self.redirect(f"/shared/{sid}/verify")
+            return
+        allowed_ok, user_err = _is_user_allowed(share, self.get_secure_cookie)
+        if not allowed_ok:
+            self.set_status(user_err[0])
+            self.write(user_err[1])
+            return
+        filtered_files = _get_share_file_list(share)
+        self.render(
+            "shared_list.html",
+            share_id=sid,
+            files=filtered_files,
+            files_json=json.dumps(filtered_files),
+        )
 
 
 class SharedFileHandler(BaseHandler):
@@ -649,95 +731,25 @@ class SharedFileHandler(BaseHandler):
             self.set_status(404)
             self.write(INVALID_SHARE_LINK)
             return
-
-        # Check if share has expired
-        expiry_date = share.get("expiry_date")
-        if is_share_expired(expiry_date):
-            self.set_status(410)  # Gone
+        if is_share_expired(share.get("expiry_date")):
+            self.set_status(410)
             self.write("Share expired: This share is no longer available")
             return
-
-        # Check if share requires token verification
-        secret_token = share.get("secret_token")
-        if secret_token:
-            # Check for Authorization header first
-            auth_header = self.request.headers.get("Authorization", "")
-            provided_token = None
-
-            if auth_header.startswith("Bearer "):
-                provided_token = auth_header[7:]
-            else:
-                # Check for cookie as fallback
-                cookie_name = f"share_token_{sid}"
-                provided_token = self.get_cookie(cookie_name)
-
-            if not provided_token or not secrets.compare_digest(
-                provided_token, secret_token
-            ):
-                self.set_status(403)
-                self.write(ACCESS_TOKEN_INVALID_OR_EXPIRED)
-                return
-
-        # Check if share has user restrictions
-        allowed_users = share.get("allowed_users")
-        if allowed_users:
-            current_user = self.get_secure_cookie("user")
-            if not current_user:
-                self.set_status(401)
-                self.write(
-                    "Authentication required: Please provide a valid access token"
-                )
-                return
-
-            if isinstance(current_user, bytes):
-                current_user = current_user.decode("utf-8")
-
-            if current_user not in allowed_users:
-                self.set_status(403)
-                self.write(ACCESS_TOKEN_INVALID_OR_EXPIRED)
-                return
-
-        share_type = share.get("share_type", "static")
-        allow_list = share.get("allow_list", [])
-        avoid_list = share.get("avoid_list", [])
-
-        if share_type == "dynamic":
-            # For dynamic shares, we need to verify the path is within one of the shared folders
-            is_authorized = False
-            for folder_path in share["paths"]:
-                try:
-                    full_folder_path = os.path.abspath(
-                        os.path.join(ROOT_DIR, folder_path)
-                    )
-                    full_file_path = os.path.abspath(os.path.join(ROOT_DIR, path))
-                    if os.path.isdir(full_folder_path) and is_within_root(
-                        full_file_path, full_folder_path
-                    ):
-                        # Path is within a shared dynamic folder, now check allow/avoid lists
-                        if not filter_files_by_patterns([path], allow_list, avoid_list):
-                            continue  # This specific file is filtered out
-                        is_authorized = True
-                        break
-                except Exception:
-                    continue
-
-            if not is_authorized:
-                self.set_status(403)
-                self.write("Access denied: This file is not part of the share")
-                return
-        else:
-            # For static shares, check if the path is in the stored list after filtering
-            filtered_paths = filter_files_by_patterns(
-                share["paths"], allow_list, avoid_list
-            )
-            if path not in filtered_paths:
-                self.set_status(403)
-                self.write("Access denied: This file is not part of the share")
-                return
-
+        if not _is_token_valid(share, sid, self.request, self.get_cookie):
+            self.set_status(403)
+            self.write(ACCESS_TOKEN_INVALID_OR_EXPIRED)
+            return
+        allowed_ok, user_err = _is_user_allowed(share, self.get_secure_cookie)
+        if not allowed_ok:
+            self.set_status(user_err[0])
+            self.write(user_err[1])
+            return
+        if not _is_path_in_share(share, path):
+            self.set_status(403)
+            self.write("Access denied: This file is not part of the share")
+            return
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
         if not os.path.isfile(abspath):
             self.set_status(404)
             return
-
         await MainHandler.serve_file(self, abspath)

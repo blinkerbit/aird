@@ -24,7 +24,7 @@ def get_all_files_recursive(root_path: str, base_path: str = "") -> list:
                 # It's a directory, recursively scan it
                 sub_files = get_all_files_recursive(item_path, relative_path)
                 all_files.extend(sub_files)
-    except (OSError, PermissionError) as e:
+    except OSError as e:
         print(f"Error scanning directory {root_path}: {e}")
 
     return all_files

@@ -32,6 +32,287 @@ import time
 _LOGIN_ATTEMPTS = {}
 
 
+# ---------------------------------------------------------------------------
+# Helpers for LDAP login (reduce cognitive complexity)
+# ---------------------------------------------------------------------------
+
+
+def _ldap_authorized(conn, ldap_attribute_map):
+    """Check LDAP attribute maps for authorization. Return True if authorized."""
+    if not ldap_attribute_map:
+        return True
+    for attribute_element in ldap_attribute_map:
+        for key, value in attribute_element.items():
+            try:
+                if value in conn.entries[0][key]:
+                    return True
+            except KeyError:
+                continue
+    return False
+
+
+def _ldap_sync_user(db_conn, username, password, admin_users):
+    """Create or update Aird user after LDAP auth. Return user_role for cookie."""
+    is_admin = username in admin_users
+    existing = get_user_by_username(db_conn, username)
+    if not existing:
+        try:
+            role = "admin" if is_admin else "user"
+            create_user(db_conn, username, password, role=role)
+            logging.info(
+                "LDAP: Created new user %r from LDAP with role %r", username, role
+            )
+        except Exception as e:
+            logging.warning(
+                "LDAP: Failed to create user %r in database: %s", username, e
+            )
+        return "admin" if is_admin else "user"
+    try:
+        update_user(db_conn, existing["id"], last_login=datetime.now().isoformat())
+        logging.info("LDAP: Updated last login for user %r", username)
+        if is_admin and existing["role"] != "admin":
+            update_user(db_conn, existing["id"], role="admin")
+            logging.info("LDAP: Assigned admin privileges to user %r", username)
+    except Exception as e:
+        logging.warning("LDAP: Failed to update user %r: %s", username, e)
+    role_row = get_user_by_username(db_conn, username)
+    default_role = "admin" if is_admin else "user"
+    return role_row["role"] if role_row else default_role
+
+
+def _set_login_cookies(handler, username, user_role, redirect_url):
+    """Set secure cookies and redirect."""
+    opts = {
+        "httponly": True,
+        "secure": handler.request.protocol == "https",
+        "samesite": "Strict",
+        "expires_days": 1,
+    }
+    handler.set_secure_cookie("user", username, **opts)
+    handler.set_secure_cookie("user_role", user_role, **opts)
+    log_audit(handler.db_conn, "login", username=username, ip=handler.request.remote_ip)
+    handler.redirect(redirect_url)
+
+
+# ---------------------------------------------------------------------------
+# Helpers for LoginHandler (username/password and token flows)
+# ---------------------------------------------------------------------------
+
+
+def _try_username_password_login(handler, username, password, next_url):
+    """Attempt username/password login. Return True if response already sent."""
+    db_conn = handler.db_conn
+    if not db_conn or not username or not password:
+        return False
+    if len(username) > 256 or len(password) > 256:
+        handler.render(
+            LOGIN_HTML,
+            error=INVALID_INPUT_LENGTH_MSG,
+            settings=handler.settings,
+            next_url=next_url,
+        )
+        return True
+    try:
+        user = authenticate_user(db_conn, username, password)
+        auth_ok = user is not None
+        if not auth_ok:
+            handler.render(
+                LOGIN_HTML,
+                error=INVALID_USERNAME_OR_PASSWORD_MSG,
+                settings=handler.settings,
+                next_url=next_url,
+            )
+            return True
+        log_audit(db_conn, "login", username=username, ip=handler.request.remote_ip)
+        opts = {
+            "httponly": True,
+            "secure": handler.request.protocol == "https",
+            "samesite": "Strict",
+            "expires_days": 1,
+        }
+        handler.set_secure_cookie("user", username, **opts)
+        handler.set_secure_cookie("user_role", user["role"], **opts)
+        handler.redirect(next_url)
+        return True
+    except Exception as e:
+        logging.error(
+            "Exception during username/password authentication: %s", e, exc_info=True
+        )
+        handler.render(
+            LOGIN_HTML,
+            error="Authentication failed. Please try again.",
+            settings=handler.settings,
+            next_url=next_url,
+        )
+        return True
+
+
+def _try_token_login(handler, token, next_url):
+    """Attempt token login. Return True if response already sent."""
+    if not token:
+        return False
+    if len(token) > 512:
+        logging.warning("Token authentication failed.")
+        handler.render(
+            LOGIN_HTML,
+            error="Invalid token.",
+            settings=handler.settings,
+            next_url=next_url,
+        )
+        return True
+    current = config_module.ACCESS_TOKEN
+    if not current:
+        handler.render(
+            LOGIN_HTML,
+            error="Token authentication is not configured.",
+            settings=handler.settings,
+            next_url=next_url,
+        )
+        return True
+    norm_token = token.strip()
+    norm_access = current.strip()
+    if secrets.compare_digest(norm_token, norm_access):
+        log_audit(
+            handler.db_conn,
+            "login",
+            username="token_authenticated",
+            ip=handler.request.remote_ip,
+        )
+        opts = {
+            "httponly": True,
+            "secure": handler.request.protocol == "https",
+            "samesite": "Strict",
+            "expires_days": 1,
+        }
+        handler.set_secure_cookie("user", "token_authenticated", **opts)
+        handler.set_secure_cookie("user_role", "admin", **opts)
+        handler.redirect(next_url)
+        return True
+    logging.warning("Token authentication failed. Token mismatch.")
+    handler.render(
+        LOGIN_HTML,
+        error="Invalid credentials. Try again.",
+        settings=handler.settings,
+        next_url=next_url,
+    )
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Helpers for AdminLoginHandler
+# ---------------------------------------------------------------------------
+
+
+def _admin_cookie_opts(handler):
+    return {
+        "httponly": True,
+        "secure": handler.request.protocol == "https",
+        "samesite": "Strict",
+        "expires_days": 1,
+    }
+
+
+def _try_admin_username_password_login(handler, username, password):
+    """Attempt admin username/password login. Return True if response sent."""
+    db_conn = handler.db_conn
+    if not db_conn or not username or not password:
+        return False
+    if len(username) > 256 or len(password) > 256:
+        handler.render(ADMIN_LOGIN_TEMPLATE, error=INVALID_INPUT_LENGTH_MSG)
+        return True
+    try:
+        user = authenticate_user(db_conn, username, password)
+        if user and user["role"] == "admin":
+            log_audit(
+                db_conn, "admin_login", username=username, ip=handler.request.remote_ip
+            )
+            opts = _admin_cookie_opts(handler)
+            handler.set_secure_cookie("user", username, **opts)
+            handler.set_secure_cookie("user_role", user["role"], **opts)
+            handler.set_secure_cookie("admin", "authenticated", **opts)
+            handler.redirect(ADMIN_URL)
+            return True
+        if user and user["role"] != "admin":
+            handler.render(
+                ADMIN_LOGIN_TEMPLATE,
+                error="Access denied. Admin privileges required.",
+            )
+            return True
+        handler.render(ADMIN_LOGIN_TEMPLATE, error=INVALID_USERNAME_OR_PASSWORD_MSG)
+        return True
+    except Exception:
+        handler.render(
+            ADMIN_LOGIN_TEMPLATE,
+            error="Authentication failed. Please try again.",
+        )
+        return True
+
+
+def _try_admin_token_login(handler, token):
+    """Attempt admin token login. Return True if response sent."""
+    if not token:
+        return False
+    if len(token) > 512:
+        handler.render(ADMIN_LOGIN_TEMPLATE, error="Invalid token.")
+        return True
+    current = config_module.ADMIN_TOKEN
+    if not current:
+        handler.render(
+            ADMIN_LOGIN_TEMPLATE,
+            error="Admin token authentication is not configured.",
+        )
+        return True
+    norm_token = token.strip()
+    norm_admin = current.strip()
+    if secrets.compare_digest(norm_token, norm_admin):
+        log_audit(
+            handler.db_conn,
+            "admin_login",
+            username="admin_token",
+            ip=handler.request.remote_ip,
+        )
+        opts = _admin_cookie_opts(handler)
+        handler.set_secure_cookie("admin", "authenticated", **opts)
+        handler.redirect(ADMIN_URL)
+        return True
+    handler.render(ADMIN_LOGIN_TEMPLATE, error="Invalid admin token.")
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Helpers for ProfileHandler
+# ---------------------------------------------------------------------------
+
+
+def _profile_render(handler, user, error=None, success=None, ldap_enabled=None):
+    """Render profile template with common kwargs."""
+    if ldap_enabled is None:
+        ldap_enabled = handler.settings.get("ldap_server") is not None
+    handler.render(
+        PROFILE_TEMPLATE,
+        user=user,
+        error=error,
+        success=success,
+        ldap_enabled=ldap_enabled,
+    )
+
+
+def _do_profile_password_update(db_conn, user, new_password, confirm_password):
+    """Validate and perform password update. Return (success_msg, None) or (None, error_msg)."""
+    if not new_password:
+        return (None, None)
+    if new_password != confirm_password:
+        return (None, "Passwords do not match")
+    is_valid, error_msg = validate_password(new_password)
+    if not is_valid:
+        return (None, error_msg)
+    try:
+        update_user(db_conn, user["id"], password=new_password)
+        return ("Password updated successfully", None)
+    except Exception as e:
+        return (None, "Error updating password: " + str(e))
+
+
 def check_login_rate_limit(remote_ip):
     now = time.time()
     attempts, timestamp = _LOGIN_ATTEMPTS.get(remote_ip, (0, now))
@@ -64,7 +345,6 @@ class LDAPLoginHandler(BaseHandler):
             )
             return
 
-        # Input validation
         username = self.get_argument("username", "").strip()
         password = self.get_argument("password", "")
 
@@ -75,8 +355,6 @@ class LDAPLoginHandler(BaseHandler):
                 settings=self.settings,
             )
             return
-
-        # Basic input length validation
         if len(username) > 256 or len(password) > 256:
             self.render(
                 LOGIN_HTML, error=INVALID_INPUT_LENGTH_MSG, settings=self.settings
@@ -85,8 +363,6 @@ class LDAPLoginHandler(BaseHandler):
 
         try:
             server = Server(self.settings["ldap_server"])
-            # Bind with the provided password
-            # Escape username for DN to prevent LDAP injection in the bind DN
             username_dn_escaped = escape_rdn(username)
             conn = Connection(
                 server,
@@ -96,8 +372,6 @@ class LDAPLoginHandler(BaseHandler):
                 password=password,
                 auto_bind=True,
             )
-
-            # Escape username for search filter to prevent LDAP injection
             username_escaped = escape_filter_chars(username)
             conn.search(
                 search_base=self.settings["ldap_base_dn"],
@@ -107,113 +381,22 @@ class LDAPLoginHandler(BaseHandler):
                 attributes=self.settings["ldap_attributes"],
             )
 
-            """
-            attribute_map = [{"member":'cn=asdfasdf,dc=com,dc=io'}]
-            """
-            # authentication
+            if not _ldap_authorized(conn, self.settings.get("ldap_attribute_map", [])):
+                self.render(
+                    LOGIN_HTML,
+                    error="Access denied. You do not have permission to access this system.",
+                    settings=self.settings,
+                )
+                return
 
-            # authorization logic - check LDAP attribute maps if configured
-            ldap_attribute_map = self.settings.get("ldap_attribute_map", [])
-            if ldap_attribute_map:
-                # If attribute maps are configured, check authorization
-                authorized = False
-                for attribute_element in ldap_attribute_map:
-                    for key, value in attribute_element.items():
-                        try:
-                            if value in conn.entries[0][key]:
-                                authorized = True
-                                break
-                        except KeyError:
-                            continue
-                    if authorized:
-                        break
-
-                if not authorized:
-                    self.render(
-                        LOGIN_HTML,
-                        error="Access denied. You do not have permission to access this system.",
-                        settings=self.settings,
-                    )
-                    return
-            # If no attribute maps are configured, all LDAP users are authorized
-
-            # Only create/update user in Aird's database after successful authorization
+            user_role = "user"
             db_conn = self.db_conn
             if db_conn:
-                existing_user = get_user_by_username(db_conn, username)
                 admin_users = self.settings.get("admin_users", [])
-                is_admin_user = username in admin_users
+                user_role = _ldap_sync_user(db_conn, username, password, admin_users)
 
-                if not existing_user:
-                    # Create new user in Aird's database for first-time LDAP login
-                    try:
-                        user_role = "admin" if is_admin_user else "user"
-                        create_user(db_conn, username, password, role=user_role)
-                        logging.info(
-                            f"LDAP: Created new user '{username}' from LDAP authentication with role '{user_role}'"
-                        )
-                    except Exception as e:
-                        logging.warning(
-                            f"LDAP: Warning: Failed to create user '{username}' in database: {e}"
-                        )
-                        # Continue with login even if user creation fails
-                else:
-                    # Update last login timestamp and check for admin role assignment
-                    try:
-                        update_user(
-                            db_conn,
-                            existing_user["id"],
-                            last_login=datetime.now().isoformat(),
-                        )
-                        logging.info(f"LDAP: Updated last login for user '{username}'")
-
-                        # Check if user should have admin privileges
-                        if is_admin_user and existing_user["role"] != "admin":
-                            update_user(db_conn, existing_user["id"], role="admin")
-                            logging.info(
-                                f"LDAP: Assigned admin privileges to user '{username}'"
-                            )
-                    except Exception as e:
-                        logging.warning(
-                            f"LDAP: Warning: Failed to update user '{username}': {e}"
-                        )
-
-            # Successful authentication and authorization
-            # Get user role for cookie setting
-            user_role = "admin" if is_admin_user else "user"
-            db_conn = self.db_conn
-            if db_conn:
-                existing_user = get_user_by_username(db_conn, username)
-                if existing_user:
-                    user_role = existing_user["role"]
-
-            # Set cookies with 24-hour expiration for session security
-            self.set_secure_cookie(
-                "user",
-                username,
-                httponly=True,
-                secure=(self.request.protocol == "https"),
-                samesite="Strict",
-                expires_days=1,
-            )
-            self.set_secure_cookie(
-                "user_role",
-                user_role,
-                httponly=True,
-                secure=(self.request.protocol == "https"),
-                samesite="Strict",
-                expires_days=1,
-            )
-            log_audit(
-                self.db_conn,
-                "login",
-                username=username,
-                ip=self.request.remote_ip,
-            )
-            self.redirect(FILES_BASE_URL)
-            return
+            _set_login_cookies(self, username, user_role, FILES_BASE_URL)
         except Exception:
-            # Generic error message to prevent information disclosure
             self.render(
                 LOGIN_HTML,
                 error="Authentication failed. Please check your credentials.",
@@ -265,16 +448,10 @@ class LoginHandler(BaseHandler):
             return
 
         try:
-            # Check if it's username/password login or token login
             username = self.get_argument("username", "").strip()
             password = self.get_argument("password", "").strip()
             token = self.get_argument("token", "").strip()
             next_url = self._get_safe_next_url()
-
-            # Safe logging without exposing sensitive data
-            logging.info(
-                f"Login attempt - username provided: {bool(username)}, password provided: {bool(password)}, token provided: {bool(token)}"
-            )
         except Exception:
             logging.error("Error parsing login form data", exc_info=True)
             self.render(
@@ -285,77 +462,14 @@ class LoginHandler(BaseHandler):
             )
             return
 
-        # Try username/password authentication first (if both provided)
-        # Access DB_CONN from constants module to ensure we have the latest value
-        db_conn = self.db_conn
-        logging.info(f"DB_CONN available: {db_conn is not None}")
-        if username and password and db_conn is not None:
-            # Input validation
-            if len(username) > 256 or len(password) > 256:
-                self.render(
-                    LOGIN_HTML,
-                    error=INVALID_INPUT_LENGTH_MSG,
-                    settings=self.settings,
-                    next_url=next_url,
-                )
-                return
-
-            try:
-                logging.info(
-                    f"Attempting username/password authentication for user: {username}"
-                )
-                user = authenticate_user(db_conn, username, password)
-                if user:
-                    logging.info(
-                        f"Username/password authentication successful for user: {username}, redirecting to: {next_url}"
-                    )
-                    log_audit(
-                        db_conn, "login", username=username, ip=self.request.remote_ip
-                    )
-                    # Set cookies with 24-hour expiration for session security
-                    self.set_secure_cookie(
-                        "user",
-                        username,
-                        httponly=True,
-                        secure=(self.request.protocol == "https"),
-                        samesite="Strict",
-                        expires_days=1,
-                    )
-                    self.set_secure_cookie(
-                        "user_role",
-                        user["role"],
-                        httponly=True,
-                        secure=(self.request.protocol == "https"),
-                        samesite="Strict",
-                        expires_days=1,
-                    )
-                    self.redirect(next_url)
-                    return
-                else:
-                    logging.warning(
-                        f"Username/password authentication failed for user: {username}"
-                    )
-                    self.render(
-                        LOGIN_HTML,
-                        error=INVALID_USERNAME_OR_PASSWORD_MSG,
-                        settings=self.settings,
-                        next_url=next_url,
-                    )
-                    return
-            except Exception as e:
-                logging.error(
-                    f"Exception during username/password authentication: {e}",
-                    exc_info=True,
-                )
-                self.render(
-                    LOGIN_HTML,
-                    error="Authentication failed. Please try again.",
-                    settings=self.settings,
-                    next_url=next_url,
-                )
-                return
-
-        # Fallback to token authentication
+        if (
+            username
+            and password
+            and _try_username_password_login(self, username, password, next_url)
+        ):
+            return
+        if token and _try_token_login(self, token, next_url):
+            return
         if not token:
             if username or password:
                 self.render(
@@ -371,83 +485,6 @@ class LoginHandler(BaseHandler):
                     settings=self.settings,
                     next_url=next_url,
                 )
-            return
-
-        if len(token) > 512:  # Reasonable token length limit
-            self.render(
-                LOGIN_HTML,
-                error="Invalid token.",
-                settings=self.settings,
-                next_url=next_url,
-            )
-            return
-
-        # Check if ACCESS_TOKEN is configured
-        # Access directly from module to ensure we have the latest value
-        current_access_token = config_module.ACCESS_TOKEN
-        logging.info(
-            f"ACCESS_TOKEN from config_module: {current_access_token is not None} (length: {len(current_access_token) if current_access_token else 0})"
-        )
-        if not current_access_token:
-            logging.error(
-                "ACCESS_TOKEN is not configured. Cannot authenticate with token."
-            )
-            self.render(
-                LOGIN_HTML,
-                error="Token authentication is not configured.",
-                settings=self.settings,
-                next_url=next_url,
-            )
-            return
-
-        # Normalize token comparison - only strip whitespace to preserve token integrity
-        # Note: Removed quote stripping as it could make 'token' and token match incorrectly
-        normalized_token = token.strip()
-        normalized_access_token = (
-            current_access_token.strip() if current_access_token else ""
-        )
-
-        # Safe logging without exposing token values
-        logging.debug(
-            f"Token comparison - lengths match: {len(normalized_token) == len(normalized_access_token)}"
-        )
-
-        if secrets.compare_digest(normalized_token, normalized_access_token):
-            logging.info(f"Token authentication successful, redirecting to: {next_url}")
-            log_audit(
-                self.db_conn,
-                "login",
-                username="token_authenticated",
-                ip=self.request.remote_ip,
-            )
-            # Set cookies with 24-hour expiration for session security
-            self.set_secure_cookie(
-                "user",
-                "token_authenticated",
-                httponly=True,
-                secure=(self.request.protocol == "https"),
-                samesite="Strict",
-                expires_days=1,
-            )
-            self.set_secure_cookie(
-                "user_role",
-                "admin",
-                httponly=True,
-                secure=(self.request.protocol == "https"),
-                samesite="Strict",
-                expires_days=1,
-            )  # Token users get admin role
-            self.redirect(next_url)
-            return
-        else:
-            # Log failure efficiently without revealing token details
-            logging.warning("Token authentication failed. Token mismatch.")
-            self.render(
-                LOGIN_HTML,
-                error="Invalid credentials. Try again.",
-                settings=self.settings,
-                next_url=next_url,
-            )
 
 
 class AdminLoginHandler(BaseHandler):
@@ -466,76 +503,18 @@ class AdminLoginHandler(BaseHandler):
             )
             return
 
-        # Check if it's username/password login or token login
         username = self.get_argument("username", "").strip()
         password = self.get_argument("password", "").strip()
         token = self.get_argument("token", "").strip()
 
-        # Try username/password authentication first (if both provided)
-        # Access DB_CONN from constants module to ensure we have the latest value
-        db_conn = self.db_conn
-        if username and password and db_conn is not None:
-            # Input validation
-            if len(username) > 256 or len(password) > 256:
-                self.render(ADMIN_LOGIN_TEMPLATE, error=INVALID_INPUT_LENGTH_MSG)
-                return
-
-            try:
-                user = authenticate_user(db_conn, username, password)
-                if user and user["role"] == "admin":
-                    log_audit(
-                        db_conn,
-                        "admin_login",
-                        username=username,
-                        ip=self.request.remote_ip,
-                    )
-                    # Set both user and admin cookies for admin users
-                    # Set cookies with 24-hour expiration for session security
-                    self.set_secure_cookie(
-                        "user",
-                        username,
-                        httponly=True,
-                        secure=(self.request.protocol == "https"),
-                        samesite="Strict",
-                        expires_days=1,
-                    )
-                    self.set_secure_cookie(
-                        "user_role",
-                        user["role"],
-                        httponly=True,
-                        secure=(self.request.protocol == "https"),
-                        samesite="Strict",
-                        expires_days=1,
-                    )
-                    self.set_secure_cookie(
-                        "admin",
-                        "authenticated",
-                        httponly=True,
-                        secure=(self.request.protocol == "https"),
-                        samesite="Strict",
-                        expires_days=1,
-                    )  # Also set admin cookie
-                    self.redirect(ADMIN_URL)
-                    return
-                elif user and user["role"] != "admin":
-                    self.render(
-                        ADMIN_LOGIN_TEMPLATE,
-                        error="Access denied. Admin privileges required.",
-                    )
-                    return
-                else:
-                    self.render(
-                        ADMIN_LOGIN_TEMPLATE, error=INVALID_USERNAME_OR_PASSWORD_MSG
-                    )
-                    return
-            except Exception:
-                self.render(
-                    ADMIN_LOGIN_TEMPLATE,
-                    error="Authentication failed. Please try again.",
-                )
-                return
-
-        # Fallback to token authentication
+        if (
+            username
+            and password
+            and _try_admin_username_password_login(self, username, password)
+        ):
+            return
+        if token and _try_admin_token_login(self, token):
+            return
         if not token:
             if username or password:
                 self.render(
@@ -546,58 +525,6 @@ class AdminLoginHandler(BaseHandler):
                     ADMIN_LOGIN_TEMPLATE,
                     error="Username/password or token is required.",
                 )
-            return
-
-        if len(token) > 512:  # Reasonable token length limit
-            self.render(ADMIN_LOGIN_TEMPLATE, error="Invalid token.")
-            return
-
-        # Check if ADMIN_TOKEN is configured
-        # Access directly from module to ensure we have the latest value
-        current_admin_token = config_module.ADMIN_TOKEN
-        if not current_admin_token:
-            logging.error(
-                "ADMIN_TOKEN is not configured. Cannot authenticate with token."
-            )
-            self.render(
-                ADMIN_LOGIN_TEMPLATE,
-                error="Admin token authentication is not configured.",
-            )
-            return
-
-        # Normalize token comparison - only strip whitespace to preserve token integrity
-        # Note: Removed quote stripping as it could make 'token' and token match incorrectly
-        normalized_token = token.strip()
-        normalized_admin_token = (
-            current_admin_token.strip() if current_admin_token else ""
-        )
-
-        # Debug logging (without exposing actual token values)
-        logging.debug(
-            f"Admin token auth attempt - submitted length: {len(normalized_token)}, expected length: {len(normalized_admin_token)}"
-        )
-
-        if secrets.compare_digest(normalized_token, normalized_admin_token):
-            logging.info("Admin token authentication successful")
-            log_audit(
-                self.db_conn,
-                "admin_login",
-                username="admin_token",
-                ip=self.request.remote_ip,
-            )
-            # Set cookie with 24-hour expiration for session security
-            self.set_secure_cookie(
-                "admin",
-                "authenticated",
-                httponly=True,
-                secure=(self.request.protocol == "https"),
-                samesite="Strict",
-                expires_days=1,
-            )
-            self.redirect(ADMIN_URL)
-        else:
-            logging.warning("Admin token authentication failed.")
-            self.render(ADMIN_LOGIN_TEMPLATE, error="Invalid admin token.")
 
 
 class LogoutHandler(BaseHandler):
@@ -624,78 +551,36 @@ class ProfileHandler(BaseHandler):
 
     @tornado.web.authenticated
     def post(self):
-        # Check if LDAP is enabled
         ldap_enabled = self.settings.get("ldap_server") is not None
-
-        # Get current user from DB
         db_conn = self.db_conn
         if not db_conn:
-            self.render(
-                PROFILE_TEMPLATE,
-                user=self.current_user,
+            _profile_render(
+                self,
+                self.current_user,
                 error="Database connection not available",
-                success=None,
                 ldap_enabled=ldap_enabled,
             )
             return
 
         user = get_user_by_username(db_conn, self.current_user["username"])
         if not user:
-            self.render(
-                PROFILE_TEMPLATE,
-                user=self.current_user,
+            _profile_render(
+                self,
+                self.current_user,
                 error="User not found",
-                success=None,
                 ldap_enabled=ldap_enabled,
             )
             return
 
         new_password = self.get_argument("new_password", "")
         confirm_password = self.get_argument("confirm_password", "")
-
-        if new_password:
-            if new_password != confirm_password:
-                self.render(
-                    PROFILE_TEMPLATE,
-                    user=self.current_user,
-                    error="Passwords do not match",
-                    success=None,
-                    ldap_enabled=ldap_enabled,
-                )
-                return
-            is_valid, error_msg = validate_password(new_password)
-            if not is_valid:
-                self.render(
-                    PROFILE_TEMPLATE,
-                    user=self.current_user,
-                    error=error_msg,
-                    success=None,
-                    ldap_enabled=ldap_enabled,
-                )
-                return
-
-            try:
-                update_user(db_conn, user["id"], password=new_password)
-                self.render(
-                    PROFILE_TEMPLATE,
-                    user=self.current_user,
-                    success="Password updated successfully",
-                    error=None,
-                    ldap_enabled=ldap_enabled,
-                )
-            except Exception as e:
-                self.render(
-                    PROFILE_TEMPLATE,
-                    user=self.current_user,
-                    error=f"Error updating password: {e}",
-                    success=None,
-                    ldap_enabled=ldap_enabled,
-                )
-        else:
-            self.render(
-                PROFILE_TEMPLATE,
-                user=self.current_user,
-                error=None,
-                success=None,
-                ldap_enabled=ldap_enabled,
-            )
+        success_msg, error_msg = _do_profile_password_update(
+            db_conn, user, new_password, confirm_password
+        )
+        _profile_render(
+            self,
+            self.current_user,
+            success=success_msg,
+            error=error_msg,
+            ldap_enabled=ldap_enabled,
+        )

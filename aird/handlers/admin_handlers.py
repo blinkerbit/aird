@@ -364,6 +364,30 @@ class UserCreateHandler(BaseHandler):
             self.render(TEMPLATE_USER_CREATE, error=FAILED_CREATE_USER)
 
 
+def _validate_user_edit(
+    username: str,
+    password: str,
+    role: str,
+    settings: dict,
+) -> str | None:
+    """Validate user edit form. Returns error message or None if valid."""
+    if not username:
+        return USERNAME_REQUIRED
+    if len(username) < 3 or len(username) > 50:
+        return USERNAME_LENGTH
+    if password:
+        is_valid, error = validate_password(password)
+        if not is_valid:
+            return error
+    if role not in ["user", "admin"]:
+        return INVALID_ROLE
+    if not re.match(r"^[a-zA-Z0-9_-]+$", username):
+        return "Username can only contain letters, numbers, underscores, and hyphens"
+    if password and settings.get("ldap_server"):
+        return LDAP_PASSWORD_CHANGE
+    return None
+
+
 class UserEditHandler(BaseHandler):
     @tornado.web.authenticated
     @require_admin(deny_status=HTTP_FORBIDDEN, deny_body=ACCESS_DENIED)
@@ -392,7 +416,7 @@ class UserEditHandler(BaseHandler):
     @require_db
     def post(self, user_id):
         """Update user information"""
-
+        user = None
         try:
             user_id = int(user_id)
             # Get existing user
@@ -409,51 +433,13 @@ class UserEditHandler(BaseHandler):
             role = self.get_argument("role", "user").strip()
             active = self.get_argument("active", "off") == "on"
 
-            # Input validation
-            if not username:
-                self.render(TEMPLATE_USER_EDIT, user=user, error=USERNAME_REQUIRED)
+            error = _validate_user_edit(username, password, role, self.settings)
+            if error:
+                self.render(TEMPLATE_USER_EDIT, user=user, error=error)
                 return
 
-            if len(username) < 3 or len(username) > 50:
-                self.render(
-                    TEMPLATE_USER_EDIT,
-                    user=user,
-                    error=USERNAME_LENGTH,
-                )
-                return
-
-            if password:
-                is_valid, error = validate_password(password)
-                if not is_valid:
-                    self.render(TEMPLATE_USER_EDIT, user=user, error=error)
-                    return
-
-            if role not in ["user", "admin"]:
-                self.render(TEMPLATE_USER_EDIT, user=user, error=INVALID_ROLE)
-                return
-
-            # Check for valid username format
-            if not re.match(r"^[a-zA-Z0-9_-]+$", username):
-                self.render(
-                    TEMPLATE_USER_EDIT,
-                    user=user,
-                    error="Username can only contain letters, numbers, underscores, and hyphens",
-                )
-                return
-
-            # Update user
             update_data = {"username": username, "role": role, "active": active}
-
-            # Check if LDAP is enabled - disable password updates for LDAP users
-            if password and self.settings.get("ldap_server"):
-                self.render(
-                    TEMPLATE_USER_EDIT,
-                    user=user,
-                    error=LDAP_PASSWORD_CHANGE,
-                )
-                return
-
-            if password:  # Only update password if provided
+            if password:
                 update_data["password"] = password
 
             if update_user(self.db_conn, user_id, **update_data):
@@ -466,11 +452,15 @@ class UserEditHandler(BaseHandler):
             self.write(INVALID_USER_ID)
         except Exception as e:
             logging.error(f"User update error: {e}")
-            self.render(
-                TEMPLATE_USER_EDIT,
-                user=user,
-                error=ERROR_UPDATE_USER,
-            )
+            if user is not None:
+                self.render(
+                    TEMPLATE_USER_EDIT,
+                    user=user,
+                    error=ERROR_UPDATE_USER,
+                )
+            else:
+                self.set_status(500)
+                self.write(ERROR_UPDATE_USER)
 
 
 class UserDeleteHandler(BaseHandler):

@@ -36,7 +36,6 @@ from aird.core.file_operations import (  # noqa: F401
 )
 
 
-
 def _load_shares(conn: sqlite3.Connection) -> dict:
     loaded: dict = {}
     try:

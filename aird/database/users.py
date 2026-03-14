@@ -30,43 +30,40 @@ def hash_password(password: str) -> str:
     return f"scrypt:{salt}:{key.hex()}"
 
 
-def verify_password(password: str, password_hash: str) -> bool:
-    """Verify password supporting Argon2, Scrypt, and legacy salted SHA-256."""
-    if not password_hash:
+def _verify_argon2(password: str, password_hash: str) -> bool:
+    """Verify Argon2 hash. Return False if not Argon2 or verification fails."""
+    if not ARGON2_AVAILABLE or PH is None:
+        return False
+    try:
+        return PH.verify(password_hash, password)
+    except argon2_exceptions.VerifyMismatchError:
+        return False
+    except Exception:
         return False
 
-    # Try Argon2 first
-    if password_hash.startswith("$argon2"):
-        if ARGON2_AVAILABLE and PH is not None:
-            try:
-                return PH.verify(password_hash, password)
-            except argon2_exceptions.VerifyMismatchError:
-                return False
-            except Exception:
-                return False
-        else:
-            return False
 
-    # Try Scrypt fallback
-    if password_hash.startswith("scrypt:"):
-        try:
-            parts = password_hash.split(":")
-            if len(parts) != 3:
-                return False
-            _, salt, stored_key_hex = parts
-            key = hashlib.scrypt(
-                password.encode("utf-8"),
-                salt=salt.encode("utf-8"),
-                n=16384,
-                r=8,
-                p=1,
-                dklen=32,
-            )
-            return secrets.compare_digest(key.hex(), stored_key_hex)
-        except Exception:
+def _verify_scrypt(password: str, password_hash: str) -> bool:
+    """Verify Scrypt hash (scrypt:salt:hexkey)."""
+    try:
+        parts = password_hash.split(":")
+        if len(parts) != 3:
             return False
+        _, salt, stored_key_hex = parts
+        key = hashlib.scrypt(
+            password.encode("utf-8"),
+            salt=salt.encode("utf-8"),
+            n=16384,
+            r=8,
+            p=1,
+            dklen=32,
+        )
+        return secrets.compare_digest(key.hex(), stored_key_hex)
+    except Exception:
+        return False
 
-    # Legacy format: salt:hash
+
+def _verify_legacy_salt_hash(password: str, password_hash: str) -> bool:
+    """Verify legacy salt:hash (SHA-256)."""
     try:
         parts = password_hash.split(":", 1)
         if len(parts) != 2:
@@ -76,6 +73,17 @@ def verify_password(password: str, password_hash: str) -> bool:
         return secrets.compare_digest(pwd_hash, stored_hash)
     except Exception:
         return False
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    """Verify password supporting Argon2, Scrypt, and legacy salted SHA-256."""
+    if not password_hash:
+        return False
+    if password_hash.startswith("$argon2"):
+        return _verify_argon2(password, password_hash)
+    if password_hash.startswith("scrypt:"):
+        return _verify_scrypt(password, password_hash)
+    return _verify_legacy_salt_hash(password, password_hash)
 
 
 def create_user(
@@ -103,8 +111,6 @@ def create_user(
         }
     except sqlite3.IntegrityError:
         raise ValueError(f"Username '{username}' already exists")
-    except Exception as e:
-        raise Exception(f"Failed to create user: {str(e)}")
 
 
 def get_user_by_username(conn: sqlite3.Connection, username: str) -> dict | None:

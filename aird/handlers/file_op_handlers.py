@@ -87,6 +87,118 @@ HEADER_APPLICATION_JSON = "application/json"
 FILES_URL_STRING = "/files/"
 
 
+# ---------------------------------------------------------------------------
+# Helpers for upload validation (reduce cognitive complexity)
+# ---------------------------------------------------------------------------
+
+
+def _validate_upload_destination(upload_dir, filename):
+    """Validate upload dir and filename. Return (final_path_abs, None) or (None, (status, message))."""
+    safe_dir_abs = os.path.realpath(
+        os.path.join(ROOT_DIR, (upload_dir or "").strip().strip("/"))
+    )
+    if not is_within_root(safe_dir_abs, ROOT_DIR):
+        return (None, (403, ACCESS_DENIED_PATH))
+    safe_filename = os.path.basename(filename)
+    if not safe_filename or safe_filename in (".", ".."):
+        return (None, (400, INVALID_FILENAME))
+    allow_all = constants_module.UPLOAD_CONFIG.get("allow_all_file_types", 0)
+    if not allow_all:
+        file_ext = os.path.splitext(safe_filename)[1].lower()
+        allowed_set = (
+            getattr(constants_module, "UPLOAD_ALLOWED_EXTENSIONS", None)
+            or ALLOWED_UPLOAD_EXTENSIONS
+        )
+        if file_ext not in allowed_set:
+            return (None, (415, UNSUPPORTED_FILE_TYPE))
+    if len(safe_filename) > 255:
+        return (None, (400, FILENAME_TOO_LONG))
+    final_path_abs = os.path.realpath(os.path.join(safe_dir_abs, safe_filename))
+    if not is_within_root(final_path_abs, safe_dir_abs):
+        return (None, (403, ACCESS_DENIED_PATH))
+    return (final_path_abs, None)
+
+
+# ---------------------------------------------------------------------------
+# Helpers for bulk actions (reduce cognitive complexity)
+# ---------------------------------------------------------------------------
+
+
+def _bulk_delete_one(abspath, _path, db_conn, get_display_username, remote_ip):
+    """Perform delete for one path. Return None on success, error message string on failure."""
+    if os.path.isdir(abspath):
+        if not is_feature_enabled("folder_delete", True):
+            return FOLDER_DELETE_DISABLED_LOWER
+        try:
+            shutil.rmtree(abspath)
+            log_audit(
+                db_conn,
+                "folder_delete",
+                username=get_display_username(),
+                details=path_to_rel(abspath),
+                ip=remote_ip,
+            )
+        except OSError as e:
+            return str(e)
+    else:
+        if not is_feature_enabled("file_delete", True):
+            return FILE_DELETE_DISABLED_LOWER
+        try:
+            os.remove(abspath)
+            log_audit(
+                db_conn,
+                "file_delete",
+                username=get_display_username(),
+                details=path_to_rel(abspath),
+                ip=remote_ip,
+            )
+        except OSError as e:
+            return str(e)
+    return None
+
+
+def _bulk_add_to_share_one(
+    abspath, path, data, db_conn, get_display_username, remote_ip
+):
+    """Add one path to share. Return None on success, error message string on failure."""
+    share_id = data.get("share_id")
+    if not share_id:
+        return SHARE_ID_REQUIRED
+    if not db_conn:
+        return DATABASE_UNAVAILABLE
+    share = get_share_by_id(db_conn, share_id)
+    if not share:
+        return SHARE_NOT_FOUND
+    paths_list = list(share.get("paths") or [])
+    rel = path_to_rel(abspath)
+    if rel in paths_list:
+        return None
+    paths_list.append(rel)
+    if not update_share(db_conn, share_id, paths=paths_list):
+        return UPDATE_FAILED
+    log_audit(
+        db_conn,
+        "share_update",
+        username=get_display_username(),
+        details=f"add path to {share_id}: {rel}",
+        ip=remote_ip,
+    )
+    return None
+
+
+def _process_bulk_action(
+    action, abspath, path, data, db_conn, get_display_username, remote_ip
+):
+    """Dispatch one bulk action. Return None on success, error string on failure."""
+    if action == "delete":
+        return _bulk_delete_one(abspath, path, db_conn, get_display_username, remote_ip)
+    if action == "add_to_share":
+        return _bulk_add_to_share_one(
+            abspath, path, data, db_conn, get_display_username, remote_ip
+        )
+    return UNSUPPORTED_ACTION
+
+
 @tornado.web.stream_request_body
 class UploadHandler(BaseHandler):
     async def prepare(self):
@@ -185,45 +297,12 @@ class UploadHandler(BaseHandler):
             self.write(FILE_TOO_LARGE_TEMPLATE.format(limit_mb=limit_mb))
             return
 
-        # Enhanced path validation
-        safe_dir_abs = os.path.realpath(
-            os.path.join(ROOT_DIR, self.upload_dir.strip("/"))
+        final_path_abs, upload_err = _validate_upload_destination(
+            self.upload_dir, self.filename
         )
-        if not is_within_root(safe_dir_abs, ROOT_DIR):
-            self.set_status(403)
-            self.write(ACCESS_DENIED_PATH)
-            return
-
-        # Validate filename more strictly
-        safe_filename = os.path.basename(self.filename)
-        if not safe_filename or safe_filename in [".", ".."]:
-            self.set_status(400)
-            self.write(INVALID_FILENAME)
-            return
-
-        # Enforce allowed extensions unless admin enabled "allow all file types"
-        allow_all = constants_module.UPLOAD_CONFIG.get("allow_all_file_types", 0)
-        if not allow_all:
-            file_ext = os.path.splitext(safe_filename)[1].lower()
-            allowed_set = (
-                getattr(constants_module, "UPLOAD_ALLOWED_EXTENSIONS", None)
-                or ALLOWED_UPLOAD_EXTENSIONS
-            )
-            if file_ext not in allowed_set:
-                self.set_status(415)
-                self.write(UNSUPPORTED_FILE_TYPE)
-                return
-
-        # Validate filename length
-        if len(safe_filename) > 255:
-            self.set_status(400)
-            self.write(FILENAME_TOO_LONG)
-            return
-
-        final_path_abs = os.path.realpath(os.path.join(safe_dir_abs, safe_filename))
-        if not is_within_root(final_path_abs, safe_dir_abs):
-            self.set_status(403)
-            self.write(ACCESS_DENIED_PATH)
+        if upload_err is not None:
+            self.set_status(upload_err[0])
+            self.write(upload_err[1])
             return
 
         os.makedirs(os.path.dirname(final_path_abs), exist_ok=True)
@@ -232,7 +311,7 @@ class UploadHandler(BaseHandler):
             shutil.move(self._temp_path, final_path_abs)
             self._moved = True
         except Exception as e:
-            logging.error(f"Upload save failed: {e}")
+            logging.error("Upload save failed: %s", e)
             self.set_status(500)
             self.write(UPLOAD_SAVE_FAILED)
             return
@@ -574,6 +653,7 @@ class BulkHandler(BaseHandler):
             return
         root = ROOT_DIR
         results = {"ok": True, "results": []}
+        remote_ip = self.request.remote_ip
         for path in paths:
             if not isinstance(path, str):
                 results["results"].append(
@@ -592,67 +672,15 @@ class BulkHandler(BaseHandler):
                     {"path": path, "ok": False, "error": NOT_FOUND_LOWER}
                 )
                 continue
-            err = None
-            if action == "delete":
-                if os.path.isdir(abspath):
-                    if not is_feature_enabled("folder_delete", True):
-                        err = FOLDER_DELETE_DISABLED_LOWER
-                    else:
-                        try:
-                            shutil.rmtree(abspath)
-                            log_audit(
-                                self.db_conn,
-                                "folder_delete",
-                                username=self.get_display_username(),
-                                details=path_to_rel(abspath),
-                                ip=self.request.remote_ip,
-                            )
-                        except OSError as e:
-                            err = str(e)
-                else:
-                    if not is_feature_enabled("file_delete", True):
-                        err = FILE_DELETE_DISABLED_LOWER
-                    else:
-                        try:
-                            os.remove(abspath)
-                            log_audit(
-                                self.db_conn,
-                                "file_delete",
-                                username=self.get_display_username(),
-                                details=path_to_rel(abspath),
-                                ip=self.request.remote_ip,
-                            )
-                        except OSError as e:
-                            err = str(e)
-            elif action == "add_to_share":
-                share_id = data.get("share_id")
-                if not share_id:
-                    err = SHARE_ID_REQUIRED
-                else:
-                    conn = self.db_conn
-                    if not conn:
-                        err = DATABASE_UNAVAILABLE
-                    else:
-                        share = get_share_by_id(conn, share_id)
-                        if not share:
-                            err = SHARE_NOT_FOUND
-                        else:
-                            paths_list = list(share.get("paths") or [])
-                            rel = path_to_rel(abspath)
-                            if rel not in paths_list:
-                                paths_list.append(rel)
-                                if update_share(conn, share_id, paths=paths_list):
-                                    log_audit(
-                                        self.db_conn,
-                                        "share_update",
-                                        username=self.get_display_username(),
-                                        details=f"add path to {share_id}: {rel}",
-                                        ip=self.request.remote_ip,
-                                    )
-                                else:
-                                    err = UPDATE_FAILED
-            else:
-                err = UNSUPPORTED_ACTION
+            err = _process_bulk_action(
+                action,
+                abspath,
+                path,
+                data,
+                self.db_conn,
+                self.get_display_username,
+                remote_ip,
+            )
             if err:
                 results["ok"] = False
                 results["results"].append({"path": path, "ok": False, "error": err})

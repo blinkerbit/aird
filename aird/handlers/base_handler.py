@@ -135,50 +135,104 @@ class XSRFTokenMixin:
             raise tornado.web.HTTPError(403, "XSRF cookie does not match POST argument")
 
 
+def _parse_username_from_cookie(user_json):
+    """Parse username from cookie value (JSON or raw string/bytes). Returns (username, True if parsed from JSON)."""
+    try:
+        user_data = json.loads(user_json)
+        return (user_data.get("username", ""), True)
+    except (json.JSONDecodeError, TypeError):
+        raw = (
+            user_json.decode("utf-8")
+            if isinstance(user_json, bytes)
+            else str(user_json)
+        )
+        return (raw, False)
+
+
+def _try_cookie_auth(handler):
+    """Attempt auth via secure cookie. Returns user dict or None."""
+    user_json = handler.get_secure_cookie("user")
+    if not user_json:
+        return None
+    try:
+        username, _ = _parse_username_from_cookie(user_json)
+        db_conn = handler.settings.get("db_conn")
+        if db_conn:
+            user = get_user_by_username(db_conn, username)
+            if user:
+                return user
+        if username == "token_authenticated":
+            return {"username": "token_user", "role": "admin"}
+        return None
+    except Exception:
+        if isinstance(user_json, bytes):
+            user_str = user_json.decode("utf-8", errors="ignore")
+            if user_str == "token_authenticated":
+                return {"username": "token_user", "role": "admin"}
+        return None
+
+
+def _try_bearer_auth(handler):
+    """Attempt auth via Authorization Bearer token. Returns user dict or None."""
+    auth_header = handler.request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return None
+    token = auth_header.split(" ")[1]
+    current_access_token = config_module.ACCESS_TOKEN
+    if not current_access_token:
+        return None
+    normalized_token = token.strip()
+    normalized_access_token = current_access_token.strip()
+    if secrets.compare_digest(normalized_token, normalized_access_token):
+        return {"username": "token_user", "role": "admin"}
+    return None
+
+
 def authenticate_handler(handler):
     """Shared authentication logic for both HTTP and WebSocket handlers.
 
     Checks secure cookie and Bearer token auth. Returns a user dict or None.
     The *handler* must support get_secure_cookie() and request.headers.
     """
-    user_json = handler.get_secure_cookie("user")
-    if user_json:
-        try:
-            try:
-                user_data = json.loads(user_json)
-                username = user_data.get("username", "")
-            except (json.JSONDecodeError, TypeError):
-                username = (
-                    user_json.decode("utf-8")
-                    if isinstance(user_json, bytes)
-                    else str(user_json)
-                )
+    user = _try_cookie_auth(handler)
+    if user is not None:
+        return user
+    return _try_bearer_auth(handler)
 
-            db_conn = handler.settings.get("db_conn")
-            if db_conn:
-                user = get_user_by_username(db_conn, username)
-                if user:
-                    return user
-            if username == "token_authenticated":
-                return {"username": "token_user", "role": "admin"}
-        except Exception:
-            if isinstance(user_json, bytes):
-                user_str = user_json.decode("utf-8", errors="ignore")
-                if user_str == "token_authenticated":
-                    return {"username": "token_user", "role": "admin"}
-            return None
 
-    auth_header = handler.request.headers.get("Authorization")
-    if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header.split(" ")[1]
-        current_access_token = config_module.ACCESS_TOKEN
-        if current_access_token:
-            normalized_token = token.strip()
-            normalized_access_token = current_access_token.strip()
-            if secrets.compare_digest(normalized_token, normalized_access_token):
-                return {"username": "token_user", "role": "admin"}
+def _display_username_from_dict(user):
+    """Return display string for dict user (from get_current_user)."""
+    username = user.get("username", "")
+    role = user.get("role", "")
+    if username in ("token_user", "token_authenticated"):
+        return "Admin (Token)"
+    if role == "admin":
+        return f"{username} (Admin)"
+    if role:
+        return f"{username} (User)"
+    return username or "Guest"
 
-    return None
+
+def _display_username_from_legacy(user, handler):
+    """Return display string for bytes/str user (legacy support)."""
+    user_str = (
+        user.decode("utf-8", errors="ignore") if isinstance(user, bytes) else str(user)
+    )
+    if user_str in ("token_authenticated", "authenticated"):
+        return "Admin (Token)"
+    role_cookie = handler.get_secure_cookie("user_role")
+    if not role_cookie:
+        return user_str
+    role = (
+        role_cookie.decode("utf-8", errors="ignore")
+        if isinstance(role_cookie, bytes)
+        else str(role_cookie)
+    )
+    if role == "admin":
+        return f"{user_str} (Admin)"
+    if role:
+        return f"{user_str} (User)"
+    return user_str
 
 
 class BaseHandler(tornado.web.RequestHandler):
@@ -291,47 +345,8 @@ class BaseHandler(tornado.web.RequestHandler):
     def get_display_username(self) -> str:
         """Get username for display purposes"""
         user = self.get_current_user()
-        if user:
-            # Handle dict user objects (from get_current_user)
-            if isinstance(user, dict):
-                username = user.get("username", "")
-                role = user.get("role", "")
-
-                # Handle token-authenticated users
-                if username == "token_user" or username == "token_authenticated":
-                    return "Admin (Token)"
-
-                # Show role for regular users
-                if role == "admin":
-                    return f"{username} (Admin)"
-                elif role:
-                    return f"{username} (User)"
-                else:
-                    return username or "Guest"
-
-            # Handle string/bytes usernames (legacy support)
-            if isinstance(user, bytes):
-                user_str = user.decode("utf-8", errors="ignore")
-            else:
-                user_str = str(user)
-
-            # Check for token-authenticated users
-            if user_str == "token_authenticated" or user_str == "authenticated":
-                return "Admin (Token)"
-
-            # Try to get role from cookie
-            role_cookie = self.get_secure_cookie("user_role")
-            if role_cookie:
-                if isinstance(role_cookie, bytes):
-                    role = role_cookie.decode("utf-8", errors="ignore")
-                else:
-                    role = str(role_cookie)
-
-                if role == "admin":
-                    return f"{user_str} (Admin)"
-                elif role:
-                    return f"{user_str} (User)"
-
-            return user_str
-
-        return "Guest"
+        if not user:
+            return "Guest"
+        if isinstance(user, dict):
+            return _display_username_from_dict(user)
+        return _display_username_from_legacy(user, self)

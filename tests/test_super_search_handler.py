@@ -1,7 +1,8 @@
+import asyncio
+import json
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 from aird.handlers.api_handlers import SuperSearchWebSocketHandler
-import json
 
 
 class TestSuperSearchWebSocketHandler:
@@ -65,8 +66,8 @@ class TestSuperSearchWebSocketHandler:
 
         # Mock os.walk and file operations
         with patch("os.walk") as mock_walk, patch("pathlib.Path") as mock_path, patch(
-            "builtins.open", new_callable=MagicMock
-        ) as mock_open:
+            "aird.handlers.api_handlers.aiofiles.open"
+        ) as mock_aio_open:
 
             # Setup mock file system
             mock_walk.return_value = [("/root", [], ["file.txt"])]
@@ -77,10 +78,13 @@ class TestSuperSearchWebSocketHandler:
             mock_path.return_value.resolve.return_value = "/root"
             mock_path.return_value.__truediv__.return_value = mock_file_path
 
-            # Mock file content
+            # Mock aiofiles.open async context manager and file with readline
             mock_file = MagicMock()
-            mock_file.__enter__.return_value = ["line with search_text\n"]
-            mock_open.return_value = mock_file
+            mock_file.readline = AsyncMock(side_effect=["line with search_text\n", ""])
+            mock_cm = MagicMock()
+            mock_cm.__aenter__ = AsyncMock(return_value=mock_file)
+            mock_cm.__aexit__ = AsyncMock(return_value=False)
+            mock_aio_open.return_value = mock_cm
 
             await handler.perform_search("*.txt", "search_text")
 
@@ -131,7 +135,8 @@ class TestSuperSearchWebSocketHandler:
         handler.write_message = MagicMock()
         handler.stop_event.set()
 
-        await handler.perform_search("*.txt", "foo")
+        with pytest.raises(asyncio.CancelledError):
+            await handler.perform_search("*.txt", "foo")
 
         calls = handler.write_message.call_args_list
         cancelled_call = next((c for c in calls if "cancelled" in c[0][0]), None)
@@ -169,11 +174,28 @@ class TestSuperSearchWebSocketHandler:
 
         path_cls = MagicMock(return_value=root_mock)
 
-        mock_open = MagicMock()
+        # aiofiles.open returns an async context manager; mock file has async readline
+        lines = list(file_lines or [])
+        normalized = [line if line.endswith("\n") else line + "\n" for line in lines]
+        line_iter = iter(normalized + [""])
+
+        async def mock_readline():
+            return next(line_iter, "")
+
         mock_file = MagicMock()
-        mock_file.__enter__ = MagicMock(return_value=iter(file_lines or []))
-        mock_file.__exit__ = MagicMock(return_value=False)
-        mock_open.return_value = mock_file
+        mock_file.readline = AsyncMock(side_effect=mock_readline)
+
+        async def mock_aenter():
+            return mock_file
+
+        async def mock_aexit(*args):
+            return False
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_file)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_open = MagicMock(return_value=mock_cm)
 
         return handler, walk_return, path_cls, mock_open
 
@@ -199,7 +221,7 @@ class TestSuperSearchWebSocketHandler:
 
         with patch("os.walk", return_value=walk_return), patch(
             "pathlib.Path", path_cls
-        ), patch("builtins.open", mock_open):
+        ), patch("aird.handlers.api_handlers.aiofiles.open", mock_open):
             await handler.perform_search("*.txt", "needle")
 
         scanning_msgs = self._get_messages(handler, "scanning")
@@ -217,7 +239,7 @@ class TestSuperSearchWebSocketHandler:
 
         with patch("os.walk", return_value=walk_return), patch(
             "pathlib.Path", path_cls
-        ), patch("builtins.open", mock_open):
+        ), patch("aird.handlers.api_handlers.aiofiles.open", mock_open):
             await handler.perform_search("*.txt", "needle")
 
         scanning_msgs = self._get_messages(handler, "scanning")
@@ -234,7 +256,7 @@ class TestSuperSearchWebSocketHandler:
 
         with patch("os.walk", return_value=walk_return), patch(
             "pathlib.Path", path_cls
-        ), patch("builtins.open", mock_open):
+        ), patch("aird.handlers.api_handlers.aiofiles.open", mock_open):
             await handler.perform_search("*.txt", "needle")
 
         scanning_msgs = self._get_messages(handler, "scanning")
@@ -249,7 +271,7 @@ class TestSuperSearchWebSocketHandler:
 
         with patch("os.walk", return_value=walk_return), patch(
             "pathlib.Path", path_cls
-        ), patch("builtins.open", mock_open):
+        ), patch("aird.handlers.api_handlers.aiofiles.open", mock_open):
             await handler.perform_search("*.txt", "needle")
 
         complete_msgs = self._get_messages(handler, "search_complete")
@@ -266,7 +288,7 @@ class TestSuperSearchWebSocketHandler:
 
         with patch("os.walk", return_value=walk_return), patch(
             "pathlib.Path", path_cls
-        ), patch("builtins.open", mock_open):
+        ), patch("aird.handlers.api_handlers.aiofiles.open", mock_open):
             await handler.perform_search("*.txt", "needle")
 
         no_files_msgs = self._get_messages(handler, "no_files")
@@ -284,7 +306,7 @@ class TestSuperSearchWebSocketHandler:
 
         with patch("os.walk", return_value=walk_return), patch(
             "pathlib.Path", path_cls
-        ), patch("builtins.open", mock_open):
+        ), patch("aird.handlers.api_handlers.aiofiles.open", mock_open):
             await handler.perform_search("*.txt", "needle")
 
         all_msgs = self._get_messages(handler)
@@ -302,7 +324,7 @@ class TestSuperSearchWebSocketHandler:
 
         with patch("os.walk", return_value=walk_return), patch(
             "pathlib.Path", path_cls
-        ), patch("builtins.open", mock_open):
+        ), patch("aird.handlers.api_handlers.aiofiles.open", mock_open):
             await handler.perform_search("*.txt", "needle")
 
         all_msgs = self._get_messages(handler)

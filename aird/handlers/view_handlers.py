@@ -38,6 +38,121 @@ from aird.handlers.constants import (
 from aird.constants import CHUNK_SIZE
 from aird.cloud import CloudManager, CloudProviderError
 
+# ---------------------------------------------------------------------------
+# Helpers for MainHandler.serve_file (reduce cognitive complexity)
+# ---------------------------------------------------------------------------
+
+DOWNLOAD_DISABLED_MSG = (
+    "Feature disabled: File download is currently disabled by administrator"
+)
+
+
+async def _serve_download(handler, abspath, filename):
+    """Serve file as attachment, with optional gzip compression."""
+    if not is_feature_enabled("file_download", True):
+        handler.set_status(403)
+        handler.write(DOWNLOAD_DISABLED_MSG)
+        return
+    handler.set_header("Content-Disposition", f'attachment; filename="{filename}"')
+    mime_type, _ = mimetypes.guess_type(abspath)
+    mime_type = mime_type or APPLICATION_OCTET_STREAM
+    handler.set_header("Content-Type", mime_type)
+
+    if is_feature_enabled("compression", True):
+        compressible = (
+            "text/",
+            "application/json",
+            "application/javascript",
+            "application/xml",
+        )
+        if any(mime_type.startswith(p) for p in compressible):
+            handler.set_header("Content-Encoding", "gzip")
+
+            def compress_file():
+                buffer = BytesIO()
+                with open(abspath, "rb") as f_in, gzip.GzipFile(
+                    fileobj=buffer, mode="wb"
+                ) as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+                return buffer.getvalue()
+
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                compressed_data = await asyncio.get_event_loop().run_in_executor(
+                    executor, compress_file
+                )
+            handler.write(compressed_data)
+            await handler.flush()
+            return
+
+    async for chunk in MMapFileHandler.serve_file_chunk(abspath):
+        handler.write(chunk)
+        await handler.flush()
+
+
+async def _serve_raw_mode(handler, abspath):
+    """Serve raw file content (inline) for client-side consumption."""
+    try:
+        mime_type = APPLICATION_OCTET_STREAM
+        try:
+            guessed_type, _ = mimetypes.guess_type(abspath)
+            if guessed_type:
+                mime_type = guessed_type
+        except Exception:
+            pass
+        handler.set_header("Content-Type", mime_type)
+        handler.set_header("Content-Disposition", "inline")
+        file_size = os.path.getsize(abspath)
+        if MMapFileHandler.should_use_mmap(file_size):
+            async for chunk in MMapFileHandler.serve_file_chunk(abspath):
+                handler.write(chunk)
+                await handler.flush()
+        else:
+            async with aiofiles.open(abspath, "rb") as f:
+                while True:
+                    chunk = await f.read(CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    handler.write(chunk)
+                    await handler.flush()
+    except Exception as e:
+        logging.error("Error serving raw file: %s", e)
+        handler.set_status(500)
+        handler.write("Error serving raw file: " + str(e))
+
+
+def _serve_pdf_preview(handler, abspath, filename):
+    """Render PDF preview page."""
+    rel_path = os.path.relpath(abspath, ROOT_DIR).replace("\\", "/")
+    handler.render(
+        "pdf_preview.html",
+        filename=filename,
+        path=rel_path,
+        pdf_url=handler.request.path + "?mode=raw",
+        pdf_download_url=handler.request.path + "?download=1",
+    )
+
+
+def _serve_file_view(handler, abspath, filename):
+    """Render file view template (client-side fetch)."""
+    file_size = 0
+    try:
+        file_size = os.path.getsize(abspath)
+    except OSError:
+        pass
+    rel_path = os.path.relpath(abspath, ROOT_DIR).replace("\\", "/")
+    handler.render(
+        "file.html",
+        filename=filename,
+        path=rel_path,
+        lines=[],
+        start_line=1,
+        end_line=0,
+        reached_EOF=False,
+        open_editor=handler.get_argument("open_editor", "False"),
+        full_file_content="",
+        file_size=file_size,
+    )
+
 
 class RootHandler(BaseHandler):
     def get(self):
@@ -89,134 +204,16 @@ class MainHandler(BaseHandler):
     async def serve_file(handler, abspath):
         filename = os.path.basename(abspath)
         if handler.get_argument("download", None):
-            if not is_feature_enabled("file_download", True):
-                handler.set_status(403)
-                handler.write(
-                    "Feature disabled: File download is currently disabled by administrator"
-                )
-                return
-
-            handler.set_header(
-                "Content-Disposition", f'attachment; filename="{filename}"'
-            )
-
-            # Guess MIME type
-            mime_type, _ = mimetypes.guess_type(abspath)
-            mime_type = mime_type or APPLICATION_OCTET_STREAM
-            handler.set_header("Content-Type", mime_type)
-
-            # Check for compressible types
-            if is_feature_enabled("compression", True):
-                compressible_types = [
-                    "text/",
-                    "application/json",
-                    "application/javascript",
-                    "application/xml",
-                ]
-                if any(mime_type.startswith(prefix) for prefix in compressible_types):
-                    handler.set_header("Content-Encoding", "gzip")
-
-                    # Fallback to Python gzip compression with async I/O
-                    def compress_file():
-                        buffer = BytesIO()
-                        with open(abspath, "rb") as f_in, gzip.GzipFile(
-                            fileobj=buffer, mode="wb"
-                        ) as f_out:
-                            shutil.copyfileobj(f_in, f_out)
-                        return buffer.getvalue()
-
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        compressed_data = (
-                            await asyncio.get_event_loop().run_in_executor(
-                                executor, compress_file
-                            )
-                        )
-
-                    handler.write(compressed_data)
-                    await handler.flush()
-                    return
-
-            # Fallback to Python mmap implementation
-            async for chunk in MMapFileHandler.serve_file_chunk(abspath):
-                handler.write(chunk)
-                await handler.flush()
+            await _serve_download(handler, abspath, filename)
             return
-
-        # View logic
         mode = handler.get_argument("mode", "view")
-
         if mode == "raw":
-            # Serve raw file content for client-side consumption
-            try:
-                # Guess MIME type
-                mime_type = APPLICATION_OCTET_STREAM
-                try:
-                    guessed_type, _ = mimetypes.guess_type(abspath)
-                    if guessed_type:
-                        mime_type = guessed_type
-                except Exception:
-                    pass
-
-                handler.set_header("Content-Type", mime_type)
-                handler.set_header("Content-Disposition", "inline")
-
-                # Serve file using mmap or async read
-                file_size = os.path.getsize(abspath)
-                if MMapFileHandler.should_use_mmap(file_size):
-                    async for chunk in MMapFileHandler.serve_file_chunk(abspath):
-                        handler.write(chunk)
-                        await handler.flush()
-                else:
-                    async with aiofiles.open(abspath, "rb") as f:
-                        while True:
-                            chunk = await f.read(CHUNK_SIZE)
-                            if not chunk:
-                                break
-                            handler.write(chunk)
-                            await handler.flush()
-                return
-            except Exception as e:
-                logging.error(f"Error serving raw file: {str(e)}")
-                handler.set_status(500)
-                handler.write(f"Error serving raw file: {str(e)}")
-                return
-
-        # PDF in-browser preview
-        if filename.lower().endswith(".pdf"):
-            rel_path = os.path.relpath(abspath, ROOT_DIR).replace("\\", "/")
-            pdf_url = handler.request.path + "?mode=raw"
-            pdf_download_url = handler.request.path + "?download=1"
-            handler.render(
-                "pdf_preview.html",
-                filename=filename,
-                path=rel_path,
-                pdf_url=pdf_url,
-                pdf_download_url=pdf_download_url,
-            )
+            await _serve_raw_mode(handler, abspath)
             return
-
-        # Template render logic (Client-side rendering)
-        # We don't read the file here anymore. The client will fetch it.
-        file_size = 0
-        try:
-            file_size = os.path.getsize(abspath)
-        except OSError:
-            pass
-
-        rel_path = os.path.relpath(abspath, ROOT_DIR).replace("\\", "/")
-
-        handler.render(
-            "file.html",
-            filename=filename,
-            path=rel_path,
-            lines=[],  # Empty lines, client will populate
-            start_line=1,
-            end_line=0,
-            reached_EOF=False,
-            open_editor=handler.get_argument("open_editor", "False"),
-            full_file_content="",  # Empty content
-            file_size=file_size,
-        )
+        if filename.lower().endswith(".pdf"):
+            _serve_pdf_preview(handler, abspath, filename)
+            return
+        _serve_file_view(handler, abspath, filename)
 
 
 class EditViewHandler(BaseHandler):

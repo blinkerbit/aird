@@ -131,6 +131,32 @@ class FilterExpression:
             return any(self._evaluate(operand, line) for operand in node["operands"])
         return False
 
+    def _update_quote_state(self, char: str, in_quotes: bool, quote_char: str | None):
+        """Update quote state when reading char. Return (in_quotes, quote_char)."""
+        if char in ('"', "'") and not in_quotes:
+            return (True, char)
+        if char == quote_char and in_quotes:
+            return (False, None)
+        return (in_quotes, quote_char)
+
+    def _try_consume_operator(
+        self, expression: str, i: int, operator: str
+    ) -> tuple[bool, int]:
+        """If operator at position i (word-boundary, standalone), return (True, next_i). Else (False, i)."""
+        remaining = expression[i:]
+        op_pattern = f"\\b{re.escape(operator)}\\b"
+        match = re.match(op_pattern, remaining, re.IGNORECASE)
+        if not match:
+            return (False, i)
+        op_end = i + len(match.group(0))
+        before_ok = i == 0 or expression[i - 1].isspace()
+        after_ok = op_end >= len(expression) or expression[op_end].isspace()
+        if not (before_ok and after_ok):
+            return (False, i)
+        while op_end < len(expression) and expression[op_end].isspace():
+            op_end += 1
+        return (True, op_end)
+
     def _split_respecting_parentheses(self, expression: str, operator: str):
         """Split expression by operator while respecting parentheses and word boundaries"""
         parts = []
@@ -142,57 +168,26 @@ class FilterExpression:
 
         while i < len(expression):
             char = expression[i]
-
-            # Handle quotes
-            if char in ['"', "'"] and not in_quotes:
-                in_quotes = True
-                quote_char = char
-            elif char == quote_char and in_quotes:
-                in_quotes = False
-                quote_char = None
-
-            # Skip everything inside quotes
+            in_quotes, quote_char = self._update_quote_state(
+                char, in_quotes, quote_char
+            )
             if in_quotes:
                 current_part += char
                 i += 1
                 continue
 
-            # Handle parentheses
             if char == "(":
                 paren_depth += 1
             elif char == ")":
                 paren_depth -= 1
 
-            # Check for operator when we're at the top level
             if paren_depth == 0:
-                # Check if we're at the start of the operator
-                remaining = expression[i:]
-                # Pattern: operator with word boundaries, possibly with whitespace
-                op_pattern = f"\\b{re.escape(operator)}\\b"
-                match = re.match(op_pattern, remaining, re.IGNORECASE)
-                if match:
-                    # Verify this is actually a logical operator by checking context
-                    operator_start = i
-                    operator_end = i + len(match.group(0))
-
-                    # Check if surrounded by whitespace or start/end of string
-                    before_ok = (
-                        operator_start == 0 or expression[operator_start - 1].isspace()
-                    )
-                    after_ok = (
-                        operator_end >= len(expression)
-                        or expression[operator_end].isspace()
-                    )
-
-                    if before_ok and after_ok:
-                        # Found operator at top level
-                        parts.append(current_part.strip())
-                        current_part = ""
-                        # Skip the operator and any following whitespace
-                        i = operator_end
-                        while i < len(expression) and expression[i].isspace():
-                            i += 1
-                        continue
+                consumed, next_i = self._try_consume_operator(expression, i, operator)
+                if consumed:
+                    parts.append(current_part.strip())
+                    current_part = ""
+                    i = next_i
+                    continue
 
             current_part += char
             i += 1

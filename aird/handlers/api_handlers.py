@@ -5,6 +5,7 @@ import logging
 import mimetypes
 import os
 import pathlib
+import re
 import time
 import tornado.escape
 import tornado.web
@@ -140,8 +141,12 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
         if self.filter_expression:
             try:
                 expr = FilterExpression(self.filter_expression)
-            except Exception:
-                pass
+            except (ValueError, TypeError, re.error) as parse_err:
+                logging.debug(
+                    "Invalid filter expression %s: %s",
+                    self.filter_expression,
+                    parse_err,
+                )
 
         # Initialize with last N matching lines (async, non-blocking)
         try:
@@ -164,10 +169,57 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
         self.is_streaming = True
         asyncio.create_task(self.stream_file())
 
+    async def _handle_stream_file_action(self, data: dict) -> None:
+        """Handle the stream_file action."""
+        rel_path = (data.get("file_path") or "").strip()
+        if not rel_path:
+            self.write_message(
+                json.dumps({"type": "error", "message": "file_path is required"})
+            )
+            return
+        abs_path = os.path.abspath(os.path.join(ROOT_DIR, rel_path))
+        if not is_within_root(abs_path, ROOT_DIR):
+            self.write_message(
+                json.dumps({"type": "error", "message": "Forbidden path"})
+            )
+            return
+        if not os.path.isfile(abs_path):
+            self.write_message(
+                json.dumps({"type": "error", "message": "File not found"})
+            )
+            return
+        try:
+            content_type = (
+                mimetypes.guess_type(abs_path)[0] or "application/octet-stream"
+            )
+            file_size = os.path.getsize(abs_path)
+            await self.write_message(
+                json.dumps(
+                    {
+                        "type": "stream_start",
+                        "file_path": rel_path,
+                        "content_type": content_type,
+                        "size": file_size,
+                    }
+                )
+            )
+            async for chunk in MMapFileHandler.serve_file_chunk(abs_path):
+                await self.write_message(
+                    json.dumps(
+                        {
+                            "type": "stream_data",
+                            "data": base64.b64encode(chunk).decode("ascii"),
+                        }
+                    )
+                )
+            await self.write_message(json.dumps({"type": "stream_end"}))
+        except Exception as e:
+            self.write_message(json.dumps({"type": "error", "message": str(e)}))
+
     async def on_message(self, message):
         try:
             data = json.loads(message)
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError:
             self.write_message(
                 json.dumps({"type": "error", "message": "Invalid JSON payload"})
             )
@@ -202,55 +254,33 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
             self.filter_expression = data.get("filter")
             return
         if action == "stream_file":
-            # One-shot stream of a file chunk via MMapFileHandler
-            rel_path = (data.get("file_path") or "").strip()
-            if not rel_path:
-                self.write_message(
-                    json.dumps({"type": "error", "message": "file_path is required"})
-                )
-                return
-            abs_path = os.path.abspath(os.path.join(ROOT_DIR, rel_path))
-            if not is_within_root(abs_path, ROOT_DIR):
-                self.write_message(
-                    json.dumps({"type": "error", "message": "Forbidden path"})
-                )
-                return
-            if not os.path.isfile(abs_path):
-                self.write_message(
-                    json.dumps({"type": "error", "message": "File not found"})
-                )
-                return
-            try:
-                content_type = (
-                    mimetypes.guess_type(abs_path)[0] or "application/octet-stream"
-                )
-                file_size = os.path.getsize(abs_path)
-                await self.write_message(
-                    json.dumps(
-                        {
-                            "type": "stream_start",
-                            "file_path": rel_path,
-                            "content_type": content_type,
-                            "size": file_size,
-                        }
-                    )
-                )
-                async for chunk in MMapFileHandler.serve_file_chunk(abs_path):
-                    await self.write_message(
-                        json.dumps(
-                            {
-                                "type": "stream_data",
-                                "data": base64.b64encode(chunk).decode("ascii"),
-                            }
-                        )
-                    )
-                await self.write_message(json.dumps({"type": "stream_end"}))
-            except Exception as e:
-                self.write_message(json.dumps({"type": "error", "message": str(e)}))
+            await self._handle_stream_file_action(data)
             return
 
-        # Unknown action
         self.write_message(json.dumps({"type": "error", "message": "Unknown action"}))
+
+    async def _send_line_with_filter(
+        self, line: str, expr, filter_str: str, last_filter_str
+    ):
+        """Apply filter and send line; returns (expr, last_filter_str) for next call."""
+        if filter_str and filter_str != last_filter_str:
+            try:
+                expr = FilterExpression(filter_str)
+            except (ValueError, TypeError, re.error):
+                expr = None
+            last_filter_str = filter_str
+
+        should_send = True
+        if filter_str and expr:
+            try:
+                should_send = expr.matches(line)
+            except Exception as match_err:
+                logging.debug(
+                    "Filter match error for line, sending anyway: %s", match_err
+                )
+        if should_send:
+            await self.write_message(json.dumps({"type": "line", "data": line.strip()}))
+        return expr, last_filter_str
 
     async def stream_file(self):
         expr = None
@@ -265,37 +295,9 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
                     if not line:
                         await asyncio.sleep(0.1)
                         continue
-
-                    if self.filter_expression:
-                        if self.filter_expression != last_filter_str:
-                            try:
-                                expr = FilterExpression(self.filter_expression)
-                            except Exception:
-                                expr = None
-                            last_filter_str = self.filter_expression
-
-                        if expr:
-                            try:
-                                if expr.matches(line):
-                                    await self.write_message(
-                                        json.dumps(
-                                            {"type": "line", "data": line.strip()}
-                                        )
-                                    )
-                            except Exception:
-                                await self.write_message(
-                                    json.dumps({"type": "line", "data": line.strip()})
-                                )
-                        else:
-                            # If filter is invalid, send line anyway
-                            await self.write_message(
-                                json.dumps({"type": "line", "data": line.strip()})
-                            )
-                    else:
-                        await self.write_message(
-                            json.dumps({"type": "line", "data": line.strip()})
-                        )
-
+                    expr, last_filter_str = await self._send_line_with_filter(
+                        line, expr, self.filter_expression or "", last_filter_str
+                    )
                     if self.stop_event.is_set():
                         break
         except (tornado.websocket.WebSocketClosedError, RuntimeError):
@@ -314,8 +316,8 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
         try:
             if self.file:
                 self.file.close()
-        except Exception:
-            pass
+        except OSError as close_err:
+            logging.debug("Error closing file stream: %s", close_err)
         super().on_close()
 
     def check_origin(self, origin):
@@ -390,27 +392,35 @@ class SuperSearchWebSocketHandler(
         """Authenticate user for WebSocket connection"""
         return authenticate_handler(self)
 
+    def _send_auth_required_and_close(
+        self, message: str, redirect: str, close_reason: str
+    ):
+        """Send auth_required JSON and close the WebSocket."""
+        try:
+            self.write_message(
+                json.dumps(
+                    {
+                        "type": "auth_required",
+                        "message": message,
+                        "redirect": redirect,
+                    }
+                )
+            )
+        except (tornado.websocket.WebSocketClosedError, RuntimeError):
+            pass
+        self.close(code=1008, reason=close_reason)
+
     def open(self):
         user = self.get_current_user()
         if not user:
             logging.warning(
                 "SuperSearchWebSocket: Authentication failed - no valid user session"
             )
-            # Send authentication error message before closing
-            try:
-                self.write_message(
-                    json.dumps(
-                        {
-                            "type": "auth_required",
-                            "message": "Authentication required. Please log in.",
-                            "redirect": "/login?next="
-                            + tornado.escape.url_escape(self.request.path),
-                        }
-                    )
-                )
-            except Exception:
-                pass
-            self.close(code=1008, reason=AUTH_REQUIRED)
+            self._send_auth_required_and_close(
+                "Authentication required. Please log in.",
+                "/login?next=" + tornado.escape.url_escape(self.request.path),
+                AUTH_REQUIRED,
+            )
             return
 
         logging.info(
@@ -427,21 +437,14 @@ class SuperSearchWebSocketHandler(
             logging.warning(
                 "SuperSearchWebSocket: Authentication failed on message - session expired"
             )
-            self.write_message(
-                json.dumps(
-                    {
-                        "type": "auth_required",
-                        "message": AUTH_EXPIRED,
-                        "redirect": REDIRECT_SEARCH,
-                    }
-                )
+            self._send_auth_required_and_close(
+                AUTH_EXPIRED, REDIRECT_SEARCH, AUTH_EXPIRED
             )
-            self.close(code=1008, reason=AUTH_EXPIRED)
             return
 
         try:
             data = json.loads(message)
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError:
             self.write_message(
                 json.dumps({"type": "error", "message": "Invalid JSON format"})
             )
@@ -465,16 +468,9 @@ class SuperSearchWebSocketHandler(
             logging.warning(
                 "SuperSearchWebSocket: Authentication failed before search start"
             )
-            self.write_message(
-                json.dumps(
-                    {
-                        "type": "auth_required",
-                        "message": AUTH_EXPIRED,
-                        "redirect": REDIRECT_SEARCH,
-                    }
-                )
+            self._send_auth_required_and_close(
+                AUTH_EXPIRED, REDIRECT_SEARCH, AUTH_EXPIRED
             )
-            self.close(code=1008, reason=AUTH_EXPIRED)
             return
 
         if self.search_task and not self.search_task.done():
@@ -492,12 +488,156 @@ class SuperSearchWebSocketHandler(
         try:
             await self.search_task
         except asyncio.CancelledError:
-            pass
+            self.stop_event.clear()
+            pattern, search_text = args
+            self.search_task = asyncio.create_task(
+                self.perform_search(pattern, search_text)
+            )
+            raise
         self.stop_event.clear()
         pattern, search_text = args
         self.search_task = asyncio.create_task(
             self.perform_search(pattern, search_text)
         )
+
+    @staticmethod
+    def _file_matches_pattern(
+        rel_path_str: str, filename: str, normalized_pattern: str
+    ) -> bool:
+        """Return True if the file path or filename matches the glob pattern."""
+        return fnmatch.fnmatch(rel_path_str, normalized_pattern) or fnmatch.fnmatch(
+            filename, normalized_pattern
+        )
+
+    async def _search_file_content(
+        self, file_path: pathlib.Path, rel_path_str: str, search_text: str
+    ) -> int:
+        """Search file for search_text; yield matches via send_match. Returns match count. May raise CancelledError."""
+        if file_path.stat().st_size > MAX_READABLE_FILE_SIZE:
+            return 0
+        match_count = 0
+        async with aiofiles.open(
+            file_path, "r", encoding="utf-8", errors="ignore"
+        ) as f:
+            line_num = 0
+            while True:
+                line = await f.readline()
+                if not line:
+                    break
+                line_num += 1
+                if self.stop_event.is_set():
+                    raise asyncio.CancelledError
+                if search_text in line:
+                    self.send_match(rel_path_str, line_num, line.strip(), search_text)
+                    match_count += 1
+        return match_count
+
+    async def _search_one_file(
+        self,
+        file_path: pathlib.Path,
+        root_path: pathlib.Path,
+        filename: str,
+        normalized_pattern: str,
+        search_text: str,
+        files_searched: int,
+    ) -> tuple[int, bool]:
+        """Search one file; sends 'scanning' then searches. Returns (match_count, True if searched)."""
+        try:
+            rel_path = file_path.relative_to(root_path)
+            rel_path_str = str(rel_path).replace("\\", "/")
+        except (ValueError, OSError):
+            return 0, False
+        if not self._file_matches_pattern(rel_path_str, filename, normalized_pattern):
+            return 0, False
+        try:
+            self.write_message(
+                json.dumps(
+                    {
+                        "type": "scanning",
+                        "file_path": rel_path_str,
+                        "files_searched": files_searched,
+                    }
+                )
+            )
+        except (tornado.websocket.WebSocketClosedError, RuntimeError):
+            pass
+        try:
+            count = await self._search_file_content(
+                file_path, rel_path_str, search_text
+            )
+            return count, True
+        except (UnicodeDecodeError, OSError):
+            return 0, True
+        except Exception as other_err:
+            logging.debug("Error searching file %s: %s", file_path, other_err)
+            return 0, True
+
+    async def _run_search_walk(
+        self,
+        root_path: pathlib.Path,
+        normalized_pattern: str,
+        search_text: str,
+    ) -> tuple[int, int] | None:
+        """Walk directory tree and search files. Returns (matches, files_searched) or None if auth expired."""
+        matches = 0
+        files_searched = 0
+        for dirpath, _dirnames, filenames in os.walk(root_path):
+            if self.stop_event.is_set():
+                raise asyncio.CancelledError
+            for filename in filenames:
+                if self.stop_event.is_set():
+                    raise asyncio.CancelledError
+                file_path = pathlib.Path(dirpath) / filename
+                match_delta, counted = await self._search_one_file(
+                    file_path,
+                    root_path,
+                    filename,
+                    normalized_pattern,
+                    search_text,
+                    files_searched + 1,
+                )
+                matches += match_delta
+                if counted:
+                    files_searched += 1
+            if files_searched % 20 == 0 and not await self._yield_and_check_auth():
+                return None
+        return matches, files_searched
+
+    async def _yield_and_check_auth(self) -> bool:
+        """Yield control and check auth; return False if session expired (caller should abort)."""
+        await asyncio.sleep(0)
+        if self.get_current_user():
+            return True
+        logging.warning("SuperSearchWebSocket: Authentication expired during search")
+        self._send_auth_required_and_close(
+            "Your session expired during search. Please log in again.",
+            REDIRECT_SEARCH,
+            AUTH_EXPIRED,
+        )
+        return False
+
+    def _send_search_completion(self, matches: int, files_searched: int):
+        """Send search_complete or no_files message."""
+        if matches == 0:
+            self.write_message(
+                json.dumps(
+                    {
+                        "type": "no_files",
+                        "message": f"No matches found in {files_searched} files.",
+                        "files_searched": files_searched,
+                    }
+                )
+            )
+        else:
+            self.write_message(
+                json.dumps(
+                    {
+                        "type": "search_complete",
+                        "matches": matches,
+                        "files_searched": files_searched,
+                    }
+                )
+            )
 
     async def perform_search(self, pattern: str, search_text: str):
         """Perform the super search and stream results"""
@@ -507,14 +647,8 @@ class SuperSearchWebSocketHandler(
             logging.warning(
                 "SuperSearchWebSocket: Authentication failed at search start"
             )
-            self.write_message(
-                json.dumps(
-                    {
-                        "type": "auth_required",
-                        "message": AUTH_EXPIRED,
-                        "redirect": REDIRECT_SEARCH,
-                    }
-                )
+            self._send_auth_required_and_close(
+                AUTH_EXPIRED, REDIRECT_SEARCH, AUTH_EXPIRED
             )
             return
 
@@ -532,124 +666,18 @@ class SuperSearchWebSocketHandler(
 
             # Normalize pattern to use forward slashes for matching
             normalized_pattern = pattern.replace("\\", "/")
-
-            # Ensure pattern is relative to ROOT_DIR
             root_path = pathlib.Path(ROOT_DIR).resolve()
-            matches = 0
-            files_searched = 0
-
-            # Walk through directory tree
-            for dirpath, dirnames, filenames in os.walk(root_path):
-                if self.stop_event.is_set():
-                    raise asyncio.CancelledError
-
-                # Check each file against the pattern
-                for filename in filenames:
-                    if self.stop_event.is_set():
-                        raise asyncio.CancelledError
-
-                    file_path = pathlib.Path(dirpath) / filename
-                    try:
-                        # Get relative path from ROOT_DIR
-                        rel_path = file_path.relative_to(root_path)
-                        rel_path_str = str(rel_path).replace("\\", "/")
-
-                        # Check if file matches pattern
-                        if not fnmatch.fnmatch(
-                            rel_path_str, normalized_pattern
-                        ) and not fnmatch.fnmatch(filename, normalized_pattern):
-                            continue
-
-                        files_searched += 1
-
-                        # Stream the file name being scanned to the client
-                        try:
-                            self.write_message(
-                                json.dumps(
-                                    {
-                                        "type": "scanning",
-                                        "file_path": rel_path_str,
-                                        "files_searched": files_searched,
-                                    }
-                                )
-                            )
-                        except Exception:
-                            pass
-
-                        # Try to read and search file content
-                        try:
-                            # Check file size before reading
-                            file_size = file_path.stat().st_size
-                            if file_size > MAX_READABLE_FILE_SIZE:
-                                # Skip files that are too large
-                                continue
-
-                            with open(
-                                file_path, "r", encoding="utf-8", errors="ignore"
-                            ) as f:
-                                for i, line in enumerate(f, 1):
-                                    if self.stop_event.is_set():
-                                        raise asyncio.CancelledError
-                                    if search_text in line:
-                                        self.send_match(
-                                            rel_path_str, i, line.strip(), search_text
-                                        )
-                                        matches += 1
-                        except (UnicodeDecodeError, PermissionError, OSError):
-                            # Skip binary files or files we can't read
-                            continue
-                        except Exception:
-                            # Skip any other errors
-                            continue
-
-                    except (ValueError, OSError):
-                        # Skip files outside root or inaccessible files
-                        continue
-
-                # Yield control periodically to avoid blocking and check authentication
-                if files_searched % 20 == 0:
-                    await asyncio.sleep(0)
-                    # Periodically validate authentication during long searches
-                    if not self.get_current_user():
-                        logging.warning(
-                            "SuperSearchWebSocket: Authentication expired during search"
-                        )
-                        self.write_message(
-                            json.dumps(
-                                {
-                                    "type": "auth_required",
-                                    "message": "Your session expired during search. Please log in again.",
-                                    "redirect": REDIRECT_SEARCH,
-                                }
-                            )
-                        )
-                        self.close(code=1008, reason=AUTH_EXPIRED)
-                        return
-
-            # Send completion message
-            if matches == 0:
-                self.write_message(
-                    json.dumps(
-                        {
-                            "type": "no_files",
-                            "message": f"No matches found in {files_searched} files.",
-                            "files_searched": files_searched,
-                        }
-                    )
-                )
-            else:
-                self.write_message(
-                    json.dumps(
-                        {
-                            "type": "search_complete",
-                            "matches": matches,
-                            "files_searched": files_searched,
-                        }
-                    )
-                )
+            result = await self._run_search_walk(
+                root_path, normalized_pattern, search_text
+            )
+            if result is None:
+                return
+            matches, files_searched = result
+            self._send_search_completion(matches, files_searched)
 
         except asyncio.CancelledError:
             self.write_message(json.dumps({"type": "cancelled"}))
+            raise
         except Exception as e:
             logging.error(f"Super search error: {e}", exc_info=True)
             self.write_message(
@@ -668,7 +696,7 @@ class SuperSearchWebSocketHandler(
         }
         try:
             self.write_message(json.dumps(message))
-        except Exception:
+        except (tornado.websocket.WebSocketClosedError, RuntimeError):
             pass
 
     def on_close(self):

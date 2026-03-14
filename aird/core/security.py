@@ -48,6 +48,26 @@ def is_within_root(path: str, root: str) -> bool:
         return False
 
 
+def _origin_scheme_ok(origin_scheme: str, expected_scheme: str) -> bool:
+    """Return True if origin scheme matches expected (http/https or ws/wss)."""
+    if origin_scheme in (expected_scheme, expected_scheme + "s"):
+        return True
+    return origin_scheme in ("ws", "wss") and expected_scheme in ("http", "https")
+
+
+def _origin_host_port_ok(
+    handler, origin_host: str, origin_port: int | None, req_host: str, req_port: int
+) -> bool:
+    """Return True if origin host/port are acceptable."""
+    allow_dev = bool(handler.settings.get("allow_dev_origins", False))
+    dev_ok = allow_dev and origin_host in ("localhost", "127.0.0.1")
+    if origin_host != req_host and not dev_ok:
+        return False
+    if origin_port is not None and origin_port != req_port and not dev_ok:
+        return False
+    return True
+
+
 def is_valid_websocket_origin(handler, origin: str) -> bool:
     """Validate WebSocket origin matches expected host/port."""
     try:
@@ -57,29 +77,16 @@ def is_valid_websocket_origin(handler, origin: str) -> bool:
         origin_host = parsed.hostname
         origin_port = parsed.port
         origin_scheme = parsed.scheme
-        # Determine expected host/port from request
         req_host = handler.request.host.split(":")[0]
         try:
             req_port = int(handler.request.host.split(":")[1])
         except (IndexError, ValueError):
             req_port = 443 if handler.request.protocol == "https" else 80
         expected_scheme = "https" if handler.request.protocol == "https" else "http"
-        if origin_scheme not in (expected_scheme, expected_scheme + "s"):
-            # Allow ws/wss equivalents to http/https
-            if not (
-                origin_scheme in ("ws", "wss") and expected_scheme in ("http", "https")
-            ):
-                return False
-        if origin_host != req_host:
-            # Allow localhost in development if explicitly enabled
-            allow_dev = bool(handler.settings.get("allow_dev_origins", False))
-            if not (allow_dev and origin_host in {"localhost", "127.0.0.1"}):
-                return False
-        if origin_port and origin_port != req_port:
-            # Different port -> reject unless allow_dev and localhost
-            allow_dev = bool(handler.settings.get("allow_dev_origins", False))
-            if not (allow_dev and origin_host in {"localhost", "127.0.0.1"}):
-                return False
-        return True
+        if not _origin_scheme_ok(origin_scheme, expected_scheme):
+            return False
+        return _origin_host_port_ok(
+            handler, origin_host, origin_port, req_host, req_port
+        )
     except Exception:
         return False
