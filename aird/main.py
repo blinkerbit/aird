@@ -449,21 +449,18 @@ def main():
                 if fqdn and fqdn != config.HOSTNAME and fqdn != "localhost":
                     print(f"http://{fqdn}:{port}/")
 
-            # Setup periodic cleanup of expired shares
-            def cleanup_expired_shares_periodic():
-                """Periodic task to cleanup expired shares"""
+            # Setup periodic cleanup of expired shares (stable reference for call_later)
+            def _run_cleanup_expired_shares():
                 if constants.DB_CONN:
                     deleted = cleanup_expired_shares(constants.DB_CONN)
                     if deleted > 0:
                         logger.info(f"Cleaned up {deleted} expired share(s)")
-                # Schedule next cleanup in 1 hour (3600 seconds)
                 tornado.ioloop.IOLoop.current().call_later(
-                    3600, cleanup_expired_shares_periodic
+                    3600, _run_cleanup_expired_shares
                 )
 
-            # Start cleanup in 1 hour
             tornado.ioloop.IOLoop.current().call_later(
-                3600, cleanup_expired_shares_periodic
+                3600, _run_cleanup_expired_shares
             )
 
             tornado.ioloop.IOLoop.current().start()

@@ -313,7 +313,7 @@ def cleanup_expired_shares(conn: sqlite3.Connection) -> int:
         return 0
 
 
-def get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict:
+def get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict | None:
     """Get a single share by ID from database"""
     try:
         logging.debug(f"get_share_by_id called with sid='{sid}'")
@@ -454,7 +454,7 @@ def get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict:
 
         logging.debug(f"No share found for sid='{sid}'")
         return None
-    except Exception as e:
+    except (sqlite3.Error, OSError) as e:
         logging.error(f"Error getting share {sid}: {e}")
         logging.debug(f"Traceback: {traceback.format_exc()}")
         return None
@@ -927,8 +927,8 @@ def create_user(
         }
     except sqlite3.IntegrityError:
         raise ValueError(f"Username '{username}' already exists")
-    except Exception as e:
-        raise Exception(f"Failed to create user: {str(e)}")
+    except (sqlite3.Error, OSError) as e:
+        raise RuntimeError(f"Failed to create user: {str(e)}") from e
 
 
 def get_user_by_username(conn: sqlite3.Connection, username: str) -> dict | None:
@@ -1076,8 +1076,8 @@ def create_ldap_config(
         }
     except sqlite3.IntegrityError:
         raise ValueError(f"LDAP configuration '{name}' already exists")
-    except Exception as e:
-        raise Exception(f"Failed to create LDAP configuration: {str(e)}")
+    except (sqlite3.Error, OSError) as e:
+        raise RuntimeError(f"Failed to create LDAP configuration: {str(e)}") from e
 
 
 def get_all_ldap_configs(conn: sqlite3.Connection) -> list[dict]:

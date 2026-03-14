@@ -568,7 +568,7 @@ class TestGetShareById:
 
     def test_exception(self):
         mock_conn = MagicMock()
-        mock_conn.execute.side_effect = Exception("fail")
+        mock_conn.execute.side_effect = sqlite3.OperationalError("fail")
         assert get_share_by_id(mock_conn, "x") is None
 
 

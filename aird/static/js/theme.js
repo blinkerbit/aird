@@ -11,5 +11,5 @@ class ThemeManager {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    window.themeManager = new ThemeManager();
+    globalThis.themeManager = new ThemeManager();
 });

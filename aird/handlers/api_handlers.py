@@ -167,7 +167,7 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
             return
 
         self.is_streaming = True
-        asyncio.create_task(self.stream_file())
+        self._stream_task = asyncio.create_task(self.stream_file())
 
     async def _handle_stream_file_action(self, data: dict) -> None:
         """Handle the stream_file action."""
@@ -240,7 +240,7 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
             return
         if action == "start":
             self.is_streaming = True
-            asyncio.create_task(self.stream_file())
+            self._stream_task = asyncio.create_task(self.stream_file())
             return
         if action == "lines":
             try:
@@ -474,7 +474,7 @@ class SuperSearchWebSocketHandler(
 
         if self.search_task and not self.search_task.done():
             self.stop_event.set()
-            asyncio.create_task(
+            self._cancel_task = asyncio.create_task(
                 self._await_cancellation_and_start_new((pattern, search_text))
             )
         else:
