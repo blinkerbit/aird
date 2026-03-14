@@ -410,7 +410,8 @@ def main():
     # Configure SSL if certificates are provided
     ssl_options = None
     if config.SSL_CERT and config.SSL_KEY:
-        ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
         ssl_context.load_cert_chain(config.SSL_CERT, config.SSL_KEY)
         ssl_options = ssl_context
 

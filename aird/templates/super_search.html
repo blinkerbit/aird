@@ -573,7 +573,7 @@
         let defaultPattern;
         if (currentPath && currentPath.trim() !== '') {
           // Use current path as base for pattern
-          const normalizedPath = currentPath.replace(/[\/\\]/g, separator);
+          const normalizedPath = currentPath.replaceAll(/[/\\]/g, separator);
           defaultPattern = `${normalizedPath}${separator}**${separator}*.txt`;
         } else {
           // Default to root search if no current path
@@ -944,13 +944,13 @@
       }
 
       escapeId(text) {
-        return text.replace(/[^a-zA-Z0-9]/g, '_');
+        return text.replaceAll(/[^a-zA-Z0-9]/g, '_');
       }
     }
 
     // Initialize the search interface when the page loads
     document.addEventListener('DOMContentLoaded', () => {
-      new SuperSearch();
+      window.superSearch = new SuperSearch();
     });
   </script>
 </body>

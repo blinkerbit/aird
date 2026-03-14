@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
     <title>{{ filename }}</title>
@@ -315,6 +315,12 @@
         <textarea id="editor">{% if open_editor %}{{ full_file_content }}{% end %}</textarea>
     </div>
     <table id="file-content">
+        <thead>
+            <tr>
+                <th class="line-numbers" scope="col" aria-label="Line number"></th>
+                <th scope="col" aria-label="Content"></th>
+            </tr>
+        </thead>
         <tbody id="file-content-body">
             <tr>
                 <td colspan="2" style="padding: 20px; text-align: center; color: #666;">Loading file content...</td>
@@ -389,11 +395,11 @@
 
             // Get range
             const urlParams = new URLSearchParams(window.location.search);
-            let start = parseInt(urlParams.get('start_line'));
-            let end = parseInt(urlParams.get('end_line'));
+            let start = Number.parseInt(urlParams.get('start_line'));
+            let end = Number.parseInt(urlParams.get('end_line'));
 
-            if (isNaN(start)) start = 1;
-            if (isNaN(end)) end = totalLines;
+            if (Number.isNaN(start)) start = 1;
+            if (Number.isNaN(end)) end = totalLines;
 
             // Update inputs
             if (startLineInput) startLineInput.value = start;
@@ -454,8 +460,8 @@
         editor.addEventListener('input', updateLineNumbers);
 
         function applyLineRange() {
-            const startLine = parseInt(startLineInput.value);
-            const endLine = parseInt(endLineInput.value);
+            const startLine = Number.parseInt(startLineInput.value);
+            const endLine = Number.parseInt(endLineInput.value);
 
             if (!Number.isFinite(startLine) || !Number.isFinite(endLine) || startLine < 1) {
                 alert('Please enter valid numeric start and end values (start >= 1).');

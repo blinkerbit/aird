@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <title>Edit LDAP Configuration</title>
     <style>
@@ -34,58 +34,7 @@
             width: auto;
             margin-right: 10px;
         }
-        textarea {
-            height: 60px;
-            resize: vertical;
-        }
-        .btn-primary {
-            background-color: #007bff;
-            color: white;
-            border: 1px solid #007bff;
-            padding: 8px 16px;
-            text-decoration: none;
-            margin-right: 10px;
-        }
-        .btn-primary:hover {
-            background-color: #0056b3;
-        }
-        .btn-secondary {
-            background-color: #6c757d;
-            color: white;
-            border: 1px solid #6c757d;
-            padding: 8px 16px;
-            text-decoration: none;
-            margin-right: 10px;
-        }
-        .btn-secondary:hover {
-            background-color: #545b62;
-        }
-        .error {
-            color: #dc3545;
-            background-color: #f8d7da;
-            border: 1px solid #f5c6cb;
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 4px;
-        }
-        .help-text {
-            font-size: 12px;
-            color: #666;
-            margin-top: 5px;
-        }
-        .nav-links {
-            margin-bottom: 20px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid #ccc;
-        }
-        .nav-links a {
-            margin-right: 15px;
-            text-decoration: none;
-            color: #007bff;
-        }
-        .nav-links a:hover {
-            text-decoration: underline;
-        }
+        {% include "_ldap_form_styles.html" %}
     </style>
 </head>
 <body>

@@ -1074,7 +1074,7 @@
           <strong>Expiry Date :</strong>
         </div>
         <div style="margin-bottom: 10px;">
-          <label style="display: block; margin-bottom: 5px; font-size: 12px;">
+          <label for="expiryDate" style="display: block; margin-bottom: 5px; font-size: 12px;">
             <strong>Share Expires On:</strong>
           </label>
           <input type="datetime-local" id="expiryDate"
@@ -1096,7 +1096,7 @@
           <strong>File Filtering :</strong>
         </div>
         <div style="margin-bottom: 10px;">
-          <label style="display: block; margin-bottom: 5px; font-size: 12px;">
+          <label for="allowList" style="display: block; margin-bottom: 5px; font-size: 12px;">
             <strong>Allow List (Glob Patterns):</strong>
           </label>
           <textarea id="allowList" placeholder="*.txt, *.pdf, images/*.jpg, documents/**"
@@ -1106,7 +1106,7 @@
           </div>
         </div>
         <div style="margin-bottom: 10px;">
-          <label style="display: block; margin-bottom: 5px; font-size: 12px;">
+          <label for="avoidList" style="display: block; margin-bottom: 5px; font-size: 12px;">
             <strong>Avoid List (Glob Patterns):</strong>
           </label>
           <textarea id="avoidList" placeholder="*.tmp, *.log, temp/*, .git/**"
@@ -1417,7 +1417,7 @@
       const k = 1024;
       const sizes = ['B', 'KB', 'MB', 'GB'];
       const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+      return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
     function escapeHtml(text) {
@@ -1425,11 +1425,11 @@
         return '';
       }
       return String(text)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
     }
 
     function cloudSelectionKey(providerName, fileId) {
@@ -1927,7 +1927,7 @@
               label = fileName;
             }
 
-            const safeKey = file.replace(/'/g, "\\'");
+            const safeKey = file.replaceAll("'", "\\'");
             return `<span class="selected-file" data-action="removeFromSelection" data-path="${safeKey}">${icon} ${escapeHtml(label)} ×</span>`;
           })
           .join('');

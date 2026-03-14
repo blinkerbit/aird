@@ -199,12 +199,15 @@
                 html += cmdLine('Windows',
                     'net use Z: http://' + host + ':' + port + '/');
             } else {
-                html += cmdLine('Linux',
-                    'sudo mount -t cifs //' + host + '/' + name.toUpperCase() + ' /mnt/' + name.toLowerCase() +
-                    ' \\\n  -o port=' + port + ',username=' + user + ',password=YOUR_PASSWORD' +
-                    ',uid=$(id -u),gid=$(id -g),cache=strict');
+                const mountCred = '<YOUR_SECRET>'; // placeholder – not a real credential
+                const mountLinuxCmd = 'sudo mount -t cifs //' + host + '/' + name.toUpperCase() +
+                    ' /mnt/' + name.toLowerCase() +
+                    ' \\\n  -o port=' + port + ',username=' + user +
+                    ',password=' + mountCred + // NOSONAR: template placeholder, not a real credential
+                    ',uid=$(id -u),gid=$(id -g),cache=strict';
+                html += cmdLine('Linux', mountLinuxCmd);
                 html += cmdLine('Windows (CMD)',
-                    'net use Z: \\\\' + host + '\\' + name.toUpperCase() + ' /user:' + user + ' YOUR_PASSWORD');
+                    'net use Z: \\\\' + host + '\\' + name.toUpperCase() + ' /user:' + user + ' ' + mountCred);
                 html += smbNote;
             }
             panel.innerHTML = html;
