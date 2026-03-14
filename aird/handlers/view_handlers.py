@@ -49,9 +49,7 @@ DOWNLOAD_DISABLED_MSG = (
 
 async def _serve_download(handler, abspath, filename):
     """Serve file as attachment, with optional gzip compression."""
-    if not is_feature_enabled("file_download", True):
-        handler.set_status(403)
-        handler.write(DOWNLOAD_DISABLED_MSG)
+    if not handler.require_feature("file_download", True, body=DOWNLOAD_DISABLED_MSG):
         return
     handler.set_header("Content-Disposition", f'attachment; filename="{filename}"')
     mime_type, _ = mimetypes.guess_type(abspath)
@@ -219,11 +217,10 @@ class MainHandler(BaseHandler):
 class EditViewHandler(BaseHandler):
     @tornado.web.authenticated
     async def get(self, path):
-        if not is_feature_enabled("file_edit", True):
-            self.set_status(403)
-            self.write(
-                "Feature disabled: File editing is currently disabled by administrator"
-            )
+        if not self.require_feature(
+            "file_edit", True,
+            body="Feature disabled: File editing is currently disabled by administrator",
+        ):
             return
 
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))

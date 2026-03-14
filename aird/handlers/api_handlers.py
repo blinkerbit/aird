@@ -359,11 +359,10 @@ class FileListAPIHandler(BaseHandler):
 class SuperSearchHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
-        if not is_feature_enabled("super_search", True):
-            self.set_status(403)
-            self.write(
-                "Feature disabled: Super Search is currently disabled by administrator"
-            )
+        if not self.require_feature(
+            "super_search", True,
+            body="Feature disabled: Super Search is currently disabled by administrator",
+        ):
             return
 
         # Get the current path from query parameter
@@ -731,9 +730,7 @@ class ShareDetailsAPIHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
         """Get share details for a specific file"""
-        if not is_feature_enabled("file_share", True):
-            self.set_status(403)
-            self.write({"error": FILESHARE_DISABLED_MSG})
+        if not self.require_feature("file_share", True, body={"error": FILESHARE_DISABLED_MSG}):
             return
 
         file_path = self.get_argument("path", "").strip()
@@ -774,9 +771,7 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
         """Get share details for a specific share ID"""
-        if not is_feature_enabled("file_share", True):
-            self.set_status(403)
-            self.write({"error": FILESHARE_DISABLED_MSG})
+        if not self.require_feature("file_share", True, body={"error": FILESHARE_DISABLED_MSG}):
             return
 
         share_id = self.get_argument("id", "").strip()
@@ -820,9 +815,7 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
 class ShareListAPIHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
-        if not is_feature_enabled("file_share", True):
-            self.set_status(403)
-            self.write({"error": FILESHARE_DISABLED_MSG})
+        if not self.require_feature("file_share", True, body={"error": FILESHARE_DISABLED_MSG}):
             return
 
         db_conn = self.db_conn

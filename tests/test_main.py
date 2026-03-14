@@ -5,56 +5,54 @@ import sqlite3
 from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 
-# Import functions from main.py
-from aird.main import (
-    _get_data_dir,
-    _init_db,
-    _is_share_expired,
-    _cleanup_expired_shares,
-    _hash_password,
-    _verify_password,
-    _create_user,
-    _get_user_by_username,
-    _get_all_users,
-    _search_users,
-    _update_user,
-    _delete_user,
-    _authenticate_user,
-    _assign_admin_privileges,
-    _extract_username_from_dn,
-    _insert_share,
-    _delete_share,
-    _update_share,
-    _get_share_by_id,
-    _get_all_shares,
-    _get_shares_for_path,
-    _load_upload_config,
-    _save_upload_config,
-    _create_ldap_config,
-    _get_all_ldap_configs,
-    _get_ldap_config_by_id,
-    _update_ldap_config,
-    _delete_ldap_config,
-    _log_ldap_sync,
-    _get_ldap_sync_logs,
-    make_app,
-    print_banner,
+from aird.database.db import get_data_dir
+from aird.db import (
+    init_db,
+    is_share_expired,
+    cleanup_expired_shares,
+    hash_password,
+    verify_password,
+    create_user,
+    get_user_by_username,
+    get_all_users,
+    search_users,
+    update_user,
+    delete_user,
+    authenticate_user,
+    assign_admin_privileges,
+    extract_username_from_dn,
+    insert_share,
+    delete_share,
+    update_share,
+    get_share_by_id,
+    get_all_shares,
+    get_shares_for_path,
+    load_upload_config,
+    save_upload_config,
+    create_ldap_config,
+    get_all_ldap_configs,
+    get_ldap_config_by_id,
+    update_ldap_config,
+    delete_ldap_config,
+    log_ldap_sync,
+    get_ldap_sync_logs,
 )
+from aird.main import make_app, print_banner
 
 
 @pytest.fixture
 def db_conn():
     """Create an in-memory SQLite database for testing"""
     conn = sqlite3.connect(":memory:")
-    _init_db(conn)
+    init_db(conn)
     yield conn
     conn.close()
 
 
 class TestGetDataDir:
-    """Tests for _get_data_dir function"""
+    """Tests for get_data_dir function"""
 
-    def test_get_data_dir_windows(self):
+    def testget_data_dir_windows(self):
         """Test data directory on Windows"""
         with patch("os.name", "nt"), patch(
             "os.environ.get",
@@ -68,20 +66,20 @@ class TestGetDataDir:
         ), patch(
             "os.path.join", side_effect=lambda *args: "\\".join(args)
         ):
-            result = _get_data_dir()
+            result = get_data_dir()
             assert "aird" in result
 
-    def test_get_data_dir_macos(self):
+    def testget_data_dir_macos(self):
         """Test data directory on macOS"""
         with patch("os.name", "posix"), patch("sys.platform", "darwin"), patch(
             "os.path.expanduser", return_value="/Users/test/Library/Application Support"
         ), patch("os.makedirs"), patch(
             "os.path.join", side_effect=lambda *args: "/".join(args)
         ):
-            result = _get_data_dir()
+            result = get_data_dir()
             assert "aird" in result
 
-    def test_get_data_dir_linux(self):
+    def testget_data_dir_linux(self):
         """Test data directory on Linux"""
         with patch("os.name", "posix"), patch("sys.platform", "linux"), patch(
             "os.environ.get",
@@ -93,23 +91,23 @@ class TestGetDataDir:
         ), patch(
             "os.path.join", side_effect=lambda *args: "/".join(args)
         ):
-            result = _get_data_dir()
+            result = get_data_dir()
             assert "aird" in result
 
-    def test_get_data_dir_fallback(self):
+    def testget_data_dir_fallback(self):
         """Test data directory fallback on exception"""
         with patch("os.name", "nt"), patch(
             "os.environ.get", side_effect=Exception("Error")
         ), patch("os.getcwd", return_value="/current/dir"):
-            result = _get_data_dir()
+            result = get_data_dir()
             assert result == "/current/dir"
 
 
 class TestInitDb:
-    """Tests for _init_db function"""
+    """Tests for init_db function"""
 
-    def test_init_db_creates_tables(self, db_conn):
-        """Test that _init_db creates all required tables"""
+    def testinit_db_creates_tables(self, db_conn):
+        """Test that init_db creates all required tables"""
         cursor = db_conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         tables = [row[0] for row in cursor.fetchall()]
 
@@ -119,8 +117,8 @@ class TestInitDb:
         assert "ldap_configs" in tables
         assert "ldap_sync_log" in tables
 
-    def test_init_db_adds_missing_columns(self):
-        """Test that _init_db adds missing columns to shares table"""
+    def testinit_db_adds_missing_columns(self):
+        """Test that init_db adds missing columns to shares table"""
         conn = sqlite3.connect(":memory:")
         # Create shares table without new columns
         conn.execute("""
@@ -132,7 +130,7 @@ class TestInitDb:
         """)
         conn.commit()
 
-        _init_db(conn)
+        init_db(conn)
 
         cursor = conn.execute("PRAGMA table_info(shares)")
         columns = [row[1] for row in cursor.fetchall()]
@@ -148,35 +146,35 @@ class TestInitDb:
 
 
 class TestIsShareExpired:
-    """Tests for _is_share_expired function"""
+    """Tests for is_share_expired function"""
 
     def test_no_expiry_date_not_expired(self):
         """Test that None expiry date means not expired"""
-        assert _is_share_expired(None) is False
-        assert _is_share_expired("") is False
+        assert is_share_expired(None) is False
+        assert is_share_expired("") is False
 
     def test_future_expiry_not_expired(self):
         """Test that future expiry date is not expired"""
         future_date = (datetime.now() + timedelta(days=1)).isoformat()
-        assert _is_share_expired(future_date) is False
+        assert is_share_expired(future_date) is False
 
     def test_past_expiry_is_expired(self):
         """Test that past expiry date is expired"""
         past_date = (datetime.now() - timedelta(days=1)).isoformat()
-        assert _is_share_expired(past_date) is True
+        assert is_share_expired(past_date) is True
 
     def test_expiry_with_z_suffix(self):
         """Test expiry date with Z suffix"""
         past_date = (datetime.now() - timedelta(days=1)).isoformat() + "Z"
-        assert _is_share_expired(past_date) is True
+        assert is_share_expired(past_date) is True
 
     def test_invalid_expiry_format_not_expired(self):
         """Test that invalid date format returns False"""
-        assert _is_share_expired("invalid-date") is False
+        assert is_share_expired("invalid-date") is False
 
 
 class TestCleanupExpiredShares:
-    """Tests for _cleanup_expired_shares function"""
+    """Tests for cleanup_expired_shares function"""
 
     def test_cleanup_removes_expired_shares(self, db_conn):
         """Test that cleanup removes expired shares"""
@@ -197,7 +195,7 @@ class TestCleanupExpiredShares:
         )
         db_conn.commit()
 
-        deleted_count = _cleanup_expired_shares(db_conn)
+        deleted_count = cleanup_expired_shares(db_conn)
 
         assert deleted_count == 2
         cursor = db_conn.execute("SELECT id FROM shares WHERE id = ?", ("expired1",))
@@ -207,93 +205,93 @@ class TestCleanupExpiredShares:
 
 
 class TestHashPassword:
-    """Tests for _hash_password function"""
+    """Tests for hash_password function"""
 
     def test_hash_returns_string(self):
         """Test that hash returns a string"""
-        result = _hash_password("testpassword")
+        result = hash_password("testpassword")
         assert isinstance(result, str)
         assert len(result) > 0
 
     def test_hash_different_for_same_password(self):
         """Test that hashing same password twice gives different results"""
-        hash1 = _hash_password("testpassword")
-        hash2 = _hash_password("testpassword")
+        hash1 = hash_password("testpassword")
+        hash2 = hash_password("testpassword")
         # Should be different due to salt
         assert hash1 != hash2
 
 
 class TestVerifyPassword:
-    """Tests for _verify_password function"""
+    """Tests for verify_password function"""
 
     def test_verify_correct_password(self):
         """Test verifying correct password"""
         password = "testpassword123"
-        password_hash = _hash_password(password)
-        assert _verify_password(password, password_hash) is True
+        password_hash = hash_password(password)
+        assert verify_password(password, password_hash) is True
 
     def test_verify_wrong_password(self):
         """Test verifying wrong password"""
-        password_hash = _hash_password("correct_password")
-        assert _verify_password("wrong_password", password_hash) is False
+        password_hash = hash_password("correct_password")
+        assert verify_password("wrong_password", password_hash) is False
 
 
 class TestCreateUser:
-    """Tests for _create_user function"""
+    """Tests for create_user function"""
 
-    def test_create_user_success(self, db_conn):
+    def testcreate_user_success(self, db_conn):
         """Test creating a new user successfully"""
-        user = _create_user(db_conn, "testuser", "password123")
+        user = create_user(db_conn, "testuser", "password123")
 
         assert user["username"] == "testuser"
         assert user["role"] == "user"
         assert user["id"] is not None
 
-    def test_create_user_custom_role(self, db_conn):
+    def testcreate_user_custom_role(self, db_conn):
         """Test creating a user with custom role"""
-        user = _create_user(db_conn, "adminuser", "password123", role="admin")
+        user = create_user(db_conn, "adminuser", "password123", role="admin")
         assert user["role"] == "admin"
 
-    def test_create_user_duplicate_username(self, db_conn):
+    def testcreate_user_duplicate_username(self, db_conn):
         """Test that duplicate username raises ValueError"""
-        _create_user(db_conn, "testuser", "password123")
+        create_user(db_conn, "testuser", "password123")
 
         with pytest.raises(ValueError):
-            _create_user(db_conn, "testuser", "different_password")
+            create_user(db_conn, "testuser", "different_password")
 
 
 class TestGetUserByUsername:
-    """Tests for _get_user_by_username function"""
+    """Tests for get_user_by_username function"""
 
     def test_get_existing_user(self, db_conn):
         """Test getting an existing user"""
-        _create_user(db_conn, "testuser", "password123")
+        create_user(db_conn, "testuser", "password123")
 
-        user = _get_user_by_username(db_conn, "testuser")
+        user = get_user_by_username(db_conn, "testuser")
 
         assert user is not None
         assert user["username"] == "testuser"
 
     def test_get_nonexistent_user(self, db_conn):
         """Test getting a non-existent user returns None"""
-        user = _get_user_by_username(db_conn, "nonexistent")
+        user = get_user_by_username(db_conn, "nonexistent")
         assert user is None
 
 
 class TestGetAllUsers:
-    """Tests for _get_all_users function"""
+    """Tests for get_all_users function"""
 
-    def test_get_all_users_empty(self, db_conn):
+    def testget_all_users_empty(self, db_conn):
         """Test getting users when none exist"""
-        result = _get_all_users(db_conn)
+        result = get_all_users(db_conn)
         assert result == []
 
-    def test_get_all_users_multiple(self, db_conn):
+    def testget_all_users_multiple(self, db_conn):
         """Test getting multiple users"""
-        _create_user(db_conn, "user1", "pass1")
-        _create_user(db_conn, "user2", "pass2")
+        create_user(db_conn, "user1", "pass1")
+        create_user(db_conn, "user2", "pass2")
 
-        result = _get_all_users(db_conn)
+        result = get_all_users(db_conn)
 
         assert len(result) == 2
         usernames = [u["username"] for u in result]
@@ -302,15 +300,15 @@ class TestGetAllUsers:
 
 
 class TestSearchUsers:
-    """Tests for _search_users function"""
+    """Tests for search_users function"""
 
-    def test_search_users_by_partial_username(self, db_conn):
+    def testsearch_users_by_partial_username(self, db_conn):
         """Test searching users by partial username"""
-        _create_user(db_conn, "john_doe", "pass1")
-        _create_user(db_conn, "jane_doe", "pass2")
-        _create_user(db_conn, "bob_smith", "pass3")
+        create_user(db_conn, "john_doe", "pass1")
+        create_user(db_conn, "jane_doe", "pass2")
+        create_user(db_conn, "bob_smith", "pass3")
 
-        result = _search_users(db_conn, "doe")
+        result = search_users(db_conn, "doe")
 
         assert len(result) == 2
         usernames = [u["username"] for u in result]
@@ -319,116 +317,116 @@ class TestSearchUsers:
 
 
 class TestUpdateUser:
-    """Tests for _update_user function"""
+    """Tests for update_user function"""
 
-    def test_update_user_role(self, db_conn):
+    def testupdate_user_role(self, db_conn):
         """Test updating user role"""
-        user = _create_user(db_conn, "testuser", "pass1")
+        user = create_user(db_conn, "testuser", "pass1")
 
-        result = _update_user(db_conn, user["id"], role="admin")
+        result = update_user(db_conn, user["id"], role="admin")
 
         assert result is True
-        updated = _get_user_by_username(db_conn, "testuser")
+        updated = get_user_by_username(db_conn, "testuser")
         assert updated["role"] == "admin"
 
-    def test_update_user_no_valid_fields(self, db_conn):
+    def testupdate_user_no_valid_fields(self, db_conn):
         """Test updating with no valid fields returns False"""
-        user = _create_user(db_conn, "testuser", "pass1")
+        user = create_user(db_conn, "testuser", "pass1")
 
-        result = _update_user(db_conn, user["id"], invalid_field="value")
+        result = update_user(db_conn, user["id"], invalid_field="value")
 
         assert result is False
 
-    def test_update_user_password(self, db_conn):
+    def testupdate_user_password(self, db_conn):
         """Test updating user password via 'password' field"""
-        user = _create_user(db_conn, "testuser", "old_password")
-        old_hash = _get_user_by_username(db_conn, "testuser")["password_hash"]
+        user = create_user(db_conn, "testuser", "old_password")
+        old_hash = get_user_by_username(db_conn, "testuser")["password_hash"]
 
-        result = _update_user(db_conn, user["id"], password="new_password")
+        result = update_user(db_conn, user["id"], password="new_password")
 
         assert result is True
-        updated = _get_user_by_username(db_conn, "testuser")
+        updated = get_user_by_username(db_conn, "testuser")
         # Password hash should have changed
         assert updated["password_hash"] != old_hash
         # New password should verify correctly
-        assert _verify_password("new_password", updated["password_hash"]) is True
+        assert verify_password("new_password", updated["password_hash"]) is True
 
 
 class TestDeleteUser:
-    """Tests for _delete_user function"""
+    """Tests for delete_user function"""
 
     def test_delete_existing_user(self, db_conn):
         """Test deleting an existing user"""
-        user = _create_user(db_conn, "testuser", "pass1")
+        user = create_user(db_conn, "testuser", "pass1")
 
-        result = _delete_user(db_conn, user["id"])
+        result = delete_user(db_conn, user["id"])
 
         assert result is True
-        assert _get_user_by_username(db_conn, "testuser") is None
+        assert get_user_by_username(db_conn, "testuser") is None
 
     def test_delete_nonexistent_user(self, db_conn):
         """Test deleting a non-existent user returns False"""
-        result = _delete_user(db_conn, 99999)
+        result = delete_user(db_conn, 99999)
         assert result is False
 
 
 class TestAuthenticateUser:
-    """Tests for _authenticate_user function"""
+    """Tests for authenticate_user function"""
 
     def test_authenticate_valid_credentials(self, db_conn):
         """Test authenticating with valid credentials"""
-        _create_user(db_conn, "testuser", "password123")
+        create_user(db_conn, "testuser", "password123")
 
-        result = _authenticate_user(db_conn, "testuser", "password123")
+        result = authenticate_user(db_conn, "testuser", "password123")
 
         assert result is not None
         assert result["username"] == "testuser"
 
     def test_authenticate_wrong_password(self, db_conn):
         """Test authenticating with wrong password"""
-        _create_user(db_conn, "testuser", "password123")
+        create_user(db_conn, "testuser", "password123")
 
-        result = _authenticate_user(db_conn, "testuser", "wrongpassword")
+        result = authenticate_user(db_conn, "testuser", "wrongpassword")
 
         assert result is None
 
     def test_authenticate_nonexistent_user(self, db_conn):
         """Test authenticating non-existent user"""
-        result = _authenticate_user(db_conn, "nonexistent", "password123")
+        result = authenticate_user(db_conn, "nonexistent", "password123")
         assert result is None
 
 
 class TestAssignAdminPrivileges:
-    """Tests for _assign_admin_privileges function"""
+    """Tests for assign_admin_privileges function"""
 
     def test_assign_admin_to_existing_user(self, db_conn):
         """Test assigning admin privileges to existing user"""
-        _create_user(db_conn, "testuser", "password123")
+        create_user(db_conn, "testuser", "password123")
 
-        _assign_admin_privileges(db_conn, ["testuser"])
+        assign_admin_privileges(db_conn, ["testuser"])
 
-        user = _get_user_by_username(db_conn, "testuser")
+        user = get_user_by_username(db_conn, "testuser")
         assert user["role"] == "admin"
 
     def test_assign_admin_empty_list(self, db_conn):
         """Test with empty list does nothing"""
-        _create_user(db_conn, "testuser", "password123")
+        create_user(db_conn, "testuser", "password123")
 
-        _assign_admin_privileges(db_conn, [])
+        assign_admin_privileges(db_conn, [])
 
-        user = _get_user_by_username(db_conn, "testuser")
+        user = get_user_by_username(db_conn, "testuser")
         assert user["role"] == "user"
 
 
 class TestExtractUsernameFromDn:
-    """Tests for _extract_username_from_dn function"""
+    """Tests for extract_username_from_dn function"""
 
     def test_extract_username_simple_dn(self):
         """Test extracting username from simple DN"""
         dn = "uid=john.doe,ou=users,dc=example,dc=com"
         template = "uid={username},ou=users,dc=example,dc=com"
 
-        result = _extract_username_from_dn(dn, template)
+        result = extract_username_from_dn(dn, template)
         assert result == "john.doe"
 
     def test_extract_username_complex_dn(self):
@@ -436,7 +434,7 @@ class TestExtractUsernameFromDn:
         dn = "CN=John Doe,OU=Users,DC=example,DC=com"
         template = "CN={username},OU=Users,DC=example,DC=com"
 
-        result = _extract_username_from_dn(dn, template)
+        result = extract_username_from_dn(dn, template)
         # Function looks for 'cn' (lowercase) in DN parts
         # It will find 'CN=John Doe' and extract 'John Doe'
         assert result == "John Doe"
@@ -446,7 +444,7 @@ class TestExtractUsernameFromDn:
         dn = "sAMAccountName=john,CN=Users,DC=example,DC=com"
         template = "sAMAccountName={username},CN=Users,DC=example,DC=com"
 
-        result = _extract_username_from_dn(dn, template)
+        result = extract_username_from_dn(dn, template)
         assert result == "john"
 
     def test_extract_username_no_match(self):
@@ -454,25 +452,25 @@ class TestExtractUsernameFromDn:
         dn = "ou=users,dc=example,dc=com"
         template = "ou={username},dc=example,dc=com"
 
-        result = _extract_username_from_dn(dn, template)
+        result = extract_username_from_dn(dn, template)
         # Should return None if no uid/cn/sAMAccountName found
         assert result is None
 
     def test_extract_no_username_in_template(self):
-        result = _extract_username_from_dn("uid=john,dc=com", "static_template")
+        result = extract_username_from_dn("uid=john,dc=com", "static_template")
         assert result is None
 
 
 class TestInsertShare:
     def test_insert_basic(self, db_conn):
-        ok = _insert_share(db_conn, "s1", "2024-01-01", ["/a.txt"])
+        ok = insert_share(db_conn, "s1", "2024-01-01", ["/a.txt"])
         assert ok is True
-        share = _get_share_by_id(db_conn, "s1")
+        share = get_share_by_id(db_conn, "s1")
         assert share is not None
         assert share["paths"] == ["/a.txt"]
 
     def test_insert_with_all_options(self, db_conn):
-        ok = _insert_share(
+        ok = insert_share(
             db_conn,
             "s2",
             "2024-01-01",
@@ -485,7 +483,7 @@ class TestInsertShare:
             expiry_date="2025-12-31",
         )
         assert ok is True
-        share = _get_share_by_id(db_conn, "s2")
+        share = get_share_by_id(db_conn, "s2")
         assert share["allowed_users"] == ["u1"]
         assert share["secret_token"] == "tok"
         assert share["share_type"] == "dynamic"
@@ -494,222 +492,222 @@ class TestInsertShare:
         mock_conn = MagicMock()
         mock_conn.__enter__ = MagicMock(side_effect=Exception("fail"))
         mock_conn.__exit__ = MagicMock(return_value=False)
-        ok = _insert_share(mock_conn, "s1", "2024", ["/x"])
+        ok = insert_share(mock_conn, "s1", "2024", ["/x"])
         assert ok is False
 
 
 class TestDeleteShare:
     def test_delete_existing(self, db_conn):
-        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
-        _delete_share(db_conn, "s1")
-        assert _get_share_by_id(db_conn, "s1") is None
+        insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        delete_share(db_conn, "s1")
+        assert get_share_by_id(db_conn, "s1") is None
 
     def test_delete_nonexistent(self, db_conn):
-        _delete_share(db_conn, "nope")
+        delete_share(db_conn, "nope")
 
 
 class TestUpdateShareMain:
-    def test_update_share_type(self, db_conn):
-        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
-        ok = _update_share(db_conn, "s1", share_type="dynamic")
+    def testupdate_share_type(self, db_conn):
+        insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        ok = update_share(db_conn, "s1", share_type="dynamic")
         assert ok is True
-        share = _get_share_by_id(db_conn, "s1")
+        share = get_share_by_id(db_conn, "s1")
         assert share["share_type"] == "dynamic"
 
     def test_update_disable_token(self, db_conn):
-        _insert_share(db_conn, "s1", "2024-01-01", ["/a"], secret_token="old")
-        _update_share(db_conn, "s1", disable_token=True)
-        share = _get_share_by_id(db_conn, "s1")
+        insert_share(db_conn, "s1", "2024-01-01", ["/a"], secret_token="old")
+        update_share(db_conn, "s1", disable_token=True)
+        share = get_share_by_id(db_conn, "s1")
         assert share["secret_token"] is None
 
     def test_update_custom_token(self, db_conn):
-        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
-        _update_share(db_conn, "s1", secret_token="custom")
-        share = _get_share_by_id(db_conn, "s1")
+        insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        update_share(db_conn, "s1", secret_token="custom")
+        share = get_share_by_id(db_conn, "s1")
         assert share["secret_token"] == "custom"
 
     def test_update_regenerate_token(self, db_conn):
-        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
-        _update_share(db_conn, "s1", disable_token=False)
-        share = _get_share_by_id(db_conn, "s1")
+        insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        update_share(db_conn, "s1", disable_token=False)
+        share = get_share_by_id(db_conn, "s1")
         assert share["secret_token"] is not None and len(share["secret_token"]) > 10
 
     def test_update_allow_avoid_lists(self, db_conn):
-        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
-        _update_share(db_conn, "s1", allow_list=["*.txt"], avoid_list=["*.log"])
-        share = _get_share_by_id(db_conn, "s1")
+        insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        update_share(db_conn, "s1", allow_list=["*.txt"], avoid_list=["*.log"])
+        share = get_share_by_id(db_conn, "s1")
         assert share["allow_list"] == ["*.txt"]
         assert share["avoid_list"] == ["*.log"]
 
     def test_update_expiry_date(self, db_conn):
-        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
-        _update_share(db_conn, "s1", expiry_date="2025-06-30")
-        share = _get_share_by_id(db_conn, "s1")
+        insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        update_share(db_conn, "s1", expiry_date="2025-06-30")
+        share = get_share_by_id(db_conn, "s1")
         assert share["expiry_date"] == "2025-06-30"
 
     def test_update_legacy_fields(self, db_conn):
-        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
-        _update_share(db_conn, "s1", allowed_users=["alice"], paths=["/b"])
-        share = _get_share_by_id(db_conn, "s1")
+        insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        update_share(db_conn, "s1", allowed_users=["alice"], paths=["/b"])
+        share = get_share_by_id(db_conn, "s1")
         assert share["allowed_users"] == ["alice"]
         assert share["paths"] == ["/b"]
 
     def test_update_no_changes(self, db_conn):
-        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
-        assert _update_share(db_conn, "s1") is False
+        insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        assert update_share(db_conn, "s1") is False
 
 
 class TestGetShareById:
     def test_found(self, db_conn):
-        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
-        share = _get_share_by_id(db_conn, "s1")
+        insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        share = get_share_by_id(db_conn, "s1")
         assert share["id"] == "s1"
 
     def test_not_found(self, db_conn):
-        assert _get_share_by_id(db_conn, "nope") is None
+        assert get_share_by_id(db_conn, "nope") is None
 
     def test_exception(self):
         mock_conn = MagicMock()
         mock_conn.execute.side_effect = Exception("fail")
-        assert _get_share_by_id(mock_conn, "x") is None
+        assert get_share_by_id(mock_conn, "x") is None
 
 
 class TestGetAllSharesMain:
     def test_multiple(self, db_conn):
-        _insert_share(db_conn, "s1", "2024-01-01", ["/a"])
-        _insert_share(db_conn, "s2", "2024-01-02", ["/b"])
-        shares = _get_all_shares(db_conn)
+        insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        insert_share(db_conn, "s2", "2024-01-02", ["/b"])
+        shares = get_all_shares(db_conn)
         assert len(shares) == 2
         assert "s1" in shares
         assert "s2" in shares
 
     def test_empty(self, db_conn):
-        assert _get_all_shares(db_conn) == {}
+        assert get_all_shares(db_conn) == {}
 
     def test_exception(self):
         mock_conn = MagicMock()
         mock_conn.execute.side_effect = Exception("fail")
-        assert _get_all_shares(mock_conn) == {}
+        assert get_all_shares(mock_conn) == {}
 
 
 class TestGetSharesForPath:
     def test_matching(self, db_conn):
-        _insert_share(db_conn, "s1", "2024-01-01", ["/a.txt", "/b.txt"])
-        _insert_share(db_conn, "s2", "2024-01-02", ["/c.txt"])
-        result = _get_shares_for_path(db_conn, "/a.txt")
+        insert_share(db_conn, "s1", "2024-01-01", ["/a.txt", "/b.txt"])
+        insert_share(db_conn, "s2", "2024-01-02", ["/c.txt"])
+        result = get_shares_for_path(db_conn, "/a.txt")
         assert len(result) == 1
         assert result[0]["id"] == "s1"
 
     def test_no_match(self, db_conn):
-        _insert_share(db_conn, "s1", "2024-01-01", ["/a.txt"])
-        assert _get_shares_for_path(db_conn, "/nope.txt") == []
+        insert_share(db_conn, "s1", "2024-01-01", ["/a.txt"])
+        assert get_shares_for_path(db_conn, "/nope.txt") == []
 
     def test_exception(self):
         mock_conn = MagicMock()
         mock_conn.execute.side_effect = Exception("fail")
-        assert _get_shares_for_path(mock_conn, "/x") == []
+        assert get_shares_for_path(mock_conn, "/x") == []
 
 
 class TestUploadConfigMain:
     def test_load_empty(self, db_conn):
-        assert _load_upload_config(db_conn) == {}
+        assert load_upload_config(db_conn) == {}
 
     def test_save_and_load(self, db_conn):
-        _save_upload_config(db_conn, {"max_size": 512})
-        result = _load_upload_config(db_conn)
+        save_upload_config(db_conn, {"max_size": 512})
+        result = load_upload_config(db_conn)
         assert result == {"max_size": 512}
 
     def test_save_replaces(self, db_conn):
-        _save_upload_config(db_conn, {"max_size": 256})
-        _save_upload_config(db_conn, {"max_size": 1024})
-        assert _load_upload_config(db_conn) == {"max_size": 1024}
+        save_upload_config(db_conn, {"max_size": 256})
+        save_upload_config(db_conn, {"max_size": 1024})
+        assert load_upload_config(db_conn) == {"max_size": 1024}
 
 
 class TestLdapConfigMain:
     def test_create(self, db_conn):
-        config = _create_ldap_config(
+        config = create_ldap_config(
             db_conn, "Test", "ldap://a", "dc=a", "member", "uid={username}"
         )
         assert config["name"] == "Test"
         assert config["active"] is True
 
     def test_create_duplicate(self, db_conn):
-        _create_ldap_config(db_conn, "Test", "ldap://a", "dc=a", "member", "uid={u}")
+        create_ldap_config(db_conn, "Test", "ldap://a", "dc=a", "member", "uid={u}")
         with pytest.raises(ValueError):
-            _create_ldap_config(
+            create_ldap_config(
                 db_conn, "Test", "ldap://b", "dc=b", "member", "uid={u}"
             )
 
     def test_get_all(self, db_conn):
-        _create_ldap_config(db_conn, "C1", "ldap://a", "dc=a", "member", "uid={u}")
-        _create_ldap_config(db_conn, "C2", "ldap://b", "dc=b", "member", "uid={u}")
-        configs = _get_all_ldap_configs(db_conn)
+        create_ldap_config(db_conn, "C1", "ldap://a", "dc=a", "member", "uid={u}")
+        create_ldap_config(db_conn, "C2", "ldap://b", "dc=b", "member", "uid={u}")
+        configs = get_all_ldap_configs(db_conn)
         assert len(configs) == 2
 
     def test_get_by_id(self, db_conn):
-        config = _create_ldap_config(
+        config = create_ldap_config(
             db_conn, "Test", "ldap://a", "dc=a", "member", "uid={u}"
         )
-        result = _get_ldap_config_by_id(db_conn, config["id"])
+        result = get_ldap_config_by_id(db_conn, config["id"])
         assert result["name"] == "Test"
 
     def test_get_by_id_not_found(self, db_conn):
-        assert _get_ldap_config_by_id(db_conn, 99999) is None
+        assert get_ldap_config_by_id(db_conn, 99999) is None
 
     def test_update(self, db_conn):
-        config = _create_ldap_config(
+        config = create_ldap_config(
             db_conn, "Test", "ldap://a", "dc=a", "member", "uid={u}"
         )
-        ok = _update_ldap_config(db_conn, config["id"], server="ldap://new")
+        ok = update_ldap_config(db_conn, config["id"], server="ldap://new")
         assert ok is True
-        updated = _get_ldap_config_by_id(db_conn, config["id"])
+        updated = get_ldap_config_by_id(db_conn, config["id"])
         assert updated["server"] == "ldap://new"
 
     def test_update_active(self, db_conn):
-        config = _create_ldap_config(
+        config = create_ldap_config(
             db_conn, "Test", "ldap://a", "dc=a", "member", "uid={u}"
         )
-        _update_ldap_config(db_conn, config["id"], active=False)
-        updated = _get_ldap_config_by_id(db_conn, config["id"])
+        update_ldap_config(db_conn, config["id"], active=False)
+        updated = get_ldap_config_by_id(db_conn, config["id"])
         assert updated["active"] is False
 
     def test_update_no_fields(self, db_conn):
-        config = _create_ldap_config(
+        config = create_ldap_config(
             db_conn, "Test", "ldap://a", "dc=a", "member", "uid={u}"
         )
-        assert _update_ldap_config(db_conn, config["id"], bad_field="x") is False
+        assert update_ldap_config(db_conn, config["id"], bad_field="x") is False
 
     def test_delete(self, db_conn):
-        config = _create_ldap_config(
+        config = create_ldap_config(
             db_conn, "Test", "ldap://a", "dc=a", "member", "uid={u}"
         )
-        assert _delete_ldap_config(db_conn, config["id"]) is True
-        assert _get_ldap_config_by_id(db_conn, config["id"]) is None
+        assert delete_ldap_config(db_conn, config["id"]) is True
+        assert get_ldap_config_by_id(db_conn, config["id"]) is None
 
     def test_delete_not_found(self, db_conn):
-        assert _delete_ldap_config(db_conn, 99999) is False
+        assert delete_ldap_config(db_conn, 99999) is False
 
 
 class TestLdapSyncLogMain:
     def test_log_and_get(self, db_conn):
-        config = _create_ldap_config(
+        config = create_ldap_config(
             db_conn, "Test", "ldap://a", "dc=a", "member", "uid={u}"
         )
-        _log_ldap_sync(db_conn, config["id"], "manual", 10, 5, 2, "success")
-        logs = _get_ldap_sync_logs(db_conn)
+        log_ldap_sync(db_conn, config["id"], "manual", 10, 5, 2, "success")
+        logs = get_ldap_sync_logs(db_conn)
         assert len(logs) == 1
         assert logs[0]["users_found"] == 10
 
     def test_log_with_error(self, db_conn):
-        config = _create_ldap_config(
+        config = create_ldap_config(
             db_conn, "Test", "ldap://a", "dc=a", "member", "uid={u}"
         )
-        _log_ldap_sync(db_conn, config["id"], "auto", 0, 0, 0, "error", "bind failed")
-        logs = _get_ldap_sync_logs(db_conn)
+        log_ldap_sync(db_conn, config["id"], "auto", 0, 0, 0, "error", "bind failed")
+        logs = get_ldap_sync_logs(db_conn)
         assert logs[0]["error_message"] == "bind failed"
 
     def test_get_empty(self, db_conn):
-        assert _get_ldap_sync_logs(db_conn) == []
+        assert get_ldap_sync_logs(db_conn) == []
 
 
 class TestMakeApp:
@@ -752,27 +750,27 @@ class TestPrintBanner:
 
 class TestAuthenticateInactiveUser:
     def test_inactive_returns_none(self, db_conn):
-        _create_user(db_conn, "inactive", "pass123")
-        _update_user(db_conn, 1, active=False)
-        result = _authenticate_user(db_conn, "inactive", "pass123")
+        create_user(db_conn, "inactive", "pass123")
+        update_user(db_conn, 1, active=False)
+        result = authenticate_user(db_conn, "inactive", "pass123")
         assert result is None
 
 
 class TestAssignAdminEdgeCases:
     def test_skips_invalid_entries(self, db_conn):
-        _create_user(db_conn, "validuser", "pass")
-        _assign_admin_privileges(db_conn, [None, "", 123, "validuser"])
-        user = _get_user_by_username(db_conn, "validuser")
+        create_user(db_conn, "validuser", "pass")
+        assign_admin_privileges(db_conn, [None, "", 123, "validuser"])
+        user = get_user_by_username(db_conn, "validuser")
         assert user["role"] == "admin"
 
     def test_already_admin_no_change(self, db_conn):
-        _create_user(db_conn, "admin", "pass", role="admin")
-        _assign_admin_privileges(db_conn, ["admin"])
-        user = _get_user_by_username(db_conn, "admin")
+        create_user(db_conn, "admin", "pass", role="admin")
+        assign_admin_privileges(db_conn, ["admin"])
+        user = get_user_by_username(db_conn, "admin")
         assert user["role"] == "admin"
 
     def test_none_conn(self):
-        _assign_admin_privileges(None, ["user"])
+        assign_admin_privileges(None, ["user"])
 
     def test_none_admin_users(self, db_conn):
-        _assign_admin_privileges(db_conn, None)
+        assign_admin_privileges(db_conn, None)

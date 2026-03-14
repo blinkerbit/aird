@@ -18,21 +18,23 @@ class TestGetCurrentWebsocketConfig:
         expected_config = {"preview_max_connections": 50, "preview_idle_timeout": 120}
 
         with patch(
-            "aird.core.websocket_manager.get_db_conn", return_value=mock_conn
+            "aird.utils.util.DB_CONN", mock_conn
         ), patch(
-            "aird.core.websocket_manager.load_websocket_config",
+            "aird.utils.util.load_websocket_config",
             return_value=expected_config,
         ):
             result = get_current_websocket_config()
-            assert result == expected_config
+            assert result["preview_max_connections"] == 50
+            assert result["preview_idle_timeout"] == 120
 
     def test_returns_empty_dict_when_no_connection(self):
-        """Should return empty dict when no database connection"""
+        """Should return default config when no database connection"""
         from aird.core.websocket_manager import get_current_websocket_config
+        from aird.constants import WEBSOCKET_CONFIG
 
-        with patch("aird.core.websocket_manager.get_db_conn", return_value=None):
+        with patch("aird.utils.util.DB_CONN", None):
             result = get_current_websocket_config()
-            assert result == {}
+            assert result == WEBSOCKET_CONFIG.copy()
 
 
 class TestWebSocketConnectionManager:
@@ -94,7 +96,7 @@ class TestWebSocketConnectionManager:
     def test_max_connections_uses_config_value(self, manager):
         """Should return configured max_connections when available"""
         with patch(
-            "aird.core.websocket_manager.get_current_websocket_config",
+            "aird.utils.util.get_current_websocket_config",
             return_value={"test_max_connections": 50},
         ):
             assert manager.max_connections == 50
@@ -102,14 +104,14 @@ class TestWebSocketConnectionManager:
     def test_max_connections_uses_default_when_not_configured(self, manager):
         """Should return default max_connections when not in config"""
         with patch(
-            "aird.core.websocket_manager.get_current_websocket_config", return_value={}
+            "aird.utils.util.get_current_websocket_config", return_value={}
         ):
             assert manager.max_connections == 10  # default_max_connections
 
     def test_idle_timeout_uses_config_value(self, manager):
         """Should return configured idle_timeout when available"""
         with patch(
-            "aird.core.websocket_manager.get_current_websocket_config",
+            "aird.utils.util.get_current_websocket_config",
             return_value={"test_idle_timeout": 120},
         ):
             assert manager.idle_timeout == 120
@@ -117,7 +119,7 @@ class TestWebSocketConnectionManager:
     def test_idle_timeout_uses_default_when_not_configured(self, manager):
         """Should return default idle_timeout when not in config"""
         with patch(
-            "aird.core.websocket_manager.get_current_websocket_config", return_value={}
+            "aird.utils.util.get_current_websocket_config", return_value={}
         ):
             assert manager.idle_timeout == 60  # default_idle_timeout
 
@@ -125,7 +127,7 @@ class TestWebSocketConnectionManager:
     def test_add_connection_success(self, manager, mock_connection):
         """Should add connection and return True when under limit"""
         with patch(
-            "aird.core.websocket_manager.get_current_websocket_config",
+            "aird.utils.util.get_current_websocket_config",
             return_value={"test_max_connections": 10},
         ):
             result = manager.add_connection(mock_connection)
@@ -138,7 +140,7 @@ class TestWebSocketConnectionManager:
     def test_add_connection_fails_at_limit(self, manager, mock_connection):
         """Should return False when at connection limit"""
         with patch(
-            "aird.core.websocket_manager.get_current_websocket_config",
+            "aird.utils.util.get_current_websocket_config",
             return_value={"test_max_connections": 1},
         ):
             # Add first connection
@@ -154,7 +156,7 @@ class TestWebSocketConnectionManager:
     def test_add_connection_records_time(self, manager, mock_connection):
         """Should record connection time and activity time"""
         with patch(
-            "aird.core.websocket_manager.get_current_websocket_config",
+            "aird.utils.util.get_current_websocket_config",
             return_value={"test_max_connections": 10},
         ):
             before_time = time.time()
@@ -171,7 +173,7 @@ class TestWebSocketConnectionManager:
     def test_remove_connection_success(self, manager, mock_connection):
         """Should remove connection and clean up tracking"""
         with patch(
-            "aird.core.websocket_manager.get_current_websocket_config",
+            "aird.utils.util.get_current_websocket_config",
             return_value={"test_max_connections": 10},
         ):
             manager.add_connection(mock_connection)
@@ -189,7 +191,7 @@ class TestWebSocketConnectionManager:
     def test_update_activity(self, manager, mock_connection):
         """Should update last activity time"""
         with patch(
-            "aird.core.websocket_manager.get_current_websocket_config",
+            "aird.utils.util.get_current_websocket_config",
             return_value={"test_max_connections": 10},
         ):
             manager.add_connection(mock_connection)
@@ -281,7 +283,7 @@ class TestWebSocketConnectionManager:
     def test_get_stats_empty(self, manager):
         """Should return correct stats when no connections"""
         with patch(
-            "aird.core.websocket_manager.get_current_websocket_config",
+            "aird.utils.util.get_current_websocket_config",
             return_value={"test_max_connections": 10, "test_idle_timeout": 60},
         ):
             stats = manager.get_stats()
@@ -295,7 +297,7 @@ class TestWebSocketConnectionManager:
     def test_get_stats_with_connections(self, manager, mock_connection):
         """Should return correct stats with active connections"""
         with patch(
-            "aird.core.websocket_manager.get_current_websocket_config",
+            "aird.utils.util.get_current_websocket_config",
             return_value={"test_max_connections": 10, "test_idle_timeout": 60},
         ):
             manager.add_connection(mock_connection)
@@ -311,7 +313,7 @@ class TestWebSocketConnectionManager:
     def test_get_stats_multiple_connections(self, manager):
         """Should calculate correct average for multiple connections"""
         with patch(
-            "aird.core.websocket_manager.get_current_websocket_config",
+            "aird.utils.util.get_current_websocket_config",
             return_value={"test_max_connections": 10, "test_idle_timeout": 60},
         ):
             conn1 = MagicMock()
@@ -332,7 +334,7 @@ class TestWebSocketConnectionManager:
     def test_broadcast_message_to_all(self, manager):
         """Should broadcast message to all connections"""
         with patch(
-            "aird.core.websocket_manager.get_current_websocket_config",
+            "aird.utils.util.get_current_websocket_config",
             return_value={"test_max_connections": 10},
         ):
             conn1 = MagicMock()
@@ -351,7 +353,7 @@ class TestWebSocketConnectionManager:
     def test_broadcast_message_with_filter(self, manager):
         """Should only broadcast to connections matching filter"""
         with patch(
-            "aird.core.websocket_manager.get_current_websocket_config",
+            "aird.utils.util.get_current_websocket_config",
             return_value={"test_max_connections": 10},
         ):
             conn1 = MagicMock()
@@ -393,7 +395,7 @@ class TestWebSocketConnectionManager:
     def test_broadcast_message_updates_activity(self, manager, mock_connection):
         """Should update activity time for successful broadcasts"""
         with patch(
-            "aird.core.websocket_manager.get_current_websocket_config",
+            "aird.utils.util.get_current_websocket_config",
             return_value={"test_max_connections": 10},
         ):
             manager.add_connection(mock_connection)
@@ -416,7 +418,7 @@ class TestWebSocketConnectionManager:
         import threading
 
         with patch(
-            "aird.core.websocket_manager.get_current_websocket_config",
+            "aird.utils.util.get_current_websocket_config",
             return_value={"test_max_connections": 100},
         ):
             connections = []

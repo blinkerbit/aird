@@ -97,12 +97,10 @@ class P2PTransferHandler(BaseHandler):
     """Handler for the P2P transfer page."""
 
     def get(self):
-        # Check if P2P transfer feature is enabled
-        if not is_feature_enabled("p2p_transfer", True):
-            self.set_status(403)
-            self.write(
-                "Feature disabled: P2P Transfer is currently disabled by administrator"
-            )
+        if not self.require_feature(
+            "p2p_transfer", True,
+            body="Feature disabled: P2P Transfer is currently disabled by administrator",
+        ):
             return
 
         room_id = self.get_argument("room", None)

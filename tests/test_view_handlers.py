@@ -103,7 +103,7 @@ class TestMainHandler:
         ), patch("os.path.isdir", return_value=False), patch(
             "os.path.isfile", return_value=True
         ), patch(
-            "aird.handlers.view_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch(
             "mimetypes.guess_type", return_value=("text/plain", None)
         ), patch(
@@ -144,7 +144,7 @@ class TestMainHandler:
         ), patch("os.path.isdir", return_value=False), patch(
             "os.path.isfile", return_value=True
         ), patch(
-            "aird.handlers.view_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch(
             "mimetypes.guess_type", return_value=("image/png", None)
         ), patch(
@@ -177,7 +177,7 @@ class TestMainHandler:
         ), patch("os.path.isdir", return_value=False), patch(
             "os.path.isfile", return_value=True
         ), patch(
-            "aird.handlers.view_handlers.is_feature_enabled", return_value=False
+            "aird.handlers.base_handler.is_feature_enabled", return_value=False
         ), patch.object(
             handler, "set_status"
         ) as mock_status, patch.object(
@@ -319,7 +319,7 @@ class TestEditViewHandler:
         handler._current_user = {"username": "user"}
 
         with patch(
-            "aird.handlers.view_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", return_value="/root/test.txt"), patch(
             "aird.handlers.view_handlers.is_within_root", return_value=True
         ), patch(
@@ -348,7 +348,7 @@ class TestEditViewHandler:
         handler._current_user = {"username": "user"}
 
         with patch(
-            "aird.handlers.view_handlers.is_feature_enabled", return_value=False
+            "aird.handlers.base_handler.is_feature_enabled", return_value=False
         ), patch.object(handler, "set_status") as mock_status, patch.object(
             handler, "write"
         ) as mock_write:
@@ -365,7 +365,7 @@ class TestEditViewHandler:
         handler._current_user = {"username": "user"}
 
         with patch(
-            "aird.handlers.view_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", return_value="/root/large.txt"), patch(
             "aird.handlers.view_handlers.is_within_root", return_value=True
         ), patch(
@@ -390,7 +390,7 @@ class TestEditViewHandler:
         handler._current_user = {"username": "user"}
 
         with patch(
-            "aird.handlers.view_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", return_value="/outside/file.txt"), patch(
             "aird.handlers.view_handlers.is_within_root", return_value=False
         ), patch.object(
@@ -411,7 +411,7 @@ class TestEditViewHandler:
         handler._current_user = {"username": "user"}
 
         with patch(
-            "aird.handlers.view_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", return_value="/root/missing.txt"), patch(
             "aird.handlers.view_handlers.is_within_root", return_value=True
         ), patch(
@@ -434,7 +434,7 @@ class TestEditViewHandler:
         handler._current_user = {"username": "user"}
 
         with patch(
-            "aird.handlers.view_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", return_value="/root/file.txt"), patch(
             "aird.handlers.view_handlers.is_within_root", return_value=True
         ), patch(
@@ -460,7 +460,7 @@ class TestEditViewHandler:
         handler._current_user = {"username": "user"}
 
         with patch(
-            "aird.handlers.view_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", return_value="/root/large.txt"), patch(
             "aird.handlers.view_handlers.is_within_root", return_value=True
         ), patch(
@@ -493,7 +493,7 @@ class TestEditViewHandler:
         handler._current_user = {"username": "user"}
 
         with patch(
-            "aird.handlers.view_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", return_value="/root/file.txt"), patch(
             "aird.handlers.view_handlers.is_within_root", return_value=True
         ), patch(

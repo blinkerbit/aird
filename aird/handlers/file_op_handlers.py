@@ -264,10 +264,7 @@ class UploadHandler(BaseHandler):
 
     @tornado.web.authenticated
     async def post(self):
-        # If uploads disabled, return now
-        if not is_feature_enabled("file_upload", True):
-            self.set_status(403)
-            self.write(FILE_UPLOAD_DISABLED_ADMIN)
+        if not self.require_feature("file_upload", True, body=FILE_UPLOAD_DISABLED_ADMIN):
             return
 
         # If we rejected in prepare (bad/missing headers), report
@@ -342,9 +339,7 @@ class UploadHandler(BaseHandler):
 class CreateFolderHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self):
-        if not is_feature_enabled("folder_create", True):
-            self.set_status(403)
-            self.write(FOLDER_CREATE_DISABLED)
+        if not self.require_feature("folder_create", True, body=FOLDER_CREATE_DISABLED):
             return
         parent = self.get_argument("parent", "").strip().strip("/")
         name = self.get_argument("name", "").strip()
@@ -416,9 +411,7 @@ class DeleteHandler(BaseHandler):
             self.write(ACCESS_DENIED)
             return
         if os.path.isdir(abspath):
-            if not is_feature_enabled("folder_delete", True):
-                self.set_status(403)
-                self.write(FOLDER_DELETE_DISABLED)
+            if not self.require_feature("folder_delete", True, body=FOLDER_DELETE_DISABLED):
                 return
             recursive = self.get_argument("recursive", "0") == "1"
             if not recursive and os.listdir(abspath):
@@ -434,9 +427,7 @@ class DeleteHandler(BaseHandler):
                 ip=self.request.remote_ip,
             )
         elif os.path.isfile(abspath):
-            if not is_feature_enabled("file_delete", True):
-                self.set_status(403)
-                self.write(FILE_DELETE_DISABLED)
+            if not self.require_feature("file_delete", True, body=FILE_DELETE_DISABLED):
                 return
             os.remove(abspath)
             log_audit(
@@ -461,9 +452,7 @@ class DeleteHandler(BaseHandler):
 class RenameHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self):
-        if not is_feature_enabled("file_rename", True):
-            self.set_status(403)
-            self.write(FILE_RENAME_DISABLED)
+        if not self.require_feature("file_rename", True, body=FILE_RENAME_DISABLED):
             return
 
         path = self.get_argument("path", "").strip()
@@ -526,9 +515,7 @@ class RenameHandler(BaseHandler):
 class CopyHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self):
-        if not is_feature_enabled("file_rename", True):
-            self.set_status(403)
-            self.write(COPY_DISABLED)
+        if not self.require_feature("file_rename", True, body=COPY_DISABLED):
             return
         path = self.get_argument("path", "").strip()
         dest = self.get_argument("dest", "").strip()
@@ -583,9 +570,7 @@ class CopyHandler(BaseHandler):
 class MoveHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self):
-        if not is_feature_enabled("file_rename", True):
-            self.set_status(403)
-            self.write(MOVE_DISABLED)
+        if not self.require_feature("file_rename", True, body=MOVE_DISABLED):
             return
         path = self.get_argument("path", "").strip()
         dest = self.get_argument("dest", "").strip()
@@ -693,9 +678,7 @@ class BulkHandler(BaseHandler):
 class EditHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self):
-        if not is_feature_enabled("file_edit", True):
-            self.set_status(403)
-            self.write(FILE_EDIT_DISABLED)
+        if not self.require_feature("file_edit", True, body=FILE_EDIT_DISABLED):
             return
 
         # Accept both JSON and form-encoded bodies

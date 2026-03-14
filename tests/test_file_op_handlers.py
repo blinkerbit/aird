@@ -53,7 +53,7 @@ class TestUploadHandler:
         self._setup_handler_for_post(handler)
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.realpath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -77,7 +77,7 @@ class TestUploadHandler:
         self._setup_handler_for_post(handler)
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=False
+            "aird.handlers.base_handler.is_feature_enabled", return_value=False
         ), patch.object(handler, "set_status") as mock_set_status, patch.object(
             handler, "write"
         ) as mock_write:
@@ -101,7 +101,7 @@ class TestUploadHandler:
         handler._aiofile = None
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch.object(handler, "set_status") as mock_set_status, patch.object(
             handler, "write"
         ) as mock_write:
@@ -118,7 +118,7 @@ class TestUploadHandler:
         handler._too_large = True
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch.object(handler, "set_status") as mock_set_status, patch.object(
             handler, "write"
         ) as mock_write:
@@ -134,7 +134,7 @@ class TestUploadHandler:
         self._setup_handler_for_post(handler, upload_dir="../../../etc")
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.realpath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=False
         ), patch.object(
@@ -154,7 +154,7 @@ class TestUploadHandler:
         self._setup_handler_for_post(handler, filename=".")
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.realpath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -176,7 +176,7 @@ class TestUploadHandler:
         self._setup_handler_for_post(handler, filename="..")
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.realpath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -198,7 +198,7 @@ class TestUploadHandler:
         self._setup_handler_for_post(handler, filename="malware.exe")
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.realpath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -221,7 +221,7 @@ class TestUploadHandler:
         self._setup_handler_for_post(handler, filename=long_filename)
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.realpath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -246,7 +246,7 @@ class TestUploadHandler:
         is_within_root_calls = [True, False]
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.realpath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root",
             side_effect=is_within_root_calls,
@@ -269,7 +269,7 @@ class TestUploadHandler:
         self._setup_handler_for_post(handler)
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.realpath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -302,7 +302,7 @@ class TestUploadHandler:
         handler._writer_task = asyncio.create_task(dummy_task())
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.realpath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -477,7 +477,7 @@ class TestUploadHandlerDynamicMaxSize:
         handler._too_large = True
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch(
             "aird.handlers.file_op_handlers.constants_module"
         ) as mock_constants, patch.object(
@@ -504,7 +504,7 @@ class TestUploadHandlerDynamicMaxSize:
         handler._too_large = True
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch(
             "aird.handlers.file_op_handlers.constants_module"
         ) as mock_constants, patch.object(
@@ -530,7 +530,7 @@ class TestUploadHandlerDynamicMaxSize:
         handler._too_large = True
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch(
             "aird.handlers.file_op_handlers.constants_module"
         ) as mock_constants, patch.object(
@@ -560,7 +560,7 @@ class TestDeleteHandler:
         handler.get_argument = MagicMock(return_value="test.txt")
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", return_value="/root/test.txt"), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -580,7 +580,7 @@ class TestDeleteHandler:
         authenticate(handler, role="user")
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=False
+            "aird.handlers.base_handler.is_feature_enabled", return_value=False
         ), patch.object(handler, "set_status") as mock_set_status, patch.object(
             handler, "write"
         ) as mock_write:
@@ -595,7 +595,7 @@ class TestDeleteHandler:
         handler.get_argument = MagicMock(return_value="../../../etc/passwd")
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", return_value="/etc/passwd"), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=False
         ), patch.object(
@@ -614,7 +614,7 @@ class TestDeleteHandler:
         handler.get_argument = MagicMock(return_value="subdir")
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", return_value="/root/subdir"), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -639,7 +639,7 @@ class TestDeleteHandler:
         handler.get_argument = MagicMock(return_value="subdir/file.txt")
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", return_value="/root/subdir/file.txt"), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -672,7 +672,7 @@ class TestRenameHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -692,7 +692,7 @@ class TestRenameHandler:
         authenticate(handler, role="user")
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=False
+            "aird.handlers.base_handler.is_feature_enabled", return_value=False
         ), patch.object(handler, "set_status") as mock_set_status, patch.object(
             handler, "write"
         ) as mock_write:
@@ -709,7 +709,7 @@ class TestRenameHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch.object(handler, "set_status") as mock_set_status, patch.object(
             handler, "write"
         ) as mock_write:
@@ -726,7 +726,7 @@ class TestRenameHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch.object(handler, "set_status") as mock_set_status, patch.object(
             handler, "write"
         ) as mock_write:
@@ -743,7 +743,7 @@ class TestRenameHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch.object(handler, "set_status") as mock_set_status, patch.object(
             handler, "write"
         ) as mock_write:
@@ -762,7 +762,7 @@ class TestRenameHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch.object(handler, "set_status") as mock_set_status, patch.object(
             handler, "write"
         ) as mock_write:
@@ -782,7 +782,7 @@ class TestRenameHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch.object(handler, "set_status") as mock_set_status, patch.object(
             handler, "write"
         ) as mock_write:
@@ -802,7 +802,7 @@ class TestRenameHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch.object(handler, "set_status") as mock_set_status, patch.object(
             handler, "write"
         ) as mock_write:
@@ -823,7 +823,7 @@ class TestRenameHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch.object(handler, "set_status") as mock_set_status, patch.object(
             handler, "write"
         ) as mock_write:
@@ -843,7 +843,7 @@ class TestRenameHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=False
         ), patch.object(
@@ -867,7 +867,7 @@ class TestRenameHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -893,7 +893,7 @@ class TestRenameHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -936,7 +936,7 @@ class TestEditHandler:
         mock_path.resolve.return_value = mock_resolved_path
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("pathlib.Path.absolute", return_value=mock_path), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -976,7 +976,7 @@ class TestEditHandler:
 
         # Simulate access denied by returning False from is_within_root
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("pathlib.Path.absolute", return_value=mock_path), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=False
         ), patch.object(
@@ -995,7 +995,7 @@ class TestEditHandler:
         authenticate(handler, role="user")
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=False
+            "aird.handlers.base_handler.is_feature_enabled", return_value=False
         ), patch.object(handler, "set_status") as mock_set_status, patch.object(
             handler, "write"
         ) as mock_write:
@@ -1011,7 +1011,7 @@ class TestEditHandler:
         handler.request.body = b'{"invalid json'
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch.object(handler, "set_status") as mock_set_status, patch.object(
             handler, "write"
         ) as mock_write:
@@ -1037,7 +1037,7 @@ class TestEditHandler:
         mock_path.resolve.return_value = mock_resolved_path
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("pathlib.Path.absolute", return_value=mock_path), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -1069,7 +1069,7 @@ class TestEditHandler:
         mock_path.resolve.return_value = mock_resolved_path
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("pathlib.Path.absolute", return_value=mock_path), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -1106,7 +1106,7 @@ class TestEditHandler:
         mock_path.resolve.return_value = mock_resolved_path
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("pathlib.Path.absolute", return_value=mock_path), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -1387,7 +1387,7 @@ class TestCreateFolderHandler:
         handler.request.headers = {}
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -1406,7 +1406,7 @@ class TestCreateFolderHandler:
         authenticate(handler, role="user")
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=False
+            "aird.handlers.base_handler.is_feature_enabled", return_value=False
         ), patch.object(handler, "set_status") as mock_status:
             handler.post()
             mock_status.assert_called_with(403)
@@ -1419,7 +1419,7 @@ class TestCreateFolderHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch.object(handler, "set_status") as mock_status:
             handler.post()
             mock_status.assert_called_with(400)
@@ -1432,7 +1432,7 @@ class TestCreateFolderHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch.object(handler, "set_status") as mock_status:
             handler.post()
             mock_status.assert_called_with(400)
@@ -1445,7 +1445,7 @@ class TestCreateFolderHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch.object(handler, "set_status") as mock_status:
             handler.post()
             mock_status.assert_called_with(400)
@@ -1458,7 +1458,7 @@ class TestCreateFolderHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch.object(handler, "set_status") as mock_status:
             handler.post()
             mock_status.assert_called_with(400)
@@ -1471,7 +1471,7 @@ class TestCreateFolderHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=False
         ), patch.object(
@@ -1488,7 +1488,7 @@ class TestCreateFolderHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -1507,7 +1507,7 @@ class TestCreateFolderHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -1529,7 +1529,7 @@ class TestCreateFolderHandler:
         handler.request.headers = {"Accept": "application/json"}
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -1553,7 +1553,7 @@ class TestCreateFolderHandler:
         handler.request.headers = {"Accept": "application/json"}
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -1583,7 +1583,7 @@ class TestCopyHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -1606,7 +1606,7 @@ class TestCopyHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -1626,7 +1626,7 @@ class TestCopyHandler:
         authenticate(handler, role="user")
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=False
+            "aird.handlers.base_handler.is_feature_enabled", return_value=False
         ), patch.object(handler, "set_status") as mock_status:
             handler.post()
             mock_status.assert_called_with(403)
@@ -1639,7 +1639,7 @@ class TestCopyHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch.object(handler, "set_status") as mock_status:
             handler.post()
             mock_status.assert_called_with(400)
@@ -1652,7 +1652,7 @@ class TestCopyHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -1671,7 +1671,7 @@ class TestCopyHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -1690,7 +1690,7 @@ class TestCopyHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -1714,7 +1714,7 @@ class TestCopyHandler:
         handler.request.headers = {"Accept": "application/json"}
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -1737,7 +1737,7 @@ class TestCopyHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=False
         ), patch.object(
@@ -1762,7 +1762,7 @@ class TestMoveHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -1780,7 +1780,7 @@ class TestMoveHandler:
         authenticate(handler, role="user")
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=False
+            "aird.handlers.base_handler.is_feature_enabled", return_value=False
         ), patch.object(handler, "set_status") as mock_status:
             handler.post()
             mock_status.assert_called_with(403)
@@ -1793,7 +1793,7 @@ class TestMoveHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch.object(handler, "set_status") as mock_status:
             handler.post()
             mock_status.assert_called_with(400)
@@ -1806,7 +1806,7 @@ class TestMoveHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=False
         ), patch.object(
@@ -1823,7 +1823,7 @@ class TestMoveHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -1842,7 +1842,7 @@ class TestMoveHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -1861,7 +1861,7 @@ class TestMoveHandler:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -1883,7 +1883,7 @@ class TestMoveHandler:
         handler.request.headers = {"Accept": "application/json"}
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -1945,7 +1945,7 @@ class TestBulkHandler:
         ), patch(
             "os.path.isdir", return_value=False
         ), patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch(
             "os.remove"
         ), patch.object(
@@ -2034,6 +2034,8 @@ class TestBulkHandler:
         ), patch(
             "os.path.isdir", return_value=True
         ), patch(
+            "aird.handlers.base_handler.is_feature_enabled", return_value=False
+        ), patch(
             "aird.handlers.file_op_handlers.is_feature_enabled", return_value=False
         ), patch.object(
             handler, "write"
@@ -2103,7 +2105,7 @@ class TestDeleteHandlerAdditional:
             return True
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled",
+            "aird.handlers.base_handler.is_feature_enabled",
             side_effect=is_enabled_side_effect,
         ), patch("os.path.abspath", return_value="/root/mydir"), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
@@ -2126,7 +2128,7 @@ class TestDeleteHandlerAdditional:
             return True
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled",
+            "aird.handlers.base_handler.is_feature_enabled",
             side_effect=is_enabled_side_effect,
         ), patch("os.path.abspath", return_value="/root/file.txt"), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
@@ -2150,7 +2152,7 @@ class TestDeleteHandlerAdditional:
         )
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", return_value="/root/mydir"), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -2171,7 +2173,7 @@ class TestDeleteHandlerAdditional:
         handler.get_argument = MagicMock(return_value="ghost.txt")
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", return_value="/root/ghost.txt"), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -2191,7 +2193,7 @@ class TestDeleteHandlerAdditional:
         handler.request.headers = {"Accept": "application/json"}
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", return_value="/root/file.txt"), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
@@ -2216,7 +2218,7 @@ class TestDeleteHandlerAdditional:
         handler.request.headers = {"Accept": "application/json"}
 
         with patch(
-            "aird.handlers.file_op_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(

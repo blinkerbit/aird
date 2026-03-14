@@ -24,7 +24,6 @@ from aird.utils.util import (
     cleanup_share_cloud_dir_if_empty,
     remove_share_cloud_dir,
     download_cloud_items,
-    is_feature_enabled,
 )
 from aird.core.security import (
     is_within_root,
@@ -448,14 +447,11 @@ def _compute_share_update_fields(
 class ShareFilesHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
-        if not is_feature_enabled("file_share", True):
-            self.set_status(403)
-            self.write(
-                "Feature disabled: File sharing is currently disabled by administrator"
-            )
+        if not self.require_feature(
+            "file_share", True,
+            body="Feature disabled: File sharing is currently disabled by administrator",
+        ):
             return
-        # Just render the template - files will be loaded on-the-fly via JavaScript
-        # Pass empty dict since shares are fetched via API
         self.render("share.html", shares={})
 
 
@@ -464,12 +460,10 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
     @tornado.web.authenticated
     @require_db
     def post(self):
-        if not is_feature_enabled("file_share", True):
-            self.set_status(403)
-            self.write({"error": FS_DISABLED_MSG})
+        if not self.require_feature("file_share", True, body={"error": FS_DISABLED_MSG}):
             return
         try:
-            data = json.loads(self.request.body or b"{}")
+            data = self.parse_json_body()
             paths = data.get("paths", [])
             allowed_users = data.get("allowed_users", [])
             share_type = data.get("share_type", "static")
@@ -539,9 +533,7 @@ class ShareRevokeHandler(BaseHandler):
     @tornado.web.authenticated
     @require_db
     def post(self):
-        if not is_feature_enabled("file_share", True):
-            self.set_status(403)
-            self.write({"error": FS_DISABLED_MSG})
+        if not self.require_feature("file_share", True, body={"error": FS_DISABLED_MSG}):
             return
         sid = self.get_argument("id", "")
 
@@ -576,15 +568,13 @@ class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
     @require_db
     def post(self):
         """Update share access list"""
-        if not is_feature_enabled("file_share", True):
-            self.set_status(403)
-            self.write({"error": FS_DISABLED_MSG})
+        if not self.require_feature("file_share", True, body={"error": FS_DISABLED_MSG}):
             return
 
         share_id = None
         new_cloud_paths: list[str] = []
         try:
-            data = json.loads(self.request.body or b"{}")
+            data = self.parse_json_body()
             share_id, share_data, err_status, err_body = _validate_share_update_request(
                 self.db_conn, data
             )
@@ -667,7 +657,7 @@ class TokenVerificationHandler(BaseHandler):
             return
 
         try:
-            data = json.loads(self.request.body or b"{}")
+            data = self.parse_json_body()
             provided_token = data.get("token", "").strip()
             stored_token = share.get("secret_token")
 

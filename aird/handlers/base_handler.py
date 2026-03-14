@@ -8,6 +8,7 @@ import tornado.websocket
 
 import aird.config as config_module
 from aird.db import get_user_by_username
+from aird.utils.util import is_feature_enabled
 
 # ---------------------------------------------------------------------------
 # Decorators for common guard patterns
@@ -251,6 +252,33 @@ class BaseHandler(tornado.web.RequestHandler):
     @property
     def network_share_manager(self):
         return self.settings.get("network_share_manager")
+
+    def require_feature(self, feature_key: str, default=True, *, status=403, body=None) -> bool:
+        """Check feature flag. If disabled, set status, write body, and return False. Else return True."""
+        if is_feature_enabled(feature_key, default):
+            return True
+        self.set_status(status)
+        self.write(body if body is not None else "Feature disabled.")
+        return False
+
+    def session_cookie_opts(self, expires_days=1) -> dict:
+        """Return common kwargs for secure session cookies (httponly, secure, samesite, expires_days)."""
+        return {
+            "httponly": True,
+            "secure": self.request.protocol == "https",
+            "samesite": "Strict",
+            "expires_days": expires_days,
+        }
+
+    def parse_json_body(self, default=None):
+        """Parse request body as JSON. Returns default if body is empty or invalid."""
+        if default is None:
+            default = {}
+        raw = self.request.body or b"{}"
+        try:
+            return json.loads(raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw)
+        except Exception:
+            return default
 
     def prepare(self):
         """Generate a unique nonce for this request for CSP."""

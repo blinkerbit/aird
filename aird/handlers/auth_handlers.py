@@ -82,12 +82,7 @@ def _ldap_sync_user(db_conn, username, password, admin_users):
 
 def _set_login_cookies(handler, username, user_role, redirect_url):
     """Set secure cookies and redirect."""
-    opts = {
-        "httponly": True,
-        "secure": handler.request.protocol == "https",
-        "samesite": "Strict",
-        "expires_days": 1,
-    }
+    opts = handler.session_cookie_opts()
     handler.set_secure_cookie("user", username, **opts)
     handler.set_secure_cookie("user_role", user_role, **opts)
     log_audit(handler.db_conn, "login", username=username, ip=handler.request.remote_ip)
@@ -124,12 +119,7 @@ def _try_username_password_login(handler, username, password, next_url):
             )
             return True
         log_audit(db_conn, "login", username=username, ip=handler.request.remote_ip)
-        opts = {
-            "httponly": True,
-            "secure": handler.request.protocol == "https",
-            "samesite": "Strict",
-            "expires_days": 1,
-        }
+        opts = handler.session_cookie_opts()
         handler.set_secure_cookie("user", username, **opts)
         handler.set_secure_cookie("user_role", user["role"], **opts)
         handler.redirect(next_url)
@@ -178,12 +168,7 @@ def _try_token_login(handler, token, next_url):
             username="token_authenticated",
             ip=handler.request.remote_ip,
         )
-        opts = {
-            "httponly": True,
-            "secure": handler.request.protocol == "https",
-            "samesite": "Strict",
-            "expires_days": 1,
-        }
+        opts = handler.session_cookie_opts()
         handler.set_secure_cookie("user", "token_authenticated", **opts)
         handler.set_secure_cookie("user_role", "admin", **opts)
         handler.redirect(next_url)
@@ -203,15 +188,6 @@ def _try_token_login(handler, token, next_url):
 # ---------------------------------------------------------------------------
 
 
-def _admin_cookie_opts(handler):
-    return {
-        "httponly": True,
-        "secure": handler.request.protocol == "https",
-        "samesite": "Strict",
-        "expires_days": 1,
-    }
-
-
 def _try_admin_username_password_login(handler, username, password):
     """Attempt admin username/password login. Return True if response sent."""
     db_conn = handler.db_conn
@@ -226,7 +202,7 @@ def _try_admin_username_password_login(handler, username, password):
             log_audit(
                 db_conn, "admin_login", username=username, ip=handler.request.remote_ip
             )
-            opts = _admin_cookie_opts(handler)
+            opts = handler.session_cookie_opts()
             handler.set_secure_cookie("user", username, **opts)
             handler.set_secure_cookie("user_role", user["role"], **opts)
             handler.set_secure_cookie("admin", "authenticated", **opts)
@@ -271,7 +247,7 @@ def _try_admin_token_login(handler, token):
             username="admin_token",
             ip=handler.request.remote_ip,
         )
-        opts = _admin_cookie_opts(handler)
+        opts = handler.session_cookie_opts()
         handler.set_secure_cookie("admin", "authenticated", **opts)
         handler.redirect(ADMIN_URL)
         return True

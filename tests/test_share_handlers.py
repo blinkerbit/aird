@@ -27,7 +27,7 @@ class TestShareFilesHandler:
         authenticate(handler, role="user")
 
         with patch(
-            "aird.handlers.share_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch.object(handler, "render") as mock_render:
 
             handler.get()
@@ -39,7 +39,7 @@ class TestShareFilesHandler:
         handler.set_status = MagicMock()
 
         with patch(
-            "aird.handlers.share_handlers.is_feature_enabled", return_value=False
+            "aird.handlers.base_handler.is_feature_enabled", return_value=False
         ), patch.object(handler, "write") as mock_write:
 
             handler.get()
@@ -72,7 +72,7 @@ class TestShareCreateHandler:
         handler = self._build_handler({"paths": ["test.txt"]})
 
         with patch(
-            "aird.handlers.share_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", return_value="/root/test.txt"), patch(
             "aird.handlers.share_handlers.is_within_root", return_value=True
         ), patch(
@@ -93,7 +93,7 @@ class TestShareCreateHandler:
         handler = self._build_handler({"paths": ["test.txt"]})
 
         with patch(
-            "aird.handlers.share_handlers.is_feature_enabled", return_value=False
+            "aird.handlers.base_handler.is_feature_enabled", return_value=False
         ), patch.object(handler, "write") as mock_write:
             handler.post()
             handler.set_status.assert_called_with(403)
@@ -103,7 +103,7 @@ class TestShareCreateHandler:
         handler = self._build_handler({"paths": ["missing.txt"]})
 
         with patch(
-            "aird.handlers.share_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", return_value="/root/missing.txt"), patch(
             "aird.handlers.share_handlers.is_within_root", return_value=True
         ), patch(
@@ -127,7 +127,7 @@ class TestShareCreateHandler:
         handler = self._build_handler({"paths": [], "share_type": "dynamic"})
 
         with patch(
-            "aird.handlers.share_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch(
             "aird.handlers.share_handlers.remove_share_cloud_dir"
         ) as mock_remove, patch.object(
@@ -147,7 +147,7 @@ class TestShareCreateHandler:
         )
 
         with patch(
-            "aird.handlers.share_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch(
             "aird.handlers.share_handlers.download_cloud_items",
             side_effect=CloudProviderError("boom"),
@@ -167,7 +167,7 @@ class TestShareCreateHandler:
         self.mock_app.settings["db_conn"] = None
 
         with patch(
-            "aird.handlers.share_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch("os.path.abspath", return_value="/root/file.txt"), patch(
             "aird.handlers.share_handlers.is_within_root", return_value=True
         ), patch(
@@ -198,7 +198,7 @@ class TestShareRevokeHandler:
         handler.get_argument = MagicMock(return_value="share1")
 
         with patch(
-            "aird.handlers.share_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch(
             "aird.handlers.share_handlers.delete_share"
         ) as mock_delete, patch(
@@ -218,7 +218,7 @@ class TestShareRevokeHandler:
         handler.request.headers = {"Accept": "application/json"}
 
         with patch(
-            "aird.handlers.share_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch(
             "aird.handlers.share_handlers.delete_share"
         ), patch(
@@ -252,7 +252,7 @@ class TestShareUpdateHandler:
         handler = self._build_handler({})
 
         with patch(
-            "aird.handlers.share_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch.object(handler, "write") as mock_write:
 
             handler.post()
@@ -263,7 +263,7 @@ class TestShareUpdateHandler:
         handler = self._build_handler({"share_id": "missing"})
 
         with patch(
-            "aird.handlers.share_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch(
             "aird.handlers.share_handlers.get_share_by_id", return_value=None
         ), patch.object(
@@ -278,7 +278,7 @@ class TestShareUpdateHandler:
         handler = self._build_handler({"share_id": "share1"})
 
         with patch(
-            "aird.handlers.share_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(None, modules=["aird.handlers.share_handlers"]), patch.object(
             handler, "write"
         ) as mock_write:
@@ -298,7 +298,7 @@ class TestShareUpdateHandler:
         handler = self._build_handler(body)
 
         with patch(
-            "aird.handlers.share_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch(
             "aird.handlers.share_handlers.get_share_by_id",
             return_value={"paths": [], "share_type": "static"},
@@ -323,7 +323,7 @@ class TestShareUpdateHandler:
 
         share_data = {"paths": [], "share_type": "static", "secret_token": None}
         with patch(
-            "aird.handlers.share_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch(
             "aird.handlers.share_handlers.get_share_by_id",
             side_effect=[share_data, {"secret_token": "newtoken"}],

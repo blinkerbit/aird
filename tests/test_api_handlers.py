@@ -105,7 +105,7 @@ class TestSuperSearchHandler:
     def test_get_renders_when_enabled(self):
         handler = make_request_handler(SuperSearchHandler)
         handler.get_argument = MagicMock(return_value="//nested//")
-        with patch("aird.handlers.api_handlers.is_feature_enabled", return_value=True):
+        with patch("aird.handlers.base_handler.is_feature_enabled", return_value=True):
             handler.get()
             handler.render.assert_called()
             assert handler.render.call_args[1]["current_path"] == "nested"
@@ -113,7 +113,7 @@ class TestSuperSearchHandler:
     def test_get_feature_disabled(self):
         handler = make_request_handler(SuperSearchHandler)
         handler.set_status = MagicMock()
-        with patch("aird.handlers.api_handlers.is_feature_enabled", return_value=False):
+        with patch("aird.handlers.base_handler.is_feature_enabled", return_value=False):
             handler.get()
             handler.set_status.assert_called_with(403)
             handler.write.assert_called_with(
@@ -202,7 +202,7 @@ class TestShareDetailsAPIHandler:
     def test_feature_disabled(self):
         handler = self._make_handler()
         handler.set_status = MagicMock()
-        with patch("aird.handlers.api_handlers.is_feature_enabled", return_value=False):
+        with patch("aird.handlers.base_handler.is_feature_enabled", return_value=False):
             handler.get()
             handler.set_status.assert_called_with(403)
             handler.write.assert_called_with({"error": "File sharing is disabled"})
@@ -211,7 +211,7 @@ class TestShareDetailsAPIHandler:
         handler = self._make_handler()
         handler.set_status = MagicMock()
         handler.get_argument = MagicMock(return_value="")
-        with patch("aird.handlers.api_handlers.is_feature_enabled", return_value=True):
+        with patch("aird.handlers.base_handler.is_feature_enabled", return_value=True):
             handler.get()
             handler.set_status.assert_called_with(400)
             handler.write.assert_called_with({"error": "File path is required"})
@@ -220,7 +220,7 @@ class TestShareDetailsAPIHandler:
         handler = self._make_handler()
         handler.set_status = MagicMock()
         with patch(
-            "aird.handlers.api_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(None, modules=["aird.handlers.api_handlers"]):
             handler.get()
             handler.set_status.assert_called_with(500)
@@ -231,7 +231,7 @@ class TestShareDetailsAPIHandler:
     def test_success(self):
         handler = self._make_handler()
         with patch(
-            "aird.handlers.api_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]), patch(
             "aird.handlers.api_handlers.get_shares_for_path",
             return_value=[{"id": "s1", "paths": ["file.txt"]}],
@@ -252,7 +252,7 @@ class TestShareDetailsByIdAPIHandler:
         handler = self._make_handler()
         handler.set_status = MagicMock()
         handler.get_argument = MagicMock(return_value="")
-        with patch("aird.handlers.api_handlers.is_feature_enabled", return_value=True):
+        with patch("aird.handlers.base_handler.is_feature_enabled", return_value=True):
             handler.get()
             handler.set_status.assert_called_with(400)
             handler.write.assert_called_with({"error": "Share ID is required"})
@@ -261,7 +261,7 @@ class TestShareDetailsByIdAPIHandler:
         handler = self._make_handler()
         handler.set_status = MagicMock()
         with patch(
-            "aird.handlers.api_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]), patch(
             "aird.handlers.api_handlers.get_share_by_id", return_value=None
         ):
@@ -273,7 +273,7 @@ class TestShareDetailsByIdAPIHandler:
         handler = self._make_handler()
         share_data = {"id": "share1", "paths": [], "secret_token": "token"}
         with patch(
-            "aird.handlers.api_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]), patch(
             "aird.handlers.api_handlers.get_share_by_id", return_value=share_data
         ):
@@ -286,7 +286,7 @@ class TestShareListAPIHandler:
     def test_feature_disabled(self):
         handler = make_request_handler(ShareListAPIHandler)
         handler.set_status = MagicMock()
-        with patch("aird.handlers.api_handlers.is_feature_enabled", return_value=False):
+        with patch("aird.handlers.base_handler.is_feature_enabled", return_value=False):
             handler.get()
             handler.set_status.assert_called_with(403)
             handler.write.assert_called_with({"error": "File sharing is disabled"})
@@ -295,7 +295,7 @@ class TestShareListAPIHandler:
         handler = make_request_handler(ShareListAPIHandler)
         handler.set_status = MagicMock()
         with patch(
-            "aird.handlers.api_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(None, modules=["aird.handlers.api_handlers"]):
             handler.get()
             handler.set_status.assert_called_with(500)
@@ -306,7 +306,7 @@ class TestShareListAPIHandler:
     def test_success(self):
         handler = make_request_handler(ShareListAPIHandler)
         with patch(
-            "aird.handlers.api_handlers.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]), patch(
             "aird.handlers.api_handlers.get_all_shares",
             return_value={"s1": {"paths": []}},
