@@ -2153,6 +2153,28 @@
                   </div>`).join('');
     }
 
+    function buildShareTypeHtml(isStatic, isDynamic, currentBadge) {
+      const staticChecked = isStatic ? 'checked' : '';
+      const staticBadge = isStatic ? currentBadge : '';
+      const dynamicChecked = isDynamic ? 'checked' : '';
+      const dynamicBadge = isDynamic ? currentBadge : '';
+      return `
+            <div style="margin-bottom: 10px;">
+              <label style="display: flex; align-items: center; gap: 8px;">
+                <input type="radio" name="shareTypeEdit" value="static" ${staticChecked}>
+                <span>Static (Snapshot of current files)</span>
+                ${staticBadge}
+              </label>
+            </div>
+            <div style="margin-bottom: 10px;">
+              <label style="display: flex; align-items: center; gap: 8px;">
+                <input type="radio" name="shareTypeEdit" value="dynamic" ${dynamicChecked}>
+                <span>Dynamic (Live folder sharing)</span>
+                ${dynamicBadge}
+              </label>
+            </div>`;
+    }
+
     function setupTokenEditCheckboxes() {
       const disableTokenCheckbox = document.getElementById('disableTokenEdit');
       const enableTokenCheckbox = document.getElementById('enableTokenEdit');
@@ -2203,20 +2225,7 @@
           <!-- Share Type Configuration -->
           <div class="share-info-section">
             <h3>Share Type</h3>
-            <div style="margin-bottom: 10px;">
-              <label style="display: flex; align-items: center; gap: 8px;">
-                <input type="radio" name="shareTypeEdit" value="static" ${isStatic ? 'checked' : ''}>
-                <span>Static (Snapshot of current files)</span>
-                ${isStatic ? currentBadge : ''}
-              </label>
-            </div>
-            <div style="margin-bottom: 10px;">
-              <label style="display: flex; align-items: center; gap: 8px;">
-                <input type="radio" name="shareTypeEdit" value="dynamic" ${isDynamic ? 'checked' : ''}>
-                <span>Dynamic (Live folder sharing)</span>
-                ${isDynamic ? currentBadge : ''}
-              </label>
-            </div>
+            ${buildShareTypeHtml(isStatic, isDynamic, currentBadge)}
           </div>
 
           <!-- Token Security -->
@@ -2974,7 +2983,7 @@
         if (data.error) {
           showDialog('Error: ' + data.error, 'Error');
         } else {
-          const fullUrl = `${window.location.origin}${data.url}`;
+          const fullUrl = `${globalThis.location.origin}${data.url}`;
           elements.shareResult.style.display = 'block';
           elements.shareResult.innerHTML = buildShareResultHtml(
             data, fullUrl, accessType, allowedUsers, shareType, disableToken
