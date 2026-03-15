@@ -5,3 +5,4 @@ wheel==0.45.1
 ldap3==2.9.1
 aiofiles
 argon2-cffi>=23.1.0
+pyasn1>=0.6.2 # not directly required, pinned by Snyk to avoid a vulnerability
