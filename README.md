@@ -1,5 +1,7 @@
 # Aird - Modern Web-Based File Management Platform
 
+![Aird Demo Video](./demo.webp)
+
 🚀 **A lightweight, fast, and secure web-based file browser, editor, and sharing platform built with Python and Tornado.**
 
 Aird provides a comprehensive file management solution with real-time streaming, in-browser editing, advanced search capabilities, and secure file sharing through a clean and intuitive web interface. Perfect for development teams, system administrators, and anyone who needs efficient file management.
@@ -79,6 +81,24 @@ aird --token your-secure-token
 
 # Enable LDAP authentication
 aird --ldap --ldap-server ldap://your-server.com
+```
+
+### Docker Usage
+
+You can run Aird inside a Docker container and share a folder from your host operating system using a volume mount.
+
+```bash
+# Build the Docker image
+docker build -t aird-app .
+
+# Run and share a specific directory (e.g., /path/to/files)
+docker run -v "/path/to/files:/shared" -p 8000:8000 aird-app python -m aird --root /shared
+
+# Run and share your current directory (PowerShell/Linux/macOS)
+docker run -v "$PWD:/shared" -p 8000:8000 aird-app python -m aird --root /shared
+
+# Run and share your current directory (Windows Command Prompt)
+docker run -v "%cd%:/shared" -p 8000:8000 aird-app python -m aird --root /shared
 ```
 
 ### Configuration
