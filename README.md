@@ -37,6 +37,24 @@ Aird provides a comprehensive file management solution with real-time streaming,
 - **Share Management** - Create, update, and revoke shares with real-time updates
 - **Session Persistence** - Tokens stored in cookies and Authorization headers for seamless access
 
+### ☁️ **Cloud Storage Integration**
+- **Multi-Cloud Support** - Seamlessly link your Google Drive and Microsoft OneDrive accounts directly into Aird
+- **Unified Interface** - Browse, view, and manage your cloud files using the familiar Aird file manager UI
+- **Chunked Uploads** - Support for large file uploads with resumable, chunked uploads out-of-the-box
+- **Direct Downloads** - Proxy and stream downloads directly from cloud storage to your browser
+
+### ⚡ **Peer-to-Peer (P2P) Transfers**
+- **WebRTC Integration** - Direct browser-to-browser file transfers without storing files temporarily on the server
+- **Secure Anonymous Rooms** - Create shareable transfer rooms for external guests or known users
+- **Real-Time WebSockets** - Instant signaling and room management
+- **Privacy First** - Files are sent directly between clients, improving speed and security
+
+### 🖥️ **Network File Sharing (SMB & WebDAV)**
+- **Embedded SMB Server** - Run your own native SMB (Server Message Block) server so you can mount Aird folders directly in Windows File Explorer or macOS Finder.
+- **Embedded WebDAV Server** - Run a fully-featured WebDAV server with locking support to map network drives over HTTP.
+- **Dynamic Provisioning** - Start and stop shares on the fly, directly from the Aird administrator dashboard without restarting the app.
+- **Access Control** - Protect your native network shares with custom usernames, passwords, and optional strictly read-only modes.
+
 ### 🔌 **API-First Architecture**
 - **RESTful API** - Complete REST API for all file operations and management
 - **WebSocket Support** - Real-time communication for streaming and live updates
