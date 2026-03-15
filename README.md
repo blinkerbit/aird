@@ -11,7 +11,6 @@ Aird provides a comprehensive file management solution with real-time streaming,
 ### 📁 **File Management**
 - **Browse & Navigate** - Intuitive file browser with resizable columns and mobile-responsive design
 - **In-Browser Editing** - Full-featured editor with syntax highlighting, line numbers, and auto-save
-- **File Operations** - Upload, download, rename, delete, and organize files with drag-and-drop support
 - **Large File Support** - Memory-efficient handling of large files with streaming capabilities
 - **File Type Recognition** - Smart file type detection with appropriate icons and handling
 
