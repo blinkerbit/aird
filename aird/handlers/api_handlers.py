@@ -556,7 +556,19 @@ class SuperSearchWebSocketHandler(
             if self.stop_event.is_set():
                 raise asyncio.CancelledError
             await asyncio.sleep(0)  # yield so on_close / stop_event can be processed
-            if search_text.lower() in filename.lower() or search_text.lower() in rel_path_str.lower():
+            
+            search_lower = search_text.lower()
+            filename_lower = filename.lower()
+            rel_path_lower = rel_path_str.lower()
+            
+            if any(c in search_text for c in "*?[]"):
+                # Use fnmatchcase to ensure consistent case-insensitive behavior across platforms
+                # since we manually lowercased the strings.
+                match = fnmatch.fnmatchcase(filename_lower, search_lower) or fnmatch.fnmatchcase(rel_path_lower, search_lower)
+            else:
+                match = search_lower in filename_lower or search_lower in rel_path_lower
+                
+            if match:
                 self.send_match(rel_path_str, 0, rel_path_str, search_text)
                 return 1, True
             return 0, True
