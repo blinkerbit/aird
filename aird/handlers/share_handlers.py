@@ -448,7 +448,8 @@ class ShareFilesHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
         if not self.require_feature(
-            "file_share", True,
+            "file_share",
+            True,
             body="Feature disabled: File sharing is currently disabled by administrator",
         ):
             return
@@ -460,7 +461,9 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
     @tornado.web.authenticated
     @require_db
     def post(self):
-        if not self.require_feature("file_share", True, body={"error": FS_DISABLED_MSG}):
+        if not self.require_feature(
+            "file_share", True, body={"error": FS_DISABLED_MSG}
+        ):
             return
         try:
             data = self.parse_json_body()
@@ -533,7 +536,9 @@ class ShareRevokeHandler(BaseHandler):
     @tornado.web.authenticated
     @require_db
     def post(self):
-        if not self.require_feature("file_share", True, body={"error": FS_DISABLED_MSG}):
+        if not self.require_feature(
+            "file_share", True, body={"error": FS_DISABLED_MSG}
+        ):
             return
         sid = self.get_argument("id", "")
 
@@ -568,7 +573,9 @@ class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
     @require_db
     def post(self):
         """Update share access list"""
-        if not self.require_feature("file_share", True, body={"error": FS_DISABLED_MSG}):
+        if not self.require_feature(
+            "file_share", True, body={"error": FS_DISABLED_MSG}
+        ):
             return
 
         share_id = None

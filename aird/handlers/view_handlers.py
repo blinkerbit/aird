@@ -218,7 +218,8 @@ class EditViewHandler(BaseHandler):
     @tornado.web.authenticated
     async def get(self, path):
         if not self.require_feature(
-            "file_edit", True,
+            "file_edit",
+            True,
             body="Feature disabled: File editing is currently disabled by administrator",
         ):
             return

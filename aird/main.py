@@ -1,14 +1,10 @@
 import traceback
-import json
 import logging
 import os
 import secrets
 import socket
 import sqlite3
 import ssl
-import sys
-import threading
-import time
 
 import tornado.ioloop
 import tornado.web
@@ -104,7 +100,6 @@ logger = logging.getLogger(__name__)
 # Secure password hashing (Priority 1)
 try:
     from argon2 import PasswordHasher
-    from argon2 import exceptions as argon2_exceptions
 
     ARGON2_AVAILABLE = True
     PH = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
@@ -283,6 +278,66 @@ def _validate_ssl_config() -> bool:
     return True
 
 
+def _create_emergency_db_connection() -> None:
+    logger.warning("Database connection is None, attempting to create...")
+    try:
+        constants.DB_PATH = os.path.join(
+            os.path.expanduser("~"), ".local", "aird", "aird.sqlite3"
+        )
+        os.makedirs(os.path.dirname(constants.DB_PATH), exist_ok=True)
+        constants.DB_CONN = sqlite3.connect(constants.DB_PATH, check_same_thread=False)
+        init_db(constants.DB_CONN)
+        logger.info(f"Created emergency database connection: {constants.DB_CONN}")
+    except Exception as db_error:
+        logger.error(f"Failed to create emergency database connection: {db_error}")
+
+
+def _load_and_merge_configs(db_conn) -> None:
+    # Load persisted feature flags and merge
+    persisted_flags = load_feature_flags(db_conn)
+    if persisted_flags:
+        for k, v in persisted_flags.items():
+            constants.FEATURE_FLAGS[k] = bool(v)
+            logger.debug(f"Feature flag '{k}' set to {bool(v)} from database")
+
+    # Log final feature flags status
+    logger.info("Final feature flags:")
+    for k, v in constants.FEATURE_FLAGS.items():
+        logger.info(f"  {k}: {v}")
+
+    # Load persisted upload config and merge
+    persisted_upload_config = load_upload_config(db_conn)
+    if persisted_upload_config:
+        for k, v in persisted_upload_config.items():
+            constants.UPLOAD_CONFIG[k] = int(v)
+            logger.debug(f"Upload config '{k}' set to {int(v)} from database")
+    constants.MAX_FILE_SIZE = constants.UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
+    logger.info(
+        f"Max upload file size: {constants.UPLOAD_CONFIG['max_file_size_mb']} MB"
+    )
+
+    # Load allowed upload extensions (when "allow all" is off)
+    constants.UPLOAD_ALLOWED_EXTENSIONS = load_allowed_extensions(db_conn)
+    if not constants.UPLOAD_ALLOWED_EXTENSIONS:
+        constants.UPLOAD_ALLOWED_EXTENSIONS = set(constants.ALLOWED_UPLOAD_EXTENSIONS)
+        save_allowed_extensions(db_conn, constants.UPLOAD_ALLOWED_EXTENSIONS)
+        logger.info("Seeded upload allowed extensions from defaults")
+
+
+def _auto_start_network_shares(db_conn) -> None:
+    constants.NETWORK_SHARE_MANAGER = NetworkShareManager()
+    try:
+        enabled_shares = [
+            s for s in get_all_network_shares(db_conn) if s.get("enabled")
+        ]
+        for share in enabled_shares:
+            constants.NETWORK_SHARE_MANAGER.start_share(share)
+        if enabled_shares:
+            logger.info("Auto-started %d network share(s)", len(enabled_shares))
+    except Exception as ns_err:
+        logger.warning("Failed to auto-start network shares: %s", ns_err)
+
+
 def _init_database() -> None:
     try:
         data_dir = get_data_dir()
@@ -294,81 +349,22 @@ def _init_database() -> None:
         )
         constants.DB_CONN = sqlite3.connect(constants.DB_PATH, check_same_thread=False)
         init_db(constants.DB_CONN)
-        # Load persisted feature flags and merge
-        persisted_flags = load_feature_flags(constants.DB_CONN)
-        if persisted_flags:
-            for k, v in persisted_flags.items():
-                constants.FEATURE_FLAGS[k] = bool(v)
-                logger.debug(f"Feature flag '{k}' set to {bool(v)} from database")
 
-        # Log final feature flags status
-        logger.info("Final feature flags:")
-        for k, v in constants.FEATURE_FLAGS.items():
-            logger.info(f"  {k}: {v}")
+        _load_and_merge_configs(constants.DB_CONN)
 
         # Start LDAP sync scheduler
         start_ldap_sync_scheduler(constants.DB_CONN)
         # Database-only persistence for shares
         logger.info("Shares are now persisted directly in database")
 
-        # Load persisted upload config and merge
-        persisted_upload_config = load_upload_config(constants.DB_CONN)
-        if persisted_upload_config:
-            for k, v in persisted_upload_config.items():
-                constants.UPLOAD_CONFIG[k] = int(v)
-                logger.debug(f"Upload config '{k}' set to {int(v)} from database")
-        constants.MAX_FILE_SIZE = (
-            constants.UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
-        )
-        logger.info(
-            f"Max upload file size: {constants.UPLOAD_CONFIG['max_file_size_mb']} MB"
-        )
-        # Load allowed upload extensions (when "allow all" is off)
-        constants.UPLOAD_ALLOWED_EXTENSIONS = load_allowed_extensions(constants.DB_CONN)
-        if not constants.UPLOAD_ALLOWED_EXTENSIONS:
-            constants.UPLOAD_ALLOWED_EXTENSIONS = set(
-                constants.ALLOWED_UPLOAD_EXTENSIONS
-            )
-            save_allowed_extensions(
-                constants.DB_CONN, constants.UPLOAD_ALLOWED_EXTENSIONS
-            )
-            logger.info("Seeded upload allowed extensions from defaults")
-
         # Assign admin privileges to configured admin users
         assign_admin_privileges(constants.DB_CONN, config.ADMIN_USERS)
 
-        # Initialize network share manager and auto-start enabled shares
-        constants.NETWORK_SHARE_MANAGER = NetworkShareManager()
-        try:
-            enabled_shares = [
-                s for s in get_all_network_shares(constants.DB_CONN) if s.get("enabled")
-            ]
-            for share in enabled_shares:
-                constants.NETWORK_SHARE_MANAGER.start_share(share)
-            if enabled_shares:
-                logger.info("Auto-started %d network share(s)", len(enabled_shares))
-        except Exception as ns_err:
-            logger.warning("Failed to auto-start network shares: %s", ns_err)
+        _auto_start_network_shares(constants.DB_CONN)
 
         # Ensure database connection is working
         if constants.DB_CONN is None:
-            logger.warning("Database connection is None, attempting to create...")
-            try:
-                constants.DB_PATH = os.path.join(
-                    os.path.expanduser("~"), ".local", "aird", "aird.sqlite3"
-                )
-                os.makedirs(os.path.dirname(constants.DB_PATH), exist_ok=True)
-                constants.DB_CONN = sqlite3.connect(
-                    constants.DB_PATH, check_same_thread=False
-                )
-                init_db(constants.DB_CONN)
-                logger.info(
-                    f"Created emergency database connection: {constants.DB_CONN}"
-                )
-            except Exception as db_error:
-                logger.error(
-                    f"Failed to create emergency database connection: {db_error}"
-                )
+            _create_emergency_db_connection()
 
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
@@ -420,7 +416,9 @@ def _start_server(app, ssl_options, port: int, hostname: str) -> None:
                     f"Serving HTTP on 0.0.0.0 port {port} ({proto}://0.0.0.0:{port}/) ..."
                 )
             _print_server_urls(port, hostname, proto)
-            tornado.ioloop.IOLoop.current().call_later(3600, _run_cleanup_expired_shares)
+            tornado.ioloop.IOLoop.current().call_later(
+                3600, _run_cleanup_expired_shares
+            )
             tornado.ioloop.IOLoop.current().start()
             break
         except OSError:

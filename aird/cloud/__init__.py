@@ -270,7 +270,9 @@ class GoogleDriveProvider(CloudProvider):
             content_length=size,
         )
 
-    def _upload_simple_gdrive(self, stream, name, metadata, headers, mime_type, size) -> CloudFile:
+    def _upload_simple_gdrive(
+        self, stream, name, metadata, headers, mime_type, size
+    ) -> CloudFile:
         try:
             stream.seek(0)
             files = {
@@ -308,7 +310,9 @@ class GoogleDriveProvider(CloudProvider):
             modified=payload.get("modifiedTime"),
         )
 
-    def _upload_resumable_gdrive(self, stream, name, metadata, headers, mime_type, size) -> CloudFile:
+    def _upload_resumable_gdrive(
+        self, stream, name, metadata, headers, mime_type, size
+    ) -> CloudFile:
         init_headers = headers.copy()
         init_headers.update(
             {
@@ -415,8 +419,12 @@ class GoogleDriveProvider(CloudProvider):
         mime_type = content_type or "application/octet-stream"
         simple_limit = 5 * 1024 * 1024
         if size <= simple_limit:
-            return self._upload_simple_gdrive(stream, name, metadata, headers, mime_type, size)
-        return self._upload_resumable_gdrive(stream, name, metadata, headers, mime_type, size)
+            return self._upload_simple_gdrive(
+                stream, name, metadata, headers, mime_type, size
+            )
+        return self._upload_resumable_gdrive(
+            stream, name, metadata, headers, mime_type, size
+        )
 
 
 class OneDriveProvider(CloudProvider):
@@ -518,7 +526,9 @@ class OneDriveProvider(CloudProvider):
             content_length=size,
         )
 
-    def _upload_simple_onedrive(self, stream, name, parent_id, headers, mime_type) -> CloudFile:
+    def _upload_simple_onedrive(
+        self, stream, name, parent_id, headers, mime_type
+    ) -> CloudFile:
         safe_name = quote(name, safe="")
         target_url = (
             f"{self._base_url}/root:/{safe_name}:/content"
@@ -552,7 +562,9 @@ class OneDriveProvider(CloudProvider):
             modified=payload.get("lastModifiedDateTime"),
         )
 
-    def _upload_chunked_onedrive(self, stream, name, parent_id, mime_type, size) -> CloudFile:
+    def _upload_chunked_onedrive(
+        self, stream, name, parent_id, mime_type, size
+    ) -> CloudFile:
         safe_name = quote(name, safe="")
         if not parent_id or parent_id == "root":
             session_url = f"{self._base_url}/root:/{safe_name}:/createUploadSession"
@@ -654,7 +666,9 @@ class OneDriveProvider(CloudProvider):
         simple_limit = 4 * 1024 * 1024
         headers = self._headers().copy()
         if size <= simple_limit:
-            return self._upload_simple_onedrive(stream, name, parent_id, headers, mime_type)
+            return self._upload_simple_onedrive(
+                stream, name, parent_id, headers, mime_type
+            )
         return self._upload_chunked_onedrive(stream, name, parent_id, mime_type, size)
 
 

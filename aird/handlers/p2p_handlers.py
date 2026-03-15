@@ -98,7 +98,8 @@ class P2PTransferHandler(BaseHandler):
 
     def get(self):
         if not self.require_feature(
-            "p2p_transfer", True,
+            "p2p_transfer",
+            True,
             body="Feature disabled: P2P Transfer is currently disabled by administrator",
         ):
             return

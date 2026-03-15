@@ -253,7 +253,9 @@ class BaseHandler(tornado.web.RequestHandler):
     def network_share_manager(self):
         return self.settings.get("network_share_manager")
 
-    def require_feature(self, feature_key: str, default=True, *, status=403, body=None) -> bool:
+    def require_feature(
+        self, feature_key: str, default=True, *, status=403, body=None
+    ) -> bool:
         """Check feature flag. If disabled, set status, write body, and return False. Else return True."""
         if is_feature_enabled(feature_key, default):
             return True
@@ -276,7 +278,9 @@ class BaseHandler(tornado.web.RequestHandler):
             default = {}
         raw = self.request.body or b"{}"
         try:
-            return json.loads(raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw)
+            return json.loads(
+                raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
+            )
         except Exception:
             return default
 

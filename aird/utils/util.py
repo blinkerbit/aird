@@ -47,8 +47,12 @@ def _parse_json_field(json_str, default):
 
 
 _SHARE_LOAD_OPTIONAL_COLS = [
-    "allowed_users", "secret_token", "share_type",
-    "allow_list", "avoid_list", "expiry_date",
+    "allowed_users",
+    "secret_token",
+    "share_type",
+    "allow_list",
+    "avoid_list",
+    "expiry_date",
 ]
 
 
@@ -56,7 +60,9 @@ def _load_share_col_names(conn: sqlite3.Connection) -> list:
     """Return the column list to SELECT from shares, based on available schema."""
     cursor = conn.execute("PRAGMA table_info(shares)")
     available = {row[1] for row in cursor.fetchall()}
-    return ["id", "created", "paths"] + [c for c in _SHARE_LOAD_OPTIONAL_COLS if c in available]
+    return ["id", "created", "paths"] + [
+        c for c in _SHARE_LOAD_OPTIONAL_COLS if c in available
+    ]
 
 
 def _share_row_to_dict(row: tuple, col_names: list) -> dict:
@@ -78,9 +84,7 @@ def _load_shares(conn: sqlite3.Connection) -> dict:
     loaded: dict = {}
     try:
         col_names = _load_share_col_names(conn)
-        rows = conn.execute(
-            f"SELECT {', '.join(col_names)} FROM shares"
-        ).fetchall()
+        rows = conn.execute(f"SELECT {', '.join(col_names)} FROM shares").fetchall()
         for row in rows:
             d = dict(zip(col_names, row))
             loaded[d["id"]] = _share_row_to_dict(row, col_names)

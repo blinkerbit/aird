@@ -360,7 +360,8 @@ class SuperSearchHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
         if not self.require_feature(
-            "super_search", True,
+            "super_search",
+            True,
             body="Feature disabled: Super Search is currently disabled by administrator",
         ):
             return
@@ -477,7 +478,9 @@ class SuperSearchWebSocketHandler(
         if self.search_task and not self.search_task.done():
             self.stop_event.set()
             self._cancel_task = asyncio.create_task(
-                self._await_cancellation_and_start_new((pattern, search_text, search_mode))
+                self._await_cancellation_and_start_new(
+                    (pattern, search_text, search_mode)
+                )
             )
         else:
             self.stop_event.clear()
@@ -556,18 +559,20 @@ class SuperSearchWebSocketHandler(
             if self.stop_event.is_set():
                 raise asyncio.CancelledError
             await asyncio.sleep(0)  # yield so on_close / stop_event can be processed
-            
+
             search_lower = search_text.lower()
             filename_lower = filename.lower()
             rel_path_lower = rel_path_str.lower()
-            
+
             if any(c in search_text for c in "*?[]"):
                 # Use fnmatchcase to ensure consistent case-insensitive behavior across platforms
                 # since we manually lowercased the strings.
-                match = fnmatch.fnmatchcase(filename_lower, search_lower) or fnmatch.fnmatchcase(rel_path_lower, search_lower)
+                match = fnmatch.fnmatchcase(
+                    filename_lower, search_lower
+                ) or fnmatch.fnmatchcase(rel_path_lower, search_lower)
             else:
                 match = search_lower in filename_lower or search_lower in rel_path_lower
-                
+
             if match:
                 self.send_match(rel_path_str, 0, rel_path_str, search_text)
                 return 1, True
@@ -665,7 +670,9 @@ class SuperSearchWebSocketHandler(
                 )
             )
 
-    async def perform_search(self, pattern: str, search_text: str, search_mode: str = "content"):
+    async def perform_search(
+        self, pattern: str, search_text: str, search_mode: str = "content"
+    ):
         """Perform the super search and stream results"""
         # Validate authentication at the start of search
         user = self.get_current_user()
@@ -764,7 +771,9 @@ class ShareDetailsAPIHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
         """Get share details for a specific file"""
-        if not self.require_feature("file_share", True, body={"error": FILESHARE_DISABLED_MSG}):
+        if not self.require_feature(
+            "file_share", True, body={"error": FILESHARE_DISABLED_MSG}
+        ):
             return
 
         file_path = self.get_argument("path", "").strip()
@@ -805,7 +814,9 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
         """Get share details for a specific share ID"""
-        if not self.require_feature("file_share", True, body={"error": FILESHARE_DISABLED_MSG}):
+        if not self.require_feature(
+            "file_share", True, body={"error": FILESHARE_DISABLED_MSG}
+        ):
             return
 
         share_id = self.get_argument("id", "").strip()
@@ -849,7 +860,9 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
 class ShareListAPIHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
-        if not self.require_feature("file_share", True, body={"error": FILESHARE_DISABLED_MSG}):
+        if not self.require_feature(
+            "file_share", True, body={"error": FILESHARE_DISABLED_MSG}
+        ):
             return
 
         db_conn = self.db_conn

@@ -251,7 +251,9 @@ def update_share(
             updates.append("share_type = ?")
             values.append(share_type)
 
-        token_updates, token_values = _get_token_field_updates(disable_token, secret_token)
+        token_updates, token_values = _get_token_field_updates(
+            disable_token, secret_token
+        )
         updates.extend(token_updates)
         values.extend(token_values)
 
@@ -334,12 +336,20 @@ def cleanup_expired_shares(conn: sqlite3.Connection) -> int:
 
 
 _SHARE_BASE_COLS = ["id", "created", "paths", "allowed_users"]
-_SHARE_OPTIONAL_COLS = ["secret_token", "share_type", "allow_list", "avoid_list", "expiry_date"]
+_SHARE_OPTIONAL_COLS = [
+    "secret_token",
+    "share_type",
+    "allow_list",
+    "avoid_list",
+    "expiry_date",
+]
 
 
 def _get_share_col_names(available_columns: list) -> list:
     """Return column list for SELECT based on available schema columns."""
-    return _SHARE_BASE_COLS + [c for c in _SHARE_OPTIONAL_COLS if c in available_columns]
+    return _SHARE_BASE_COLS + [
+        c for c in _SHARE_OPTIONAL_COLS if c in available_columns
+    ]
 
 
 def _row_to_share_dict(row: tuple, col_names: list) -> dict:
@@ -349,7 +359,9 @@ def _row_to_share_dict(row: tuple, col_names: list) -> dict:
         "id": d["id"],
         "created": d["created"],
         "paths": json.loads(d["paths"]) if d.get("paths") else [],
-        "allowed_users": json.loads(d["allowed_users"]) if d.get("allowed_users") else None,
+        "allowed_users": (
+            json.loads(d["allowed_users"]) if d.get("allowed_users") else None
+        ),
         "secret_token": d.get("secret_token"),
         "share_type": d.get("share_type") or "static",
         "allow_list": json.loads(d["allow_list"]) if d.get("allow_list") else [],

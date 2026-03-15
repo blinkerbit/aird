@@ -264,7 +264,9 @@ class UploadHandler(BaseHandler):
 
     @tornado.web.authenticated
     async def post(self):
-        if not self.require_feature("file_upload", True, body=FILE_UPLOAD_DISABLED_ADMIN):
+        if not self.require_feature(
+            "file_upload", True, body=FILE_UPLOAD_DISABLED_ADMIN
+        ):
             return
 
         # If we rejected in prepare (bad/missing headers), report
@@ -411,7 +413,9 @@ class DeleteHandler(BaseHandler):
             self.write(ACCESS_DENIED)
             return
         if os.path.isdir(abspath):
-            if not self.require_feature("folder_delete", True, body=FOLDER_DELETE_DISABLED):
+            if not self.require_feature(
+                "folder_delete", True, body=FOLDER_DELETE_DISABLED
+            ):
                 return
             recursive = self.get_argument("recursive", "0") == "1"
             if not recursive and os.listdir(abspath):
