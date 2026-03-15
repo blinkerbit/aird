@@ -205,6 +205,33 @@ def delete_share(conn: sqlite3.Connection, sid: str) -> None:
         pass
 
 
+def _get_token_field_updates(
+    disable_token: bool | None, secret_token: str | None
+) -> tuple[list, list]:
+    """Return (SET clauses, values) for secret_token update."""
+    if disable_token is None and secret_token is None:
+        return [], []
+    updates, values = [], []
+    if disable_token is True:
+        updates.append("secret_token = ?")
+        values.append(None)
+    else:
+        new_token = secrets.token_urlsafe(64) if secret_token is None else secret_token
+        updates.append("secret_token = ?")
+        values.append(new_token)
+    return updates, values
+
+
+def _get_kwargs_field_updates(kwargs: dict) -> tuple[list, list]:
+    """Return (SET clauses, values) for legacy allowed_users/paths kwargs."""
+    updates, values = [], []
+    for field, value in kwargs.items():
+        if field in ("allowed_users", "paths"):
+            updates.append(f"{field} = ?")
+            values.append(json.dumps(value) if value is not None else value)
+    return updates, values
+
+
 def update_share(
     conn: sqlite3.Connection,
     sid: str,
@@ -218,29 +245,15 @@ def update_share(
 ) -> bool:
     """Update share information"""
     try:
-        updates = []
-        values = []
+        updates, values = [], []
 
-        # Handle new parameters
         if share_type is not None:
             updates.append("share_type = ?")
             values.append(share_type)
 
-        token_update_requested = (disable_token is not None) or (
-            secret_token is not None
-        )
-        if token_update_requested:
-            if disable_token is True:
-                logging.debug(f"update_share - disable_token={disable_token}")
-                logging.debug("Disabling token (setting to None)")
-                updates.append("secret_token = ?")
-                values.append(None)
-            else:
-                new_token = (
-                    secrets.token_urlsafe(64) if secret_token is None else secret_token
-                )
-                updates.append("secret_token = ?")
-                values.append(new_token)
+        token_updates, token_values = _get_token_field_updates(disable_token, secret_token)
+        updates.extend(token_updates)
+        values.extend(token_values)
 
         if allow_list is not None:
             updates.append("allow_list = ?")
@@ -254,15 +267,9 @@ def update_share(
             updates.append("expiry_date = ?")
             values.append(expiry_date)
 
-        # Handle legacy parameters
-        valid_fields = ["allowed_users", "paths"]
-        for field, value in kwargs.items():
-            if field in valid_fields:
-                updates.append(f"{field} = ?")
-                if field in ["allowed_users", "paths"] and value is not None:
-                    values.append(json.dumps(value))
-                else:
-                    values.append(value)
+        kwarg_updates, kwarg_values = _get_kwargs_field_updates(kwargs)
+        updates.extend(kwarg_updates)
+        values.extend(kwarg_values)
 
         if not updates:
             return False
@@ -326,148 +333,51 @@ def cleanup_expired_shares(conn: sqlite3.Connection) -> int:
         return 0
 
 
+_SHARE_BASE_COLS = ["id", "created", "paths", "allowed_users"]
+_SHARE_OPTIONAL_COLS = ["secret_token", "share_type", "allow_list", "avoid_list", "expiry_date"]
+
+
+def _get_share_col_names(available_columns: list) -> list:
+    """Return column list for SELECT based on available schema columns."""
+    return _SHARE_BASE_COLS + [c for c in _SHARE_OPTIONAL_COLS if c in available_columns]
+
+
+def _row_to_share_dict(row: tuple, col_names: list) -> dict:
+    """Convert a raw share DB row to a normalized share dict."""
+    d = dict(zip(col_names, row))
+    return {
+        "id": d["id"],
+        "created": d["created"],
+        "paths": json.loads(d["paths"]) if d.get("paths") else [],
+        "allowed_users": json.loads(d["allowed_users"]) if d.get("allowed_users") else None,
+        "secret_token": d.get("secret_token"),
+        "share_type": d.get("share_type") or "static",
+        "allow_list": json.loads(d["allow_list"]) if d.get("allow_list") else [],
+        "avoid_list": json.loads(d["avoid_list"]) if d.get("avoid_list") else [],
+        "expiry_date": d.get("expiry_date"),
+    }
+
+
 def get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict | None:
     """Get a single share by ID from database"""
     try:
         logging.debug(f"get_share_by_id called with sid='{sid}'")
         logging.debug(f"conn is {'None' if conn is None else 'available'}")
-
-        # Check if secret_token column exists
         cursor = conn.execute(PRAGMA_TABLE_INFO)
-        columns = [row[1] for row in cursor.fetchall()]
-        logging.debug(f"Table columns: {columns}")
-
-        if (
-            "secret_token" in columns
-            and "share_type" in columns
-            and "allow_list" in columns
-            and "avoid_list" in columns
-            and "expiry_date" in columns
-        ):
-            logging.debug("Using query with all columns including expiry_date")
-            cursor = conn.execute(
-                "SELECT id, created, paths, allowed_users, secret_token, share_type, allow_list, avoid_list, expiry_date FROM shares WHERE id = ?",
-                (sid,),
-            )
-            row = cursor.fetchone()
-            logging.debug(f"Query result: {row}")
-            if row:
-                (
-                    sid,
-                    created,
-                    paths_json,
-                    allowed_users_json,
-                    secret_token,
-                    share_type,
-                    allow_list_json,
-                    avoid_list_json,
-                    expiry_date,
-                ) = row
-                result = {
-                    "id": sid,
-                    "created": created,
-                    "paths": json.loads(paths_json) if paths_json else [],
-                    "allowed_users": (
-                        json.loads(allowed_users_json) if allowed_users_json else None
-                    ),
-                    "secret_token": secret_token,
-                    "share_type": share_type or "static",
-                    "allow_list": (
-                        json.loads(allow_list_json) if allow_list_json else []
-                    ),
-                    "avoid_list": (
-                        json.loads(avoid_list_json) if avoid_list_json else []
-                    ),
-                    "expiry_date": expiry_date,
-                }
-                logging.debug(f"Returning share data: {result}")
-                return result
-        elif "secret_token" in columns and "share_type" in columns:
-            logging.debug("Using query with secret_token and share_type columns")
-            cursor = conn.execute(
-                "SELECT id, created, paths, allowed_users, secret_token, share_type FROM shares WHERE id = ?",
-                (sid,),
-            )
-            row = cursor.fetchone()
-            logging.debug(f"Query result: {row}")
-            if row:
-                (
-                    sid,
-                    created,
-                    paths_json,
-                    allowed_users_json,
-                    secret_token,
-                    share_type,
-                ) = row
-                result = {
-                    "id": sid,
-                    "created": created,
-                    "paths": json.loads(paths_json) if paths_json else [],
-                    "allowed_users": (
-                        json.loads(allowed_users_json) if allowed_users_json else None
-                    ),
-                    "secret_token": secret_token,
-                    "share_type": share_type or "static",
-                    "allow_list": [],
-                    "avoid_list": [],
-                    "expiry_date": None,
-                }
-                logging.debug(f"Returning share data: {result}")
-                return result
-        elif "secret_token" in columns:
-            logging.debug("Using query with secret_token column")
-            cursor = conn.execute(
-                "SELECT id, created, paths, allowed_users, secret_token FROM shares WHERE id = ?",
-                (sid,),
-            )
-            row = cursor.fetchone()
-            logging.debug(f"Query result: {row}")
-            if row:
-                sid, created, paths_json, allowed_users_json, secret_token = row
-                result = {
-                    "id": sid,
-                    "created": created,
-                    "paths": json.loads(paths_json) if paths_json else [],
-                    "allowed_users": (
-                        json.loads(allowed_users_json) if allowed_users_json else None
-                    ),
-                    "secret_token": secret_token,
-                    "share_type": "static",
-                    "allow_list": [],
-                    "avoid_list": [],
-                    "expiry_date": None,
-                }
-                logging.debug(f"Returning share data: {result}")
-                return result
-        else:
-            logging.debug("Using query without secret_token column")
-            cursor = conn.execute(
-                "SELECT id, created, paths, allowed_users FROM shares WHERE id = ?",
-                (sid,),
-            )
-            row = cursor.fetchone()
-            logging.debug(f"Query result: {row}")
-            if row:
-                sid, created, paths_json, allowed_users_json = row
-                result = {
-                    "id": sid,
-                    "created": created,
-                    "paths": json.loads(paths_json) if paths_json else [],
-                    "allowed_users": (
-                        json.loads(allowed_users_json) if allowed_users_json else None
-                    ),
-                    "secret_token": None,
-                    "share_type": "static",
-                    "allow_list": [],
-                    "avoid_list": [],
-                    "expiry_date": None,
-                }
-                logging.debug(f"Returning share data: {result}")
-                return result
-
+        available = [row[1] for row in cursor.fetchall()]
+        logging.debug(f"Table columns: {available}")
+        col_names = _get_share_col_names(available)
+        cursor = conn.execute(
+            f"SELECT {', '.join(col_names)} FROM shares WHERE id = ?", (sid,)
+        )
+        row = cursor.fetchone()
+        if row:
+            result = _row_to_share_dict(row, col_names)
+            logging.debug(f"Returning share data: {result}")
+            return result
         logging.debug(f"No share found for sid='{sid}'")
         return None
-    except Exception as e:  # NOSONAR: must return None on any DB/mock error
+    except Exception as e:  # NOSONAR
         logging.error(f"Error getting share {sid}: {e}")
         logging.debug(f"Traceback: {traceback.format_exc()}")
         return None
@@ -476,41 +386,11 @@ def get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict | None:
 def get_all_shares(conn: sqlite3.Connection) -> dict:
     """Get all shares from database"""
     try:
-        # Check if secret_token column exists
         cursor = conn.execute(PRAGMA_TABLE_INFO)
-        columns = [row[1] for row in cursor.fetchall()]
-
-        if "secret_token" in columns:
-            cursor = conn.execute(
-                "SELECT id, created, paths, allowed_users, secret_token FROM shares"
-            )
-            shares = {}
-            for row in cursor:
-                sid, created, paths_json, allowed_users_json, secret_token = row
-                shares[sid] = {
-                    "created": created,
-                    "paths": json.loads(paths_json) if paths_json else [],
-                    "allowed_users": (
-                        json.loads(allowed_users_json) if allowed_users_json else None
-                    ),
-                    "secret_token": secret_token,
-                }
-        else:
-            cursor = conn.execute(
-                "SELECT id, created, paths, allowed_users FROM shares"
-            )
-            shares = {}
-            for row in cursor:
-                sid, created, paths_json, allowed_users_json = row
-                shares[sid] = {
-                    "created": created,
-                    "paths": json.loads(paths_json) if paths_json else [],
-                    "allowed_users": (
-                        json.loads(allowed_users_json) if allowed_users_json else None
-                    ),
-                    "secret_token": None,
-                }
-        return shares
+        available = [row[1] for row in cursor.fetchall()]
+        col_names = _get_share_col_names(available)
+        cursor = conn.execute(f"SELECT {', '.join(col_names)} FROM shares")
+        return {row[0]: _row_to_share_dict(row, col_names) for row in cursor}
     except Exception as e:
         print(f"Error getting all shares: {e}")
         return {}
@@ -519,55 +399,16 @@ def get_all_shares(conn: sqlite3.Connection) -> dict:
 def get_shares_for_path(conn: sqlite3.Connection, file_path: str) -> list:
     """Get all shares that contain a specific file path"""
     try:
-        # Check if secret_token column exists
         cursor = conn.execute(PRAGMA_TABLE_INFO)
-        columns = [row[1] for row in cursor.fetchall()]
-
-        if "secret_token" in columns:
-            cursor = conn.execute(
-                "SELECT id, created, paths, allowed_users, secret_token FROM shares"
-            )
-            matching_shares = []
-            for row in cursor:
-                sid, created, paths_json, allowed_users_json, secret_token = row
-                paths = json.loads(paths_json) if paths_json else []
-                if file_path in paths:
-                    matching_shares.append(
-                        {
-                            "id": sid,
-                            "created": created,
-                            "paths": paths,
-                            "allowed_users": (
-                                json.loads(allowed_users_json)
-                                if allowed_users_json
-                                else None
-                            ),
-                            "secret_token": secret_token,
-                        }
-                    )
-        else:
-            cursor = conn.execute(
-                "SELECT id, created, paths, allowed_users FROM shares"
-            )
-            matching_shares = []
-            for row in cursor:
-                sid, created, paths_json, allowed_users_json = row
-                paths = json.loads(paths_json) if paths_json else []
-                if file_path in paths:
-                    matching_shares.append(
-                        {
-                            "id": sid,
-                            "created": created,
-                            "paths": paths,
-                            "allowed_users": (
-                                json.loads(allowed_users_json)
-                                if allowed_users_json
-                                else None
-                            ),
-                            "secret_token": None,
-                        }
-                    )
-        return matching_shares
+        available = [row[1] for row in cursor.fetchall()]
+        col_names = _get_share_col_names(available)
+        cursor = conn.execute(f"SELECT {', '.join(col_names)} FROM shares")
+        matching = []
+        for row in cursor:
+            share = _row_to_share_dict(row, col_names)
+            if file_path in share["paths"]:
+                matching.append(share)
+        return matching
     except Exception as e:
         print(f"Error getting shares for path {file_path}: {e}")
         return []
@@ -866,44 +707,38 @@ def hash_password(password: str) -> str:
     return f"scrypt:{salt}:{key.hex()}"
 
 
-def verify_password(password: str, password_hash: str) -> bool:
-    """Verify password supporting Argon2, Scrypt, and legacy salted SHA-256."""
-    if not password_hash:
+def _verify_argon2(password: str, password_hash: str) -> bool:
+    """Verify an Argon2 password hash."""
+    if not (ARGON2_AVAILABLE and PH is not None):
+        return False
+    try:
+        return PH.verify(password_hash, password)
+    except (argon2_exceptions.VerifyMismatchError, Exception):
         return False
 
-    # Try Argon2 first
-    if password_hash.startswith("$argon2"):
-        if ARGON2_AVAILABLE and PH is not None:
-            try:
-                return PH.verify(password_hash, password)
-            except argon2_exceptions.VerifyMismatchError:
-                return False
-            except Exception:
-                return False
-        else:
-            # Argon2 hash but library not available
-            return False
 
-    # Try Scrypt fallback
-    if password_hash.startswith("scrypt:"):
-        try:
-            parts = password_hash.split(":")
-            if len(parts) != 3:
-                return False
-            _, salt, stored_key_hex = parts
-            key = hashlib.scrypt(
-                password.encode("utf-8"),
-                salt=salt.encode("utf-8"),
-                n=16384,
-                r=8,
-                p=1,
-                dklen=32,
-            )
-            return secrets.compare_digest(key.hex(), stored_key_hex)
-        except Exception:
+def _verify_scrypt(password: str, password_hash: str) -> bool:
+    """Verify a scrypt password hash."""
+    try:
+        parts = password_hash.split(":")
+        if len(parts) != 3:
             return False
+        _, salt, stored_key_hex = parts
+        key = hashlib.scrypt(
+            password.encode("utf-8"),
+            salt=salt.encode("utf-8"),
+            n=16384,
+            r=8,
+            p=1,
+            dklen=32,
+        )
+        return secrets.compare_digest(key.hex(), stored_key_hex)
+    except Exception:
+        return False
 
-    # Legacy format: salt:hash
+
+def _verify_legacy_sha256(password: str, password_hash: str) -> bool:
+    """Verify a legacy salted SHA-256 password hash."""
     try:
         parts = password_hash.split(":", 1)
         if len(parts) != 2:
@@ -913,6 +748,17 @@ def verify_password(password: str, password_hash: str) -> bool:
         return secrets.compare_digest(pwd_hash, stored_hash)
     except Exception:
         return False
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    """Verify password supporting Argon2, Scrypt, and legacy salted SHA-256."""
+    if not password_hash:
+        return False
+    if password_hash.startswith("$argon2"):
+        return _verify_argon2(password, password_hash)
+    if password_hash.startswith("scrypt:"):
+        return _verify_scrypt(password, password_hash)
+    return _verify_legacy_sha256(password, password_hash)
 
 
 def create_user(

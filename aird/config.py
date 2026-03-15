@@ -48,19 +48,7 @@ CHUNK_SIZE = _CHUNK_SIZE
 MAX_UPLOAD_FILE_SIZE_HARD_LIMIT = _MAX_UPLOAD_FILE_SIZE_HARD_LIMIT
 
 
-def _configure_cloud_providers(config: dict | None) -> None:
-    """Load cloud provider configuration from config dict and environment."""
-    global CLOUD_MANAGER
-    CLOUD_MANAGER.reset()
-
-    if not isinstance(config, dict):
-        config = {}
-
-    cloud_config = config.get("cloud", {})
-    if not isinstance(cloud_config, dict):
-        cloud_config = {}
-
-    # Google Drive configuration
+def _configure_google_drive(cloud_config: dict) -> None:
     gdrive_config = cloud_config.get("google_drive", {})
     if not isinstance(gdrive_config, dict):
         gdrive_config = {}
@@ -97,7 +85,8 @@ def _configure_cloud_providers(config: dict | None) -> None:
     except Exception as exc:
         logging.error("Unexpected error configuring Google Drive provider: %s", exc)
 
-    # OneDrive configuration
+
+def _configure_onedrive(config: dict) -> None:
     onedrive_config = config.get("one_drive")
     if not isinstance(onedrive_config, dict):
         onedrive_config = config.get("onedrive", {})
@@ -134,8 +123,56 @@ def _configure_cloud_providers(config: dict | None) -> None:
     except Exception as exc:
         logging.error("Unexpected error configuring OneDrive provider: %s", exc)
 
+
+def _configure_cloud_providers(config: dict | None) -> None:
+    """Load cloud provider configuration from config dict and environment."""
+    global CLOUD_MANAGER
+    CLOUD_MANAGER.reset()
+
+    if not isinstance(config, dict):
+        config = {}
+
+    cloud_config = config.get("cloud", {})
+    if not isinstance(cloud_config, dict):
+        cloud_config = {}
+
+    _configure_google_drive(cloud_config)
+    _configure_onedrive(config)
+
     if not CLOUD_MANAGER.has_providers():
         logging.info("No cloud providers configured")
+
+
+def _parse_ldap_settings(args, config: dict) -> dict:
+    enabled = args.ldap or config.get("ldap", False)
+    server = args.ldap_server or config.get("ldap_server")
+    base_dn = args.ldap_base_dn or config.get("ldap_base_dn")
+    user_template = args.ldap_user_template or config.get(
+        "ldap_user_template", "uid={username},{ldap_base_dn}"
+    )
+    filter_template = args.ldap_filter_template or config.get("ldap_filter_template")
+    attributes = args.ldap_attributes or config.get(
+        "ldap_attributes", ["cn", "mail", "memberOf"]
+    )
+    if isinstance(attributes, str):
+        attributes = [attr.strip() for attr in attributes.split(",")]
+    attribute_map = config.get("ldap_attribute_map", [])
+    return {
+        "enabled": enabled,
+        "server": server,
+        "base_dn": base_dn,
+        "user_template": user_template,
+        "filter_template": filter_template,
+        "attributes": attributes,
+        "attribute_map": attribute_map,
+    }
+
+
+def _apply_feature_flags_from_config(config: dict) -> None:
+    if "features" in config:
+        features_config = config["features"]
+        for feature_name, feature_value in features_config.items():
+            FEATURE_FLAGS[feature_name] = bool(feature_value)
 
 
 def init_config():
@@ -203,27 +240,16 @@ def init_config():
         args.admin_token or config.get("admin_token") or secrets.token_urlsafe(64)
     )
 
-    LDAP_ENABLED = args.ldap or config.get("ldap", False)
-    LDAP_SERVER = args.ldap_server or config.get("ldap_server")
-    LDAP_BASE_DN = args.ldap_base_dn or config.get("ldap_base_dn")
-    LDAP_USER_TEMPLATE = args.ldap_user_template or config.get(
-        "ldap_user_template", "uid={username},{ldap_base_dn}"
-    )
-    LDAP_FILTER_TEMPLATE = args.ldap_filter_template or config.get(
-        "ldap_filter_template"
-    )
-    LDAP_ATTRIBUTES = args.ldap_attributes or config.get(
-        "ldap_attributes", ["cn", "mail", "memberOf"]
-    )
-    LDAP_ATTRIBUTE_MAP = config.get("ldap_attribute_map", [])
+    ldap_settings = _parse_ldap_settings(args, config)
+    LDAP_ENABLED = ldap_settings["enabled"]
+    LDAP_SERVER = ldap_settings["server"]
+    LDAP_BASE_DN = ldap_settings["base_dn"]
+    LDAP_USER_TEMPLATE = ldap_settings["user_template"]
+    LDAP_FILTER_TEMPLATE = ldap_settings["filter_template"]
+    LDAP_ATTRIBUTES = ldap_settings["attributes"]
+    LDAP_ATTRIBUTE_MAP = ldap_settings["attribute_map"]
 
-    if isinstance(LDAP_ATTRIBUTES, str):
-        LDAP_ATTRIBUTES = [attr.strip() for attr in LDAP_ATTRIBUTES.split(",")]
-
-    if "features" in config:
-        features_config = config["features"]
-        for feature_name, feature_value in features_config.items():
-            FEATURE_FLAGS[feature_name] = bool(feature_value)
+    _apply_feature_flags_from_config(config)
 
     SSL_CERT = args.ssl_cert or config.get("ssl_cert")
     SSL_KEY = args.ssl_key or config.get("ssl_key")

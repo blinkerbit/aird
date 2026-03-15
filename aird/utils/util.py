@@ -36,167 +36,54 @@ from aird.core.file_operations import (  # noqa: F401
 )
 
 
+def _parse_json_field(json_str, default):
+    """Parse a JSON string, returning default on any error or if falsy."""
+    if not json_str:
+        return default
+    try:
+        return json.loads(json_str)
+    except Exception:
+        return default
+
+
+_SHARE_LOAD_OPTIONAL_COLS = [
+    "allowed_users", "secret_token", "share_type",
+    "allow_list", "avoid_list", "expiry_date",
+]
+
+
+def _load_share_col_names(conn: sqlite3.Connection) -> list:
+    """Return the column list to SELECT from shares, based on available schema."""
+    cursor = conn.execute("PRAGMA table_info(shares)")
+    available = {row[1] for row in cursor.fetchall()}
+    return ["id", "created", "paths"] + [c for c in _SHARE_LOAD_OPTIONAL_COLS if c in available]
+
+
+def _share_row_to_dict(row: tuple, col_names: list) -> dict:
+    """Convert a raw shares DB row to the canonical share dict."""
+    d = dict(zip(col_names, row))
+    return {
+        "paths": _parse_json_field(d.get("paths"), []),
+        "created": d["created"],
+        "allowed_users": _parse_json_field(d.get("allowed_users"), None),
+        "secret_token": d.get("secret_token"),
+        "share_type": d.get("share_type") or "static",
+        "allow_list": _parse_json_field(d.get("allow_list"), []),
+        "avoid_list": _parse_json_field(d.get("avoid_list"), []),
+        "expiry_date": d.get("expiry_date"),
+    }
+
+
 def _load_shares(conn: sqlite3.Connection) -> dict:
     loaded: dict = {}
     try:
-        # Check if allowed_users and secret_token columns exist
-        cursor = conn.execute("PRAGMA table_info(shares)")
-        columns = [row[1] for row in cursor.fetchall()]
-
-        if (
-            "allowed_users" in columns
-            and "secret_token" in columns
-            and "share_type" in columns
-            and "allow_list" in columns
-            and "avoid_list" in columns
-            and "expiry_date" in columns
-        ):
-            rows = conn.execute(
-                "SELECT id, created, paths, allowed_users, secret_token, share_type, allow_list, avoid_list, expiry_date FROM shares"
-            ).fetchall()
-            for (
-                sid,
-                created,
-                paths_json,
-                allowed_users_json,
-                secret_token,
-                share_type,
-                allow_list_json,
-                avoid_list_json,
-                expiry_date,
-            ) in rows:
-                try:
-                    paths = json.loads(paths_json) if paths_json else []
-                except Exception:
-                    paths = []
-                try:
-                    allowed_users = (
-                        json.loads(allowed_users_json) if allowed_users_json else None
-                    )
-                except Exception:
-                    allowed_users = None
-                try:
-                    allow_list = json.loads(allow_list_json) if allow_list_json else []
-                except Exception:
-                    allow_list = []
-                try:
-                    avoid_list = json.loads(avoid_list_json) if avoid_list_json else []
-                except Exception:
-                    avoid_list = []
-                loaded[sid] = {
-                    "paths": paths,
-                    "created": created,
-                    "allowed_users": allowed_users,
-                    "secret_token": secret_token,
-                    "share_type": share_type or "static",
-                    "allow_list": allow_list,
-                    "avoid_list": avoid_list,
-                    "expiry_date": expiry_date,
-                }
-        elif (
-            "allowed_users" in columns
-            and "secret_token" in columns
-            and "share_type" in columns
-        ):
-            rows = conn.execute(
-                "SELECT id, created, paths, allowed_users, secret_token, share_type FROM shares"
-            ).fetchall()
-            for (
-                sid,
-                created,
-                paths_json,
-                allowed_users_json,
-                secret_token,
-                share_type,
-            ) in rows:
-                try:
-                    paths = json.loads(paths_json) if paths_json else []
-                except Exception:
-                    paths = []
-                try:
-                    allowed_users = (
-                        json.loads(allowed_users_json) if allowed_users_json else None
-                    )
-                except Exception:
-                    allowed_users = None
-                loaded[sid] = {
-                    "paths": paths,
-                    "created": created,
-                    "allowed_users": allowed_users,
-                    "secret_token": secret_token,
-                    "share_type": share_type or "static",
-                    "allow_list": [],
-                    "avoid_list": [],
-                    "expiry_date": None,
-                }
-        elif "allowed_users" in columns and "secret_token" in columns:
-            rows = conn.execute(
-                "SELECT id, created, paths, allowed_users, secret_token FROM shares"
-            ).fetchall()
-            for sid, created, paths_json, allowed_users_json, secret_token in rows:
-                try:
-                    paths = json.loads(paths_json) if paths_json else []
-                except Exception:
-                    paths = []
-                try:
-                    allowed_users = (
-                        json.loads(allowed_users_json) if allowed_users_json else None
-                    )
-                except Exception:
-                    allowed_users = None
-                loaded[sid] = {
-                    "paths": paths,
-                    "created": created,
-                    "allowed_users": allowed_users,
-                    "secret_token": secret_token,
-                    "share_type": "static",
-                    "allow_list": [],
-                    "avoid_list": [],
-                    "expiry_date": None,
-                }
-        elif "allowed_users" in columns:
-            rows = conn.execute(
-                "SELECT id, created, paths, allowed_users FROM shares"
-            ).fetchall()
-            for sid, created, paths_json, allowed_users_json in rows:
-                try:
-                    paths = json.loads(paths_json) if paths_json else []
-                except Exception:
-                    paths = []
-                try:
-                    allowed_users = (
-                        json.loads(allowed_users_json) if allowed_users_json else None
-                    )
-                except Exception:
-                    allowed_users = None
-                loaded[sid] = {
-                    "paths": paths,
-                    "created": created,
-                    "allowed_users": allowed_users,
-                    "secret_token": None,
-                    "share_type": "static",
-                    "allow_list": [],
-                    "avoid_list": [],
-                    "expiry_date": None,
-                }
-        else:
-            # Fallback for old schema without allowed_users column
-            rows = conn.execute("SELECT id, created, paths FROM shares").fetchall()
-            for sid, created, paths_json in rows:
-                try:
-                    paths = json.loads(paths_json) if paths_json else []
-                except Exception:
-                    paths = []
-                loaded[sid] = {
-                    "paths": paths,
-                    "created": created,
-                    "allowed_users": None,
-                    "secret_token": None,
-                    "share_type": "static",
-                    "allow_list": [],
-                    "avoid_list": [],
-                    "expiry_date": None,
-                }
+        col_names = _load_share_col_names(conn)
+        rows = conn.execute(
+            f"SELECT {', '.join(col_names)} FROM shares"
+        ).fetchall()
+        for row in rows:
+            d = dict(zip(col_names, row))
+            loaded[d["id"]] = _share_row_to_dict(row, col_names)
     except Exception as e:
         print(f"Error loading shares: {e}")
         print(f"Traceback: {traceback.format_exc()}")

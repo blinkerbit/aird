@@ -241,68 +241,49 @@ def print_banner():
     print(banner)
 
 
-def main():
-    print_banner()
+def _validate_ldap_config() -> bool:
+    """Return False (logging errors) if LDAP is enabled but mis-configured."""
+    if not config.LDAP_ENABLED:
+        return True
+    checks = [
+        (config.LDAP_SERVER, "--ldap-server"),
+        (config.LDAP_BASE_DN, "--ldap-base-dn"),
+        (config.LDAP_USER_TEMPLATE, "--ldap-user-template"),
+        (config.LDAP_FILTER_TEMPLATE, "--ldap-filter-template"),
+        (config.LDAP_ATTRIBUTES, "--ldap-attributes"),
+    ]
+    for value, flag in checks:
+        if not value:
+            logger.error("LDAP is enabled, but %s is not configured.", flag)
+            return False
+    return True
 
-    config.init_config()
 
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
-
-    if config.LDAP_ENABLED:
-        if not config.LDAP_SERVER:
-            logger.error("LDAP is enabled, but --ldap-server is not configured.")
-            return
-        if not config.LDAP_BASE_DN:
-            logger.error("LDAP is enabled, but --ldap-base-dn is not configured.")
-            return
-        if not config.LDAP_USER_TEMPLATE:
-            logger.error("LDAP is enabled, but --ldap-user-template is not configured.")
-            return
-        if not config.LDAP_FILTER_TEMPLATE:
-            logger.error(
-                "LDAP is enabled, but --ldap-filter-template is not configured."
-            )
-            return
-        if not config.LDAP_ATTRIBUTES:
-            logger.error("LDAP is enabled, but --ldap-attributes is not configured.")
-            return
-
-    # SSL validation
+def _validate_ssl_config() -> bool:
+    """Return False (logging errors) if SSL certificate/key config is invalid."""
     if config.SSL_CERT and not config.SSL_KEY:
         logger.error(
-            "SSL certificate provided but SSL key is missing. Both --ssl-cert and --ssl-key are required for SSL."
+            "SSL certificate provided but SSL key is missing. "
+            "Both --ssl-cert and --ssl-key are required for SSL."
         )
-        return
+        return False
     if config.SSL_KEY and not config.SSL_CERT:
         logger.error(
-            "SSL key provided but SSL certificate is missing. Both --ssl-cert and --ssl-key are required for SSL."
+            "SSL key provided but SSL certificate is missing. "
+            "Both --ssl-cert and --ssl-key are required for SSL."
         )
-        return
+        return False
     if config.SSL_CERT and config.SSL_KEY:
-        # Validate that certificate and key files exist
         if not os.path.exists(config.SSL_CERT):
             logger.error(f"SSL certificate file not found: {config.SSL_CERT}")
-            return
+            return False
         if not os.path.exists(config.SSL_KEY):
             logger.error(f"SSL key file not found: {config.SSL_KEY}")
-            return
+            return False
+    return True
 
-    constants.ACCESS_TOKEN = config.ACCESS_TOKEN
-    constants.ADMIN_TOKEN = config.ADMIN_TOKEN
-    constants.ROOT_DIR = os.path.abspath(config.ROOT_DIR)
 
-    # Generate separate cookie secret for better security
-    cookie_secret = secrets.token_urlsafe(64)
-
-    settings = {
-        "cookie_secret": cookie_secret,
-        "xsrf_cookies": True,  # Enable CSRF protection
-        "login_url": "/login",
-        "admin_login_url": "/admin/login",
-        "cloud_manager": constants.CLOUD_MANAGER,
-    }
-
-    # Initialize SQLite persistence under OS data dir
+def _init_database() -> None:
     try:
         data_dir = get_data_dir()
         constants.DB_PATH = os.path.join(data_dir, "aird.sqlite3")
@@ -395,6 +376,82 @@ def main():
         constants.DB_CONN = None
         logger.warning("DB_CONN set to None")
 
+
+def _print_server_urls(port: int, hostname: str, scheme: str) -> None:
+    """Print accessible server URLs to stdout."""
+    print(f"{scheme}://localhost:{port}/")
+    if hostname and hostname != "localhost":
+        print(f"{scheme}://{hostname}:{port}/")
+    fqdn = socket.getfqdn()
+    if fqdn and fqdn != hostname and fqdn != "localhost":
+        print(f"{scheme}://{fqdn}:{port}/")
+
+
+def _run_cleanup_expired_shares():
+    if constants.DB_CONN:
+        deleted = cleanup_expired_shares(constants.DB_CONN)
+        if deleted > 0:
+            logger.info(f"Cleaned up {deleted} expired share(s)")
+    tornado.ioloop.IOLoop.current().call_later(3600, _run_cleanup_expired_shares)
+
+
+def _start_server(app, ssl_options, port: int, hostname: str) -> None:
+    while True:
+        try:
+            if ssl_options:
+                proto = "https"
+                app.listen(
+                    port,
+                    ssl_options=ssl_options,
+                    max_body_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
+                    max_buffer_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
+                )
+                logger.info(
+                    f"Serving HTTPS on 0.0.0.0 port {port} ({proto}://0.0.0.0:{port}/) ..."
+                )
+            else:
+                proto = "http"
+                app.listen(
+                    port,
+                    max_body_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
+                    max_buffer_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
+                )
+                logger.info(
+                    f"Serving HTTP on 0.0.0.0 port {port} ({proto}://0.0.0.0:{port}/) ..."
+                )
+            _print_server_urls(port, hostname, proto)
+            tornado.ioloop.IOLoop.current().call_later(3600, _run_cleanup_expired_shares)
+            tornado.ioloop.IOLoop.current().start()
+            break
+        except OSError:
+            port += 1
+
+
+def main():
+    print_banner()
+    config.init_config()
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
+
+    if not _validate_ldap_config():
+        return
+    if not _validate_ssl_config():
+        return
+
+    constants.ACCESS_TOKEN = config.ACCESS_TOKEN
+    constants.ADMIN_TOKEN = config.ADMIN_TOKEN
+    constants.ROOT_DIR = os.path.abspath(config.ROOT_DIR)
+
+    cookie_secret = secrets.token_urlsafe(64)
+    settings = {
+        "cookie_secret": cookie_secret,
+        "xsrf_cookies": True,
+        "login_url": "/login",
+        "admin_login_url": "/admin/login",
+        "cloud_manager": constants.CLOUD_MANAGER,
+    }
+
+    _init_database()
+
     app = make_app(
         settings,
         config.LDAP_ENABLED,
@@ -407,7 +464,6 @@ def main():
         config.ADMIN_USERS,
     )
 
-    # Configure SSL if certificates are provided
     ssl_options = None
     if config.SSL_CERT and config.SSL_KEY:
         ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -415,59 +471,7 @@ def main():
         ssl_context.load_cert_chain(config.SSL_CERT, config.SSL_KEY)
         ssl_options = ssl_context
 
-    port = config.PORT
-    while True:
-        try:
-            if ssl_options:
-                app.listen(
-                    port,
-                    ssl_options=ssl_options,
-                    max_body_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
-                    max_buffer_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
-                )
-                logger.info(
-                    f"Serving HTTPS on 0.0.0.0 port {port} (https://0.0.0.0:{port}/) ..."
-                )
-                print(f"https://localhost:{port}/")
-                if config.HOSTNAME and config.HOSTNAME != "localhost":
-                    print(f"https://{config.HOSTNAME}:{port}/")
-                fqdn = socket.getfqdn()
-                if fqdn and fqdn != config.HOSTNAME and fqdn != "localhost":
-                    print(f"https://{fqdn}:{port}/")
-            else:
-                app.listen(
-                    port,
-                    max_body_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
-                    max_buffer_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
-                )
-                logger.info(
-                    f"Serving HTTP on 0.0.0.0 port {port} (http://0.0.0.0:{port}/) ..."
-                )
-                print(f"http://localhost:{port}/")
-                if config.HOSTNAME and config.HOSTNAME != "localhost":
-                    print(f"http://{config.HOSTNAME}:{port}/")
-                fqdn = socket.getfqdn()
-                if fqdn and fqdn != config.HOSTNAME and fqdn != "localhost":
-                    print(f"http://{fqdn}:{port}/")
-
-            # Setup periodic cleanup of expired shares (stable reference for call_later)
-            def _run_cleanup_expired_shares():
-                if constants.DB_CONN:
-                    deleted = cleanup_expired_shares(constants.DB_CONN)
-                    if deleted > 0:
-                        logger.info(f"Cleaned up {deleted} expired share(s)")
-                tornado.ioloop.IOLoop.current().call_later(
-                    3600, _run_cleanup_expired_shares
-                )
-
-            tornado.ioloop.IOLoop.current().call_later(
-                3600, _run_cleanup_expired_shares
-            )
-
-            tornado.ioloop.IOLoop.current().start()
-            break
-        except OSError:
-            port += 1
+    _start_server(app, ssl_options, config.PORT, config.HOSTNAME)
 
 
 if __name__ == "__main__":

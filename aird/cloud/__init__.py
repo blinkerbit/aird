@@ -270,81 +270,45 @@ class GoogleDriveProvider(CloudProvider):
             content_length=size,
         )
 
-    def upload_file(
-        self,
-        stream: BinaryIO,
-        *,
-        name: str,
-        parent_id: Optional[str] = None,
-        size: Optional[int] = None,
-        content_type: Optional[str] = None,
-    ) -> CloudFile:
-        if not name:
-            raise CloudProviderError("A file name is required for Google Drive uploads")
+    def _upload_simple_gdrive(self, stream, name, metadata, headers, mime_type, size) -> CloudFile:
+        try:
+            stream.seek(0)
+            files = {
+                "metadata": (
+                    "metadata",
+                    json.dumps(metadata),
+                    "application/json; charset=UTF-8",
+                ),
+                "file": (
+                    name,
+                    stream.read(),
+                    mime_type,
+                ),
+            }
+            response = requests.post(
+                "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+                headers=headers,
+                files=files,
+                timeout=120,
+            )
+        except requests.RequestException as exc:
+            raise CloudProviderError(f"Google Drive upload failed: {exc}") from exc
 
-        if size is None:
-            try:
-                current = stream.tell()
-                stream.seek(0, os.SEEK_END)
-                size = stream.tell()
-                stream.seek(current)
-            except Exception:
-                raise CloudProviderError(
-                    "Unable to determine upload size for Google Drive"
-                )
-
-        if size < 0:
-            raise CloudProviderError("Invalid upload size for Google Drive")
-
-        stream.seek(0)
-        metadata: dict[str, object] = {"name": name}
-        if parent_id:
-            metadata["parents"] = [parent_id]
-
-        headers = self._headers()
-        mime_type = content_type or "application/octet-stream"
-
-        # Small files (<=5MB) can use multipart upload for simplicity
-        simple_limit = 5 * 1024 * 1024
-        if size <= simple_limit:
-            try:
-                stream.seek(0)
-                files = {
-                    "metadata": (
-                        "metadata",
-                        json.dumps(metadata),
-                        "application/json; charset=UTF-8",
-                    ),
-                    "file": (
-                        name,
-                        stream.read(),
-                        mime_type,
-                    ),
-                }
-                response = requests.post(
-                    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
-                    headers=headers,
-                    files=files,
-                    timeout=120,
-                )
-            except requests.RequestException as exc:
-                raise CloudProviderError(f"Google Drive upload failed: {exc}") from exc
-
-            if response.status_code not in (200, 201):
-                raise CloudProviderError(
-                    f"Google Drive upload failed ({response.status_code}): {response.text[:200]}"
-                )
-
-            payload = response.json()
-            return CloudFile(
-                id=payload.get("id", ""),
-                name=payload.get("name", name),
-                is_dir=False,
-                size=_safe_int(payload.get("size")),
-                modified=payload.get("modifiedTime"),
+        if response.status_code not in (200, 201):
+            raise CloudProviderError(
+                f"Google Drive upload failed ({response.status_code}): {response.text[:200]}"
             )
 
-        # Resumable upload for larger files
+        payload = response.json()
+        return CloudFile(
+            id=payload.get("id", ""),
+            name=payload.get("name", name),
+            is_dir=False,
+            size=_safe_int(payload.get("size")),
+            modified=payload.get("modifiedTime"),
+        )
+
+    def _upload_resumable_gdrive(self, stream, name, metadata, headers, mime_type, size) -> CloudFile:
         init_headers = headers.copy()
         init_headers.update(
             {
@@ -419,6 +383,40 @@ class GoogleDriveProvider(CloudProvider):
             )
 
         raise CloudProviderError("Google Drive upload did not complete successfully")
+
+    def upload_file(
+        self,
+        stream: BinaryIO,
+        *,
+        name: str,
+        parent_id: Optional[str] = None,
+        size: Optional[int] = None,
+        content_type: Optional[str] = None,
+    ) -> CloudFile:
+        if not name:
+            raise CloudProviderError("A file name is required for Google Drive uploads")
+        if size is None:
+            try:
+                current = stream.tell()
+                stream.seek(0, os.SEEK_END)
+                size = stream.tell()
+                stream.seek(current)
+            except Exception:
+                raise CloudProviderError(
+                    "Unable to determine upload size for Google Drive"
+                )
+        if size < 0:
+            raise CloudProviderError("Invalid upload size for Google Drive")
+        stream.seek(0)
+        metadata: dict[str, object] = {"name": name}
+        if parent_id:
+            metadata["parents"] = [parent_id]
+        headers = self._headers()
+        mime_type = content_type or "application/octet-stream"
+        simple_limit = 5 * 1024 * 1024
+        if size <= simple_limit:
+            return self._upload_simple_gdrive(stream, name, metadata, headers, mime_type, size)
+        return self._upload_resumable_gdrive(stream, name, metadata, headers, mime_type, size)
 
 
 class OneDriveProvider(CloudProvider):
@@ -520,72 +518,41 @@ class OneDriveProvider(CloudProvider):
             content_length=size,
         )
 
-    def upload_file(
-        self,
-        stream: BinaryIO,
-        *,
-        name: str,
-        parent_id: Optional[str] = None,
-        size: Optional[int] = None,
-        content_type: Optional[str] = None,
-    ) -> CloudFile:
-        if not name:
-            raise CloudProviderError("A file name is required for OneDrive uploads")
+    def _upload_simple_onedrive(self, stream, name, parent_id, headers, mime_type) -> CloudFile:
+        safe_name = quote(name, safe="")
+        target_url = (
+            f"{self._base_url}/root:/{safe_name}:/content"
+            if not parent_id or parent_id == "root"
+            else f"{self._base_url}/items/{parent_id}:/{safe_name}:/content"
+        )
+        headers["Content-Type"] = mime_type
 
-        if size is None:
-            try:
-                current = stream.tell()
-                stream.seek(0, os.SEEK_END)
-                size = stream.tell()
-                stream.seek(current)
-            except Exception:
-                raise CloudProviderError("Unable to determine upload size for OneDrive")
+        try:
+            stream.seek(0)
+            response = requests.put(
+                target_url,
+                headers=headers,
+                data=stream.read(),
+                timeout=120,
+            )
+        except requests.RequestException as exc:
+            raise CloudProviderError(f"OneDrive upload failed: {exc}") from exc
 
-        if size < 0:
-            raise CloudProviderError("Invalid upload size for OneDrive")
-
-        stream.seek(0)
-        mime_type = content_type or "application/octet-stream"
-
-        # Simple uploads are limited to 4 MiB
-        simple_limit = 4 * 1024 * 1024
-        if size <= simple_limit:
-            safe_name = quote(name, safe="")
-            target_url = (
-                f"{self._base_url}/root:/{safe_name}:/content"
-                if not parent_id or parent_id == "root"
-                else f"{self._base_url}/items/{parent_id}:/{safe_name}:/content"
+        if response.status_code not in (200, 201):
+            raise CloudProviderError(
+                f"OneDrive upload failed ({response.status_code}): {response.text[:200]}"
             )
 
-            headers = self._headers().copy()
-            headers["Content-Type"] = mime_type
+        payload = response.json()
+        return CloudFile(
+            id=payload.get("id", ""),
+            name=payload.get("name", name),
+            is_dir="folder" in payload,
+            size=_safe_int(payload.get("size")),
+            modified=payload.get("lastModifiedDateTime"),
+        )
 
-            try:
-                stream.seek(0)
-                response = requests.put(
-                    target_url,
-                    headers=headers,
-                    data=stream.read(),
-                    timeout=120,
-                )
-            except requests.RequestException as exc:
-                raise CloudProviderError(f"OneDrive upload failed: {exc}") from exc
-
-            if response.status_code not in (200, 201):
-                raise CloudProviderError(
-                    f"OneDrive upload failed ({response.status_code}): {response.text[:200]}"
-                )
-
-            payload = response.json()
-            return CloudFile(
-                id=payload.get("id", ""),
-                name=payload.get("name", name),
-                is_dir="folder" in payload,
-                size=_safe_int(payload.get("size")),
-                modified=payload.get("lastModifiedDateTime"),
-            )
-
-        # Larger uploads require an upload session
+    def _upload_chunked_onedrive(self, stream, name, parent_id, mime_type, size) -> CloudFile:
         safe_name = quote(name, safe="")
         if not parent_id or parent_id == "root":
             session_url = f"{self._base_url}/root:/{safe_name}:/createUploadSession"
@@ -660,6 +627,35 @@ class OneDriveProvider(CloudProvider):
             )
 
         raise CloudProviderError("OneDrive upload did not complete successfully")
+
+    def upload_file(
+        self,
+        stream: BinaryIO,
+        *,
+        name: str,
+        parent_id: Optional[str] = None,
+        size: Optional[int] = None,
+        content_type: Optional[str] = None,
+    ) -> CloudFile:
+        if not name:
+            raise CloudProviderError("A file name is required for OneDrive uploads")
+        if size is None:
+            try:
+                current = stream.tell()
+                stream.seek(0, os.SEEK_END)
+                size = stream.tell()
+                stream.seek(current)
+            except Exception:
+                raise CloudProviderError("Unable to determine upload size for OneDrive")
+        if size < 0:
+            raise CloudProviderError("Invalid upload size for OneDrive")
+        stream.seek(0)
+        mime_type = content_type or "application/octet-stream"
+        simple_limit = 4 * 1024 * 1024
+        headers = self._headers().copy()
+        if size <= simple_limit:
+            return self._upload_simple_onedrive(stream, name, parent_id, headers, mime_type)
+        return self._upload_chunked_onedrive(stream, name, parent_id, mime_type, size)
 
 
 def encode_identifier(identifier: str) -> str:
