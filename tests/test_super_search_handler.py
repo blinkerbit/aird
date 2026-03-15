@@ -109,7 +109,7 @@ class TestSuperSearchWebSocketHandler:
         message = json.dumps({"pattern": "*.txt", "search_text": "foo"})
         await handler.on_message(message)
 
-        handler.perform_search.assert_called_with("*.txt", "foo")
+        handler.perform_search.assert_called_with("*.txt", "foo", "content")
 
     @pytest.mark.asyncio
     async def test_search_no_matches(self):

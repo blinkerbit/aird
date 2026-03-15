@@ -472,15 +472,17 @@ class SuperSearchWebSocketHandler(
             )
             return
 
+        search_mode = data.get("search_mode", "content")
+
         if self.search_task and not self.search_task.done():
             self.stop_event.set()
             self._cancel_task = asyncio.create_task(
-                self._await_cancellation_and_start_new((pattern, search_text))
+                self._await_cancellation_and_start_new((pattern, search_text, search_mode))
             )
         else:
             self.stop_event.clear()
             self.search_task = asyncio.create_task(
-                self.perform_search(pattern, search_text)
+                self.perform_search(pattern, search_text, search_mode)
             )
 
     async def _await_cancellation_and_start_new(self, args):
@@ -488,15 +490,15 @@ class SuperSearchWebSocketHandler(
             await self.search_task
         except asyncio.CancelledError:
             self.stop_event.clear()
-            pattern, search_text = args
+            pattern, search_text, search_mode = args
             self.search_task = asyncio.create_task(
-                self.perform_search(pattern, search_text)
+                self.perform_search(pattern, search_text, search_mode)
             )
             raise
         self.stop_event.clear()
-        pattern, search_text = args
+        pattern, search_text, search_mode = args
         self.search_task = asyncio.create_task(
-            self.perform_search(pattern, search_text)
+            self.perform_search(pattern, search_text, search_mode)
         )
 
     @staticmethod
@@ -539,6 +541,7 @@ class SuperSearchWebSocketHandler(
         normalized_pattern: str,
         search_text: str,
         files_searched: int,
+        search_mode: str = "content",
     ) -> tuple[int, bool]:
         """Search one file; sends 'scanning' then searches. Returns (match_count, True if searched)."""
         try:
@@ -548,6 +551,16 @@ class SuperSearchWebSocketHandler(
             return 0, False
         if not self._file_matches_pattern(rel_path_str, filename, normalized_pattern):
             return 0, False
+
+        if search_mode == "filename":
+            if self.stop_event.is_set():
+                raise asyncio.CancelledError
+            await asyncio.sleep(0)  # yield so on_close / stop_event can be processed
+            if search_text.lower() in filename.lower() or search_text.lower() in rel_path_str.lower():
+                self.send_match(rel_path_str, 0, rel_path_str, search_text)
+                return 1, True
+            return 0, True
+
         try:
             self.write_message(
                 json.dumps(
@@ -576,6 +589,7 @@ class SuperSearchWebSocketHandler(
         root_path: pathlib.Path,
         normalized_pattern: str,
         search_text: str,
+        search_mode: str = "content",
     ) -> tuple[int, int] | None:
         """Walk directory tree and search files. Returns (matches, files_searched) or None if auth expired."""
         matches = 0
@@ -594,6 +608,7 @@ class SuperSearchWebSocketHandler(
                     normalized_pattern,
                     search_text,
                     files_searched + 1,
+                    search_mode,
                 )
                 matches += match_delta
                 if counted:
@@ -638,7 +653,7 @@ class SuperSearchWebSocketHandler(
                 )
             )
 
-    async def perform_search(self, pattern: str, search_text: str):
+    async def perform_search(self, pattern: str, search_text: str, search_mode: str = "content"):
         """Perform the super search and stream results"""
         # Validate authentication at the start of search
         user = self.get_current_user()
@@ -659,6 +674,7 @@ class SuperSearchWebSocketHandler(
                         "type": "search_start",
                         "pattern": pattern,
                         "search_text": search_text,
+                        "search_mode": search_mode,
                     }
                 )
             )
@@ -667,7 +683,7 @@ class SuperSearchWebSocketHandler(
             normalized_pattern = pattern.replace("\\", "/")
             root_path = pathlib.Path(ROOT_DIR).resolve()
             result = await self._run_search_walk(
-                root_path, normalized_pattern, search_text
+                root_path, normalized_pattern, search_text, search_mode
             )
             if result is None:
                 return
@@ -675,13 +691,19 @@ class SuperSearchWebSocketHandler(
             self._send_search_completion(matches, files_searched)
 
         except asyncio.CancelledError:
-            self.write_message(json.dumps({"type": "cancelled"}))
+            try:
+                self.write_message(json.dumps({"type": "cancelled"}))
+            except (tornado.websocket.WebSocketClosedError, RuntimeError):
+                pass
             raise
         except Exception as e:
             logging.error(f"Super search error: {e}", exc_info=True)
-            self.write_message(
-                json.dumps({"type": "error", "message": f"Search failed: {str(e)}"})
-            )
+            try:
+                self.write_message(
+                    json.dumps({"type": "error", "message": f"Search failed: {str(e)}"})
+                )
+            except (tornado.websocket.WebSocketClosedError, RuntimeError):
+                pass
 
     def send_match(
         self, file_path: str, line_number: int, line_content: str, search_text: str

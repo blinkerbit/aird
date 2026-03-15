@@ -527,6 +527,7 @@
       constructor() {
         this.ws = null;
         this.isSearching = false;
+        this.cancelled = false;
         this.results = new Map(); // file_path -> {matches: [], collapsed: false}
         this.totalMatches = 0;
         this.totalFiles = 0;
@@ -682,6 +683,7 @@
         }
 
         this.isSearching = true;
+        this.cancelled = false;
         this.updateButtons();
         this.clearResults();
         this.showStatus('Connecting to search service...', 'searching');
@@ -718,6 +720,9 @@
             return;
           }
 
+          // Don't overwrite status if user explicitly cancelled
+          if (this.cancelled) return;
+
           if (this.totalMatches === 0 && this.processedFiles > 0) {
             this.showStatus('Search completed - no matches found.', 'success');
           }
@@ -746,7 +751,11 @@
             break;
 
           case 'search_start':
-            this.showStatus(`Searching for "${data.search_text}" in files matching "${data.pattern}"...`, 'searching');
+            if (data.search_mode === 'filename') {
+              this.showStatus(`Searching for filenames matching "${data.search_text}" in pattern "${data.pattern}"...`, 'searching');
+            } else {
+              this.showStatus(`Searching for "${data.search_text}" in files matching "${data.pattern}"...`, 'searching');
+            }
             this.progressContainer.style.display = 'block';
             this.scanningTicker.textContent = '';
             break;
@@ -771,6 +780,14 @@
 
           case 'no_files':
             this.showStatus(data.message || `No matches found (${data.files_searched} files scanned).`, 'success');
+            this.progressContainer.style.display = 'none';
+            this.scanningTicker.textContent = '';
+            this.isSearching = false;
+            this.updateButtons();
+            break;
+
+          case 'cancelled':
+            this.showStatus('Search cancelled.', 'error');
             this.progressContainer.style.display = 'none';
             this.scanningTicker.textContent = '';
             this.isSearching = false;
@@ -902,6 +919,7 @@
       }
 
       cancelSearch() {
+        this.cancelled = true;
         if (this.ws) {
           this.ws.close();
         }
