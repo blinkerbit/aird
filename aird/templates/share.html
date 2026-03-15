@@ -181,7 +181,7 @@
 
     .btn:disabled {
       background: #eee;
-      color: #999;
+      color: #595959;
       cursor: not-allowed;
     }
 
@@ -274,13 +274,13 @@
       vertical-align: middle;
       padding: 2px 4px;
       border-radius: 3px;
-      background: rgba(0, 102, 204, 0.1);
+      background: #e8f0fe;
     }
 
     .shared-icon:hover {
       color: #004499;
       transform: scale(1.2);
-      background: rgba(0, 102, 204, 0.2);
+      background: #d0e4fe;
     }
 
     .share-result {
@@ -621,7 +621,7 @@
     .access-user-tag {
       display: inline-flex;
       align-items: center;
-      background: #007bff;
+      background: #0066cc;
       color: white;
       padding: 4px 8px;
       border-radius: 15px;
@@ -658,7 +658,7 @@
     }
 
     .access-user-add {
-      background: #28a745;
+      background: #1a7a32;
       color: white;
       border: none;
       border-radius: 4px;
@@ -668,7 +668,7 @@
     }
 
     .access-user-add:hover {
-      background: #218838;
+      background: #155724;
     }
 
     .access-user-add:disabled {
@@ -685,7 +685,7 @@
     }
 
     .share-management-save {
-      background: #28a745;
+      background: #1a7a32;
       color: white;
       border: none;
       border-radius: 4px;
@@ -695,7 +695,7 @@
     }
 
     .share-management-save:hover {
-      background: #218838;
+      background: #155724;
     }
 
     .share-management-cancel {
@@ -719,7 +719,7 @@
     }
 
     .share-files-actions .btn {
-      background: #007bff;
+      background: #0066cc;
       color: white;
       border: none;
       border-radius: 4px;
@@ -796,7 +796,7 @@
     }
 
     .custom-dialog-buttons button#dialogConfirmBtn {
-      background-color: #007bff;
+      background-color: #0066cc;
       color: white;
     }
 
@@ -1781,33 +1781,35 @@
       });
     }
 
+    function buildCloudFormData(file) {
+      const formData = new FormData();
+      formData.append('file', file);
+      const targetFolder = cloudState.currentFolder || cloudState.currentProvider.root;
+      if (targetFolder) {
+        formData.append('parent_id', targetFolder);
+      }
+      return formData;
+    }
+
     async function handleCloudUpload() {
       if (!cloudState.currentProvider) {
         setCloudUploadStatus('Select a cloud provider before uploading.', true);
         return;
       }
 
-      if (!cloudElements.uploadInput || !cloudElements.uploadInput.files || !cloudElements.uploadInput.files.length) {
+      const uploadInput = cloudElements.uploadInput;
+      if (!uploadInput || !uploadInput.files || !uploadInput.files.length) {
         setCloudUploadStatus('Choose a file to upload.', true);
         return;
       }
 
-      const file = cloudElements.uploadInput.files[0];
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const targetFolder = cloudState.currentFolder || cloudState.currentProvider.root;
-      if (targetFolder) {
-        formData.append('parent_id', targetFolder);
-      }
+      const file = uploadInput.files[0];
+      const formData = buildCloudFormData(file);
 
       cloudState.uploading = true;
       setCloudUploadStatus(`Uploading ${file.name || 'file'}...`);
       updateCloudNavigationState();
-
-      if (cloudElements.uploadInput) {
-        cloudElements.uploadInput.disabled = true;
-      }
+      uploadInput.disabled = true;
 
       try {
         const response = await fetch(`/api/cloud/${cloudState.currentProvider.name}/upload`, {
@@ -1816,28 +1818,21 @@
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
-          const message = payload && payload.error ? payload.error : `Upload failed (HTTP ${response.status})`;
-          throw new Error(message);
+          throw new Error(payload.error || `Upload failed (HTTP ${response.status})`);
         }
 
-        const uploadedName = payload && payload.file && payload.file.name ? payload.file.name : (file.name || 'file');
+        const uploadedName = (payload.file && payload.file.name) ? payload.file.name : (file.name || 'file');
         setCloudUploadStatus(`Uploaded ${uploadedName}.`);
+        uploadInput.value = '';
 
-        if (cloudElements.uploadInput) {
-          cloudElements.uploadInput.value = '';
-        }
-
-        const folderToReload = cloudState.currentFolder;
-        await loadCloudFolder(folderToReload, {});
+        await loadCloudFolder(cloudState.currentFolder, {});
         setCloudStatus(`Uploaded ${uploadedName} to ${cloudState.currentProvider.label || cloudState.currentProvider.name}.`);
       } catch (error) {
         console.error('Cloud upload failed:', error);
-        setCloudUploadStatus(error && error.message ? error.message : 'Upload failed.', true);
+        setCloudUploadStatus((error && error.message) ? error.message : 'Upload failed.', true);
       } finally {
         cloudState.uploading = false;
-        if (cloudElements.uploadInput) {
-          cloudElements.uploadInput.disabled = false;
-        }
+        uploadInput.disabled = false;
         updateCloudNavigationState();
       }
     }
@@ -1913,7 +1908,7 @@
         elements.selectedFilesDiv.innerHTML = Array.from(selectedFiles)
           .map(file => {
             const meta = selectedFileMetadata.get(file);
-            let icon = '📄';
+            let icon;
             let label = '';
 
             if (meta && meta.type === 'cloud') {
@@ -1927,7 +1922,7 @@
               label = fileName;
             }
 
-            const safeKey = file.replaceAll("'", "\\'");
+            const safeKey = file.replaceAll("'", String.raw`\'`);
             return `<span class="selected-file" data-action="removeFromSelection" data-path="${safeKey}">${icon} ${escapeHtml(label)} ×</span>`;
           })
           .join('');
@@ -2015,7 +2010,7 @@
       elements.fileTableBody.innerHTML = '';
 
       if (currentPath) {
-        const parentPath = currentPath.split('/').filter(p => p).slice(0, -1).join('/');
+        const parentPath = currentPath.split('/').filter(Boolean).slice(0, -1).join('/');
         const row = document.createElement('tr');
         row.innerHTML = `
           <td></td>
@@ -2123,11 +2118,62 @@
       }
     }
 
+    function buildShareTokenHtml(share) {
+      if (!share.secret_token) return '';
+      return `
+            <div style="margin-top: 15px;">
+              <strong>🔐 Secret Token:</strong><br>
+              <code style="background: #f0f0f0; padding: 4px 8px; border-radius: 3px; font-family: monospace; font-size: 12px; word-break: break-all; display: inline-block; margin: 5px 0;">${share.secret_token}</code>
+              <button class="btn" data-action="copyToClipboard" data-text="${share.secret_token}" style="margin-left: 10px; font-size: 11px; padding: 4px 8px;">Copy Token</button>
+              <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 8px; border-radius: 4px; font-size: 11px; color: #856404; margin-top: 8px;">
+                <strong>⚠️ Important:</strong> Users need this token to access the share.
+              </div>
+            </div>`;
+    }
+
+    function buildShareUsersHtml(allowedUsers) {
+      if (!allowedUsers || allowedUsers.length === 0) {
+        return '<div style="color: #666; font-style: italic;">No users specified (public access)</div>';
+      }
+      return allowedUsers.map(user => `
+                  <span class="access-user-tag">
+                    ${user}
+                    <button class="access-user-remove" data-action="removeUserFromShare" data-user="${user}">&times;</button>
+                  </span>`).join('');
+    }
+
+    function buildSharePathsHtml(paths) {
+      if (!paths || paths.length === 0) {
+        return '<div style="padding: 20px; text-align: center; color: #666;">No files in this share</div>';
+      }
+      return paths.map(path => `
+                  <div class="share-file-item">
+                    <span>${path}</span>
+                    <button class="share-file-remove" data-action="removeFileFromShare" data-path="${path}">Remove</button>
+                  </div>`).join('');
+    }
+
+    function setupTokenEditCheckboxes() {
+      const disableTokenCheckbox = document.getElementById('disableTokenEdit');
+      const enableTokenCheckbox = document.getElementById('enableTokenEdit');
+      if (!disableTokenCheckbox || !enableTokenCheckbox) return;
+      disableTokenCheckbox.addEventListener('change', function () {
+        if (this.checked) enableTokenCheckbox.checked = false;
+      });
+      enableTokenCheckbox.addEventListener('change', function () {
+        if (this.checked) disableTokenCheckbox.checked = false;
+      });
+    }
+
     function renderShareManagementModal(share) {
       const body = document.getElementById('shareManagementBody');
-      const accessInfo = share.allowed_users ?
-        `Restricted (${share.allowed_users.length} user${share.allowed_users.length !== 1 ? 's' : ''})` :
-        'Public';
+      let accessInfo;
+      if (share.allowed_users) {
+        const suffix = share.allowed_users.length === 1 ? '' : 's';
+        accessInfo = `Restricted (${share.allowed_users.length} user${suffix})`;
+      } else {
+        accessInfo = 'Public';
+      }
 
       console.log('Rendering share management modal with data:', {
         share_type: share.share_type,
@@ -2136,23 +2182,22 @@
         avoid_list: share.avoid_list
       });
 
+      const isStatic = (share.share_type || 'static') === 'static';
+      const isDynamic = share.share_type === 'dynamic';
+      const currentBadge = '<span style="color: #28a745; font-weight: bold;">← Current</span>';
+      const expiryValue = share.expiry_date ? new Date(share.expiry_date).toISOString().slice(0, 16) : '';
+      const expiryDisplay = share.expiry_date
+        ? `<strong>${new Date(share.expiry_date).toLocaleString()}</strong>`
+        : '<strong>No expiration</strong>';
+
       body.innerHTML = `
           <div class="share-info-section">
             <h3>Share Information</h3>
             <div><strong>Share ID:</strong> <code>${share.id}</code></div>
             <div><strong>Access:</strong> <span class="${share.allowed_users ? 'restricted' : 'public'}">${accessInfo}</span></div>
             <div><strong>Created:</strong> Just now</div>
-            <div><strong>URL:</strong> <a href="${share.url}" target="_blank">${window.location.origin}${share.url}</a></div>
-            ${share.secret_token ? `
-            <div style="margin-top: 15px;">
-              <strong>🔐 Secret Token:</strong><br>
-              <code style="background: #f0f0f0; padding: 4px 8px; border-radius: 3px; font-family: monospace; font-size: 12px; word-break: break-all; display: inline-block; margin: 5px 0;">${share.secret_token}</code>
-              <button class="btn" data-action="copyToClipboard" data-text="${share.secret_token}" style="margin-left: 10px; font-size: 11px; padding: 4px 8px;">Copy Token</button>
-              <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 8px; border-radius: 4px; font-size: 11px; color: #856404; margin-top: 8px;">
-                <strong>⚠️ Important:</strong> Users need this token to access the share.
-              </div>
-            </div>
-            ` : ''}
+            <div><strong>URL:</strong> <a href="${share.url}" target="_blank">${globalThis.location.origin}${share.url}</a></div>
+            ${buildShareTokenHtml(share)}
           </div>
 
           <!-- Share Type Configuration -->
@@ -2160,16 +2205,16 @@
             <h3>Share Type</h3>
             <div style="margin-bottom: 10px;">
               <label style="display: flex; align-items: center; gap: 8px;">
-                <input type="radio" name="shareTypeEdit" value="static" ${(share.share_type || 'static') === 'static' ? 'checked' : ''}>
+                <input type="radio" name="shareTypeEdit" value="static" ${isStatic ? 'checked' : ''}>
                 <span>Static (Snapshot of current files)</span>
-                ${(share.share_type || 'static') === 'static' ? '<span style="color: #28a745; font-weight: bold;">← Current</span>' : ''}
+                ${isStatic ? currentBadge : ''}
               </label>
             </div>
             <div style="margin-bottom: 10px;">
               <label style="display: flex; align-items: center; gap: 8px;">
-                <input type="radio" name="shareTypeEdit" value="dynamic" ${share.share_type === 'dynamic' ? 'checked' : ''}>
+                <input type="radio" name="shareTypeEdit" value="dynamic" ${isDynamic ? 'checked' : ''}>
                 <span>Dynamic (Live folder sharing)</span>
-                ${share.share_type === 'dynamic' ? '<span style="color: #28a745; font-weight: bold;">← Current</span>' : ''}
+                ${isDynamic ? currentBadge : ''}
               </label>
             </div>
           </div>
@@ -2179,16 +2224,16 @@
             <h3>Security Options</h3>
             <div style="margin-bottom: 10px;">
               <label style="display: flex; align-items: center; gap: 8px;">
-                <input type="checkbox" id="disableTokenEdit" ${!share.secret_token ? 'checked' : ''}>
+                <input type="checkbox" id="disableTokenEdit" ${share.secret_token ? '' : 'checked'}>
                 <span>Disable Secret Token (Public Access)</span>
-                ${!share.secret_token ? '<span style="color: #28a745; font-weight: bold;">← Current</span>' : ''}
+                ${share.secret_token ? '' : currentBadge}
               </label>
             </div>
             <div style="margin-bottom: 10px;">
               <label style="display: flex; align-items: center; gap: 8px;">
                 <input type="checkbox" id="enableTokenEdit" ${share.secret_token ? 'checked' : ''}>
                 <span>Enable Secret Token (Secure Access)</span>
-                ${share.secret_token ? '<span style="color: #28a745; font-weight: bold;">← Current</span>' : ''}
+                ${share.secret_token ? currentBadge : ''}
               </label>
             </div>
           </div>
@@ -2200,10 +2245,10 @@
               <label style="display: block; margin-bottom: 5px; font-size: 12px;">
                 <strong>Share Expires On:</strong>
               </label>
-              <input type="datetime-local" id="expiryDateEdit" value="${share.expiry_date ? new Date(share.expiry_date).toISOString().slice(0, 16) : ''}"
+              <input type="datetime-local" id="expiryDateEdit" value="${expiryValue}"
                      style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px;">
               <div style="font-size: 11px; color: #666; margin-top: 3px;">
-                Leave empty for no expiration. Current: ${share.expiry_date ? `<strong>${new Date(share.expiry_date).toLocaleString()}</strong>` : '<strong>No expiration</strong>'}
+                Leave empty for no expiration. Current: ${expiryDisplay}
               </div>
             </div>
           </div>
@@ -2231,15 +2276,7 @@
           <div class="share-info-section access-list-section">
             <h3>Access Control</h3>
             <div class="access-users-list" id="accessUsersList">
-              ${share.allowed_users && share.allowed_users.length > 0 ?
-          share.allowed_users.map(user => `
-                  <span class="access-user-tag">
-                    ${user}
-                    <button class="access-user-remove" data-action="removeUserFromShare" data-user="${user}">&times;</button>
-                  </span>
-                `).join('') :
-          '<div style="color: #666; font-style: italic;">No users specified (public access)</div>'
-        }
+              ${buildShareUsersHtml(share.allowed_users)}
             </div>
             <div class="access-user-input-section">
               <input type="text" class="access-user-input" id="newUserInput" placeholder="Enter username to add">
@@ -2251,15 +2288,7 @@
           <div class="share-info-section">
             <h3>Files in Share (${share.paths ? share.paths.length : 0})</h3>
             <div class="share-files-list" id="shareFilesList">
-              ${share.paths && share.paths.length > 0 ?
-          share.paths.map(path => `
-                  <div class="share-file-item">
-                    <span>${path}</span>
-                    <button class="share-file-remove" data-action="removeFileFromShare" data-path="${path}">Remove</button>
-                  </div>
-                `).join('') :
-          '<div style="padding: 20px; text-align: center; color: #666;">No files in this share</div>'
-        }
+              ${buildSharePathsHtml(share.paths)}
             </div>
             <div class="share-files-actions">
               <button class="btn" data-action="showAddFilesModal">Add Files</button>
@@ -2267,31 +2296,9 @@
           </div>
         `;
 
-      // Store current share data for updates
       currentShareData = share;
-
-      // Update modal title
       document.querySelector('.share-management-title').textContent = `Manage Share: ${share.id}`;
-
-      // Add event listeners for mutually exclusive checkboxes
-      setTimeout(() => {
-        const disableTokenCheckbox = document.getElementById('disableTokenEdit');
-        const enableTokenCheckbox = document.getElementById('enableTokenEdit');
-
-        if (disableTokenCheckbox && enableTokenCheckbox) {
-          disableTokenCheckbox.addEventListener('change', function () {
-            if (this.checked) {
-              enableTokenCheckbox.checked = false;
-            }
-          });
-
-          enableTokenCheckbox.addEventListener('change', function () {
-            if (this.checked) {
-              disableTokenCheckbox.checked = false;
-            }
-          });
-        }
-      }, 100);
+      setTimeout(setupTokenEditCheckboxes, 100);
     }
 
     async function updateShare() {
@@ -2320,8 +2327,8 @@
         }
         // If neither is checked, tokenDisabled remains null (no change)
 
-        const allowList = allowListText ? allowListText.split(',').map(s => s.trim()).filter(s => s) : [];
-        const avoidList = avoidListText ? avoidListText.split(',').map(s => s.trim()).filter(s => s) : [];
+        const allowList = allowListText ? allowListText.split(',').map(s => s.trim()).filter(Boolean) : [];
+        const avoidList = avoidListText ? avoidListText.split(',').map(s => s.trim()).filter(Boolean) : [];
 
         // Get expiry date (store as system time)
         const expiryDateInput = document.getElementById('expiryDateEdit').value;
@@ -2885,6 +2892,44 @@
       }
     }
 
+    function buildPathsPayload(files, metadataMap) {
+      return Array.from(files).map(item => {
+        const meta = metadataMap.get(item);
+        if (meta && meta.type === 'cloud') {
+          return { type: 'cloud', provider: meta.provider, id: meta.id, name: meta.name, is_dir: !!meta.is_dir };
+        }
+        return item;
+      });
+    }
+
+    function buildShareResultHtml(data, fullUrl, accessType, allowedUsers, shareType, disableToken) {
+      const accessInfo = accessType === 'restricted'
+        ? `<br><small>Access restricted to: ${allowedUsers.join(', ') || 'No users selected'}</small>`
+        : '<br><small>Public access (anyone with link)</small>';
+      const shareTypeInfo = shareType === 'dynamic'
+        ? '<br><small>🔄 Dynamic share (live folder)</small>'
+        : '<br><small>📸 Static share (snapshot)</small>';
+      const tokenInfo = disableToken
+        ? '<br><small>🌐 Public access (no token required)</small>'
+        : '<br><small>🔐 Token required</small>';
+      const tokenSection = disableToken ? '' : `<strong>🔐 Secret Token:</strong><br>
+            <code style="background: #f0f0f0; padding: 4px 8px; border-radius: 3px; font-family: monospace; font-size: 12px; word-break: break-all;">${data.secret_token}</code>
+            <button class="btn" data-action="copyToClipboard" data-text="${data.secret_token}" style="margin-left: 10px;">Copy Token</button>
+            <br><br>
+            <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 4px; font-size: 12px; color: #856404;">
+              <strong>⚠️ Important:</strong> Share this secret token with users who need access. They will need to enter this token to view the shared files.
+            </div>`;
+      return `
+            <strong>Share link created:</strong><br>
+            <a href="${data.url}" target="_blank">${data.url}</a>
+            <button class="btn" data-action="copyToClipboard" data-text="${fullUrl}" style="margin-left: 10px;">Copy Link</button>
+            ${accessInfo}${shareTypeInfo}${tokenInfo}
+            <br><br>
+            ${tokenSection}
+            ${accessInfo}
+          `;
+    }
+
     async function generateShareLink() {
       if (selectedFiles.size === 0) return;
 
@@ -2892,35 +2937,20 @@
       elements.generateLink.textContent = 'Generating...';
 
       try {
-        // Determine access type, share type, allowed users, filter lists, and token settings
         const accessType = document.querySelector('input[name="accessType"]:checked').value;
         const shareType = document.querySelector('input[name="shareType"]:checked').value;
         const allowedUsers = accessType === 'restricted' ? Array.from(selectedUsers) : [];
         const disableToken = document.getElementById('disableToken').checked;
 
-        // Get allow and avoid lists
         const allowListText = document.getElementById('allowList').value.trim();
         const avoidListText = document.getElementById('avoidList').value.trim();
-        const allowList = allowListText ? allowListText.split(',').map(s => s.trim()).filter(s => s) : [];
-        const avoidList = avoidListText ? avoidListText.split(',').map(s => s.trim()).filter(s => s) : [];
+        const allowList = allowListText ? allowListText.split(',').map(s => s.trim()).filter(Boolean) : [];
+        const avoidList = avoidListText ? avoidListText.split(',').map(s => s.trim()).filter(Boolean) : [];
 
-        // Get expiry date (store as system time)
         const expiryDateInput = document.getElementById('expiryDate').value;
         const expiryDate = expiryDateInput ? new Date(expiryDateInput).toISOString().replace('Z', '') : null;
 
-        const pathsPayload = Array.from(selectedFiles).map(item => {
-          const meta = selectedFileMetadata.get(item);
-          if (meta && meta.type === 'cloud') {
-            return {
-              type: 'cloud',
-              provider: meta.provider,
-              id: meta.id,
-              name: meta.name,
-              is_dir: !!meta.is_dir
-            };
-          }
-          return item;
-        });
+        const pathsPayload = buildPathsPayload(selectedFiles, selectedFileMetadata);
 
         const response = await fetch('/share/create', {
           method: 'POST',
@@ -2945,37 +2975,11 @@
           showDialog('Error: ' + data.error, 'Error');
         } else {
           const fullUrl = `${window.location.origin}${data.url}`;
-          const accessInfo = accessType === 'restricted' ?
-            `<br><small>Access restricted to: ${allowedUsers.join(', ') || 'No users selected'}</small>` :
-            '<br><small>Public access (anyone with link)</small>';
-          const shareTypeInfo = shareType === 'dynamic' ?
-            '<br><small>🔄 Dynamic share (live folder)</small>' :
-            '<br><small>📸 Static share (snapshot)</small>';
-          const tokenInfo = disableToken ?
-            '<br><small>🌐 Public access (no token required)</small>' :
-            '<br><small>🔐 Token required</small>';
-
           elements.shareResult.style.display = 'block';
-          elements.shareResult.innerHTML = `
-            <strong>Share link created:</strong><br>
-            <a href="${data.url}" target="_blank">${data.url}</a>
-            <button class="btn" data-action="copyToClipboard" data-text="${fullUrl}" style="margin-left: 10px;">Copy Link</button>
-            ${accessInfo}${shareTypeInfo}${tokenInfo}
-            <br><br>
-            ${disableToken ? '' : `<strong>🔐 Secret Token:</strong><br>
-            <code style="background: #f0f0f0; padding: 4px 8px; border-radius: 3px; font-family: monospace; font-size: 12px; word-break: break-all;">${data.secret_token}</code>
-            <button class="btn" data-action="copyToClipboard" data-text="${data.secret_token}" style="margin-left: 10px;">Copy Token</button>
-            <br><br>
-            <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 4px; font-size: 12px; color: #856404;">
-              <strong>⚠️ Important:</strong> Share this secret token with users who need access. They will need to enter this token to view the shared files.
-            </div>`}
-            ${accessInfo}
-          `;
-
-          // Clear selection after successful share creation
+          elements.shareResult.innerHTML = buildShareResultHtml(
+            data, fullUrl, accessType, allowedUsers, shareType, disableToken
+          );
           clearSelection();
-
-          // Reload active shares
           loadActiveShares();
         }
       } catch (error) {
@@ -3010,17 +3014,21 @@
         elements.sharesTableBody.innerHTML = '';
         sharesArray.forEach(share => {
           const row = document.createElement('tr');
-          const accessInfo = share.allowed_users ?
-            `Restricted (${share.allowed_users.length} user${share.allowed_users.length !== 1 ? 's' : ''})` :
-            'Public';
+          let accessInfo;
+          if (share.allowed_users) {
+            const suffix = share.allowed_users.length === 1 ? '' : 's';
+            accessInfo = `Restricted (${share.allowed_users.length} user${suffix})`;
+          } else {
+            accessInfo = 'Public';
+          }
 
           row.innerHTML = `
             <td><code>${share.id}</code></td>
-            <td>${share.count} file${share.count !== 1 ? 's' : ''}</td>
+            <td>${share.count} file${share.count === 1 ? '' : 's'}</td>
             <td>${accessInfo}</td>
             <td>Just now</td>
             <td>
-              <button class="btn" data-action="copyToClipboard" data-text="${window.location.origin}/shared/${share.id}">Copy Link</button>
+              <button class="btn" data-action="copyToClipboard" data-text="${globalThis.location.origin}/shared/${share.id}">Copy Link</button>
               ${share.secret_token ? `<button class="btn" data-action="copyToClipboard" data-text="${share.secret_token}" title="Copy Secret Token">Copy Token</button>` : ''}
               <button class="btn" data-action="openShare" data-url="/shared/${share.id}">Open</button>
               <button class="btn" data-action="manageShare" data-id="${share.id}">Manage</button>
@@ -3080,7 +3088,7 @@
         console.error('Fallback copy failed: ', err);
         showDialog('Failed to copy to clipboard', 'Error');
       } finally {
-        document.body.removeChild(textArea);
+        textArea.remove();
       }
     }
 
@@ -3141,14 +3149,22 @@
         document.querySelector('.popup-title').textContent = `Share Details - ${filePath.split('/').pop()}`;
 
         // Render share details
-        content.innerHTML = data.shares.map(share => `
+        content.innerHTML = data.shares.map(share => {
+          let shareAccessInfo;
+          if (share.allowed_users) {
+            const suffix = share.allowed_users.length === 1 ? '' : 's';
+            shareAccessInfo = `Restricted (${share.allowed_users.length} user${suffix})`;
+          } else {
+            shareAccessInfo = 'Public Access';
+          }
+          return `
           <div class="share-item">
             <div class="share-id">${share.id}</div>
             <div class="share-url">
-              <a href="${share.url}" target="_blank">${window.location.origin}${share.url}</a>
+              <a href="${share.url}" target="_blank">${globalThis.location.origin}${share.url}</a>
             </div>
             <div class="share-access ${share.allowed_users ? 'restricted' : 'public'}">
-              ${share.allowed_users ? `Restricted (${share.allowed_users.length} user${share.allowed_users.length !== 1 ? 's' : ''})` : 'Public Access'}
+              ${shareAccessInfo}
             </div>
             ${share.secret_token ? `
               <div style="margin: 10px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
@@ -3164,12 +3180,12 @@
               </div>
             ` : ''}
             <div class="share-actions">
-              <button class="btn" data-action="copyToClipboard" data-text="${window.location.origin}${share.url}">Copy Link</button>
+              <button class="btn" data-action="copyToClipboard" data-text="${globalThis.location.origin}${share.url}">Copy Link</button>
               <button class="btn" data-action="openShare" data-url="${share.url}">Open Share</button>
               <button class="btn" data-action="revokeShare" data-id="${share.id}">Revoke</button>
             </div>
           </div>
-        `).join('');
+        `; }).join('');
 
       } catch (error) {
         console.error('Error loading share details:', error);

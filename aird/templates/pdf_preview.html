@@ -37,7 +37,7 @@
         <canvas id="pdf-canvas"></canvas>
     </div>
     <div id="error" class="error" style="display:none;"></div>
-    <script nonce="{{ csp_nonce }}">
+    <script type="module" nonce="{{ csp_nonce }}">
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         const pdfUrl = "{{ pdf_url }}";
         let pdfDoc = null;
@@ -72,13 +72,14 @@
             });
         }
 
-        pdfjsLib.getDocument(pdfUrl).promise.then(function(pdf) {
+        try {
+            const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
             pdfDoc = pdf;
             totalPages = pdf.numPages;
             renderPage(1);
-        }).catch(function(err) {
+        } catch (err) {
             showError('Failed to load PDF: ' + err.message);
-        });
+        }
 
         document.getElementById('prevBtn').addEventListener('click', function() {
             if (pageNum > 1) renderPage(pageNum - 1);

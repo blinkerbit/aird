@@ -140,9 +140,9 @@
     }
 
     .pattern-btn:hover {
-      background: #007bff;
+      background: #0056b3;
       color: white;
-      border-color: #007bff;
+      border-color: #0056b3;
     }
 
     .pattern-btn:active {
@@ -186,9 +186,9 @@
     }
 
     .toggle-label input[type="radio"]:checked+.toggle-option {
-      background: #007bff;
+      background: #0056b3;
       color: white;
-      border-color: #007bff;
+      border-color: #0056b3;
     }
 
     .toggle-label:hover .toggle-option {
@@ -203,7 +203,7 @@
 
     .filename-match {
       font-weight: bold;
-      color: #007bff;
+      color: #0056b3;
       background: #e3f2fd;
       padding: 2px 4px;
       border-radius: 3px;
@@ -231,7 +231,7 @@
 
     .btn:disabled {
       background: #eee;
-      color: #999;
+      color: #595959;
       cursor: not-allowed;
       border-color: #ccc;
     }
@@ -524,15 +524,15 @@
 
   <script nonce="{{ csp_nonce }}">
     class SuperSearch {
-      constructor() {
-        this.ws = null;
-        this.isSearching = false;
-        this.cancelled = false;
-        this.results = new Map(); // file_path -> {matches: [], collapsed: false}
-        this.totalMatches = 0;
-        this.totalFiles = 0;
-        this.processedFiles = 0;
+      ws = null;
+      isSearching = false;
+      cancelled = false;
+      results = new Map(); // file_path -> {matches: [], collapsed: false}
+      totalMatches = 0;
+      totalFiles = 0;
+      processedFiles = 0;
 
+      constructor() {
         this.initializeElements();
         this.bindEvents();
       }
@@ -564,7 +564,7 @@
 
       setupPlatformDefaults() {
         // Detect platform and set appropriate examples
-        const isWindows = navigator.platform.indexOf('Win') > -1;
+        const isWindows = navigator.platform.includes('Win');
         const separator = isWindows ? '\\' : '/';
 
         // Get current path from template variable
@@ -578,11 +578,11 @@
           defaultPattern = `${normalizedPath}${separator}**${separator}*.txt`;
         } else {
           // Default to root search if no current path
-          defaultPattern = isWindows ? '**\\*.txt' : '**/*.txt';
+          defaultPattern = isWindows ? String.raw`**\*.txt` : '**/*.txt';
         }
 
         if (isWindows) {
-          this.patternInput.placeholder = 'e.g., *.py, **\\*.txt, src\\**\\*.js';
+          this.patternInput.placeholder = String.raw`e.g., *.py, **\*.txt, src\**\*.js`;
         } else {
           this.patternInput.placeholder = 'e.g., *.py, **/*.txt, src/**/*.js';
         }
@@ -610,7 +610,7 @@
         // Pattern button clicks
         document.querySelectorAll('.pattern-btn').forEach(btn => {
           btn.addEventListener('click', () => {
-            const pattern = btn.getAttribute('data-pattern');
+            const pattern = btn.dataset.pattern;
             this.patternInput.value = pattern;
             this.patternInput.focus();
             this.validatePattern();
@@ -689,8 +689,8 @@
         this.showStatus('Connecting to search service...', 'searching');
 
         // Create WebSocket connection
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/search/ws`;
+        const protocol = globalThis.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${globalThis.location.host}/search/ws`;
 
         this.ws = new WebSocket(wsUrl);
 
@@ -715,7 +715,7 @@
           if (event.code === 1008) {
             this.showStatus('Authentication required. Redirecting to login...', 'error');
             setTimeout(() => {
-              window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+              globalThis.location.href = '/login?next=' + encodeURIComponent(globalThis.location.pathname);
             }, 1500);
             return;
           }
@@ -737,18 +737,19 @@
 
       handleMessage(data) {
         switch (data.type) {
-          case 'auth_required':
+          case 'auth_required': {
             // Authentication required - redirect to login page
             this.showStatus('Authentication required. Redirecting to login...', 'error');
             this.isSearching = false;
             this.updateButtons();
             this.progressContainer.style.display = 'none';
             // Redirect to login page with next parameter
-            const redirectUrl = data.redirect || '/login?next=' + encodeURIComponent(window.location.pathname);
+            const redirectUrl = data.redirect || '/login?next=' + encodeURIComponent(globalThis.location.pathname);
             setTimeout(() => {
-              window.location.href = redirectUrl;
+              globalThis.location.href = redirectUrl;
             }, 1500); // Give user time to see the message
             break;
+          }
 
           case 'search_start':
             if (data.search_mode === 'filename') {
@@ -968,7 +969,7 @@
 
     // Initialize the search interface when the page loads
     document.addEventListener('DOMContentLoaded', () => {
-      window.superSearch = new SuperSearch();
+      globalThis.superSearch = new SuperSearch();
     });
   </script>
 </body>

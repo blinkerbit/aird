@@ -159,6 +159,7 @@
         td pre {
             margin: 0;
             padding: 0;
+            min-height: 1.2em;
         }
 
         /* Hide line numbers when toggled */
@@ -169,11 +170,6 @@
         /* Ensure content takes full width when line numbers are hidden */
         .line-numbers.hidden+td {
             padding-left: 0;
-        }
-
-        /* Ensure empty lines are visible */
-        td pre {
-            min-height: 1.2em;
         }
 
         #editor-container {
@@ -187,7 +183,7 @@
             /* top, right, bottom, left */
             text-align: right;
             background-color: #f0f0f0;
-            color: #999;
+            color: #595959;
             border: 1px solid #ccc;
             border-right: none;
             overflow-y: hidden;
@@ -394,7 +390,7 @@
             const totalLines = lines.length;
 
             // Get range
-            const urlParams = new URLSearchParams(window.location.search);
+            const urlParams = new URLSearchParams(globalThis.location.search);
             let start = Number.parseInt(urlParams.get('start_line'));
             let end = Number.parseInt(urlParams.get('end_line'));
 
@@ -436,7 +432,7 @@
 
         encodingSelect.addEventListener('change', renderContent);
 
-        const featureSocket = new WebSocket(`ws://${window.location.host}/features`);
+        const featureSocket = new WebSocket(`ws://${globalThis.location.host}/features`);
         featureSocket.onmessage = function (event) {
             updateFeatureVisibility(JSON.parse(event.data));
         };
@@ -472,10 +468,10 @@
                 return;
             }
 
-            const currentUrl = new URL(window.location);
+            const currentUrl = new URL(globalThis.location.href);
             currentUrl.searchParams.set('start_line', startLine);
             currentUrl.searchParams.set('end_line', endLine);
-            window.history.pushState({}, '', currentUrl);
+            globalThis.history.pushState({}, '', currentUrl);
             renderContent();
         }
 
@@ -484,15 +480,15 @@
         endLineInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') applyLineRange(); });
 
         showAllBtn.onclick = function () {
-            const currentUrl = new URL(window.location);
+            const currentUrl = new URL(globalThis.location.href);
             currentUrl.searchParams.delete('start_line');
             currentUrl.searchParams.delete('end_line');
-            window.history.pushState({}, '', currentUrl);
+            globalThis.history.pushState({}, '', currentUrl);
             renderContent();
         };
 
         editBtn.onclick = function () {
-            window.location.href = `/edit/{{ path }}`;
+            globalThis.location.href = `/edit/{{ path }}`;
         };
 
         function getXSRFToken() {
@@ -513,7 +509,7 @@
                 .then(response => response.text())
                 .then(data => {
                     alert(data);
-                    if (data.includes("successfully")) window.location.reload();
+                    if (data.includes("successfully")) globalThis.location.reload();
                 })
                 .catch(error => {
                     console.error('Error:', error);
@@ -522,7 +518,7 @@
         };
 
         streamBtn.onclick = function () {
-            let url = `ws://${window.location.host}/stream/{{ path }}`;
+            let url = `ws://${globalThis.location.host}/stream/{{ path }}`;
             const params = new URLSearchParams();
             const nVal = (lastNInput?.value || '').trim();
             if (nVal && /^\d+$/.test(nVal)) params.append('n', nVal);
@@ -554,8 +550,8 @@
                     lineContentCell.innerHTML = `<pre>${line || '\u00A0'}</pre>`;
                     if (!lineNumbersVisible) lineNumCell.classList.add('hidden');
                     if (lineCount % 2 === 0) row.style.backgroundColor = '#f8f8f8';
-                    window.scrollTo(0, document.body.scrollHeight);
-                } catch (e) {
+                    globalThis.scrollTo(0, document.body.scrollHeight);
+                } catch {
                     // Fallback: treat as raw text
                     let line = event.data;
                     if (line.endsWith('\n')) line = line.slice(0, -1);
@@ -568,7 +564,7 @@
                     lineContentCell.innerHTML = `<pre>${line || '\u00A0'}</pre>`;
                     if (!lineNumbersVisible) lineNumCell.classList.add('hidden');
                     if (lineCount % 2 === 0) row.style.backgroundColor = '#f8f8f8';
-                    window.scrollTo(0, document.body.scrollHeight);
+                    globalThis.scrollTo(0, document.body.scrollHeight);
                 }
             };
             ws.onclose = () => {
@@ -613,7 +609,7 @@
                 });
             }
 
-            const urlParams = new URLSearchParams(window.location.search);
+            const urlParams = new URLSearchParams(globalThis.location.search);
             if (urlParams.has('stream')) {
                 streamBtn.click();
             }

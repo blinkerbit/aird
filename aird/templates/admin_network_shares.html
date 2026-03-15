@@ -23,9 +23,9 @@
         .config-row input[type="password"],
         .config-row select { width: 280px; padding: 4px; }
         .help-text { font-size: 0.9em; color: #666; margin-left: 8px; }
-        .error { color: #dc3545; margin-bottom: 12px; padding: 8px; border: 1px solid #dc3545; background: #ffeaea; }
+        .error { color: #b02a37; margin-bottom: 12px; padding: 8px; border: 1px solid #dc3545; background: #ffeaea; }
         .info-btn { display: inline-block; width: 20px; height: 20px; line-height: 20px; text-align: center;
-                     border-radius: 50%; background: #007bff; color: #fff; font-size: 12px; font-weight: bold;
+                     border-radius: 50%; background: #0056b3; color: #fff; font-size: 12px; font-weight: bold;
                      cursor: pointer; border: none; font-family: serif; vertical-align: middle; }
         .info-btn:hover { background: #0056b3; }
         .mount-panel { display: none; margin-top: 6px; padding: 10px; background: #f0f7ff; border: 1px solid #b0d0ff;
@@ -183,7 +183,7 @@
         var smbNote = '<div style="margin-top:8px;padding:8px;background:#fff8e1;border:1px solid #ffe082;font-size:11px;">' +
             '<strong>Windows SMB note:</strong> If you get error 1272 (guest access blocked), ' +
             'run this in an elevated PowerShell and reboot:<br>' +
-            '<code>Set-ItemProperty -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters" ' +
+            String.raw`<code>Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" ` +
             '-Name "AllowInsecureGuestAuth" -Type DWord -Value 1</code><br>' +
             'Or use <strong>WebDAV</strong> instead, which avoids this issue entirely.</div>';
 

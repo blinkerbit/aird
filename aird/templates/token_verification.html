@@ -173,7 +173,7 @@
     const infoMessage = document.getElementById('infoMessage');
 
     // Get share ID from URL
-    const pathParts = window.location.pathname.split('/');
+    const pathParts = globalThis.location.pathname.split('/');
     const shareId = pathParts[pathParts.length - 2];
 
     form.addEventListener('submit', async function (e) {
@@ -207,7 +207,7 @@
         } else {
           showError(data.error || 'Invalid token');
         }
-      } catch (error) {
+      } catch {
         showError('Network error. Please try again.');
       } finally {
         submitBtn.disabled = false;
@@ -269,11 +269,11 @@
 
         if (response.ok) {
           // If successful, redirect to the share
-          window.location.href = `/shared/${shareId}`;
+          globalThis.location.href = `/shared/${shareId}`;
         } else {
           showError('Failed to access share with token');
         }
-      } catch (error) {
+      } catch {
         showError('Network error accessing share');
       }
     }
