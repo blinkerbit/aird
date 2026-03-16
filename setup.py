@@ -1,28 +1,10 @@
 from setuptools import setup, find_packages
 
-# Try to import Rust extension support
-try:
-    from setuptools_rust import Binding, RustExtension
-
-    rust_extensions = [
-        RustExtension(
-            "aird.rust_core",
-            path="aird/rust_core/Cargo.toml",
-            binding=Binding.PyO3,
-            debug=False,
-        )
-    ]
-    rust_dependencies = ["setuptools-rust>=1.7.0"]
-except ImportError:
-    rust_extensions = []
-    rust_dependencies = []
-
 setup(
     name="aird",
     version="0.4.12",
     packages=find_packages(),
     package_data={"aird": ["templates/*.html"]},
-    rust_extensions=rust_extensions,
     entry_points={
         "console_scripts": [
             "aird=aird.main:main",
@@ -38,9 +20,12 @@ setup(
         'pysmbserver>=0.1.0; python_version>="3.13"',
         "wsgidav>=4.3.0",
         "cheroot>=10.0.0",
-    ]
-    + rust_dependencies,
+    ],
     extras_require={
+        "dev": [
+            "ruff>=0.15.0",
+            "black>=24.0.0",
+        ],
         "test": [
             "pytest>=8.3.3",
             "pytest-asyncio>=0.25.0",
@@ -65,5 +50,4 @@ setup(
         "Operating System :: OS Independent",
     ],
     python_requires=">=3.10",
-    zip_safe=False,  # Required for Rust extensions
 )

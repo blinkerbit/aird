@@ -4,8 +4,6 @@ import json
 import logging
 import secrets
 import hashlib
-import threading
-import time
 from datetime import datetime, timezone
 
 # Secure password hashing (Priority 1)
@@ -20,24 +18,11 @@ except Exception:
     PH = None
 
 try:
-    from ldap3 import Server, Connection, ALL
 
     LDAP3_AVAILABLE = True
 except Exception:
     LDAP3_AVAILABLE = False
 
-from aird.database.ldap import (
-    create_ldap_config,
-    get_all_ldap_configs,
-    get_ldap_config_by_id,
-    update_ldap_config,
-    delete_ldap_config,
-    log_ldap_sync,
-    get_ldap_sync_logs,
-    extract_username_from_dn,
-    sync_ldap_users,
-    start_ldap_sync_scheduler,
-)
 
 DB_CONN = None
 DB_PATH = "aird.db"
