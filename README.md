@@ -356,15 +356,15 @@ python -m aird --debug
 
 ## 📄 License
 
-This project is licensed under a **Custom License** - see the [LICENSE](LICENSE) file for complete details.
+This project is licensed under the **Business Source License 1.1 (BSL)** - see the [LICENSE](LICENSE) file for complete details.
 
 ### License Summary:
-- ✅ **Free for non-commercial use** - Use, modify, and distribute freely for personal and educational purposes
-- ✅ **Open source** - Source code is available and can be modified
-- ✅ **Attribution required** - Include copyright notice in all copies
-- ⚠️ **Commercial use requires permission** - Contact the author for commercial licensing
+- ✅ **Free for most uses** - Use, modify, and distribute freely for personal, educational, and internal business purposes.
+- ✅ **Eventually Open Source** - Code converts to the **Apache 2.0 License** 10 years after release.
+- ⚠️ **Commercial restriction** - You may not use Aird to provide a commercial "File-Management-as-a-Service" offering without a commercial enterprise license.
+- 🚫 **No AI Training** - You may not use the source code or documentation to train, fine-tune, or improve any AI or machine learning models.
 
-For commercial use, please contact **Viswantha Srinivas P** for licensing terms.
+For commercial service licensing, please contact **Viswantha Srinivas P**.
 
 ## 🔗 Links
 
