@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="aird",
-    version="0.4.12",
+    version="0.4.13",
     packages=find_packages(),
     package_data={"aird": ["templates/*.html"]},
     entry_points={
@@ -20,6 +20,7 @@ setup(
         'pysmbserver>=0.1.0; python_version>="3.13"',
         "wsgidav>=4.3.0",
         "cheroot>=10.0.0",
+        "pyasn1>=0.6.2",
     ],
     extras_require={
         "dev": [
