@@ -18,11 +18,11 @@ except Exception:
     PH = None
 
 try:
+    import ldap3  # noqa: F401
 
     LDAP3_AVAILABLE = True
-except Exception:
+except ImportError:
     LDAP3_AVAILABLE = False
-
 
 DB_CONN = None
 DB_PATH = "aird.db"

@@ -20,7 +20,6 @@ from aird.db import (
     delete_user,
     authenticate_user,
     assign_admin_privileges,
-    extract_username_from_dn,
     insert_share,
     delete_share,
     update_share,
@@ -29,13 +28,16 @@ from aird.db import (
     get_shares_for_path,
     load_upload_config,
     save_upload_config,
+)
+from aird.database.ldap import (
     create_ldap_config,
+    delete_ldap_config,
+    extract_username_from_dn,
     get_all_ldap_configs,
     get_ldap_config_by_id,
-    update_ldap_config,
-    delete_ldap_config,
-    log_ldap_sync,
     get_ldap_sync_logs,
+    log_ldap_sync,
+    update_ldap_config,
 )
 from aird.main import make_app, print_banner
 

@@ -1,10 +1,17 @@
 """LDAP configuration and synchronization functions."""
 
 import sqlite3
-import time
-import threading
 from datetime import datetime
-from ldap3 import Server, Connection, ALL
+
+try:
+    from ldap3 import Server, Connection, ALL
+
+    LDAP3_AVAILABLE = True
+except ImportError:
+    Server = None
+    Connection = None
+    ALL = None
+    LDAP3_AVAILABLE = False
 
 from aird.database.users import create_user, get_all_users, delete_user
 
@@ -362,32 +369,4 @@ def sync_ldap_users(conn: sqlite3.Connection) -> dict:
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-
-def start_ldap_sync_scheduler(conn: sqlite3.Connection) -> None:
-    """Start the daily LDAP sync scheduler in a background thread"""
-
-    def sync_worker():
-        while True:
-            try:
-                current_time = datetime.now()
-                if current_time.hour == 2 and current_time.minute == 0:
-                    print("Starting daily LDAP sync...")
-                    sync_result = sync_ldap_users(conn)
-                    if sync_result["status"] == "success":
-                        print(
-                            f"Daily LDAP sync completed: {sync_result.get('total_ldap_users', 0)} users found"
-                        )
-                    else:
-                        print(
-                            f"Daily LDAP sync failed: {sync_result.get('message', 'Unknown error')}"
-                        )
-
-                time.sleep(60)
-            except Exception as e:
-                print(f"Error in LDAP sync scheduler: {e}")
-                time.sleep(300)
-
-    if conn:
-        sync_thread = threading.Thread(target=sync_worker, daemon=True)
-        sync_thread.start()
         print("LDAP sync scheduler started (daily at 2 AM)")

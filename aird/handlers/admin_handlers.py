@@ -21,12 +21,6 @@ from aird.db import (
     create_user,
     update_user,
     delete_user,
-    get_all_ldap_configs,
-    get_ldap_sync_logs,
-    create_ldap_config,
-    get_ldap_config_by_id,
-    update_ldap_config,
-    delete_ldap_config,
     save_feature_flags,
     save_websocket_config,
     save_upload_config,
@@ -39,6 +33,14 @@ from aird.db import (
     update_network_share,
     delete_network_share,
     log_audit,
+)
+from aird.database.ldap import (
+    create_ldap_config,
+    delete_ldap_config,
+    get_all_ldap_configs,
+    get_ldap_config_by_id,
+    get_ldap_sync_logs,
+    update_ldap_config,
 )
 from aird.constants import (
     FEATURE_FLAGS,

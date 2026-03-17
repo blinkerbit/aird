@@ -30,14 +30,6 @@ from aird.db import (
     update_user,
     delete_user,
     authenticate_user,
-    create_ldap_config,
-    get_all_ldap_configs,
-    get_ldap_config_by_id,
-    update_ldap_config,
-    delete_ldap_config,
-    log_ldap_sync,
-    get_ldap_sync_logs,
-    extract_username_from_dn,
     assign_admin_privileges,
     load_allowed_extensions,
     save_allowed_extensions,
@@ -48,6 +40,16 @@ from aird.db import (
     delete_network_share,
     log_audit,
     get_audit_logs,
+)
+from aird.database.ldap import (
+    create_ldap_config,
+    delete_ldap_config,
+    extract_username_from_dn,
+    get_all_ldap_configs,
+    get_ldap_config_by_id,
+    get_ldap_sync_logs,
+    log_ldap_sync,
+    update_ldap_config,
 )
 
 

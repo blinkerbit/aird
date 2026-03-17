@@ -19,10 +19,10 @@ from aird.db import (
     load_feature_flags,
     init_db,
     load_upload_config,
-    start_ldap_sync_scheduler,
     assign_admin_privileges,
     cleanup_expired_shares,
 )
+
 from aird.database.db import get_data_dir
 from aird.network_share_manager import NetworkShareManager
 from aird.handlers.admin_handlers import (
@@ -352,8 +352,6 @@ def _init_database() -> None:
 
         _load_and_merge_configs(constants.DB_CONN)
 
-        # Start LDAP sync scheduler
-        start_ldap_sync_scheduler(constants.DB_CONN)
         # Database-only persistence for shares
         logger.info("Shares are now persisted directly in database")
 
