@@ -959,6 +959,49 @@
     .btn-secondary:hover {
       background: #5a6268;
     }
+  
+    /* Auto-extracted SonarQube styles */
+    .sq-style-b512c9 { display: flex; align-items: center; gap: 10px; }
+    .sq-style-a28ca9 { font-size: 12px; color: #666; margin-right: 15px; text-decoration: none; }
+    .sq-style-169f06 { color: #666; }
+    .sq-style-80aeec { margin: 15px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa; }
+    .sq-style-3301ea { margin-bottom: 10px; }
+    .sq-style-bd9db1 { display: flex; align-items: center; gap: 8px; }
+    .sq-style-fa0207 { display: none; margin-top: 10px; }
+    .sq-style-ccd7dd { margin-bottom: 8px; }
+    .sq-style-9e615c { width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px; }
+    .sq-style-d63423 { max-height: 120px; overflow-y: auto; border: 1px solid #ccc; padding: 8px; background: white; }
+    .sq-style-7c7bb5 { margin-top: 8px; min-height: 20px; }
+    .sq-style-e0c770 { font-size: 12px; color: #666; margin-bottom: 5px; }
+    .sq-style-8a1ab4 { min-height: 20px; }
+    .sq-style-e1b789 { color: #999; font-size: 11px; }
+    .sq-style-a4710f { margin-top: 8px; padding: 8px; background: #e8f4fd; border-radius: 3px; font-size: 12px; color: #0066cc; }
+    .sq-style-3c7c49 { display: block; margin-bottom: 5px; font-size: 12px; }
+    .sq-style-d4eeac { font-size: 11px; color: #666; margin-top: 3px; }
+    .sq-style-0b9905 { margin-top: 8px; padding: 8px; background: #fff3cd; border-radius: 3px; font-size: 12px; color: #856404; }
+    .sq-style-7a5527 { width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px; height: 60px; resize: vertical; }
+    .sq-style-224b51 { display: none; }
+    .sq-style-4dd6e6 { text-align: center; padding: 20px; color: red; }
+    .sq-style-cdd8ca { text-align: center; }
+    .sq-style-e9dc52 { cursor: pointer; color: #0066cc; }
+    .sq-style-24b531 { cursor: pointer; }
+    .sq-style-fd1d87 { color: red; text-align: center; padding: 20px; }
+    .sq-style-8ecca8 { margin-top: 15px; }
+    .sq-style-889f05 { background: #f0f0f0; padding: 4px 8px; border-radius: 3px; font-family: monospace; font-size: 12px; word-break: break-all; display: inline-block; margin: 5px 0; }
+    .sq-style-9858f1 { margin-left: 10px; font-size: 11px; padding: 4px 8px; }
+    .sq-style-79c262 { background: #fff3cd; border: 1px solid #ffeaa7; padding: 8px; border-radius: 4px; font-size: 11px; color: #856404; margin-top: 8px; }
+    .sq-style-be1381 { color: #666; font-style: italic; }
+    .sq-style-8eb9ea { padding: 20px; text-align: center; color: #666; }
+    .sq-style-e524ca { color: #28a745; font-weight: bold; }
+    .sq-style-41e54b { text-align: center; padding: 20px; color: #666; }
+    .sq-style-f479d1 { color: red; }
+    .sq-style-d92075 { display: inline-block; background: #e6f3ff; color: #0066cc; padding: 2px 6px; margin: 2px; border-radius: 3px; font-size: 11px; cursor: pointer; }
+    .sq-style-adfe87 { background: #f0f0f0; padding: 4px 8px; border-radius: 3px; font-family: monospace; font-size: 12px; word-break: break-all; }
+    .sq-style-214d83 { margin-left: 10px; }
+    .sq-style-568262 { background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 4px; font-size: 12px; color: #856404; }
+    .sq-style-fef9ee { margin: 10px 0; padding: 8px; background: #f8f9fa; border-radius: 4px; }
+    .sq-style-8c1855 { background: #e9ecef; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 11px; word-break: break-all; }
+    .sq-style-bfef8f { margin-left: 8px; font-size: 10px; padding: 2px 6px; }
   </style>
 </head>
 
@@ -972,8 +1015,8 @@
           <span id="currentPath">Browse & Select Files</span>
         </div>
       </div>
-      <div style="display: flex; align-items: center; gap: 10px;">
-        <a href="/profile" style="font-size: 12px; color: #666; margin-right: 15px; text-decoration: none;">👤 {{
+      <div class="sq-style-b512c9">
+        <a class="sq-style-a28ca9" href="/profile">👤 {{
           handler.get_display_username() }}</a>
         <a href="/files/" class="btn">📁 Browse Files</a>
         <a href="/logout" class="btn">↩ Logout</a>
@@ -986,138 +1029,129 @@
         <strong>Selected Files (<span id="selectedCount">0</span>):</strong>
       </div>
       <div class="selected-files" id="selectedFiles">
-        <em style="color: #666;">No files selected</em>
+        <em class="sq-style-169f06">No files selected</em>
       </div>
 
       <!-- User Access Control -->
-      <div style="margin: 15px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa;">
-        <div style="margin-bottom: 10px;">
+      <div class="sq-style-80aeec">
+        <div class="sq-style-3301ea">
           <strong>Access Control:</strong>
         </div>
-        <div style="margin-bottom: 10px;">
-          <label style="display: flex; align-items: center; gap: 8px;">
+        <div class="sq-style-3301ea">
+          <label class="sq-style-bd9db1">
             <input type="radio" name="accessType" value="public" checked>
             <span>Public (Anyone with link can access)</span>
           </label>
         </div>
-        <div style="margin-bottom: 10px;">
-          <label style="display: flex; align-items: center; gap: 8px;">
+        <div class="sq-style-3301ea">
+          <label class="sq-style-bd9db1">
             <input type="radio" name="accessType" value="restricted">
             <span>Restricted (Only selected users can access)</span>
           </label>
         </div>
-        <div id="userSelection" style="display: none; margin-top: 10px;">
-          <div style="margin-bottom: 8px;">
+        <div class="sq-style-fa0207" id="userSelection">
+          <div class="sq-style-ccd7dd">
             <strong>Select Users:</strong>
           </div>
-          <div style="margin-bottom: 8px;">
-            <input type="text" id="userSearchInput" placeholder="Type to search users..."
-              style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px;">
+          <div class="sq-style-ccd7dd">
+            <input class="sq-style-9e615c" type="text" id="userSearchInput" placeholder="Type to search users...">
           </div>
-          <div id="userList"
-            style="max-height: 120px; overflow-y: auto; border: 1px solid #ccc; padding: 8px; background: white;">
-            <em style="color: #666;">Type to search for users...</em>
+          <div class="sq-style-d63423" id="userList">
+            <em class="sq-style-169f06">Type to search for users...</em>
           </div>
-          <div id="selectedUsers" style="margin-top: 8px; min-height: 20px;">
-            <div style="font-size: 12px; color: #666; margin-bottom: 5px;">Selected users:</div>
-            <div id="selectedUsersList" style="min-height: 20px;">
-              <em style="color: #999; font-size: 11px;">No users selected</em>
+          <div class="sq-style-7c7bb5" id="selectedUsers">
+            <div class="sq-style-e0c770">Selected users:</div>
+            <div class="sq-style-8a1ab4" id="selectedUsersList">
+              <em class="sq-style-e1b789">No users selected</em>
             </div>
           </div>
         </div>
       </div>
 
       <!-- Share Type Selection -->
-      <div style="margin: 15px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa;">
-        <div style="margin-bottom: 10px;">
+      <div class="sq-style-80aeec">
+        <div class="sq-style-3301ea">
           <strong>Share Type:</strong>
         </div>
-        <div style="margin-bottom: 10px;">
-          <label style="display: flex; align-items: center; gap: 8px;">
+        <div class="sq-style-3301ea">
+          <label class="sq-style-bd9db1">
             <input type="radio" name="shareType" value="static" checked>
             <span>Static (Snapshot of current files)</span>
           </label>
         </div>
-        <div style="margin-bottom: 10px;">
-          <label style="display: flex; align-items: center; gap: 8px;">
+        <div class="sq-style-3301ea">
+          <label class="sq-style-bd9db1">
             <input type="radio" name="shareType" value="dynamic">
             <span>Dynamic (Live folder sharing)</span>
           </label>
         </div>
-        <div id="shareTypeInfo"
-          style="margin-top: 8px; padding: 8px; background: #e8f4fd; border-radius: 3px; font-size: 12px; color: #0066cc;">
+        <div class="sq-style-a4710f" id="shareTypeInfo">
           <strong>Static Share:</strong> Creates a snapshot of all files at the time of sharing. New files added later
           won't appear in the share.
         </div>
       </div>
 
       <!-- Token Security -->
-      <div style="margin: 15px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa;">
-        <div style="margin-bottom: 10px;">
+      <div class="sq-style-80aeec">
+        <div class="sq-style-3301ea">
           <strong>Security Options:</strong>
         </div>
-        <div style="margin-bottom: 10px;">
-          <label style="display: flex; align-items: center; gap: 8px;">
+        <div class="sq-style-3301ea">
+          <label class="sq-style-bd9db1">
             <input type="checkbox" id="disableToken">
             <span>Disable Secret Token (Public Access)</span>
           </label>
         </div>
-        <div id="tokenInfo"
-          style="margin-top: 8px; padding: 8px; background: #e8f4fd; border-radius: 3px; font-size: 12px; color: #0066cc;">
+        <div class="sq-style-a4710f" id="tokenInfo">
           <strong>🔐 Token Enabled:</strong> Users will need to enter a secret token to access the shared files.
         </div>
       </div>
 
       <!-- Expiry Date -->
-      <div style="margin: 15px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa;">
-        <div style="margin-bottom: 10px;">
+      <div class="sq-style-80aeec">
+        <div class="sq-style-3301ea">
           <strong>Expiry Date :</strong>
         </div>
-        <div style="margin-bottom: 10px;">
-          <label for="expiryDate" style="display: block; margin-bottom: 5px; font-size: 12px;">
+        <div class="sq-style-3301ea">
+          <label class="sq-style-3c7c49" for="expiryDate">
             <strong>Share Expires On:</strong>
           </label>
-          <input type="datetime-local" id="expiryDate"
-            style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px;">
-          <div style="font-size: 11px; color: #666; margin-top: 3px;">
+          <input class="sq-style-9e615c" type="datetime-local" id="expiryDate">
+          <div class="sq-style-d4eeac">
             Leave empty for no expiration. The share will automatically become inaccessible after this date/time.
           </div>
         </div>
-        <div
-          style="margin-top: 8px; padding: 8px; background: #fff3cd; border-radius: 3px; font-size: 12px; color: #856404;">
+        <div class="sq-style-0b9905">
           <strong>⏰ Note:</strong> After expiration, users will receive a "share has expired" message when attempting to
           access it.
         </div>
       </div>
 
       <!-- File Filtering -->
-      <div style="margin: 15px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa;">
-        <div style="margin-bottom: 10px;">
+      <div class="sq-style-80aeec">
+        <div class="sq-style-3301ea">
           <strong>File Filtering :</strong>
         </div>
-        <div style="margin-bottom: 10px;">
-          <label for="allowList" style="display: block; margin-bottom: 5px; font-size: 12px;">
+        <div class="sq-style-3301ea">
+          <label class="sq-style-3c7c49" for="allowList">
             <strong>Allow List (Glob Patterns):</strong>
           </label>
-          <textarea id="allowList" placeholder="*.txt, *.pdf, images/*.jpg, documents/**"
-            style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px; height: 60px; resize: vertical;"></textarea>
-          <div style="font-size: 11px; color: #666; margin-top: 3px;">
+          <textarea class="sq-style-7a5527" id="allowList" placeholder="*.txt, *.pdf, images/*.jpg, documents/**"></textarea>
+          <div class="sq-style-d4eeac">
             Comma-separated glob patterns. If empty, all files are allowed (unless in avoid list).
           </div>
         </div>
-        <div style="margin-bottom: 10px;">
-          <label for="avoidList" style="display: block; margin-bottom: 5px; font-size: 12px;">
+        <div class="sq-style-3301ea">
+          <label class="sq-style-3c7c49" for="avoidList">
             <strong>Avoid List (Glob Patterns):</strong>
           </label>
-          <textarea id="avoidList" placeholder="*.tmp, *.log, temp/*, .git/**"
-            style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px; height: 60px; resize: vertical;"></textarea>
-          <div style="font-size: 11px; color: #666; margin-top: 3px;">
+          <textarea class="sq-style-7a5527" id="avoidList" placeholder="*.tmp, *.log, temp/*, .git/**"></textarea>
+          <div class="sq-style-d4eeac">
             Comma-separated glob patterns. Files matching these patterns will be excluded (takes priority over allow
             list).
           </div>
         </div>
-        <div
-          style="margin-top: 8px; padding: 8px; background: #fff3cd; border-radius: 3px; font-size: 12px; color: #856404;">
+        <div class="sq-style-0b9905">
           <strong>💡 Examples:</strong><br>
           • Allow: <code>*.pdf, *.docx, images/*</code><br>
           • Avoid: <code>*.tmp, .git/**, temp/*</code><br>
@@ -1248,7 +1282,7 @@
     <div class="custom-dialog-modal-content">
       <h2 id="dialogTitle">Dialog</h2>
       <p id="dialogMessage"></p>
-      <div id="dialogInputContainer" style="display: none;">
+      <div class="sq-style-224b51" id="dialogInputContainer">
         <input type="text" id="dialogInput" class="custom-dialog-input">
       </div>
       <div class="custom-dialog-buttons">
@@ -1714,20 +1748,27 @@
 
         const nameCell = document.createElement('td');
         nameCell.className = 'name-col';
-        const icon = file.is_dir ? '📁' : '📄';
+
+        const iconSpan = document.createElement('span');
+        iconSpan.className = 'file-icon';
+        iconSpan.textContent = file.is_dir ? '📁' : '📄';
+
+        const nameText = document.createTextNode(file.name || 'Unnamed');
 
         if (file.is_dir) {
           const link = document.createElement('a');
           link.href = '#';
           link.className = 'file-link';
-          link.innerHTML = `<span class="file-icon">${icon}</span>${escapeHtml(file.name || 'Unnamed')}`;
+          link.appendChild(iconSpan);
+          link.appendChild(nameText);
           link.addEventListener('click', event => {
             event.preventDefault();
             handleCloudFolderNavigation(file);
           });
           nameCell.appendChild(link);
         } else {
-          nameCell.innerHTML = `<span class="file-icon">${icon}</span>${escapeHtml(file.name || 'Unnamed')}`;
+          nameCell.appendChild(iconSpan);
+          nameCell.appendChild(nameText);
         }
 
         const sizeCell = document.createElement('td');
@@ -1903,7 +1944,7 @@
       elements.generateLink.disabled = selectedFiles.size === 0;
 
       if (selectedFiles.size === 0) {
-        elements.selectedFilesDiv.innerHTML = '<em style="color: #666;">No files or folders selected</em>';
+        elements.selectedFilesDiv.innerHTML = '<em class="sq-style-169f06">No files or folders selected</em>';
       } else {
         elements.selectedFilesDiv.innerHTML = Array.from(selectedFiles)
           .map(file => {
@@ -1997,7 +2038,7 @@
 
       } catch (error) {
         console.error('Error loading directory:', error);
-        elements.fileTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: red;">Error loading files</td></tr>';
+        elements.fileTableBody.innerHTML = '<tr><td class="sq-style-4dd6e6" colspan="5">Error loading files</td></tr>';
       }
     }
 
@@ -2030,16 +2071,16 @@
         if (file.is_dir) {
           const newPath = currentPath ? `${currentPath}/${file.name}` : file.name;
           row.innerHTML = `
-            <td style="text-align: center;">
+            <td class="sq-style-cdd8ca">
               <input type="checkbox" value="${filePath}" ${isSelected ? 'checked' : ''}
                      data-action="toggleSelection" data-path="${filePath}">
             </td>
             <td>
-              <div style="display: flex; align-items: center; gap: 8px;">
+              <div class="sq-style-bd9db1">
                 <a href="#" class="file-link" data-action="loadDirectory" data-path="${newPath}">
                   <span class="file-icon">📁</span>${file.name}
                 </a>
-                ${file.is_shared ? `<span class="shared-icon" title="Click to view share details" data-action="showShareDetails" data-path="${filePath}" style="cursor: pointer; color: #0066cc;">🔗</span>` : ''}
+                ${file.is_shared ? `<span class="shared-icon sq-style-e9dc52" title="Click to view share details" data-action="showShareDetails" data-path="${filePath}">🔗</span>` : ''}
               </div>
             </td>
             <td>-</td>
@@ -2050,16 +2091,16 @@
           `;
         } else {
           row.innerHTML = `
-            <td style="text-align: center;">
+            <td class="sq-style-cdd8ca">
               <input type="checkbox" value="${filePath}" ${isSelected ? 'checked' : ''}
                      data-action="toggleSelection" data-path="${filePath}">
             </td>
             <td>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <span class="file-link" style="cursor: pointer;" data-action="previewFile" data-path="${filePath}">
+              <div class="sq-style-bd9db1">
+                <span class="file-link sq-style-24b531" data-action="previewFile" data-path="${filePath}">
                   <span class="file-icon">${getFileIcon(file.name)}</span>${file.name}
                 </span>
-                ${file.is_shared ? `<span class="shared-icon" title="Click to view share details" data-action="showShareDetails" data-path="${filePath}" style="cursor: pointer; color: #0066cc;">🔗</span>` : ''}
+                ${file.is_shared ? `<span class="shared-icon sq-style-e9dc52" title="Click to view share details" data-action="showShareDetails" data-path="${filePath}">🔗</span>` : ''}
               </div>
             </td>
             <td>${file.size_str || '-'}</td>
@@ -2104,7 +2145,13 @@
         const detailsData = await detailsResponse.json();
 
         if (detailsData.error) {
-          body.innerHTML = `<div style="color: red; text-align: center; padding: 20px;">Error: ${detailsData.error}</div>`;
+          body.innerHTML = '';
+          const errDiv = document.createElement('div');
+          errDiv.style.color = 'red';
+          errDiv.style.textAlign = 'center';
+          errDiv.style.padding = '20px';
+          errDiv.textContent = `Error: ${detailsData.error}`;
+          body.appendChild(errDiv);
           return;
         }
 
@@ -2114,18 +2161,18 @@
 
       } catch (error) {
         console.error('Error loading share details:', error);
-        body.innerHTML = '<div style="color: red; text-align: center; padding: 20px;">Failed to load share details</div>';
+        body.innerHTML = '<div class="sq-style-fd1d87">Failed to load share details</div>';
       }
     }
 
     function buildShareTokenHtml(share) {
       if (!share.secret_token) return '';
       return `
-            <div style="margin-top: 15px;">
+            <div class="sq-style-8ecca8">
               <strong>🔐 Secret Token:</strong><br>
-              <code style="background: #f0f0f0; padding: 4px 8px; border-radius: 3px; font-family: monospace; font-size: 12px; word-break: break-all; display: inline-block; margin: 5px 0;">${share.secret_token}</code>
-              <button class="btn" data-action="copyToClipboard" data-text="${share.secret_token}" style="margin-left: 10px; font-size: 11px; padding: 4px 8px;">Copy Token</button>
-              <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 8px; border-radius: 4px; font-size: 11px; color: #856404; margin-top: 8px;">
+              <code class="sq-style-889f05">${share.secret_token}</code>
+              <button class="btn sq-style-9858f1" data-action="copyToClipboard" data-text="${share.secret_token}">Copy Token</button>
+              <div class="sq-style-79c262">
                 <strong>⚠️ Important:</strong> Users need this token to access the share.
               </div>
             </div>`;
@@ -2133,7 +2180,7 @@
 
     function buildShareUsersHtml(allowedUsers) {
       if (!allowedUsers || allowedUsers.length === 0) {
-        return '<div style="color: #666; font-style: italic;">No users specified (public access)</div>';
+        return '<div class="sq-style-be1381">No users specified (public access)</div>';
       }
       return allowedUsers.map(user => `
                   <span class="access-user-tag">
@@ -2144,7 +2191,7 @@
 
     function buildSharePathsHtml(paths) {
       if (!paths || paths.length === 0) {
-        return '<div style="padding: 20px; text-align: center; color: #666;">No files in this share</div>';
+        return '<div class="sq-style-8eb9ea">No files in this share</div>';
       }
       return paths.map(path => `
                   <div class="share-file-item">
@@ -2159,15 +2206,15 @@
       const dynamicChecked = isDynamic ? 'checked' : '';
       const dynamicBadge = isDynamic ? currentBadge : '';
       return `
-            <div style="margin-bottom: 10px;">
-              <label style="display: flex; align-items: center; gap: 8px;">
+            <div class="sq-style-3301ea">
+              <label class="sq-style-bd9db1">
                 <input type="radio" name="shareTypeEdit" value="static" ${staticChecked}>
                 <span>Static (Snapshot of current files)</span>
                 ${staticBadge}
               </label>
             </div>
-            <div style="margin-bottom: 10px;">
-              <label style="display: flex; align-items: center; gap: 8px;">
+            <div class="sq-style-3301ea">
+              <label class="sq-style-bd9db1">
                 <input type="radio" name="shareTypeEdit" value="dynamic" ${dynamicChecked}>
                 <span>Dynamic (Live folder sharing)</span>
                 ${dynamicBadge}
@@ -2206,11 +2253,12 @@
 
       const isStatic = (share.share_type || 'static') === 'static';
       const isDynamic = share.share_type === 'dynamic';
-      const currentBadge = '<span style="color: #28a745; font-weight: bold;">← Current</span>';
+      const currentBadge = '<span class="sq-style-e524ca">← Current</span>';
       const expiryValue = share.expiry_date ? new Date(share.expiry_date).toISOString().slice(0, 16) : '';
-      const expiryDisplay = share.expiry_date
-        ? `<strong>${new Date(share.expiry_date).toLocaleString()}</strong>`
-        : '<strong>No expiration</strong>';
+      const expiryDisplaySpan = document.createElement('strong');
+      expiryDisplaySpan.textContent = share.expiry_date
+        ? new Date(share.expiry_date).toLocaleString()
+        : 'No expiration';
 
       body.innerHTML = `
           <div class="share-info-section">
@@ -2231,15 +2279,15 @@
           <!-- Token Security -->
           <div class="share-info-section">
             <h3>Security Options</h3>
-            <div style="margin-bottom: 10px;">
-              <label style="display: flex; align-items: center; gap: 8px;">
+            <div class="sq-style-3301ea">
+              <label class="sq-style-bd9db1">
                 <input type="checkbox" id="disableTokenEdit" ${share.secret_token ? '' : 'checked'}>
                 <span>Disable Secret Token (Public Access)</span>
                 ${share.secret_token ? '' : currentBadge}
               </label>
             </div>
-            <div style="margin-bottom: 10px;">
-              <label style="display: flex; align-items: center; gap: 8px;">
+            <div class="sq-style-3301ea">
+              <label class="sq-style-bd9db1">
                 <input type="checkbox" id="enableTokenEdit" ${share.secret_token ? 'checked' : ''}>
                 <span>Enable Secret Token (Secure Access)</span>
                 ${share.secret_token ? currentBadge : ''}
@@ -2250,13 +2298,12 @@
           <!-- Expiry Date -->
           <div class="share-info-section">
             <h3>Expiry Date</h3>
-            <div style="margin-bottom: 10px;">
-              <label style="display: block; margin-bottom: 5px; font-size: 12px;">
+            <div class="sq-style-3301ea">
+              <label class="sq-style-3c7c49">
                 <strong>Share Expires On:</strong>
               </label>
-              <input type="datetime-local" id="expiryDateEdit" value="${expiryValue}"
-                     style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px;">
-              <div style="font-size: 11px; color: #666; margin-top: 3px;">
+              <input class="sq-style-9e615c" type="datetime-local" id="expiryDateEdit" value="${expiryValue}">
+              <div class="sq-style-d4eeac">
                 Leave empty for no expiration. Current: ${expiryDisplay}
               </div>
             </div>
@@ -2265,19 +2312,17 @@
           <!-- File Filtering -->
           <div class="share-info-section">
             <h3>File Filtering</h3>
-            <div style="margin-bottom: 10px;">
-              <label style="display: block; margin-bottom: 5px; font-size: 12px;">
+            <div class="sq-style-3301ea">
+              <label class="sq-style-3c7c49">
                 <strong>Allow List (Glob Patterns):</strong>
               </label>
-              <textarea id="allowListEdit" placeholder="*.txt, *.pdf, images/*.jpg, documents/**" 
-                        style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px; height: 60px; resize: vertical;">${(share.allow_list || []).join(', ')}</textarea>
+              <textarea class="sq-style-7a5527" id="allowListEdit" placeholder="*.txt, *.pdf, images/*.jpg, documents/**">${(share.allow_list || []).join(', ')}</textarea>
             </div>
-            <div style="margin-bottom: 10px;">
-              <label style="display: block; margin-bottom: 5px; font-size: 12px;">
+            <div class="sq-style-3301ea">
+              <label class="sq-style-3c7c49">
                 <strong>Avoid List (Glob Patterns):</strong>
               </label>
-              <textarea id="avoidListEdit" placeholder="*.tmp, *.log, temp/*, .git/**" 
-                        style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px; height: 60px; resize: vertical;">${(share.avoid_list || []).join(', ')}</textarea>
+              <textarea class="sq-style-7a5527" id="avoidListEdit" placeholder="*.tmp, *.log, temp/*, .git/**">${(share.avoid_list || []).join(', ')}</textarea>
             </div>
           </div>
 
@@ -2444,11 +2489,17 @@
         } else {
           const errorText = await response.text();
           console.error('API error:', response.status, errorText);
-          content.innerHTML = `<div style="color: red; text-align: center; padding: 20px;">Error loading files: ${response.status}</div>`;
+          content.innerHTML = '';
+          const errDiv = document.createElement('div');
+          errDiv.style.color = 'red';
+          errDiv.style.textAlign = 'center';
+          errDiv.style.padding = '20px';
+          errDiv.textContent = `Error loading files: ${response.status}`;
+          content.appendChild(errDiv);
         }
       } catch (error) {
         console.error('Error loading files:', error);
-        content.innerHTML = '<div style="color: red; text-align: center; padding: 20px;">Error loading files</div>';
+        content.innerHTML = '<div class="sq-style-fd1d87">Error loading files</div>';
       }
     }
 
@@ -2459,31 +2510,37 @@
       console.log('Rendering files:', files);
 
       if (!files || files.length === 0) {
-        content.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No files in this directory</div>';
+        content.innerHTML = '<div class="sq-style-41e54b">No files in this directory</div>';
         return;
       }
 
-      content.innerHTML = files.map(file => {
+      content.innerHTML = '';
+      files.forEach(file => {
         const isSelected = addFilesModalData.selectedFiles.has(file.path);
         const icon = file.is_dir ? '📁' : getFileIcon(file.name);
 
         console.log('Rendering file:', file.name, 'is_dir:', file.is_dir, 'path:', file.path);
 
-        if (file.is_dir) {
-          return `
-              <div class="file-browser-item" data-action="navigateToDirectory" data-path="${file.path}">
-                <span>${icon} ${file.name}</span>
-              </div>
-            `;
-        } else {
-          return `
-              <div class="file-browser-item ${isSelected ? 'selected' : ''}" data-action="toggleFileSelection" data-path="${file.path}">
-                <input type="checkbox" ${isSelected ? 'checked' : ''} data-action="toggleFileSelection" data-path="${file.path}">
-                <span>${icon} ${file.name}</span>
-              </div>
-            `;
+        const itemDiv = document.createElement('div');
+        itemDiv.className = `file-browser-item ${isSelected && !file.is_dir ? 'selected' : ''}`;
+        itemDiv.dataset.action = file.is_dir ? 'navigateToDirectory' : 'toggleFileSelection';
+        itemDiv.dataset.path = file.path;
+
+        if (!file.is_dir) {
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.checked = isSelected;
+          checkbox.dataset.action = 'toggleFileSelection';
+          checkbox.dataset.path = file.path;
+          itemDiv.appendChild(checkbox);
         }
-      }).join('');
+
+        const span = document.createElement('span');
+        span.textContent = ` ${icon} ${file.name}`;
+        itemDiv.appendChild(span);
+
+        content.appendChild(itemDiv);
+      });
     }
 
     function toggleFileSelection(filePath) {
@@ -2505,7 +2562,7 @@
       const selectedFiles = Array.from(addFilesModalData.selectedFiles);
 
       if (selectedFiles.length === 0) {
-        preview.innerHTML = '<div style="color: #666; font-style: italic;">No files selected</div>';
+        preview.innerHTML = '<div class="sq-style-be1381">No files selected</div>';
         return;
       }
 
@@ -2768,7 +2825,7 @@
         userSelection.style.display = 'block';
         // Clear previous search and selections
         document.getElementById('userSearchInput').value = '';
-        document.getElementById('userList').innerHTML = '<em style="color: #666;">Type to search for users...</em>';
+        document.getElementById('userList').innerHTML = '<em class="sq-style-169f06">Type to search for users...</em>';
         updateSelectedUsersDisplay();
       } else {
         userSelection.style.display = 'none';
@@ -2818,7 +2875,7 @@
         }
 
         if (query.length < 1) {
-          document.getElementById('userList').innerHTML = '<em style="color: #666;">Type to search for users...</em>';
+          document.getElementById('userList').innerHTML = '<em class="sq-style-169f06">Type to search for users...</em>';
           return;
         }
 
@@ -2836,11 +2893,11 @@
           const data = await response.json();
           renderUserList(data.users || []);
         } else {
-          document.getElementById('userList').innerHTML = '<em style="color: red;">Error searching users</em>';
+          document.getElementById('userList').innerHTML = '<em class="sq-style-f479d1">Error searching users</em>';
         }
       } catch (error) {
         console.error('Error searching users:', error);
-        document.getElementById('userList').innerHTML = '<em style="color: red;">Error searching users</em>';
+        document.getElementById('userList').innerHTML = '<em class="sq-style-f479d1">Error searching users</em>';
       }
     }
 
@@ -2848,7 +2905,7 @@
       const userList = document.getElementById('userList');
 
       if (users.length === 0) {
-        userList.innerHTML = '<em style="color: #666;">No users found</em>';
+        userList.innerHTML = '<em class="sq-style-169f06">No users found</em>';
         return;
       }
 
@@ -2857,13 +2914,25 @@
         const userDiv = document.createElement('div');
         userDiv.style.marginBottom = '5px';
         const isSelected = selectedUsers.has(user.username);
-        userDiv.innerHTML = `
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-            <input type="checkbox" value="${user.username}" ${isSelected ? 'checked' : ''}
-                   data-action="toggleUserSelection" data-user="${user.username}">
-            <span>${user.username} ${user.role === 'admin' ? '(Admin)' : ''}</span>
-          </label>
-        `;
+        const label = document.createElement('label');
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '8px';
+        label.style.cursor = 'pointer';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = user.username;
+        checkbox.checked = isSelected;
+        checkbox.dataset.action = 'toggleUserSelection';
+        checkbox.dataset.user = user.username;
+
+        const span = document.createElement('span');
+        span.textContent = `${user.username} ${user.role === 'admin' ? '(Admin)' : ''}`;
+
+        label.appendChild(checkbox);
+        label.appendChild(span);
+        userDiv.appendChild(label);
         userList.appendChild(userDiv);
       });
     }
@@ -2881,12 +2950,12 @@
       const selectedUsersList = document.getElementById('selectedUsersList');
 
       if (selectedUsers.size === 0) {
-        selectedUsersList.innerHTML = '<em style="color: #999; font-size: 11px;">No users selected</em>';
+        selectedUsersList.innerHTML = '<em class="sq-style-e1b789">No users selected</em>';
         return;
       }
 
       selectedUsersList.innerHTML = Array.from(selectedUsers)
-        .map(username => `<span style="display: inline-block; background: #e6f3ff; color: #0066cc; padding: 2px 6px; margin: 2px; border-radius: 3px; font-size: 11px; cursor: pointer;" data-action="removeSelectedUser" data-user="${username}">${username} ×</span>`)
+        .map(username => `<span class="sq-style-d92075" data-action="removeSelectedUser" data-user="${username}">${username} ×</span>`)
         .join('');
     }
 
@@ -2922,16 +2991,16 @@
         ? '<br><small>🌐 Public access (no token required)</small>'
         : '<br><small>🔐 Token required</small>';
       const tokenSection = disableToken ? '' : `<strong>🔐 Secret Token:</strong><br>
-            <code style="background: #f0f0f0; padding: 4px 8px; border-radius: 3px; font-family: monospace; font-size: 12px; word-break: break-all;">${data.secret_token}</code>
-            <button class="btn" data-action="copyToClipboard" data-text="${data.secret_token}" style="margin-left: 10px;">Copy Token</button>
+            <code class="sq-style-adfe87">${data.secret_token}</code>
+            <button class="btn sq-style-214d83" data-action="copyToClipboard" data-text="${data.secret_token}">Copy Token</button>
             <br><br>
-            <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 4px; font-size: 12px; color: #856404;">
+            <div class="sq-style-568262">
               <strong>⚠️ Important:</strong> Share this secret token with users who need access. They will need to enter this token to view the shared files.
             </div>`;
       return `
             <strong>Share link created:</strong><br>
             <a href="${data.url}" target="_blank">${data.url}</a>
-            <button class="btn" data-action="copyToClipboard" data-text="${fullUrl}" style="margin-left: 10px;">Copy Link</button>
+            <button class="btn sq-style-214d83" data-action="copyToClipboard" data-text="${fullUrl}">Copy Link</button>
             ${accessInfo}${shareTypeInfo}${tokenInfo}
             <br><br>
             ${tokenSection}
@@ -3145,12 +3214,12 @@
         const data = await response.json();
 
         if (data.error) {
-          content.innerHTML = `<div style="color: red; text-align: center; padding: 20px;">Error: ${data.error}</div>`;
+          content.innerHTML = `<div class="sq-style-fd1d87">Error: ${data.error}</div>`;
           return;
         }
 
         if (data.shares.length === 0) {
-          content.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">This file is not currently shared.</div>';
+          content.innerHTML = '<div class="sq-style-41e54b">This file is not currently shared.</div>';
           return;
         }
 
@@ -3176,10 +3245,10 @@
               ${shareAccessInfo}
             </div>
             ${share.secret_token ? `
-              <div style="margin: 10px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
+              <div class="sq-style-fef9ee">
                 <strong>🔐 Secret Token:</strong><br>
-                <code style="background: #e9ecef; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 11px; word-break: break-all;">${share.secret_token}</code>
-                <button class="btn" data-action="copyToClipboard" data-text="${share.secret_token}" style="margin-left: 8px; font-size: 10px; padding: 2px 6px;">Copy</button>
+                <code class="sq-style-8c1855">${share.secret_token}</code>
+                <button class="btn sq-style-bfef8f" data-action="copyToClipboard" data-text="${share.secret_token}">Copy</button>
               </div>
             ` : ''}
             ${share.allowed_users ? `
@@ -3198,7 +3267,7 @@
 
       } catch (error) {
         console.error('Error loading share details:', error);
-        content.innerHTML = '<div style="color: red; text-align: center; padding: 20px;">Failed to load share details</div>';
+        content.innerHTML = '<div class="sq-style-fd1d87">Failed to load share details</div>';
       }
     }
 

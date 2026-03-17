@@ -6,6 +6,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>P2P File Transfer - Aird</title>
     <style>
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #000000;
+            --border-color: #000000;
+            --accent-color: #000000;
+            --grid-color: #e5e5e5;
+            --error-color: #dc2626;
+            --shadow: 6px 6px 0px 0px rgba(0, 0, 0, 1);
+            --shadow-hover: 2px 2px 0px 0px rgba(0, 0, 0, 1);
+            --transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -13,10 +25,13 @@
         }
 
         body {
-            font-family: "Courier New", monospace;
-            background: white;
-            color: black;
+            font-family: 'Courier New', Courier, monospace;
+            background-color: var(--bg-color);
+            background-image: radial-gradient(var(--grid-color) 1px, transparent 1px);
+            background-size: 20px 20px;
+            color: var(--text-color);
             line-height: 1.4;
+            min-height: 100vh;
         }
 
         .container {
@@ -35,17 +50,34 @@
         }
 
         .header h1 {
-            font-size: 24px;
-            font-weight: bold;
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: -1px;
+            text-transform: uppercase;
         }
 
         .breadcrumb a {
-            color: black;
+            color: var(--bg-color);
+            background: var(--text-color);
             text-decoration: none;
+            padding: 2px 8px;
+            font-weight: bold;
+            border: 2px solid var(--border-color);
+            box-shadow: 2px 2px 0px 0px rgba(0, 0, 0, 1);
+            transition: var(--transition);
+            display: inline-block;
         }
 
         .breadcrumb a:hover {
-            text-decoration: underline;
+            text-decoration: none;
+            background: #222;
+            transform: translate(1px, 1px);
+            box-shadow: 1px 1px 0px 0px rgba(0, 0, 0, 1);
+        }
+        
+        .breadcrumb a:active {
+            transform: translate(2px, 2px);
+            box-shadow: none;
         }
 
         .nav-links {
@@ -56,24 +88,55 @@
 
         .nav-links a {
             display: inline-block;
-            padding: 6px 10px;
-            border: 1px solid #000;
-            background: #fff;
-            color: #000;
+            padding: 8px 12px;
+            border: 2px solid var(--border-color);
+            background: var(--bg-color);
+            color: var(--text-color);
             text-decoration: none;
-            font-size: 12px;
+            font-size: 14px;
+            font-weight: bold;
+            text-transform: uppercase;
+            box-shadow: 4px 4px 0px 0px rgba(0, 0, 0, 1);
+            transition: var(--transition);
         }
 
         .nav-links a:hover {
-            background: #f0f0f0;
+            transform: translate(2px, 2px);
+            box-shadow: 2px 2px 0px 0px rgba(0, 0, 0, 1);
+            background: #e0e0e0;
+        }
+
+        .nav-links a:active {
+            transform: translate(4px, 4px);
+            box-shadow: none;
+        }
+
+        .nav-links a.primary-btn {
+            background: var(--text-color);
+            color: var(--bg-color);
+        }
+        
+        .nav-links a.primary-btn:hover {
+            background: #222;
         }
 
         .section {
             margin-bottom: 30px;
             padding: 20px;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            background: #fafafa;
+            background: white;
+            border: 2px solid var(--border-color);
+            box-shadow: var(--shadow);
+            transform-style: preserve-3d;
+            animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
+        @keyframes slideUp {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .section h2 {
@@ -92,21 +155,30 @@
         .mode-btn {
             flex: 1;
             padding: 20px;
-            border: 2px solid #ddd;
-            background: white;
+            border: 2px solid var(--border-color);
+            background: var(--bg-color);
             cursor: pointer;
             text-align: center;
-            border-radius: 8px;
-            transition: all 0.2s;
+            transition: var(--transition);
+            box-shadow: 4px 4px 0px 0px rgba(0, 0, 0, 1);
         }
 
         .mode-btn:hover {
-            border-color: #999;
+            transform: translate(2px, 2px);
+            box-shadow: 2px 2px 0px 0px rgba(0, 0, 0, 1);
+            background: #f5f5f5;
         }
 
-        .mode-btn.active {
-            border-color: #2563eb;
-            background: #eff6ff;
+        .mode-btn:active, .mode-btn.active {
+            transform: translate(4px, 4px);
+            box-shadow: none;
+            border-color: var(--text-color);
+            background: var(--text-color);
+            color: var(--bg-color);
+        }
+        
+        .mode-btn:active p, .mode-btn.active p {
+            color: var(--bg-color);
         }
 
         .mode-btn h3 {
@@ -116,7 +188,7 @@
 
         .mode-btn p {
             font-size: 12px;
-            color: #666;
+            color: #595959;
         }
 
         .mode-icon {
@@ -138,42 +210,65 @@
         .form-group input[type="text"],
         .form-group input[type="file"] {
             width: 100%;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            font-family: monospace;
-            font-size: 14px;
+            padding: 12px;
+            border: 2px solid var(--border-color);
+            font-family: inherit;
+            font-size: 16px;
+            background: rgba(255, 255, 255, 0.9);
+            box-sizing: border-box;
+            outline: none;
+            transition: var(--transition);
+        }
+
+        .form-group input[type="text"]:focus,
+        .form-group input[type="file"]:focus {
+            box-shadow: 4px 4px 0px 0px rgba(0, 0, 0, 0.1);
+            transform: translate(-2px, -2px);
         }
 
         .btn {
             padding: 10px 20px;
-            border: 1px solid #000;
-            background: #000;
-            color: #fff;
-            cursor: pointer;
-            font-family: monospace;
+            background: var(--text-color);
+            color: var(--bg-color);
+            border: 2px solid var(--border-color);
+            font-family: inherit;
             font-size: 14px;
-            border-radius: 4px;
-            transition: all 0.2s;
+            font-weight: bold;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: var(--transition);
+            position: relative;
+            box-shadow: 4px 4px 0px 0px rgba(0, 0, 0, 1);
         }
 
         .btn:hover {
-            background: #333;
+            transform: translate(2px, 2px);
+            box-shadow: 2px 2px 0px 0px rgba(0, 0, 0, 1);
+            background: #222;
+        }
+
+        .btn:active {
+            transform: translate(4px, 4px);
+            box-shadow: none;
         }
 
         .btn:disabled {
-            background: #ccc;
-            border-color: #ccc;
+            background: #b3b3b3;
+            border-color: #b3b3b3;
+            color: #595959;
             cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
         }
 
         .btn-secondary {
-            background: #fff;
-            color: #000;
+            background: var(--bg-color);
+            color: var(--text-color);
         }
 
         .btn-secondary:hover {
-            background: #f0f0f0;
+            background: #f5f5f5;
+            color: var(--text-color);
         }
 
         .btn-success {
@@ -186,13 +281,14 @@
         }
 
         .share-code-display {
-            background: #1e293b;
-            color: #22d3ee;
+            background: var(--text-color);
+            color: var(--bg-color);
             padding: 20px;
-            border-radius: 8px;
+            border: 2px solid var(--border-color);
             text-align: center;
             margin: 15px 0;
             overflow: hidden;
+            box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);
         }
 
         .share-code {
@@ -207,7 +303,7 @@
 
         .share-code-hint {
             font-size: 12px;
-            color: #94a3b8;
+            color: #ccc;
             margin-top: 10px;
         }
 
@@ -216,52 +312,53 @@
             align-items: center;
             gap: 8px;
             padding: 10px;
-            border-radius: 4px;
+            border: 2px solid var(--border-color);
             margin-bottom: 15px;
+            font-weight: bold;
+            text-transform: uppercase;
         }
 
         .status-indicator.waiting {
-            background: #fef3c7;
-            color: #92400e;
+            background: repeating-linear-gradient(45deg, #ffffff, #ffffff 10px, #f0f0f0 10px, #f0f0f0 20px);
+            color: var(--text-color);
+            box-shadow: 2px 2px 0px 0px rgba(0,0,0,1);
         }
 
         .status-indicator.connected {
-            background: #dcfce7;
-            color: #166534;
+            background: var(--text-color);
+            color: var(--bg-color);
+            box-shadow: 2px 2px 0px 0px rgba(0,0,0,1);
         }
 
         .status-indicator.transferring {
-            background: #dbeafe;
-            color: #1e40af;
+            background: repeating-linear-gradient(45deg, #000000, #000000 10px, #222222 10px, #222222 20px);
+            color: var(--bg-color);
+            box-shadow: 2px 2px 0px 0px rgba(0,0,0,1);
         }
 
         .status-indicator.error {
-            background: #fee2e2;
-            color: #991b1b;
+            background: var(--bg-color);
+            color: var(--text-color);
+            box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);
         }
 
         .status-dot {
             width: 10px;
             height: 10px;
-            border-radius: 50%;
+            border: 2px solid var(--text-color);
             animation: pulse 2s infinite;
         }
 
-        .status-indicator.waiting .status-dot {
-            background: #f59e0b;
-        }
-
-        .status-indicator.connected .status-dot {
-            background: #22c55e;
-        }
-
-        .status-indicator.transferring .status-dot {
-            background: #3b82f6;
-        }
-
+        .status-indicator.waiting .status-dot,
         .status-indicator.error .status-dot {
-            background: #ef4444;
-            animation: none;
+            background: var(--text-color);
+            border-color: var(--text-color);
+        }
+
+        .status-indicator.connected .status-dot,
+        .status-indicator.transferring .status-dot {
+            background: var(--bg-color);
+            border-color: var(--bg-color);
         }
 
         @keyframes pulse {
@@ -277,18 +374,18 @@
         }
 
         .file-info {
-            background: white;
-            border: 1px solid #e5e7eb;
-            border-radius: 6px;
+            background: var(--bg-color);
+            border: 2px solid var(--border-color);
             padding: 15px;
             margin: 15px 0;
+            box-shadow: 2px 2px 0px 0px rgba(0,0,0,1);
         }
 
         .file-info-row {
             display: flex;
             justify-content: space-between;
             padding: 5px 0;
-            border-bottom: 1px solid #f3f4f6;
+            border-bottom: 1px dashed var(--border-color);
         }
 
         .file-info-row:last-child {
@@ -296,8 +393,9 @@
         }
 
         .file-info-label {
-            color: #6b7280;
             font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
         }
 
         .file-info-value {
@@ -312,20 +410,20 @@
         .progress-bar {
             width: 100%;
             height: 24px;
-            background: #e5e7eb;
-            border-radius: 12px;
+            background: var(--bg-color);
+            border: 2px solid var(--border-color);
             overflow: hidden;
+            box-shadow: inset 2px 2px 0px 0px rgba(0,0,0,0.1);
         }
 
         .progress-fill {
             height: 100%;
-            background: linear-gradient(90deg, #1d4ed8, #1e40af);
-            border-radius: 12px;
+            background: repeating-linear-gradient(45deg, #000, #000 10px, #222 10px, #222 20px);
             transition: width 0.3s;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: white;
+            color: var(--bg-color);
             font-size: 12px;
             font-weight: bold;
         }
@@ -343,52 +441,59 @@
         }
 
         .drop-zone {
-            border: 2px dashed #d1d5db;
-            border-radius: 8px;
+            border: 2px dashed var(--border-color);
             padding: 40px;
             text-align: center;
             cursor: pointer;
             transition: all 0.2s;
-            background: white;
+            background: repeating-linear-gradient(45deg, #ffffff, #ffffff 10px, #f9f9f9 10px, #f9f9f9 20px);
+            font-weight: bold;
+            text-transform: uppercase;
         }
 
         .drop-zone:hover,
         .drop-zone.dragover {
-            border-color: #3b82f6;
-            background: #eff6ff;
+            border: 2px solid var(--border-color);
+            background: var(--bg-color);
+            box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);
         }
 
         .drop-zone-icon {
             font-size: 48px;
             margin-bottom: 10px;
+            display: none;
         }
 
         .log-container {
             max-height: 200px;
             overflow-y: auto;
-            background: #1e293b;
-            color: #e2e8f0;
+            background: var(--bg-color);
+            color: var(--text-color);
+            border: 2px solid var(--border-color);
             padding: 10px;
-            border-radius: 4px;
             font-size: 11px;
+            font-weight: bold;
             margin-top: 15px;
+            box-shadow: inset 4px 4px 0px 0px rgba(0,0,0,0.05);
         }
 
         .log-entry {
-            padding: 2px 0;
-            border-bottom: 1px solid #334155;
+            padding: 4px 0;
+            border-bottom: 1px dashed #b3b3b3;
         }
 
         .log-entry.error {
-            color: #f87171;
+            color: var(--text-color);
+            text-decoration: underline;
         }
 
         .log-entry.success {
-            color: #4ade80;
+            color: var(--text-color);
+            background: repeating-linear-gradient(45deg, #ffffff, #ffffff 5px, #f0f0f0 5px, #f0f0f0 10px);
         }
 
         .log-entry.info {
-            color: #60a5fa;
+            color: var(--text-color);
         }
 
         .received-file-item {
@@ -449,24 +554,31 @@
 
         .received-file-btn {
             padding: 6px 10px;
-            border: 1px solid #e0e0e0;
-            background: #fafafa;
-            border-radius: 6px;
+            border: 2px solid var(--border-color);
+            background: var(--bg-color);
+            border-radius: 0;
             cursor: pointer;
             font-size: 12px;
-            transition: all 0.15s;
+            font-weight: bold;
+            text-transform: uppercase;
+            transition: var(--transition);
             display: inline-flex;
             align-items: center;
             justify-content: center;
             gap: 6px;
             position: relative;
+            box-shadow: 2px 2px 0px 0px rgba(0, 0, 0, 1);
         }
 
         .received-file-btn:hover {
             background: #f0f0f0;
-            border-color: #ccc;
-            transform: translateY(-1px);
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            transform: translate(1px, 1px);
+            box-shadow: 1px 1px 0px 0px rgba(0, 0, 0, 1);
+        }
+
+        .received-file-btn:active {
+            transform: translate(2px, 2px);
+            box-shadow: none;
         }
 
         .received-file-btn svg {
@@ -549,14 +661,25 @@
             padding: 6px 12px;
             font-size: 12px;
             cursor: pointer;
-            border: 1px solid #ddd;
-            background: #fafafa;
-            border-radius: 4px;
+            border: 2px solid var(--border-color);
+            background: var(--bg-color);
+            border-radius: 0;
+            font-weight: bold;
+            text-transform: uppercase;
             margin-top: 10px;
+            box-shadow: 2px 2px 0px 0px rgba(0, 0, 0, 1);
+            transition: var(--transition);
         }
 
         .qr-toggle-btn:hover {
             background: #f0f0f0;
+            transform: translate(1px, 1px);
+            box-shadow: 1px 1px 0px 0px rgba(0, 0, 0, 1);
+        }
+
+        .qr-toggle-btn:active {
+            transform: translate(2px, 2px);
+            box-shadow: none;
         }
 
         .received-file-icon svg {
@@ -602,41 +725,75 @@
                 order: 0;
             }
         }
-    </style>
+    
+    /* Auto-extracted SonarQube styles */
+    .sq-style-f93d70 { display: none; background: repeating-linear-gradient(45deg, #ffffff, #ffffff 10px, #f0f0f0 10px, #f0f0f0 20px); color: var(--text-color); padding: 12px; border: 2px solid var(--border-color); box-shadow: 4px 4px 0px 0px rgba(0,0,0,1); margin-bottom: 20px; align-items: center; gap: 10px; font-weight: bold; text-transform: uppercase; }
+    .sq-style-98ea50 { background: repeating-linear-gradient(45deg, #ffffff, #ffffff 10px, #f0f0f0 10px, #f0f0f0 20px); color: var(--text-color); padding: 10px; border: 2px dashed var(--border-color); margin-bottom: 15px; font-weight: bold; text-transform: uppercase; }
+    .sq-style-d0a913 { text-align: center; margin-top: 10px; font-size: 12px; color: #595959; font-weight: bold; text-transform: uppercase; }
+    .sq-style-2bd300 { margin-top: 20px; border-top: 2px dashed var(--border-color); padding-top: 15px; }
+    .sq-style-1d7b9a { cursor: pointer; font-size: 14px; font-weight: bold; color: var(--text-color); text-transform: uppercase; }
+    .sq-style-0d9f0a { margin-top: 10px; padding: 10px; background: #fff; border: 1px solid #ddd; border-radius: 4px; }
+    .sq-style-591b06 { width: 100%; padding: 8px; border: 1px solid #b3b3b3; border-radius: 4px; font-family: monospace; }
+    .sq-style-6b6318 { font-size: 11px; color: #595959; margin-top: 5px; }
+    .sq-style-99890f { font-size: 12px; margin-top: 10px; font-weight: normal; text-transform: none; }
+    .sq-style-224b51 { display: none; }
+    .sq-style-194b57 { margin-top: 20px; }
+    .sq-style-e77389 { font-size: 14px; margin-bottom: 10px; text-transform: uppercase; }
+    .sq-style-98648e { background: var(--bg-color); border: 2px solid var(--border-color); box-shadow: 2px 2px 0px 0px rgba(0,0,0,1); max-height: 250px; overflow-y: auto; }
+    .sq-style-9241f8 { margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+    .sq-style-d3ab62 { font-size: 12px; font-weight: bold; }
+    .sq-style-ae2dfd { text-align: center; margin-top: 10px; display: flex; justify-content: center; gap: 10px; }
+    .sq-style-759002 { width: 0% }
+    .sq-style-8ecca8 { margin-top: 15px; }
+    .sq-style-73d774 { display: flex; align-items: center; gap: 10px; cursor: pointer; text-transform: uppercase; }
+    .sq-style-50b87a { width: 18px; height: 18px; cursor: pointer; }
+    .sq-style-da0682 { font-size: 11px; color: #595959; margin-top: 5px; margin-left: 28px; text-transform: uppercase; }
+    .sq-style-640cf9 { margin-top: 15px; display: flex; gap: 10px; }
+    .sq-style-4f859d { text-transform: uppercase; letter-spacing: 2px; text-align: center; font-size: 18px; }
+    .sq-style-8c5c1b { margin-bottom: 10px; display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: bold; }
+    .sq-style-f3d19e { cursor: pointer; display: flex; align-items: center; gap: 5px; }
+    .sq-style-c0a39a { padding: 4px 8px; font-size: 11px; }
+    .sq-style-f0061d { padding: 4px 8px; font-size: 11px; margin-left: auto; }
+    .sq-style-a5e3c2 { color: #4ade80; }
+    .sq-style-28e6a7 { color: #94a3b8; }
+    .sq-style-6872ed { margin-right:10px; }
+    .sq-style-f0acb3 { font-size:12px; padding:6px 10px; }
+    .sq-style-bccdd9 { color: #0891b2; }
+    .sq-style-e33b5b { color: #7c3aed; }
+    .sq-style-f79f7b { color: #ec4899; }
+    .sq-style-610bd2 { color: #dc2626; }
+    .sq-style-51f0e3 { color: #ca8a04; }
+    .sq-style-369042 { color: #2563eb; }
+    .sq-style-f89798 { color: #16a34a; }
+    .sq-style-e60fe6 { color: #6366f1; }
+    .sq-style-166c56 { color: #6b7280; }
+  </style>
 </head>
 
 <body>
     <div class="container">
         <div class="header">
             <div>
-                <h1>🔗 P2P File Transfer</h1>
+                <h1>P2P FILE TRANSFER</h1>
                 <div class="breadcrumb">
-                    <a href="/files/">🏠 Home</a> / P2P Transfer
+                    <a href="/files/">HOME</a> / P2P TRANSFER
                 </div>
             </div>
             <div class="nav-links">
-                <a href="/files/">📁 Files</a>
-                <a href="/search">🚀 Super Search</a>
+                <a href="/files/">FILES</a>
+                <a href="/search">SUPER SEARCH</a>
                 {% if current_user %}
-                <a href="/logout">↩ Logout</a>
+                <a href="/logout" class="primary-btn">LOGOUT</a>
                 {% else %}
-                <a href="/login">🔑 Login</a>
+                <a href="/login" class="primary-btn">LOGIN</a>
                 {% end %}
             </div>
         </div>
 
         <!-- Session Warning Banner -->
-        <div id="session-warning"
-            style="display: none; background: #e0f2fe; color: #0369a1; padding: 12px; border-radius: 4px; margin-bottom: 20px; border-left: 4px solid #0284c7; align-items: center; gap: 10px;">
-            <svg viewBox="0 0 24 24"
-                style="width: 20px; height: 20px; stroke: currentColor; stroke-width: 2; fill: none; flex-shrink: 0;">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="8" x2="12" y2="12"></line>
-                <line x1="12" y1="16" x2="12.01" y2="16"></line>
-            </svg>
+        <div class="sq-style-f93d70" id="session-warning">
             <div>
-                <strong>Important:</strong> Do not close this tab or browser window while a transfer is in progress. The
-                connection will be lost.
+                <strong>IMPORTANT:</strong> Do not close this tab or browser window while a transfer is in progress. The connection will be lost.
             </div>
         </div>
 
@@ -644,48 +801,50 @@
         <div class="section" id="mode-section">
             <h2>Select Transfer Mode</h2>
             {% if is_anonymous %}
-            <div style="background: #fef3c7; color: #92400e; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
-                ⚠️ You are browsing as a guest. You can receive files but need to <a href="/login"
-                    style="color: #92400e; font-weight: bold;">log in</a> to share files.
+            <div class="sq-style-98ea50">
+                [!] You are browsing as a guest. You can share and receive files without logging in.
             </div>
             {% end %}
             <div class="mode-selector">
-                <div class="mode-btn {% if is_anonymous %}disabled{% end %}" id="send-mode-btn" {% if is_anonymous
-                    %}style="opacity: 0.5; cursor: not-allowed;" {% end %}>
-                    <div class="mode-icon">📤</div>
-                    <h3>Send File</h3>
-                    <p>{% if is_anonymous %}Login required to share files{% else %}Share a file with another user{% end
-                        %}</p>
+                <div class="mode-btn" id="send-mode-btn">
+                    <div class="mode-icon">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2L2 14H8V22H16V14H22L12 2Z" />
+                        </svg>
+                    </div>
+                    <h3>SEND FILE</h3>
+                    <p>Share a file with another user</p>
                 </div>
                 <div class="mode-btn" id="receive-mode-btn">
-                    <div class="mode-icon">📥</div>
-                    <h3>Receive File</h3>
+                    <div class="mode-icon">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 22L22 10H16V2H8V10H2L12 22Z" />
+                        </svg>
+                    </div>
+                    <h3>RECEIVE FILE</h3>
                     <p>Enter a share code to receive a file</p>
                 </div>
             </div>
 
-            <div style="text-align: center; margin-top: 10px; font-size: 12px; color: #666;">
-                <p>💡 Tip: Use the <strong>Connection Settings</strong> below if you have trouble connecting.</p>
+            <div class="sq-style-d0a913">
+                <p>[TIP] Use the <strong>Connection Settings</strong> below if you have trouble connecting.</p>
             </div>
 
             <!-- Connection Settings -->
-            <div style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px;">
+            <div class="sq-style-2bd300">
                 <details>
-                    <summary style="cursor: pointer; font-size: 14px; font-weight: bold; color: #555;">⚙️ Connection
-                        Settings (Advanced)</summary>
-                    <div
-                        style="margin-top: 10px; padding: 10px; background: #fff; border: 1px solid #ddd; border-radius: 4px;">
+                    <summary class="sq-style-1d7b9a">[+] CONNECTION SETTINGS (ADVANCED)</summary>
+                    <div class="sq-style-0d9f0a">
                         <div class="form-group">
                             <label for="stun-server-select">STUN Server (NAT Traversal)</label>
-                            <select id="stun-server-select"
-                                style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace;">
+                            <select class="sq-style-591b06" id="stun-server-select">
                                 <option value="google" selected>Google (Default - Reliable)</option>
                                 <option value="mozilla">Mozilla Services</option>
                                 <option value="openstun">OpenSTUN (Ekiga)</option>
                                 <option value="blackberry">Blackberry VOIP</option>
                                 <option value="framasoft">Framasoft</option>
                             </select>
-                            <p style="font-size: 11px; color: #666; margin-top: 5px;">
+                            <p class="sq-style-6b6318">
                                 If connection fails, try selecting a different STUN server. These servers help establish
                                 P2P connections across different networks.
                             </p>
@@ -707,27 +866,25 @@
             <!-- File Selection -->
             <div id="file-selection">
                 <div class="drop-zone" id="drop-zone">
-                    <div class="drop-zone-icon">📁</div>
-                    <p><strong>Drop file here</strong> or click to select</p>
-                    <p style="font-size: 12px; color: #6b7280; margin-top: 10px;">Files transfer directly to the
+                    <p><strong>DROP FILE(S) HERE</strong> OR CLICK TO SELECT</p>
+                    <p class="sq-style-99890f">Files transfer directly to the
                         recipient - never stored on server</p>
                 </div>
-                <input type="file" id="file-input" style="display: none;">
+                <input class="sq-style-224b51" type="file" id="file-input" multiple>
             </div>
 
-            <!-- File Info -->
-            <div id="send-file-info" class="file-info hidden">
-                <div class="file-info-row">
-                    <span class="file-info-label">File Name</span>
-                    <span class="file-info-value" id="send-file-name">-</span>
+            <!-- File Info (Selected Files List) -->
+            <div id="send-file-info" class="hidden sq-style-194b57">
+                <h3 class="sq-style-e77389">
+                    SELECTED FILES TO SHARE
+                </h3>
+                <div class="sq-style-98648e" id="send-files-list">
+                    <!-- Files will be added here dynamically -->
                 </div>
-                <div class="file-info-row">
-                    <span class="file-info-label">Size</span>
-                    <span class="file-info-value" id="send-file-size">-</span>
-                </div>
-                <div class="file-info-row">
-                    <span class="file-info-label">Type</span>
-                    <span class="file-info-value" id="send-file-type">-</span>
+                <div class="sq-style-9241f8">
+                    <div class="sq-style-d3ab62">
+                        TOTAL: <span id="send-total-size">0 B</span>
+                    </div>
                 </div>
             </div>
 
@@ -744,17 +901,17 @@
                     <div class="qr-code-label">Scan to receive file</div>
                 </div>
 
-                <div style="text-align: center; margin-top: 10px;">
-                    <button class="btn btn-secondary" id="copy-code-btn">📋 Copy Code</button>
-                    <button class="btn btn-secondary" id="copy-link-btn">🔗 Copy Link</button>
-                    <button class="qr-toggle-btn" id="qr-toggle-btn">Hide QR</button>
+                <div class="sq-style-ae2dfd">
+                    <button class="btn btn-secondary" id="copy-code-btn">[ COPY CODE ]</button>
+                    <button class="btn btn-secondary" id="copy-link-btn">[ COPY LINK ]</button>
+                    <button class="btn btn-secondary" id="qr-toggle-btn">[ HIDE QR ]</button>
                 </div>
             </div>
 
             <!-- Transfer Progress -->
             <div id="send-progress" class="progress-container hidden">
                 <div class="progress-bar">
-                    <div class="progress-fill" id="send-progress-fill" style="width: 0%">0%</div>
+                    <div class="progress-fill sq-style-759002" id="send-progress-fill">0%</div>
                 </div>
                 <div class="progress-stats">
                     <span id="send-progress-transferred">0 B / 0 B</span>
@@ -763,35 +920,34 @@
             </div>
 
             <!-- Anonymous Sharing Option -->
-            <div class="form-group" style="margin-top: 15px;">
-                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-                    <input type="checkbox" id="allow-anonymous" style="width: 18px; height: 18px; cursor: pointer;">
-                    <span>Allow anonymous access (recipients don't need to log in)</span>
+            <div class="form-group sq-style-8ecca8">
+                <label class="sq-style-73d774">
+                    <input class="sq-style-50b87a" type="checkbox" id="allow-anonymous">
+                    <strong>ALLOW ANONYMOUS ACCESS (NO LOGIN REQUIRED)</strong>
                 </label>
-                <p style="font-size: 11px; color: #666; margin-top: 5px; margin-left: 28px;">
-                    Anyone with the share link can receive this file without an account
+                <p class="sq-style-da0682">
+                    ANYONE WITH THE SHARE LINK CAN RECEIVE THIS FILE
                 </p>
             </div>
 
-            <div style="margin-top: 15px;">
-                <button class="btn" id="create-room-btn" disabled>Create Share Link</button>
-                <button class="btn btn-secondary" id="cancel-send-btn">Cancel</button>
+            <div class="sq-style-640cf9">
+                <button class="btn" id="create-room-btn" disabled>CREATE SHARE LINK</button>
+                <button class="btn btn-secondary" id="cancel-send-btn">CANCEL</button>
             </div>
         </div>
 
         <!-- Receive Mode Section -->
         <div class="section hidden" id="receive-section">
-            <h2>📥 Receive File</h2>
+            <h2>RECEIVE FILE</h2>
 
             <div id="receive-status" class="status-indicator waiting">
                 <div class="status-dot"></div>
-                <span id="receive-status-text">Enter share code to connect</span>
+                <span id="receive-status-text">ENTER SHARE CODE TO CONNECT</span>
             </div>
 
             <div class="form-group">
                 <label for="room-code-input">Share Code</label>
-                <input type="text" id="room-code-input" placeholder="Enter the share code"
-                    style="text-transform: uppercase; letter-spacing: 2px; text-align: center; font-size: 18px;"
+                <input class="sq-style-4f859d" type="text" id="room-code-input" placeholder="Enter the share code"
                     maxlength="20">
             </div>
 
@@ -814,7 +970,7 @@
             <!-- Transfer Progress -->
             <div id="receive-progress" class="progress-container hidden">
                 <div class="progress-bar">
-                    <div class="progress-fill" id="receive-progress-fill" style="width: 0%">0%</div>
+                    <div class="progress-fill sq-style-759002" id="receive-progress-fill">0%</div>
                 </div>
                 <div class="progress-stats">
                     <span id="receive-progress-transferred">0 B / 0 B</span>
@@ -822,52 +978,56 @@
                 </div>
             </div>
 
-            <!-- Received Files Section -->
-            <div id="received-files-section" class="hidden" style="margin-top: 20px;">
-                <h3 style="font-size: 14px; margin-bottom: 10px; color: #166534;">
-                    <svg viewBox="0 0 24 24"
-                        style="width: 16px; height: 16px; stroke: #16a34a; stroke-width: 2; fill: none; vertical-align: middle; margin-right: 6px;">
-                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                        <polyline points="22 4 12 14.01 9 11.01" />
-                    </svg>
-                    Files Ready to Download
+            <!-- Available Files Section -->
+            <div id="available-files-section" class="hidden sq-style-194b57">
+                <h3 class="sq-style-e77389">
+                    AVAILABLE FILES
                 </h3>
-                <div id="received-files-list"
-                    style="background: white; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden;">
-                    <!-- Files will be added here dynamically -->
+                <div class="sq-style-8c5c1b">
+                    <label class="sq-style-f3d19e">
+                        <input type="checkbox" id="select-all-available" checked>
+                        SELECT ALL
+                    </label>
+                    <button class="btn btn-secondary sq-style-c0a39a" id="download-selected-available-btn">
+                        DOWNLOAD SELECTED
+                    </button>
                 </div>
-                <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
-                    <button class="btn btn-icon-success" id="download-all-btn"
-                        style="display: inline-flex; align-items: center; gap: 8px;">
-                        <svg viewBox="0 0 24 24"
-                            style="width: 16px; height: 16px; stroke: currentColor; stroke-width: 2; fill: none;">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <polyline points="7 10 12 15 17 10" />
-                            <line x1="12" y1="15" x2="12" y2="3" />
-                        </svg>
-                        Download Selected
-                    </button>
-                    <button class="btn btn-secondary" id="clear-files-btn"
-                        style="display: inline-flex; align-items: center; gap: 8px;">
-                        <svg viewBox="0 0 24 24"
-                            style="width: 16px; height: 16px; stroke: currentColor; stroke-width: 2; fill: none;">
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                        </svg>
-                        Clear All
-                    </button>
+                <div class="sq-style-98648e" id="available-files-list">
+                    <!-- Files will be added here dynamically -->
                 </div>
             </div>
 
-            <div style="margin-top: 15px;">
-                <button class="btn" id="join-room-btn">Connect</button>
-                <button class="btn btn-secondary" id="cancel-receive-btn">Cancel</button>
+            <!-- Received Files Section -->
+            <div id="received-files-section" class="hidden sq-style-194b57">
+                <h3 class="sq-style-e77389">
+                    FILES READY TO DOWNLOAD
+                </h3>
+                <div class="sq-style-8c5c1b">
+                    <label class="sq-style-f3d19e">
+                        <input type="checkbox" id="select-all-received" checked>
+                        SELECT ALL
+                    </label>
+                    <button class="btn btn-secondary sq-style-c0a39a" id="download-all-btn">
+                        DOWNLOAD SELECTED
+                    </button>
+                    <button class="btn btn-secondary sq-style-f0061d" id="clear-files-btn">
+                        CLEAR LIST
+                    </button>
+                </div>
+                <div class="sq-style-98648e" id="received-files-list">
+                    <!-- Files will be added here dynamically -->
+                </div>
+            </div>
+
+            <div class="sq-style-640cf9">
+                <button class="btn" id="join-room-btn">CONNECT</button>
+                <button class="btn btn-secondary" id="cancel-receive-btn">CANCEL</button>
             </div>
         </div>
 
         <!-- Connection Log -->
         <div class="section">
-            <h2>📋 Connection Log</h2>
+            <h2>CONNECTION LOG</h2>
             <div class="log-container" id="log-container">
                 <div class="log-entry info">Ready to start P2P transfer...</div>
             </div>
@@ -1337,7 +1497,8 @@
         let ws = null;
         let peerConnection = null;
         let dataChannel = null;
-        let selectedFile = null;
+        let selectedFiles = [];
+        let currentFileIndex = 0;
         let currentMode = null;
         let myPeerId = null;
         let currentRoomId = null;
@@ -1345,6 +1506,10 @@
         let receivedSize = 0;
         let expectedFileInfo = null;
         let transferStartTime = null;
+        let availableFiles = [];
+        let requestedFiles = new Set();
+        let pendingRequests = [];
+        let isTransferring = false;
         let pendingRoomId = {% if room_id %}"{{ room_id }}"{% else %} null{% end %};
         let receivedFiles = []; // Array to store received files for manual download
 
@@ -1355,7 +1520,7 @@
             setupDropZone();
 
             // Check for room ID in URL or if anonymous user with pending room
-            const urlParams = new URLSearchParams(window.location.search);
+            const urlParams = new URLSearchParams(globalThis.location.search);
             const roomId = urlParams.get('room');
             if (roomId || pendingRoomId) {
                 selectMode('receive');
@@ -1364,11 +1529,11 @@
             }
 
             // Warn user before leaving if transfer is active
-            window.onbeforeunload = function (e) {
+            globalThis.onbeforeunload = function (e) {
                 if ((peerConnection && peerConnection.connectionState === 'connected') ||
                     (receivedChunks.length > 0 && receivedChunks.length * CHUNK_SIZE < (expectedFileInfo ? expectedFileInfo.size : 0))) {
                     const confirmationMessage = 'A file transfer is in progress. If you leave this page, the transfer will be cancelled.';
-                    (e || window.event).returnValue = confirmationMessage;
+                    (e || globalThis.event).returnValue = confirmationMessage;
                     return confirmationMessage;
                 }
             };
@@ -1458,9 +1623,9 @@
                     // Show anonymous access info
                     const anonHint = document.getElementById('share-code-hint');
                     if (data.allow_anonymous) {
-                        anonHint.innerHTML = 'Share this code with the recipient<br><span style="color: #4ade80;">✓ Anonymous access enabled - no login required</span>';
+                        anonHint.innerHTML = 'Share this code with the recipient<br><span class="sq-style-a5e3c2">✓ Anonymous access enabled - no login required</span>';
                     } else {
-                        anonHint.innerHTML = 'Share this code with the recipient<br><span style="color: #94a3b8;">Recipients must be logged in</span>';
+                        anonHint.innerHTML = 'Share this code with the recipient<br><span class="sq-style-28e6a7">Recipients must be logged in</span>';
                     }
 
                     // Generate QR code for the share link
@@ -1543,7 +1708,10 @@
             const fileInput = document.getElementById('file-input');
             fileInput.addEventListener('change', (e) => {
                 if (e.target.files.length > 0) {
-                    selectedFile = e.target.files[0];
+                    selectedFiles = Array.from(e.target.files).map(f => {
+                        f.fileId = Math.random().toString(36).substr(2, 9);
+                        return f;
+                    });
                     showSelectedFile();
                 }
             });
@@ -1565,21 +1733,61 @@
                 e.preventDefault();
                 dropZone.classList.remove('dragover');
                 if (e.dataTransfer.files.length > 0) {
-                    selectedFile = e.dataTransfer.files[0];
+                    selectedFiles = Array.from(e.dataTransfer.files).map(f => {
+                        f.fileId = Math.random().toString(36).substr(2, 9);
+                        return f;
+                    });
                     showSelectedFile();
                 }
             });
         }
 
         function showSelectedFile() {
-            document.getElementById('send-file-name').textContent = selectedFile.name;
-            document.getElementById('send-file-size').textContent = formatBytes(selectedFile.size);
-            document.getElementById('send-file-type').textContent = selectedFile.type || 'Unknown';
+            if (selectedFiles.length === 0) {
+                document.getElementById('send-file-info').classList.add('hidden');
+                document.getElementById('file-selection').classList.remove('hidden');
+                document.getElementById('create-room-btn').disabled = true;
+                updateSendStatus('waiting', 'Select a file to share');
+                return;
+            }
+
+            const container = document.getElementById('send-files-list');
+            const totalSize = selectedFiles.reduce((acc, f) => acc + f.size, 0);
+            
+            container.innerHTML = selectedFiles.map((file) => `
+                <div class="received-file-item">
+                    <div class="received-file-icon">${getFileIcon(file.type)}</div>
+                    <div class="received-file-details">
+                        <div class="received-file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
+                        <div class="received-file-meta">
+                            ${formatBytes(file.size)}
+                        </div>
+                    </div>
+                    <div class="received-file-actions">
+                        <button class="received-file-btn sender-remove-btn" data-action="remove-send" data-send-id="${file.fileId}" title="Remove">
+                            <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+
+            document.getElementById('send-total-size').textContent = formatBytes(totalSize);
             document.getElementById('send-file-info').classList.remove('hidden');
-            document.getElementById('file-selection').classList.add('hidden');
+            document.getElementById('file-selection').classList.add('hidden'); // keep drop zone hidden once selected
             document.getElementById('create-room-btn').disabled = false;
-            updateSendStatus('waiting', 'File selected. Click "Create Share Link" to continue.');
-            log(`File selected: ${selectedFile.name} (${formatBytes(selectedFile.size)})`, 'info');
+            updateSendStatus('waiting', 'File(s) queued. Click "Create Share Link" to continue.');
+            
+            log(`Selected ${selectedFiles.length} file(s) (${formatBytes(totalSize)})`, 'info');
+        }
+
+        function removeSelectedFile(id) {
+            const index = selectedFiles.findIndex(f => f.fileId === id);
+            if (index !== -1) {
+                selectedFiles.splice(index, 1);
+                showSelectedFile();
+                log('File removed from local queue', 'info');
+                sendFileList();
+            }
         }
 
         function showReceiveFileInfo(fileInfo) {
@@ -1590,8 +1798,8 @@
         }
 
         function createRoom() {
-            if (!selectedFile) {
-                log('No file selected', 'error');
+            if (selectedFiles.length === 0) {
+                log('No files selected', 'error');
                 return;
             }
 
@@ -1602,10 +1810,11 @@
                 return;
             }
 
+            const totalSize = selectedFiles.reduce((acc, f) => acc + f.size, 0);
             const fileInfo = {
-                name: selectedFile.name,
-                size: selectedFile.size,
-                type: selectedFile.type
+                name: selectedFiles.length === 1 ? selectedFiles[0].name : `${selectedFiles.length} files`,
+                size: totalSize,
+                type: selectedFiles.length === 1 ? selectedFiles[0].type : 'multipart'
             };
 
             const allowAnonymous = document.getElementById('allow-anonymous').checked;
@@ -1635,7 +1844,7 @@
             document.getElementById('join-room-btn').disabled = true;
         }
 
-        function createPeerConnection(isInitiator) {
+        async function createPeerConnection(isInitiator) {
             peerConnection = new RTCPeerConnection({ iceServers: currentIceServers });
 
             peerConnection.onicecandidate = (event) => {
@@ -1664,15 +1873,16 @@
                 });
                 setupDataChannel();
 
-                peerConnection.createOffer()
-                    .then(offer => peerConnection.setLocalDescription(offer))
-                    .then(() => {
-                        ws.send(JSON.stringify({
-                            type: 'offer',
-                            sdp: peerConnection.localDescription
-                        }));
-                    })
-                    .catch(err => log(`Error creating offer: ${err}`, 'error'));
+                try {
+                    const offer = await peerConnection.createOffer();
+                    await peerConnection.setLocalDescription(offer);
+                    ws.send(JSON.stringify({
+                        type: 'offer',
+                        sdp: peerConnection.localDescription
+                    }));
+                } catch (err) {
+                    log(`Error creating offer: ${err}`, 'error');
+                }
             } else {
                 peerConnection.ondatachannel = (event) => {
                     dataChannel = event.channel;
@@ -1700,9 +1910,7 @@
             };
 
             dataChannel.onmessage = (event) => {
-                if (currentMode === 'receive') {
-                    handleReceivedData(event.data);
-                }
+                handleDataChannelMessage(event.data);
             };
         }
 
@@ -1730,10 +1938,44 @@
             }
         }
 
-        async function startFileSend() {
-            if (!selectedFile || !dataChannel) return;
+        function sendFileList() {
+            if (!dataChannel || dataChannel.readyState !== 'open') return;
+            const fileList = selectedFiles.map((f) => ({
+                id: f.fileId,
+                name: f.name,
+                size: f.size,
+                type: f.type
+            }));
+            dataChannel.send(JSON.stringify({ type: 'file_list', files: fileList }));
+        }
 
-            updateSendStatus('transferring', 'Sending file...');
+        async function startFileSend() {
+            if (selectedFiles.length === 0 || !dataChannel) return;
+            
+            sendFileList();
+            updateSendStatus('connected', 'Waiting for recipient to request files...');
+        }
+
+        async function processNextRequest() {
+            if (pendingRequests.length === 0) {
+                isTransferring = false;
+                updateSendStatus('connected', 'All requested files sent. Waiting for more requests...');
+                return;
+            }
+
+            isTransferring = true;
+            const requestedId = pendingRequests.shift();
+            
+            currentFileIndex = selectedFiles.findIndex(f => f.fileId === requestedId);
+            if (currentFileIndex === -1) {
+                log('Recipient requested a file that was removed', 'warning');
+                isTransferring = false;
+                processNextRequest();
+                return;
+            }
+
+            const currentFile = selectedFiles[currentFileIndex];
+            updateSendStatus('transferring', `Sending file ${currentFile.name}...`);
             document.getElementById('send-progress').classList.remove('hidden');
 
             transferStartTime = Date.now();
@@ -1741,13 +1983,12 @@
             let offset = 0;
 
             const sendNextChunk = () => {
-                const slice = selectedFile.slice(offset, offset + CHUNK_SIZE);
+                const slice = currentFile.slice(offset, offset + CHUNK_SIZE);
                 reader.readAsArrayBuffer(slice);
             };
 
             reader.onload = (e) => {
                 if (dataChannel.bufferedAmount > CHUNK_SIZE * 10) {
-                    // Wait for buffer to drain
                     setTimeout(() => reader.onload(e), 50);
                     return;
                 }
@@ -1755,36 +1996,59 @@
                 dataChannel.send(e.target.result);
                 offset += e.target.result.byteLength;
 
-                // Update progress
-                const progress = (offset / selectedFile.size) * 100;
-                updateSendProgress(progress, offset, selectedFile.size);
+                const progress = (offset / currentFile.size) * 100;
+                updateSendProgress(progress, offset, currentFile.size);
 
-                if (offset < selectedFile.size) {
+                if (offset < currentFile.size) {
                     sendNextChunk();
                 } else {
-                    // Send end marker
                     dataChannel.send(JSON.stringify({ type: 'end' }));
-                    updateSendStatus('connected', 'File sent successfully!');
-                    log(`File transfer complete: ${selectedFile.name}`, 'success');
+                    log(`File transfer complete: ${currentFile.name}`, 'success');
+                    document.getElementById('send-progress').classList.add('hidden');
+                    setTimeout(processNextRequest, 500);
                 }
             };
 
-            // Send file info first
             dataChannel.send(JSON.stringify({
                 type: 'start',
-                name: selectedFile.name,
-                size: selectedFile.size,
-                mime: selectedFile.type
+                id: requestedId,
+                name: currentFile.name,
+                size: currentFile.size,
+                mime: currentFile.type
             }));
 
             sendNextChunk();
         }
 
-        function handleReceivedData(data) {
+        function handleDataChannelMessage(data) {
             if (typeof data === 'string') {
                 const msg = JSON.parse(data);
-                if (msg.type === 'start') {
+                
+                if (currentMode === 'send') {
+                    if (msg.type === 'request_file') {
+                        pendingRequests.push(msg.id);
+                        log(`File requested by recipient: ${msg.id}`, 'info');
+                        if (!isTransferring) {
+                            processNextRequest();
+                        }
+                    }
+                    return;
+                }
+
+                if (msg.type === 'file_list') {
+                    availableFiles = msg.files;
+                    renderAvailableFiles();
+                    updateReceiveStatus('connected', 'Select file(s) to download.');
+                    
+                    let totalSize = availableFiles.reduce((acc, f) => acc + f.size, 0);
+                    let overviewName = availableFiles.length === 1 ? availableFiles[0].name : `${availableFiles.length} file(s) available`;
+                    document.getElementById('receive-file-name').textContent = overviewName;
+                    document.getElementById('receive-file-size').textContent = formatBytes(totalSize);
+                    document.getElementById('receive-from-user').textContent = currentRoomId || 'Sender';
+                    document.getElementById('receive-file-info').classList.remove('hidden');
+                } else if (msg.type === 'start') {
                     expectedFileInfo = {
+                        id: msg.id,
                         name: msg.name,
                         size: msg.size,
                         mime: msg.mime
@@ -1792,20 +2056,27 @@
                     receivedChunks = [];
                     receivedSize = 0;
                     transferStartTime = Date.now();
-                    showReceiveFileInfo(expectedFileInfo);
-                    updateReceiveStatus('transferring', 'Receiving file...');
-                    document.getElementById('receive-progress').classList.remove('hidden');
                     log(`Receiving: ${msg.name} (${formatBytes(msg.size)})`, 'info');
+                    
+                    updateReceiveStatus('transferring', `Receiving ${msg.name}...`);
+                    document.getElementById('receive-progress').classList.remove('hidden');
+                    
+                    if (expectedFileInfo.id) {
+                        const dBtn = document.querySelector(`.available-file-btn[data-file-id="${expectedFileInfo.id}"]`);
+                        if (dBtn) dBtn.textContent = 'RECEIVING...';
+                    }
                 } else if (msg.type === 'end') {
                     completeReceive();
                 }
             } else {
-                receivedChunks.push(data);
-                receivedSize += data.byteLength;
+                if (currentMode === 'receive') {
+                    receivedChunks.push(data);
+                    receivedSize += data.byteLength;
 
-                if (expectedFileInfo) {
-                    const progress = (receivedSize / expectedFileInfo.size) * 100;
-                    updateReceiveProgress(progress, receivedSize, expectedFileInfo.size);
+                    if (expectedFileInfo) {
+                        const progress = (receivedSize / expectedFileInfo.size) * 100;
+                        updateReceiveProgress(progress, receivedSize, expectedFileInfo.size);
+                    }
                 }
             }
         }
@@ -1813,9 +2084,9 @@
         function completeReceive() {
             const blob = new Blob(receivedChunks, { type: expectedFileInfo.mime || 'application/octet-stream' });
 
-            // Store the file for manual download (don't auto-download)
             const fileEntry = {
                 id: Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+                originalId: expectedFileInfo.id,
                 name: expectedFileInfo.name,
                 size: expectedFileInfo.size,
                 mime: expectedFileInfo.mime || 'application/octet-stream',
@@ -1826,19 +2097,104 @@
 
             receivedFiles.push(fileEntry);
 
-            // Hide progress bar after completion
             document.getElementById('receive-progress').classList.add('hidden');
+            
+            if (expectedFileInfo && expectedFileInfo.id) {
+                const btn = document.querySelector(`.available-file-btn[data-file-id="${expectedFileInfo.id}"]`);
+                if (btn) {
+                    btn.textContent = 'DOWNLOADED ✓';
+                    btn.disabled = true;
+                }
+            }
 
-            updateReceiveStatus('connected', `File received! ${receivedFiles.length} file(s) ready to download.`);
+            updateReceiveStatus('connected', `File received! ${receivedFiles.length} file(s) downloaded.`);
             log(`File received: ${expectedFileInfo.name} - Ready to download`, 'success');
 
-            // Show the received files section and render the file list
             renderReceivedFiles();
 
-            // Reset for next transfer
             receivedChunks = [];
             receivedSize = 0;
             expectedFileInfo = null;
+        }
+
+        globalThis.requestFile = function(id) {
+            if (!dataChannel || dataChannel.readyState !== 'open') {
+                log('No active connection to sender', 'error');
+                return;
+            }
+            
+            const btn = document.querySelector(`.available-file-btn[data-file-id="${id}"]`);
+            if (btn && btn.disabled) return; // Prevent duplicate requests
+            
+            requestedFiles.add(id);
+            dataChannel.send(JSON.stringify({ type: 'request_file', id: id }));
+            
+            if (btn) {
+                btn.textContent = 'REQUESTED...';
+                btn.disabled = true;
+            }
+            const cb = document.querySelector(`.available-file-checkbox[data-file-id="${id}"]`);
+            if (cb) {
+                cb.disabled = true;
+                cb.checked = false; // Disconnect it from select-all logic if requested
+            }
+        };
+
+        function downloadSelectedAvailableFiles() {
+            const checkboxes = document.querySelectorAll('.available-file-checkbox:checked');
+            const selectedIds = Array.from(checkboxes).map(cb => cb.dataset.fileId);
+            
+            if (selectedIds.length === 0) {
+                log('No files selected', 'error');
+                return;
+            }
+
+            selectedIds.forEach((id, i) => {
+                setTimeout(() => {
+                    requestFile(id);
+                }, i * 200); // Stagger requests slightly to not choke the WS/RTC buffers
+            });
+        }
+
+        function renderAvailableFiles() {
+            const container = document.getElementById('available-files-list');
+            const section = document.getElementById('available-files-section');
+
+            if (availableFiles.length === 0) {
+                section.classList.add('hidden');
+                container.innerHTML = '';
+                return;
+            }
+
+            section.classList.remove('hidden');
+
+            container.innerHTML = availableFiles.map((file) => {
+                const isRequested = requestedFiles.has(file.id);
+                const isDownloaded = receivedFiles.some(f => f.originalId === file.id);
+                const isBusy = isRequested || isDownloaded;
+                
+                let btnText = 'DOWNLOAD';
+                if(isDownloaded) btnText = 'DOWNLOADED ✓';
+                else if(isRequested) btnText = 'REQUESTED...';
+
+                return `
+                <div class="received-file-item">
+                    <input type="checkbox" class="available-file-checkbox sq-style-6872ed" ${isBusy ? 'disabled' : 'checked'} data-file-id="${file.id}">
+                    <div class="received-file-icon">${getFileIcon(file.type)}</div>
+                    <div class="received-file-details">
+                        <div class="received-file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
+                        <div class="received-file-meta">
+                            ${formatBytes(file.size)}
+                        </div>
+                    </div>
+                    <div class="received-file-actions">
+                        <button class="received-file-btn available-file-btn ${isBusy ? '' : 'btn-secondary'} sq-style-f0acb3" data-file-id="${file.id}" ${isBusy ? 'disabled' : ''}>
+                            ${btnText}
+                        </button>
+                    </div>
+                </div>
+            `;
+            }).join('');
         }
 
         function renderReceivedFiles() {
@@ -1878,15 +2234,15 @@
 
         // SVG icons for different file types
         const FILE_ICONS = {
-            image: '<svg viewBox="0 0 24 24" style="color: #0891b2;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
-            video: '<svg viewBox="0 0 24 24" style="color: #7c3aed;"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>',
-            audio: '<svg viewBox="0 0 24 24" style="color: #ec4899;"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
-            pdf: '<svg viewBox="0 0 24 24" style="color: #dc2626;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>',
-            archive: '<svg viewBox="0 0 24 24" style="color: #ca8a04;"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>',
-            document: '<svg viewBox="0 0 24 24" style="color: #2563eb;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
-            spreadsheet: '<svg viewBox="0 0 24 24" style="color: #16a34a;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><line x1="12" y1="9" x2="12" y2="21"/></svg>',
-            code: '<svg viewBox="0 0 24 24" style="color: #6366f1;"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
-            default: '<svg viewBox="0 0 24 24" style="color: #6b7280;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
+            image: '<svg class="sq-style-bccdd9" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
+            video: '<svg class="sq-style-e33b5b" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>',
+            audio: '<svg class="sq-style-f79f7b" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+            pdf: '<svg class="sq-style-610bd2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>',
+            archive: '<svg class="sq-style-51f0e3" viewBox="0 0 24 24"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>',
+            document: '<svg class="sq-style-369042" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+            spreadsheet: '<svg class="sq-style-f89798" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><line x1="12" y1="9" x2="12" y2="21"/></svg>',
+            code: '<svg class="sq-style-e60fe6" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+            default: '<svg class="sq-style-166c56" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
         };
 
         function getFileIcon(mime) {
@@ -1920,7 +2276,7 @@
             a.download = file.name;
             document.body.appendChild(a);
             a.click();
-            document.body.removeChild(a);
+            a.remove();
 
             log(`Downloaded: ${file.name}`, 'success');
         }
@@ -2024,7 +2380,7 @@
         }
 
         function generateShareQRCode(roomId) {
-            const link = `${window.location.origin}/p2p?room=${roomId}`;
+            const link = `${globalThis.location.origin}/p2p?room=${roomId}`;
             const canvas = document.getElementById('qr-code-canvas');
             const container = document.getElementById('qr-code-container');
 
@@ -2056,15 +2412,16 @@
             }
         }
 
-        function copyToClipboard(text, successMessage) {
+        async function copyToClipboard(text, successMessage) {
             // Try modern clipboard API first
             if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(text).then(() => {
+                try {
+                    await navigator.clipboard.writeText(text);
                     log(successMessage, 'success');
-                }).catch((err) => {
+                } catch (err) {
                     console.error('Clipboard API failed:', err);
                     fallbackCopyToClipboard(text, successMessage);
-                });
+                }
             } else {
                 fallbackCopyToClipboard(text, successMessage);
             }
@@ -2094,7 +2451,7 @@
                 prompt('Copy this:', text);
             }
 
-            document.body.removeChild(textArea);
+            textArea.remove();
         }
 
         function cancelSend() {
@@ -2144,7 +2501,7 @@
         // Event listeners for CSP compliance
         document.addEventListener('DOMContentLoaded', function () {
             document.getElementById('send-mode-btn')?.addEventListener('click', function () {
-                if (!isAnonymous) selectMode('send');
+                selectMode('send');
             });
             document.getElementById('receive-mode-btn')?.addEventListener('click', function () {
                 selectMode('receive');
@@ -2161,6 +2518,40 @@
             document.getElementById('clear-files-btn')?.addEventListener('click', clearReceivedFiles);
             document.getElementById('join-room-btn')?.addEventListener('click', joinRoom);
             document.getElementById('cancel-receive-btn')?.addEventListener('click', cancelReceive);
+
+            document.getElementById('download-selected-available-btn')?.addEventListener('click', downloadSelectedAvailableFiles);
+            
+            document.getElementById('select-all-available')?.addEventListener('change', function(e) {
+                const checked = e.target.checked;
+                document.querySelectorAll('.available-file-checkbox').forEach(cb => {
+                    if(!cb.disabled) cb.checked = checked;
+                });
+            });
+
+            document.getElementById('select-all-received')?.addEventListener('change', function(e) {
+                const checked = e.target.checked;
+                document.querySelectorAll('.received-file-checkbox').forEach(cb => {
+                    cb.checked = checked;
+                });
+            });
+
+            // Event delegation for dynamically added available files (CSP compliant)
+            document.getElementById('available-files-list')?.addEventListener('click', function(e) {
+                const btn = e.target.closest('.available-file-btn');
+                if (!btn) return;
+                const id = btn.dataset.fileId;
+                if (!btn.disabled) {
+                    requestFile(id);
+                }
+            });
+
+            // Event delegation for Sender managing local files list
+            document.getElementById('send-files-list')?.addEventListener('click', function(e) {
+                const btn = e.target.closest('.sender-remove-btn');
+                if (!btn) return;
+                const id = btn.dataset.sendId;
+                removeSelectedFile(id);
+            });
 
             // Event delegation for dynamically added received files
             document.getElementById('received-files-list')?.addEventListener('click', function (e) {

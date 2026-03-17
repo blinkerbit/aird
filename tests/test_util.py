@@ -228,9 +228,8 @@ class TestGetAllFilesRecursive:
             files = get_all_files_recursive(temp_dir, temp_dir)
 
             assert len(files) == 2
-            paths = [f for f in files]
-            assert any("file1.txt" in p for p in paths)
-            assert any("file2.txt" in p for p in paths)
+            assert any("file1.txt" in p for p in files)
+            assert any("file2.txt" in p for p in files)
 
 
 class TestMatchesGlobPatterns:

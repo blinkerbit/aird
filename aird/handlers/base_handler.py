@@ -325,6 +325,7 @@ class BaseHandler(tornado.web.RequestHandler):
         """Add CSP nonce to template namespace so templates can use it."""
         namespace = super().get_template_namespace()
         namespace["csp_nonce"] = self.get_csp_nonce()
+        namespace["is_feature_enabled"] = is_feature_enabled
         return namespace
 
     def get_current_user(self):

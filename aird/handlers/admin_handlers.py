@@ -408,7 +408,9 @@ class UserEditHandler(BaseHandler):
                 self.write(USER_NOT_FOUND)
                 return
 
-            self.render(TEMPLATE_USER_EDIT, user=user, error=None)
+            self.render(
+                TEMPLATE_USER_EDIT, user=user, error=None, settings=self.settings
+            )
         except ValueError:
             self.set_status(HTTP_BAD_REQUEST)
             self.write(INVALID_USER_ID)

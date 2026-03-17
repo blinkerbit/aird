@@ -322,8 +322,8 @@ class TestP2PTransferHandler:
         assert call_args[1]["room_id"] == "test_room_123"
         assert call_args[1]["is_anonymous"] is False
 
-    def test_get_unauthenticated_no_room_redirects(self):
-        """Test GET request without auth and no room redirects to login."""
+    def test_get_unauthenticated_no_room_renders_anonymous(self):
+        """Test GET request without auth and no room renders anonymous mode."""
         handler = self._create_handler()
         handler.get_current_user = MagicMock(return_value=None)
         handler.get_argument = MagicMock(return_value=None)
@@ -331,8 +331,11 @@ class TestP2PTransferHandler:
 
         handler.get()
 
-        handler.redirect.assert_called_once_with("/login")
-        handler.render.assert_not_called()
+        handler.render.assert_called_once()
+        call_args = handler.render.call_args
+        assert call_args[1]["is_anonymous"] is True
+        assert call_args[1]["room_id"] is None
+        handler.redirect.assert_not_called()
 
     def test_get_unauthenticated_with_anonymous_room(self):
         """Test GET request with anonymous room allows access."""
@@ -498,21 +501,20 @@ class TestP2PSignalingHandler:
         assert message["is_anonymous"] is False
 
     def test_open_unauthenticated_no_room(self):
-        """Test WebSocket open without auth and no room."""
+        """Test WebSocket open without auth and no room creates guest session."""
         handler = self._create_handler()
         handler.get_secure_cookie = MagicMock(return_value=None)
         handler.get_argument = MagicMock(return_value=None)
 
         handler.open()
 
-        # Should send error and close
         handler.write_message.assert_called_once()
         message = json.loads(handler.write_message.call_args[0][0])
-        assert message["type"] == "error"
-        assert "Authentication" in message["message"]
-        handler.close.assert_called_once_with(
-            code=1008, reason="Authentication required"
-        )
+        assert message["type"] == "connected"
+        assert message["is_anonymous"] is True
+        assert message["username"].startswith("Guest_")
+        assert message["pending_room"] is None
+        handler.close.assert_not_called()
 
     def test_open_anonymous_with_valid_room(self):
         """Test WebSocket open as anonymous with valid anonymous room."""
@@ -636,8 +638,8 @@ class TestP2PSignalingHandler:
         assert response["type"] == "room_created"
         assert "room_id" in response
 
-    def test_handle_create_room_anonymous_denied(self):
-        """Test create_room denied for anonymous user."""
+    def test_handle_create_room_anonymous_allowed(self):
+        """Test create_room allowed for anonymous user."""
         handler = self._create_handler()
         handler.peer_id = "test_peer"
         handler.username = "Guest_123"
@@ -645,10 +647,11 @@ class TestP2PSignalingHandler:
 
         handler._handle_create_room({})
 
-        assert handler.room is None
+        assert handler.room is not None
+        assert handler.room.creator_id == "test_peer"
         response = json.loads(handler.write_message.call_args[0][0])
-        assert response["type"] == "error"
-        assert "Anonymous" in response["message"]
+        assert response["type"] == "room_created"
+        assert "room_id" in response
 
     def test_handle_create_room_with_file_info(self):
         """Test create_room with file info."""

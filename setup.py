@@ -12,7 +12,7 @@ setup(
     },
     install_requires=[
         "tornado>=6.5.1",
-        "ldap3>=2.10.2rc3",
+        "ldap3>=2.9.1",
         "aiofiles>=23.0.0",
         "argon2-cffi>=23.1.0",
         "requests>=2.31.0",

@@ -109,20 +109,18 @@ class P2PTransferHandler(BaseHandler):
 
         # If user is not logged in
         if not current_user:
-            # If there's a room ID, check if it allows anonymous access
             if room_id:
                 room = room_manager.get_room(room_id)
-                if room and room.allow_anonymous:
-                    # Allow anonymous access for receiving
-                    self.render(
-                        "p2p_transfer.html",
-                        room_id=room_id,
-                        current_user=None,
-                        is_anonymous=True,
-                    )
+                if not room or not room.allow_anonymous:
+                    self.redirect(self.get_login_url())
                     return
-            # Otherwise, redirect to login
-            self.redirect(self.get_login_url())
+
+            self.render(
+                "p2p_transfer.html",
+                room_id=room_id,
+                current_user=None,
+                is_anonymous=True,
+            )
             return
 
         self.render(
@@ -190,45 +188,41 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
 
         user = self.get_current_user()
         if not user:
-            # Check if this is an anonymous join attempt
+            self.is_anonymous = True
             if room_id:
                 room = room_manager.get_room(room_id)
                 if room and room.allow_anonymous:
-                    # Allow anonymous connection for this specific room
-                    self.is_anonymous = True
                     self.pending_room_id = room_id
-                    self.username = f"Guest_{secrets.token_hex(4)}"
-                    self.peer_id = secrets.token_urlsafe(64)
-
-                    logger.info(
-                        f"P2P WebSocket opened for anonymous user: {self.username}, peer_id: {self.peer_id}"
-                    )
-
+                else:
                     self.write_message(
                         json.dumps(
                             {
-                                "type": "connected",
-                                "peer_id": self.peer_id,
-                                "username": self.username,
-                                "is_anonymous": True,
-                                "pending_room": room_id,
+                                "type": "error",
+                                "message": "This share link requires login. Please log in to receive the file.",
                             }
                         )
                     )
+                    self.close(code=1008, reason="Authentication required for room")
                     return
 
-            logger.warning(
-                "P2P WebSocket: Authentication failed - no valid user session"
+            self.username = f"Guest_{secrets.token_hex(4)}"
+            self.peer_id = secrets.token_urlsafe(64)
+
+            logger.info(
+                f"P2P WebSocket opened for anonymous user: {self.username}, peer_id: {self.peer_id}"
             )
+
             self.write_message(
                 json.dumps(
                     {
-                        "type": "error",
-                        "message": "Authentication required. Please log in.",
+                        "type": "connected",
+                        "peer_id": self.peer_id,
+                        "username": self.username,
+                        "is_anonymous": True,
+                        "pending_room": self.pending_room_id,
                     }
                 )
             )
-            self.close(code=1008, reason="Authentication required")
             return
 
         self.username = user.get("username", "anonymous")
@@ -283,18 +277,6 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
 
     def _handle_create_room(self, data: dict):
         """Create a new room and join it."""
-        # Anonymous users cannot create rooms
-        if self.is_anonymous:
-            self.write_message(
-                json.dumps(
-                    {
-                        "type": "error",
-                        "message": "Anonymous users cannot create share links. Please log in.",
-                    }
-                )
-            )
-            return
-
         logger.info(f"Creating room for peer {self.peer_id}, user {self.username}")
 
         if self.room:

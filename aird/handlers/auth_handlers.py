@@ -337,6 +337,16 @@ class LDAPLoginHandler(BaseHandler):
             )
             return
 
+        import re
+
+        if not re.match(r"^[a-zA-Z0-9_.\-@]+$", username):
+            self.render(
+                LOGIN_HTML,
+                error="Invalid username format.",
+                settings=self.settings,
+            )
+            return
+
         try:
             server = Server(self.settings["ldap_server"])
             username_dn_escaped = escape_rdn(username)

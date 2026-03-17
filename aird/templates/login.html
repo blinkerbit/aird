@@ -122,17 +122,32 @@
             cursor: pointer;
             transition: var(--transition);
             position: relative;
+            box-shadow: 4px 4px 0px 0px rgba(0, 0, 0, 1);
         }
 
         .btn:hover {
             transform: translate(2px, 2px);
-            box-shadow: none;
-            /* Shadow disappears on press feel */
+            box-shadow: 2px 2px 0px 0px rgba(0, 0, 0, 1);
             background: #222;
         }
 
         .btn:active {
             transform: translate(4px, 4px);
+            box-shadow: none;
+        }
+
+        .btn-secondary {
+            background: var(--bg-color);
+            color: var(--text-color);
+            display: block;
+            text-align: center;
+            text-decoration: none;
+            box-sizing: border-box;
+            margin-top: 10px;
+        }
+
+        .btn-secondary:hover {
+            background: #f5f5f5;
         }
 
         .sep {
@@ -230,12 +245,12 @@
                 {% else %}
                 <div class="subtitle">Sign in with your username and password</div>
                 <div class="form-group">
-                    <label for="username">Username </label>
-                    <input type="text" id="username" name="username" placeholder="Username">
+                    <label for="local-username">Username </label>
+                    <input type="text" id="local-username" name="username" placeholder="Username">
                 </div>
                 <div class="form-group">
-                    <label for="password">Password </label>
-                    <input type="password" id="password" name="password" placeholder="Password">
+                    <label for="local-password">Password </label>
+                    <input type="password" id="local-password" name="password" placeholder="Password">
                 </div>
 
                 <div class="sep">OR</div>
@@ -248,6 +263,11 @@
                 <button type="submit" class="btn">Login</button>
                 {% end %}
             </form>
+
+            {% if is_feature_enabled("p2p_transfer", True) %}
+            <div class="sep">Free Features</div>
+            <a href="/p2p" class="btn btn-secondary">Anonymous P2P Transfer</a>
+            {% end %}
         </div>
     </div>
 
