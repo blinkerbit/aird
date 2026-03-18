@@ -303,7 +303,7 @@
 
         .share-code-hint {
             font-size: 12px;
-            color: #ccc;
+            color: #b3b3b3;
             margin-top: 10px;
         }
 
@@ -2375,7 +2375,7 @@
                 log('No share code available yet', 'error');
                 return;
             }
-            const link = `${window.location.origin}/p2p?room=${code}`;
+            const link = `${globalThis.location.origin}/p2p?room=${code}`;
             copyToClipboard(link, 'Share link copied to clipboard');
         }
 
