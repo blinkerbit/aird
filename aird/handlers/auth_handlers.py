@@ -8,6 +8,7 @@ from ldap3.utils.dn import escape_rdn
 from ldap3.utils.conv import escape_filter_chars
 from aird.db import (
     get_user_by_username,
+    get_user_quota,
     create_user,
     update_user,
     authenticate_user,
@@ -30,6 +31,18 @@ import time
 
 # IP -> (attempts, timestamp)
 _LOGIN_ATTEMPTS = {}
+
+
+def cleanup_stale_rate_limits():
+    """Remove expired entries from the rate-limit dict to prevent unbounded growth."""
+    now = time.time()
+    stale = [
+        ip
+        for ip, (_, ts) in _LOGIN_ATTEMPTS.items()
+        if now - ts > constants_module.LOGIN_RATE_LIMIT_WINDOW
+    ]
+    for ip in stale:
+        _LOGIN_ATTEMPTS.pop(ip, None)
 
 
 # ---------------------------------------------------------------------------
@@ -264,12 +277,17 @@ def _profile_render(handler, user, error=None, success=None, ldap_enabled=None):
     """Render profile template with common kwargs."""
     if ldap_enabled is None:
         ldap_enabled = handler.settings.get("ldap_server") is not None
+    quota = {"quota_bytes": None, "used_bytes": 0}
+    if user and handler.db_conn:
+        username = user.get("username", "") if isinstance(user, dict) else str(user)
+        quota = get_user_quota(handler.db_conn, username)
     handler.render(
         PROFILE_TEMPLATE,
         user=user,
         error=error,
         success=success,
         ldap_enabled=ldap_enabled,
+        quota=quota,
     )
 
 
@@ -286,7 +304,8 @@ def _do_profile_password_update(db_conn, user, new_password, confirm_password):
         update_user(db_conn, user["id"], password=new_password)
         return ("Password updated successfully", None)
     except Exception as e:
-        return (None, "Error updating password: " + str(e))
+        logging.error("Error updating password for user %s: %s", user.get("username"), e)
+        return (None, "Error updating password. Please try again.")
 
 
 def check_login_rate_limit(remote_ip):
@@ -435,7 +454,7 @@ class LoginHandler(BaseHandler):
 
         try:
             username = self.get_argument("username", "").strip()
-            password = self.get_argument("password", "").strip()
+            password = self.get_argument("password", "")
             token = self.get_argument("token", "").strip()
             next_url = self._get_safe_next_url()
         except Exception:
@@ -490,7 +509,7 @@ class AdminLoginHandler(BaseHandler):
             return
 
         username = self.get_argument("username", "").strip()
-        password = self.get_argument("password", "").strip()
+        password = self.get_argument("password", "")
         token = self.get_argument("token", "").strip()
 
         if (
@@ -515,8 +534,9 @@ class AdminLoginHandler(BaseHandler):
 
 class LogoutHandler(BaseHandler):
     def get(self):
-        # Clear both regular and admin auth cookies
+        # Clear all auth cookies
         self.clear_cookie("user")
+        self.clear_cookie("user_role")
         self.clear_cookie("admin")
         # Redirect to login page
         self.redirect("/login")
@@ -527,12 +547,18 @@ class ProfileHandler(BaseHandler):
     def get(self):
         # Check if LDAP is enabled
         ldap_enabled = self.settings.get("ldap_server") is not None
+        quota = {"quota_bytes": None, "used_bytes": 0}
+        user = self.current_user
+        if user and self.db_conn:
+            username = user.get("username", "") if isinstance(user, dict) else str(user)
+            quota = get_user_quota(self.db_conn, username)
         self.render(
             PROFILE_TEMPLATE,
-            user=self.current_user,
+            user=user,
             error=None,
             success=None,
             ldap_enabled=ldap_enabled,
+            quota=quota,
         )
 
     @tornado.web.authenticated

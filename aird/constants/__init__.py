@@ -36,6 +36,8 @@ FEATURE_FLAGS = {
     "folder_create": True,
     "folder_delete": True,
     "allow_simple_passwords": False,
+    "favorites": True,
+    "storage_quotas": False,
 }
 
 # WebSocket connection configuration

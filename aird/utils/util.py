@@ -311,11 +311,41 @@ def is_audio_file(filename):
     return ext in AUDIO_EXTENSIONS
 
 
+_feature_flags_cache: dict | None = None
+_feature_flags_cache_ts: float = 0.0
+_FEATURE_FLAGS_TTL = 5.0  # seconds
+
+
+def invalidate_feature_flags_cache() -> None:
+    """Call after updating feature flags to force a fresh read on next access."""
+    global _feature_flags_cache, _feature_flags_cache_ts
+    _feature_flags_cache = None
+    _feature_flags_cache_ts = 0.0
+
+
+def _merge_flags(current: dict, persisted: dict) -> dict:
+    """Merge persisted DB flags with in-memory flags; in-memory takes precedence."""
+    merged = persisted.copy()
+    for k, v in current.items():
+        merged[k] = bool(v)
+    # Also include any DB-only flags not yet in merged
+    for k, v in persisted.items():
+        if k not in merged:
+            merged[k] = bool(v)
+    return merged
+
+
 def get_current_feature_flags() -> dict:
     """Return current feature flags with in-memory changes taking precedence over DB.
-    This ensures real-time updates are immediately reflected.
+    Results are cached for a short TTL to avoid hitting the database on every request.
     Falls back to in-memory defaults if DB is unavailable.
     """
+    global _feature_flags_cache, _feature_flags_cache_ts
+
+    now = time.time()
+    if _feature_flags_cache is not None and (now - _feature_flags_cache_ts) < _FEATURE_FLAGS_TTL:
+        return _feature_flags_cache.copy()
+
     # Start with in-memory flags (which may have just been updated)
     current = FEATURE_FLAGS.copy()
 
@@ -324,18 +354,15 @@ def get_current_feature_flags() -> dict:
         try:
             persisted = load_feature_flags(db_conn)
             if persisted:
-                # Start with DB values as base
-                merged = persisted.copy()
-                # Then overlay in-memory changes (in-memory takes precedence for real-time updates)
-                for k, v in current.items():
-                    merged[k] = bool(v)
-                # Also include any DB-only flags
-                for k, v in persisted.items():
-                    if k not in merged:
-                        merged[k] = bool(v)
-                return merged
+                merged = _merge_flags(current, persisted)
+                _feature_flags_cache = merged
+                _feature_flags_cache_ts = now
+                return merged.copy()
         except Exception:
             pass
+
+    _feature_flags_cache = current
+    _feature_flags_cache_ts = now
     return current
 
 

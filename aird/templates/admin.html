@@ -180,12 +180,27 @@
             .nav-strip { padding: 0 8px; }
             .page { padding: 0 8px; }
         }
+
+        .theme-toggle-btn { background: none; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 16px; padding: 4px 8px; line-height: 1; color: #fff; }
+
+        /* Admin already has dark feel; dark mode deepens it */
+        [data-theme="dark"] body { background: #111; }
+        [data-theme="dark"] .topbar { background: #0a0a0a; }
+        [data-theme="dark"] .nav-strip { background: #1a1a1a; border-color: #333; }
+        [data-theme="dark"] .page { color: #e0e0e0; }
+        [data-theme="dark"] .card { background: #1e1e1e; border-color: #333; }
+        [data-theme="dark"] input,
+        [data-theme="dark"] select,
+        [data-theme="dark"] textarea { background: #1a1a1a; color: #e0e0e0; border-color: #444; }
+        [data-theme="dark"] .flag-card { background: #1a1a1a; border-color: #333; }
+        [data-theme="dark"] .theme-toggle-btn { border-color: #444; }
     </style>
 </head>
 <body>
     <div class="topbar">
         <h1>Admin Panel</h1>
         <div class="topbar-right">
+            <button class="theme-toggle-btn" title="Toggle dark mode" type="button">🌙</button>
             <a href="/profile">{{ handler.get_display_username() }}</a>
             <a href="/files/">Files</a>
             <a href="/logout">Logout</a>
@@ -381,5 +396,6 @@
         }
     })();
     </script>
+    <script src="/static/js/theme.js"></script>
 </body>
 </html>

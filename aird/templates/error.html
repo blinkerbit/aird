@@ -41,14 +41,24 @@
         a:hover {
             background-color: #f0f0f0;
         }
+
+        .theme-toggle-btn { position: fixed; top: 16px; right: 16px; background: none; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 16px; padding: 4px 8px; line-height: 1; z-index: 10; }
+
+        [data-theme="dark"] body { background-color: #1a1a2e; color: #e0e0e0; }
+        [data-theme="dark"] .error-container { border-color: #444; }
+        [data-theme="dark"] a { color: #e0e0e0; border-color: #555; }
+        [data-theme="dark"] a:hover { background-color: #2a2a3e; }
+        [data-theme="dark"] .theme-toggle-btn { border-color: #444; color: #e0e0e0; }
     </style>
 </head>
 <body>
+    <button class="theme-toggle-btn" title="Toggle dark mode">🌙</button>
     <div class="error-container">
         <h1>{{ status_code }}</h1>
         <h2>{{ escape(message) }}</h2>
         <p>Something went wrong. Please try again or contact your administrator.</p>
         <a href="/files/">← Back to Files</a>
     </div>
+    <script src="/static/js/theme.js"></script>
 </body>
 </html>

@@ -31,9 +31,12 @@ from aird.handlers.base_handler import (
 )
 from aird.db import (
     get_share_by_id,
+    get_share_download_count,
     get_all_shares,
+    get_user_favorites,
     search_users,
     get_shares_for_path,
+    toggle_favorite,
 )
 
 from aird.utils.util import (
@@ -351,8 +354,9 @@ class FileListAPIHandler(BaseHandler):
             }
             self.write(result)
         except Exception as e:
+            logging.error("Error listing files: %s", e, exc_info=True)
             self.set_status(500)
-            self.write(str(e))
+            self.write("Internal server error")
 
 
 class SuperSearchHandler(BaseHandler):
@@ -762,8 +766,9 @@ class UserSearchAPIHandler(BaseHandler):
             users = search_users(self.db_conn, query)
             self.write({"users": users})
         except Exception as e:
+            logging.error("User search failed: %s", e, exc_info=True)
             self.set_status(500)
-            self.write({"error": str(e)})
+            self.write({"error": "Search failed"})
 
 
 class ShareDetailsAPIHandler(BaseHandler):
@@ -805,8 +810,9 @@ class ShareDetailsAPIHandler(BaseHandler):
 
             self.write({"shares": formatted_shares})
         except Exception as e:
+            logging.error("Error fetching share details: %s", e, exc_info=True)
             self.set_status(500)
-            self.write({"error": str(e)})
+            self.write({"error": "Failed to retrieve share details"})
 
 
 class ShareDetailsByIdAPIHandler(BaseHandler):
@@ -843,17 +849,19 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
                 "allowed_users": allowed_users if allowed_users is not None else [],
                 "url": f"/shared/{share['id']}",
                 "paths": share.get("paths", []),
-                "secret_token": share.get("secret_token"),
+                "has_token": share.get("secret_token") is not None,
                 "share_type": share.get("share_type", "static"),
                 "allow_list": share.get("allow_list", []),
                 "avoid_list": share.get("avoid_list", []),
                 "expiry_date": share.get("expiry_date"),
+                "download_count": get_share_download_count(db_conn, share_id),
             }
 
             self.write({"share": share_info})
         except Exception as e:
+            logging.error("Error fetching share by ID: %s", e, exc_info=True)
             self.set_status(500)
-            self.write({"error": str(e)})
+            self.write({"error": "Failed to retrieve share details"})
 
 
 class ShareListAPIHandler(BaseHandler):
@@ -888,3 +896,48 @@ class WebSocketStatsHandler(BaseHandler):
 
         self.set_header("Content-Type", "application/json")
         self.write(json.dumps(stats, indent=2))
+
+
+class FavoriteToggleAPIHandler(BaseHandler):
+    @tornado.web.authenticated
+    def post(self):
+        if not self.require_feature("favorites", True, body={"error": "Favorites disabled"}):
+            return
+        db_conn = self.db_conn
+        if not db_conn:
+            self.set_status(500)
+            self.write({"error": DB_NOT_AVAILABLE_MSG})
+            return
+        try:
+            body = json.loads(self.request.body)
+        except Exception:
+            self.set_status(400)
+            self.write({"error": "Invalid JSON"})
+            return
+        path = body.get("path", "").strip()
+        if not path:
+            self.set_status(400)
+            self.write({"error": "path is required"})
+            return
+        username = self.current_user
+        if isinstance(username, bytes):
+            username = username.decode("utf-8")
+        is_fav = toggle_favorite(db_conn, username, path)
+        self.write({"favorited": is_fav, "path": path})
+
+
+class FavoritesListAPIHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        if not self.require_feature("favorites", True, body={"error": "Favorites disabled"}):
+            return
+        db_conn = self.db_conn
+        if not db_conn:
+            self.set_status(500)
+            self.write({"error": DB_NOT_AVAILABLE_MSG})
+            return
+        username = self.current_user
+        if isinstance(username, bytes):
+            username = username.decode("utf-8")
+        favorites = get_user_favorites(db_conn, username)
+        self.write({"favorites": favorites})

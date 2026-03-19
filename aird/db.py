@@ -124,6 +124,23 @@ def init_db(conn: sqlite3.Connection) -> None:
         )
         """)
 
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS favorites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(username, file_path)
+        )
+        """)
+
+    # Migrate users table: add quota columns if missing
+    user_cols = {r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()}
+    if "quota_bytes" not in user_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN quota_bytes INTEGER")
+    if "used_bytes" not in user_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN used_bytes INTEGER NOT NULL DEFAULT 0")
+
     conn.commit()
 
 
@@ -661,6 +678,100 @@ def log_audit(
             )
     except Exception as e:
         logging.warning("Audit log write failed: %s", e)
+
+
+def get_user_quota(conn: sqlite3.Connection, username: str) -> dict:
+    """Return quota info for a user: {quota_bytes, used_bytes}."""
+    if conn is None:
+        return {"quota_bytes": None, "used_bytes": 0}
+    try:
+        row = conn.execute(
+            "SELECT quota_bytes, used_bytes FROM users WHERE username=?",
+            (username,),
+        ).fetchone()
+        if row:
+            return {"quota_bytes": row[0], "used_bytes": row[1] or 0}
+    except Exception:
+        pass
+    return {"quota_bytes": None, "used_bytes": 0}
+
+
+def update_user_used_bytes(conn: sqlite3.Connection, username: str, delta: int) -> None:
+    """Add delta bytes to a user's used_bytes (can be negative for deletes)."""
+    if conn is None:
+        return
+    try:
+        with conn:
+            conn.execute(
+                "UPDATE users SET used_bytes = MAX(0, COALESCE(used_bytes, 0) + ?) WHERE username=?",
+                (delta, username),
+            )
+    except Exception:
+        pass
+
+
+def set_user_quota(conn: sqlite3.Connection, username: str, quota_bytes) -> None:
+    """Set quota_bytes for a user. None means unlimited."""
+    if conn is None:
+        return
+    try:
+        with conn:
+            conn.execute(
+                "UPDATE users SET quota_bytes=? WHERE username=?",
+                (quota_bytes, username),
+            )
+    except Exception:
+        pass
+
+
+def toggle_favorite(conn: sqlite3.Connection, username: str, file_path: str) -> bool:
+    """Toggle a favorite for a user. Returns True if now favorited, False if removed."""
+    if conn is None:
+        return False
+    row = conn.execute(
+        "SELECT id FROM favorites WHERE username=? AND file_path=?",
+        (username, file_path),
+    ).fetchone()
+    if row:
+        with conn:
+            conn.execute("DELETE FROM favorites WHERE id=?", (row[0],))
+        return False
+    else:
+        created = datetime.now(timezone.utc).isoformat() + "Z"
+        with conn:
+            conn.execute(
+                "INSERT INTO favorites (username, file_path, created_at) VALUES (?, ?, ?)",
+                (username, file_path, created),
+            )
+        return True
+
+
+def get_user_favorites(conn: sqlite3.Connection, username: str) -> list:
+    """Return list of favorited file paths for a user."""
+    if conn is None:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT file_path FROM favorites WHERE username=? ORDER BY created_at DESC",
+            (username,),
+        ).fetchall()
+        return [r[0] for r in rows]
+    except Exception:
+        return []
+
+
+def get_share_download_count(conn: sqlite3.Connection, share_id: str) -> int:
+    """Return the number of share_download audit events for a given share_id."""
+    if conn is None:
+        return 0
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM audit_log WHERE action='share_download' AND details LIKE ?",
+            (f"share_id={share_id}%",),
+        ).fetchone()
+        return row[0] if row else 0
+    except Exception:
+        return 0
 
 
 def get_audit_logs(conn: sqlite3.Connection, limit: int = 500, offset: int = 0) -> list:
