@@ -115,7 +115,7 @@ async def _serve_raw_mode(handler, abspath):
     except Exception as e:
         logging.error("Error serving raw file: %s", e)
         handler.set_status(500)
-        handler.write("Error serving raw file: " + str(e))
+        handler.write("Error serving file")
 
 
 def _serve_pdf_preview(handler, abspath, filename):

@@ -32,6 +32,7 @@ from aird.utils.util import (
     get_current_websocket_config,
     is_feature_enabled,
     format_size,
+    invalidate_feature_flags_cache,
 )
 from aird.core.mmap_handler import MMapFileHandler
 from aird.constants import MMAP_MIN_SIZE
@@ -411,6 +412,7 @@ class TestGetCurrentFeatureFlags:
 
     def test_get_current_feature_flags_from_constants(self):
         """Test getting feature flags from constants when DB is None"""
+        invalidate_feature_flags_cache()
         with patch("aird.utils.util.FEATURE_FLAGS", {"flag1": True}), patch(
             "aird.utils.util.constants_module.DB_CONN", None
         ):
@@ -419,6 +421,7 @@ class TestGetCurrentFeatureFlags:
 
     def test_get_current_feature_flags_from_db(self):
         """Test getting feature flags from database"""
+        invalidate_feature_flags_cache()
         conn = sqlite3.connect(":memory:")
         conn.execute("CREATE TABLE feature_flags (key TEXT PRIMARY KEY, value INTEGER)")
         conn.execute("INSERT INTO feature_flags (key, value) VALUES ('db_flag', 1)")

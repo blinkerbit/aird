@@ -97,20 +97,6 @@ from aird.handlers.p2p_handlers import (
 # Set up module logger
 logger = logging.getLogger(__name__)
 
-# Secure password hashing (Priority 1)
-try:
-    from argon2 import PasswordHasher
-
-    ARGON2_AVAILABLE = True
-    PH = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
-except Exception:
-    ARGON2_AVAILABLE = False
-    PH = None
-
-RUST_AVAILABLE = False
-HybridFileHandler = None
-HybridCompressionHandler = None
-
 # Import handlers from modules
 
 
@@ -389,8 +375,45 @@ def _run_cleanup_expired_shares():
     tornado.ioloop.IOLoop.current().call_later(3600, _run_cleanup_expired_shares)
 
 
+def _run_cleanup_p2p_rooms():
+    from aird.handlers.p2p_handlers import room_manager
+
+    room_manager.cleanup_old_rooms()
+    tornado.ioloop.IOLoop.current().call_later(3600, _run_cleanup_p2p_rooms)
+
+
+def _load_or_create_cookie_secret() -> str:
+    """Load a persisted cookie secret or generate and save a new one.
+
+    This ensures sessions survive server restarts.
+    """
+    secret_path = os.path.join(get_data_dir(), ".cookie_secret")
+    try:
+        if os.path.exists(secret_path):
+            with open(secret_path, "r") as f:
+                secret = f.read().strip()
+            if secret:
+                return secret
+    except OSError:
+        logger.warning("Could not read cookie secret file, generating new one")
+
+    secret = secrets.token_urlsafe(64)
+    try:
+        os.makedirs(os.path.dirname(secret_path), exist_ok=True)
+        with open(secret_path, "w") as f:
+            f.write(secret)
+        logger.info("Generated and persisted new cookie secret")
+    except OSError:
+        logger.warning("Could not persist cookie secret – sessions won't survive restarts")
+    return secret
+
+
+_MAX_PORT_RETRIES = 10
+
+
 def _start_server(app, ssl_options, port: int, hostname: str) -> None:
-    while True:
+    original_port = port
+    for _ in range(_MAX_PORT_RETRIES):
         try:
             if ssl_options:
                 proto = "https"
@@ -417,10 +440,17 @@ def _start_server(app, ssl_options, port: int, hostname: str) -> None:
             tornado.ioloop.IOLoop.current().call_later(
                 3600, _run_cleanup_expired_shares
             )
+            tornado.ioloop.IOLoop.current().call_later(
+                3600, _run_cleanup_p2p_rooms
+            )
             tornado.ioloop.IOLoop.current().start()
-            break
+            return
         except OSError:
+            logger.warning("Port %d is in use, trying %d", port, port + 1)
             port += 1
+    logger.error(
+        "Could not bind to any port in range %d-%d", original_port, port - 1
+    )
 
 
 def main():
@@ -437,7 +467,7 @@ def main():
     constants.ADMIN_TOKEN = config.ADMIN_TOKEN
     constants.ROOT_DIR = os.path.abspath(config.ROOT_DIR)
 
-    cookie_secret = secrets.token_urlsafe(64)
+    cookie_secret = _load_or_create_cookie_secret()
     settings = {
         "cookie_secret": cookie_secret,
         "xsrf_cookies": True,

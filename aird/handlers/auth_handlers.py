@@ -32,6 +32,18 @@ import time
 _LOGIN_ATTEMPTS = {}
 
 
+def cleanup_stale_rate_limits():
+    """Remove expired entries from the rate-limit dict to prevent unbounded growth."""
+    now = time.time()
+    stale = [
+        ip
+        for ip, (_, ts) in _LOGIN_ATTEMPTS.items()
+        if now - ts > constants_module.LOGIN_RATE_LIMIT_WINDOW
+    ]
+    for ip in stale:
+        _LOGIN_ATTEMPTS.pop(ip, None)
+
+
 # ---------------------------------------------------------------------------
 # Helpers for LDAP login (reduce cognitive complexity)
 # ---------------------------------------------------------------------------
@@ -286,7 +298,8 @@ def _do_profile_password_update(db_conn, user, new_password, confirm_password):
         update_user(db_conn, user["id"], password=new_password)
         return ("Password updated successfully", None)
     except Exception as e:
-        return (None, "Error updating password: " + str(e))
+        logging.error("Error updating password for user %s: %s", user.get("username"), e)
+        return (None, "Error updating password. Please try again.")
 
 
 def check_login_rate_limit(remote_ip):
@@ -435,7 +448,7 @@ class LoginHandler(BaseHandler):
 
         try:
             username = self.get_argument("username", "").strip()
-            password = self.get_argument("password", "").strip()
+            password = self.get_argument("password", "")
             token = self.get_argument("token", "").strip()
             next_url = self._get_safe_next_url()
         except Exception:
@@ -490,7 +503,7 @@ class AdminLoginHandler(BaseHandler):
             return
 
         username = self.get_argument("username", "").strip()
-        password = self.get_argument("password", "").strip()
+        password = self.get_argument("password", "")
         token = self.get_argument("token", "").strip()
 
         if (
@@ -515,8 +528,9 @@ class AdminLoginHandler(BaseHandler):
 
 class LogoutHandler(BaseHandler):
     def get(self):
-        # Clear both regular and admin auth cookies
+        # Clear all auth cookies
         self.clear_cookie("user")
+        self.clear_cookie("user_role")
         self.clear_cookie("admin")
         # Redirect to login page
         self.redirect("/login")

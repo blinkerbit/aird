@@ -351,8 +351,9 @@ class FileListAPIHandler(BaseHandler):
             }
             self.write(result)
         except Exception as e:
+            logging.error("Error listing files: %s", e, exc_info=True)
             self.set_status(500)
-            self.write(str(e))
+            self.write("Internal server error")
 
 
 class SuperSearchHandler(BaseHandler):
@@ -762,8 +763,9 @@ class UserSearchAPIHandler(BaseHandler):
             users = search_users(self.db_conn, query)
             self.write({"users": users})
         except Exception as e:
+            logging.error("User search failed: %s", e, exc_info=True)
             self.set_status(500)
-            self.write({"error": str(e)})
+            self.write({"error": "Search failed"})
 
 
 class ShareDetailsAPIHandler(BaseHandler):
@@ -805,8 +807,9 @@ class ShareDetailsAPIHandler(BaseHandler):
 
             self.write({"shares": formatted_shares})
         except Exception as e:
+            logging.error("Error fetching share details: %s", e, exc_info=True)
             self.set_status(500)
-            self.write({"error": str(e)})
+            self.write({"error": "Failed to retrieve share details"})
 
 
 class ShareDetailsByIdAPIHandler(BaseHandler):
@@ -843,7 +846,7 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
                 "allowed_users": allowed_users if allowed_users is not None else [],
                 "url": f"/shared/{share['id']}",
                 "paths": share.get("paths", []),
-                "secret_token": share.get("secret_token"),
+                "has_token": share.get("secret_token") is not None,
                 "share_type": share.get("share_type", "static"),
                 "allow_list": share.get("allow_list", []),
                 "avoid_list": share.get("avoid_list", []),
@@ -852,8 +855,9 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
 
             self.write({"share": share_info})
         except Exception as e:
+            logging.error("Error fetching share by ID: %s", e, exc_info=True)
             self.set_status(500)
-            self.write({"error": str(e)})
+            self.write({"error": "Failed to retrieve share details"})
 
 
 class ShareListAPIHandler(BaseHandler):

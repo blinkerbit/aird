@@ -532,7 +532,7 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
             self.write({"error": "Failed to create share. Please try again."})
 
 
-class ShareRevokeHandler(BaseHandler):
+class ShareRevokeHandler(XSRFTokenMixin, BaseHandler):
     @tornado.web.authenticated
     @require_db
     def post(self):
@@ -556,7 +556,7 @@ class ShareRevokeHandler(BaseHandler):
         except Exception as e:
             logging.error(f"Failed to delete share {sid}: {e}")
             self.set_status(500)
-            self.write({"error": f"Failed to delete share: {str(e)}"})
+            self.write({"error": "Failed to delete share"})
 
         if sid:
             remove_share_cloud_dir(sid)
