@@ -86,7 +86,7 @@ class TestLogoutHandler:
             handler, "redirect"
         ) as mock_redirect:
             handler.get()
-            assert mock_clear.call_count == 2  # user and admin
+            assert mock_clear.call_count == 3  # user, user_role, and admin
             mock_redirect.assert_called_with("/login")
 
 

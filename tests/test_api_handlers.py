@@ -98,7 +98,7 @@ class TestFileListAPIHandler:
         ):
             handler.get("path")
             handler.set_status.assert_called_with(500)
-            handler.write.assert_called_with("boom")
+            handler.write.assert_called_with("Internal server error")
 
 
 class TestSuperSearchHandler:
@@ -180,7 +180,7 @@ class TestUserSearchAPIHandler:
         ):
             handler.get()
             handler.set_status.assert_called_with(500)
-            handler.write.assert_called_with({"error": "nope"})
+            handler.write.assert_called_with({"error": "Search failed"})
 
     def test_search_success(self):
         handler = make_request_handler(UserSearchAPIHandler)

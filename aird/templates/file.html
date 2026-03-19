@@ -229,6 +229,38 @@
                 opacity: 1;
             }
         }
+
+        .theme-toggle-btn { background: none; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 16px; padding: 4px 8px; line-height: 1; }
+
+        #markdown-preview h1, #markdown-preview h2, #markdown-preview h3 { margin-top: 1em; margin-bottom: 0.5em; }
+        #markdown-preview pre { background: #f5f5f5; padding: 10px; overflow: auto; border: 1px solid #ddd; border-radius: 4px; }
+        #markdown-preview code { background: #f5f5f5; padding: 2px 4px; border-radius: 3px; font-family: monospace; }
+        #markdown-preview pre code { background: none; padding: 0; }
+        #markdown-preview blockquote { border-left: 4px solid #ccc; margin: 0; padding-left: 1em; color: #555; }
+        #markdown-preview table { border-collapse: collapse; margin: 1em 0; }
+        #markdown-preview th, #markdown-preview td { border: 1px solid #ddd; padding: 6px 12px; }
+        #markdown-preview img { max-width: 100%; }
+        [data-theme="dark"] #markdown-preview pre { background: #222; border-color: #444; }
+        [data-theme="dark"] #markdown-preview code { background: #222; }
+        [data-theme="dark"] #markdown-preview blockquote { border-color: #444; color: #aaa; }
+        [data-theme="dark"] #markdown-preview th, [data-theme="dark"] #markdown-preview td { border-color: #444; }
+
+        /* Dark mode */
+        [data-theme="dark"] body { background-color: #1a1a2e; color: #e0e0e0; }
+        [data-theme="dark"] .header { border-color: #444; }
+        [data-theme="dark"] .breadcrumb a { color: #58a6ff; }
+        [data-theme="dark"] h2 { color: #e0e0e0; }
+        [data-theme="dark"] .download-btn,
+        [data-theme="dark"] button { background-color: #2a2a3e; color: #e0e0e0; border-color: #555; }
+        [data-theme="dark"] .download-btn:hover,
+        [data-theme="dark"] button:hover { background-color: #333; }
+        [data-theme="dark"] select { background: #222; color: #e0e0e0; border-color: #555; }
+        [data-theme="dark"] .line-numbers { background-color: #1e1e2e; color: #888; border-color: #444; }
+        [data-theme="dark"] .code-content { background-color: #1a1a2e; color: #e0e0e0; border-color: #444; }
+        [data-theme="dark"] .file-info { color: #aaa; }
+        [data-theme="dark"] .loading span { color: #e0e0e0; }
+        [data-theme="dark"] a { color: #58a6ff; }
+        [data-theme="dark"] .theme-toggle-btn { border-color: #444; color: #e0e0e0; }
     </style>
 </head>
 
@@ -238,6 +270,7 @@
             <a href="/files/">🏠 Home</a>
         </div>
         <div style="display: flex; align-items: center; gap: 10px;">
+            <button class="theme-toggle-btn" title="Toggle dark mode" type="button">🌙</button>
             <a href="/profile" style="font-size: 12px; color: #666; text-decoration: none;">👤 {{
                 handler.get_display_username() }}</a>
             <a href="/logout" class="download-btn">↩ Logout</a>
@@ -263,6 +296,9 @@
             <button id="toggle-lines-btn">🔢 Hide Line Numbers</button>
             <button id="edit-btn" data-feature="file_edit">📝 Edit</button>
             <button id="save-btn" style="display:none;">💾 Save</button>
+            {% if filename.lower().endswith('.md') %}
+            <button id="md-toggle-btn" type="button">📖 Rendered</button>
+            {% end %}
         </div>
         <div class="toolbar-right">
             <input type="text" id="stream-filter" placeholder="Filter: error OR warning AND user123"
@@ -309,6 +345,8 @@
     <div id="editor-container" style="display:none;">
         <textarea id="line-numbers-editor" readonly></textarea>
         <textarea id="editor">{% if open_editor %}{{ full_file_content }}{% end %}</textarea>
+    </div>
+    <div id="markdown-preview" style="display:none;padding:10px 20px;max-width:900px;line-height:1.6;font-family:sans-serif,monospace;">
     </div>
     <table id="file-content">
         <thead>
@@ -615,6 +653,44 @@
             }
         });
     </script>
+    {% if filename.lower().endswith('.md') %}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/16.3.0/marked.min.js" integrity="sha512-gxBP/mcwo9A5lJDFbVfXNb1hSLpOkHLLXAjld8HfCWjVIZnA3nlNnIqSTLvtwF4t55Dt4Rzh7phL3tJuKZ+teQ==" crossorigin="anonymous" referrerpolicy="no-referrer" nonce="{{ csp_nonce }}"></script>
+    <script nonce="{{ csp_nonce }}">
+    (function() {
+        var mdBtn = document.getElementById('md-toggle-btn');
+        var mdPreview = document.getElementById('markdown-preview');
+        var fileTable = document.getElementById('file-content');
+        var showing = false;
+        if (!mdBtn || !mdPreview || !fileTable) return;
+        mdBtn.addEventListener('click', function() {
+            showing = !showing;
+            if (showing) {
+                // Collect text from file content rows
+                var rows = fileTable.querySelectorAll('#file-content-body tr');
+                var text = [];
+                rows.forEach(function(r) {
+                    var cells = r.querySelectorAll('td');
+                    if (cells.length >= 2) text.push(cells[1].textContent);
+                });
+                var raw = text.join('\n');
+                if (typeof marked === 'undefined') {
+                    mdPreview.textContent = raw;
+                } else {
+                    mdPreview.innerHTML = marked.parse(raw);
+                }
+                mdPreview.style.display = 'block';
+                fileTable.style.display = 'none';
+                mdBtn.textContent = '📄 Raw';
+            } else {
+                mdPreview.style.display = 'none';
+                fileTable.style.display = '';
+                mdBtn.textContent = '📖 Rendered';
+            }
+        });
+    })();
+    </script>
+    {% end %}
+    <script src="/static/js/theme.js"></script>
 </body>
 
 </html>

@@ -16,8 +16,14 @@
         #canvas-wrap { overflow: auto; text-align: center; padding: 20px; min-height: calc(100vh - 50px); }
         #pdf-canvas { box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
         .error { padding: 20px; color: #f66; }
+
+        .theme-toggle-btn { background: none; border: 1px solid #666; border-radius: 4px; cursor: pointer; font-size: 16px; padding: 4px 8px; line-height: 1; color: #fff; }
+
+        [data-theme="dark"] body { background: #1a1a2e; }
+        [data-theme="dark"] .header { background: #111; border-color: #333; }
+        [data-theme="dark"] .theme-toggle-btn { border-color: #444; }
     </style>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" nonce="{{ csp_nonce }}"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" integrity="sha512-q+4liFwdPC/bNdhUpZx6aXDx/h77yEQtn4I1slHydcbZK34nLaR3cAeYSJshoxIOq3mjEf7xJE8YWIUHMn+oCQ==" crossorigin="anonymous" referrerpolicy="no-referrer" nonce="{{ csp_nonce }}"></script>
 </head>
 <body>
     <div class="header">
@@ -27,6 +33,7 @@
             <span>{{ filename }}</span>
         </div>
         <div id="toolbar">
+            <button class="theme-toggle-btn" title="Toggle dark mode" type="button">🌙</button>
             <button id="prevBtn">Previous</button>
             <span id="pageInfo">Page 1 of 1</span>
             <button id="nextBtn">Next</button>
@@ -88,5 +95,6 @@
             if (pageNum < totalPages) renderPage(pageNum + 1);
         });
     </script>
+    <script src="/static/js/theme.js"></script>
 </body>
 </html>

@@ -26,12 +26,16 @@ except Exception:
     pass
 
 
+_DEFAULT_BIND_ADDRESS = "127.0.0.1"
+
+
 class NetworkShareManager:
     """Start / stop pure-Python SMB and WebDAV servers in daemon threads."""
 
-    def __init__(self) -> None:
+    def __init__(self, bind_address: str = _DEFAULT_BIND_ADDRESS) -> None:
         self._servers: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
+        self._bind_address = bind_address
 
     # ------------------------------------------------------------------
     # Public API
@@ -114,7 +118,7 @@ class NetworkShareManager:
 
         def _run() -> None:
             try:
-                server = PySMBServer(listenAddress="0.0.0.0", listenPort=port)
+                server = PySMBServer(listenAddress=self._bind_address, listenPort=port)
                 server.addShare(share_name, folder, readOnly=read_only)
                 server.addCredential(username, password=password)
                 server.setSMB2Support(True)
@@ -157,7 +161,7 @@ class NetworkShareManager:
         def _run() -> None:
             try:
                 dav_config: dict[str, Any] = {
-                    "host": "0.0.0.0",
+                    "host": self._bind_address,
                     "port": port,
                     "provider_mapping": {"/": folder},
                     "simple_dc": {
@@ -194,7 +198,7 @@ class NetworkShareManager:
                     "verbose": 1,
                 }
                 app = WsgiDAVApp(dav_config)
-                srv = cheroot_wsgi.Server(("0.0.0.0", port), app)
+                srv = cheroot_wsgi.Server((self._bind_address, port), app)
                 with self._lock:
                     if sid in self._servers:
                         self._servers[sid]["server"] = srv

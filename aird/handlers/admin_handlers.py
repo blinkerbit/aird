@@ -47,6 +47,7 @@ from aird.constants import (
     WEBSOCKET_CONFIG,
     UPLOAD_CONFIG,
 )
+from aird.utils.util import invalidate_feature_flags_cache
 from aird.constants.admin import (
     ACCESS_DENIED,
     ACCESS_DENIED_JSON,
@@ -222,6 +223,7 @@ class AdminHandler(BaseHandler):
             db_conn = self.db_conn
             if db_conn is not None:
                 save_feature_flags(db_conn, FEATURE_FLAGS)
+                invalidate_feature_flags_cache()
                 save_websocket_config(db_conn, WEBSOCKET_CONFIG)
                 save_upload_config(db_conn, UPLOAD_CONFIG)
                 # When "allow all file types" is off, persist selected extensions from checkboxes

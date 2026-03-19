@@ -427,6 +427,7 @@ class TestProfileHandlerExtended:
                 success="Password updated successfully",
                 error=None,
                 ldap_enabled=False,
+                quota=ANY,
             )
 
     def test_post_password_mismatch(self):
@@ -454,6 +455,7 @@ class TestProfileHandlerExtended:
                 error="Passwords do not match",
                 success=None,
                 ldap_enabled=False,
+                quota=ANY,
             )
 
 

@@ -176,6 +176,18 @@
                 margin: 5px 5px 5px 0;
             }
         }
+
+        .theme-toggle-btn { background: none; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 16px; padding: 4px 8px; line-height: 1; float: right; }
+
+        [data-theme="dark"] body { background-color: #1a1a2e; color: #e0e0e0; }
+        [data-theme="dark"] .header { border-color: #444; }
+        [data-theme="dark"] .file-table { background: #1e1e2e; border-color: #444; }
+        [data-theme="dark"] .file-table th { background: #2a2a3e; color: #e0e0e0; border-color: #444; }
+        [data-theme="dark"] .file-table td { border-color: #333; color: #e0e0e0; }
+        [data-theme="dark"] .file-table tbody tr:hover { background: #2a2a3e; }
+        [data-theme="dark"] .action-link { color: #58a6ff; background: #1a2744; border-color: #2563eb; }
+        [data-theme="dark"] a { color: #58a6ff; }
+        [data-theme="dark"] .theme-toggle-btn { border-color: #444; color: #e0e0e0; }
     </style>
 </head>
 
@@ -183,6 +195,7 @@
     <div class="container">
         <div class="header">
             <h1>📁 Shared Files</h1>
+            <button class="theme-toggle-btn" title="Toggle dark mode">🌙</button>
         </div>
 
         <table class="file-table" id="fileTable">
@@ -343,6 +356,7 @@
         }
         });
     </script>
+    <script src="/static/js/theme.js"></script>
 </body>
 
 </html>

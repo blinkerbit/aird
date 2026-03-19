@@ -203,10 +203,47 @@
                 box-shadow: 4px 4px 0px 0px rgba(0, 0, 0, 1);
             }
         }
+
+        .theme-toggle-btn {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            background: none;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 4px 8px;
+            line-height: 1;
+            z-index: 10;
+        }
+
+        [data-theme="dark"] {
+            --bg-color: #1a1a2e;
+            --text-color: #e0e0e0;
+            --border-color: #555;
+            --accent-color: #58a6ff;
+            --grid-color: #2a2a3e;
+            --error-color: #f87171;
+            --shadow: 6px 6px 0px 0px rgba(255, 255, 255, 0.1);
+            --shadow-hover: 2px 2px 0px 0px rgba(255, 255, 255, 0.1);
+        }
+        [data-theme="dark"] .login-card { background: #1e1e2e; }
+        [data-theme="dark"] .subtitle { color: #aaa; }
+        [data-theme="dark"] input[type="text"],
+        [data-theme="dark"] input[type="password"] { background: #222; color: #e0e0e0; }
+        [data-theme="dark"] .btn:hover { background: #444; }
+        [data-theme="dark"] .btn-secondary { background: #1e1e2e; color: #e0e0e0; }
+        [data-theme="dark"] .btn-secondary:hover { background: #2a2a3e; }
+        [data-theme="dark"] .sep { color: #aaa; }
+        [data-theme="dark"] .sep::before,
+        [data-theme="dark"] .sep::after { border-color: #444; }
+        [data-theme="dark"] .error-msg { background-color: #2a1111; }
     </style>
 </head>
 
 <body>
+    <button class="theme-toggle-btn" title="Toggle dark mode">🌙</button>
     <div class="login-container">
         <div class="login-card">
             <div class="header">
@@ -283,6 +320,7 @@
             }, 100 + (index * 50));
         });
     </script>
+    <script src="/static/js/theme.js"></script>
 </body>
 
 </html>

@@ -767,6 +767,26 @@
     .sq-style-f89798 { color: #16a34a; }
     .sq-style-e60fe6 { color: #6366f1; }
     .sq-style-166c56 { color: #6b7280; }
+
+    .theme-toggle-btn { background: none; border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; font-size: 16px; padding: 4px 8px; line-height: 1; }
+
+    [data-theme="dark"] {
+        --bg-color: #1a1a2e;
+        --text-color: #e0e0e0;
+        --border-color: #555;
+        --accent-color: #58a6ff;
+        --grid-color: #2a2a3e;
+        --error-color: #f87171;
+        --shadow: 6px 6px 0px 0px rgba(255, 255, 255, 0.1);
+        --shadow-hover: 2px 2px 0px 0px rgba(255, 255, 255, 0.1);
+    }
+    [data-theme="dark"] .container { color: #e0e0e0; }
+    [data-theme="dark"] .header { border-color: #444; }
+    [data-theme="dark"] .breadcrumb a { color: #58a6ff; }
+    [data-theme="dark"] input,
+    [data-theme="dark"] select { background: #222; color: #e0e0e0; border-color: #555; }
+    [data-theme="dark"] .primary-btn { background: #333; color: #e0e0e0; border-color: #555; }
+    [data-theme="dark"] a { color: #58a6ff; }
   </style>
 </head>
 
@@ -780,6 +800,7 @@
                 </div>
             </div>
             <div class="nav-links">
+                <button class="theme-toggle-btn" title="Toggle dark mode" type="button">🌙</button>
                 <a href="/files/">FILES</a>
                 <a href="/search">SUPER SEARCH</a>
                 {% if current_user %}
@@ -930,6 +951,17 @@
                 </p>
             </div>
 
+            <div style="margin-bottom:12px;">
+                <label for="expiry-select" style="font-size:12px;font-weight:bold;text-transform:uppercase;">LINK EXPIRY:</label>
+                <select id="expiry-select" style="padding:6px;border:2px solid var(--border-color);font-family:inherit;font-size:12px;background:var(--bg-color);color:var(--text-color);">
+                    <option value="15">15 minutes</option>
+                    <option value="60">1 hour</option>
+                    <option value="360">6 hours</option>
+                    <option value="1440" selected>24 hours</option>
+                    <option value="4320">3 days</option>
+                    <option value="10080">7 days</option>
+                </select>
+            </div>
             <div class="sq-style-640cf9">
                 <button class="btn" id="create-room-btn" disabled>CREATE SHARE LINK</button>
                 <button class="btn btn-secondary" id="cancel-send-btn">CANCEL</button>
@@ -1819,11 +1851,15 @@
 
             const allowAnonymous = document.getElementById('allow-anonymous').checked;
 
-            log(`Creating share room${allowAnonymous ? ' (anonymous access enabled)' : ''}...`, 'info');
+            var expirySelect = document.getElementById('expiry-select');
+            var expiryMinutes = expirySelect ? parseInt(expirySelect.value) : 1440;
+
+            log(`Creating share room${allowAnonymous ? ' (anonymous access enabled)' : ''} (expires in ${expiryMinutes} min)...`, 'info');
             ws.send(JSON.stringify({
                 type: 'create_room',
                 file_info: fileInfo,
-                allow_anonymous: allowAnonymous
+                allow_anonymous: allowAnonymous,
+                expiry_minutes: expiryMinutes
             }));
 
             document.getElementById('create-room-btn').disabled = true;
@@ -2566,6 +2602,7 @@
             });
         });
     </script>
+    <script src="/static/js/theme.js"></script>
 </body>
 
 </html>
