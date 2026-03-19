@@ -16,7 +16,7 @@ from aird.core.security import (  # noqa: F401
     is_valid_websocket_origin,
     join_path,
 )
-from aird.db import log_audit
+from aird.db import log_audit, get_user_quota, update_user_used_bytes
 import aird.constants as constants_module
 from aird.constants.file_ops import (
     ACCESS_DENIED,
@@ -296,6 +296,16 @@ class UploadHandler(BaseHandler):
             self.write(FILE_TOO_LARGE_TEMPLATE.format(limit_mb=limit_mb))
             return
 
+        # Check storage quota if enabled
+        if is_feature_enabled("storage_quotas", False):
+            username = self.get_display_username()
+            quota = get_user_quota(self.db_conn, username)
+            if quota["quota_bytes"] is not None:
+                if quota["used_bytes"] + self._bytes_received > quota["quota_bytes"]:
+                    self.set_status(413)
+                    self.write("Storage quota exceeded")
+                    return
+
         final_path_abs, upload_err = _validate_upload_destination(
             self.upload_dir, self.filename
         )
@@ -314,6 +324,10 @@ class UploadHandler(BaseHandler):
             self.set_status(500)
             self.write(UPLOAD_SAVE_FAILED)
             return
+
+        # Update used bytes
+        if is_feature_enabled("storage_quotas", False):
+            update_user_used_bytes(self.db_conn, self.get_display_username(), self._bytes_received)
 
         log_audit(
             self.db_conn,
@@ -433,7 +447,14 @@ class DeleteHandler(BaseHandler):
         elif os.path.isfile(abspath):
             if not self.require_feature("file_delete", True, body=FILE_DELETE_DISABLED):
                 return
+            file_size = 0
+            try:
+                file_size = os.path.getsize(abspath)
+            except OSError:
+                pass
             os.remove(abspath)
+            if is_feature_enabled("storage_quotas", False) and file_size > 0:
+                update_user_used_bytes(self.db_conn, self.get_display_username(), -file_size)
             log_audit(
                 self.db_conn,
                 "file_delete",

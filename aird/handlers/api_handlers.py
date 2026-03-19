@@ -31,9 +31,12 @@ from aird.handlers.base_handler import (
 )
 from aird.db import (
     get_share_by_id,
+    get_share_download_count,
     get_all_shares,
+    get_user_favorites,
     search_users,
     get_shares_for_path,
+    toggle_favorite,
 )
 
 from aird.utils.util import (
@@ -851,6 +854,7 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
                 "allow_list": share.get("allow_list", []),
                 "avoid_list": share.get("avoid_list", []),
                 "expiry_date": share.get("expiry_date"),
+                "download_count": get_share_download_count(db_conn, share_id),
             }
 
             self.write({"share": share_info})
@@ -892,3 +896,48 @@ class WebSocketStatsHandler(BaseHandler):
 
         self.set_header("Content-Type", "application/json")
         self.write(json.dumps(stats, indent=2))
+
+
+class FavoriteToggleAPIHandler(BaseHandler):
+    @tornado.web.authenticated
+    def post(self):
+        if not self.require_feature("favorites", True, body={"error": "Favorites disabled"}):
+            return
+        db_conn = self.db_conn
+        if not db_conn:
+            self.set_status(500)
+            self.write({"error": DB_NOT_AVAILABLE_MSG})
+            return
+        try:
+            body = json.loads(self.request.body)
+        except Exception:
+            self.set_status(400)
+            self.write({"error": "Invalid JSON"})
+            return
+        path = body.get("path", "").strip()
+        if not path:
+            self.set_status(400)
+            self.write({"error": "path is required"})
+            return
+        username = self.current_user
+        if isinstance(username, bytes):
+            username = username.decode("utf-8")
+        is_fav = toggle_favorite(db_conn, username, path)
+        self.write({"favorited": is_fav, "path": path})
+
+
+class FavoritesListAPIHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        if not self.require_feature("favorites", True, body={"error": "Favorites disabled"}):
+            return
+        db_conn = self.db_conn
+        if not db_conn:
+            self.set_status(500)
+            self.write({"error": DB_NOT_AVAILABLE_MSG})
+            return
+        username = self.current_user
+        if isinstance(username, bytes):
+            username = username.decode("utf-8")
+        favorites = get_user_favorites(db_conn, username)
+        self.write({"favorites": favorites})

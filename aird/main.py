@@ -43,6 +43,8 @@ from aird.handlers.admin_handlers import (
     WebSocketStatsHandler,
 )
 from aird.handlers.api_handlers import (
+    FavoriteToggleAPIHandler,
+    FavoritesListAPIHandler,
     FeatureFlagSocketHandler,
     FileListAPIHandler,
     FileStreamHandler,
@@ -86,6 +88,7 @@ from aird.handlers.view_handlers import (
     CloudFilesHandler,
     CloudProvidersHandler,
     MainHandler,
+    NoCacheStaticFileHandler,
     RootHandler,
     EditViewHandler,
 )
@@ -187,10 +190,17 @@ def make_app(
         (r"/shared/([A-Za-z0-9_\-]+)/verify", TokenVerificationHandler),
         (r"/shared/([A-Za-z0-9_\-]+)", SharedListHandler),
         (r"/shared/([A-Za-z0-9_\-]+)/file/(.*)", SharedFileHandler),
+        (r"/api/favorites/toggle", FavoriteToggleAPIHandler),
+        (r"/api/favorites", FavoritesListAPIHandler),
         (r"/search", SuperSearchHandler),
         (r"/search/ws", SuperSearchWebSocketHandler),
         (r"/p2p", P2PTransferHandler),
         (r"/p2p/signal", P2PSignalingHandler),
+        (
+            r"/static/(.*)",
+            NoCacheStaticFileHandler,
+            {"path": os.path.join(os.path.dirname(__file__), "static")},
+        ),
         (r"/files/(.*)", MainHandler),
     ]
 

@@ -103,6 +103,23 @@ def init_db(conn: sqlite3.Connection) -> None:
     if "expiry_date" not in columns:
         cursor.execute("ALTER TABLE shares ADD COLUMN expiry_date TEXT")
 
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS favorites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(username, file_path)
+        )
+        """)
+
+    # Migrate users table: add quota columns if missing
+    user_cols = {r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()}
+    if "quota_bytes" not in user_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN quota_bytes INTEGER")
+    if "used_bytes" not in user_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN used_bytes INTEGER NOT NULL DEFAULT 0")
+
     conn.commit()
 
 

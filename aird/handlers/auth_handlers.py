@@ -8,6 +8,7 @@ from ldap3.utils.dn import escape_rdn
 from ldap3.utils.conv import escape_filter_chars
 from aird.db import (
     get_user_by_username,
+    get_user_quota,
     create_user,
     update_user,
     authenticate_user,
@@ -276,12 +277,17 @@ def _profile_render(handler, user, error=None, success=None, ldap_enabled=None):
     """Render profile template with common kwargs."""
     if ldap_enabled is None:
         ldap_enabled = handler.settings.get("ldap_server") is not None
+    quota = {"quota_bytes": None, "used_bytes": 0}
+    if user and handler.db_conn:
+        username = user.get("username", "") if isinstance(user, dict) else str(user)
+        quota = get_user_quota(handler.db_conn, username)
     handler.render(
         PROFILE_TEMPLATE,
         user=user,
         error=error,
         success=success,
         ldap_enabled=ldap_enabled,
+        quota=quota,
     )
 
 
@@ -541,12 +547,18 @@ class ProfileHandler(BaseHandler):
     def get(self):
         # Check if LDAP is enabled
         ldap_enabled = self.settings.get("ldap_server") is not None
+        quota = {"quota_bytes": None, "used_bytes": 0}
+        user = self.current_user
+        if user and self.db_conn:
+            username = user.get("username", "") if isinstance(user, dict) else str(user)
+            quota = get_user_quota(self.db_conn, username)
         self.render(
             PROFILE_TEMPLATE,
-            user=self.current_user,
+            user=user,
             error=None,
             success=None,
             ldap_enabled=ldap_enabled,
+            quota=quota,
         )
 
     @tornado.web.authenticated

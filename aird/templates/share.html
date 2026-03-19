@@ -1002,6 +1002,32 @@
     .sq-style-fef9ee { margin: 10px 0; padding: 8px; background: #f8f9fa; border-radius: 4px; }
     .sq-style-8c1855 { background: #e9ecef; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 11px; word-break: break-all; }
     .sq-style-bfef8f { margin-left: 8px; font-size: 10px; padding: 2px 6px; }
+
+    .theme-toggle-btn { background: none; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 16px; padding: 4px 8px; line-height: 1; }
+
+    [data-theme="dark"] body { background: #1a1a2e; color: #e0e0e0; }
+    [data-theme="dark"] .header { border-color: #444; }
+    [data-theme="dark"] .breadcrumb a { color: #58a6ff; }
+    [data-theme="dark"] .btn { background: #2a2a3e; color: #e0e0e0; border-color: #555; }
+    [data-theme="dark"] .btn:hover { background: #333; }
+    [data-theme="dark"] .selection-panel { background: #1e1e2e; border-color: #444; }
+    [data-theme="dark"] .file-table { background: #1e1e2e; border-color: #444; }
+    [data-theme="dark"] .file-table th { background: #2a2a3e; color: #e0e0e0; border-color: #444; }
+    [data-theme="dark"] .file-table td { border-color: #333; color: #e0e0e0; }
+    [data-theme="dark"] .file-table tbody tr:hover { background: #2a2a3e; }
+    [data-theme="dark"] input[type="text"],
+    [data-theme="dark"] select,
+    [data-theme="dark"] textarea { background: #222; color: #e0e0e0; border-color: #444; }
+    [data-theme="dark"] .popup-content { background: #1e1e2e; border-color: #444; color: #e0e0e0; }
+    [data-theme="dark"] .popup-header { border-color: #444; }
+    [data-theme="dark"] .popup-close:hover { background: #333; }
+    [data-theme="dark"] a { color: #58a6ff; }
+    [data-theme="dark"] .sq-style-a28ca9 { color: #aaa; }
+    [data-theme="dark"] .sq-style-d92075 { background: #1a2744; color: #58a6ff; }
+    [data-theme="dark"] .sq-style-568262 { background: #2a2211; border-color: #665500; color: #fbbf24; }
+    [data-theme="dark"] .sq-style-fef9ee { background: #222; }
+    [data-theme="dark"] .sq-style-8c1855 { background: #333; color: #e0e0e0; }
+    [data-theme="dark"] .theme-toggle-btn { border-color: #444; color: #e0e0e0; }
   </style>
 </head>
 
@@ -1016,6 +1042,7 @@
         </div>
       </div>
       <div class="sq-style-b512c9">
+        <button class="theme-toggle-btn" title="Toggle dark mode" type="button">🌙</button>
         <a class="sq-style-a28ca9" href="/profile">👤 {{
           handler.get_display_username() }}</a>
         <a href="/files/" class="btn">📁 Browse Files</a>
@@ -3453,6 +3480,7 @@
       });
     });
   </script>
+  <script src="/static/js/theme.js"></script>
 </body>
 
 </html>

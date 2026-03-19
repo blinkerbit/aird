@@ -404,6 +404,24 @@
         margin-right: 8px;
       }
     }
+
+    .theme-toggle-btn { background: none; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 16px; padding: 4px 8px; line-height: 1; }
+
+    [data-theme="dark"] body { background: #1a1a2e; color: #e0e0e0; }
+    [data-theme="dark"] .header { border-color: #444; }
+    [data-theme="dark"] .breadcrumb a { color: #58a6ff; }
+    [data-theme="dark"] .breadcrumb { color: #aaa; }
+    [data-theme="dark"] input[type="text"],
+    [data-theme="dark"] select { background: #222; color: #e0e0e0; border-color: #444; }
+    [data-theme="dark"] button { background: #2a2a3e; color: #e0e0e0; border-color: #555; }
+    [data-theme="dark"] button:hover { background: #333; }
+    [data-theme="dark"] .result-item { background: #1e1e2e; border-color: #444; }
+    [data-theme="dark"] .result-path { color: #58a6ff; }
+    [data-theme="dark"] .result-path a { color: #58a6ff; }
+    [data-theme="dark"] .code-line { background: #222; border-color: #444; }
+    [data-theme="dark"] .line-number { color: #888; }
+    [data-theme="dark"] a { color: #58a6ff; }
+    [data-theme="dark"] .theme-toggle-btn { border-color: #444; color: #e0e0e0; }
   </style>
 </head>
 
@@ -425,6 +443,7 @@
         </div>
       </div>
       <div style="display: flex; align-items: center; gap: 10px;">
+        <button class="theme-toggle-btn" title="Toggle dark mode" type="button">🌙</button>
         <a href="/profile" style="font-size: 12px; color: #666; margin-right: 15px; text-decoration: none;">👤 {{
           handler.get_display_username() }}</a>
         {% if current_path and current_path.strip() %}
@@ -972,6 +991,7 @@
       globalThis.superSearch = new SuperSearch();
     });
   </script>
+  <script src="/static/js/theme.js"></script>
 </body>
 
 </html>

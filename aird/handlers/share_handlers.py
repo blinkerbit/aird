@@ -749,4 +749,15 @@ class SharedFileHandler(BaseHandler):
         if not os.path.isfile(abspath):
             self.set_status(404)
             return
+        # Track download for analytics
+        if self.db_conn:
+            try:
+                log_audit(
+                    self.db_conn,
+                    "share_download",
+                    details=f"share_id={sid} path={path}",
+                    ip=self.request.remote_ip,
+                )
+            except Exception:
+                pass
         await MainHandler.serve_file(self, abspath)

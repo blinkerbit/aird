@@ -624,6 +624,70 @@
     .custom-dialog-buttons button#dialogCancelBtn:hover {
       background-color: #999;
     }
+
+    /* Favorites */
+    .fav-star {
+      cursor: pointer;
+      font-size: 16px;
+      color: #ccc;
+      margin-left: 6px;
+      transition: color 0.15s ease;
+      user-select: none;
+    }
+    .fav-star:hover { color: #f59e0b; }
+    .fav-star.fav-active { color: #f59e0b; }
+
+    /* Theme toggle */
+    .theme-toggle-btn {
+      background: none;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      padding: 4px 8px;
+      line-height: 1;
+    }
+
+    /* Dark mode overrides */
+    [data-theme="dark"] body { background: #1a1a2e; color: #e0e0e0; }
+    [data-theme="dark"] .header { border-color: #444; }
+    [data-theme="dark"] .header h1 { color: #e0e0e0; }
+    [data-theme="dark"] .breadcrumb { color: #aaa; }
+    [data-theme="dark"] .breadcrumb a { color: #58a6ff; }
+    [data-theme="dark"] .upload-zone { background: #222; border-color: #444; color: #ccc; }
+    [data-theme="dark"] .upload-zone.dragover { background: #2a2a3e; border-color: #58a6ff; }
+    [data-theme="dark"] .file-table { background: #1e1e2e; border-color: #444; }
+    [data-theme="dark"] .file-table th { background: #2a2a3e; color: #e0e0e0; border-color: #444; }
+    [data-theme="dark"] .file-table td { border-color: #333; color: #e0e0e0; }
+    [data-theme="dark"] .file-table tbody tr:hover { background: #2a2a3e; }
+    [data-theme="dark"] .file-link { color: #58a6ff; }
+    [data-theme="dark"] .modified-cell { color: #aaa; }
+    [data-theme="dark"] .sort-header:hover { background: #444; }
+    [data-theme="dark"] .action-link { background: #2a2a3e; border-color: #444; color: #ccc; }
+    [data-theme="dark"] .action-link:hover { background: #333; border-color: #555; }
+    [data-theme="dark"] .action-link.download-btn { background: #1a2744; border-color: #2563eb; color: #58a6ff; }
+    [data-theme="dark"] .action-link.edit-btn { background: #2a2211; border-color: #d97706; color: #fbbf24; }
+    [data-theme="dark"] .action-link.rename-btn { background: #1f1533; border-color: #7c3aed; color: #a78bfa; }
+    [data-theme="dark"] .action-link.delete-btn { background: #2a1111; border-color: #dc2626; color: #f87171; }
+    [data-theme="dark"] .action-link[title]:hover::after { background: #555; }
+    [data-theme="dark"] .action-link[title]:hover::before { border-top-color: #555; }
+    [data-theme="dark"] .popup-overlay { background: rgba(0, 0, 0, 0.7); }
+    [data-theme="dark"] .popup-content { background: #1e1e2e; border-color: #444; color: #e0e0e0; }
+    [data-theme="dark"] .popup-header { border-color: #444; }
+    [data-theme="dark"] .popup-close:hover { background: #333; }
+    [data-theme="dark"] .share-item { background: #222; border-color: #444; }
+    [data-theme="dark"] .share-id { background: #1a2744; color: #58a6ff; }
+    [data-theme="dark"] .share-url a { color: #58a6ff; }
+    [data-theme="dark"] .share-users-title { color: #aaa; }
+    [data-theme="dark"] .user-tag { background: #1a2744; color: #58a6ff; }
+    [data-theme="dark"] input[type="text"],
+    [data-theme="dark"] input[type="file"],
+    [data-theme="dark"] select { background: #222; color: #e0e0e0; border-color: #444; }
+    [data-theme="dark"] .btn { background: #333; color: #e0e0e0; border-color: #555; }
+    [data-theme="dark"] .btn:hover { background: #444; }
+    [data-theme="dark"] .theme-toggle-btn { border-color: #444; color: #e0e0e0; }
+    [data-theme="dark"] .custom-dialog-overlay .custom-dialog { background: #1e1e2e; border-color: #444; color: #e0e0e0; }
+    [data-theme="dark"] .custom-dialog input { background: #222; color: #e0e0e0; border-color: #444; }
   </style>
 </head>
 
@@ -642,6 +706,7 @@
         </div>
       </div>
       <div style="display: flex; align-items: center; gap: 10px;">
+        <button class="theme-toggle-btn" title="Toggle dark mode">🌙</button>
         <a href="/profile" style="font-size: 12px; color: #666; margin-right: 15px; text-decoration: none;">👤 {{
           handler.get_display_username() }}</a>
         {% if features.get('super_search') %}
@@ -746,13 +811,23 @@
             {% else %}
             <a href="/files/{{ escape(join_path(current_path, file['name'])) }}?start_line=1&end_line=100"
               class="file-link">
-              <span class="file-icon">{{ get_file_icon(file["name"]) }}</span>{{
+              {% set _ext = file['name'].rsplit('.', 1)[-1].lower() if '.' in file['name'] else '' %}
+              {% if _ext in ('jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico') %}
+              <img src="/files/{{ escape(join_path(current_path, file['name'])) }}?mode=raw" alt="" loading="lazy" style="width:24px;height:24px;object-fit:cover;vertical-align:middle;margin-right:8px;border-radius:3px;border:1px solid #ddd;" onerror="this.outerHTML='<span class=file-icon>{{ get_file_icon(file[&quot;name&quot;]) }}</span>'">
+              {% else %}
+              <span class="file-icon">{{ get_file_icon(file["name"]) }}</span>
+              {% end %}{{
               escape(file['name']) }}
               {% if file.get('is_shared') %}
               <span class="shared-icon" title="Click to view share details"
                 data-share-path="{{ escape(join_path(current_path, file['name'])) }}">🔗</span>
               {% end %}
             </a>
+            {% end %}
+            {% if features.get('favorites') %}
+            {% set _fav_path = join_path(current_path, file['name']) %}
+            <span class="fav-star{% if _fav_path in user_favorites %} fav-active{% end %}"
+              data-fav-path="{{ escape(_fav_path) }}" title="Toggle favorite">{{ '★' if _fav_path in user_favorites else '☆' }}</span>
             {% end %}
           </td>
           <td class="size-cell" data-label="Size" data-bytes="{{ file.get('size_bytes', 0) }}">
@@ -911,11 +986,119 @@
     uploadZone.addEventListener("dragleave", () => {
       uploadZone.classList.remove("dragover");
     });
-    uploadZone.addEventListener("drop", (e) => {
+    uploadZone.addEventListener("drop", async (e) => {
       e.preventDefault();
       uploadZone.classList.remove("dragover");
+      // Try to detect folders via webkitGetAsEntry
+      const items = e.dataTransfer.items;
+      if (items && items.length > 0 && typeof items[0].webkitGetAsEntry === 'function') {
+        const entries = [];
+        for (let i = 0; i < items.length; i++) {
+          const entry = items[i].webkitGetAsEntry();
+          if (entry) entries.push(entry);
+        }
+        const hasDir = entries.some(function(ent) { return ent.isDirectory; });
+        if (hasDir) {
+          const filesWithPaths = await traverseEntries(entries, '');
+          handleFilesWithPaths(filesWithPaths);
+          return;
+        }
+      }
       handleFiles(e.dataTransfer.files);
     });
+
+    // --- Folder drag-and-drop helpers ---
+    function readAllEntries(reader) {
+      return new Promise(function(resolve) {
+        var results = [];
+        (function read() {
+          reader.readEntries(function(entries) {
+            if (entries.length === 0) { resolve(results); return; }
+            results = results.concat(Array.from(entries));
+            read();
+          });
+        })();
+      });
+    }
+
+    function getFileFromEntry(entry) {
+      return new Promise(function(resolve, reject) {
+        entry.file(resolve, reject);
+      });
+    }
+
+    async function traverseEntries(entries, pathPrefix) {
+      var result = [];
+      for (var i = 0; i < entries.length; i++) {
+        var entry = entries[i];
+        if (entry.isFile) {
+          try {
+            var file = await getFileFromEntry(entry);
+            result.push({ file: file, relativePath: pathPrefix + file.name });
+          } catch (e) { /* skip unreadable */ }
+        } else if (entry.isDirectory) {
+          var reader = entry.createReader();
+          var children = await readAllEntries(reader);
+          var sub = await traverseEntries(children, pathPrefix + entry.name + '/');
+          result = result.concat(sub);
+        }
+      }
+      return result;
+    }
+
+    function handleFilesWithPaths(filesWithPaths) {
+      if (filesWithPaths.length === 0) return;
+      var rejected = [];
+      for (var i = 0; i < filesWithPaths.length; i++) {
+        var fw = filesWithPaths[i];
+        if (fw.file.size > MAX_FILE_SIZE) { rejected.push(fw.relativePath); continue; }
+
+        var item = document.createElement("div");
+        item.style.marginTop = "5px";
+        var nameEl = document.createElement("div");
+        nameEl.textContent = fw.relativePath;
+        var bar = document.createElement("progress");
+        bar.max = 100; bar.value = 0; bar.style.width = "100%";
+        var info = document.createElement("span");
+        info.style.display = "block"; info.style.fontSize = "12px";
+        var cancelBtn = document.createElement("button");
+        cancelBtn.textContent = "Cancel"; cancelBtn.style.marginTop = "2px";
+        item.appendChild(nameEl); item.appendChild(bar); item.appendChild(info); item.appendChild(cancelBtn);
+        progressContainer.appendChild(item);
+
+        // Compute the upload dir: current path + relative folder path
+        var parts = fw.relativePath.split('/');
+        var fileName = parts.pop();
+        var subDir = parts.join('/');
+        var uploadDir = '{{ current_path or "" }}';
+        if (subDir) uploadDir = uploadDir ? uploadDir + '/' + subDir : subDir;
+
+        var queueItem = { file: fw.file, bar: bar, info: info, cancelBtn: cancelBtn, item: item, xhr: null, start: null, uploadDir: uploadDir, uploadName: fileName };
+        (function(qi) {
+          qi.cancelBtn.addEventListener("click", function() {
+            if (qi.xhr) { qi.xhr.abort(); }
+            else {
+              var idx = uploadQueue.indexOf(qi);
+              if (idx !== -1) uploadQueue.splice(idx, 1);
+              progressContainer.removeChild(qi.item);
+              if (progressContainer.children.length === 0) progressContainer.style.display = "none";
+            }
+          });
+        })(queueItem);
+        uploadQueue.push(queueItem);
+      }
+      if (rejected.length > 0) {
+        var limitGB = (MAX_FILE_SIZE / (1024 * 1024 * 1024)).toFixed(2);
+        showDialog('Files exceed the ' + limitGB + ' GB limit: ' + rejected.join(", "), 'File Size Limit');
+      }
+      fileInput.value = "";
+      clearTimeout(reloadTimer);
+      if (!isUploading && uploadQueue.length > 0) {
+        isUploading = true;
+        progressContainer.style.display = "block";
+        processQueue();
+      }
+    }
 
     fileInput.addEventListener("change", (e) => {
       handleFiles(e.target.files);
@@ -1074,8 +1257,10 @@
         });
 
         // Stream raw file bytes with headers the backend expects
-        xhr.setRequestHeader("X-Upload-Dir", encodeURIComponent('{{ current_path or "" }}'));
-        xhr.setRequestHeader("X-Upload-Filename", encodeURIComponent(item.file.name));
+        var dir = item.uploadDir != null ? item.uploadDir : '{{ current_path or "" }}';
+        var fname = item.uploadName || item.file.name;
+        xhr.setRequestHeader("X-Upload-Dir", encodeURIComponent(dir));
+        xhr.setRequestHeader("X-Upload-Filename", encodeURIComponent(fname));
         xhr.setRequestHeader("Content-Type", "application/octet-stream");
         // CSRF Protection
         const xsrfToken = getXSRFToken();
@@ -1609,6 +1794,117 @@
           revokeShare(el.dataset.id);
         }
       });
+
+      // --- Favorites ---
+      document.querySelectorAll('.fav-star').forEach(function(star) {
+        star.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          var path = star.dataset.favPath;
+          var xsrf = getXSRFToken();
+          fetch('/api/favorites/toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-XSRFToken': xsrf },
+            body: JSON.stringify({ path: path })
+          }).then(function(r) { return r.json(); }).then(function(data) {
+            if (data.favorited) {
+              star.textContent = '\u2605';
+              star.classList.add('fav-active');
+            } else {
+              star.textContent = '\u2606';
+              star.classList.remove('fav-active');
+            }
+          }).catch(function() {});
+        });
+      });
+
+      // --- Keyboard Shortcuts ---
+      var shortcutsOverlay = null;
+
+      function showShortcutsHelp() {
+        if (shortcutsOverlay) { hideShortcutsHelp(); return; }
+        shortcutsOverlay = document.createElement('div');
+        shortcutsOverlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
+        var card = document.createElement('div');
+        card.style.cssText = 'background:#fff;border:2px solid #000;border-radius:8px;padding:24px 32px;max-width:420px;width:90%;font-family:monospace;font-size:13px;';
+        if (document.documentElement.getAttribute('data-theme') === 'dark') {
+          card.style.background = '#1e1e2e';
+          card.style.color = '#e0e0e0';
+          card.style.borderColor = '#444';
+        }
+        card.innerHTML = '<h3 style="margin:0 0 16px 0;">Keyboard Shortcuts</h3>' +
+          '<table style="width:100%;border-collapse:collapse;">' +
+          '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">?</td><td>Show this help</td></tr>' +
+          '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">/</td><td>Focus search (if available)</td></tr>' +
+          '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">n</td><td>New folder</td></tr>' +
+          '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">u</td><td>Upload file</td></tr>' +
+          '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Ctrl+A</td><td>Select all files</td></tr>' +
+          '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Delete</td><td>Delete selected files</td></tr>' +
+          '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Escape</td><td>Deselect / close</td></tr>' +
+          '</table>' +
+          '<p style="margin:16px 0 0;font-size:11px;color:#888;">Press Escape or ? to close</p>';
+        shortcutsOverlay.appendChild(card);
+        shortcutsOverlay.addEventListener('click', function(e) { if (e.target === shortcutsOverlay) hideShortcutsHelp(); });
+        document.body.appendChild(shortcutsOverlay);
+      }
+
+      function hideShortcutsHelp() {
+        if (shortcutsOverlay) { shortcutsOverlay.remove(); shortcutsOverlay = null; }
+      }
+
+      document.addEventListener('keydown', function(e) {
+        // Don't trigger when typing in inputs
+        var tag = (e.target.tagName || '').toLowerCase();
+        var isInput = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable;
+
+        if (e.key === 'Escape') {
+          if (shortcutsOverlay) { hideShortcutsHelp(); return; }
+          // Close any open popup
+          var popup = document.querySelector('.popup-overlay.show');
+          if (popup) { popup.classList.remove('show'); return; }
+          // Deselect all checkboxes
+          document.querySelectorAll('.row-checkbox:checked').forEach(function(cb) { cb.checked = false; cb.dispatchEvent(new Event('change', {bubbles:true})); });
+          var selectAll = document.getElementById('selectAllCheckbox');
+          if (selectAll) selectAll.checked = false;
+          return;
+        }
+
+        if (isInput) return;
+
+        if (e.key === '?') { e.preventDefault(); showShortcutsHelp(); return; }
+        if (e.key === '/') {
+          e.preventDefault();
+          var searchInput = document.querySelector('input[type="text"][placeholder*="earch"], input[type="search"]');
+          if (searchInput) searchInput.focus();
+          return;
+        }
+        if (e.key === 'n' && !e.ctrlKey && !e.metaKey) {
+          e.preventDefault();
+          var newFolderBtn = document.getElementById('newFolderBtn');
+          if (newFolderBtn) newFolderBtn.click();
+          return;
+        }
+        if (e.key === 'u' && !e.ctrlKey && !e.metaKey) {
+          e.preventDefault();
+          var fi = document.getElementById('fileInput');
+          if (fi) fi.click();
+          return;
+        }
+        if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          var selectAllCb = document.getElementById('selectAllCheckbox');
+          if (selectAllCb) { selectAllCb.checked = true; selectAllCb.dispatchEvent(new Event('change', {bubbles:true})); }
+          return;
+        }
+        if (e.key === 'Delete') {
+          var checked = document.querySelectorAll('.row-checkbox:checked');
+          if (checked.length > 0) {
+            var bulkDelBtn = document.getElementById('bulkDeleteBtn');
+            if (bulkDelBtn) bulkDelBtn.click();
+          }
+          return;
+        }
+      });
     });
   </script>
 
@@ -1624,6 +1920,7 @@
       </div>
     </div>
   </div>
+<script src="/static/js/theme.js"></script>
 </body>
 
 </html>

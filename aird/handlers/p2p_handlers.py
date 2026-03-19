@@ -19,10 +19,14 @@ logger = logging.getLogger(__name__)
 class P2PRoom:
     """Represents a P2P transfer room/session."""
 
-    def __init__(self, room_id: str, creator_id: str, allow_anonymous: bool = False):
+    # Default expiry: 24 hours
+    DEFAULT_EXPIRY = 86400
+
+    def __init__(self, room_id: str, creator_id: str, allow_anonymous: bool = False, expiry_seconds: int = None):
         self.room_id = room_id
         self.creator_id = creator_id
         self.created_at = time.time()
+        self.expiry_seconds = expiry_seconds if expiry_seconds is not None else self.DEFAULT_EXPIRY
         self.peers: Dict[str, "P2PSignalingHandler"] = {}
         self.file_info: Optional[dict] = None  # Info about file being shared
         self.allow_anonymous = allow_anonymous  # Whether anonymous users can join
@@ -58,13 +62,19 @@ class P2PRoomManager:
         self._cleanup_interval = 3600  # 1 hour
         self._max_room_age = 86400  # 24 hours
 
-    def create_room(self, creator_id: str, allow_anonymous: bool = False) -> P2PRoom:
+    # Clamp range: 5 minutes to 7 days
+    MIN_EXPIRY = 300
+    MAX_EXPIRY = 604800
+
+    def create_room(self, creator_id: str, allow_anonymous: bool = False, expiry_seconds: int = None) -> P2PRoom:
         """Create a new room with a unique ID."""
+        if expiry_seconds is not None:
+            expiry_seconds = max(self.MIN_EXPIRY, min(self.MAX_EXPIRY, expiry_seconds))
         room_id = secrets.token_urlsafe(64)
         while room_id in self.rooms:
             room_id = secrets.token_urlsafe(64)
 
-        room = P2PRoom(room_id, creator_id, allow_anonymous=allow_anonymous)
+        room = P2PRoom(room_id, creator_id, allow_anonymous=allow_anonymous, expiry_seconds=expiry_seconds)
         self.rooms[room_id] = room
         logger.info(f"Created P2P room: {room_id} (anonymous: {allow_anonymous})")
         return room
@@ -78,12 +88,12 @@ class P2PRoomManager:
             logger.info(f"Removed P2P room: {room_id}")
 
     def cleanup_old_rooms(self):
-        """Remove rooms older than max age."""
+        """Remove rooms older than their individual expiry."""
         now = time.time()
         to_remove = [
             room_id
             for room_id, room in self.rooms.items()
-            if now - room.created_at > self._max_room_age
+            if now - room.created_at > room.expiry_seconds
         ]
         for room_id in to_remove:
             self.remove_room(room_id)
@@ -285,7 +295,16 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
         # Check if anonymous access is requested
         allow_anonymous = data.get("allow_anonymous", False)
 
-        room = room_manager.create_room(self.peer_id, allow_anonymous=allow_anonymous)
+        # Parse custom expiry
+        expiry_seconds = None
+        expiry_minutes = data.get("expiry_minutes")
+        if expiry_minutes is not None:
+            try:
+                expiry_seconds = int(expiry_minutes) * 60
+            except (ValueError, TypeError):
+                pass
+
+        room = room_manager.create_room(self.peer_id, allow_anonymous=allow_anonymous, expiry_seconds=expiry_seconds)
         room.add_peer(self.peer_id, self)
         self.room = room
 
@@ -299,6 +318,7 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
             "room_id": room.room_id,
             "file_info": room.file_info,
             "allow_anonymous": room.allow_anonymous,
+            "expiry_minutes": room.expiry_seconds // 60,
         }
         logger.info(f"Sending room_created response: {response}")
         self.write_message(json.dumps(response))

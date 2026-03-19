@@ -91,6 +91,25 @@
     .markdown-preview blockquote { border-left: 4px solid #ccc; margin: 0; padding-left: 1em; color: #555; }
     button.active-tab { background-color: #ddd; }
 
+    .theme-toggle-btn { border-color: #ccc; background: none; font-size: 16px; padding: 4px 8px; line-height: 1; cursor: pointer; border-radius: 4px; }
+
+    /* Dark mode overrides */
+    [data-theme="dark"] body { background-color: #1a1a2e; color: #e0e0e0; }
+    [data-theme="dark"] header { border-color: #444; }
+    [data-theme="dark"] .breadcrumb a { color: #58a6ff; }
+    [data-theme="dark"] .path { color: #aaa; }
+    [data-theme="dark"] button { background-color: #2a2a3e; color: #e0e0e0; border-color: #555; }
+    [data-theme="dark"] button:hover { background-color: #333; }
+    [data-theme="dark"] button.active-tab { background-color: #444; }
+    [data-theme="dark"] .status { color: #aaa; }
+    [data-theme="dark"] .gutter { background-color: #1e1e2e; color: #888; border-color: #444; background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 1.2em, #222 1.2em, #222 2.4em); }
+    [data-theme="dark"] textarea { background-color: #1a1a2e; color: #e0e0e0; border-color: #444; background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 1.2em, #1e1e2e 1.2em, #1e1e2e 2.4em); }
+    [data-theme="dark"] .markdown-preview pre { background: #222; border-color: #444; }
+    [data-theme="dark"] .markdown-preview code { background: #222; }
+    [data-theme="dark"] .markdown-preview blockquote { border-color: #444; color: #aaa; }
+    [data-theme="dark"] .theme-toggle-btn { border-color: #444; color: #e0e0e0; }
+    [data-theme="dark"] a { color: #58a6ff; }
+
     /* Line numbers gutter styled similar to file view */
     .gutter {
       width: 40px;
@@ -143,6 +162,7 @@
       <div class="path">/{{ path }}</div>
     </div>
     <div class="btns">
+      <button class="theme-toggle-btn" title="Toggle dark mode" type="button">🌙</button>
       <a href="/profile" style="font-size: 12px; color: #666; margin-right: 15px; text-decoration: none;">👤 {{
         handler.get_display_username() }}</a>
       {% if is_markdown %}
@@ -295,6 +315,7 @@
     })();
     {% end %}
   </script>
+  <script src="/static/js/theme.js"></script>
 </body>
 
 </html>
