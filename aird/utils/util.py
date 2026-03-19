@@ -323,6 +323,18 @@ def invalidate_feature_flags_cache() -> None:
     _feature_flags_cache_ts = 0.0
 
 
+def _merge_flags(current: dict, persisted: dict) -> dict:
+    """Merge persisted DB flags with in-memory flags; in-memory takes precedence."""
+    merged = persisted.copy()
+    for k, v in current.items():
+        merged[k] = bool(v)
+    # Also include any DB-only flags not yet in merged
+    for k, v in persisted.items():
+        if k not in merged:
+            merged[k] = bool(v)
+    return merged
+
+
 def get_current_feature_flags() -> dict:
     """Return current feature flags with in-memory changes taking precedence over DB.
     Results are cached for a short TTL to avoid hitting the database on every request.
@@ -342,15 +354,7 @@ def get_current_feature_flags() -> dict:
         try:
             persisted = load_feature_flags(db_conn)
             if persisted:
-                # Start with DB values as base
-                merged = persisted.copy()
-                # Then overlay in-memory changes (in-memory takes precedence for real-time updates)
-                for k, v in current.items():
-                    merged[k] = bool(v)
-                # Also include any DB-only flags
-                for k, v in persisted.items():
-                    if k not in merged:
-                        merged[k] = bool(v)
+                merged = _merge_flags(current, persisted)
                 _feature_flags_cache = merged
                 _feature_flags_cache_ts = now
                 return merged.copy()

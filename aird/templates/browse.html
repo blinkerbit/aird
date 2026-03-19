@@ -813,7 +813,7 @@
               class="file-link">
               {% set _ext = file['name'].rsplit('.', 1)[-1].lower() if '.' in file['name'] else '' %}
               {% if _ext in ('jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico') %}
-              <img src="/files/{{ escape(join_path(current_path, file['name'])) }}?mode=raw" alt="" loading="lazy" style="width:24px;height:24px;object-fit:cover;vertical-align:middle;margin-right:8px;border-radius:3px;border:1px solid #ddd;" onerror="this.outerHTML='<span class=file-icon>{{ get_file_icon(file[&quot;name&quot;]) }}</span>'">
+              <img src="/files/{{ escape(join_path(current_path, file['name'])) }}?mode=raw" alt="" loading="lazy" style="width:24px;height:24px;object-fit:cover;vertical-align:middle;margin-right:8px;border-radius:3px;border:1px solid #ddd;" data-fallback="<span class=file-icon>{{ get_file_icon(file[&quot;name&quot;]) }}</span>">
               {% else %}
               <span class="file-icon">{{ get_file_icon(file["name"]) }}</span>
               {% end %}{{
@@ -923,6 +923,13 @@
     const RELOAD_DELAY_MS = 500;
     const MIN_COLUMN_WIDTH = 50;
     const MAX_FILE_SIZE = {{ max_file_size }};
+
+    // Fallback for image thumbnails that fail to load
+    document.addEventListener('error', function(e) {
+      if (e.target.tagName === 'IMG' && e.target.dataset.fallback) {
+        e.target.outerHTML = e.target.dataset.fallback;
+      }
+    }, true);
 
     // Custom dialog function
     function showDialog(message, title = 'Confirm', options = {}) {

@@ -654,7 +654,7 @@
         });
     </script>
     {% if filename.lower().endswith('.md') %}
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" nonce="{{ csp_nonce }}"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/16.3.0/marked.min.js" integrity="sha512-gxBP/mcwo9A5lJDFbVfXNb1hSLpOkHLLXAjld8HfCWjVIZnA3nlNnIqSTLvtwF4t55Dt4Rzh7phL3tJuKZ+teQ==" crossorigin="anonymous" referrerpolicy="no-referrer" nonce="{{ csp_nonce }}"></script>
     <script nonce="{{ csp_nonce }}">
     (function() {
         var mdBtn = document.getElementById('md-toggle-btn');
@@ -673,10 +673,10 @@
                     if (cells.length >= 2) text.push(cells[1].textContent);
                 });
                 var raw = text.join('\n');
-                if (typeof marked !== 'undefined') {
-                    mdPreview.innerHTML = marked.parse(raw);
-                } else {
+                if (typeof marked === 'undefined') {
                     mdPreview.textContent = raw;
+                } else {
+                    mdPreview.innerHTML = marked.parse(raw);
                 }
                 mdPreview.style.display = 'block';
                 fileTable.style.display = 'none';

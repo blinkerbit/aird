@@ -262,6 +262,31 @@ class UploadHandler(BaseHandler):
         finally:
             self._writing = False
 
+    async def _finalize_stream(self):
+        """Wait for in-flight writes and close the temp file."""
+        if self._writer_task is not None:
+            try:
+                await self._writer_task
+            except Exception:
+                pass
+        if self._aiofile is not None:
+            try:
+                await self._aiofile.close()
+            except Exception:
+                pass
+
+    def _check_quota_exceeded(self) -> bool:
+        """Return True and set error response if storage quota would be exceeded."""
+        if not is_feature_enabled("storage_quotas", False):
+            return False
+        username = self.get_display_username()
+        quota = get_user_quota(self.db_conn, username)
+        if quota["quota_bytes"] is not None and quota["used_bytes"] + self._bytes_received > quota["quota_bytes"]:
+            self.set_status(413)
+            self.write("Storage quota exceeded")
+            return True
+        return False
+
     @tornado.web.authenticated
     async def post(self):
         if not self.require_feature(
@@ -275,19 +300,7 @@ class UploadHandler(BaseHandler):
             self.write(self._reject_reason or BAD_REQUEST)
             return
 
-        # Wait for any in-flight writes to complete
-        if self._writer_task is not None:
-            try:
-                await self._writer_task
-            except Exception:
-                pass
-
-        # Close file to flush buffers
-        if self._aiofile is not None:
-            try:
-                await self._aiofile.close()
-            except Exception:
-                pass
+        await self._finalize_stream()
 
         # Enforce size limit
         if self._too_large:
@@ -297,14 +310,8 @@ class UploadHandler(BaseHandler):
             return
 
         # Check storage quota if enabled
-        if is_feature_enabled("storage_quotas", False):
-            username = self.get_display_username()
-            quota = get_user_quota(self.db_conn, username)
-            if quota["quota_bytes"] is not None:
-                if quota["used_bytes"] + self._bytes_received > quota["quota_bytes"]:
-                    self.set_status(413)
-                    self.write("Storage quota exceeded")
-                    return
+        if self._check_quota_exceeded():
+            return
 
         final_path_abs, upload_err = _validate_upload_destination(
             self.upload_dir, self.filename
@@ -417,6 +424,48 @@ def path_to_rel(abspath):
 
 
 class DeleteHandler(BaseHandler):
+    def _delete_directory(self, abspath):
+        """Delete a directory. Returns True if handled (caller should return early on failure)."""
+        if not self.require_feature(
+            "folder_delete", True, body=FOLDER_DELETE_DISABLED
+        ):
+            return False
+        recursive = self.get_argument("recursive", "0") == "1"
+        if not recursive and os.listdir(abspath):
+            self.set_status(400)
+            self.write(FOLDER_NOT_EMPTY)
+            return False
+        shutil.rmtree(abspath)
+        log_audit(
+            self.db_conn,
+            "folder_delete",
+            username=self.get_display_username(),
+            details=path_to_rel(abspath),
+            ip=self.request.remote_ip,
+        )
+        return True
+
+    def _delete_file(self, abspath):
+        """Delete a file. Returns True if handled (caller should return early on failure)."""
+        if not self.require_feature("file_delete", True, body=FILE_DELETE_DISABLED):
+            return False
+        file_size = 0
+        try:
+            file_size = os.path.getsize(abspath)
+        except OSError:
+            pass
+        os.remove(abspath)
+        if is_feature_enabled("storage_quotas", False) and file_size > 0:
+            update_user_used_bytes(self.db_conn, self.get_display_username(), -file_size)
+        log_audit(
+            self.db_conn,
+            "file_delete",
+            username=self.get_display_username(),
+            details=path_to_rel(abspath),
+            ip=self.request.remote_ip,
+        )
+        return True
+
     @tornado.web.authenticated
     def post(self):
         path = self.get_argument("path", "")
@@ -427,41 +476,11 @@ class DeleteHandler(BaseHandler):
             self.write(ACCESS_DENIED)
             return
         if os.path.isdir(abspath):
-            if not self.require_feature(
-                "folder_delete", True, body=FOLDER_DELETE_DISABLED
-            ):
+            if not self._delete_directory(abspath):
                 return
-            recursive = self.get_argument("recursive", "0") == "1"
-            if not recursive and os.listdir(abspath):
-                self.set_status(400)
-                self.write(FOLDER_NOT_EMPTY)
-                return
-            shutil.rmtree(abspath)
-            log_audit(
-                self.db_conn,
-                "folder_delete",
-                username=self.get_display_username(),
-                details=path_to_rel(abspath),
-                ip=self.request.remote_ip,
-            )
         elif os.path.isfile(abspath):
-            if not self.require_feature("file_delete", True, body=FILE_DELETE_DISABLED):
+            if not self._delete_file(abspath):
                 return
-            file_size = 0
-            try:
-                file_size = os.path.getsize(abspath)
-            except OSError:
-                pass
-            os.remove(abspath)
-            if is_feature_enabled("storage_quotas", False) and file_size > 0:
-                update_user_used_bytes(self.db_conn, self.get_display_username(), -file_size)
-            log_audit(
-                self.db_conn,
-                "file_delete",
-                username=self.get_display_username(),
-                details=path_to_rel(abspath),
-                ip=self.request.remote_ip,
-            )
         else:
             self.set_status(404)
             self.write(FILE_OR_FOLDER_NOT_FOUND)

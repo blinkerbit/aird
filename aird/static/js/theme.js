@@ -1,7 +1,8 @@
 // Theme Manager - handles dark/light mode toggle with cookie persistence
 class ThemeManager {
+    storageKey = 'aird_theme';
+
     constructor() {
-        this.storageKey = 'aird_theme';
         this.init();
     }
 
@@ -15,7 +16,7 @@ class ThemeManager {
 
     getSavedTheme() {
         // Read from cookie
-        const match = document.cookie.match(new RegExp('(?:^|; )' + this.storageKey + '=([^;]*)'));
+        const match = new RegExp('(?:^|; )' + this.storageKey + '=([^;]*)').exec(document.cookie);
         return match ? decodeURIComponent(match[1]) : null;
     }
 
@@ -25,33 +26,32 @@ class ThemeManager {
     }
 
     setTheme(theme, save) {
-        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.dataset.theme = theme;
         if (save !== false) {
             this.saveTheme(theme);
         }
         // Update all toggle button icons
-        document.querySelectorAll('.theme-toggle-btn').forEach(function(btn) {
+        document.querySelectorAll('.theme-toggle-btn').forEach((btn) => {
             btn.textContent = theme === 'dark' ? '\u2600\uFE0F' : '\uD83C\uDF19';
             btn.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
         });
     }
 
     toggle() {
-        var current = document.documentElement.getAttribute('data-theme');
+        const current = document.documentElement.dataset.theme;
         this.setTheme(current === 'dark' ? 'light' : 'dark');
     }
 
     bindToggleButtons() {
-        var self = this;
-        document.querySelectorAll('.theme-toggle-btn').forEach(function(btn) {
-            btn.addEventListener('click', function(e) {
+        document.querySelectorAll('.theme-toggle-btn').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
                 e.preventDefault();
-                self.toggle();
+                this.toggle();
             });
         });
     }
 }
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', () => {
     globalThis.themeManager = new ThemeManager();
 });
