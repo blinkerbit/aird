@@ -19,10 +19,18 @@ logger = logging.getLogger(__name__)
 class P2PRoom:
     """Represents a P2P transfer room/session."""
 
-    def __init__(self, room_id: str, creator_id: str, allow_anonymous: bool = False):
+    def __init__(
+        self,
+        room_id: str,
+        creator_id: str,
+        allow_anonymous: bool = False,
+        expiry_seconds: Optional[int] = None,
+    ):
         self.room_id = room_id
         self.creator_id = creator_id
         self.created_at = time.time()
+        # None = no time-based expiry (room lives until empty or server restart)
+        self.expiry_seconds = expiry_seconds
         self.peers: Dict[str, "P2PSignalingHandler"] = {}
         self.file_info: Optional[dict] = None  # Info about file being shared
         self.allow_anonymous = allow_anonymous  # Whether anonymous users can join
@@ -55,16 +63,30 @@ class P2PRoomManager:
 
     def __init__(self):
         self.rooms: Dict[str, P2PRoom] = {}
-        self._cleanup_interval = 3600  # 1 hour
-        self._max_room_age = 86400  # 24 hours
 
-    def create_room(self, creator_id: str, allow_anonymous: bool = False) -> P2PRoom:
-        """Create a new room with a unique ID."""
+    # Optional clamp when expiry_seconds is set (tests / internal use only; API does not set expiry)
+    MIN_EXPIRY = 300
+    MAX_EXPIRY = 604800
+
+    def create_room(
+        self,
+        creator_id: str,
+        allow_anonymous: bool = False,
+        expiry_seconds: Optional[int] = None,
+    ) -> P2PRoom:
+        """Create a new room with a unique ID. expiry_seconds None = never expire by age."""
+        if expiry_seconds is not None:
+            expiry_seconds = max(self.MIN_EXPIRY, min(self.MAX_EXPIRY, expiry_seconds))
         room_id = secrets.token_urlsafe(64)
         while room_id in self.rooms:
             room_id = secrets.token_urlsafe(64)
 
-        room = P2PRoom(room_id, creator_id, allow_anonymous=allow_anonymous)
+        room = P2PRoom(
+            room_id,
+            creator_id,
+            allow_anonymous=allow_anonymous,
+            expiry_seconds=expiry_seconds,
+        )
         self.rooms[room_id] = room
         logger.info(f"Created P2P room: {room_id} (anonymous: {allow_anonymous})")
         return room
@@ -78,12 +100,13 @@ class P2PRoomManager:
             logger.info(f"Removed P2P room: {room_id}")
 
     def cleanup_old_rooms(self):
-        """Remove rooms older than max age."""
+        """Remove rooms older than their individual expiry (only if expiry_seconds is set)."""
         now = time.time()
         to_remove = [
             room_id
             for room_id, room in self.rooms.items()
-            if now - room.created_at > self._max_room_age
+            if room.expiry_seconds is not None
+            and now - room.created_at > room.expiry_seconds
         ]
         for room_id in to_remove:
             self.remove_room(room_id)
@@ -265,6 +288,8 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
                 self._handle_ice_candidate(data)
             elif msg_type == "file_info":
                 self._handle_file_info(data)
+            elif msg_type == "restart_connection":
+                self._handle_restart_connection()
             else:
                 logger.warning(f"Unknown message type: {msg_type}")
 
@@ -449,6 +474,24 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
             {"type": "file_info_updated", "file_info": self.room.file_info},
             exclude_peer=self.peer_id,
         )
+
+    def _handle_restart_connection(self):
+        """Broadcast restart_connection to other peer so both can reconnect with new settings."""
+        if not self.room:
+            return
+
+        other_peer = self.room.get_other_peer(self.peer_id)
+        if other_peer:
+            other_peer.write_message(
+                json.dumps(
+                    {
+                        "type": "restart_connection",
+                        "from_peer": self.peer_id,
+                        "username": self.username,
+                    }
+                )
+            )
+            logger.info(f"Restart connection requested by {self.username}")
 
     def on_close(self):
         logger.info(f"P2P WebSocket closed for peer: {self.peer_id}")

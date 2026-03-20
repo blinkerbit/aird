@@ -39,41 +39,98 @@
             font-weight: bold;
         }
 
-        .file-table {
+        /* Folder tree (structured paths instead of one long path per row) */
+        .file-browser {
             width: 100%;
-            border-collapse: collapse;
             border: 1px solid black;
             background: white;
-            table-layout: fixed;
         }
 
-        .file-table th {
+        .file-header-row {
+            display: grid;
+            grid-template-columns: 1fr 120px;
+            align-items: center;
             background: black;
             color: white;
             padding: 10px 12px;
-            text-align: left;
             font-weight: bold;
             border-bottom: 2px solid black;
-            position: relative;
         }
 
-        .file-table td {
+        .file-header-row .actions-col-h {
+            text-align: right;
+        }
+
+        .file-tree-body {
+            min-height: 40px;
+        }
+
+        .tree-folder {
+            border-bottom: 1px solid #eee;
+        }
+
+        .tree-folder:last-child {
+            border-bottom: none;
+        }
+
+        .folder-summary {
+            cursor: pointer;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            font-weight: 600;
+            color: #111;
+            user-select: none;
+        }
+
+        .folder-summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .folder-summary::before {
+            content: '▶';
+            display: inline-block;
+            width: 1em;
+            margin-right: 6px;
+            font-size: 10px;
+            transition: transform 0.15s ease;
+        }
+
+        details[open]>.folder-summary::before {
+            transform: rotate(90deg);
+        }
+
+        .tree-children {
+            padding-left: 0;
+            border-left: 2px solid #e8e8e8;
+            margin-left: 14px;
+        }
+
+        .file-row {
+            display: grid;
+            grid-template-columns: 1fr 120px;
+            align-items: center;
+            gap: 8px;
             padding: 8px 12px;
             border-bottom: 1px solid #ddd;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            background: #fff;
         }
 
-        .file-table tbody tr:hover {
-            background: #f5f5f5;
+        .file-row:hover {
+            background: #f0f7ff !important;
         }
 
-        .file-table th,
-        .file-table td {
-            white-space: nowrap;
+        .file-row .name-part {
+            min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .file-row .actions-part {
+            text-align: right;
+            flex-shrink: 0;
         }
 
         .name-col {
@@ -116,66 +173,33 @@
 
         /* Responsive design */
         @media (max-width: 768px) {
-            .file-table thead {
-                display: none;
+            .file-header-row {
+                grid-template-columns: 1fr 80px;
+                font-size: 13px;
             }
 
-            .file-table,
-            .file-table tbody,
-            .file-table tr,
-            .file-table td {
-                display: block;
-                width: 100%;
+            .file-row {
+                grid-template-columns: 1fr 80px;
+                font-size: 13px;
             }
 
-            .file-table tr {
-                border: 1px solid #ccc;
-                margin-bottom: 10px;
-                padding: 10px;
-                background: white;
-            }
-
-            .file-table td {
-                border: none;
-                padding: 5px 0;
-                position: relative;
-                padding-left: 50%;
-            }
-
-            .file-table td:before {
-                content: attr(data-label) ": ";
-                position: absolute;
-                left: 6px;
-                width: 45%;
-                padding-right: 10px;
-                white-space: nowrap;
-                font-weight: bold;
-            }
-
-            .name-cell::before {
-                display: none;
-            }
-
-            .actions-cell {
-                padding-left: 10px !important;
-                text-align: left !important;
-            }
-
-            .actions-cell::before {
-                content: "Download: ";
-                position: absolute;
-                left: 6px;
-                width: 45%;
-                padding-right: 10px;
-                white-space: nowrap;
-                font-weight: bold;
-            }
-
-            .action-link {
-                display: inline-block;
-                margin: 5px 5px 5px 0;
+            .folder-summary {
+                font-size: 13px;
+                padding: 10px 8px;
             }
         }
+
+        [data-theme="dark"] body { background-color: #1a1a2e; color: #e0e0e0; }
+        [data-theme="dark"] .header { border-color: #444; }
+        [data-theme="dark"] .file-browser { background: #1e1e2e; border-color: #444; }
+        [data-theme="dark"] .file-header-row { background: #2a2a3e; color: #e0e0e0; border-color: #444; }
+        [data-theme="dark"] .file-row { border-color: #333; color: #e0e0e0; background: #1e1e2e; }
+        [data-theme="dark"] .file-row:hover { background: #2a2a3e !important; }
+        [data-theme="dark"] .folder-summary { color: #e0e0e0; }
+        [data-theme="dark"] .tree-children { border-left-color: #444; }
+        [data-theme="dark"] .tree-folder { border-color: #333; }
+        [data-theme="dark"] .action-link { color: #58a6ff; background: #1a2744; border-color: #2563eb; }
+        [data-theme="dark"] a { color: #58a6ff; }
     </style>
 </head>
 
@@ -185,35 +209,18 @@
             <h1>📁 Shared Files</h1>
         </div>
 
-        <table class="file-table" id="fileTable">
-            <thead>
-                <tr>
-                    <th class="name-col">📄 Name</th>
-                    <th class="actions-col">⬇️ Download</th>
-                </tr>
-            </thead>
-            <tbody id="fileTableBody">
-                <!-- Files will be populated by JavaScript -->
-                {% if files %}
-                {% for file_path in files %}
-                <tr>
-                    <td class="name-cell" data-label="Name">
-                        <span class="file-icon">📄</span>
-                        <span>{{ file_path.split('/')[-1] }}</span>
-                    </td>
-                    <td class="actions-cell" data-label="Download">
-                        <a href="/shared/{{ share_id }}/file/{{ file_path }}?download=1" class="action-link"
-                            title="Download">⬇️</a>
-                    </td>
-                </tr>
-                {% end %}
-                {% else %}
-                <tr>
-                    <td colspan="2" style="text-align: center; padding: 20px;">No files available</td>
-                </tr>
-                {% end %}
-            </tbody>
-        </table>
+        <div class="file-browser" id="fileBrowser">
+            <div class="file-header-row">
+                <span class="name-col-h">📄 Name</span>
+                <span class="actions-col-h">⬇️ Download</span>
+            </div>
+            <div id="fileTreeBody" class="file-tree-body">
+                <div class="file-row" style="border: none;">
+                    <span class="name-part" style="color:#666;">Loading…</span>
+                    <span class="actions-part"></span>
+                </div>
+            </div>
+        </div>
 
     </div>
 
@@ -287,39 +294,146 @@
             window.open(fileUrl, '_blank');
         }
 
-        // Function to render files in table format
+        /** Normalize path segments (handles Windows backslashes in shared paths). */
+        function pathParts(p) {
+            return String(p).replace(/\\/g, '/').split('/').filter(Boolean);
+        }
+
+        /** Build a folder tree from flat path strings. Deeper paths are inserted first to reduce conflicts. */
+        function buildPathTree(paths) {
+            const root = { name: '', children: new Map(), isFile: false, fullPath: '' };
+            const list = [...paths].sort((a, b) => pathParts(b).length - pathParts(a).length);
+            for (const raw of list) {
+                const parts = pathParts(raw);
+                if (parts.length === 0) continue;
+                let node = root;
+                let skip = false;
+                for (let i = 0; i < parts.length; i++) {
+                    const part = parts[i];
+                    const last = i === parts.length - 1;
+                    if (!node.children.has(part)) {
+                        node.children.set(part, {
+                            name: part,
+                            children: new Map(),
+                            isFile: last,
+                            fullPath: last ? raw : '',
+                        });
+                    }
+                    const child = node.children.get(part);
+                    if (last) {
+                        if (!child.isFile && child.children.size > 0) {
+                            skip = true;
+                            break;
+                        }
+                        child.isFile = true;
+                        child.fullPath = raw;
+                    } else {
+                        if (child.isFile) {
+                            skip = true;
+                            break;
+                        }
+                    }
+                    node = child;
+                }
+                if (skip) continue;
+            }
+            return root;
+        }
+
+        function sortTreeEntries(childrenMap) {
+            return [...childrenMap.entries()].sort((a, b) => {
+                const nodeA = a[1];
+                const nodeB = b[1];
+                if (nodeA.isFile !== nodeB.isFile) return nodeA.isFile ? 1 : -1;
+                return a[0].localeCompare(b[0], undefined, { sensitivity: 'base' });
+            });
+        }
+
+        function renderTreeNode(node, depth) {
+            if (node.isFile) {
+                const row = document.createElement('div');
+                row.className = 'file-row';
+                row.style.paddingLeft = `${12 + depth * 16}px`;
+
+                const nameEl = document.createElement('div');
+                nameEl.className = 'name-part';
+                const icon = document.createElement('span');
+                icon.className = 'file-icon';
+                icon.textContent = getFileIcon(node.name) + '\u00A0';
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = node.name;
+                nameEl.appendChild(icon);
+                nameEl.appendChild(nameSpan);
+
+                const action = document.createElement('div');
+                action.className = 'actions-part';
+                const a = document.createElement('a');
+                a.href = `/shared/${shareId}/file/${encodeURIComponent(node.fullPath)}?download=1`;
+                a.className = 'action-link';
+                a.title = 'Download';
+                a.textContent = '⬇️';
+                action.appendChild(a);
+
+                row.appendChild(nameEl);
+                row.appendChild(action);
+                if (node.fullPath) row.title = node.fullPath;
+                return row;
+            }
+
+            const details = document.createElement('details');
+            details.className = 'tree-folder';
+            if (depth === 0) details.open = true;
+
+            const summary = document.createElement('summary');
+            summary.className = 'folder-summary';
+            summary.style.paddingLeft = `${12 + depth * 16}px`;
+            summary.textContent = '📁 ' + node.name;
+
+            const wrap = document.createElement('div');
+            wrap.className = 'tree-children';
+            sortTreeEntries(node.children).forEach(([, child]) => {
+                wrap.appendChild(renderTreeNode(child, depth + 1));
+            });
+
+            details.appendChild(summary);
+            details.appendChild(wrap);
+            return details;
+        }
+
         function renderFiles(files) {
-            const tbody = document.getElementById('fileTableBody');
-            tbody.innerHTML = '';
+            const container = document.getElementById('fileTreeBody');
+            container.innerHTML = '';
 
             if (!files || files.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; padding: 20px;">No files available</td></tr>';
+                const empty = document.createElement('div');
+                empty.className = 'file-row';
+                empty.style.border = 'none';
+                empty.style.justifyContent = 'center';
+                empty.style.gridTemplateColumns = '1fr';
+                empty.textContent = 'No files available';
+                empty.style.textAlign = 'center';
+                empty.style.padding = '20px';
+                empty.style.color = '#666';
+                container.appendChild(empty);
                 return;
             }
 
-            // Sort files: folders first, then files, both alphabetically
-            const sortedFiles = files.sort((a, b) => {
-                // For shared files, we don't have actual folders, just file paths
-                // So we'll just sort alphabetically
-                return a.localeCompare(b);
+            const tree = buildPathTree(files);
+            sortTreeEntries(tree.children).forEach(([, child]) => {
+                container.appendChild(renderTreeNode(child, 0));
             });
-
-            sortedFiles.forEach(filePath => {
-                const fileName = filePath.split('/').pop();
-
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td class="name-cell" data-label="Name">
-                        <span class="file-icon">${getFileIcon(fileName)}</span>
-                        <span>${fileName}</span>
-                    </td>
-                    <td class="actions-cell" data-label="Download">
-                        <a href="/shared/${shareId}/file/${encodeURIComponent(filePath)}?download=1" class="action-link" title="Download">⬇️</a>
-                    </td>
-                `;
-
-                tbody.appendChild(row);
-            });
+            if (container.childElementCount === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'file-row';
+                empty.style.border = 'none';
+                empty.style.gridTemplateColumns = '1fr';
+                empty.style.justifyContent = 'center';
+                empty.style.textAlign = 'center';
+                empty.style.padding = '20px';
+                empty.style.color = '#666';
+                empty.textContent = 'No files available';
+                container.appendChild(empty);
+            }
         }
 
         // Check if we have a token on page load
@@ -331,18 +445,27 @@
                 return;
             }
 
-            // Render files in table format
             try {
-                const files = {{ files_json }};
-            console.log('Files type:', typeof files);
-            console.log('Files length:', files ? files.length : 'undefined');
-            renderFiles(files);
-        } catch (error) {
-            console.error('Error processing files data:', error);
-            document.getElementById('fileTableBody').innerHTML = '<tr><td colspan="2" style="text-align: center; padding: 20px; color: red;">Error loading files data</td></tr>';
-        }
+                const files = {% raw files_json %};
+                renderFiles(Array.isArray(files) ? files : []);
+            } catch (error) {
+                console.error('Error processing files data:', error);
+                const el = document.getElementById('fileTreeBody');
+                if (el) {
+                    el.innerHTML = '';
+                    const err = document.createElement('div');
+                    err.className = 'file-row';
+                    err.style.border = 'none';
+                    err.style.color = 'red';
+                    err.style.padding = '20px';
+                    err.style.textAlign = 'center';
+                    err.textContent = 'Error loading files data';
+                    el.appendChild(err);
+                }
+            }
         });
     </script>
+    <script src="/static/js/theme.js"></script>
 </body>
 
 </html>

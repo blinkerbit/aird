@@ -25,19 +25,7 @@
       padding: 20px 10px;
     }
 
-    .header {
-      border-bottom: 2px solid black;
-      padding-bottom: 15px;
-      margin-bottom: 20px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .header h1 {
-      font-size: 24px;
-      font-weight: bold;
-    }
+    {% include '_app_nav_header_styles.html' %}
 
     .breadcrumb {
       font-size: 14px;
@@ -51,6 +39,11 @@
 
     .breadcrumb a:hover {
       text-decoration: underline;
+    }
+
+    /* Path shown next to the folder list (not lost under the config panel) */
+    .file-browser-path {
+      margin-bottom: 12px;
     }
 
     .selection-panel {
@@ -1002,26 +995,39 @@
     .sq-style-fef9ee { margin: 10px 0; padding: 8px; background: #f8f9fa; border-radius: 4px; }
     .sq-style-8c1855 { background: #e9ecef; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 11px; word-break: break-all; }
     .sq-style-bfef8f { margin-left: 8px; font-size: 10px; padding: 2px 6px; }
+
+    [data-theme="dark"] body { background: #1a1a2e; color: #e0e0e0; }
+    [data-theme="dark"] .breadcrumb a { color: #58a6ff; }
+    [data-theme="dark"] .btn { background: #2a2a3e; color: #e0e0e0; border-color: #555; }
+    [data-theme="dark"] .btn:hover { background: #333; }
+    [data-theme="dark"] .selection-panel { background: #1e1e2e; border-color: #444; }
+    [data-theme="dark"] .file-table { background: #1e1e2e; border-color: #444; }
+    [data-theme="dark"] .file-table th { background: #2a2a3e; color: #e0e0e0; border-color: #444; }
+    [data-theme="dark"] .file-table td { border-color: #333; color: #e0e0e0; }
+    [data-theme="dark"] .file-table tbody tr:hover { background: #2a2a3e; }
+    [data-theme="dark"] input[type="text"],
+    [data-theme="dark"] select,
+    [data-theme="dark"] textarea { background: #222; color: #e0e0e0; border-color: #444; }
+    [data-theme="dark"] .popup-content { background: #1e1e2e; border-color: #444; color: #e0e0e0; }
+    [data-theme="dark"] .popup-header { border-color: #444; }
+    [data-theme="dark"] .popup-close:hover { background: #333; }
+    [data-theme="dark"] a { color: #58a6ff; }
+    [data-theme="dark"] .sq-style-a28ca9 { color: #aaa; }
+    [data-theme="dark"] .sq-style-d92075 { background: #1a2744; color: #58a6ff; }
+    [data-theme="dark"] .sq-style-568262 { background: #2a2211; border-color: #665500; color: #fbbf24; }
+    [data-theme="dark"] .sq-style-fef9ee { background: #222; }
+    [data-theme="dark"] .sq-style-8c1855 { background: #333; color: #e0e0e0; }
   </style>
 </head>
 
 <body>
   <div class="container">
-    <div class="header">
-      <div>
-        <h1>Share Files</h1>
-        <div class="breadcrumb">
-          <a href="/files/">🏠 Home</a> /
-          <span id="currentPath">Browse & Select Files</span>
-        </div>
-      </div>
-      <div class="sq-style-b512c9">
-        <a class="sq-style-a28ca9" href="/profile">👤 {{
-          handler.get_display_username() }}</a>
-        <a href="/files/" class="btn">📁 Browse Files</a>
-        <a href="/logout" class="btn">↩ Logout</a>
-      </div>
-    </div>
+    {% set nav_title = "Aird" %}
+{% set nav_search_path = "" %}
+{% set show_admin_link = False %}
+{% include '_app_nav_header.html' %}
+
+    <h2 style="font-size: 18px; margin: 0 0 12px 0; font-weight: bold;">Share Files</h2>
 
     <!-- Selection Panel -->
     <div class="selection-panel">
@@ -1169,6 +1175,10 @@
     </div>
 
     <!-- File Browser -->
+    <div class="breadcrumb file-browser-path" aria-label="Current directory">
+      <a href="/files/">🏠 Home</a> /
+      <span id="currentPath">Browse & Select Files</span>
+    </div>
     <table class="file-table" id="fileTable">
       <thead>
         <tr>
@@ -2255,8 +2265,7 @@
       const isDynamic = share.share_type === 'dynamic';
       const currentBadge = '<span class="sq-style-e524ca">← Current</span>';
       const expiryValue = share.expiry_date ? new Date(share.expiry_date).toISOString().slice(0, 16) : '';
-      const expiryDisplaySpan = document.createElement('strong');
-      expiryDisplaySpan.textContent = share.expiry_date
+      const expiryDisplay = share.expiry_date
         ? new Date(share.expiry_date).toLocaleString()
         : 'No expiration';
 
@@ -3453,6 +3462,7 @@
       });
     });
   </script>
+  <script src="/static/js/theme.js"></script>
 </body>
 
 </html>

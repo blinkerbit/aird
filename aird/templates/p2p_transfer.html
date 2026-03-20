@@ -13,8 +13,8 @@
             --accent-color: #000000;
             --grid-color: #e5e5e5;
             --error-color: #dc2626;
-            --shadow: 6px 6px 0px 0px rgba(0, 0, 0, 1);
-            --shadow-hover: 2px 2px 0px 0px rgba(0, 0, 0, 1);
+            --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            --shadow-hover: 0 1px 2px rgba(0, 0, 0, 0.06);
             --transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
@@ -40,43 +40,37 @@
             padding: 20px;
         }
 
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 2px solid black;
-            padding-bottom: 15px;
-            margin-bottom: 20px;
-        }
+        {% include '_app_nav_header_styles.html' %}
 
-        .header h1 {
-            font-size: 32px;
+        .p2p-page-title {
+            font-size: 28px;
             font-weight: 700;
             letter-spacing: -1px;
             text-transform: uppercase;
+            margin: 0 0 12px 0;
+            line-height: 1.2;
         }
 
-        .breadcrumb a {
+        .p2p-subnav .breadcrumb a {
             color: var(--bg-color);
             background: var(--text-color);
             text-decoration: none;
             padding: 2px 8px;
             font-weight: bold;
             border: 2px solid var(--border-color);
-            box-shadow: 2px 2px 0px 0px rgba(0, 0, 0, 1);
+            box-shadow: var(--shadow);
             transition: var(--transition);
             display: inline-block;
         }
 
-        .breadcrumb a:hover {
+        .p2p-subnav .breadcrumb a:hover {
             text-decoration: none;
             background: #222;
-            transform: translate(1px, 1px);
-            box-shadow: 1px 1px 0px 0px rgba(0, 0, 0, 1);
+            box-shadow: var(--shadow-hover);
         }
-        
-        .breadcrumb a:active {
-            transform: translate(2px, 2px);
+
+        .p2p-subnav .breadcrumb a:active {
+            transform: translate(1px, 1px);
             box-shadow: none;
         }
 
@@ -96,18 +90,17 @@
             font-size: 14px;
             font-weight: bold;
             text-transform: uppercase;
-            box-shadow: 4px 4px 0px 0px rgba(0, 0, 0, 1);
+            box-shadow: var(--shadow);
             transition: var(--transition);
         }
 
         .nav-links a:hover {
-            transform: translate(2px, 2px);
-            box-shadow: 2px 2px 0px 0px rgba(0, 0, 0, 1);
+            box-shadow: var(--shadow-hover);
             background: #e0e0e0;
         }
 
         .nav-links a:active {
-            transform: translate(4px, 4px);
+            transform: translate(1px, 1px);
             box-shadow: none;
         }
 
@@ -120,13 +113,39 @@
             background: #222;
         }
 
+        /* FILES + Super Search — flat elevation (no skew), gray hover */
+        .nav-links a.nav-pill {
+            position: relative;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+            transition:
+                transform 0.15s ease-out,
+                box-shadow 0.15s ease-out,
+                background 0.15s ease-out;
+        }
+
+        .nav-links a.nav-pill:hover {
+            background: #ebebeb;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+        }
+
+        .nav-links a.nav-pill:active {
+            transform: translateY(1px);
+            background: #e2e2e2;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+            transition-duration: 0.08s;
+        }
+
+        .nav-links a.nav-pill:focus-visible {
+            outline: 2px solid var(--text-color);
+            outline-offset: 3px;
+        }
+
         .section {
             margin-bottom: 30px;
             padding: 20px;
             background: white;
             border: 2px solid var(--border-color);
             box-shadow: var(--shadow);
-            transform-style: preserve-3d;
             animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
             opacity: 0;
             transform: translateY(20px);
@@ -160,17 +179,23 @@
             cursor: pointer;
             text-align: center;
             transition: var(--transition);
-            box-shadow: 4px 4px 0px 0px rgba(0, 0, 0, 1);
+            box-shadow: var(--shadow);
         }
 
         .mode-btn:hover {
-            transform: translate(2px, 2px);
-            box-shadow: 2px 2px 0px 0px rgba(0, 0, 0, 1);
+            box-shadow: var(--shadow-hover);
             background: #f5f5f5;
         }
 
-        .mode-btn:active, .mode-btn.active {
-            transform: translate(4px, 4px);
+        .mode-btn:active {
+            transform: translate(1px, 1px);
+            box-shadow: none;
+            border-color: var(--text-color);
+            background: var(--text-color);
+            color: var(--bg-color);
+        }
+
+        .mode-btn.active {
             box-shadow: none;
             border-color: var(--text-color);
             background: var(--text-color);
@@ -222,8 +247,7 @@
 
         .form-group input[type="text"]:focus,
         .form-group input[type="file"]:focus {
-            box-shadow: 4px 4px 0px 0px rgba(0, 0, 0, 0.1);
-            transform: translate(-2px, -2px);
+            box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
         }
 
         .btn {
@@ -238,24 +262,23 @@
             cursor: pointer;
             transition: var(--transition);
             position: relative;
-            box-shadow: 4px 4px 0px 0px rgba(0, 0, 0, 1);
+            box-shadow: var(--shadow);
         }
 
         .btn:hover {
-            transform: translate(2px, 2px);
-            box-shadow: 2px 2px 0px 0px rgba(0, 0, 0, 1);
+            box-shadow: var(--shadow-hover);
             background: #222;
         }
 
         .btn:active {
-            transform: translate(4px, 4px);
+            transform: translate(1px, 1px);
             box-shadow: none;
         }
 
         .btn:disabled {
             background: #b3b3b3;
             border-color: #b3b3b3;
-            color: #595959;
+            color: #404040;
             cursor: not-allowed;
             transform: none;
             box-shadow: none;
@@ -288,7 +311,7 @@
             text-align: center;
             margin: 15px 0;
             overflow: hidden;
-            box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);
+            box-shadow: var(--shadow);
         }
 
         .share-code {
@@ -321,25 +344,25 @@
         .status-indicator.waiting {
             background: repeating-linear-gradient(45deg, #ffffff, #ffffff 10px, #f0f0f0 10px, #f0f0f0 20px);
             color: var(--text-color);
-            box-shadow: 2px 2px 0px 0px rgba(0,0,0,1);
+            box-shadow: var(--shadow);
         }
 
         .status-indicator.connected {
             background: var(--text-color);
             color: var(--bg-color);
-            box-shadow: 2px 2px 0px 0px rgba(0,0,0,1);
+            box-shadow: var(--shadow);
         }
 
         .status-indicator.transferring {
             background: repeating-linear-gradient(45deg, #000000, #000000 10px, #222222 10px, #222222 20px);
             color: var(--bg-color);
-            box-shadow: 2px 2px 0px 0px rgba(0,0,0,1);
+            box-shadow: var(--shadow);
         }
 
         .status-indicator.error {
             background: var(--bg-color);
             color: var(--text-color);
-            box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);
+            box-shadow: var(--shadow);
         }
 
         .status-dot {
@@ -378,7 +401,7 @@
             border: 2px solid var(--border-color);
             padding: 15px;
             margin: 15px 0;
-            box-shadow: 2px 2px 0px 0px rgba(0,0,0,1);
+            box-shadow: var(--shadow);
         }
 
         .file-info-row {
@@ -413,7 +436,7 @@
             background: var(--bg-color);
             border: 2px solid var(--border-color);
             overflow: hidden;
-            box-shadow: inset 2px 2px 0px 0px rgba(0,0,0,0.1);
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.06);
         }
 
         .progress-fill {
@@ -455,7 +478,7 @@
         .drop-zone.dragover {
             border: 2px solid var(--border-color);
             background: var(--bg-color);
-            box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);
+            box-shadow: var(--shadow);
         }
 
         .drop-zone-icon {
@@ -474,7 +497,7 @@
             font-size: 11px;
             font-weight: bold;
             margin-top: 15px;
-            box-shadow: inset 4px 4px 0px 0px rgba(0,0,0,0.05);
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.04);
         }
 
         .log-entry {
@@ -567,17 +590,16 @@
             justify-content: center;
             gap: 6px;
             position: relative;
-            box-shadow: 2px 2px 0px 0px rgba(0, 0, 0, 1);
+            box-shadow: var(--shadow);
         }
 
         .received-file-btn:hover {
             background: #f0f0f0;
-            transform: translate(1px, 1px);
-            box-shadow: 1px 1px 0px 0px rgba(0, 0, 0, 1);
+            box-shadow: var(--shadow-hover);
         }
 
         .received-file-btn:active {
-            transform: translate(2px, 2px);
+            transform: translate(1px, 1px);
             box-shadow: none;
         }
 
@@ -647,7 +669,7 @@
 
         .qr-code-container canvas {
             border: 4px solid white;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            box-shadow: var(--shadow);
             border-radius: 4px;
         }
 
@@ -667,18 +689,17 @@
             font-weight: bold;
             text-transform: uppercase;
             margin-top: 10px;
-            box-shadow: 2px 2px 0px 0px rgba(0, 0, 0, 1);
+            box-shadow: var(--shadow);
             transition: var(--transition);
         }
 
         .qr-toggle-btn:hover {
             background: #f0f0f0;
-            transform: translate(1px, 1px);
-            box-shadow: 1px 1px 0px 0px rgba(0, 0, 0, 1);
+            box-shadow: var(--shadow-hover);
         }
 
         .qr-toggle-btn:active {
-            transform: translate(2px, 2px);
+            transform: translate(1px, 1px);
             box-shadow: none;
         }
 
@@ -727,7 +748,7 @@
         }
     
     /* Auto-extracted SonarQube styles */
-    .sq-style-f93d70 { display: none; background: repeating-linear-gradient(45deg, #ffffff, #ffffff 10px, #f0f0f0 10px, #f0f0f0 20px); color: var(--text-color); padding: 12px; border: 2px solid var(--border-color); box-shadow: 4px 4px 0px 0px rgba(0,0,0,1); margin-bottom: 20px; align-items: center; gap: 10px; font-weight: bold; text-transform: uppercase; }
+    .sq-style-f93d70 { display: none; background: repeating-linear-gradient(45deg, #ffffff, #ffffff 10px, #f0f0f0 10px, #f0f0f0 20px); color: var(--text-color); padding: 12px; border: 2px solid var(--border-color); box-shadow: var(--shadow); margin-bottom: 20px; align-items: center; gap: 10px; font-weight: bold; text-transform: uppercase; }
     .sq-style-98ea50 { background: repeating-linear-gradient(45deg, #ffffff, #ffffff 10px, #f0f0f0 10px, #f0f0f0 20px); color: var(--text-color); padding: 10px; border: 2px dashed var(--border-color); margin-bottom: 15px; font-weight: bold; text-transform: uppercase; }
     .sq-style-d0a913 { text-align: center; margin-top: 10px; font-size: 12px; color: #595959; font-weight: bold; text-transform: uppercase; }
     .sq-style-2bd300 { margin-top: 20px; border-top: 2px dashed var(--border-color); padding-top: 15px; }
@@ -739,7 +760,7 @@
     .sq-style-224b51 { display: none; }
     .sq-style-194b57 { margin-top: 20px; }
     .sq-style-e77389 { font-size: 14px; margin-bottom: 10px; text-transform: uppercase; }
-    .sq-style-98648e { background: var(--bg-color); border: 2px solid var(--border-color); box-shadow: 2px 2px 0px 0px rgba(0,0,0,1); max-height: 250px; overflow-y: auto; }
+    .sq-style-98648e { background: var(--bg-color); border: 2px solid var(--border-color); box-shadow: var(--shadow); max-height: 250px; overflow-y: auto; }
     .sq-style-9241f8 { margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
     .sq-style-d3ab62 { font-size: 12px; font-weight: bold; }
     .sq-style-ae2dfd { text-align: center; margin-top: 10px; display: flex; justify-content: center; gap: 10px; }
@@ -767,33 +788,55 @@
     .sq-style-f89798 { color: #16a34a; }
     .sq-style-e60fe6 { color: #6366f1; }
     .sq-style-166c56 { color: #6b7280; }
+
+    [data-theme="dark"] {
+        --bg-color: #1a1a2e;
+        --text-color: #e0e0e0;
+        --border-color: #555;
+        --accent-color: #58a6ff;
+        --grid-color: #2a2a3e;
+        --error-color: #f87171;
+        --shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        --shadow-hover: 0 1px 2px rgba(0, 0, 0, 0.15);
+    }
+    [data-theme="dark"] .container { color: #e0e0e0; }
+    [data-theme="dark"] .header { border-color: #444; }
+    [data-theme="dark"] .breadcrumb a { color: #58a6ff; }
+    [data-theme="dark"] input,
+    [data-theme="dark"] select { background: #222; color: #e0e0e0; border-color: #555; }
+    [data-theme="dark"] .primary-btn { background: #333; color: #e0e0e0; border-color: #555; }
+    [data-theme="dark"] a { color: #58a6ff; }
+    [data-theme="dark"] .nav-links a.nav-pill {
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.35);
+        border-color: #666;
+    }
+    [data-theme="dark"] .nav-links a.nav-pill:hover {
+        background: #2c2c2c;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+    }
+    [data-theme="dark"] .nav-links a.nav-pill:active {
+        background: #333;
+        box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+    }
   </style>
 </head>
 
 <body>
     <div class="container">
-        <div class="header">
-            <div>
-                <h1>P2P FILE TRANSFER</h1>
-                <div class="breadcrumb">
-                    <a href="/files/">HOME</a> / P2P TRANSFER
-                </div>
-            </div>
-            <div class="nav-links">
-                <a href="/files/">FILES</a>
-                <a href="/search">SUPER SEARCH</a>
-                {% if current_user %}
-                <a href="/logout" class="primary-btn">LOGOUT</a>
-                {% else %}
-                <a href="/login" class="primary-btn">LOGIN</a>
-                {% end %}
-            </div>
+        {% set nav_title = "Aird" %}
+{% set nav_search_path = "" %}
+{% set show_admin_link = False %}
+{% include '_app_nav_header.html' %}
+
+        <h2 class="p2p-page-title">P2P FILE TRANSFER</h2>
+        <div class="breadcrumb p2p-subnav" style="margin-bottom: 16px;">
+            <a href="/files/">HOME</a> / P2P TRANSFER
         </div>
 
         <!-- Session Warning Banner -->
         <div class="sq-style-f93d70" id="session-warning">
             <div>
-                <strong>IMPORTANT:</strong> Do not close this tab or browser window while a transfer is in progress. The connection will be lost.
+                <strong>IMPORTANT:</strong> Do not close this tab or browser window until transfers are complete. Closing the window ends your session and the share room—the recipient will no longer be able to join or receive files.
             </div>
         </div>
 
@@ -827,30 +870,7 @@
             </div>
 
             <div class="sq-style-d0a913">
-                <p>[TIP] Use the <strong>Connection Settings</strong> below if you have trouble connecting.</p>
-            </div>
-
-            <!-- Connection Settings -->
-            <div class="sq-style-2bd300">
-                <details>
-                    <summary class="sq-style-1d7b9a">[+] CONNECTION SETTINGS (ADVANCED)</summary>
-                    <div class="sq-style-0d9f0a">
-                        <div class="form-group">
-                            <label for="stun-server-select">STUN Server (NAT Traversal)</label>
-                            <select class="sq-style-591b06" id="stun-server-select">
-                                <option value="google" selected>Google (Default - Reliable)</option>
-                                <option value="mozilla">Mozilla Services</option>
-                                <option value="openstun">OpenSTUN (Ekiga)</option>
-                                <option value="blackberry">Blackberry VOIP</option>
-                                <option value="framasoft">Framasoft</option>
-                            </select>
-                            <p class="sq-style-6b6318">
-                                If connection fails, try selecting a different STUN server. These servers help establish
-                                P2P connections across different networks.
-                            </p>
-                        </div>
-                    </div>
-                </details>
+                <p>[TIP] Use <strong>Connection Settings</strong> further down (below Send / Receive) if you have trouble connecting.</p>
             </div>
         </div>
 
@@ -1023,6 +1043,33 @@
                 <button class="btn" id="join-room-btn">CONNECT</button>
                 <button class="btn btn-secondary" id="cancel-receive-btn">CANCEL</button>
             </div>
+        </div>
+
+        <!-- Connection Settings (always visible - below Send / Receive; can change even after room is created) -->
+        <div class="section" id="connection-settings-section">
+            <details>
+                <summary class="sq-style-1d7b9a">[+] CONNECTION SETTINGS (ADVANCED)</summary>
+                <div class="sq-style-0d9f0a">
+                    <div class="form-group">
+                        <label for="stun-server-select">STUN Server (NAT Traversal)</label>
+                        <select class="sq-style-591b06" id="stun-server-select">
+                            <option value="google" selected>Google (Default - Reliable)</option>
+                            <option value="mozilla">Mozilla Services</option>
+                            <option value="openstun">OpenSTUN (Ekiga)</option>
+                            <option value="blackberry">Blackberry VOIP</option>
+                            <option value="framasoft">Framasoft</option>
+                        </select>
+                        <p class="sq-style-6b6318">
+                            If connection fails, try selecting a different STUN server. These servers help establish
+                            P2P connections across different networks. You can change this anytime—even after creating a room.
+                        </p>
+                        <button type="button" class="btn btn-secondary" id="apply-reconnect-btn" style="margin-top:10px;">
+                            Apply &amp; Reconnect
+                        </button>
+                        <span class="sq-style-6b6318" style="display:block;margin-top:6px;">Reconnects with the new STUN server without leaving the room.</span>
+                    </div>
+                </div>
+            </details>
         </div>
 
         <!-- Connection Log -->
@@ -1510,6 +1557,7 @@
         let requestedFiles = new Set();
         let pendingRequests = [];
         let isTransferring = false;
+        let otherPeerInRoom = false;
         let pendingRoomId = {% if room_id %}"{{ room_id }}"{% else %} null{% end %};
         let receivedFiles = []; // Array to store received files for manual download
 
@@ -1549,7 +1597,28 @@
                     }
                 });
             }
+
+            document.getElementById('apply-reconnect-btn')?.addEventListener('click', restartConnection);
         });
+
+        function updateApplyReconnectButton() {
+            const btn = document.getElementById('apply-reconnect-btn');
+            if (!btn) return;
+            btn.disabled = !(currentRoomId && otherPeerInRoom && ws && ws.readyState === 1);
+        }
+
+        function restartConnection() {
+            if (!currentRoomId || !otherPeerInRoom || !ws || ws.readyState !== 1) return;
+            const btn = document.getElementById('apply-reconnect-btn');
+            if (btn) btn.disabled = true;
+            log('Applying new STUN server and reconnecting...', 'info');
+            closePeerConnection();
+            ws.send(JSON.stringify({ type: 'restart_connection' }));
+            if (currentMode === 'send') {
+                createPeerConnection(true);
+            }
+            setTimeout(updateApplyReconnectButton, 2000);
+        }
 
         function initWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1633,19 +1702,23 @@
 
                     updateSendStatus('waiting', 'Waiting for recipient to connect...');
                     log(`Room created: ${data.room_id}${data.allow_anonymous ? ' (anonymous access enabled)' : ''}`, 'success');
+                    updateApplyReconnectButton();
                     break;
 
                 case 'room_joined':
                     currentRoomId = data.room_id;
+                    otherPeerInRoom = (data.peer_count || 0) >= 2;
                     if (data.file_info) {
                         expectedFileInfo = data.file_info;
                         showReceiveFileInfo(data.file_info);
                     }
                     updateReceiveStatus('waiting', 'Connected! Waiting for sender...');
                     log(`Joined room: ${data.room_id}`, 'success');
+                    updateApplyReconnectButton();
                     break;
 
                 case 'peer_joined':
+                    otherPeerInRoom = true;
                     log(`Peer joined: ${data.username}`, 'success');
                     updateSendStatus('connected', `Connected to ${data.username}`);
                     // Sender initiates the connection
@@ -1653,12 +1726,23 @@
                         createPeerConnection(true);
                     }
                     document.getElementById('session-warning').style.display = 'flex';
+                    updateApplyReconnectButton();
                     break;
 
                 case 'peer_left':
+                    otherPeerInRoom = false;
                     log(`Peer left: ${data.username}`, 'info');
                     closePeerConnection();
                     document.getElementById('session-warning').style.display = 'none';
+                    updateApplyReconnectButton();
+                    break;
+
+                case 'restart_connection':
+                    log(`Reconnecting with new settings (requested by ${data.username || 'peer'})...`, 'info');
+                    closePeerConnection();
+                    if (currentMode === 'send') {
+                        createPeerConnection(true);
+                    }
                     break;
 
                 case 'offer':
@@ -2566,6 +2650,7 @@
             });
         });
     </script>
+    <script src="/static/js/theme.js"></script>
 </body>
 
 </html>

@@ -16,8 +16,11 @@
         #canvas-wrap { overflow: auto; text-align: center; padding: 20px; min-height: calc(100vh - 50px); }
         #pdf-canvas { box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
         .error { padding: 20px; color: #f66; }
+
+        [data-theme="dark"] body { background: #1a1a2e; }
+        [data-theme="dark"] .header { background: #111; border-color: #333; }
     </style>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" nonce="{{ csp_nonce }}"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" integrity="sha512-q+4liFwdPC/bNdhUpZx6aXDx/h77yEQtn4I1slHydcbZK34nLaR3cAeYSJshoxIOq3mjEf7xJE8YWIUHMn+oCQ==" crossorigin="anonymous" referrerpolicy="no-referrer" nonce="{{ csp_nonce }}"></script>
 </head>
 <body>
     <div class="header">
@@ -88,5 +91,6 @@
             if (pageNum < totalPages) renderPage(pageNum + 1);
         });
     </script>
+    <script src="/static/js/theme.js"></script>
 </body>
 </html>

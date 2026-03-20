@@ -91,6 +91,22 @@
     .markdown-preview blockquote { border-left: 4px solid #ccc; margin: 0; padding-left: 1em; color: #555; }
     button.active-tab { background-color: #ddd; }
 
+    /* Dark mode overrides */
+    [data-theme="dark"] body { background-color: #1a1a2e; color: #e0e0e0; }
+    [data-theme="dark"] header { border-color: #444; }
+    [data-theme="dark"] .breadcrumb a { color: #58a6ff; }
+    [data-theme="dark"] .path { color: #aaa; }
+    [data-theme="dark"] button { background-color: #2a2a3e; color: #e0e0e0; border-color: #555; }
+    [data-theme="dark"] button:hover { background-color: #333; }
+    [data-theme="dark"] button.active-tab { background-color: #444; }
+    [data-theme="dark"] .status { color: #aaa; }
+    [data-theme="dark"] .gutter { background-color: #1e1e2e; color: #888; border-color: #444; background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 1.2em, #222 1.2em, #222 2.4em); }
+    [data-theme="dark"] textarea { background-color: #1a1a2e; color: #e0e0e0; border-color: #444; background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 1.2em, #1e1e2e 1.2em, #1e1e2e 2.4em); }
+    [data-theme="dark"] .markdown-preview pre { background: #222; border-color: #444; }
+    [data-theme="dark"] .markdown-preview code { background: #222; }
+    [data-theme="dark"] .markdown-preview blockquote { border-color: #444; color: #aaa; }
+    [data-theme="dark"] a { color: #58a6ff; }
+
     /* Line numbers gutter styled similar to file view */
     .gutter {
       width: 40px;
@@ -158,7 +174,7 @@
     </div>
   </header>
   {% if is_markdown %}
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" nonce="{{ csp_nonce }}"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/16.3.0/marked.min.js" integrity="sha512-gxBP/mcwo9A5lJDFbVfXNb1hSLpOkHLLXAjld8HfCWjVIZnA3nlNnIqSTLvtwF4t55Dt4Rzh7phL3tJuKZ+teQ==" crossorigin="anonymous" referrerpolicy="no-referrer" nonce="{{ csp_nonce }}"></script>
   {% end %}
   <input type="hidden" id="path" value="/{{ path }}" />
   <div class="editor-wrap" id="editorWrap">
@@ -295,6 +311,7 @@
     })();
     {% end %}
   </script>
+  <script src="/static/js/theme.js"></script>
 </body>
 
 </html>

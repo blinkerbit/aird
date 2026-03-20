@@ -163,13 +163,21 @@ def _try_cookie_auth(handler):
             if user:
                 return user
         if username == "token_authenticated":
-            return {"username": "token_user", "role": "admin"}
+            return {"username": "token_user", "role": "user"}
+        if username == "admin_token_authenticated":
+            if handler.get_secure_cookie("admin"):
+                return {"username": "admin_token", "role": "admin"}
+            return None
         return None
     except Exception:
         if isinstance(user_json, bytes):
             user_str = user_json.decode("utf-8", errors="ignore")
             if user_str == "token_authenticated":
-                return {"username": "token_user", "role": "admin"}
+                return {"username": "token_user", "role": "user"}
+            if user_str == "admin_token_authenticated":
+                if handler.get_secure_cookie("admin"):
+                    return {"username": "admin_token", "role": "admin"}
+                return None
         return None
 
 
@@ -185,7 +193,7 @@ def _try_bearer_auth(handler):
     normalized_token = token.strip()
     normalized_access_token = current_access_token.strip()
     if secrets.compare_digest(normalized_token, normalized_access_token):
-        return {"username": "token_user", "role": "admin"}
+        return {"username": "token_user", "role": "user"}
     return None
 
 
@@ -201,12 +209,35 @@ def authenticate_handler(handler):
     return _try_bearer_auth(handler)
 
 
+def get_username_string_for_db(handler) -> str | None:
+    """Return the login username string for SQLite (e.g. favorites), not the whole user dict.
+
+    ``get_current_user()`` / ``current_user`` may be a dict from ``authenticate_handler``;
+    DB helpers expect a plain ``str`` username.
+    """
+    if not hasattr(handler, "get_current_user"):
+        return None
+    user = handler.get_current_user()
+    if user is None:
+        return None
+    if isinstance(user, dict):
+        name = user.get("username")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+        return None
+    if isinstance(user, bytes):
+        return user.decode("utf-8", errors="replace")
+    return str(user)
+
+
 def _display_username_from_dict(user):
     """Return display string for dict user (from get_current_user)."""
     username = user.get("username", "")
     role = user.get("role", "")
-    if username in ("token_user", "token_authenticated"):
+    if username == "admin_token" and role == "admin":
         return "Admin (Token)"
+    if username == "token_user" and role == "user":
+        return "Access (Token)"
     if role == "admin":
         return f"{username} (Admin)"
     if role:
@@ -219,7 +250,15 @@ def _display_username_from_legacy(user, handler):
     user_str = (
         user.decode("utf-8", errors="ignore") if isinstance(user, bytes) else str(user)
     )
-    if user_str in ("token_authenticated", "authenticated"):
+    if user_str == "token_authenticated":
+        role_cookie = handler.get_secure_cookie("user_role")
+        role = (
+            role_cookie.decode("utf-8", errors="ignore")
+            if isinstance(role_cookie, bytes)
+            else (str(role_cookie) if role_cookie else "")
+        )
+        return "Access (Token)" if role != "admin" else "Admin (Token)"
+    if user_str == "admin_token_authenticated":
         return "Admin (Token)"
     role_cookie = handler.get_secure_cookie("user_role")
     if not role_cookie:
@@ -309,8 +348,8 @@ class BaseHandler(tornado.web.RequestHandler):
         # Use nonce for scripts, keep unsafe-inline for styles (inline style attributes are common)
         csp = (
             f"default-src 'self'; "
-            f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
-            f"style-src 'self' 'unsafe-inline'; "
+            f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+            f"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
             f"img-src 'self' data:; "
             f"connect-src 'self' ws: wss:;"
         )

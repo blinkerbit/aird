@@ -10,8 +10,8 @@ import mmap
 import concurrent.futures
 import logging
 
-from aird.handlers.base_handler import BaseHandler
-from aird.db import get_all_shares
+from aird.handlers.base_handler import BaseHandler, get_username_string_for_db
+from aird.db import get_all_shares, get_user_favorites
 from aird.utils.util import (
     get_files_in_directory,
     get_file_icon,
@@ -115,7 +115,7 @@ async def _serve_raw_mode(handler, abspath):
     except Exception as e:
         logging.error("Error serving raw file: %s", e)
         handler.set_status(500)
-        handler.write("Error serving raw file: " + str(e))
+        handler.write("Error serving file")
 
 
 def _serve_pdf_preview(handler, abspath, filename):
@@ -180,6 +180,12 @@ class MainHandler(BaseHandler):
             parent_path = os.path.dirname(path) if path else None
             # Use SQLite-backed flags for template
             flags_for_template = get_current_feature_flags()
+            # Fetch user favorites
+            user_favorites = set()
+            if db_conn and flags_for_template.get("favorites"):
+                username = get_username_string_for_db(self)
+                if username:
+                    user_favorites = set(get_user_favorites(db_conn, username))
             self.render(
                 "browse.html",
                 current_path=path,
@@ -189,6 +195,7 @@ class MainHandler(BaseHandler):
                 get_file_icon=get_file_icon,
                 features=flags_for_template,
                 max_file_size=constants_module.MAX_FILE_SIZE,
+                user_favorites=user_favorites,
             )
         elif os.path.isfile(abspath):
             await self.serve_file(self, abspath)

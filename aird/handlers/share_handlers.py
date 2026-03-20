@@ -532,7 +532,7 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
             self.write({"error": "Failed to create share. Please try again."})
 
 
-class ShareRevokeHandler(BaseHandler):
+class ShareRevokeHandler(XSRFTokenMixin, BaseHandler):
     @tornado.web.authenticated
     @require_db
     def post(self):
@@ -556,7 +556,7 @@ class ShareRevokeHandler(BaseHandler):
         except Exception as e:
             logging.error(f"Failed to delete share {sid}: {e}")
             self.set_status(500)
-            self.write({"error": f"Failed to delete share: {str(e)}"})
+            self.write({"error": "Failed to delete share"})
 
         if sid:
             remove_share_cloud_dir(sid)
@@ -712,11 +712,13 @@ class SharedListHandler(BaseHandler):
             self.write(user_err[1])
             return
         filtered_files = _get_share_file_list(share)
+        # Replace </script> so the raw JSON is safe to embed directly in a <script> tag
+        files_json_safe = json.dumps(filtered_files).replace("</", "<\\/")
         self.render(
             "shared_list.html",
             share_id=sid,
             files=filtered_files,
-            files_json=json.dumps(filtered_files),
+            files_json=files_json_safe,
         )
 
 
@@ -749,4 +751,15 @@ class SharedFileHandler(BaseHandler):
         if not os.path.isfile(abspath):
             self.set_status(404)
             return
+        # Track download for analytics
+        if self.db_conn:
+            try:
+                log_audit(
+                    self.db_conn,
+                    "share_download",
+                    details=f"share_id={sid} path={path}",
+                    ip=self.request.remote_ip,
+                )
+            except Exception:
+                pass
         await MainHandler.serve_file(self, abspath)

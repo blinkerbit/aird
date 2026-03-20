@@ -41,6 +41,11 @@
         a:hover {
             background-color: #f0f0f0;
         }
+
+        [data-theme="dark"] body { background-color: #1a1a2e; color: #e0e0e0; }
+        [data-theme="dark"] .error-container { border-color: #444; }
+        [data-theme="dark"] a { color: #e0e0e0; border-color: #555; }
+        [data-theme="dark"] a:hover { background-color: #2a2a3e; }
     </style>
 </head>
 <body>
@@ -50,5 +55,6 @@
         <p>Something went wrong. Please try again or contact your administrator.</p>
         <a href="/files/">← Back to Files</a>
     </div>
+    <script src="/static/js/theme.js"></script>
 </body>
 </html>
