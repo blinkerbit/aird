@@ -712,11 +712,13 @@ class SharedListHandler(BaseHandler):
             self.write(user_err[1])
             return
         filtered_files = _get_share_file_list(share)
+        # Replace </script> so the raw JSON is safe to embed directly in a <script> tag
+        files_json_safe = json.dumps(filtered_files).replace("</", "<\\/")
         self.render(
             "shared_list.html",
             share_id=sid,
             files=filtered_files,
-            files_json=json.dumps(filtered_files),
+            files_json=files_json_safe,
         )
 
 

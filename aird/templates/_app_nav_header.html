@@ -1,0 +1,33 @@
+{# Main app header: Aird + profile + Browse + feature nav. Pass: nav_title (default Aird), nav_search_path (for Super Search link), show_admin_link (optional). #}
+<div class="header app-main-header">
+  <div class="header-left">
+    <h1>{{ nav_title or "Aird" }}</h1>
+  </div>
+  <div class="app-header-actions" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end;">
+    {% if current_user %}
+    <a href="/profile" style="font-size: 12px; color: #666; margin-right: 5px; text-decoration: none;">👤 {{ handler.get_display_username() }}</a>
+    {% else %}
+    <span style="font-size: 12px; color: #666; margin-right: 5px;">Guest</span>
+    {% end %}
+    <a href="/files/" class="hdr-action-btn hdr-action-btn--browse" title="Browse files">📂 Browse</a>
+    {% if is_feature_enabled('super_search', True) %}
+    <a href="/search?path={{ escape(nav_search_path or '') }}" class="hdr-action-btn hdr-action-btn--search">🚀 Super Search</a>
+    {% end %}
+    {% if is_feature_enabled('file_share', True) %}
+    <a href="/share" class="hdr-action-btn hdr-action-btn--share">🔗 Share Files</a>
+    {% end %}
+    {% if is_feature_enabled('p2p_transfer', True) %}
+    <a href="/p2p" class="hdr-action-btn hdr-action-btn--p2p">🔀 P2P Transfer</a>
+    {% end %}
+    {% if show_admin_link %}
+    {% if user and user["role"] == "admin" %}
+    <a href="/admin" class="hdr-action-btn hdr-action-btn--admin">⚙️ Admin</a>
+    {% end %}
+    {% end %}
+    {% if current_user %}
+    <a href="/logout" class="hdr-action-btn hdr-action-btn--logout">↩ Logout</a>
+    {% else %}
+    <a href="/login" class="hdr-action-btn hdr-action-btn--login">🔑 Login</a>
+    {% end %}
+  </div>
+</div>

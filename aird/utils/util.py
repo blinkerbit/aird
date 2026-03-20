@@ -343,7 +343,10 @@ def get_current_feature_flags() -> dict:
     global _feature_flags_cache, _feature_flags_cache_ts
 
     now = time.time()
-    if _feature_flags_cache is not None and (now - _feature_flags_cache_ts) < _FEATURE_FLAGS_TTL:
+    if (
+        _feature_flags_cache is not None
+        and (now - _feature_flags_cache_ts) < _FEATURE_FLAGS_TTL
+    ):
         return _feature_flags_cache.copy()
 
     # Start with in-memory flags (which may have just been updated)

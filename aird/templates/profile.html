@@ -6,15 +6,19 @@
         body {
             background-color: white;
             color: black;
-            font-family: monospace;
-            margin: 50px auto;
-            max-width: 600px;
+            font-family: "Courier New", monospace;
+            margin: 20px auto;
+            max-width: 960px;
+            padding: 0 12px;
         }
-        
-        .header {
+
+        {% include '_app_nav_header_styles.html' %}
+
+        .profile-intro {
             border-bottom: 2px solid black;
             padding-bottom: 10px;
-            margin-bottom: 30px;
+            margin-bottom: 24px;
+            margin-top: 8px;
         }
         
         .profile-section {
@@ -74,20 +78,6 @@
             margin: 10px 0;
         }
         
-        .nav-links {
-            margin-bottom: 20px;
-        }
-        
-        .nav-links a {
-            color: black;
-            text-decoration: none;
-            margin-right: 20px;
-        }
-        
-        .nav-links a:hover {
-            text-decoration: underline;
-        }
-        
         .form-group {
             margin: 15px 0;
         }
@@ -99,10 +89,10 @@
         }
 
         .theme-toggle-btn { background: none; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 16px; padding: 4px 8px; line-height: 1; }
+        .appearance-hint { margin-bottom: 12px; color: #555; font-size: 14px; }
 
         [data-theme="dark"] body { background-color: #1a1a2e; color: #e0e0e0; }
-        [data-theme="dark"] .header { border-color: #444; }
-        [data-theme="dark"] .nav-links a { color: #58a6ff; }
+        [data-theme="dark"] .profile-intro { border-color: #444; }
         [data-theme="dark"] a { color: #58a6ff; }
         [data-theme="dark"] .section { border-color: #444; background: #1e1e2e; }
         [data-theme="dark"] input[type="password"],
@@ -112,18 +102,17 @@
         [data-theme="dark"] .error { background-color: #2a1111; color: #f87171; border-color: #dc2626; }
         [data-theme="dark"] .success { background-color: #112a11; color: #4ade80; border-color: #22c55e; }
         [data-theme="dark"] .theme-toggle-btn { border-color: #444; color: #e0e0e0; }
+        [data-theme="dark"] .profile-section { border-color: #444; background: #1e1e2e; }
+        [data-theme="dark"] .appearance-hint { color: #aaa; }
     </style>
 </head>
 <body>
-    <div class="nav-links">
-        <button class="theme-toggle-btn" title="Toggle dark mode">🌙</button>
-        <a href="/files/">← Files</a>
-        {% if user and user['role'] == "admin" %}
-            <a href="/admin">Admin Panel</a>
-        {% end %}
-    </div>
-    
-    <div class="header">
+    {% set nav_title = "Aird" %}
+{% set nav_search_path = "" %}
+{% set show_admin_link = True %}
+{% include '_app_nav_header.html' %}
+
+    <div class="profile-intro">
         <h1>Profile Settings</h1>
         {% if user %}
             <p>User: <strong>{{ escape(user['username']) }}</strong> ({{ escape(user['role']) }})</p>
@@ -138,6 +127,12 @@
     {% if success %}
         <div class="success">{{ escape(success) }}</div>
     {% end %}
+
+    <div class="profile-section">
+        <h3>Appearance</h3>
+        <p class="appearance-hint">Light or dark theme for the whole app. Your choice is saved in this browser.</p>
+        <button type="button" class="theme-toggle-btn" title="Toggle dark mode">🌙</button>
+    </div>
     
     {% if not user %}
         <div class="info">

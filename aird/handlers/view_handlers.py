@@ -10,7 +10,7 @@ import mmap
 import concurrent.futures
 import logging
 
-from aird.handlers.base_handler import BaseHandler
+from aird.handlers.base_handler import BaseHandler, get_username_string_for_db
 from aird.db import get_all_shares, get_user_favorites
 from aird.utils.util import (
     get_files_in_directory,
@@ -183,10 +183,9 @@ class MainHandler(BaseHandler):
             # Fetch user favorites
             user_favorites = set()
             if db_conn and flags_for_template.get("favorites"):
-                username = self.current_user
-                if isinstance(username, bytes):
-                    username = username.decode("utf-8")
-                user_favorites = set(get_user_favorites(db_conn, username))
+                username = get_username_string_for_db(self)
+                if username:
+                    user_favorites = set(get_user_favorites(db_conn, username))
             self.render(
                 "browse.html",
                 current_path=path,

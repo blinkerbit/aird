@@ -11,11 +11,7 @@
             font-family: monospace;
         }
 
-        .header {
-            border-bottom: 2px solid black;
-            padding: 10px 0;
-            margin-bottom: 10px;
-        }
+        {% include "_app_nav_header_styles.html" %}
 
         .breadcrumb a {
             color: black;
@@ -115,9 +111,18 @@
         }
 
         .line-numbers {
+            /* Shrink column to content; "1% + nowrap" is the standard table trick */
+            width: 1%;
+            max-width: 12ch;
+            min-width: 3ch;
+            white-space: nowrap;
+            vertical-align: top;
             text-align: right;
-
+            padding: 2px 10px 2px 4px;
+            box-sizing: border-box;
             border-right: 1px solid #ccc;
+            background-color: #f5f5f5;
+            color: #595959;
             user-select: none;
         }
 
@@ -151,15 +156,28 @@
             }
         }
 
-        table {
+        /* Line + content: keep gutter narrow and flush left (no huge gap before numbers) */
+        #file-content {
             border-collapse: collapse;
             width: 100%;
+            table-layout: fixed;
+        }
+
+        /* Empty header row should not steal width — columns come from tbody */
+        #file-content thead {
+            display: none;
         }
 
         td pre {
             margin: 0;
             padding: 0;
             min-height: 1.2em;
+        }
+
+        #file-content td:not(.line-numbers) {
+            vertical-align: top;
+            word-break: break-word;
+            overflow-wrap: anywhere;
         }
 
         /* Hide line numbers when toggled */
@@ -230,8 +248,6 @@
             }
         }
 
-        .theme-toggle-btn { background: none; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 16px; padding: 4px 8px; line-height: 1; }
-
         #markdown-preview h1, #markdown-preview h2, #markdown-preview h3 { margin-top: 1em; margin-bottom: 0.5em; }
         #markdown-preview pre { background: #f5f5f5; padding: 10px; overflow: auto; border: 1px solid #ddd; border-radius: 4px; }
         #markdown-preview code { background: #f5f5f5; padding: 2px 4px; border-radius: 3px; font-family: monospace; }
@@ -260,21 +276,16 @@
         [data-theme="dark"] .file-info { color: #aaa; }
         [data-theme="dark"] .loading span { color: #e0e0e0; }
         [data-theme="dark"] a { color: #58a6ff; }
-        [data-theme="dark"] .theme-toggle-btn { border-color: #444; color: #e0e0e0; }
     </style>
 </head>
 
 <body>
-    <div class="header" style="display:flex;align-items:center;justify-content:space-between;">
-        <div class="breadcrumb">
-            <a href="/files/">🏠 Home</a>
-        </div>
-        <div style="display: flex; align-items: center; gap: 10px;">
-            <button class="theme-toggle-btn" title="Toggle dark mode" type="button">🌙</button>
-            <a href="/profile" style="font-size: 12px; color: #666; text-decoration: none;">👤 {{
-                handler.get_display_username() }}</a>
-            <a href="/logout" class="download-btn">↩ Logout</a>
-        </div>
+    {% set nav_title = "Aird" %}
+{% set nav_search_path = "" %}
+{% set show_admin_link = False %}
+{% include '_app_nav_header.html' %}
+    <div class="breadcrumb" style="margin-bottom: 10px;">
+        <a href="/files/">🏠 Home</a>
     </div>
     <h2>{{ filename }}</h2>
     <div class="toolbar">

@@ -1,0 +1,5 @@
+# Caddy reverse proxy for Aird
+# Listens on port 80, proxies to aird on port 8000
+:80 {
+    reverse_proxy 127.0.0.1:8000
+}

@@ -6,6 +6,7 @@ import json
 import logging
 import pathlib
 from collections import deque
+from urllib.parse import unquote
 import asyncio
 import aiofiles
 
@@ -221,9 +222,11 @@ class UploadHandler(BaseHandler):
             self._reject_reason = FILE_UPLOAD_DISABLED
             return
 
-        # Read and decode headers provided by client
-        self.upload_dir = self.request.headers.get("X-Upload-Dir", "")
-        self.filename = self.request.headers.get("X-Upload-Filename", "")
+        # Read and URL-decode headers provided by client (frontend uses encodeURIComponent)
+        raw_dir = self.request.headers.get("X-Upload-Dir") or ""
+        raw_filename = self.request.headers.get("X-Upload-Filename") or ""
+        self.upload_dir = unquote(raw_dir)
+        self.filename = unquote(raw_filename)
 
         # Basic validation
         if not self.filename:
@@ -281,7 +284,10 @@ class UploadHandler(BaseHandler):
             return False
         username = self.get_display_username()
         quota = get_user_quota(self.db_conn, username)
-        if quota["quota_bytes"] is not None and quota["used_bytes"] + self._bytes_received > quota["quota_bytes"]:
+        if (
+            quota["quota_bytes"] is not None
+            and quota["used_bytes"] + self._bytes_received > quota["quota_bytes"]
+        ):
             self.set_status(413)
             self.write("Storage quota exceeded")
             return True
@@ -334,7 +340,9 @@ class UploadHandler(BaseHandler):
 
         # Update used bytes
         if is_feature_enabled("storage_quotas", False):
-            update_user_used_bytes(self.db_conn, self.get_display_username(), self._bytes_received)
+            update_user_used_bytes(
+                self.db_conn, self.get_display_username(), self._bytes_received
+            )
 
         log_audit(
             self.db_conn,
@@ -426,9 +434,7 @@ def path_to_rel(abspath):
 class DeleteHandler(BaseHandler):
     def _delete_directory(self, abspath):
         """Delete a directory. Returns True if handled (caller should return early on failure)."""
-        if not self.require_feature(
-            "folder_delete", True, body=FOLDER_DELETE_DISABLED
-        ):
+        if not self.require_feature("folder_delete", True, body=FOLDER_DELETE_DISABLED):
             return False
         recursive = self.get_argument("recursive", "0") == "1"
         if not recursive and os.listdir(abspath):
@@ -456,7 +462,9 @@ class DeleteHandler(BaseHandler):
             pass
         os.remove(abspath)
         if is_feature_enabled("storage_quotas", False) and file_size > 0:
-            update_user_used_bytes(self.db_conn, self.get_display_username(), -file_size)
+            update_user_used_bytes(
+                self.db_conn, self.get_display_username(), -file_size
+            )
         log_audit(
             self.db_conn,
             "file_delete",

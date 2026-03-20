@@ -26,6 +26,7 @@ from aird.handlers.base_handler import (
     BaseHandler,
     ManagedWebSocketMixin,
     authenticate_handler,
+    get_username_string_for_db,
     require_admin,
     require_db,
 )
@@ -901,7 +902,9 @@ class WebSocketStatsHandler(BaseHandler):
 class FavoriteToggleAPIHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self):
-        if not self.require_feature("favorites", True, body={"error": "Favorites disabled"}):
+        if not self.require_feature(
+            "favorites", True, body={"error": "Favorites disabled"}
+        ):
             return
         db_conn = self.db_conn
         if not db_conn:
@@ -919,9 +922,11 @@ class FavoriteToggleAPIHandler(BaseHandler):
             self.set_status(400)
             self.write({"error": "path is required"})
             return
-        username = self.current_user
-        if isinstance(username, bytes):
-            username = username.decode("utf-8")
+        username = get_username_string_for_db(self)
+        if not username:
+            self.set_status(401)
+            self.write({"error": "Could not resolve username"})
+            return
         is_fav = toggle_favorite(db_conn, username, path)
         self.write({"favorited": is_fav, "path": path})
 
@@ -929,15 +934,19 @@ class FavoriteToggleAPIHandler(BaseHandler):
 class FavoritesListAPIHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
-        if not self.require_feature("favorites", True, body={"error": "Favorites disabled"}):
+        if not self.require_feature(
+            "favorites", True, body={"error": "Favorites disabled"}
+        ):
             return
         db_conn = self.db_conn
         if not db_conn:
             self.set_status(500)
             self.write({"error": DB_NOT_AVAILABLE_MSG})
             return
-        username = self.current_user
-        if isinstance(username, bytes):
-            username = username.decode("utf-8")
+        username = get_username_string_for_db(self)
+        if not username:
+            self.set_status(401)
+            self.write({"error": "Could not resolve username"})
+            return
         favorites = get_user_favorites(db_conn, username)
         self.write({"favorites": favorites})

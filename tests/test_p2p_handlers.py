@@ -188,8 +188,8 @@ class TestP2PRoomManager:
     def test_initialization(self):
         """Test room manager initialization."""
         assert self.manager.rooms == {}
-        assert self.manager._cleanup_interval == 3600
-        assert self.manager._max_room_age == 86400
+        assert self.manager.MIN_EXPIRY == 300
+        assert self.manager.MAX_EXPIRY == 604800
 
     def test_create_room_basic(self):
         """Test basic room creation."""
@@ -242,10 +242,9 @@ class TestP2PRoomManager:
         self.manager.remove_room("nonexistent_room_id")
 
     def test_cleanup_old_rooms(self):
-        """Test cleanup of old rooms."""
-        # Create a room and artificially age it
-        room = self.manager.create_room("creator")
-        room.created_at = time.time() - 100000  # Well past max age
+        """Test cleanup of old rooms when expiry_seconds is set."""
+        room = self.manager.create_room("creator", expiry_seconds=3600)
+        room.created_at = time.time() - 100000  # Well past 1h expiry
 
         self.manager.cleanup_old_rooms()
 
@@ -260,8 +259,8 @@ class TestP2PRoomManager:
         assert room.room_id in self.manager.rooms
 
     def test_cleanup_mixed_rooms(self):
-        """Test cleanup with mix of old and new rooms."""
-        old_room = self.manager.create_room("old_creator")
+        """Test cleanup with mix of old (expired) and new (no expiry) rooms."""
+        old_room = self.manager.create_room("old_creator", expiry_seconds=3600)
         old_room.created_at = time.time() - 100000
 
         new_room = self.manager.create_room("new_creator")
@@ -270,6 +269,13 @@ class TestP2PRoomManager:
 
         assert old_room.room_id not in self.manager.rooms
         assert new_room.room_id in self.manager.rooms
+
+    def test_cleanup_skips_rooms_without_expiry(self):
+        """Rooms with no expiry are never removed by age."""
+        room = self.manager.create_room("creator")
+        room.created_at = time.time() - 100000
+        self.manager.cleanup_old_rooms()
+        assert room.room_id in self.manager.rooms
 
 
 # =============================================================================

@@ -4,17 +4,20 @@ Covers: path traversal, authentication, password hashing, CSRF, rate limiting,
 input validation, session management, file operations, share security, and more.
 """
 
+import base64
 import hashlib
 import json
 import os
+import re
 import secrets
+import shutil
 import sqlite3
 import tempfile
 import time
-from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
+import tornado.web
 
 from aird.core.security import (
     is_within_root,
@@ -33,19 +36,20 @@ from aird.database.users import (
     search_users,
 )
 from aird.handlers.auth_handlers import (
+    LoginHandler,
     check_login_rate_limit,
     _LOGIN_ATTEMPTS,
-    _try_token_login,
-    _try_username_password_login,
 )
 from aird.handlers.base_handler import (
+    BaseHandler,
     authenticate_handler,
     _try_cookie_auth,
     _try_bearer_auth,
     XSRFTokenMixin,
 )
 from aird.handlers.file_op_handlers import _validate_upload_destination
-
+from aird.handlers.share_handlers import _is_token_valid, _is_user_allowed
+from aird.network_share_manager import NetworkShareManager
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -64,8 +68,7 @@ def _clear_rate_limits():
 def db():
     """In-memory SQLite database with schema initialised."""
     conn = sqlite3.connect(":memory:")
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS users (
+    conn.execute("""CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
@@ -73,18 +76,15 @@ def db():
             created_at TEXT NOT NULL,
             active INTEGER NOT NULL DEFAULT 1,
             last_login TEXT
-        )"""
-    )
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS audit_log (
+        )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             created_at TEXT NOT NULL,
             username TEXT,
             action TEXT NOT NULL,
             details TEXT,
             ip TEXT
-        )"""
-    )
+        )""")
     conn.commit()
     yield conn
     conn.close()
@@ -95,7 +95,6 @@ def temp_root():
     """Temporary directory for file-operation tests."""
     d = tempfile.mkdtemp(prefix="aird_test_")
     yield d
-    import shutil
     shutil.rmtree(d, ignore_errors=True)
 
 
@@ -158,7 +157,6 @@ class TestPathTraversal:
         except OSError:
             pytest.skip("symlinks not supported on this platform/privileges")
         finally:
-            import shutil
             shutil.rmtree(outside, ignore_errors=True)
             if os.path.islink(link):
                 os.unlink(link)
@@ -200,8 +198,9 @@ class TestPasswordHashing:
         assert verify_password("wrong_password", h) is False
 
     def test_scrypt_fallback(self):
-        with patch("aird.database.users.ARGON2_AVAILABLE", False), \
-             patch("aird.database.users.PH", None):
+        with patch("aird.database.users.ARGON2_AVAILABLE", False), patch(
+            "aird.database.users.PH", None
+        ):
             h = hash_password("test_scrypt_pass")
             assert h.startswith("scrypt:")
             assert verify_password("test_scrypt_pass", h) is True
@@ -290,7 +289,9 @@ class TestPasswordValidation:
         assert "special" in msg
 
     def test_allow_simple_passwords_flag(self):
-        with patch("aird.core.security.FEATURE_FLAGS", {"allow_simple_passwords": True}):
+        with patch(
+            "aird.core.security.FEATURE_FLAGS", {"allow_simple_passwords": True}
+        ):
             ok, msg = validate_password("weak")
             assert ok is True
 
@@ -356,7 +357,7 @@ class TestAuthentication:
             cfg.ACCESS_TOKEN = "test_token_123"
             user = authenticate_handler(handler)
             assert user is not None
-            assert user["role"] == "admin"
+            assert user["role"] == "user"
 
     def test_bearer_auth_invalid(self):
         handler = MagicMock()
@@ -383,7 +384,9 @@ class TestAuthentication:
         handler.get_secure_cookie.return_value = None
         with patch("aird.handlers.base_handler.config_module") as cfg:
             cfg.ACCESS_TOKEN = "abc"
-            with patch("aird.handlers.base_handler.secrets.compare_digest", return_value=True) as mock_cd:
+            with patch(
+                "aird.handlers.base_handler.secrets.compare_digest", return_value=True
+            ) as mock_cd:
                 _try_bearer_auth(handler)
                 mock_cd.assert_called_once()
 
@@ -395,11 +398,14 @@ class TestAuthentication:
         user = _try_cookie_auth(handler)
         assert user is not None
         assert user["username"] == "token_user"
+        assert user["role"] == "user"
 
     def test_cookie_auth_with_db_user(self, db):
         create_user(db, "alice", "Str0ng!Pass#1", role="user")
         handler = MagicMock()
-        handler.get_secure_cookie.return_value = json.dumps({"username": "alice"}).encode()
+        handler.get_secure_cookie.return_value = json.dumps(
+            {"username": "alice"}
+        ).encode()
         handler.settings = {"db_conn": db}
         handler.request.headers = {}
         user = _try_cookie_auth(handler)
@@ -408,7 +414,9 @@ class TestAuthentication:
 
     def test_cookie_auth_nonexistent_user(self, db):
         handler = MagicMock()
-        handler.get_secure_cookie.return_value = json.dumps({"username": "ghost"}).encode()
+        handler.get_secure_cookie.return_value = json.dumps(
+            {"username": "ghost"}
+        ).encode()
         handler.settings = {"db_conn": db}
         handler.request.headers = {}
         user = _try_cookie_auth(handler)
@@ -439,7 +447,9 @@ class TestXSRFProtection:
             headers["X-XSRFToken"] = header_token
         mixin.request = MagicMock()
         mixin.request.headers = MagicMock()
-        mixin.request.headers.get = MagicMock(side_effect=lambda k, d=None: headers.get(k, d))
+        mixin.request.headers.get = MagicMock(
+            side_effect=lambda k, d=None: headers.get(k, d)
+        )
         mixin.get_argument = MagicMock(return_value=post_token)
         return mixin
 
@@ -453,20 +463,17 @@ class TestXSRFProtection:
         mixin.check_xsrf_cookie()
 
     def test_missing_cookie_raises(self):
-        import tornado.web
         mixin = self._make_mixin(None, header_token="token123")
         with pytest.raises(tornado.web.HTTPError) as exc_info:
             mixin.check_xsrf_cookie()
         assert exc_info.value.status_code == 403
 
     def test_missing_provided_token_raises(self):
-        import tornado.web
         mixin = self._make_mixin("token123", header_token=None, post_token=None)
         with pytest.raises(tornado.web.HTTPError):
             mixin.check_xsrf_cookie()
 
     def test_mismatched_token_raises(self):
-        import tornado.web
         mixin = self._make_mixin("correct_token", header_token="wrong_token")
         with pytest.raises(tornado.web.HTTPError) as exc_info:
             mixin.check_xsrf_cookie()
@@ -575,7 +582,9 @@ class TestUserDatabaseSecurity:
         assert user is not None
         # hash should be present (for internal use) but must not be plaintext
         assert user["password_hash"] != "Str0ng!Pass#1"
-        assert user["password_hash"].startswith("$argon2") or user["password_hash"].startswith("scrypt:")
+        assert user["password_hash"].startswith("$argon2") or user[
+            "password_hash"
+        ].startswith("scrypt:")
 
     def test_update_password(self, db):
         user = create_user(db, "pwchange", "OldP@ss123!!")
@@ -589,32 +598,36 @@ class TestUserDatabaseSecurity:
         assert get_user_by_username(db, "tobedeleted") is None
 
     def test_sql_injection_in_username(self, db):
-        """Parameterized queries should prevent SQL injection."""
+        """Malicious username must not allow stacked SQL (e.g. DROP TABLE)."""
         malicious = "'; DROP TABLE users; --"
         try:
             create_user(db, malicious, "Str0ng!Pass#1")
         except Exception:
             pass
-        # Table should still exist
-        count = db.execute("SELECT count(*) FROM users").fetchone()[0]
-        assert count >= 0  # table exists
+        table = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
+        ).fetchone()
+        assert table is not None
 
     def test_sql_injection_in_search(self, db):
+        """search_users must use bound parameters; injection string must not wipe DB."""
         create_user(db, "normal_user", "Str0ng!Pass#1")
         results = search_users(db, "'; DROP TABLE users; --")
-        # Should not crash and table should still exist
-        db.execute("SELECT count(*) FROM users").fetchone()
+        assert isinstance(results, list)
+        assert get_user_by_username(db, "normal_user") is not None
+        assert (
+            db.execute("SELECT name FROM sqlite_master WHERE name='users'").fetchone()
+            is not None
+        )
 
-    def test_role_escalation_blocked(self, db):
-        """Ensure only valid_fields are accepted in update_user."""
-        user = create_user(db, "escalation_test", "Str0ng!Pass#1", role="user")
-        # Attempt to inject a bogus field — should be silently ignored
+    def test_update_user_accepts_known_fields_and_ignores_unknown_kwargs(self, db):
+        """Valid columns (e.g. role) update; arbitrary kwargs must not break update_user."""
+        user = create_user(db, "field_test", "Str0ng!Pass#1", role="user")
         update_user(db, user["id"], role="admin")
-        updated = get_user_by_username(db, "escalation_test")
-        assert updated["role"] == "admin"  # This IS a valid field
-        # But invalid fields should not work
+        updated = get_user_by_username(db, "field_test")
+        assert updated["role"] == "admin"
         update_user(db, user["id"], bogus_field="hacked")
-        # Should not crash — bogus_field is ignored
+        assert get_user_by_username(db, "field_test")["role"] == "admin"
 
 
 # ===================================================================
@@ -657,8 +670,9 @@ class TestUploadValidation:
             assert err is not None
 
     def test_disallowed_extension(self, temp_root):
-        with patch("aird.handlers.file_op_handlers.ROOT_DIR", temp_root), \
-             patch("aird.constants.UPLOAD_CONFIG", {"allow_all_file_types": 0}):
+        with patch("aird.handlers.file_op_handlers.ROOT_DIR", temp_root), patch(
+            "aird.constants.UPLOAD_CONFIG", {"allow_all_file_types": 0}
+        ):
             _, err = _validate_upload_destination("", "malware.exe")
             assert err is not None
             assert err[0] == 415
@@ -695,35 +709,30 @@ class TestSessionSecurity:
         """Session cookies must be httponly."""
         handler = MagicMock()
         handler.request.protocol = "https"
-        from aird.handlers.base_handler import BaseHandler
         opts = BaseHandler.session_cookie_opts(handler)
         assert opts["httponly"] is True
 
     def test_session_cookie_secure_on_https(self):
         handler = MagicMock()
         handler.request.protocol = "https"
-        from aird.handlers.base_handler import BaseHandler
         opts = BaseHandler.session_cookie_opts(handler)
         assert opts["secure"] is True
 
     def test_session_cookie_not_secure_on_http(self):
         handler = MagicMock()
         handler.request.protocol = "http"
-        from aird.handlers.base_handler import BaseHandler
         opts = BaseHandler.session_cookie_opts(handler)
         assert opts["secure"] is False
 
     def test_session_cookie_samesite_strict(self):
         handler = MagicMock()
         handler.request.protocol = "https"
-        from aird.handlers.base_handler import BaseHandler
         opts = BaseHandler.session_cookie_opts(handler)
         assert opts["samesite"] == "Strict"
 
     def test_session_cookie_expires(self):
         handler = MagicMock()
         handler.request.protocol = "https"
-        from aird.handlers.base_handler import BaseHandler
         opts = BaseHandler.session_cookie_opts(handler, expires_days=7)
         assert opts["expires_days"] == 7
 
@@ -737,7 +746,6 @@ class TestSecurityHeaders:
     """Test that BaseHandler sets proper security headers."""
 
     def test_default_headers_set(self):
-        from aird.handlers.base_handler import BaseHandler
         handler = MagicMock(spec=BaseHandler)
         handler.set_header = MagicMock()
         # Call the real method
@@ -758,7 +766,6 @@ class TestOpenRedirect:
     """Test LoginHandler._is_safe_redirect_url."""
 
     def _check(self, url):
-        from aird.handlers.auth_handlers import LoginHandler
         handler = MagicMock(spec=LoginHandler)
         return LoginHandler._is_safe_redirect_url(handler, url)
 
@@ -796,24 +803,23 @@ class TestShareTokenSecurity:
     """Test share token verification uses constant-time comparison."""
 
     def test_token_comparison_uses_compare_digest(self):
-        from aird.handlers.share_handlers import _is_token_valid
         share = {"secret_token": "valid_token_abc"}
         request = MagicMock()
         request.headers = {"Authorization": "Bearer valid_token_abc"}
         get_cookie = MagicMock(return_value=None)
-        with patch("aird.handlers.share_handlers.secrets.compare_digest", return_value=True) as mock_cd:
+        with patch(
+            "aird.handlers.share_handlers.secrets.compare_digest", return_value=True
+        ) as mock_cd:
             result = _is_token_valid(share, "share_id", request, get_cookie)
             assert result is True
             mock_cd.assert_called_once()
 
     def test_no_token_required(self):
-        from aird.handlers.share_handlers import _is_token_valid
         share = {"secret_token": None}
         result = _is_token_valid(share, "sid", MagicMock(), MagicMock())
         assert result is True
 
     def test_wrong_token_rejected(self):
-        from aird.handlers.share_handlers import _is_token_valid
         share = {"secret_token": "correct_token"}
         request = MagicMock()
         request.headers = {"Authorization": "Bearer wrong_token"}
@@ -822,7 +828,6 @@ class TestShareTokenSecurity:
         assert result is False
 
     def test_missing_token_rejected(self):
-        from aird.handlers.share_handlers import _is_token_valid
         share = {"secret_token": "some_token"}
         request = MagicMock()
         request.headers = {}
@@ -831,7 +836,6 @@ class TestShareTokenSecurity:
         assert result is False
 
     def test_token_from_cookie(self):
-        from aird.handlers.share_handlers import _is_token_valid
         share = {"secret_token": "cookie_token_val"}
         request = MagicMock()
         request.headers = {}
@@ -849,26 +853,22 @@ class TestShareAccessControl:
     """Test share user-based access control."""
 
     def test_no_user_restriction(self):
-        from aird.handlers.share_handlers import _is_user_allowed
         share = {"allowed_users": None}
         ok, err = _is_user_allowed(share, MagicMock(return_value=None))
         assert ok is True
 
     def test_empty_allowed_users(self):
-        from aird.handlers.share_handlers import _is_user_allowed
         share = {"allowed_users": []}
         ok, err = _is_user_allowed(share, MagicMock(return_value=None))
         assert ok is True
 
     def test_allowed_user_passes(self):
-        from aird.handlers.share_handlers import _is_user_allowed
         share = {"allowed_users": ["alice", "bob"]}
         get_secure_cookie = MagicMock(return_value=b"alice")
         ok, err = _is_user_allowed(share, get_secure_cookie)
         assert ok is True
 
     def test_disallowed_user_blocked(self):
-        from aird.handlers.share_handlers import _is_user_allowed
         share = {"allowed_users": ["alice", "bob"]}
         get_secure_cookie = MagicMock(return_value=b"eve")
         ok, err = _is_user_allowed(share, get_secure_cookie)
@@ -876,7 +876,6 @@ class TestShareAccessControl:
         assert err[0] == 403
 
     def test_unauthenticated_user_blocked(self):
-        from aird.handlers.share_handlers import _is_user_allowed
         share = {"allowed_users": ["alice"]}
         get_secure_cookie = MagicMock(return_value=None)
         ok, err = _is_user_allowed(share, get_secure_cookie)
@@ -923,7 +922,6 @@ class TestNetworkShareSecurity:
     """Test network share manager security properties."""
 
     def test_nonexistent_folder_rejected(self):
-        from aird.network_share_manager import NetworkShareManager
         mgr = NetworkShareManager()
         share = {
             "id": "test1",
@@ -938,12 +936,10 @@ class TestNetworkShareSecurity:
         assert result is False
 
     def test_stop_nonexistent_share(self):
-        from aird.network_share_manager import NetworkShareManager
         mgr = NetworkShareManager()
         assert mgr.stop_share("nonexistent") is False
 
     def test_is_running_nonexistent(self):
-        from aird.network_share_manager import NetworkShareManager
         mgr = NetworkShareManager()
         assert mgr.is_running("nonexistent") is False
 
@@ -958,7 +954,6 @@ class TestInputSanitization:
 
     def test_ldap_username_regex(self):
         """LDAP login should only allow safe username characters."""
-        import re
         pattern = r"^[a-zA-Z0-9_.\-@]+$"
         assert re.match(pattern, "normal_user") is not None
         assert re.match(pattern, "user@domain.com") is not None
@@ -976,14 +971,12 @@ class TestInputSanitization:
 
     def test_json_body_parse_resilience(self):
         """BaseHandler.parse_json_body should handle malformed JSON."""
-        from aird.handlers.base_handler import BaseHandler
         handler = MagicMock()
         handler.request.body = b"not json at all"
         result = BaseHandler.parse_json_body(handler)
         assert result == {}
 
     def test_json_body_parse_empty(self):
-        from aird.handlers.base_handler import BaseHandler
         handler = MagicMock()
         handler.request.body = b""
         result = BaseHandler.parse_json_body(handler)
@@ -999,17 +992,12 @@ class TestCSPNonce:
     """Test Content Security Policy nonce generation."""
 
     def test_nonce_is_unique_per_request(self):
-        import base64
-        from aird.handlers.base_handler import BaseHandler
-        h1 = MagicMock(spec=BaseHandler)
-        h2 = MagicMock(spec=BaseHandler)
         # Simulate prepare() setting the nonce
         nonce1 = base64.b64encode(secrets.token_bytes(16)).decode("utf-8")
         nonce2 = base64.b64encode(secrets.token_bytes(16)).decode("utf-8")
         assert nonce1 != nonce2
 
     def test_nonce_is_base64(self):
-        import base64
         nonce = base64.b64encode(secrets.token_bytes(16)).decode("utf-8")
         # Should be valid base64
         decoded = base64.b64decode(nonce)
@@ -1047,27 +1035,30 @@ class TestAdminAccessControl:
     """Test admin privilege checks."""
 
     def test_admin_role_detected(self):
-        from aird.handlers.base_handler import BaseHandler
         handler = MagicMock(spec=BaseHandler)
-        handler.get_current_user = MagicMock(return_value={"username": "admin1", "role": "admin"})
+        handler.get_current_user = MagicMock(
+            return_value={"username": "admin1", "role": "admin"}
+        )
         handler.get_secure_cookie = MagicMock(return_value=None)
         handler.get_current_admin = MagicMock(side_effect=AttributeError)
         result = BaseHandler.is_admin_user(handler)
         assert result is True
 
     def test_non_admin_rejected(self):
-        from aird.handlers.base_handler import BaseHandler
         handler = MagicMock(spec=BaseHandler)
-        handler.get_current_user = MagicMock(return_value={"username": "user1", "role": "user"})
+        handler.get_current_user = MagicMock(
+            return_value={"username": "user1", "role": "user"}
+        )
         handler.get_secure_cookie = MagicMock(return_value=None)
         result = BaseHandler.is_admin_user(handler)
         assert result is False
 
     def test_username_containing_admin_not_escalated(self):
         """A user named 'administrator' with role='user' must NOT be treated as admin."""
-        from aird.handlers.base_handler import BaseHandler
         handler = MagicMock(spec=BaseHandler)
-        handler.get_current_user = MagicMock(return_value={"username": "administrator", "role": "user"})
+        handler.get_current_user = MagicMock(
+            return_value={"username": "administrator", "role": "user"}
+        )
         handler.get_secure_cookie = MagicMock(return_value=None)
         result = BaseHandler.is_admin_user(handler)
         assert result is False

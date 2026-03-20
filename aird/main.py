@@ -414,7 +414,9 @@ def _load_or_create_cookie_secret() -> str:
             f.write(secret)
         logger.info("Generated and persisted new cookie secret")
     except OSError:
-        logger.warning("Could not persist cookie secret – sessions won't survive restarts")
+        logger.warning(
+            "Could not persist cookie secret – sessions won't survive restarts"
+        )
     return secret
 
 
@@ -450,17 +452,13 @@ def _start_server(app, ssl_options, port: int, hostname: str) -> None:
             tornado.ioloop.IOLoop.current().call_later(
                 3600, _run_cleanup_expired_shares
             )
-            tornado.ioloop.IOLoop.current().call_later(
-                3600, _run_cleanup_p2p_rooms
-            )
+            tornado.ioloop.IOLoop.current().call_later(3600, _run_cleanup_p2p_rooms)
             tornado.ioloop.IOLoop.current().start()
             return
         except OSError:
             logger.warning("Port %d is in use, trying %d", port, port + 1)
             port += 1
-    logger.error(
-        "Could not bind to any port in range %d-%d", original_port, port - 1
-    )
+    logger.error("Could not bind to any port in range %d-%d", original_port, port - 1)
 
 
 def main():

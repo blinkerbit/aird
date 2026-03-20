@@ -17,9 +17,7 @@ class TestGetCurrentWebsocketConfig:
         mock_conn = MagicMock()
         expected_config = {"preview_max_connections": 50, "preview_idle_timeout": 120}
 
-        with patch(
-            "aird.utils.util.DB_CONN", mock_conn
-        ), patch(
+        with patch("aird.utils.util.DB_CONN", mock_conn), patch(
             "aird.utils.util.load_websocket_config",
             return_value=expected_config,
         ):
@@ -103,9 +101,7 @@ class TestWebSocketConnectionManager:
 
     def test_max_connections_uses_default_when_not_configured(self, manager):
         """Should return default max_connections when not in config"""
-        with patch(
-            "aird.utils.util.get_current_websocket_config", return_value={}
-        ):
+        with patch("aird.utils.util.get_current_websocket_config", return_value={}):
             assert manager.max_connections == 10  # default_max_connections
 
     def test_idle_timeout_uses_config_value(self, manager):
@@ -118,9 +114,7 @@ class TestWebSocketConnectionManager:
 
     def test_idle_timeout_uses_default_when_not_configured(self, manager):
         """Should return default idle_timeout when not in config"""
-        with patch(
-            "aird.utils.util.get_current_websocket_config", return_value={}
-        ):
+        with patch("aird.utils.util.get_current_websocket_config", return_value={}):
             assert manager.idle_timeout == 60  # default_idle_timeout
 
     # add_connection tests

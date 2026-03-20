@@ -183,7 +183,7 @@ def _try_token_login(handler, token, next_url):
         )
         opts = handler.session_cookie_opts()
         handler.set_secure_cookie("user", "token_authenticated", **opts)
-        handler.set_secure_cookie("user_role", "admin", **opts)
+        handler.set_secure_cookie("user_role", "user", **opts)
         handler.redirect(next_url)
         return True
     logging.warning("Token authentication failed. Token mismatch.")
@@ -261,6 +261,9 @@ def _try_admin_token_login(handler, token):
             ip=handler.request.remote_ip,
         )
         opts = handler.session_cookie_opts()
+        # Must set user cookie so @authenticated passes; admin cookie for is_admin_user
+        handler.set_secure_cookie("user", "admin_token_authenticated", **opts)
+        handler.set_secure_cookie("user_role", "admin", **opts)
         handler.set_secure_cookie("admin", "authenticated", **opts)
         handler.redirect(ADMIN_URL)
         return True
@@ -304,7 +307,9 @@ def _do_profile_password_update(db_conn, user, new_password, confirm_password):
         update_user(db_conn, user["id"], password=new_password)
         return ("Password updated successfully", None)
     except Exception as e:
-        logging.error("Error updating password for user %s: %s", user.get("username"), e)
+        logging.error(
+            "Error updating password for user %s: %s", user.get("username"), e
+        )
         return (None, "Error updating password. Please try again.")
 
 

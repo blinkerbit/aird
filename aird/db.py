@@ -139,7 +139,9 @@ def init_db(conn: sqlite3.Connection) -> None:
     if "quota_bytes" not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN quota_bytes INTEGER")
     if "used_bytes" not in user_cols:
-        conn.execute("ALTER TABLE users ADD COLUMN used_bytes INTEGER NOT NULL DEFAULT 0")
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN used_bytes INTEGER NOT NULL DEFAULT 0"
+        )
 
     conn.commit()
 

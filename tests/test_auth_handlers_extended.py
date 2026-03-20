@@ -266,7 +266,7 @@ class TestLoginHandlerExtended:
             # Check cookies set
             cookies = {c[0][0]: c[0][1] for c in mock_cookie.call_args_list}
             assert cookies["user"] == "token_authenticated"
-            assert cookies["user_role"] == "admin"
+            assert cookies["user_role"] == "user"
 
     def test_post_fallback_errors(self):
         handler = LoginHandler(self.mock_app, self.mock_request)
@@ -321,14 +321,10 @@ class TestAdminLoginHandlerExtended:
 
             handler.post()
             mock_redirect.assert_called_with("/admin")
-            mock_cookie.assert_called_with(
-                "admin",
-                "authenticated",
-                httponly=True,
-                secure=ANY,
-                samesite="Strict",
-                expires_days=1,
-            )
+            cookies = {c[0][0]: c[0][1] for c in mock_cookie.call_args_list}
+            assert cookies["user"] == "admin_token_authenticated"
+            assert cookies["user_role"] == "admin"
+            assert cookies["admin"] == "authenticated"
 
     def test_post_admin_token_fail(self):
         handler = AdminLoginHandler(self.mock_app, self.mock_request)
@@ -483,7 +479,7 @@ class TestBaseHandlerExtended:
             side_effect=Exception("DB Error"),
         ):
             user = handler.get_current_user()
-            assert user == {"username": "token_user", "role": "admin"}
+            assert user == {"username": "token_user", "role": "user"}
 
     def test_write_error_exception(self):
         handler = BaseHandler(self.mock_app, self.mock_request)
@@ -528,14 +524,15 @@ class TestBaseHandlerExtended:
     def test_get_display_username_dict_token(self):
         handler = BaseHandler(self.mock_app, self.mock_request)
         handler.get_current_user = MagicMock(
-            return_value={"username": "token_user", "role": "admin"}
+            return_value={"username": "token_user", "role": "user"}
         )
-        assert handler.get_display_username() == "Admin (Token)"
+        assert handler.get_display_username() == "Access (Token)"
 
     def test_get_display_username_bytes_token(self):
         handler = BaseHandler(self.mock_app, self.mock_request)
         handler.get_current_user = MagicMock(return_value=b"token_authenticated")
-        assert handler.get_display_username() == "Admin (Token)"
+        handler.get_secure_cookie = MagicMock(return_value=b"user")
+        assert handler.get_display_username() == "Access (Token)"
 
     def test_get_display_username_bytes_role_cookie(self):
         handler = BaseHandler(self.mock_app, self.mock_request)
@@ -566,7 +563,8 @@ class TestBaseHandlerExtended:
     def test_get_display_username_str_token(self):
         handler = BaseHandler(self.mock_app, self.mock_request)
         handler.get_current_user = MagicMock(return_value="token_authenticated")
-        assert handler.get_display_username() == "Admin (Token)"
+        handler.get_secure_cookie = MagicMock(return_value=b"user")
+        assert handler.get_display_username() == "Access (Token)"
 
     def test_get_display_username_str_role_cookie_user(self):
         handler = BaseHandler(self.mock_app, self.mock_request)

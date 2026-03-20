@@ -636,9 +636,7 @@ class TestLdapConfigMain:
     def test_create_duplicate(self, db_conn):
         create_ldap_config(db_conn, "Test", "ldap://a", "dc=a", "member", "uid={u}")
         with pytest.raises(ValueError):
-            create_ldap_config(
-                db_conn, "Test", "ldap://b", "dc=b", "member", "uid={u}"
-            )
+            create_ldap_config(db_conn, "Test", "ldap://b", "dc=b", "member", "uid={u}")
 
     def test_get_all(self, db_conn):
         create_ldap_config(db_conn, "C1", "ldap://a", "dc=a", "member", "uid={u}")

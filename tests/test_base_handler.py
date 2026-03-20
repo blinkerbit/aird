@@ -40,7 +40,7 @@ class TestBaseHandler:
 
             user = handler.get_current_user()
             assert user["username"] == "token_user"
-            assert user["role"] == "admin"
+            assert user["role"] == "user"
 
     def test_is_admin_user_true(self):
         handler = prepare_handler(BaseHandler(self.mock_app, self.mock_request))
@@ -72,11 +72,19 @@ class TestBaseHandler:
         ):
             assert handler.get_display_username() == "admin (Admin)"
 
-        # Test token user
+        # Test access token user
         with patch.object(
             handler,
             "get_current_user",
-            return_value={"username": "token_user", "role": "admin"},
+            return_value={"username": "token_user", "role": "user"},
+        ):
+            assert handler.get_display_username() == "Access (Token)"
+
+        # Test admin token session user
+        with patch.object(
+            handler,
+            "get_current_user",
+            return_value={"username": "admin_token", "role": "admin"},
         ):
             assert handler.get_display_username() == "Admin (Token)"
 

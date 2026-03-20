@@ -1,6 +1,9 @@
 # Use a minimal python image
 FROM python:3.11-alpine
 
+# Copy Caddy binary from official image
+COPY --from=caddy:2-alpine /usr/bin/caddy /usr/bin/caddy
+
 # Set working directory
 WORKDIR /app
 
@@ -14,8 +17,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the application code
 COPY aird /app/aird
 
-# Expose the default port
-EXPOSE 8000
+# Copy Caddy config and entrypoint
+COPY Caddyfile /etc/caddy/Caddyfile
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
-# Run the application
-CMD ["python", "-m", "aird"]
+# Expose port 80 (Caddy gateway)
+EXPOSE 80
+
+# Run entrypoint: starts aird in background, Caddy in foreground (PID 1)
+ENTRYPOINT ["/docker-entrypoint.sh"]

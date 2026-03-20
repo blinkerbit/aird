@@ -25,29 +25,18 @@
       padding: 20px 10px;
     }
 
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 2px solid black;
-      padding-bottom: 15px;
-      margin-bottom: 20px;
-    }
-
-    .header-left {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .header h1 {
-      font-size: 24px;
-      font-weight: bold;
-    }
+    {% include '_app_nav_header_styles.html' %}
 
     .breadcrumb {
       margin-top: 10px;
       font-size: 14px;
       color: #666;
+    }
+
+    /* Path shown directly above the file table (not under the title / upload zone) */
+    .breadcrumb-above-file-list {
+      margin-top: 0;
+      margin-bottom: 10px;
     }
 
     .breadcrumb a {
@@ -183,6 +172,52 @@
 
     .file-icon {
       margin-right: 8px;
+    }
+
+    /* Checkbox + name share one cell so nothing can visually sit between columns */
+    .name-cell-contents {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .name-cell-contents .row-checkbox {
+      flex-shrink: 0;
+      width: 16px;
+      height: 16px;
+      margin: 0;
+    }
+
+    .row-checkbox-spacer {
+      display: block;
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+
+    .name-cell-contents .file-link {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .name-cell-contents .fav-star {
+      flex-shrink: 0;
+    }
+
+    .th-checkbox-wrap {
+      display: inline-flex;
+      align-items: center;
+      margin-right: 10px;
+      vertical-align: middle;
+    }
+
+    .th-checkbox-wrap input {
+      margin: 0;
     }
 
     /* Share Popup Styles */
@@ -637,17 +672,6 @@
     .fav-star:hover { color: #f59e0b; }
     .fav-star.fav-active { color: #f59e0b; }
 
-    /* Theme toggle */
-    .theme-toggle-btn {
-      background: none;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 16px;
-      padding: 4px 8px;
-      line-height: 1;
-    }
-
     /* Dark mode overrides */
     [data-theme="dark"] body { background: #1a1a2e; color: #e0e0e0; }
     [data-theme="dark"] .header { border-color: #444; }
@@ -685,7 +709,6 @@
     [data-theme="dark"] select { background: #222; color: #e0e0e0; border-color: #444; }
     [data-theme="dark"] .btn { background: #333; color: #e0e0e0; border-color: #555; }
     [data-theme="dark"] .btn:hover { background: #444; }
-    [data-theme="dark"] .theme-toggle-btn { border-color: #444; color: #e0e0e0; }
     [data-theme="dark"] .custom-dialog-overlay .custom-dialog { background: #1e1e2e; border-color: #444; color: #e0e0e0; }
     [data-theme="dark"] .custom-dialog input { background: #222; color: #e0e0e0; border-color: #444; }
   </style>
@@ -693,42 +716,10 @@
 
 <body>
   <div class="container">
-    <div class="header">
-      <div class="header-left">
-        <h1>Aird</h1>
-        <div class="breadcrumb">
-          <a href="/files/">🏠 Home</a>
-          {% if current_user and current_path != "/" %} {% set path_parts = current_path.strip('/').split('/') %}
-          {% for i, part in enumerate(path_parts) %}
-          {% set partial_path = '/files/' + '/'.join(path_parts[:i+1]) %} /
-          <a href="{{ partial_path }}">{{ part }}</a>
-          {% end %} {% end %}
-        </div>
-      </div>
-      <div style="display: flex; align-items: center; gap: 10px;">
-        <button class="theme-toggle-btn" title="Toggle dark mode">🌙</button>
-        <a href="/profile" style="font-size: 12px; color: #666; margin-right: 15px; text-decoration: none;">👤 {{
-          handler.get_display_username() }}</a>
-        {% if features.get('super_search') %}
-        <a href="/search?path={{ escape(current_path or '') }}"
-          style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;">🚀
-          Super Search</a>
-        {% end %}
-        {% if features.get('file_share') %}
-        <a href="/share"
-          style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;{% if features.get('super_search') %}margin-left:8px;{% end %}">🔗
-          Share Files</a>
-        {% end %}
-        {% if features.get('p2p_transfer') %}
-        <a href="/p2p"
-          style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;margin-left:8px;">🔀
-          P2P Transfer</a>
-        {% end %}
-        <a href="/logout"
-          style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;margin-left:8px;">↩
-          Logout</a>
-      </div>
-    </div>
+    {% set nav_title = "Aird" %}
+{% set nav_search_path = current_path or "" %}
+{% set show_admin_link = False %}
+{% include '_app_nav_header.html' %}
 
     <!-- Upload Zone -->
     {% if features['file_upload'] %}
@@ -760,18 +751,28 @@
     </div>
     {% end %}
 
+    <div class="breadcrumb breadcrumb-above-file-list" aria-label="Current path">
+      <a href="/files/">🏠 Home</a>
+      {% if current_user and current_path != "/" %} {% set path_parts = current_path.strip('/').split('/') %}
+      {% for i, part in enumerate(path_parts) %}
+      {% set partial_path = '/files/' + '/'.join(path_parts[:i+1]) %} /
+      <a href="{{ partial_path }}">{{ part }}</a>
+      {% end %} {% end %}
+    </div>
+
     <!-- File Listing Table -->
     <table class="file-table" id="fileTable">
       <thead>
         <tr>
-          <th class="select-col" style="width: 32px; text-align: center;">
-            <input type="checkbox" id="selectAllCheckbox" title="Select all" />
+          <th class="name-col sort-header" data-sort-column="0">
+            <span class="th-checkbox-wrap">
+              <input type="checkbox" id="selectAllCheckbox" title="Select all" />
+            </span>
+            📄 Name<div class="resizer"></div>
           </th>
-          <th class="name-col sort-header" data-sort-column="1">📄 Name<div class="resizer"></div>
+          <th class="size-col sort-header" data-sort-column="1">📊 Size<div class="resizer"></div>
           </th>
-          <th class="size-col sort-header" data-sort-column="2">📊 Size<div class="resizer"></div>
-          </th>
-          <th class="modified-col sort-header" data-sort-column="3">
+          <th class="modified-col sort-header" data-sort-column="2">
             🕐 Modified<div class="resizer"></div>
           </th>
           <th class="actions-col">🛠️ Actions</th>
@@ -781,11 +782,13 @@
         <!-- Parent Directory Link -->
         {% if current_path and current_path != "/" %}
         <tr class="file-row parent-row">
-          <td class="select-cell" data-label="Select"></td>
           <td class="name-cell" data-label="Name">
-            <a href="/files/{{ parent_path or '' }}" class="file-link">
-              <span class="file-icon">📁</span>..
-            </a>
+            <div class="name-cell-contents">
+              <span class="row-checkbox-spacer" aria-hidden="true"></span>
+              <a href="/files/{{ parent_path or '' }}" class="file-link parent-folder-link" title="Parent folder">
+                <span class="file-icon">📁</span><span class="parent-up-label">Up</span>
+              </a>
+            </div>
           </td>
           <td class="size-cell" data-label="Size">-</td>
           <td class="modified-cell" data-label="Modified">-</td>
@@ -796,10 +799,9 @@
         <!-- File and Directory Listings -->
         {% for file in files %}
         <tr class="file-row" data-path="{{ escape(join_path(current_path, file['name'])) }}">
-          <td class="select-cell" data-label="Select">
-            <input type="checkbox" class="row-checkbox" data-path="{{ escape(join_path(current_path, file['name'])) }}" />
-          </td>
           <td class="name-cell" data-label="Name">
+            <div class="name-cell-contents">
+            <input type="checkbox" class="row-checkbox" data-path="{{ escape(join_path(current_path, file['name'])) }}" />
             {% if file['is_dir'] %}
             <a href="/files/{{ escape(join_path(current_path, file['name'])) }}" class="file-link">
               <span class="file-icon">📁</span>{{ escape(file['name']) }}
@@ -813,7 +815,7 @@
               class="file-link">
               {% set _ext = file['name'].rsplit('.', 1)[-1].lower() if '.' in file['name'] else '' %}
               {% if _ext in ('jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico') %}
-              <img src="/files/{{ escape(join_path(current_path, file['name'])) }}?mode=raw" alt="" loading="lazy" style="width:24px;height:24px;object-fit:cover;vertical-align:middle;margin-right:8px;border-radius:3px;border:1px solid #ddd;" data-fallback="<span class=file-icon>{{ get_file_icon(file[&quot;name&quot;]) }}</span>">
+              <img src="/files/{{ escape(join_path(current_path, file['name'])) }}?mode=raw" alt="" loading="lazy" style="width:24px;height:24px;object-fit:cover;vertical-align:middle;margin-right:8px;border-radius:3px;border:1px solid #ddd;" data-fallback="<span class=file-icon>{{ get_file_icon(file['name']) }}</span>">
               {% else %}
               <span class="file-icon">{{ get_file_icon(file["name"]) }}</span>
               {% end %}{{
@@ -829,6 +831,7 @@
             <span class="fav-star{% if _fav_path in user_favorites %} fav-active{% end %}"
               data-fav-path="{{ escape(_fav_path) }}" title="Toggle favorite">{{ '★' if _fav_path in user_favorites else '☆' }}</span>
             {% end %}
+            </div>
           </td>
           <td class="size-cell" data-label="Size" data-bytes="{{ file.get('size_bytes', 0) }}">
             {{ file.get('size_str', '-') }}
@@ -862,7 +865,7 @@
               </svg></a>
             {% end %}
             {% if features['file_delete'] %}
-            <a href="#" data-delete-path="{{ escape(join_path(current_path, file['name'])) }}"
+            <a href="#" data-delete-path="{{ escape(join_path(current_path, file['name'])) }}" data-is-dir="{{ '1' if file['is_dir'] else '0' }}"
               class="action-link delete-btn" title="Delete"><svg viewBox="0 0 24 24">
                 <polyline points="3 6 5 6 21 6" />
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
@@ -877,7 +880,7 @@
         <!-- Empty Directory Message -->
         {% if not files %}
         <tr>
-          <td colspan="5" style="text-align: center; padding: 40px; color: #666">
+          <td colspan="4" style="text-align: center; padding: 40px; color: #666">
             📭 This directory is empty
           </td>
         </tr>
@@ -1305,11 +1308,15 @@
     }
 
     // Delete functionality
-    async function deleteItem(filepath) {
-      const confirmed = await showDialog("Are you sure you want to delete this item?", "Confirm Delete", { showCancel: true });
+    async function deleteItem(filepath, isFolder) {
+      const message = isFolder
+        ? "Delete this folder and all files inside it? This cannot be undone."
+        : "Are you sure you want to delete this item?";
+      const confirmed = await showDialog(message, "Confirm Delete", { showCancel: true });
       if (!confirmed) return;
       const formData = new URLSearchParams();
       formData.append("path", filepath);
+      if (isFolder) formData.append("recursive", "1");
       fetch("/delete", {
         method: "POST",
         headers: {
@@ -1467,14 +1474,8 @@
     }
 
     function calculateSkipRows(allRows) {
-      // Skip parent directory link if present
-      if (
-        allRows.length > 0 &&
-        allRows[0].querySelector(".file-icon") &&
-        allRows[0].querySelector(".file-icon").textContent === "📁" &&
-        allRows[0].querySelector(".file-link") &&
-        allRows[0].querySelector(".file-link").textContent.trim() === ".."
-      ) {
+      // Skip parent directory link if present (must stay first; never sort with file rows).
+      if (allRows.length > 0 && allRows[0].classList.contains("parent-row")) {
         return 1;
       }
       // Skip empty directory message
@@ -1500,6 +1501,7 @@
         let aVal = a.children[columnIndex].textContent.trim();
         let bVal = b.children[columnIndex].textContent.trim();
 
+        // Column indices: 0 = Name (checkbox+name), 1 = Size, 2 = Modified, 3 = Actions
         if (columnIndex === 1) {
           // Size column
           aVal = parseInt(a.children[columnIndex].dataset.bytes) || -1;
@@ -1512,7 +1514,7 @@
           return bVal - aVal;
         }
 
-        const nameCol = 1;
+        const nameCol = 0;
         const aIsDir =
           a.children[nameCol] && a.children[nameCol].querySelector(".file-icon") && a.children[nameCol].querySelector(".file-icon").textContent === "📁";
         const bIsDir =
@@ -1752,7 +1754,7 @@
       document.querySelectorAll('[data-delete-path]').forEach(function (el) {
         el.addEventListener('click', function (e) {
           e.preventDefault();
-          deleteItem(this.dataset.deletePath);
+          deleteItem(this.dataset.deletePath, this.dataset.isDir === '1');
         });
       });
 
@@ -1766,6 +1768,9 @@
       // Select all checkbox
       const selectAllCheckbox = document.getElementById('selectAllCheckbox');
       if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('click', function (e) {
+          e.stopPropagation();
+        });
         selectAllCheckbox.addEventListener('change', function () {
           document.querySelectorAll('.row-checkbox').forEach(cb => { cb.checked = selectAllCheckbox.checked; });
           updateBulkToolbar();

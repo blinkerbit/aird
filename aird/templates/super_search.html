@@ -25,24 +25,7 @@
       padding: 20px 10px;
     }
 
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 2px solid black;
-      padding-bottom: 15px;
-      margin-bottom: 20px;
-    }
-
-    .header-left {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .header h1 {
-      font-size: 24px;
-      font-weight: bold;
-    }
+    {% include '_app_nav_header_styles.html' %}
 
     .breadcrumb {
       margin-top: 10px;
@@ -405,10 +388,7 @@
       }
     }
 
-    .theme-toggle-btn { background: none; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 16px; padding: 4px 8px; line-height: 1; }
-
     [data-theme="dark"] body { background: #1a1a2e; color: #e0e0e0; }
-    [data-theme="dark"] .header { border-color: #444; }
     [data-theme="dark"] .breadcrumb a { color: #58a6ff; }
     [data-theme="dark"] .breadcrumb { color: #aaa; }
     [data-theme="dark"] input[type="text"],
@@ -421,43 +401,27 @@
     [data-theme="dark"] .code-line { background: #222; border-color: #444; }
     [data-theme="dark"] .line-number { color: #888; }
     [data-theme="dark"] a { color: #58a6ff; }
-    [data-theme="dark"] .theme-toggle-btn { border-color: #444; color: #e0e0e0; }
   </style>
 </head>
 
 <body>
   <div class="container">
-    <div class="header">
-      <div class="header-left">
-        <h1>Super Search</h1>
-        <div class="breadcrumb">
-          <a href="/files/">🏠 Home</a>
-          {% if current_path and current_path.strip() %}
-          {% set path_parts = current_path.strip('/').split('/') %}
-          {% for i, part in enumerate(path_parts) %}
-          {% set partial_path = '/files/' + '/'.join(path_parts[:i+1]) %} /
-          <a href="{{ partial_path }}">{{ part }}</a>
-          {% end %}
-          {% end %}
-          / <a href="/search">🔍 Super Search</a>
-        </div>
-      </div>
-      <div style="display: flex; align-items: center; gap: 10px;">
-        <button class="theme-toggle-btn" title="Toggle dark mode" type="button">🌙</button>
-        <a href="/profile" style="font-size: 12px; color: #666; margin-right: 15px; text-decoration: none;">👤 {{
-          handler.get_display_username() }}</a>
-        {% if current_path and current_path.strip() %}
-        <a href="/files/{{ escape(current_path) }}"
-          style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;">📂
-          Back to {{ current_path.split('/')[-1] if '/' in current_path else current_path }}</a>
-        {% end %}
-        <a href="/files/"
-          style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;margin-left:8px;">📁
-          Browse Files</a>
-        <a href="/logout"
-          style="display:inline-block;padding:6px 10px;border:1px solid #000;background:#fff;color:#000;text-decoration:none;font-size:12px;margin-left:8px;">↩
-          Logout</a>
-      </div>
+    {% set nav_title = "Aird" %}
+{% set nav_search_path = current_path or "" %}
+{% set show_admin_link = False %}
+{% include '_app_nav_header.html' %}
+
+    <h2 style="font-size: 18px; margin-bottom: 8px;">Super Search</h2>
+    <div class="breadcrumb" style="margin-bottom: 16px;">
+      <a href="/files/">🏠 Home</a>
+      {% if current_path and current_path.strip() %}
+      {% set path_parts = current_path.strip('/').split('/') %}
+      {% for i, part in enumerate(path_parts) %}
+      {% set partial_path = '/files/' + '/'.join(path_parts[:i+1]) %} /
+      <a href="{{ partial_path }}">{{ part }}</a>
+      {% end %}
+      {% end %}
+      / <a href="/search">🔍 Super Search</a>
     </div>
 
     <div class="search-form">
