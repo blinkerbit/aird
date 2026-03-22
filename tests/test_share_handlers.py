@@ -10,6 +10,16 @@ from aird.handlers.share_handlers import (
     TokenVerificationHandler,
     SharedListHandler,
     SharedFileHandler,
+    _build_token_update_fields,
+    _collect_paths_from_request,
+    _get_provided_token,
+    _is_token_valid,
+    _is_user_allowed,
+    _normalize_path_entry,
+    _parse_path_entries_for_update,
+    _parse_paths_for_update,
+    _resolve_final_paths_dynamic,
+    _resolve_final_paths_static,
 )
 from aird.cloud import CloudProviderError
 
@@ -560,3 +570,131 @@ class TestSharedFileHandler:
             handler.write.assert_called_with(
                 "Access denied: Invalid or expired access token"
             )
+
+
+class TestShareHandlerPathHelpers:
+    def test_normalize_path_entry_cloud_dict(self):
+        assert _normalize_path_entry({"type": "cloud", "id": "1"}) == (None, True)
+
+    def test_normalize_path_entry_local_dict(self):
+        assert _normalize_path_entry({"type": "local", "path": " /x/ "}) == (
+            "/x/",
+            False,
+        )
+
+    def test_normalize_path_entry_plain_string(self):
+        assert _normalize_path_entry("file.txt") == ("file.txt", False)
+        assert _normalize_path_entry("   ") == (None, False)
+        assert _normalize_path_entry(123) == (None, False)
+
+    def test_get_provided_token_bearer(self):
+        req = MagicMock()
+        req.headers.get = MagicMock(return_value="Bearer secret-token")
+        assert _get_provided_token("sid1", req, MagicMock()) == "secret-token"
+
+    def test_get_provided_token_cookie_fallback(self):
+        req = MagicMock()
+        req.headers.get = MagicMock(return_value="")
+        get_cookie = MagicMock(return_value="from-cookie")
+        assert _get_provided_token("sid1", req, get_cookie) == "from-cookie"
+        get_cookie.assert_called_with("share_token_sid1")
+
+    def test_is_token_valid_no_secret(self):
+        share = {"secret_token": None}
+        assert _is_token_valid(share, "s", MagicMock(), MagicMock()) is True
+
+    def test_is_token_valid_matches(self):
+        share = {"secret_token": "abc"}
+        req = MagicMock()
+        req.headers.get = MagicMock(return_value="Bearer abc")
+        assert _is_token_valid(share, "s", req, MagicMock()) is True
+
+    def test_is_user_allowed_no_restriction(self):
+        assert _is_user_allowed({}, MagicMock()) == (True, None)
+
+    def test_is_user_allowed_missing_cookie(self):
+        get_sc = MagicMock(return_value=None)
+        assert _is_user_allowed({"allowed_users": ["a"]}, get_sc) == (
+            False,
+            (
+                401,
+                "Authentication required: Please provide a valid access token",
+            ),
+        )
+
+    def test_build_token_update_fields(self):
+        assert _build_token_update_fields(
+            True, {}
+        ) == {"secret_token": None, "disable_token": True}
+        out = _build_token_update_fields(False, {"secret_token": "keep"})
+        assert out["disable_token"] is False
+        assert out["secret_token"] == "keep"
+        assert _build_token_update_fields(None, {}) == {}
+
+    def test_parse_path_entries_for_update(self):
+        paths, remote = _parse_path_entries_for_update(
+            [
+                {"type": "cloud"},
+                {"type": "local", "path": "a"},
+                "b",
+            ]
+        )
+        assert remote == [{"type": "cloud"}]
+        assert paths == ["a", "b"]
+
+    def test_parse_paths_for_update_dynamic_rejects_cloud(self):
+        deduped, new_c, removed, err = _parse_paths_for_update(
+            [{"type": "cloud"}], "sid", "dynamic", []
+        )
+        assert err == (
+            400,
+            {"error": "Cloud files are not supported in dynamic shares"},
+        )
+        assert deduped is None
+
+    def test_parse_paths_for_update_cloud_error(self):
+        with patch(
+            "aird.handlers.share_handlers.download_cloud_items",
+            side_effect=CloudProviderError("fail"),
+        ), patch(
+            "aird.handlers.share_handlers.remove_share_cloud_dir"
+        ):
+            deduped, new_c, removed, err = _parse_paths_for_update(
+                [{"type": "cloud", "x": 1}], "sid", "static", []
+            )
+        assert err == (400, {"error": "fail"})
+
+    def test_resolve_final_paths_dynamic_cloud_rejected(self):
+        with patch("aird.handlers.share_handlers.remove_share_cloud_dir"):
+            final, err = _resolve_final_paths_dynamic([], [{"type": "cloud"}], "s")
+        assert err == (
+            400,
+            {"error": "Cloud files are not supported in dynamic shares"},
+        )
+
+    def test_resolve_final_paths_dynamic_no_folders(self):
+        with patch("aird.handlers.share_handlers.remove_share_cloud_dir"):
+            final, err = _resolve_final_paths_dynamic([], [], "s")
+        assert err == (
+            400,
+            {"error": "No valid directories for dynamic share"},
+        )
+
+    def test_resolve_final_paths_static_cloud_provider_error(self):
+        with patch(
+            "aird.handlers.share_handlers.download_cloud_items",
+            side_effect=CloudProviderError("x"),
+        ), patch("aird.handlers.share_handlers.remove_share_cloud_dir"):
+            final, err = _resolve_final_paths_static([], [{"type": "cloud"}], "s")
+        assert err == (400, {"error": "x"})
+
+    def test_collect_paths_from_request_skips_outside_root(self):
+        with patch("aird.handlers.share_handlers.ROOT_DIR", "/root"), patch(
+            "os.path.abspath", side_effect=lambda p: p
+        ), patch(
+            "aird.handlers.share_handlers.is_within_root", return_value=False
+        ):
+            valid, dyn, remote = _collect_paths_from_request(["inside"], "static")
+        assert valid == []
+        assert dyn == []
+        assert remote == []

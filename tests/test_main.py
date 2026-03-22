@@ -1,9 +1,13 @@
 """Tests for aird/main.py"""
 
+import copy
 import pytest
 import sqlite3
 from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
+
+import aird.constants as constants_module
+import tornado.web
 
 from aird.database.db import get_data_dir
 from aird.db import (
@@ -39,7 +43,22 @@ from aird.database.ldap import (
     log_ldap_sync,
     update_ldap_config,
 )
-from aird.main import make_app, print_banner
+from aird.handlers.admin_handlers import LDAPConfigHandler
+from aird.handlers.api_handlers import (
+    FavoriteToggleAPIHandler,
+    FavoritesListAPIHandler,
+)
+from aird.main import (
+    _auto_start_network_shares,
+    _create_emergency_db_connection,
+    _load_and_merge_configs,
+    _print_server_urls,
+    _run_cleanup_expired_shares,
+    _validate_ldap_config,
+    _validate_ssl_config,
+    make_app,
+    print_banner,
+)
 
 
 @pytest.fixture
@@ -710,6 +729,196 @@ class TestLdapSyncLogMain:
         assert get_ldap_sync_logs(db_conn) == []
 
 
+class TestMainModuleHelpers:
+    def test_validate_ldap_config_disabled(self):
+        with patch("aird.main.config.LDAP_ENABLED", False):
+            assert _validate_ldap_config() is True
+
+    def test_validate_ldap_enabled_missing_field(self):
+        with patch("aird.main.config.LDAP_ENABLED", True), patch(
+            "aird.main.config.LDAP_SERVER", ""
+        ), patch("aird.main.config.LDAP_BASE_DN", "dc=x"), patch(
+            "aird.main.config.LDAP_USER_TEMPLATE", "x"
+        ), patch(
+            "aird.main.config.LDAP_FILTER_TEMPLATE", "x"
+        ), patch(
+            "aird.main.config.LDAP_ATTRIBUTES", ["cn"]
+        ):
+            assert _validate_ldap_config() is False
+
+    def test_validate_ldap_enabled_complete(self):
+        with patch("aird.main.config.LDAP_ENABLED", True), patch(
+            "aird.main.config.LDAP_SERVER", "ldap://h"
+        ), patch("aird.main.config.LDAP_BASE_DN", "dc=x"), patch(
+            "aird.main.config.LDAP_USER_TEMPLATE", "{u}"
+        ), patch(
+            "aird.main.config.LDAP_FILTER_TEMPLATE", "(uid={u})"
+        ), patch(
+            "aird.main.config.LDAP_ATTRIBUTES", ["cn"]
+        ):
+            assert _validate_ldap_config() is True
+
+    def test_validate_ssl_cert_without_key(self):
+        with patch("aird.main.config.SSL_CERT", "/c.pem"), patch(
+            "aird.main.config.SSL_KEY", None
+        ):
+            assert _validate_ssl_config() is False
+
+    def test_validate_ssl_key_without_cert(self):
+        with patch("aird.main.config.SSL_CERT", None), patch(
+            "aird.main.config.SSL_KEY", "/k.pem"
+        ):
+            assert _validate_ssl_config() is False
+
+    def test_validate_ssl_files_missing(self):
+        with patch("aird.main.config.SSL_CERT", "/c.pem"), patch(
+            "aird.main.config.SSL_KEY", "/k.pem"
+        ), patch("aird.main.os.path.exists", return_value=False):
+            assert _validate_ssl_config() is False
+
+    def test_validate_ssl_files_present(self):
+        with patch("aird.main.config.SSL_CERT", "/c.pem"), patch(
+            "aird.main.config.SSL_KEY", "/k.pem"
+        ), patch("aird.main.os.path.exists", return_value=True):
+            assert _validate_ssl_config() is True
+
+    def test_validate_ssl_unconfigured(self):
+        with patch("aird.main.config.SSL_CERT", None), patch(
+            "aird.main.config.SSL_KEY", None
+        ):
+            assert _validate_ssl_config() is True
+
+    def test_print_server_urls_localhost_only(self):
+        printed = []
+        with patch("builtins.print", printed.append), patch(
+            "aird.main.socket.getfqdn", return_value="localhost"
+        ):
+            _print_server_urls(8080, "localhost", "http")
+        assert printed == ["http://localhost:8080/"]
+
+    def test_print_server_urls_hostname_and_fqdn(self):
+        printed = []
+        with patch("builtins.print", printed.append), patch(
+            "aird.main.socket.getfqdn", return_value="box.example.com"
+        ):
+            _print_server_urls(443, "box", "https")
+        assert printed == [
+            "https://localhost:443/",
+            "https://box:443/",
+            "https://box.example.com:443/",
+        ]
+
+    def test_load_and_merge_configs(self, db_conn):
+        orig_flags = copy.deepcopy(constants_module.FEATURE_FLAGS)
+        orig_upload = copy.deepcopy(constants_module.UPLOAD_CONFIG)
+        orig_max = constants_module.MAX_FILE_SIZE
+        orig_ext = constants_module.UPLOAD_ALLOWED_EXTENSIONS.copy()
+        try:
+            with patch(
+                "aird.main.load_feature_flags",
+                return_value={"super_search": False},
+            ), patch(
+                "aird.main.load_upload_config",
+                return_value={"max_file_size_mb": 77, "allow_all_file_types": 0},
+            ), patch(
+                "aird.main.load_allowed_extensions", return_value={".zz"}
+            ):
+                _load_and_merge_configs(db_conn)
+            assert constants_module.FEATURE_FLAGS["super_search"] is False
+            assert constants_module.UPLOAD_CONFIG["max_file_size_mb"] == 77
+            assert constants_module.MAX_FILE_SIZE == 77 * 1024 * 1024
+            assert ".zz" in constants_module.UPLOAD_ALLOWED_EXTENSIONS
+        finally:
+            constants_module.FEATURE_FLAGS.clear()
+            constants_module.FEATURE_FLAGS.update(orig_flags)
+            constants_module.UPLOAD_CONFIG.clear()
+            constants_module.UPLOAD_CONFIG.update(orig_upload)
+            constants_module.MAX_FILE_SIZE = orig_max
+            constants_module.UPLOAD_ALLOWED_EXTENSIONS.clear()
+            constants_module.UPLOAD_ALLOWED_EXTENSIONS.update(orig_ext)
+
+    def test_load_and_merge_configs_seeds_extensions(self, db_conn):
+        orig_flags = copy.deepcopy(constants_module.FEATURE_FLAGS)
+        orig_upload = copy.deepcopy(constants_module.UPLOAD_CONFIG)
+        orig_max = constants_module.MAX_FILE_SIZE
+        orig_ext = constants_module.UPLOAD_ALLOWED_EXTENSIONS.copy()
+        try:
+            with patch("aird.main.load_feature_flags", return_value={}), patch(
+                "aird.main.load_upload_config", return_value={}
+            ), patch("aird.main.load_allowed_extensions", return_value=set()), patch(
+                "aird.main.save_allowed_extensions"
+            ) as mock_save:
+                _load_and_merge_configs(db_conn)
+            mock_save.assert_called_once()
+            assert constants_module.UPLOAD_ALLOWED_EXTENSIONS
+        finally:
+            constants_module.FEATURE_FLAGS.clear()
+            constants_module.FEATURE_FLAGS.update(orig_flags)
+            constants_module.UPLOAD_CONFIG.clear()
+            constants_module.UPLOAD_CONFIG.update(orig_upload)
+            constants_module.MAX_FILE_SIZE = orig_max
+            constants_module.UPLOAD_ALLOWED_EXTENSIONS.clear()
+            constants_module.UPLOAD_ALLOWED_EXTENSIONS.update(orig_ext)
+
+    def test_create_emergency_db_connection(self):
+        orig_conn = constants_module.DB_CONN
+        orig_path = constants_module.DB_PATH
+        mock_sql_conn = MagicMock()
+        try:
+            constants_module.DB_CONN = None
+            with patch("aird.main.os.makedirs"), patch(
+                "aird.main.os.path.join", return_value="/fake/db.sqlite3"
+            ), patch("aird.main.os.path.expanduser", return_value="/home"), patch(
+                "aird.main.sqlite3.connect", return_value=mock_sql_conn
+            ), patch("aird.main.init_db") as mock_init:
+                _create_emergency_db_connection()
+            assert constants_module.DB_CONN is mock_sql_conn
+            mock_init.assert_called_once_with(mock_sql_conn)
+            assert constants_module.DB_PATH == "/fake/db.sqlite3"
+        finally:
+            constants_module.DB_CONN = orig_conn
+            constants_module.DB_PATH = orig_path
+
+    def test_run_cleanup_expired_shares_with_db(self):
+        mock_loop = MagicMock()
+        db = MagicMock()
+        with patch("aird.main.constants.DB_CONN", db), patch(
+            "aird.main.cleanup_expired_shares", return_value=2
+        ), patch("aird.main.tornado.ioloop.IOLoop.current", return_value=mock_loop):
+            _run_cleanup_expired_shares()
+        mock_loop.call_later.assert_called_once_with(
+            3600, _run_cleanup_expired_shares
+        )
+
+    def test_run_cleanup_expired_shares_no_db_still_schedules(self):
+        mock_loop = MagicMock()
+        with patch("aird.main.constants.DB_CONN", None), patch(
+            "aird.main.cleanup_expired_shares"
+        ) as mock_cleanup, patch(
+            "aird.main.tornado.ioloop.IOLoop.current", return_value=mock_loop
+        ):
+            _run_cleanup_expired_shares()
+        mock_cleanup.assert_not_called()
+        mock_loop.call_later.assert_called_once()
+
+    def test_auto_start_network_shares(self):
+        orig_nsm = constants_module.NETWORK_SHARE_MANAGER
+        mock_mgr = MagicMock()
+        share_row = {"id": 1, "enabled": True, "name": "smb1"}
+        try:
+            with patch(
+                "aird.main.NetworkShareManager", return_value=mock_mgr
+            ), patch(
+                "aird.main.get_all_network_shares",
+                return_value=[share_row, {"enabled": False}],
+            ):
+                _auto_start_network_shares(MagicMock())
+            assert constants_module.NETWORK_SHARE_MANAGER is mock_mgr
+            mock_mgr.start_share.assert_called_once_with(share_row)
+        finally:
+            constants_module.NETWORK_SHARE_MANAGER = orig_nsm
+
+
 class TestMakeApp:
     def test_basic_app(self):
         settings = {
@@ -718,6 +927,37 @@ class TestMakeApp:
         }
         app = make_app(settings)
         assert app is not None
+
+    def test_sets_max_body_and_buffer_limits(self):
+        settings = {"cookie_secret": "test"}
+        make_app(settings)
+        assert (
+            settings["max_body_size"]
+            == constants_module.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT
+        )
+        assert (
+            settings["max_buffer_size"]
+            == constants_module.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT
+        )
+
+    def test_registers_favorites_and_ldap_routes(self):
+        settings = {"cookie_secret": "test"}
+        with patch.object(tornado.web.Application, "__init__", return_value=None) as ai:
+            make_app(settings)
+        routes = ai.call_args[0][0]
+        handlers = [spec[1] for spec in routes]
+        assert FavoriteToggleAPIHandler in handlers
+        assert FavoritesListAPIHandler in handlers
+        with patch.object(tornado.web.Application, "__init__", return_value=None) as ai2:
+            make_app(
+                settings,
+                ldap_enabled=True,
+                ldap_server="ldap://x",
+                ldap_base_dn="dc=x",
+                ldap_user_template="u",
+            )
+        routes2 = ai2.call_args[0][0]
+        assert LDAPConfigHandler in [spec[1] for spec in routes2]
 
     def test_with_ldap(self):
         settings = {
