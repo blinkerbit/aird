@@ -5,6 +5,7 @@ Tests for the network share feature: DB CRUD, NetworkShareManager, and admin han
 import os
 import sqlite3
 import threading
+import time
 
 import pytest
 from unittest.mock import MagicMock, patch
@@ -507,12 +508,17 @@ class TestNetworkShareManager:
     def test_start_webdav_read_only_flag_passed(self, sample_share):
         mgr = NetworkShareManager()
         ro_share = {**sample_share, "read_only": True}
+        # WsgiDAVApp runs inside a daemon thread; keep patches active until invoked.
         with patch("aird.network_share_manager._WEBDAV_AVAILABLE", True), patch(
             "aird.network_share_manager.WsgiDAVApp"
         ) as mock_app, patch("aird.network_share_manager.cheroot_wsgi"):
             mgr._start_webdav(ro_share)
-        config_passed = mock_app.call_args[0][0]
-        assert config_passed["fs_dav_provider"]["readonly"] is True
+            deadline = time.time() + 5.0
+            while not mock_app.called and time.time() < deadline:
+                time.sleep(0.01)
+            assert mock_app.called, "WsgiDAVApp was not called by WebDAV thread"
+            config_passed = mock_app.call_args[0][0]
+            assert config_passed["fs_dav_provider"]["readonly"] is True
 
 
 # ================================================================
