@@ -711,6 +711,311 @@
     [data-theme="dark"] .btn:hover { background: #444; }
     [data-theme="dark"] .custom-dialog-overlay .custom-dialog { background: #1e1e2e; border-color: #444; color: #e0e0e0; }
     [data-theme="dark"] .custom-dialog input { background: #222; color: #e0e0e0; border-color: #444; }
+
+    /* Sticky selection bar at bottom of viewport */
+    .selection-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #111;
+      color: white;
+      padding: 12px 20px;
+      z-index: 900;
+      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.25);
+      transform: translateY(100%);
+      transition: transform 0.25s ease;
+    }
+
+    .selection-bar.visible {
+      transform: translateY(0);
+    }
+
+    .selection-bar-inner {
+      max-width: 100%;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .selection-bar-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+      overflow: hidden;
+      flex: 1;
+    }
+
+    .selection-bar-count {
+      font-weight: bold;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    .selection-bar .selected-files {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 4px;
+      overflow-x: auto;
+      max-width: 500px;
+    }
+
+    .selection-bar .selected-file {
+      background: #333;
+      color: #ddd;
+      font-size: 11px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      padding: 2px 8px;
+      border-radius: 3px;
+    }
+
+    .selection-bar-actions {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+      align-items: center;
+    }
+
+    .selection-bar-actions button {
+      padding: 6px 14px;
+      border: 1px solid #555;
+      color: #ddd;
+      background: #333;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 13px;
+      border-radius: 4px;
+      transition: background 0.15s ease;
+    }
+
+    .selection-bar-actions button:hover {
+      background: #444;
+    }
+
+    .selection-bar-actions .clear-btn {
+      background: transparent;
+      border-color: #666;
+      color: #aaa;
+    }
+
+    .selection-bar-actions .clear-btn:hover {
+      background: #222;
+      color: #fff;
+    }
+
+    [data-theme="dark"] .selection-bar { background: #0d0d1a; }
+    [data-theme="dark"] .selection-bar .selected-file { background: #2a2a3e; color: #ccc; }
+    [data-theme="dark"] .selection-bar-actions button { background: #2a2a3e; border-color: #444; color: #ccc; }
+    [data-theme="dark"] .selection-bar-actions button:hover { background: #333; }
+
+    @media (max-width: 768px) {
+      .selection-bar-inner {
+        flex-direction: column;
+        gap: 8px;
+      }
+      .selection-bar .selected-files {
+        max-width: 100%;
+      }
+      .selection-bar-actions {
+        width: 100%;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+      }
+    }
+
+    /* Folder picker modal */
+    .folder-picker-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 2000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+    .folder-picker-overlay.show { display: flex; }
+
+    .folder-picker {
+      background: #fff;
+      border: 2px solid #000;
+      border-radius: 10px;
+      width: 90%;
+      max-width: 560px;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+    }
+
+    .fp-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #ddd;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .fp-header h3 { margin: 0; font-size: 16px; }
+    .fp-close {
+      background: none; border: none; font-size: 22px;
+      cursor: pointer; padding: 0; width: 30px; height: 30px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 50%;
+    }
+    .fp-close:hover { background: #f0f0f0; }
+
+    .fp-breadcrumb {
+      padding: 10px 20px;
+      font-size: 13px;
+      background: #f8f8f8;
+      border-bottom: 1px solid #eee;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    .fp-breadcrumb a {
+      color: #0066cc;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .fp-breadcrumb a:hover { text-decoration: underline; }
+    .fp-breadcrumb .fp-sep { color: #999; }
+    .fp-breadcrumb .fp-current { font-weight: bold; color: #333; }
+
+    .fp-body {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 200px;
+      max-height: 400px;
+    }
+
+    .fp-loading {
+      text-align: center;
+      padding: 40px 20px;
+      color: #888;
+    }
+
+    .fp-empty {
+      text-align: center;
+      padding: 40px 20px;
+      color: #999;
+      font-style: italic;
+    }
+
+    .fp-folder-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .fp-folder-item {
+      padding: 10px 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid #f0f0f0;
+      transition: background 0.1s ease;
+      font-size: 14px;
+    }
+    .fp-folder-item:hover { background: #f0f5ff; }
+    .fp-folder-item .fp-icon { font-size: 16px; flex-shrink: 0; }
+    .fp-folder-item .fp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fp-folder-item .fp-arrow { color: #bbb; font-size: 14px; flex-shrink: 0; }
+
+    .fp-new-folder {
+      padding: 10px 20px;
+      border-bottom: 1px solid #eee;
+      background: #fafafa;
+    }
+    .fp-new-folder button {
+      padding: 5px 12px;
+      border: 1px dashed #ccc;
+      background: #fff;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 13px;
+      border-radius: 4px;
+      color: #555;
+    }
+    .fp-new-folder button:hover { border-color: #999; color: #000; }
+
+    .fp-footer {
+      padding: 14px 20px;
+      border-top: 1px solid #ddd;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: #fafafa;
+    }
+
+    .fp-dest-path {
+      font-size: 12px;
+      color: #666;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+    .fp-dest-path code {
+      background: #eee;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+
+    .fp-footer-actions {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .fp-footer-actions button {
+      padding: 8px 18px;
+      border: 1px solid #000;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 13px;
+      border-radius: 5px;
+      font-weight: bold;
+    }
+    .fp-cancel-btn {
+      background: #fff;
+      color: #333;
+    }
+    .fp-cancel-btn:hover { background: #f0f0f0; }
+    .fp-confirm-btn {
+      background: #000;
+      color: #fff;
+    }
+    .fp-confirm-btn:hover { background: #333; }
+
+    /* Folder picker dark mode */
+    [data-theme="dark"] .folder-picker { background: #1e1e2e; border-color: #444; color: #e0e0e0; }
+    [data-theme="dark"] .fp-header { border-color: #444; }
+    [data-theme="dark"] .fp-close:hover { background: #333; }
+    [data-theme="dark"] .fp-breadcrumb { background: #1a1a2a; border-color: #333; }
+    [data-theme="dark"] .fp-breadcrumb a { color: #58a6ff; }
+    [data-theme="dark"] .fp-breadcrumb .fp-current { color: #e0e0e0; }
+    [data-theme="dark"] .fp-breadcrumb .fp-sep { color: #666; }
+    [data-theme="dark"] .fp-folder-item { border-color: #2a2a3e; }
+    [data-theme="dark"] .fp-folder-item:hover { background: #2a2a3e; }
+    [data-theme="dark"] .fp-new-folder { background: #1a1a2a; border-color: #333; }
+    [data-theme="dark"] .fp-new-folder button { background: #222; border-color: #555; color: #ccc; }
+    [data-theme="dark"] .fp-new-folder button:hover { color: #fff; border-color: #888; }
+    [data-theme="dark"] .fp-footer { background: #1a1a2a; border-color: #444; }
+    [data-theme="dark"] .fp-dest-path { color: #aaa; }
+    [data-theme="dark"] .fp-dest-path code { background: #2a2a3e; color: #ccc; }
+    [data-theme="dark"] .fp-cancel-btn { background: #2a2a3e; color: #ccc; border-color: #555; }
+    [data-theme="dark"] .fp-cancel-btn:hover { background: #333; }
+    [data-theme="dark"] .fp-confirm-btn { background: #58a6ff; color: #000; border-color: #58a6ff; }
+    [data-theme="dark"] .fp-confirm-btn:hover { background: #79b8ff; }
   </style>
 </head>
 
@@ -731,20 +1036,7 @@
     <div id="progressContainer" style="display:none;width:100%;"></div>
     {% end %}
 
-    <!-- Toolbar: New folder + bulk actions -->
-    <div class="bulk-toolbar" id="bulkToolbar" style="display: none; margin-bottom: 12px; padding: 10px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; align-items: center; gap: 10px; flex-wrap: wrap;">
-      <span id="bulkCount" style="font-weight: bold;">0 selected</span>
-      {% if features.get('file_delete') %}
-      <button type="button" id="bulkDeleteBtn" class="bulk-btn" style="padding:6px 12px;border:1px solid #000;background:#fff;cursor:pointer;">Delete</button>
-      {% end %}
-      {% if features.get('file_rename') %}
-      <button type="button" id="bulkCopyBtn" class="bulk-btn" style="padding:6px 12px;border:1px solid #000;background:#fff;cursor:pointer;">Copy</button>
-      <button type="button" id="bulkMoveBtn" class="bulk-btn" style="padding:6px 12px;border:1px solid #000;background:#fff;cursor:pointer;">Move</button>
-      {% end %}
-      {% if features.get('file_share') %}
-      <button type="button" id="bulkAddToShareBtn" class="bulk-btn" style="padding:6px 12px;border:1px solid #000;background:#fff;cursor:pointer;">Add to share</button>
-      {% end %}
-    </div>
+    <!-- Toolbar: New folder -->
     {% if features.get('folder_create') %}
     <div style="margin-bottom: 10px;">
       <button type="button" id="newFolderBtn" style="padding:6px 12px;border:1px solid #000;background:#fff;cursor:pointer;font-family:inherit;">📁 New folder</button>
@@ -890,6 +1182,53 @@
 
   </div>
 
+  <!-- Sticky selection bar at bottom of screen -->
+  <div class="selection-bar" id="selectionBar">
+    <div class="selection-bar-inner">
+      <div class="selection-bar-info">
+        <span class="selection-bar-count" id="bulkCount">0 selected</span>
+        <div class="selected-files" id="selectedFilesList"></div>
+      </div>
+      <div class="selection-bar-actions">
+        {% if features.get('file_delete') %}
+        <button type="button" id="bulkDeleteBtn">Delete</button>
+        {% end %}
+        {% if features.get('file_rename') %}
+        <button type="button" id="bulkCopyBtn">Copy</button>
+        <button type="button" id="bulkMoveBtn">Move</button>
+        {% end %}
+        {% if features.get('file_share') %}
+        <button type="button" id="bulkAddToShareBtn">Add to share</button>
+        {% end %}
+        <button type="button" id="clearSelectionBtn" class="clear-btn" title="Clear all selections">✕ Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Folder picker modal for Copy / Move -->
+  <div class="folder-picker-overlay" id="folderPickerOverlay">
+    <div class="folder-picker">
+      <div class="fp-header">
+        <h3 id="fpTitle">Select destination</h3>
+        <button class="fp-close" id="fpCloseBtn">&times;</button>
+      </div>
+      <div class="fp-breadcrumb" id="fpBreadcrumb"></div>
+      <div class="fp-new-folder">
+        <button type="button" id="fpNewFolderBtn">📁 New folder</button>
+      </div>
+      <div class="fp-body" id="fpBody">
+        <div class="fp-loading">Loading...</div>
+      </div>
+      <div class="fp-footer">
+        <div class="fp-dest-path">Destination: <code id="fpDestDisplay">/</code></div>
+        <div class="fp-footer-actions">
+          <button type="button" class="fp-cancel-btn" id="fpCancelBtn">Cancel</button>
+          <button type="button" class="fp-confirm-btn" id="fpConfirmBtn">Paste here</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Share picker modal for bulk Add to share -->
   <div id="sharePickerModal" class="custom-dialog-modal">
     <div class="custom-dialog-modal-content">
@@ -926,6 +1265,38 @@
     const RELOAD_DELAY_MS = 500;
     const MIN_COLUMN_WIDTH = 50;
     const MAX_FILE_SIZE = {{ max_file_size }};
+
+    const SelectionStore = {
+      KEY: 'aird_browse_selections',
+      _read() {
+        try { return JSON.parse(sessionStorage.getItem(this.KEY)) || []; }
+        catch { return []; }
+      },
+      _write(arr) { sessionStorage.setItem(this.KEY, JSON.stringify(arr)); },
+      getAll() { return this._read(); },
+      add(path) {
+        const arr = this._read();
+        if (!arr.includes(path)) { arr.push(path); this._write(arr); }
+      },
+      remove(path) {
+        const arr = this._read().filter(p => p !== path);
+        this._write(arr);
+      },
+      has(path) { return this._read().includes(path); },
+      clear() { sessionStorage.removeItem(this.KEY); },
+      count() { return this._read().length; },
+      addMany(paths) {
+        const arr = this._read();
+        let changed = false;
+        for (const p of paths) { if (!arr.includes(p)) { arr.push(p); changed = true; } }
+        if (changed) this._write(arr);
+      },
+      removeMany(paths) {
+        const set = new Set(paths);
+        const arr = this._read().filter(p => !set.has(p));
+        this._write(arr);
+      }
+    };
 
     // Fallback for image thumbnails that fail to load
     document.addEventListener('error', function(e) {
@@ -1299,6 +1670,7 @@
       })
         .then((res) => {
           if (res.ok) {
+            SelectionStore.remove(filepath);
             location.reload();
           } else {
             res.text().then((t) => showDialog("Rename failed: " + t, "Error"));
@@ -1327,6 +1699,7 @@
       })
         .then((res) => {
           if (res.ok) {
+            SelectionStore.remove(filepath);
             location.reload();
           } else {
             res.text().then((t) => showDialog("Delete failed: " + t, "Error"));
@@ -1336,25 +1709,60 @@
     }
 
     function getSelectedPaths() {
+      return SelectionStore.getAll();
+    }
+
+    function getPageSelectedPaths() {
       return Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.dataset.path);
     }
 
-    function updateBulkToolbar() {
-      const paths = getSelectedPaths();
-      const toolbar = document.getElementById('bulkToolbar');
-      const countEl = document.getElementById('bulkCount');
-      if (!toolbar || !countEl) return;
-      if (paths.length === 0) {
-        toolbar.style.display = 'none';
+    function syncCheckboxToStore(checkbox) {
+      if (checkbox.checked) {
+        SelectionStore.add(checkbox.dataset.path);
       } else {
-        toolbar.style.display = 'flex';
-        countEl.textContent = paths.length + ' selected';
+        SelectionStore.remove(checkbox.dataset.path);
       }
+    }
+
+    function updateBulkToolbar() {
+      const allPaths = SelectionStore.getAll();
+      const totalCount = allPaths.length;
+      const pageCount = getPageSelectedPaths().length;
+      const otherCount = totalCount - pageCount;
+      const bar = document.getElementById('selectionBar');
+      const countEl = document.getElementById('bulkCount');
+      const filesList = document.getElementById('selectedFilesList');
+      if (!bar || !countEl) return;
+
+      if (totalCount === 0) {
+        bar.classList.remove('visible');
+      } else {
+        let label = totalCount + ' selected';
+        if (otherCount > 0) {
+          label += ' (' + otherCount + ' from other folders)';
+        }
+        countEl.textContent = label;
+
+        if (filesList) {
+          const displayPaths = allPaths.slice(0, 10);
+          filesList.innerHTML = displayPaths.map(function (p) {
+            const name = p.split('/').filter(Boolean).pop() || p;
+            return '<span class="selected-file" title="' + p.replace(/"/g, '&quot;') + '">' +
+              name.replace(/</g, '&lt;') + '</span>';
+          }).join('');
+          if (allPaths.length > 10) {
+            filesList.innerHTML += '<span class="selected-file">+' + (allPaths.length - 10) + ' more</span>';
+          }
+        }
+
+        bar.classList.add('visible');
+      }
+
       const selectAll = document.getElementById('selectAllCheckbox');
       if (selectAll) {
         const total = document.querySelectorAll('.row-checkbox').length;
-        selectAll.checked = total > 0 && paths.length === total;
-        selectAll.indeterminate = paths.length > 0 && paths.length < total;
+        selectAll.checked = total > 0 && pageCount === total;
+        selectAll.indeterminate = pageCount > 0 && pageCount < total;
       }
     }
 
@@ -1390,19 +1798,153 @@
           body: JSON.stringify({ action: 'delete', paths }),
         });
         const data = await res.json();
-        if (data.ok) location.reload();
+        if (data.ok) { SelectionStore.clear(); location.reload(); }
         else showDialog(data.results && data.results.find(r => !r.ok) ? data.results.map(r => r.error).filter(Boolean).join('; ') : 'Bulk delete failed', 'Error');
       } catch (e) {
         showDialog('Bulk delete failed: ' + e.message, 'Error');
       }
     }
 
+    // --- Folder Picker ---
+    const FolderPicker = {
+      _overlay: null,
+      _body: null,
+      _breadcrumb: null,
+      _destDisplay: null,
+      _confirmBtn: null,
+      _titleEl: null,
+      _currentPath: '',
+      _mode: 'copy',
+      _resolve: null,
+
+      init() {
+        this._overlay = document.getElementById('folderPickerOverlay');
+        this._body = document.getElementById('fpBody');
+        this._breadcrumb = document.getElementById('fpBreadcrumb');
+        this._destDisplay = document.getElementById('fpDestDisplay');
+        this._confirmBtn = document.getElementById('fpConfirmBtn');
+        this._titleEl = document.getElementById('fpTitle');
+
+        document.getElementById('fpCloseBtn').addEventListener('click', () => this.close(null));
+        document.getElementById('fpCancelBtn').addEventListener('click', () => this.close(null));
+        this._confirmBtn.addEventListener('click', () => this.close(this._currentPath));
+        this._overlay.addEventListener('click', (e) => {
+          if (e.target === this._overlay) this.close(null);
+        });
+        document.getElementById('fpNewFolderBtn').addEventListener('click', () => this._createFolder());
+      },
+
+      open(mode) {
+        this._mode = mode;
+        this._titleEl.textContent = mode === 'copy' ? 'Copy to...' : 'Move to...';
+        this._confirmBtn.textContent = mode === 'copy' ? 'Paste here' : 'Move here';
+        this._overlay.classList.add('show');
+        const startPath = (document.getElementById('currentPath') || {}).value || '';
+        this._navigate(startPath);
+
+        return new Promise((resolve) => { this._resolve = resolve; });
+      },
+
+      close(result) {
+        this._overlay.classList.remove('show');
+        if (this._resolve) {
+          this._resolve(result);
+          this._resolve = null;
+        }
+      },
+
+      async _navigate(path) {
+        this._currentPath = path;
+        this._renderBreadcrumb(path);
+        this._destDisplay.textContent = '/' + (path || '');
+        this._body.innerHTML = '<div class="fp-loading">Loading...</div>';
+
+        try {
+          const res = await fetch('/api/files/' + encodeURI(path));
+          if (!res.ok) throw new Error('Failed to load');
+          const data = await res.json();
+          const folders = (data.files || []).filter(f => f.is_dir);
+          this._renderFolders(folders);
+        } catch (e) {
+          this._body.innerHTML = '<div class="fp-empty">Failed to load directory</div>';
+        }
+      },
+
+      _renderBreadcrumb(path) {
+        const parts = path.split('/').filter(Boolean);
+        let html = '<a data-fp-nav="">🏠 Root</a>';
+        parts.forEach((part, i) => {
+          const partPath = parts.slice(0, i + 1).join('/');
+          html += ' <span class="fp-sep">/</span> ';
+          if (i === parts.length - 1) {
+            html += '<span class="fp-current">' + this._esc(part) + '</span>';
+          } else {
+            html += '<a data-fp-nav="' + partPath + '">' + this._esc(part) + '</a>';
+          }
+        });
+        this._breadcrumb.innerHTML = html;
+        this._breadcrumb.querySelectorAll('a[data-fp-nav]').forEach(a => {
+          a.addEventListener('click', (e) => {
+            e.preventDefault();
+            this._navigate(a.dataset.fpNav);
+          });
+        });
+      },
+
+      _renderFolders(folders) {
+        if (folders.length === 0) {
+          this._body.innerHTML = '<div class="fp-empty">No subfolders here</div>';
+          return;
+        }
+        const ul = document.createElement('ul');
+        ul.className = 'fp-folder-list';
+        folders.forEach(f => {
+          const li = document.createElement('li');
+          li.className = 'fp-folder-item';
+          li.innerHTML = '<span class="fp-icon">📁</span>' +
+            '<span class="fp-name">' + this._esc(f.name) + '</span>' +
+            '<span class="fp-arrow">›</span>';
+          li.addEventListener('click', () => {
+            const child = this._currentPath ? this._currentPath + '/' + f.name : f.name;
+            this._navigate(child);
+          });
+          ul.appendChild(li);
+        });
+        this._body.innerHTML = '';
+        this._body.appendChild(ul);
+      },
+
+      async _createFolder() {
+        const name = await showDialog('Enter folder name:', 'New folder', { prompt: true, showCancel: true });
+        if (!name || !name.trim()) return;
+        const formData = new URLSearchParams();
+        formData.append('parent', this._currentPath);
+        formData.append('name', name.trim());
+        try {
+          const res = await fetch('/mkdir', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRFToken': getXSRFToken() },
+            body: formData.toString(),
+          });
+          if (res.ok) this._navigate(this._currentPath);
+          else showDialog('Create folder failed: ' + (await res.text()), 'Error');
+        } catch (e) {
+          showDialog('Create folder failed: ' + e.message, 'Error');
+        }
+      },
+
+      _esc(str) {
+        const el = document.createElement('span');
+        el.textContent = str;
+        return el.innerHTML;
+      }
+    };
+
     async function bulkCopy() {
       const paths = getSelectedPaths();
       if (paths.length === 0) return;
-      const dest = await showDialog('Destination folder path (e.g. target/ or target/sub):', 'Copy to', { prompt: true, showCancel: true, defaultValue: (document.getElementById('currentPath') || {}).value || '' });
-      if (dest == null || dest === '') return;
-      const destDir = dest.trim().replace(/^\/+|\/+$/g, '') || '';
+      const destDir = await FolderPicker.open('copy');
+      if (destDir == null) return;
       let failed = 0;
       for (const path of paths) {
         const base = path.split('/').filter(Boolean).pop() || path;
@@ -1413,16 +1955,15 @@
         const res = await fetch('/copy', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRFToken': getXSRFToken() }, body: formData.toString() });
         if (!res.ok) failed++;
       }
-      if (failed === 0) location.reload();
+      if (failed === 0) { SelectionStore.clear(); location.reload(); }
       else showDialog(failed + ' of ' + paths.length + ' copy operation(s) failed.', 'Copy');
     }
 
     async function bulkMove() {
       const paths = getSelectedPaths();
       if (paths.length === 0) return;
-      const dest = await showDialog('Destination folder path (e.g. target/ or target/sub):', 'Move to', { prompt: true, showCancel: true, defaultValue: (document.getElementById('currentPath') || {}).value || '' });
-      if (dest == null || dest === '') return;
-      const destDir = dest.trim().replace(/^\/+|\/+$/g, '') || '';
+      const destDir = await FolderPicker.open('move');
+      if (destDir == null) return;
       let failed = 0;
       for (const path of paths) {
         const base = path.split('/').filter(Boolean).pop() || path;
@@ -1433,7 +1974,7 @@
         const res = await fetch('/move', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRFToken': getXSRFToken() }, body: formData.toString() });
         if (!res.ok) failed++;
       }
-      if (failed === 0) location.reload();
+      if (failed === 0) { SelectionStore.clear(); location.reload(); }
       else showDialog(failed + ' of ' + paths.length + ' move operation(s) failed.', 'Move');
     }
 
@@ -1466,7 +2007,7 @@
           body: JSON.stringify({ action: 'add_to_share', share_id: shareId, paths }),
         });
         const data = await res.json();
-        if (data.ok) location.reload();
+        if (data.ok) { SelectionStore.clear(); location.reload(); }
         else showDialog(data.results && data.results.find(r => !r.ok) ? data.results.map(r => r.error).filter(Boolean).join('; ') : 'Add to share failed', 'Error');
       } catch (e) {
         showDialog('Add to share failed: ' + e.message, 'Error');
@@ -1726,6 +2267,8 @@
 
     // Event delegation for CSP compliance - handle all clicks through event listeners
     document.addEventListener('DOMContentLoaded', function () {
+      FolderPicker.init();
+
       // Sort headers
       document.querySelectorAll('[data-sort-column]').forEach(function (el) {
         el.addEventListener('click', function () {
@@ -1765,6 +2308,14 @@
         });
       });
 
+      // Restore selections from sessionStorage
+      document.querySelectorAll('.row-checkbox').forEach(function (cb) {
+        if (SelectionStore.has(cb.dataset.path)) {
+          cb.checked = true;
+        }
+      });
+      updateBulkToolbar();
+
       // Select all checkbox
       const selectAllCheckbox = document.getElementById('selectAllCheckbox');
       if (selectAllCheckbox) {
@@ -1772,12 +2323,21 @@
           e.stopPropagation();
         });
         selectAllCheckbox.addEventListener('change', function () {
+          const allPagePaths = Array.from(document.querySelectorAll('.row-checkbox')).map(cb => cb.dataset.path);
           document.querySelectorAll('.row-checkbox').forEach(cb => { cb.checked = selectAllCheckbox.checked; });
+          if (selectAllCheckbox.checked) {
+            SelectionStore.addMany(allPagePaths);
+          } else {
+            SelectionStore.removeMany(allPagePaths);
+          }
           updateBulkToolbar();
         });
       }
       document.querySelectorAll('.row-checkbox').forEach(function (cb) {
-        cb.addEventListener('change', updateBulkToolbar);
+        cb.addEventListener('change', function () {
+          syncCheckboxToStore(cb);
+          updateBulkToolbar();
+        });
       });
       const newFolderBtn = document.getElementById('newFolderBtn');
       if (newFolderBtn) newFolderBtn.addEventListener('click', newFolder);
@@ -1789,6 +2349,14 @@
       if (bulkMoveBtn) bulkMoveBtn.addEventListener('click', bulkMove);
       const bulkAddToShareBtn = document.getElementById('bulkAddToShareBtn');
       if (bulkAddToShareBtn) bulkAddToShareBtn.addEventListener('click', bulkAddToShare);
+      const clearSelectionBtn = document.getElementById('clearSelectionBtn');
+      if (clearSelectionBtn) clearSelectionBtn.addEventListener('click', function () {
+        SelectionStore.clear();
+        document.querySelectorAll('.row-checkbox:checked').forEach(function (cb) { cb.checked = false; });
+        var sa = document.getElementById('selectAllCheckbox');
+        if (sa) sa.checked = false;
+        updateBulkToolbar();
+      });
 
       // Event delegation for dynamically generated share popup buttons
       document.addEventListener('click', function (e) {
@@ -1871,13 +2439,18 @@
 
         if (e.key === 'Escape') {
           if (shortcutsOverlay) { hideShortcutsHelp(); return; }
+          // Close folder picker if open
+          var fpOverlay = document.getElementById('folderPickerOverlay');
+          if (fpOverlay && fpOverlay.classList.contains('show')) { FolderPicker.close(null); return; }
           // Close any open popup
           var popup = document.querySelector('.popup-overlay.show');
           if (popup) { popup.classList.remove('show'); return; }
-          // Deselect all checkboxes
-          document.querySelectorAll('.row-checkbox:checked').forEach(function(cb) { cb.checked = false; cb.dispatchEvent(new Event('change', {bubbles:true})); });
+          // Deselect all checkboxes and clear persistent store
+          SelectionStore.clear();
+          document.querySelectorAll('.row-checkbox:checked').forEach(function(cb) { cb.checked = false; });
           var selectAll = document.getElementById('selectAllCheckbox');
           if (selectAll) selectAll.checked = false;
+          updateBulkToolbar();
           return;
         }
 

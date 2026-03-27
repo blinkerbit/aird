@@ -1,14 +1,20 @@
 import base64
 import functools
 import json
+import logging
 import secrets
+from typing import Any, Callable, Protocol
 
 import tornado.web
 import tornado.websocket
 
 import aird.config as config_module
-from aird.db import get_user_by_username
+from aird.adapters.persistence_adapter import get_user_by_username
 from aird.utils.util import is_feature_enabled
+
+logger = logging.getLogger(__name__)
+DISPLAY_ADMIN_TOKEN = "Admin (Token)"
+DISPLAY_ACCESS_TOKEN = "Access (Token)"
 
 # ---------------------------------------------------------------------------
 # Decorators for common guard patterns
@@ -64,6 +70,26 @@ def require_admin(
                     self.write(deny_body)
                 return
             return method(self, *args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+def require_modify_access(
+    deny_status=403,
+    deny_body="Write access denied. Sign in with modify privileges.",
+):
+    """Decorator: ensure caller has modify/write privileges."""
+
+    def decorator(method):
+        @functools.wraps(method)
+        def wrapper(self, *args, **kwargs):
+            if hasattr(self, "has_modify_privileges") and self.has_modify_privileges():
+                return method(self, *args, **kwargs)
+            self.set_status(deny_status)
+            self.write(deny_body)
+            return None
 
         return wrapper
 
@@ -150,18 +176,17 @@ def _parse_username_from_cookie(user_json):
         return (raw, False)
 
 
-def _try_cookie_auth(handler):
-    """Attempt auth via secure cookie. Returns user dict or None."""
-    user_json = handler.get_secure_cookie("user")
-    if not user_json:
-        return None
-    try:
-        username, _ = _parse_username_from_cookie(user_json)
-        db_conn = handler.settings.get("db_conn")
-        if db_conn:
-            user = get_user_by_username(db_conn, username)
-            if user:
-                return user
+class AuthStrategy(Protocol):
+    """Authentication strategy contract."""
+
+    def authenticate(self, handler: Any) -> dict[str, Any] | None: ...
+
+
+class CookieAuthStrategy:
+    """Authenticate a user from signed cookie state."""
+
+    @staticmethod
+    def _token_user_from_username(handler: Any, username: str) -> dict[str, Any] | None:
         if username == "token_authenticated":
             return {"username": "token_user", "role": "user"}
         if username == "admin_token_authenticated":
@@ -169,32 +194,79 @@ def _try_cookie_auth(handler):
                 return {"username": "admin_token", "role": "admin"}
             return None
         return None
-    except Exception:
-        if isinstance(user_json, bytes):
-            user_str = user_json.decode("utf-8", errors="ignore")
-            if user_str == "token_authenticated":
-                return {"username": "token_user", "role": "user"}
-            if user_str == "admin_token_authenticated":
-                if handler.get_secure_cookie("admin"):
-                    return {"username": "admin_token", "role": "admin"}
-                return None
+
+    @classmethod
+    def _token_user_from_cookie_bytes(
+        cls, handler: Any, user_json: Any
+    ) -> dict[str, Any] | None:
+        if not isinstance(user_json, bytes):
+            return None
+        user_str = user_json.decode("utf-8", errors="ignore")
+        return cls._token_user_from_username(handler, user_str)
+
+    def authenticate(self, handler: Any) -> dict[str, Any] | None:
+        user_json = handler.get_secure_cookie("user")
+        if not user_json:
+            return None
+        try:
+            username, _ = _parse_username_from_cookie(user_json)
+            db_conn = handler.settings.get("db_conn")
+            if db_conn:
+                user = get_user_by_username(db_conn, username)
+                if user:
+                    return user
+            return self._token_user_from_username(handler, username)
+        except Exception:
+            return self._token_user_from_cookie_bytes(handler, user_json)
+
+
+class BearerAuthStrategy:
+    """Authenticate a user from Bearer token."""
+
+    def authenticate(self, handler: Any) -> dict[str, Any] | None:
+        auth_header = handler.request.headers.get("Authorization")
+        if not isinstance(auth_header, str) or not auth_header.startswith("Bearer "):
+            return None
+        token = auth_header.split(" ")[1]
+        current_access_token = config_module.ACCESS_TOKEN
+        if not isinstance(current_access_token, str) or not current_access_token:
+            return None
+        normalized_token = token.strip()
+        normalized_access_token = current_access_token.strip()
+        if secrets.compare_digest(normalized_token, normalized_access_token):
+            return {"username": "token_user", "role": "user"}
         return None
+
+
+class ChainedAuthStrategy:
+    """Run auth strategies in order until one succeeds."""
+
+    def __init__(self, strategies: list[AuthStrategy]):
+        self._strategies = strategies
+
+    def authenticate(self, handler: Any) -> dict[str, Any] | None:
+        for strategy in self._strategies:
+            user = strategy.authenticate(handler)
+            if user is not None:
+                return user
+        return None
+
+
+_COOKIE_AUTH_STRATEGY = CookieAuthStrategy()
+_BEARER_AUTH_STRATEGY = BearerAuthStrategy()
+_DEFAULT_AUTH_STRATEGY = ChainedAuthStrategy(
+    [_COOKIE_AUTH_STRATEGY, _BEARER_AUTH_STRATEGY]
+)
+
+
+def _try_cookie_auth(handler):
+    """Attempt auth via secure cookie. Returns user dict or None."""
+    return _COOKIE_AUTH_STRATEGY.authenticate(handler)
 
 
 def _try_bearer_auth(handler):
     """Attempt auth via Authorization Bearer token. Returns user dict or None."""
-    auth_header = handler.request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        return None
-    token = auth_header.split(" ")[1]
-    current_access_token = config_module.ACCESS_TOKEN
-    if not current_access_token:
-        return None
-    normalized_token = token.strip()
-    normalized_access_token = current_access_token.strip()
-    if secrets.compare_digest(normalized_token, normalized_access_token):
-        return {"username": "token_user", "role": "user"}
-    return None
+    return _BEARER_AUTH_STRATEGY.authenticate(handler)
 
 
 def authenticate_handler(handler):
@@ -203,10 +275,7 @@ def authenticate_handler(handler):
     Checks secure cookie and Bearer token auth. Returns a user dict or None.
     The *handler* must support get_secure_cookie() and request.headers.
     """
-    user = _try_cookie_auth(handler)
-    if user is not None:
-        return user
-    return _try_bearer_auth(handler)
+    return _DEFAULT_AUTH_STRATEGY.authenticate(handler)
 
 
 def get_username_string_for_db(handler) -> str | None:
@@ -235,9 +304,9 @@ def _display_username_from_dict(user):
     username = user.get("username", "")
     role = user.get("role", "")
     if username == "admin_token" and role == "admin":
-        return "Admin (Token)"
+        return DISPLAY_ADMIN_TOKEN
     if username == "token_user" and role == "user":
-        return "Access (Token)"
+        return DISPLAY_ACCESS_TOKEN
     if role == "admin":
         return f"{username} (Admin)"
     if role:
@@ -252,14 +321,15 @@ def _display_username_from_legacy(user, handler):
     )
     if user_str == "token_authenticated":
         role_cookie = handler.get_secure_cookie("user_role")
-        role = (
-            role_cookie.decode("utf-8", errors="ignore")
-            if isinstance(role_cookie, bytes)
-            else (str(role_cookie) if role_cookie else "")
-        )
-        return "Access (Token)" if role != "admin" else "Admin (Token)"
+        if isinstance(role_cookie, bytes):
+            role = role_cookie.decode("utf-8", errors="ignore")
+        elif role_cookie:
+            role = str(role_cookie)
+        else:
+            role = ""
+        return DISPLAY_ACCESS_TOKEN if role != "admin" else DISPLAY_ADMIN_TOKEN
     if user_str == "admin_token_authenticated":
-        return "Admin (Token)"
+        return DISPLAY_ADMIN_TOKEN
     role_cookie = handler.get_secure_cookie("user_role")
     if not role_cookie:
         return user_str
@@ -276,21 +346,134 @@ def _display_username_from_legacy(user, handler):
 
 
 class BaseHandler(tornado.web.RequestHandler):
+    _TOKEN_ONLY_USERNAMES = {"token_user", "admin_token"}
+
+    @property
+    def app_context(self):
+        return self.settings.get("app_context")
+
     @property
     def db_conn(self):
+        if self.app_context is not None:
+            return self.app_context.db_conn
         return self.settings.get("db_conn")
 
     @property
     def feature_flags(self):
+        if self.app_context is not None:
+            return self.app_context.feature_flags
         return self.settings.get("feature_flags", {})
 
     @property
     def cloud_manager(self):
+        if self.app_context is not None:
+            return self.app_context.cloud_manager
         return self.settings.get("cloud_manager")
 
     @property
     def network_share_manager(self):
+        if self.app_context is not None:
+            return self.app_context.network_share_manager
         return self.settings.get("network_share_manager")
+
+    @property
+    def room_manager(self):
+        if self.app_context is not None:
+            return self.app_context.room_manager
+        return self.settings.get("room_manager")
+
+    @property
+    def event_bus(self):
+        if self.app_context is not None:
+            return self.app_context.event_bus
+        return self.settings.get("event_bus")
+
+    @property
+    def event_metrics(self):
+        if self.app_context is not None:
+            return self.app_context.event_metrics
+        return self.settings.get("event_metrics")
+
+    def get_repository(self, name: str, default=None):
+        repos = self.settings.get("repositories", {})
+        if self.app_context is not None:
+            return self.app_context.get_repo(name, default)
+        return repos.get(name, default)
+
+    def get_service(self, name: str, default=None):
+        services = self.settings.get("services", {})
+        if self.app_context is not None:
+            return self.app_context.get_service(name, default)
+        return services.get(name, default)
+
+    def publish_event(self, event: Any) -> None:
+        bus = self.event_bus
+        if bus is not None:
+            bus.publish(event)
+
+    def get_signed_in_user(self) -> dict[str, Any] | None:
+        """Return non-token authenticated user object when available."""
+        user = self.get_current_user()
+        if not isinstance(user, dict):
+            return None
+        username = user.get("username")
+        if not isinstance(username, str) or not username.strip():
+            return None
+        if username in self._TOKEN_ONLY_USERNAMES:
+            return None
+        return user
+
+    def has_modify_privileges(self) -> bool:
+        user = self.get_signed_in_user()
+        if not user:
+            return False
+        role = str(user.get("role", "user")).lower()
+        return role in {"admin", "user"}
+
+    def require_modify_privileges(
+        self,
+        *,
+        status: int = 403,
+        body: str = "Write access denied. Sign in with modify privileges.",
+    ) -> bool:
+        if self.has_modify_privileges():
+            return True
+        self.set_status(status)
+        self.write(body)
+        return False
+
+    def write_json_error(self, status: int, message: str) -> None:
+        self.set_status(status)
+        self.write({"error": message})
+
+    def require_db_connection(self, message: str = "Database connection not available"):
+        db_conn = self.db_conn
+        if db_conn is None:
+            self.write_json_error(500, message)
+            return None
+        return db_conn
+
+    def run_json_action(
+        self,
+        action: Callable[[], dict[str, Any] | None],
+        *,
+        on_error_message: str,
+        on_error_status: int = 500,
+    ) -> dict[str, Any] | None:
+        """Template-style execution flow for JSON endpoints."""
+        try:
+            payload = action()
+            if payload is not None:
+                self.write(payload)
+            return payload
+        except tornado.web.HTTPError as exc:
+            reason = exc.log_message or exc.reason or "Request failed"
+            self.write_json_error(exc.status_code, reason)
+            return None
+        except Exception as exc:
+            logger.error("JSON action failed: %s", exc, exc_info=True)
+            self.write_json_error(on_error_status, on_error_message)
+            return None
 
     def require_feature(
         self, feature_key: str, default=True, *, status=403, body=None

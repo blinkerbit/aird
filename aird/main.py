@@ -8,20 +8,42 @@ import ssl
 
 import tornado.ioloop
 import tornado.web
-import tornado.websocket
+
 
 import aird.constants as constants
 import aird.config as config
+from aird.app_context import AppContext
+from aird.core.events import (
+    EventBus,
+    ShareCreatedEvent,
+    TransferStartedEvent,
+    UserAuthenticatedEvent,
+)
 from aird.db import (
-    load_allowed_extensions,
-    save_allowed_extensions,
     get_all_network_shares,
-    load_feature_flags,
     init_db,
+    load_allowed_extensions,
+    load_feature_flags,
     load_upload_config,
     assign_admin_privileges,
     cleanup_expired_shares,
+    save_allowed_extensions,
 )
+from aird.repositories import (
+    ConfigRepository,
+    NetworkShareRepository,
+    ShareRepository,
+    UserRepository,
+)
+from aird.services import (
+    ConfigService,
+    EventLoggingSubscriber,
+    EventMetricsSubscriber,
+    NetworkShareService,
+    ShareService,
+)
+from aird.services.user_service import UserService
+from aird.services.p2p_service import P2PSignalingService
 
 from aird.database.db import get_data_dir
 from aird.network_share_manager import NetworkShareManager
@@ -93,12 +115,27 @@ from aird.handlers.view_handlers import (
     EditViewHandler,
 )
 from aird.handlers.p2p_handlers import (
+    P2PRoomManager,
     P2PTransferHandler,
     P2PSignalingHandler,
 )
 
 # Set up module logger
 logger = logging.getLogger(__name__)
+
+# Secure password hashing (Priority 1)
+try:
+    from argon2 import PasswordHasher
+
+    ARGON2_AVAILABLE = True
+    PH = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
+except Exception:
+    ARGON2_AVAILABLE = False
+    PH = None
+
+RUST_AVAILABLE = False
+HybridFileHandler = None
+HybridCompressionHandler = None
 
 # Import handlers from modules
 
@@ -115,6 +152,8 @@ def make_app(
     admin_users=None,
 ):
     settings["template_path"] = os.path.join(os.path.dirname(__file__), "templates")
+    settings["static_path"] = os.path.join(os.path.dirname(__file__), "static")
+    settings.setdefault("static_url_prefix", "/static/")
     # Limit request size to avoid Tornado rejecting large uploads with
     # "Content-Length too long" before our handler can respond.
     settings.setdefault("max_body_size", constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT)
@@ -132,13 +171,21 @@ def make_app(
     if admin_users:
         settings["admin_users"] = admin_users
 
-    # Inject global dependencies into application settings
-    import aird.constants as constants_module
+    app_context: AppContext | None = settings.get("app_context")
+    if app_context is None:
+        app_context = _build_app_context()
+        settings["app_context"] = app_context
 
-    settings["db_conn"] = constants_module.DB_CONN
-    settings["feature_flags"] = constants_module.FEATURE_FLAGS
-    settings["cloud_manager"] = constants_module.CLOUD_MANAGER
-    settings["network_share_manager"] = constants_module.NETWORK_SHARE_MANAGER
+    # Backward-compatible keys for handlers still reading from settings directly.
+    settings["db_conn"] = app_context.db_conn
+    settings["feature_flags"] = app_context.feature_flags
+    settings["cloud_manager"] = app_context.cloud_manager
+    settings["network_share_manager"] = app_context.network_share_manager
+    settings["room_manager"] = app_context.room_manager
+    settings["event_bus"] = app_context.event_bus
+    settings["event_metrics"] = app_context.event_metrics
+    settings["repositories"] = app_context.repositories
+    settings["services"] = app_context.services
 
     if ldap_enabled:
         login_handler = LDAPLoginHandler
@@ -147,6 +194,11 @@ def make_app(
 
     # Build routes list
     routes = [
+        (
+            r"/static/(.*)",
+            NoCacheStaticFileHandler,
+            {"path": settings["static_path"]},
+        ),
         (r"/", RootHandler),
         (r"/health", HealthHandler),
         (r"/login", login_handler),
@@ -182,6 +234,8 @@ def make_app(
         (r"/api/cloud/([a-z0-9_\-]+)/upload", CloudUploadHandler),
         (r"/api/share/details", ShareDetailsAPIHandler),
         (r"/api/share/details_by_id", ShareDetailsByIdAPIHandler),
+        (r"/api/favorites/toggle", FavoriteToggleAPIHandler),
+        (r"/api/favorites", FavoritesListAPIHandler),
         (r"/share", ShareFilesHandler),
         (r"/share/create", ShareCreateHandler),
         (r"/share/revoke", ShareRevokeHandler),
@@ -190,17 +244,10 @@ def make_app(
         (r"/shared/([A-Za-z0-9_\-]+)/verify", TokenVerificationHandler),
         (r"/shared/([A-Za-z0-9_\-]+)", SharedListHandler),
         (r"/shared/([A-Za-z0-9_\-]+)/file/(.*)", SharedFileHandler),
-        (r"/api/favorites/toggle", FavoriteToggleAPIHandler),
-        (r"/api/favorites", FavoritesListAPIHandler),
         (r"/search", SuperSearchHandler),
         (r"/search/ws", SuperSearchWebSocketHandler),
         (r"/p2p", P2PTransferHandler),
         (r"/p2p/signal", P2PSignalingHandler),
-        (
-            r"/static/(.*)",
-            NoCacheStaticFileHandler,
-            {"path": os.path.join(os.path.dirname(__file__), "static")},
-        ),
         (r"/files/(.*)", MainHandler),
     ]
 
@@ -289,35 +336,34 @@ def _create_emergency_db_connection() -> None:
 
 
 def _load_and_merge_configs(db_conn) -> None:
-    # Load persisted feature flags and merge
+    # Keep legacy helper function references for test compatibility while
+    # preserving behavior equivalent to ConfigService.merge_from_db.
     persisted_flags = load_feature_flags(db_conn)
     if persisted_flags:
-        for k, v in persisted_flags.items():
-            constants.FEATURE_FLAGS[k] = bool(v)
-            logger.debug(f"Feature flag '{k}' set to {bool(v)} from database")
+        for key, value in persisted_flags.items():
+            constants.FEATURE_FLAGS[key] = bool(value)
+            logger.debug("Feature flag '%s' set to %s from database", key, bool(value))
 
-    # Log final feature flags status
-    logger.info("Final feature flags:")
-    for k, v in constants.FEATURE_FLAGS.items():
-        logger.info(f"  {k}: {v}")
-
-    # Load persisted upload config and merge
-    persisted_upload_config = load_upload_config(db_conn)
-    if persisted_upload_config:
-        for k, v in persisted_upload_config.items():
-            constants.UPLOAD_CONFIG[k] = int(v)
-            logger.debug(f"Upload config '{k}' set to {int(v)} from database")
+    persisted_upload = load_upload_config(db_conn)
+    if persisted_upload:
+        for key, value in persisted_upload.items():
+            constants.UPLOAD_CONFIG[key] = int(value)
+            logger.debug("Upload config '%s' set to %s from database", key, int(value))
     constants.MAX_FILE_SIZE = constants.UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
-    logger.info(
-        f"Max upload file size: {constants.UPLOAD_CONFIG['max_file_size_mb']} MB"
-    )
 
-    # Load allowed upload extensions (when "allow all" is off)
     constants.UPLOAD_ALLOWED_EXTENSIONS = load_allowed_extensions(db_conn)
     if not constants.UPLOAD_ALLOWED_EXTENSIONS:
         constants.UPLOAD_ALLOWED_EXTENSIONS = set(constants.ALLOWED_UPLOAD_EXTENSIONS)
         save_allowed_extensions(db_conn, constants.UPLOAD_ALLOWED_EXTENSIONS)
         logger.info("Seeded upload allowed extensions from defaults")
+
+    logger.info("Final feature flags:")
+    for key, value in constants.FEATURE_FLAGS.items():
+        logger.info("  %s: %s", key, value)
+    logger.info(
+        "Max upload file size: %s MB",
+        constants.UPLOAD_CONFIG["max_file_size_mb"],
+    )
 
 
 def _auto_start_network_shares(db_conn) -> None:
@@ -385,47 +431,48 @@ def _run_cleanup_expired_shares():
     tornado.ioloop.IOLoop.current().call_later(3600, _run_cleanup_expired_shares)
 
 
-def _run_cleanup_p2p_rooms():
-    from aird.handlers.p2p_handlers import room_manager
-
-    room_manager.cleanup_old_rooms()
-    tornado.ioloop.IOLoop.current().call_later(3600, _run_cleanup_p2p_rooms)
-
-
-def _load_or_create_cookie_secret() -> str:
-    """Load a persisted cookie secret or generate and save a new one.
-
-    This ensures sessions survive server restarts.
-    """
-    secret_path = os.path.join(get_data_dir(), ".cookie_secret")
-    try:
-        if os.path.exists(secret_path):
-            with open(secret_path, "r") as f:
-                secret = f.read().strip()
-            if secret:
-                return secret
-    except OSError:
-        logger.warning("Could not read cookie secret file, generating new one")
-
-    secret = secrets.token_urlsafe(64)
-    try:
-        os.makedirs(os.path.dirname(secret_path), exist_ok=True)
-        with open(secret_path, "w") as f:
-            f.write(secret)
-        logger.info("Generated and persisted new cookie secret")
-    except OSError:
-        logger.warning(
-            "Could not persist cookie secret – sessions won't survive restarts"
-        )
-    return secret
-
-
-_MAX_PORT_RETRIES = 10
+def _build_app_context() -> AppContext:
+    """Construct application-level dependencies in one place."""
+    repositories = {
+        "config_repo": ConfigRepository(),
+        "network_share_repo": NetworkShareRepository(),
+        "share_repo": ShareRepository(),
+        "user_repo": UserRepository(),
+    }
+    room_manager = P2PRoomManager()
+    event_bus = EventBus()
+    event_metrics = EventMetricsSubscriber()
+    event_logging = EventLoggingSubscriber()
+    event_bus.subscribe(UserAuthenticatedEvent, event_metrics.on_user_authenticated)
+    event_bus.subscribe(UserAuthenticatedEvent, event_logging.on_user_authenticated)
+    event_bus.subscribe(ShareCreatedEvent, event_metrics.on_share_created)
+    event_bus.subscribe(ShareCreatedEvent, event_logging.on_share_created)
+    event_bus.subscribe(TransferStartedEvent, event_metrics.on_transfer_started)
+    event_bus.subscribe(TransferStartedEvent, event_logging.on_transfer_started)
+    services = {
+        "config_service": ConfigService(repositories["config_repo"]),
+        "network_share_service": NetworkShareService(
+            repositories["network_share_repo"]
+        ),
+        "share_service": ShareService(repositories["share_repo"]),
+        "user_service": UserService(repositories["user_repo"]),
+        "p2p_signaling_service": P2PSignalingService(room_manager),
+    }
+    return AppContext(
+        db_conn=constants.DB_CONN,
+        feature_flags=constants.FEATURE_FLAGS,
+        cloud_manager=constants.CLOUD_MANAGER,
+        network_share_manager=constants.NETWORK_SHARE_MANAGER,
+        room_manager=room_manager,
+        event_bus=event_bus,
+        event_metrics=event_metrics,
+        repositories=repositories,
+        services=services,
+    )
 
 
 def _start_server(app, ssl_options, port: int, hostname: str) -> None:
-    original_port = port
-    for _ in range(_MAX_PORT_RETRIES):
+    while True:
         try:
             if ssl_options:
                 proto = "https"
@@ -452,13 +499,10 @@ def _start_server(app, ssl_options, port: int, hostname: str) -> None:
             tornado.ioloop.IOLoop.current().call_later(
                 3600, _run_cleanup_expired_shares
             )
-            tornado.ioloop.IOLoop.current().call_later(3600, _run_cleanup_p2p_rooms)
             tornado.ioloop.IOLoop.current().start()
-            return
+            break
         except OSError:
-            logger.warning("Port %d is in use, trying %d", port, port + 1)
             port += 1
-    logger.error("Could not bind to any port in range %d-%d", original_port, port - 1)
 
 
 def main():
@@ -475,7 +519,7 @@ def main():
     constants.ADMIN_TOKEN = config.ADMIN_TOKEN
     constants.ROOT_DIR = os.path.abspath(config.ROOT_DIR)
 
-    cookie_secret = _load_or_create_cookie_secret()
+    cookie_secret = secrets.token_urlsafe(64)
     settings = {
         "cookie_secret": cookie_secret,
         "xsrf_cookies": True,
@@ -485,6 +529,7 @@ def main():
     }
 
     _init_database()
+    settings["app_context"] = _build_app_context()
 
     app = make_app(
         settings,

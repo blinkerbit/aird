@@ -1,6 +1,8 @@
 // Theme Manager - handles dark/light mode toggle with cookie persistence
 class ThemeManager {
-    storageKey = 'aird_theme';
+    get storageKey() {
+        return 'aird_theme';
+    }
 
     constructor() {
         this.init();
@@ -10,6 +12,9 @@ class ThemeManager {
         const saved = this.getSavedTheme();
         if (saved) {
             this.setTheme(saved, false);
+        } else {
+            // Ensure a deterministic initial state and correct icon/title.
+            this.setTheme('light', false);
         }
         this.bindToggleButtons();
     }
@@ -52,6 +57,13 @@ class ThemeManager {
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+function initThemeManager() {
     globalThis.themeManager = new ThemeManager();
-});
+}
+
+// Support both standard page loads and cases where script executes after DOM ready.
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initThemeManager);
+} else {
+    initThemeManager();
+}

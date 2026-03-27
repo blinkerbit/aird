@@ -40,7 +40,75 @@
             padding: 20px;
         }
 
-        {% include '_app_nav_header_styles.html' %}
+        /* Shared app navigation header (see _app_nav_header.html) */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid black;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }
+        .header-left {
+            display: flex;
+            flex-direction: column;
+        }
+        .header h1 {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .hdr-action-btn {
+            display: inline-block;
+            padding: 6px 12px;
+            border: 2px solid #000;
+            background: #fff;
+            color: #000;
+            text-decoration: none;
+            font-size: 12px;
+            font-weight: bold;
+            font-family: "Courier New", monospace;
+            text-transform: uppercase;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+            transition:
+                transform 0.15s ease-out,
+                box-shadow 0.15s ease-out,
+                background 0.15s ease-out;
+        }
+        .hdr-action-btn:hover {
+            background: #ebebeb;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+            text-decoration: none;
+            color: #000;
+        }
+        .hdr-action-btn:active {
+            transform: translateY(1px);
+            background: #e2e2e2;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+            transition-duration: 0.08s;
+        }
+        .hdr-action-btn:focus-visible {
+            outline: 2px solid #000;
+            outline-offset: 3px;
+        }
+        [data-theme="dark"] .hdr-action-btn {
+            background: #1e1e2e;
+            color: #e0e0e0;
+            border-color: #666;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.35);
+        }
+        [data-theme="dark"] .hdr-action-btn:hover {
+            background: #2c2c3c;
+            border-color: #888;
+            color: #e0e0e0;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+        }
+        [data-theme="dark"] .hdr-action-btn:active {
+            background: #333;
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+        }
+        [data-theme="dark"] .hdr-action-btn:focus-visible {
+            outline-color: #e0e0e0;
+        }
 
         .p2p-page-title {
             font-size: 28px;
@@ -821,7 +889,10 @@
   </style>
 </head>
 
-<body>
+<body
+    data-is-anonymous="{% if is_anonymous %}true{% else %}false{% end %}"
+    data-pending-room-id="{% if room_id %}{{ room_id }}{% end %}"
+>
     <div class="container">
         {% set nav_title = "Aird" %}
 {% set nav_search_path = "" %}
@@ -1081,8 +1152,15 @@
         </div>
     </div>
 
+    <script src="/static/js/common/ui-utils.js"></script>
+    <script src="/static/js/p2p/state-machine.js"></script>
+    <script src="/static/js/p2p/mediator.js"></script>
+    <script src="/static/js/p2p/signaling-service.js"></script>
+    <script src="/static/js/p2p/transfer-service.js"></script>
+    <script src="/static/js/p2p/qr-adapter.js"></script>
+    <script src="/static/js/p2p/app.js"></script>
     <script nonce="{{ csp_nonce }}">
-        let isAnonymous = {{ 'true' if is_anonymous else 'false' }};
+        let isAnonymous = document.body.dataset.isAnonymous === 'true';
 
         // =====================================================================
         // QR Code Generator (Lightweight inline implementation)
@@ -1091,8 +1169,25 @@
             // QR Code Generator based on qr.js
             const EC_LEVEL = 1; // L=1, M=0, Q=3, H=2
 
-            function generateQR(text, typeNumber) {
-                typeNumber = typeNumber || 4;
+            function isAdjustPatternDark(r, c) {
+                return r === -2 || r === 2 || c === -2 || c === 2 || (r === 0 && c === 0);
+            }
+
+            function readCurrentBit(data, byteIndex, bitIndex) {
+                if (byteIndex >= data.length) return false;
+                return ((data[byteIndex] >> bitIndex) & 1) === 1;
+            }
+
+            function advanceBitCursor(byteIndex, bitIndex) {
+                bitIndex--;
+                if (bitIndex === -1) {
+                    byteIndex++;
+                    bitIndex = 7;
+                }
+                return { byteIndex, bitIndex };
+            }
+
+            function generateQR(text, typeNumber = 4) {
                 const qr = createQRCode(typeNumber, EC_LEVEL);
                 qr.addData(text);
                 qr.make();
@@ -1100,7 +1195,6 @@
             }
 
             function createQRCode(typeNumber, errorCorrectLevel) {
-                const PAD0 = 0xEC, PAD1 = 0x11;
                 const modules = [];
                 let moduleCount = 0;
                 let dataCache = null;
@@ -1152,21 +1246,20 @@
                     }
                 }
 
+                function fillAdjustPatternAt(row, col) {
+                    for (let r = -2; r <= 2; r++) {
+                        for (let c = -2; c <= 2; c++) {
+                            modules[row + r][col + c] = isAdjustPatternDark(r, c);
+                        }
+                    }
+                }
+
                 function setupPositionAdjustPattern() {
                     const pos = getPatternPosition(typeNumber);
-                    for (let i = 0; i < pos.length; i++) {
-                        for (let j = 0; j < pos.length; j++) {
-                            const row = pos[i], col = pos[j];
+                    for (const row of pos) {
+                        for (const col of pos) {
                             if (modules[row][col] !== null) continue;
-                            for (let r = -2; r <= 2; r++) {
-                                for (let c = -2; c <= 2; c++) {
-                                    if (r === -2 || r === 2 || c === -2 || c === 2 || (r === 0 && c === 0)) {
-                                        modules[row + r][col + c] = true;
-                                    } else {
-                                        modules[row + r][col + c] = false;
-                                    }
-                                }
-                            }
+                            fillAdjustPatternAt(row, col);
                         }
                     }
                 }
@@ -1203,27 +1296,59 @@
                     }
                 }
 
+                function mapModuleCell(data, maskPattern, row, col, byteIndex, bitIndex) {
+                    let dark = readCurrentBit(data, byteIndex, bitIndex);
+                    if (getMask(maskPattern, row, col)) dark = !dark;
+                    modules[row][col] = dark;
+                    return advanceBitCursor(byteIndex, bitIndex);
+                }
+
+                function mapColumnPair(data, maskPattern, col, row, inc, byteIndex, bitIndex) {
+                    while (true) {
+                        for (let c = 0; c < 2; c++) {
+                            const currentCol = col - c;
+                            if (modules[row][currentCol] !== null) continue;
+                            const next = mapModuleCell(
+                                data,
+                                maskPattern,
+                                row,
+                                currentCol,
+                                byteIndex,
+                                bitIndex
+                            );
+                            byteIndex = next.byteIndex;
+                            bitIndex = next.bitIndex;
+                        }
+                        row += inc;
+                        if (row < 0 || moduleCount <= row) {
+                            row -= inc;
+                            inc = -inc;
+                            break;
+                        }
+                    }
+                    return { row, inc, byteIndex, bitIndex };
+                }
+
                 function mapData(data, maskPattern) {
-                    let inc = -1, row = moduleCount - 1, bitIndex = 7, byteIndex = 0;
+                    let inc = -1;
+                    let row = moduleCount - 1;
+                    let bitIndex = 7;
+                    let byteIndex = 0;
                     for (let col = moduleCount - 1; col > 0; col -= 2) {
                         if (col === 6) col--;
-                        while (true) {
-                            for (let c = 0; c < 2; c++) {
-                                if (modules[row][col - c] === null) {
-                                    let dark = false;
-                                    if (byteIndex < data.length) {
-                                        dark = ((data[byteIndex] >> bitIndex) & 1) === 1;
-                                    }
-                                    const mask = getMask(maskPattern, row, col - c);
-                                    if (mask) dark = !dark;
-                                    modules[row][col - c] = dark;
-                                    bitIndex--;
-                                    if (bitIndex === -1) { byteIndex++; bitIndex = 7; }
-                                }
-                            }
-                            row += inc;
-                            if (row < 0 || moduleCount <= row) { row -= inc; inc = -inc; break; }
-                        }
+                        const next = mapColumnPair(
+                            data,
+                            maskPattern,
+                            col,
+                            row,
+                            inc,
+                            byteIndex,
+                            bitIndex
+                        );
+                        row = next.row;
+                        inc = next.inc;
+                        byteIndex = next.byteIndex;
+                        bitIndex = next.bitIndex;
                     }
                 }
 
@@ -1281,18 +1406,17 @@
                 const rsBlocks = getRSBlocks(typeNumber, errorCorrectLevel);
                 const buffer = createBitBuffer();
 
-                for (let i = 0; i < dataList.length; i++) {
-                    const data = dataList[i];
+                for (const data of dataList) {
                     buffer.put(data.mode, 4);
                     buffer.put(data.data.length, getLengthInBits(data.mode, typeNumber));
-                    for (let j = 0; j < data.data.length; j++) {
-                        buffer.put(data.data.charCodeAt(j), 8);
+                    for (const ch of data.data) {
+                        buffer.put(ch.codePointAt(0), 8);
                     }
                 }
 
                 let totalDataCount = 0;
-                for (let i = 0; i < rsBlocks.length; i++) {
-                    totalDataCount += rsBlocks[i].dataCount;
+                for (const block of rsBlocks) {
+                    totalDataCount += block.dataCount;
                 }
 
                 if (buffer.getLengthInBits() > totalDataCount * 8) {
@@ -1366,10 +1490,12 @@
                 else return 16;
             }
 
-            function createBytes(buffer, rsBlocks) {
+            function buildErrorCorrectionBlocks(buffer, rsBlocks) {
                 let offset = 0;
-                let maxDcCount = 0, maxEcCount = 0;
-                const dcdata = [], ecdata = [];
+                let maxDcCount = 0;
+                let maxEcCount = 0;
+                const dcdata = [];
+                const ecdata = [];
 
                 for (let r = 0; r < rsBlocks.length; r++) {
                     const dcCount = rsBlocks[r].dataCount;
@@ -1391,11 +1517,10 @@
                     }
                 }
 
-                let totalCodeCount = 0;
-                for (let i = 0; i < rsBlocks.length; i++) {
-                    totalCodeCount += rsBlocks[i].totalCount;
-                }
+                return { dcdata, ecdata, maxDcCount, maxEcCount };
+            }
 
+            function interleaveBlocks(dcdata, ecdata, maxDcCount, maxEcCount, rsBlocks) {
                 const data = [];
                 let index = 0;
                 for (let i = 0; i < maxDcCount; i++) {
@@ -1409,6 +1534,14 @@
                     }
                 }
                 return data;
+            }
+
+            function createBytes(buffer, rsBlocks) {
+                const { dcdata, ecdata, maxDcCount, maxEcCount } = buildErrorCorrectionBlocks(
+                    buffer,
+                    rsBlocks
+                );
+                return interleaveBlocks(dcdata, ecdata, maxDcCount, maxEcCount, rsBlocks);
             }
 
             function createPolynomial(num, shift) {
@@ -1558,8 +1691,17 @@
         let pendingRequests = [];
         let isTransferring = false;
         let otherPeerInRoom = false;
-        let pendingRoomId = {% if room_id %}"{{ room_id }}"{% else %} null{% end %};
+        const pendingRoomIdRaw = document.body.dataset.pendingRoomId || '';
+        let pendingRoomId = pendingRoomIdRaw || null;
         let receivedFiles = []; // Array to store received files for manual download
+        const p2pPatternKit = globalThis.P2PPatterns?.createP2PPatternKit({
+            currentMode: null,
+            currentRoomId: null,
+            isTransferring: false,
+            otherPeerInRoom: false
+        });
+        const p2pStateMachine = p2pPatternKit?.stateMachine || null;
+        const p2pMediator = p2pPatternKit?.mediator || null;
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
@@ -1621,8 +1763,8 @@
         }
 
         function initWebSocket() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            let wsUrl = `${protocol}//${window.location.host}/p2p/signal`;
+            const protocol = globalThis.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            let wsUrl = `${protocol}//${globalThis.location.host}/p2p/signal`;
 
             // For anonymous users, pass the room ID in the WebSocket URL
             if (isAnonymous && pendingRoomId) {
@@ -1667,114 +1809,121 @@
             };
         }
 
-        function handleSignalingMessage(data) {
-            switch (data.type) {
-                case 'connected':
-                    myPeerId = data.peer_id;
-                    isAnonymous = data.is_anonymous || false;
-                    log(`Connected as ${data.username}${data.is_anonymous ? ' (guest)' : ''} (${data.peer_id.substring(0, 8)}...)`, 'info');
+        function handleConnectedMessage(data) {
+            myPeerId = data.peer_id;
+            isAnonymous = data.is_anonymous || false;
+            log(`Connected as ${data.username}${data.is_anonymous ? ' (guest)' : ''} (${data.peer_id.substring(0, 8)}...)`, 'info');
+            if (!data.pending_room || !isAnonymous) return;
+            log(`Auto-joining room ${data.pending_room}...`, 'info');
+            setTimeout(() => {
+                document.getElementById('room-code-input').value = data.pending_room;
+                joinRoom();
+            }, 500);
+        }
 
-                    // Auto-join room for anonymous users
-                    if (data.pending_room && isAnonymous) {
-                        log(`Auto-joining room ${data.pending_room}...`, 'info');
-                        setTimeout(() => {
-                            document.getElementById('room-code-input').value = data.pending_room;
-                            joinRoom();
-                        }, 500);
-                    }
-                    break;
+        function handleRoomCreatedMessage(data) {
+            currentRoomId = data.room_id;
+            document.getElementById('share-code').textContent = data.room_id;
+            document.getElementById('share-code-container').classList.remove('hidden');
+            const anonHint = document.getElementById('share-code-hint');
+            anonHint.innerHTML = data.allow_anonymous
+                ? 'Share this code with the recipient<br><span class="sq-style-a5e3c2">✓ Anonymous access enabled - no login required</span>'
+                : 'Share this code with the recipient<br><span class="sq-style-28e6a7">Recipients must be logged in</span>';
+            generateShareQRCode(data.room_id);
+            updateSendStatus('waiting', 'Waiting for recipient to connect...');
+            log(`Room created: ${data.room_id}${data.allow_anonymous ? ' (anonymous access enabled)' : ''}`, 'success');
+            updateApplyReconnectButton();
+        }
 
-                case 'room_created':
-                    currentRoomId = data.room_id;
-                    document.getElementById('share-code').textContent = data.room_id;
-                    document.getElementById('share-code-container').classList.remove('hidden');
-
-                    // Show anonymous access info
-                    const anonHint = document.getElementById('share-code-hint');
-                    if (data.allow_anonymous) {
-                        anonHint.innerHTML = 'Share this code with the recipient<br><span class="sq-style-a5e3c2">✓ Anonymous access enabled - no login required</span>';
-                    } else {
-                        anonHint.innerHTML = 'Share this code with the recipient<br><span class="sq-style-28e6a7">Recipients must be logged in</span>';
-                    }
-
-                    // Generate QR code for the share link
-                    generateShareQRCode(data.room_id);
-
-                    updateSendStatus('waiting', 'Waiting for recipient to connect...');
-                    log(`Room created: ${data.room_id}${data.allow_anonymous ? ' (anonymous access enabled)' : ''}`, 'success');
-                    updateApplyReconnectButton();
-                    break;
-
-                case 'room_joined':
-                    currentRoomId = data.room_id;
-                    otherPeerInRoom = (data.peer_count || 0) >= 2;
-                    if (data.file_info) {
-                        expectedFileInfo = data.file_info;
-                        showReceiveFileInfo(data.file_info);
-                    }
-                    updateReceiveStatus('waiting', 'Connected! Waiting for sender...');
-                    log(`Joined room: ${data.room_id}`, 'success');
-                    updateApplyReconnectButton();
-                    break;
-
-                case 'peer_joined':
-                    otherPeerInRoom = true;
-                    log(`Peer joined: ${data.username}`, 'success');
-                    updateSendStatus('connected', `Connected to ${data.username}`);
-                    // Sender initiates the connection
-                    if (currentMode === 'send') {
-                        createPeerConnection(true);
-                    }
-                    document.getElementById('session-warning').style.display = 'flex';
-                    updateApplyReconnectButton();
-                    break;
-
-                case 'peer_left':
-                    otherPeerInRoom = false;
-                    log(`Peer left: ${data.username}`, 'info');
-                    closePeerConnection();
-                    document.getElementById('session-warning').style.display = 'none';
-                    updateApplyReconnectButton();
-                    break;
-
-                case 'restart_connection':
-                    log(`Reconnecting with new settings (requested by ${data.username || 'peer'})...`, 'info');
-                    closePeerConnection();
-                    if (currentMode === 'send') {
-                        createPeerConnection(true);
-                    }
-                    break;
-
-                case 'offer':
-                    log('Received connection offer', 'info');
-                    handleOffer(data.sdp);
-                    break;
-
-                case 'answer':
-                    log('Received connection answer', 'info');
-                    handleAnswer(data.sdp);
-                    break;
-
-                case 'ice_candidate':
-                    handleIceCandidate(data.candidate);
-                    break;
-
-                case 'file_info_updated':
-                    expectedFileInfo = data.file_info;
-                    showReceiveFileInfo(data.file_info);
-                    break;
-
-                case 'error':
-                    log(`Error: ${data.message}`, 'error');
-                    // Re-enable buttons on error
-                    document.getElementById('create-room-btn').disabled = false;
-                    document.getElementById('join-room-btn').disabled = false;
-                    break;
+        function handleRoomJoinedMessage(data) {
+            currentRoomId = data.room_id;
+            otherPeerInRoom = (data.peer_count || 0) >= 2;
+            if (data.file_info) {
+                expectedFileInfo = data.file_info;
+                showReceiveFileInfo(data.file_info);
             }
+            updateReceiveStatus('waiting', 'Connected! Waiting for sender...');
+            log(`Joined room: ${data.room_id}`, 'success');
+            updateApplyReconnectButton();
+        }
+
+        function handlePeerJoinedMessage(data) {
+            otherPeerInRoom = true;
+            log(`Peer joined: ${data.username}`, 'success');
+            updateSendStatus('connected', `Connected to ${data.username}`);
+            if (currentMode === 'send') {
+                createPeerConnection(true);
+            }
+            document.getElementById('session-warning').style.display = 'flex';
+            updateApplyReconnectButton();
+        }
+
+        function handlePeerLeftMessage(data) {
+            otherPeerInRoom = false;
+            log(`Peer left: ${data.username}`, 'info');
+            closePeerConnection();
+            document.getElementById('session-warning').style.display = 'none';
+            updateApplyReconnectButton();
+        }
+
+        function handleRestartConnectionMessage(data) {
+            log(`Reconnecting with new settings (requested by ${data.username || 'peer'})...`, 'info');
+            closePeerConnection();
+            if (currentMode === 'send') {
+                createPeerConnection(true);
+            }
+        }
+
+        function handleErrorMessage(data) {
+            log(`Error: ${data.message}`, 'error');
+            document.getElementById('create-room-btn').disabled = false;
+            document.getElementById('join-room-btn').disabled = false;
+        }
+
+        const SIGNALING_MESSAGE_HANDLERS = {
+            connected: handleConnectedMessage,
+            room_created: handleRoomCreatedMessage,
+            room_joined: handleRoomJoinedMessage,
+            peer_joined: handlePeerJoinedMessage,
+            peer_left: handlePeerLeftMessage,
+            restart_connection: handleRestartConnectionMessage,
+            offer: (data) => {
+                log('Received connection offer', 'info');
+                handleOffer(data.sdp);
+            },
+            answer: (data) => {
+                log('Received connection answer', 'info');
+                handleAnswer(data.sdp);
+            },
+            ice_candidate: (data) => {
+                handleIceCandidate(data.candidate);
+            },
+            file_info_updated: (data) => {
+                expectedFileInfo = data.file_info;
+                showReceiveFileInfo(data.file_info);
+            },
+            error: handleErrorMessage
+        };
+
+        function handleSignalingMessage(data) {
+            const SignalingServiceCtor = globalThis.P2PPatterns?.SignalingService;
+            if (!SignalingServiceCtor) {
+                const handler = SIGNALING_MESSAGE_HANDLERS[data.type];
+                if (handler) handler(data);
+                return;
+            }
+            if (!handleSignalingMessage._service) {
+                handleSignalingMessage._service = new SignalingServiceCtor(
+                    SIGNALING_MESSAGE_HANDLERS
+                );
+            }
+            handleSignalingMessage._service.dispatch(data);
+            p2pMediator?.emit("signaling:message", data);
         }
 
         function selectMode(mode) {
             currentMode = mode;
+            p2pStateMachine?.transition("MODE_SELECTED", { mode });
             document.getElementById('mode-section').classList.add('hidden');
 
             if (mode === 'send') {
@@ -2063,28 +2212,26 @@
             document.getElementById('send-progress').classList.remove('hidden');
 
             transferStartTime = Date.now();
-            const reader = new FileReader();
             let offset = 0;
 
-            const sendNextChunk = () => {
+            const sendNextChunk = async () => {
                 const slice = currentFile.slice(offset, offset + CHUNK_SIZE);
-                reader.readAsArrayBuffer(slice);
-            };
-
-            reader.onload = (e) => {
+                const chunk = await slice.arrayBuffer();
                 if (dataChannel.bufferedAmount > CHUNK_SIZE * 10) {
-                    setTimeout(() => reader.onload(e), 50);
+                    setTimeout(() => {
+                        void sendNextChunk();
+                    }, 50);
                     return;
                 }
 
-                dataChannel.send(e.target.result);
-                offset += e.target.result.byteLength;
+                dataChannel.send(chunk);
+                offset += chunk.byteLength;
 
                 const progress = (offset / currentFile.size) * 100;
                 updateSendProgress(progress, offset, currentFile.size);
 
                 if (offset < currentFile.size) {
-                    sendNextChunk();
+                    void sendNextChunk();
                 } else {
                     dataChannel.send(JSON.stringify({ type: 'end' }));
                     log(`File transfer complete: ${currentFile.name}`, 'success');
@@ -2092,7 +2239,6 @@
                     setTimeout(processNextRequest, 500);
                 }
             };
-
             dataChannel.send(JSON.stringify({
                 type: 'start',
                 id: requestedId,
@@ -2101,68 +2247,111 @@
                 mime: currentFile.type
             }));
 
-            sendNextChunk();
+            void sendNextChunk();
+        }
+
+        function handleSenderDataMessage(msg) {
+            if (msg.type !== 'request_file') return;
+            pendingRequests.push(msg.id);
+            log(`File requested by recipient: ${msg.id}`, 'info');
+            if (!isTransferring) {
+                processNextRequest();
+            }
+        }
+
+        function renderReceivedFilesOverview() {
+            const totalSize = availableFiles.reduce((acc, f) => acc + f.size, 0);
+            const overviewName = availableFiles.length === 1
+                ? availableFiles[0].name
+                : `${availableFiles.length} file(s) available`;
+            document.getElementById('receive-file-name').textContent = overviewName;
+            document.getElementById('receive-file-size').textContent = formatBytes(totalSize);
+            document.getElementById('receive-from-user').textContent = currentRoomId || 'Sender';
+            document.getElementById('receive-file-info').classList.remove('hidden');
+        }
+
+        function handleReceiverFileListMessage(msg) {
+            availableFiles = msg.files;
+            renderAvailableFiles();
+            updateReceiveStatus('connected', 'Select file(s) to download.');
+            renderReceivedFilesOverview();
+        }
+
+        function markFileAsReceiving(fileId) {
+            if (!fileId) return;
+            const dBtn = document.querySelector(`.available-file-btn[data-file-id="${fileId}"]`);
+            if (dBtn) dBtn.textContent = 'RECEIVING...';
+        }
+
+        function handleReceiverStartMessage(msg) {
+            expectedFileInfo = {
+                id: msg.id,
+                name: msg.name,
+                size: msg.size,
+                mime: msg.mime
+            };
+            receivedChunks = [];
+            receivedSize = 0;
+            transferStartTime = Date.now();
+            log(`Receiving: ${msg.name} (${formatBytes(msg.size)})`, 'info');
+            updateReceiveStatus('transferring', `Receiving ${msg.name}...`);
+            document.getElementById('receive-progress').classList.remove('hidden');
+            markFileAsReceiving(expectedFileInfo.id);
+        }
+
+        function handleReceiverDataMessage(msg) {
+            if (msg.type === 'file_list') {
+                handleReceiverFileListMessage(msg);
+                return;
+            }
+            if (msg.type === 'start') {
+                handleReceiverStartMessage(msg);
+                return;
+            }
+            if (msg.type === 'end') {
+                completeReceive();
+            }
+        }
+
+        function handleBinaryDataChunk(data) {
+            if (currentMode !== 'receive') return;
+            receivedChunks.push(data);
+            receivedSize += data.byteLength;
+            if (!expectedFileInfo) return;
+            const progress = (receivedSize / expectedFileInfo.size) * 100;
+            updateReceiveProgress(progress, receivedSize, expectedFileInfo.size);
         }
 
         function handleDataChannelMessage(data) {
-            if (typeof data === 'string') {
-                const msg = JSON.parse(data);
-                
-                if (currentMode === 'send') {
-                    if (msg.type === 'request_file') {
-                        pendingRequests.push(msg.id);
-                        log(`File requested by recipient: ${msg.id}`, 'info');
-                        if (!isTransferring) {
-                            processNextRequest();
+            const TransferServiceCtor = globalThis.P2PPatterns?.TransferService;
+            if (TransferServiceCtor) {
+                if (!handleDataChannelMessage._service) {
+                    handleDataChannelMessage._service = new TransferServiceCtor({
+                        onStringMessage: (msg) => {
+                            if (currentMode === 'send') {
+                                handleSenderDataMessage(msg);
+                                return;
+                            }
+                            handleReceiverDataMessage(msg);
+                        },
+                        onBinaryMessage: (chunk) => {
+                            handleBinaryDataChunk(chunk);
                         }
-                    }
-                    return;
+                    });
                 }
-
-                if (msg.type === 'file_list') {
-                    availableFiles = msg.files;
-                    renderAvailableFiles();
-                    updateReceiveStatus('connected', 'Select file(s) to download.');
-                    
-                    let totalSize = availableFiles.reduce((acc, f) => acc + f.size, 0);
-                    let overviewName = availableFiles.length === 1 ? availableFiles[0].name : `${availableFiles.length} file(s) available`;
-                    document.getElementById('receive-file-name').textContent = overviewName;
-                    document.getElementById('receive-file-size').textContent = formatBytes(totalSize);
-                    document.getElementById('receive-from-user').textContent = currentRoomId || 'Sender';
-                    document.getElementById('receive-file-info').classList.remove('hidden');
-                } else if (msg.type === 'start') {
-                    expectedFileInfo = {
-                        id: msg.id,
-                        name: msg.name,
-                        size: msg.size,
-                        mime: msg.mime
-                    };
-                    receivedChunks = [];
-                    receivedSize = 0;
-                    transferStartTime = Date.now();
-                    log(`Receiving: ${msg.name} (${formatBytes(msg.size)})`, 'info');
-                    
-                    updateReceiveStatus('transferring', `Receiving ${msg.name}...`);
-                    document.getElementById('receive-progress').classList.remove('hidden');
-                    
-                    if (expectedFileInfo.id) {
-                        const dBtn = document.querySelector(`.available-file-btn[data-file-id="${expectedFileInfo.id}"]`);
-                        if (dBtn) dBtn.textContent = 'RECEIVING...';
-                    }
-                } else if (msg.type === 'end') {
-                    completeReceive();
-                }
-            } else {
-                if (currentMode === 'receive') {
-                    receivedChunks.push(data);
-                    receivedSize += data.byteLength;
-
-                    if (expectedFileInfo) {
-                        const progress = (receivedSize / expectedFileInfo.size) * 100;
-                        updateReceiveProgress(progress, receivedSize, expectedFileInfo.size);
-                    }
-                }
+                handleDataChannelMessage._service.handleIncoming(data);
+                return;
             }
+            if (typeof data !== 'string') {
+                handleBinaryDataChunk(data);
+                return;
+            }
+            const msg = JSON.parse(data);
+            if (currentMode === 'send') {
+                handleSenderDataMessage(msg);
+                return;
+            }
+            handleReceiverDataMessage(msg);
         }
 
         function completeReceive() {
@@ -2343,6 +2532,9 @@
         }
 
         function escapeHtml(text) {
+            if (globalThis.AirdUtils?.escapeHtml) {
+                return globalThis.AirdUtils.escapeHtml(text);
+            }
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
@@ -2538,7 +2730,7 @@
             textArea.remove();
         }
 
-        function cancelSend() {
+        function cancelCurrentTransfer() {
             closePeerConnection();
             if (currentRoomId) {
                 ws.send(JSON.stringify({ type: 'leave_room' }));
@@ -2546,12 +2738,12 @@
             location.reload();
         }
 
+        function cancelSend() {
+            cancelCurrentTransfer();
+        }
+
         function cancelReceive() {
-            closePeerConnection();
-            if (currentRoomId) {
-                ws.send(JSON.stringify({ type: 'leave_room' }));
-            }
-            location.reload();
+            cancelCurrentTransfer();
         }
 
         function closePeerConnection() {
@@ -2566,11 +2758,14 @@
         }
 
         function formatBytes(bytes) {
+            if (globalThis.AirdUtils?.formatBytes) {
+                return globalThis.AirdUtils.formatBytes(bytes);
+            }
             if (bytes === 0) return '0 B';
             const k = 1024;
             const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
             const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
 
         function log(message, type = '') {

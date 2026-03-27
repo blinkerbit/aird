@@ -41,7 +41,8 @@ def init_db(conn: sqlite3.Connection) -> None:
             id TEXT PRIMARY KEY,
             created TEXT NOT NULL,
             paths TEXT NOT NULL,
-            allowed_users TEXT
+            allowed_users TEXT,
+            modify_users TEXT
         )
         """)
     conn.execute("""
@@ -98,6 +99,8 @@ def init_db(conn: sqlite3.Connection) -> None:
         cursor.execute("ALTER TABLE shares ADD COLUMN avoid_list TEXT")
     if "expiry_date" not in columns:
         cursor.execute("ALTER TABLE shares ADD COLUMN expiry_date TEXT")
+    if "modify_users" not in columns:
+        cursor.execute("ALTER TABLE shares ADD COLUMN modify_users TEXT")
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS audit_log (
@@ -177,11 +180,12 @@ def insert_share(
     allow_list: list[str] = None,
     avoid_list: list[str] = None,
     expiry_date: str = None,
+    modify_users: list[str] = None,
 ) -> bool:
     try:
         with conn:
             conn.execute(
-                "REPLACE INTO shares (id, created, paths, allowed_users, secret_token, share_type, allow_list, avoid_list, expiry_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "REPLACE INTO shares (id, created, paths, allowed_users, secret_token, share_type, allow_list, avoid_list, expiry_date, modify_users) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     sid,
                     created,
@@ -192,6 +196,7 @@ def insert_share(
                     json.dumps(allow_list) if allow_list else None,
                     json.dumps(avoid_list) if avoid_list else None,
                     expiry_date,
+                    json.dumps(modify_users) if modify_users else None,
                 ),
             )
         return True
@@ -230,7 +235,7 @@ def _get_kwargs_field_updates(kwargs: dict) -> tuple[list, list]:
     """Return (SET clauses, values) for legacy allowed_users/paths kwargs."""
     updates, values = [], []
     for field, value in kwargs.items():
-        if field in ("allowed_users", "paths"):
+        if field in ("allowed_users", "modify_users", "paths"):
             updates.append(f"{field} = ?")
             values.append(json.dumps(value) if value is not None else value)
     return updates, values
@@ -341,6 +346,7 @@ def cleanup_expired_shares(conn: sqlite3.Connection) -> int:
 
 _SHARE_BASE_COLS = ["id", "created", "paths", "allowed_users"]
 _SHARE_OPTIONAL_COLS = [
+    "modify_users",
     "secret_token",
     "share_type",
     "allow_list",
@@ -365,6 +371,9 @@ def _row_to_share_dict(row: tuple, col_names: list) -> dict:
         "paths": json.loads(d["paths"]) if d.get("paths") else [],
         "allowed_users": (
             json.loads(d["allowed_users"]) if d.get("allowed_users") else None
+        ),
+        "modify_users": (
+            json.loads(d["modify_users"]) if d.get("modify_users") else None
         ),
         "secret_token": d.get("secret_token"),
         "share_type": d.get("share_type") or "static",

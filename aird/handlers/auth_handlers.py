@@ -3,10 +3,11 @@ import logging
 from aird.handlers.base_handler import BaseHandler
 from datetime import datetime
 import secrets
+from typing import Any
 from ldap3 import Server, Connection
 from ldap3.utils.dn import escape_rdn
 from ldap3.utils.conv import escape_filter_chars
-from aird.db import (
+from aird.adapters.persistence_adapter import (
     get_user_by_username,
     get_user_quota,
     create_user,
@@ -15,6 +16,8 @@ from aird.db import (
     log_audit,
 )
 from aird.core.security import validate_password
+from aird.core.events import UserAuthenticatedEvent, now_ts
+from aird.domain.contracts import AuthRequest
 import aird.config as config_module
 import aird.constants as constants_module
 from aird.handlers.constants import (
@@ -31,6 +34,24 @@ import time
 
 # IP -> (attempts, timestamp)
 _LOGIN_ATTEMPTS = {}
+
+
+def _publish_user_authenticated(handler, username: str, role: str) -> None:
+    if hasattr(handler, "publish_event"):
+        handler.publish_event(
+            UserAuthenticatedEvent(
+                username=username,
+                role=role,
+                ip=getattr(handler.request, "remote_ip", "") or "",
+                authenticated_at=now_ts(),
+            )
+        )
+
+
+def _get_user_service(handler) -> Any:
+    if hasattr(handler, "get_service"):
+        return handler.get_service("user_service")
+    return None
 
 
 def cleanup_stale_rate_limits():
@@ -64,14 +85,38 @@ def _ldap_authorized(conn, ldap_attribute_map):
     return False
 
 
-def _ldap_sync_user(db_conn, username, password, admin_users):
+def _user_get(db_conn, username, user_service=None):
+    if user_service is not None:
+        return user_service.get_user(db_conn, username)
+    return get_user_by_username(db_conn, username)
+
+
+def _user_create(db_conn, username, password, role, user_service=None):
+    if user_service is not None:
+        return user_service.create_user(db_conn, username, password, role=role)
+    return create_user(db_conn, username, password, role=role)
+
+
+def _user_update(db_conn, user_id, user_service=None, **kwargs):
+    if user_service is not None:
+        return user_service.update_user(db_conn, user_id, **kwargs)
+    return update_user(db_conn, user_id, **kwargs)
+
+
+def _ldap_sync_user(db_conn, username, password, admin_users, user_service=None):
     """Create or update Aird user after LDAP auth. Return user_role for cookie."""
     is_admin = username in admin_users
-    existing = get_user_by_username(db_conn, username)
+    existing = _user_get(db_conn, username, user_service=user_service)
     if not existing:
         try:
             role = "admin" if is_admin else "user"
-            create_user(db_conn, username, password, role=role)
+            _user_create(
+                db_conn,
+                username,
+                password,
+                role=role,
+                user_service=user_service,
+            )
             logging.info(
                 "LDAP: Created new user %r from LDAP with role %r", username, role
             )
@@ -81,14 +126,24 @@ def _ldap_sync_user(db_conn, username, password, admin_users):
             )
         return "admin" if is_admin else "user"
     try:
-        update_user(db_conn, existing["id"], last_login=datetime.now().isoformat())
+        _user_update(
+            db_conn,
+            existing["id"],
+            user_service=user_service,
+            last_login=datetime.now().isoformat(),
+        )
         logging.info("LDAP: Updated last login for user %r", username)
         if is_admin and existing["role"] != "admin":
-            update_user(db_conn, existing["id"], role="admin")
+            _user_update(
+                db_conn,
+                existing["id"],
+                user_service=user_service,
+                role="admin",
+            )
             logging.info("LDAP: Assigned admin privileges to user %r", username)
     except Exception as e:
         logging.warning("LDAP: Failed to update user %r: %s", username, e)
-    role_row = get_user_by_username(db_conn, username)
+    role_row = _user_get(db_conn, username, user_service=user_service)
     default_role = "admin" if is_admin else "user"
     return role_row["role"] if role_row else default_role
 
@@ -98,7 +153,16 @@ def _set_login_cookies(handler, username, user_role, redirect_url):
     opts = handler.session_cookie_opts()
     handler.set_secure_cookie("user", username, **opts)
     handler.set_secure_cookie("user_role", user_role, **opts)
-    log_audit(handler.db_conn, "login", username=username, ip=handler.request.remote_ip)
+    _publish_user_authenticated(handler, username=username, role=user_role)
+    user_service = _get_user_service(handler)
+    if user_service is not None:
+        user_service.log_audit(
+            handler.db_conn, "login", username=username, ip=handler.request.remote_ip
+        )
+    else:
+        log_audit(
+            handler.db_conn, "login", username=username, ip=handler.request.remote_ip
+        )
     handler.redirect(redirect_url)
 
 
@@ -110,6 +174,7 @@ def _set_login_cookies(handler, username, user_role, redirect_url):
 def _try_username_password_login(handler, username, password, next_url):
     """Attempt username/password login. Return True if response already sent."""
     db_conn = handler.db_conn
+    user_service = _get_user_service(handler)
     if not db_conn or not username or not password:
         return False
     if len(username) > 256 or len(password) > 256:
@@ -121,7 +186,10 @@ def _try_username_password_login(handler, username, password, next_url):
         )
         return True
     try:
-        user = authenticate_user(db_conn, username, password)
+        if user_service is not None:
+            user = user_service.authenticate(db_conn, username, password)
+        else:
+            user = authenticate_user(db_conn, username, password)
         auth_ok = user is not None
         if not auth_ok:
             handler.render(
@@ -131,10 +199,16 @@ def _try_username_password_login(handler, username, password, next_url):
                 next_url=next_url,
             )
             return True
-        log_audit(db_conn, "login", username=username, ip=handler.request.remote_ip)
+        if user_service is not None:
+            user_service.log_audit(
+                db_conn, "login", username=username, ip=handler.request.remote_ip
+            )
+        else:
+            log_audit(db_conn, "login", username=username, ip=handler.request.remote_ip)
         opts = handler.session_cookie_opts()
         handler.set_secure_cookie("user", username, **opts)
         handler.set_secure_cookie("user_role", user["role"], **opts)
+        _publish_user_authenticated(handler, username=username, role=user["role"])
         handler.redirect(next_url)
         return True
     except Exception as e:
@@ -175,15 +249,27 @@ def _try_token_login(handler, token, next_url):
     norm_token = token.strip()
     norm_access = current.strip()
     if secrets.compare_digest(norm_token, norm_access):
-        log_audit(
-            handler.db_conn,
-            "login",
-            username="token_authenticated",
-            ip=handler.request.remote_ip,
-        )
+        user_service = _get_user_service(handler)
+        if user_service is not None:
+            user_service.log_audit(
+                handler.db_conn,
+                "login",
+                username="token_authenticated",
+                ip=handler.request.remote_ip,
+            )
+        else:
+            log_audit(
+                handler.db_conn,
+                "login",
+                username="token_authenticated",
+                ip=handler.request.remote_ip,
+            )
         opts = handler.session_cookie_opts()
         handler.set_secure_cookie("user", "token_authenticated", **opts)
         handler.set_secure_cookie("user_role", "user", **opts)
+        _publish_user_authenticated(
+            handler, username="token_authenticated", role="user"
+        )
         handler.redirect(next_url)
         return True
     logging.warning("Token authentication failed. Token mismatch.")
@@ -204,21 +290,37 @@ def _try_token_login(handler, token, next_url):
 def _try_admin_username_password_login(handler, username, password):
     """Attempt admin username/password login. Return True if response sent."""
     db_conn = handler.db_conn
+    user_service = _get_user_service(handler)
     if not db_conn or not username or not password:
         return False
     if len(username) > 256 or len(password) > 256:
         handler.render(ADMIN_LOGIN_TEMPLATE, error=INVALID_INPUT_LENGTH_MSG)
         return True
     try:
-        user = authenticate_user(db_conn, username, password)
+        if user_service is not None:
+            user = user_service.authenticate(db_conn, username, password)
+        else:
+            user = authenticate_user(db_conn, username, password)
         if user and user["role"] == "admin":
-            log_audit(
-                db_conn, "admin_login", username=username, ip=handler.request.remote_ip
-            )
+            if user_service is not None:
+                user_service.log_audit(
+                    db_conn,
+                    "admin_login",
+                    username=username,
+                    ip=handler.request.remote_ip,
+                )
+            else:
+                log_audit(
+                    db_conn,
+                    "admin_login",
+                    username=username,
+                    ip=handler.request.remote_ip,
+                )
             opts = handler.session_cookie_opts()
             handler.set_secure_cookie("user", username, **opts)
             handler.set_secure_cookie("user_role", user["role"], **opts)
             handler.set_secure_cookie("admin", "authenticated", **opts)
+            _publish_user_authenticated(handler, username=username, role=user["role"])
             handler.redirect(ADMIN_URL)
             return True
         if user and user["role"] != "admin":
@@ -254,17 +356,29 @@ def _try_admin_token_login(handler, token):
     norm_token = token.strip()
     norm_admin = current.strip()
     if secrets.compare_digest(norm_token, norm_admin):
-        log_audit(
-            handler.db_conn,
-            "admin_login",
-            username="admin_token",
-            ip=handler.request.remote_ip,
-        )
+        user_service = _get_user_service(handler)
+        if user_service is not None:
+            user_service.log_audit(
+                handler.db_conn,
+                "admin_login",
+                username="admin_token",
+                ip=handler.request.remote_ip,
+            )
+        else:
+            log_audit(
+                handler.db_conn,
+                "admin_login",
+                username="admin_token",
+                ip=handler.request.remote_ip,
+            )
         opts = handler.session_cookie_opts()
         # Must set user cookie so @authenticated passes; admin cookie for is_admin_user
         handler.set_secure_cookie("user", "admin_token_authenticated", **opts)
         handler.set_secure_cookie("user_role", "admin", **opts)
         handler.set_secure_cookie("admin", "authenticated", **opts)
+        _publish_user_authenticated(
+            handler, username="admin_token_authenticated", role="admin"
+        )
         handler.redirect(ADMIN_URL)
         return True
     handler.render(ADMIN_LOGIN_TEMPLATE, error="Invalid admin token.")
@@ -283,7 +397,11 @@ def _profile_render(handler, user, error=None, success=None, ldap_enabled=None):
     quota = {"quota_bytes": None, "used_bytes": 0}
     if user and handler.db_conn:
         username = user.get("username", "") if isinstance(user, dict) else str(user)
-        quota = get_user_quota(handler.db_conn, username)
+        user_service = _get_user_service(handler)
+        if user_service is not None:
+            quota = user_service.get_user_quota(handler.db_conn, username)
+        else:
+            quota = get_user_quota(handler.db_conn, username)
     handler.render(
         PROFILE_TEMPLATE,
         user=user,
@@ -294,7 +412,9 @@ def _profile_render(handler, user, error=None, success=None, ldap_enabled=None):
     )
 
 
-def _do_profile_password_update(db_conn, user, new_password, confirm_password):
+def _do_profile_password_update(
+    db_conn, user, new_password, confirm_password, user_service=None
+):
     """Validate and perform password update. Return (success_msg, None) or (None, error_msg)."""
     if not new_password:
         return (None, None)
@@ -304,7 +424,10 @@ def _do_profile_password_update(db_conn, user, new_password, confirm_password):
     if not is_valid:
         return (None, error_msg)
     try:
-        update_user(db_conn, user["id"], password=new_password)
+        if user_service is not None:
+            user_service.update_user(db_conn, user["id"], password=new_password)
+        else:
+            update_user(db_conn, user["id"], password=new_password)
         return ("Password updated successfully", None)
     except Exception as e:
         logging.error(
@@ -403,7 +526,13 @@ class LDAPLoginHandler(BaseHandler):
             db_conn = self.db_conn
             if db_conn:
                 admin_users = self.settings.get("admin_users", [])
-                user_role = _ldap_sync_user(db_conn, username, password, admin_users)
+                user_role = _ldap_sync_user(
+                    db_conn,
+                    username,
+                    password,
+                    admin_users,
+                    user_service=_get_user_service(self),
+                )
 
             _set_login_cookies(self, username, user_role, FILES_BASE_URL)
         except Exception:
@@ -458,9 +587,10 @@ class LoginHandler(BaseHandler):
             return
 
         try:
-            username = self.get_argument("username", "").strip()
-            password = self.get_argument("password", "")
-            token = self.get_argument("token", "").strip()
+            auth_req = AuthRequest.from_handler(self)
+            username = auth_req.username
+            password = auth_req.password
+            token = auth_req.token
             next_url = self._get_safe_next_url()
         except Exception:
             logging.error("Error parsing login form data", exc_info=True)
@@ -513,9 +643,10 @@ class AdminLoginHandler(BaseHandler):
             )
             return
 
-        username = self.get_argument("username", "").strip()
-        password = self.get_argument("password", "")
-        token = self.get_argument("token", "").strip()
+        auth_req = AuthRequest.from_handler(self)
+        username = auth_req.username
+        password = auth_req.password
+        token = auth_req.token
 
         if (
             username
@@ -556,7 +687,11 @@ class ProfileHandler(BaseHandler):
         user = self.current_user
         if user and self.db_conn:
             username = user.get("username", "") if isinstance(user, dict) else str(user)
-            quota = get_user_quota(self.db_conn, username)
+            user_service = _get_user_service(self)
+            if user_service is not None:
+                quota = user_service.get_user_quota(self.db_conn, username)
+            else:
+                quota = get_user_quota(self.db_conn, username)
         self.render(
             PROFILE_TEMPLATE,
             user=user,
@@ -579,7 +714,11 @@ class ProfileHandler(BaseHandler):
             )
             return
 
-        user = get_user_by_username(db_conn, self.current_user["username"])
+        user_service = _get_user_service(self)
+        if user_service is not None:
+            user = user_service.get_user(db_conn, self.current_user["username"])
+        else:
+            user = get_user_by_username(db_conn, self.current_user["username"])
         if not user:
             _profile_render(
                 self,
@@ -592,7 +731,11 @@ class ProfileHandler(BaseHandler):
         new_password = self.get_argument("new_password", "")
         confirm_password = self.get_argument("confirm_password", "")
         success_msg, error_msg = _do_profile_password_update(
-            db_conn, user, new_password, confirm_password
+            db_conn,
+            user,
+            new_password,
+            confirm_password,
+            user_service=user_service,
         )
         _profile_render(
             self,

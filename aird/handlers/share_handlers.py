@@ -6,8 +6,15 @@ from datetime import datetime, timezone
 import os
 import logging
 
-from aird.handlers.base_handler import BaseHandler, XSRFTokenMixin, require_db
-from aird.db import (
+from aird.handlers.base_handler import (
+    BaseHandler,
+    XSRFTokenMixin,
+    require_db,
+    require_modify_access,
+)
+from aird.core.events import ShareCreatedEvent, now_ts
+from aird.domain.contracts import ShareCreateRequest, ShareCreateResponse
+from aird.adapters.persistence_adapter import (
     insert_share,
     delete_share,
     get_share_by_id,
@@ -134,6 +141,45 @@ def _resolve_final_paths_static(valid_paths, remote_items, sid):
     return (final_paths, None)
 
 
+def _resolve_share_paths(paths, share_type, sid):
+    valid_paths, dynamic_folders, remote_items = _collect_paths_from_request(
+        paths, share_type
+    )
+    if share_type == "dynamic":
+        return _resolve_final_paths_dynamic(dynamic_folders, remote_items, sid)
+    return _resolve_final_paths_static(valid_paths, remote_items, sid)
+
+
+def _create_share_record(
+    db_conn,
+    sid,
+    final_paths,
+    allowed_users,
+    disable_token,
+    share_type,
+    allow_list,
+    avoid_list,
+    expiry_date,
+    modify_users=None,
+):
+    secret_token = secrets.token_urlsafe(64) if not disable_token else None
+    created = datetime.now(timezone.utc).isoformat()
+    success = insert_share(
+        db_conn,
+        sid,
+        created,
+        final_paths,
+        allowed_users if allowed_users else None,
+        secret_token,
+        share_type,
+        allow_list if allow_list else None,
+        avoid_list if avoid_list else None,
+        expiry_date,
+        modify_users=modify_users if modify_users else None,
+    )
+    return success, secret_token
+
+
 # ---------------------------------------------------------------------------
 # Helpers for share list/file access (token and user checks)
 # ---------------------------------------------------------------------------
@@ -161,16 +207,45 @@ def _is_user_allowed(share, get_secure_cookie):
     allowed_users = share.get("allowed_users")
     if not allowed_users:
         return (True, None)
-    current_user = get_secure_cookie("user")
+    current_user = _get_cookie_username(get_secure_cookie)
     if not current_user:
         return (
             False,
             (401, "Authentication required: Please provide a valid access token"),
         )
-    if isinstance(current_user, bytes):
-        current_user = current_user.decode("utf-8")
     if current_user not in allowed_users:
         return (False, (403, ACCESS_TOKEN_INVALID_OR_EXPIRED))
+    return (True, None)
+
+
+def _get_cookie_username(get_secure_cookie):
+    current_user = get_secure_cookie("user")
+    if not current_user:
+        return None
+    raw = (
+        current_user.decode("utf-8", errors="ignore")
+        if isinstance(current_user, bytes)
+        else str(current_user)
+    )
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return str(parsed.get("username", "")).strip() or None
+        return str(parsed).strip() or None
+    except Exception:
+        return raw.strip() or None
+
+
+def _is_user_allowed_for_modify(share, get_secure_cookie):
+    """Return (True, None) if user can modify shared structure/files."""
+    modify_users = share.get("modify_users") or []
+    if not modify_users:
+        return (False, (403, "This share is read-only"))
+    username = _get_cookie_username(get_secure_cookie)
+    if not username:
+        return (False, (401, "Authentication required for modify access"))
+    if username not in modify_users:
+        return (False, (403, "Modify access denied for this share"))
     return (True, None)
 
 
@@ -302,6 +377,8 @@ def _build_share_update_response(updated_share, share_id, db_success, data):
     out = {"success": True, "share_id": share_id, "db_persisted": db_success}
     if data.get("allowed_users") is not None:
         out["allowed_users"] = updated_share.get("allowed_users")
+    if data.get("modify_users") is not None:
+        out["modify_users"] = updated_share.get("modify_users")
     if data.get("remove_files"):
         out["removed_files"] = data["remove_files"]
         out["remaining_files"] = updated_share.get("paths", [])
@@ -402,9 +479,11 @@ def _execute_share_update(db_conn, share_id, share_data, data):
 
 
 def _apply_metadata_updates(data, share_data, update_fields):
-    """Apply allowed_users, token, allow_list, avoid_list, expiry_date to update_fields."""
+    """Apply users/token/filters/expiry metadata to update_fields."""
     if data.get("allowed_users") is not None:
         update_fields["allowed_users"] = data.get("allowed_users") or None
+    if data.get("modify_users") is not None:
+        update_fields["modify_users"] = data.get("modify_users") or None
     update_fields.update(
         _build_token_update_fields(data.get("disable_token"), share_data)
     )
@@ -460,54 +539,37 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
 
     @tornado.web.authenticated
     @require_db
+    @require_modify_access()
     def post(self):
         if not self.require_feature(
             "file_share", True, body={"error": FS_DISABLED_MSG}
         ):
             return
-        try:
+
+        def action():
             data = self.parse_json_body()
-            paths = data.get("paths", [])
-            allowed_users = data.get("allowed_users", [])
-            share_type = data.get("share_type", "static")
-            allow_list = data.get("allow_list", [])
-            avoid_list = data.get("avoid_list", [])
-            disable_token = data.get("disable_token", False)
-            expiry_date = data.get("expiry_date", None)
+            req = ShareCreateRequest.from_payload(data)
 
-            valid_paths, dynamic_folders, remote_items = _collect_paths_from_request(
-                paths, share_type
-            )
             sid = secrets.token_urlsafe(64)
-
-            if share_type == "dynamic":
-                final_paths, err = _resolve_final_paths_dynamic(
-                    dynamic_folders, remote_items, sid
-                )
-            else:
-                final_paths, err = _resolve_final_paths_static(
-                    valid_paths, remote_items, sid
-                )
+            final_paths, err = _resolve_share_paths(req.paths, req.share_type, sid)
 
             if err is not None:
                 status, body = err
                 self.set_status(status)
                 self.write(body)
-                return
+                return None
 
-            secret_token = secrets.token_urlsafe(64) if not disable_token else None
-            created = datetime.now(timezone.utc).isoformat()
-            success = insert_share(
+            success, secret_token = _create_share_record(
                 self.db_conn,
                 sid,
-                created,
                 final_paths,
-                allowed_users if allowed_users else None,
-                secret_token,
-                share_type,
-                allow_list if allow_list else None,
-                avoid_list if avoid_list else None,
-                expiry_date,
+                req.allowed_users,
+                req.disable_token,
+                req.share_type,
+                req.allow_list,
+                req.avoid_list,
+                req.expiry_date,
+                modify_users=req.modify_users,
             )
             if success:
                 logging.info("Share %s created successfully in database", sid)
@@ -518,23 +580,34 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
                     details=f"share_id={sid} paths={len(final_paths)}",
                     ip=self.request.remote_ip,
                 )
-                response_data = {"id": sid, "url": f"/shared/{sid}"}
-                if not disable_token:
-                    response_data["secret_token"] = secret_token
-                self.write(response_data)
-            else:
-                logging.error("Failed to create share %s in database", sid)
-                self.set_status(500)
-                self.write({"error": "Failed to create share"})
-        except Exception as e:
-            logging.error("Share creation error: %s", e)
-            self.set_status(500)
-            self.write({"error": "Failed to create share. Please try again."})
+                self.publish_event(
+                    ShareCreatedEvent(
+                        share_id=sid,
+                        creator=self.get_display_username(),
+                        path_count=len(final_paths),
+                        created_at=now_ts(),
+                    )
+                )
+                response_data = ShareCreateResponse(
+                    share_id=sid,
+                    url=f"/shared/{sid}",
+                    secret_token=secret_token if not req.disable_token else None,
+                )
+                return response_data.to_json()
+            logging.error("Failed to create share %s in database", sid)
+            self.write_json_error(500, "Failed to create share")
+            return None
+
+        self.run_json_action(
+            action,
+            on_error_message="Failed to create share. Please try again.",
+        )
 
 
 class ShareRevokeHandler(XSRFTokenMixin, BaseHandler):
     @tornado.web.authenticated
     @require_db
+    @require_modify_access()
     def post(self):
         if not self.require_feature(
             "file_share", True, body={"error": FS_DISABLED_MSG}
@@ -571,6 +644,7 @@ class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
 
     @tornado.web.authenticated
     @require_db
+    @require_modify_access()
     def post(self):
         """Update share access list"""
         if not self.require_feature(
@@ -580,33 +654,38 @@ class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
 
         share_id = None
         new_cloud_paths: list[str] = []
-        try:
-            data = self.parse_json_body()
-            share_id, share_data, err_status, err_body = _validate_share_update_request(
-                self.db_conn, data
-            )
-            if err_status is not None:
-                self.set_status(err_status)
-                self.write(err_body)
-                return
 
-            response_data, err, new_cloud_paths = _execute_share_update(
-                self.db_conn, share_id, share_data, data
-            )
-            if err is not None:
-                self.set_status(err[0])
-                self.write(err[1])
-                return
-            self.write(response_data)
+        def action():
+            nonlocal share_id, new_cloud_paths
+            try:
+                data = self.parse_json_body()
+                share_id, share_data, err_status, err_body = (
+                    _validate_share_update_request(self.db_conn, data)
+                )
+                if err_status is not None:
+                    self.set_status(err_status)
+                    self.write(err_body)
+                    return None
 
-        except Exception as e:
-            logging.error("Share update error: %s", e)
-            if share_id and new_cloud_paths:
-                for rel_path in new_cloud_paths:
-                    remove_cloud_file_if_exists(share_id, rel_path)
-                cleanup_share_cloud_dir_if_empty(share_id)
-            self.set_status(500)
-            self.write({"error": "Failed to update share. Please try again."})
+                response_data, err, new_cloud_paths = _execute_share_update(
+                    self.db_conn, share_id, share_data, data
+                )
+                if err is not None:
+                    self.set_status(err[0])
+                    self.write(err[1])
+                    return None
+                return response_data
+            except Exception:
+                if share_id and new_cloud_paths:
+                    for rel_path in new_cloud_paths:
+                        remove_cloud_file_if_exists(share_id, rel_path)
+                    cleanup_share_cloud_dir_if_empty(share_id)
+                raise
+
+        self.run_json_action(
+            action,
+            on_error_message="Failed to update share. Please try again.",
+        )
 
 
 class TokenVerificationHandler(BaseHandler):
@@ -653,42 +732,35 @@ class TokenVerificationHandler(BaseHandler):
         """Verify token and grant access"""
         # Rate limiting check
         if not self._check_rate_limit():
-            self.set_status(429)
-            self.write({"error": "Too many attempts. Please try again later."})
+            self.write_json_error(429, "Too many attempts. Please try again later.")
             return
 
         share = get_share_by_id(self.db_conn, sid)
         if not share:
-            self.set_status(404)
-            self.write({"error": "Invalid share link"})
+            self.write_json_error(404, "Invalid share link")
             return
 
-        try:
+        def action():
             data = self.parse_json_body()
             provided_token = data.get("token", "").strip()
             stored_token = share.get("secret_token")
 
             if not stored_token:
                 # Old share without secret token - allow access
-                self.write({"success": True})
-                return
+                return {"success": True}
 
             if not provided_token:
-                self.set_status(400)
-                self.write({"error": "Token is required"})
-                return
+                self.write_json_error(400, "Token is required")
+                return None
 
             if not secrets.compare_digest(provided_token, stored_token):
-                self.set_status(403)
-                self.write({"error": "Invalid token"})
-                return
+                self.write_json_error(403, "Invalid token")
+                return None
 
             # Token is valid
-            self.write({"success": True})
+            return {"success": True}
 
-        except Exception:
-            self.set_status(500)
-            self.write({"error": "Server error"})
+        self.run_json_action(action, on_error_message="Server error")
 
 
 class SharedListHandler(BaseHandler):
@@ -712,6 +784,7 @@ class SharedListHandler(BaseHandler):
             self.write(user_err[1])
             return
         filtered_files = _get_share_file_list(share)
+        can_modify, _ = _is_user_allowed_for_modify(share, self.get_secure_cookie)
         # Replace </script> so the raw JSON is safe to embed directly in a <script> tag
         files_json_safe = json.dumps(filtered_files).replace("</", "<\\/")
         self.render(
@@ -719,6 +792,7 @@ class SharedListHandler(BaseHandler):
             share_id=sid,
             files=filtered_files,
             files_json=files_json_safe,
+            can_modify=can_modify,
         )
 
 

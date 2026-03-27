@@ -9,15 +9,20 @@ from collections import deque
 from urllib.parse import unquote
 import asyncio
 import aiofiles
+from typing import Protocol, Callable, Any
 
-from aird.handlers.base_handler import BaseHandler
+from aird.handlers.base_handler import BaseHandler, require_modify_access
 from aird.utils.util import sanitize_cloud_filename, is_feature_enabled
 from aird.core.security import (  # noqa: F401
     is_within_root,
     is_valid_websocket_origin,
     join_path,
 )
-from aird.db import log_audit, get_user_quota, update_user_used_bytes
+from aird.adapters.persistence_adapter import (
+    log_audit,
+    get_user_quota,
+    update_user_used_bytes,
+)
 import aird.constants as constants_module
 from aird.constants.file_ops import (
     ACCESS_DENIED,
@@ -80,7 +85,7 @@ from aird.config import (
     ALLOWED_UPLOAD_EXTENSIONS,
     CLOUD_MANAGER,
 )
-from aird.db import get_share_by_id, update_share
+from aird.adapters.persistence_adapter import get_share_by_id, update_share
 from aird.cloud import CloudManager, CloudProviderError
 from io import BytesIO
 
@@ -187,16 +192,61 @@ def _bulk_add_to_share_one(
     return None
 
 
+class BulkActionCommand(Protocol):
+    """Command contract for one bulk action execution."""
+
+    def __call__(
+        self,
+        abspath: str,
+        path: str,
+        data: dict,
+        db_conn: Any,
+        get_display_username: Callable[[], str],
+        remote_ip: str,
+    ) -> str | None: ...
+
+
+class DeleteBulkActionCommand:
+    def __call__(
+        self,
+        abspath: str,
+        path: str,
+        data: dict,
+        db_conn: Any,
+        get_display_username: Callable[[], str],
+        remote_ip: str,
+    ) -> str | None:
+        return _bulk_delete_one(abspath, path, db_conn, get_display_username, remote_ip)
+
+
+class AddToShareBulkActionCommand:
+    def __call__(
+        self,
+        abspath: str,
+        path: str,
+        data: dict,
+        db_conn: Any,
+        get_display_username: Callable[[], str],
+        remote_ip: str,
+    ) -> str | None:
+        return _bulk_add_to_share_one(
+            abspath, path, data, db_conn, get_display_username, remote_ip
+        )
+
+
+_BULK_ACTION_COMMANDS: dict[str, BulkActionCommand] = {
+    "delete": DeleteBulkActionCommand(),
+    "add_to_share": AddToShareBulkActionCommand(),
+}
+
+
 def _process_bulk_action(
     action, abspath, path, data, db_conn, get_display_username, remote_ip
 ):
     """Dispatch one bulk action. Return None on success, error string on failure."""
-    if action == "delete":
-        return _bulk_delete_one(abspath, path, db_conn, get_display_username, remote_ip)
-    if action == "add_to_share":
-        return _bulk_add_to_share_one(
-            abspath, path, data, db_conn, get_display_username, remote_ip
-        )
+    command = _BULK_ACTION_COMMANDS.get(action)
+    if command:
+        return command(abspath, path, data, db_conn, get_display_username, remote_ip)
     return UNSUPPORTED_ACTION
 
 
@@ -294,6 +344,7 @@ class UploadHandler(BaseHandler):
         return False
 
     @tornado.web.authenticated
+    @require_modify_access()
     async def post(self):
         if not self.require_feature(
             "file_upload", True, body=FILE_UPLOAD_DISABLED_ADMIN
@@ -369,6 +420,7 @@ class UploadHandler(BaseHandler):
 
 class CreateFolderHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_modify_access()
     def post(self):
         if not self.require_feature("folder_create", True, body=FOLDER_CREATE_DISABLED):
             return
@@ -475,6 +527,7 @@ class DeleteHandler(BaseHandler):
         return True
 
     @tornado.web.authenticated
+    @require_modify_access()
     def post(self):
         path = self.get_argument("path", "")
         abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
@@ -503,6 +556,7 @@ class DeleteHandler(BaseHandler):
 
 class RenameHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_modify_access()
     def post(self):
         if not self.require_feature("file_rename", True, body=FILE_RENAME_DISABLED):
             return
@@ -566,6 +620,7 @@ class RenameHandler(BaseHandler):
 
 class CopyHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_modify_access()
     def post(self):
         if not self.require_feature("file_rename", True, body=COPY_DISABLED):
             return
@@ -621,6 +676,7 @@ class CopyHandler(BaseHandler):
 
 class MoveHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_modify_access()
     def post(self):
         if not self.require_feature("file_rename", True, body=MOVE_DISABLED):
             return
@@ -673,6 +729,7 @@ class MoveHandler(BaseHandler):
 
 class BulkHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_modify_access()
     def post(self):
         try:
             data = json.loads(
@@ -729,6 +786,7 @@ class BulkHandler(BaseHandler):
 
 class EditHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_modify_access()
     def post(self):
         if not self.require_feature("file_edit", True, body=FILE_EDIT_DISABLED):
             return
@@ -807,6 +865,7 @@ class EditHandler(BaseHandler):
 
 class CloudUploadHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_modify_access()
     async def post(self, provider_name: str):
         manager: CloudManager = self.application.settings.get(
             "cloud_manager", CLOUD_MANAGER

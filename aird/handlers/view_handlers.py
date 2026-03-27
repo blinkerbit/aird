@@ -11,7 +11,7 @@ import concurrent.futures
 import logging
 
 from aird.handlers.base_handler import BaseHandler, get_username_string_for_db
-from aird.db import get_all_shares, get_user_favorites
+from aird.adapters.persistence_adapter import get_all_shares, get_user_favorites
 from aird.utils.util import (
     get_files_in_directory,
     get_file_icon,

@@ -208,6 +208,13 @@
         <div class="header">
             <h1>📁 Shared Files</h1>
         </div>
+        <div style="margin-bottom:12px; font-size:13px; color:#666;">
+            {% if can_modify %}
+            Access level: <strong>Modify</strong>
+            {% else %}
+            Access level: <strong>Read-only</strong>
+            {% end %}
+        </div>
 
         <div class="file-browser" id="fileBrowser">
             <div class="file-header-row">
@@ -223,6 +230,7 @@
         </div>
 
     </div>
+    <script id="files-json" type="application/json">{% raw files_json %}</script>
 
     <script nonce="{{ csp_nonce }}">
         // Global token management for shared files
@@ -446,7 +454,9 @@
             }
 
             try {
-                const files = {% raw files_json %};
+                const filesRaw =
+                    document.getElementById('files-json')?.textContent || '[]';
+                const files = JSON.parse(filesRaw);
                 renderFiles(Array.isArray(files) ? files : []);
             } catch (error) {
                 console.error('Error processing files data:', error);

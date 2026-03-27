@@ -9,6 +9,7 @@ import time
 
 import json
 import tornado.web
+from typing import Any
 
 from aird.handlers.base_handler import BaseHandler
 from aird.handlers.api_handlers import (
@@ -16,7 +17,7 @@ from aird.handlers.api_handlers import (
     FileStreamHandler,
     SuperSearchWebSocketHandler,
 )
-from aird.db import (
+from aird.adapters.persistence_adapter import (
     get_all_users,
     create_user,
     update_user,
@@ -92,6 +93,10 @@ import aird.constants as constants_module
 from aird.utils.util import get_current_websocket_config
 from aird.core.security import validate_password
 from aird.handlers.base_handler import require_admin, require_db
+
+
+def _get_user_service(handler) -> Any:
+    return handler.get_service("user_service")
 
 
 class AdminHandler(BaseHandler):
@@ -305,8 +310,12 @@ class AdminUsersHandler(BaseHandler):
 
         users = []
         db_conn = self.db_conn
+        user_service = _get_user_service(self)
         if db_conn is not None:
-            users = get_all_users(db_conn)
+            if user_service is not None:
+                users = user_service.list_users(db_conn)
+            else:
+                users = get_all_users(db_conn)
 
         self.render("admin_users.html", users=users)
 
@@ -325,6 +334,7 @@ class UserCreateHandler(BaseHandler):
         """Create a new user"""
 
         db_conn = self.db_conn
+        user_service = _get_user_service(self)
         if db_conn is None:
             self.render(TEMPLATE_USER_CREATE, error=DATABASE_NOT_AVAILABLE)
             return
@@ -360,7 +370,10 @@ class UserCreateHandler(BaseHandler):
             return
 
         try:
-            create_user(db_conn, username, password, role)
+            if user_service is not None:
+                user_service.create_user(db_conn, username, password, role=role)
+            else:
+                create_user(db_conn, username, password, role)
             self.redirect(URL_ADMIN_USERS)
         except ValueError as e:
             self.render(TEMPLATE_USER_CREATE, error=str(e))
@@ -402,7 +415,11 @@ class UserEditHandler(BaseHandler):
         try:
             user_id = int(user_id)
             # Get user by ID
-            users = get_all_users(self.db_conn)
+            user_service = _get_user_service(self)
+            if user_service is not None:
+                users = user_service.list_users(self.db_conn)
+            else:
+                users = get_all_users(self.db_conn)
             user = next((u for u in users if u["id"] == user_id), None)
 
             if not user:
@@ -426,7 +443,11 @@ class UserEditHandler(BaseHandler):
         try:
             user_id = int(user_id)
             # Get existing user
-            users = get_all_users(self.db_conn)
+            user_service = _get_user_service(self)
+            if user_service is not None:
+                users = user_service.list_users(self.db_conn)
+            else:
+                users = get_all_users(self.db_conn)
             user = next((u for u in users if u["id"] == user_id), None)
 
             if not user:
@@ -448,7 +469,11 @@ class UserEditHandler(BaseHandler):
             if password:
                 update_data["password"] = password
 
-            if update_user(self.db_conn, user_id, **update_data):
+            if user_service is not None:
+                updated = user_service.update_user(self.db_conn, user_id, **update_data)
+            else:
+                updated = update_user(self.db_conn, user_id, **update_data)
+            if updated:
                 self.redirect(URL_ADMIN_USERS)
             else:
                 self.render(TEMPLATE_USER_EDIT, user=user, error=FAILED_UPDATE_USER)
@@ -478,13 +503,18 @@ class UserDeleteHandler(BaseHandler):
 
         try:
             user_id = int(self.get_argument("user_id", "0"))
+            user_service = _get_user_service(self)
 
             if user_id <= 0:
                 self.set_status(HTTP_BAD_REQUEST)
                 self.write(INVALID_USER_ID_SHORT)
                 return
 
-            if delete_user(self.db_conn, user_id):
+            if user_service is not None:
+                deleted = user_service.delete_user(self.db_conn, user_id)
+            else:
+                deleted = delete_user(self.db_conn, user_id)
+            if deleted:
                 self.redirect(URL_ADMIN_USERS)
             else:
                 self.set_status(404)

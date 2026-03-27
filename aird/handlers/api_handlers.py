@@ -30,7 +30,7 @@ from aird.handlers.base_handler import (
     require_admin,
     require_db,
 )
-from aird.db import (
+from aird.adapters.persistence_adapter import (
     get_share_by_id,
     get_share_download_count,
     get_all_shares,
@@ -763,13 +763,15 @@ class UserSearchAPIHandler(BaseHandler):
             self.write({"users": []})
             return
 
-        try:
-            users = search_users(self.db_conn, query)
-            self.write({"users": users})
-        except Exception as e:
-            logging.error("User search failed: %s", e, exc_info=True)
-            self.set_status(500)
-            self.write({"error": "Search failed"})
+        def action():
+            user_repo = self.get_repository("user_repo")
+            if user_repo is not None:
+                users = user_repo.search_users(self.db_conn, query)
+            else:
+                users = search_users(self.db_conn, query)
+            return {"users": users}
+
+        self.run_json_action(action, on_error_message="Search failed")
 
 
 class ShareDetailsAPIHandler(BaseHandler):
@@ -783,37 +785,40 @@ class ShareDetailsAPIHandler(BaseHandler):
 
         file_path = self.get_argument("path", "").strip()
         if not file_path:
-            self.set_status(400)
-            self.write({"error": "File path is required"})
+            self.write_json_error(400, "File path is required")
             return
 
-        try:
+        def action():
             # Find shares that contain this file
-            db_conn = self.db_conn
+            db_conn = self.require_db_connection(DB_NOT_AVAILABLE_MSG)
             if not db_conn:
-                self.set_status(500)
-                self.write({"error": DB_NOT_AVAILABLE_MSG})
-                return
-            matching_shares = get_shares_for_path(db_conn, file_path)
+                return None
+            share_service = self.get_service("share_service")
+            if share_service is not None:
+                matching_shares = share_service.get_shares_for_path(db_conn, file_path)
+            else:
+                matching_shares = get_shares_for_path(db_conn, file_path)
 
             # Format response
             formatted_shares = []
             for share in matching_shares:
                 allowed_users = share.get("allowed_users")
+                modify_users = share.get("modify_users")
                 share_info = {
                     "id": share["id"],
                     "created": share.get("created", ""),
                     "allowed_users": allowed_users if allowed_users is not None else [],
+                    "modify_users": modify_users if modify_users is not None else [],
                     "url": f"/shared/{share['id']}",
                     "paths": share.get("paths", []),
                 }
                 formatted_shares.append(share_info)
 
-            self.write({"shares": formatted_shares})
-        except Exception as e:
-            logging.error("Error fetching share details: %s", e, exc_info=True)
-            self.set_status(500)
-            self.write({"error": "Failed to retrieve share details"})
+            return {"shares": formatted_shares}
+
+        self.run_json_action(
+            action, on_error_message="Failed to retrieve share details"
+        )
 
 
 class ShareDetailsByIdAPIHandler(BaseHandler):
@@ -827,27 +832,29 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
 
         share_id = self.get_argument("id", "").strip()
         if not share_id:
-            self.set_status(400)
-            self.write({"error": "Share ID is required"})
+            self.write_json_error(400, "Share ID is required")
             return
 
-        try:
-            db_conn = self.db_conn
+        def action():
+            db_conn = self.require_db_connection(DB_NOT_AVAILABLE_MSG)
             if not db_conn:
-                self.set_status(500)
-                self.write({"error": DB_NOT_AVAILABLE_MSG})
-                return
-            share = get_share_by_id(db_conn, share_id)
+                return None
+            share_service = self.get_service("share_service")
+            if share_service is not None:
+                share = share_service.get_share(db_conn, share_id)
+            else:
+                share = get_share_by_id(db_conn, share_id)
             if not share:
-                self.set_status(404)
-                self.write({"error": "Share not found"})
-                return
+                self.write_json_error(404, "Share not found")
+                return None
 
             allowed_users = share.get("allowed_users")
+            modify_users = share.get("modify_users")
             share_info = {
                 "id": share["id"],
                 "created": share.get("created", ""),
                 "allowed_users": allowed_users if allowed_users is not None else [],
+                "modify_users": modify_users if modify_users is not None else [],
                 "url": f"/shared/{share['id']}",
                 "paths": share.get("paths", []),
                 "has_token": share.get("secret_token") is not None,
@@ -858,11 +865,11 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
                 "download_count": get_share_download_count(db_conn, share_id),
             }
 
-            self.write({"share": share_info})
-        except Exception as e:
-            logging.error("Error fetching share by ID: %s", e, exc_info=True)
-            self.set_status(500)
-            self.write({"error": "Failed to retrieve share details"})
+            return {"share": share_info}
+
+        self.run_json_action(
+            action, on_error_message="Failed to retrieve share details"
+        )
 
 
 class ShareListAPIHandler(BaseHandler):
@@ -873,12 +880,14 @@ class ShareListAPIHandler(BaseHandler):
         ):
             return
 
-        db_conn = self.db_conn
+        db_conn = self.require_db_connection(DB_NOT_AVAILABLE_MSG)
         if not db_conn:
-            self.set_status(500)
-            self.write({"error": DB_NOT_AVAILABLE_MSG})
             return
-        shares = get_all_shares(db_conn)
+        share_service = self.get_service("share_service")
+        if share_service is not None:
+            shares = share_service.list_shares(db_conn)
+        else:
+            shares = get_all_shares(db_conn)
         self.write({"shares": shares})
 
 
@@ -906,29 +915,28 @@ class FavoriteToggleAPIHandler(BaseHandler):
             "favorites", True, body={"error": "Favorites disabled"}
         ):
             return
-        db_conn = self.db_conn
+        db_conn = self.require_db_connection(DB_NOT_AVAILABLE_MSG)
         if not db_conn:
-            self.set_status(500)
-            self.write({"error": DB_NOT_AVAILABLE_MSG})
             return
-        try:
-            body = json.loads(self.request.body)
-        except Exception:
-            self.set_status(400)
-            self.write({"error": "Invalid JSON"})
-            return
-        path = body.get("path", "").strip()
-        if not path:
-            self.set_status(400)
-            self.write({"error": "path is required"})
-            return
-        username = get_username_string_for_db(self)
-        if not username:
-            self.set_status(401)
-            self.write({"error": "Could not resolve username"})
-            return
-        is_fav = toggle_favorite(db_conn, username, path)
-        self.write({"favorited": is_fav, "path": path})
+
+        def action():
+            try:
+                body = json.loads(self.request.body)
+            except Exception:
+                self.write_json_error(400, "Invalid JSON")
+                return None
+            path = body.get("path", "").strip()
+            if not path:
+                self.write_json_error(400, "path is required")
+                return None
+            username = get_username_string_for_db(self)
+            if not username:
+                self.write_json_error(401, "Could not resolve username")
+                return None
+            is_fav = toggle_favorite(db_conn, username, path)
+            return {"favorited": is_fav, "path": path}
+
+        self.run_json_action(action, on_error_message="Failed to toggle favorite")
 
 
 class FavoritesListAPIHandler(BaseHandler):
@@ -938,15 +946,12 @@ class FavoritesListAPIHandler(BaseHandler):
             "favorites", True, body={"error": "Favorites disabled"}
         ):
             return
-        db_conn = self.db_conn
+        db_conn = self.require_db_connection(DB_NOT_AVAILABLE_MSG)
         if not db_conn:
-            self.set_status(500)
-            self.write({"error": DB_NOT_AVAILABLE_MSG})
             return
         username = get_username_string_for_db(self)
         if not username:
-            self.set_status(401)
-            self.write({"error": "Could not resolve username"})
+            self.write_json_error(401, "Could not resolve username")
             return
         favorites = get_user_favorites(db_conn, username)
         self.write({"favorites": favorites})
