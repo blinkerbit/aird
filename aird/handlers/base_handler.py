@@ -9,7 +9,7 @@ import tornado.web
 import tornado.websocket
 
 import aird.config as config_module
-from aird.adapters.persistence_adapter import get_user_by_username
+from aird.db import get_user_by_username
 from aird.utils.util import is_feature_enabled
 
 logger = logging.getLogger(__name__)
@@ -393,12 +393,6 @@ class BaseHandler(tornado.web.RequestHandler):
         if self.app_context is not None:
             return self.app_context.event_metrics
         return self.settings.get("event_metrics")
-
-    def get_repository(self, name: str, default=None):
-        repos = self.settings.get("repositories", {})
-        if self.app_context is not None:
-            return self.app_context.get_repo(name, default)
-        return repos.get(name, default)
 
     def get_service(self, name: str, default=None):
         services = self.settings.get("services", {})

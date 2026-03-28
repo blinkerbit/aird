@@ -18,11 +18,6 @@ from aird.core.security import (  # noqa: F401
     is_valid_websocket_origin,
     join_path,
 )
-from aird.adapters.persistence_adapter import (
-    log_audit,
-    get_user_quota,
-    update_user_used_bytes,
-)
 import aird.constants as constants_module
 from aird.constants.file_ops import (
     ACCESS_DENIED,
@@ -85,7 +80,6 @@ from aird.config import (
     ALLOWED_UPLOAD_EXTENSIONS,
     CLOUD_MANAGER,
 )
-from aird.adapters.persistence_adapter import get_share_by_id, update_share
 from aird.cloud import CloudManager, CloudProviderError
 from io import BytesIO
 
@@ -130,14 +124,16 @@ def _validate_upload_destination(upload_dir, filename):
 # ---------------------------------------------------------------------------
 
 
-def _bulk_delete_one(abspath, _path, db_conn, get_display_username, remote_ip):
+def _bulk_delete_one(
+    abspath, _path, db_conn, get_display_username, remote_ip, get_service
+):
     """Perform delete for one path. Return None on success, error message string on failure."""
     if os.path.isdir(abspath):
         if not is_feature_enabled("folder_delete", True):
             return FOLDER_DELETE_DISABLED_LOWER
         try:
             shutil.rmtree(abspath)
-            log_audit(
+            get_service("audit_service").log(
                 db_conn,
                 "folder_delete",
                 username=get_display_username(),
@@ -151,7 +147,7 @@ def _bulk_delete_one(abspath, _path, db_conn, get_display_username, remote_ip):
             return FILE_DELETE_DISABLED_LOWER
         try:
             os.remove(abspath)
-            log_audit(
+            get_service("audit_service").log(
                 db_conn,
                 "file_delete",
                 username=get_display_username(),
@@ -164,7 +160,7 @@ def _bulk_delete_one(abspath, _path, db_conn, get_display_username, remote_ip):
 
 
 def _bulk_add_to_share_one(
-    abspath, path, data, db_conn, get_display_username, remote_ip
+    abspath, path, data, db_conn, get_display_username, remote_ip, get_service
 ):
     """Add one path to share. Return None on success, error message string on failure."""
     share_id = data.get("share_id")
@@ -172,7 +168,7 @@ def _bulk_add_to_share_one(
         return SHARE_ID_REQUIRED
     if not db_conn:
         return DATABASE_UNAVAILABLE
-    share = get_share_by_id(db_conn, share_id)
+    share = get_service("share_service").get_share(db_conn, share_id)
     if not share:
         return SHARE_NOT_FOUND
     paths_list = list(share.get("paths") or [])
@@ -180,9 +176,11 @@ def _bulk_add_to_share_one(
     if rel in paths_list:
         return None
     paths_list.append(rel)
-    if not update_share(db_conn, share_id, paths=paths_list):
+    if not get_service("share_service").update_share(
+        db_conn, share_id, paths=paths_list
+    ):
         return UPDATE_FAILED
-    log_audit(
+    get_service("audit_service").log(
         db_conn,
         "share_update",
         username=get_display_username(),
@@ -203,6 +201,7 @@ class BulkActionCommand(Protocol):
         db_conn: Any,
         get_display_username: Callable[[], str],
         remote_ip: str,
+        get_service: Callable[[str], Any],
     ) -> str | None: ...
 
 
@@ -215,8 +214,11 @@ class DeleteBulkActionCommand:
         db_conn: Any,
         get_display_username: Callable[[], str],
         remote_ip: str,
+        get_service: Callable[[str], Any] = None,
     ) -> str | None:
-        return _bulk_delete_one(abspath, path, db_conn, get_display_username, remote_ip)
+        return _bulk_delete_one(
+            abspath, path, db_conn, get_display_username, remote_ip, get_service
+        )
 
 
 class AddToShareBulkActionCommand:
@@ -228,9 +230,10 @@ class AddToShareBulkActionCommand:
         db_conn: Any,
         get_display_username: Callable[[], str],
         remote_ip: str,
+        get_service: Callable[[str], Any] = None,
     ) -> str | None:
         return _bulk_add_to_share_one(
-            abspath, path, data, db_conn, get_display_username, remote_ip
+            abspath, path, data, db_conn, get_display_username, remote_ip, get_service
         )
 
 
@@ -241,12 +244,14 @@ _BULK_ACTION_COMMANDS: dict[str, BulkActionCommand] = {
 
 
 def _process_bulk_action(
-    action, abspath, path, data, db_conn, get_display_username, remote_ip
+    action, abspath, path, data, db_conn, get_display_username, remote_ip, get_service
 ):
     """Dispatch one bulk action. Return None on success, error string on failure."""
     command = _BULK_ACTION_COMMANDS.get(action)
     if command:
-        return command(abspath, path, data, db_conn, get_display_username, remote_ip)
+        return command(
+            abspath, path, data, db_conn, get_display_username, remote_ip, get_service
+        )
     return UNSUPPORTED_ACTION
 
 
@@ -333,7 +338,7 @@ class UploadHandler(BaseHandler):
         if not is_feature_enabled("storage_quotas", False):
             return False
         username = self.get_display_username()
-        quota = get_user_quota(self.db_conn, username)
+        quota = self.get_service("quota_service").get_quota(self.db_conn, username)
         if (
             quota["quota_bytes"] is not None
             and quota["used_bytes"] + self._bytes_received > quota["quota_bytes"]
@@ -391,11 +396,11 @@ class UploadHandler(BaseHandler):
 
         # Update used bytes
         if is_feature_enabled("storage_quotas", False):
-            update_user_used_bytes(
+            self.get_service("quota_service").update_used_bytes(
                 self.db_conn, self.get_display_username(), self._bytes_received
             )
 
-        log_audit(
+        self.get_service("audit_service").log(
             self.db_conn,
             "file_upload",
             username=self.get_display_username(),
@@ -460,7 +465,7 @@ class CreateFolderHandler(BaseHandler):
             if hasattr(self, "get_display_username")
             else None
         )
-        log_audit(
+        self.get_service("audit_service").log(
             self.db_conn,
             "folder_create",
             username=username,
@@ -494,7 +499,7 @@ class DeleteHandler(BaseHandler):
             self.write(FOLDER_NOT_EMPTY)
             return False
         shutil.rmtree(abspath)
-        log_audit(
+        self.get_service("audit_service").log(
             self.db_conn,
             "folder_delete",
             username=self.get_display_username(),
@@ -514,10 +519,10 @@ class DeleteHandler(BaseHandler):
             pass
         os.remove(abspath)
         if is_feature_enabled("storage_quotas", False) and file_size > 0:
-            update_user_used_bytes(
+            self.get_service("quota_service").update_used_bytes(
                 self.db_conn, self.get_display_username(), -file_size
             )
-        log_audit(
+        self.get_service("audit_service").log(
             self.db_conn,
             "file_delete",
             username=self.get_display_username(),
@@ -603,7 +608,7 @@ class RenameHandler(BaseHandler):
             self.write(RENAME_FAILED)
             return
 
-        log_audit(
+        self.get_service("audit_service").log(
             self.db_conn,
             "rename",
             username=self.get_display_username(),
@@ -656,7 +661,7 @@ class CopyHandler(BaseHandler):
             self.set_status(500)
             self.write(COPY_FAILED)
             return
-        log_audit(
+        self.get_service("audit_service").log(
             self.db_conn,
             "copy",
             username=self.get_display_username(),
@@ -709,7 +714,7 @@ class MoveHandler(BaseHandler):
             self.set_status(500)
             self.write(MOVE_FAILED)
             return
-        log_audit(
+        self.get_service("audit_service").log(
             self.db_conn,
             "move",
             username=self.get_display_username(),
@@ -774,6 +779,7 @@ class BulkHandler(BaseHandler):
                 self.db_conn,
                 self.get_display_username,
                 remote_ip,
+                self.get_service,
             )
             if err:
                 results["ok"] = False
@@ -844,7 +850,7 @@ class EditHandler(BaseHandler):
                 except OSError:
                     pass
                 raise
-            log_audit(
+            self.get_service("audit_service").log(
                 self.db_conn,
                 "file_edit",
                 username=self.get_display_username(),

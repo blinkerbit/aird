@@ -6,7 +6,6 @@ import mimetypes
 import os
 import pathlib
 import re
-import time
 import tornado.escape
 import tornado.web
 import tornado.websocket
@@ -27,17 +26,7 @@ from aird.handlers.base_handler import (
     ManagedWebSocketMixin,
     authenticate_handler,
     get_username_string_for_db,
-    require_admin,
     require_db,
-)
-from aird.adapters.persistence_adapter import (
-    get_share_by_id,
-    get_share_download_count,
-    get_all_shares,
-    get_user_favorites,
-    search_users,
-    get_shares_for_path,
-    toggle_favorite,
 )
 
 from aird.utils.util import (
@@ -345,7 +334,9 @@ class FileListAPIHandler(BaseHandler):
             # Augment file data with shared status
             db_conn = self.db_conn
             if db_conn:
-                augment_with_shared_status(files, path, get_all_shares(db_conn))
+                augment_with_shared_status(
+                    files, path, self.get_service("share_service").list_shares(db_conn)
+                )
 
             result = {
                 "path": path,
@@ -764,11 +755,7 @@ class UserSearchAPIHandler(BaseHandler):
             return
 
         def action():
-            user_repo = self.get_repository("user_repo")
-            if user_repo is not None:
-                users = user_repo.search_users(self.db_conn, query)
-            else:
-                users = search_users(self.db_conn, query)
+            users = self.get_service("user_service").search_users(self.db_conn, query)
             return {"users": users}
 
         self.run_json_action(action, on_error_message="Search failed")
@@ -797,7 +784,9 @@ class ShareDetailsAPIHandler(BaseHandler):
             if share_service is not None:
                 matching_shares = share_service.get_shares_for_path(db_conn, file_path)
             else:
-                matching_shares = get_shares_for_path(db_conn, file_path)
+                matching_shares = self.get_service("share_service").get_shares_for_path(
+                    db_conn, file_path
+                )
 
             # Format response
             formatted_shares = []
@@ -843,7 +832,7 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
             if share_service is not None:
                 share = share_service.get_share(db_conn, share_id)
             else:
-                share = get_share_by_id(db_conn, share_id)
+                share = self.get_service("share_service").get_share(db_conn, share_id)
             if not share:
                 self.write_json_error(404, "Share not found")
                 return None
@@ -862,7 +851,9 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
                 "allow_list": share.get("allow_list", []),
                 "avoid_list": share.get("avoid_list", []),
                 "expiry_date": share.get("expiry_date"),
-                "download_count": get_share_download_count(db_conn, share_id),
+                "download_count": self.get_service("share_service").get_download_count(
+                    db_conn, share_id
+                ),
             }
 
             return {"share": share_info}
@@ -887,25 +878,8 @@ class ShareListAPIHandler(BaseHandler):
         if share_service is not None:
             shares = share_service.list_shares(db_conn)
         else:
-            shares = get_all_shares(db_conn)
+            shares = self.get_service("share_service").list_shares(db_conn)
         self.write({"shares": shares})
-
-
-class WebSocketStatsHandler(BaseHandler):
-    @tornado.web.authenticated
-    @require_admin()
-    def get(self):
-        """Return WebSocket connection statistics"""
-
-        stats = {
-            "feature_flags": FeatureFlagSocketHandler.connection_manager.get_stats(),
-            "file_streaming": FileStreamHandler.connection_manager.get_stats(),
-            "super_search": SuperSearchWebSocketHandler.connection_manager.get_stats(),
-            "timestamp": time.time(),
-        }
-
-        self.set_header("Content-Type", "application/json")
-        self.write(json.dumps(stats, indent=2))
 
 
 class FavoriteToggleAPIHandler(BaseHandler):
@@ -933,7 +907,9 @@ class FavoriteToggleAPIHandler(BaseHandler):
             if not username:
                 self.write_json_error(401, "Could not resolve username")
                 return None
-            is_fav = toggle_favorite(db_conn, username, path)
+            is_fav = self.get_service("favorites_service").toggle(
+                db_conn, username, path
+            )
             return {"favorited": is_fav, "path": path}
 
         self.run_json_action(action, on_error_message="Failed to toggle favorite")
@@ -953,5 +929,7 @@ class FavoritesListAPIHandler(BaseHandler):
         if not username:
             self.write_json_error(401, "Could not resolve username")
             return
-        favorites = get_user_favorites(db_conn, username)
+        favorites = self.get_service("favorites_service").get_favorites(
+            db_conn, username
+        )
         self.write({"favorites": favorites})

@@ -14,15 +14,6 @@ from aird.handlers.base_handler import (
 )
 from aird.core.events import ShareCreatedEvent, now_ts
 from aird.domain.contracts import ShareCreateRequest, ShareCreateResponse
-from aird.adapters.persistence_adapter import (
-    insert_share,
-    delete_share,
-    get_share_by_id,
-    update_share,
-    is_share_expired,
-    log_audit,
-)
-
 from aird.utils.util import (
     get_all_files_recursive,
     filter_files_by_patterns,
@@ -151,6 +142,7 @@ def _resolve_share_paths(paths, share_type, sid):
 
 
 def _create_share_record(
+    handler,
     db_conn,
     sid,
     final_paths,
@@ -164,7 +156,7 @@ def _create_share_record(
 ):
     secret_token = secrets.token_urlsafe(64) if not disable_token else None
     created = datetime.now(timezone.utc).isoformat()
-    success = insert_share(
+    success = handler.get_service("share_service").insert_share(
         db_conn,
         sid,
         created,
@@ -361,12 +353,12 @@ def _build_token_update_fields(disable_token, share_data):
     return {}
 
 
-def _validate_share_update_request(db_conn, data):
+def _validate_share_update_request(handler, db_conn, data):
     """Validate update request and load share. Return (share_id, share_data) or (None, None, status, body)."""
     share_id = data.get("share_id")
     if not share_id:
         return (None, None, 400, {"error": "Share ID is required"})
-    share_data = get_share_by_id(db_conn, share_id)
+    share_data = handler.get_service("share_service").get_share(db_conn, share_id)
     if not share_data:
         return (None, None, 404, {"error": "Share not found"})
     return (share_id, share_data, None, None)
@@ -434,7 +426,7 @@ def _apply_paths_update(
     return None
 
 
-def _execute_share_update(db_conn, share_id, share_data, data):
+def _execute_share_update(handler, db_conn, share_id, share_data, data):
     """Perform share update. Return (response_data, None, []) or (None, (status, body), new_cloud_paths)."""
     current_paths = share_data.get("paths", []) or []
     requested_share_type = (
@@ -459,7 +451,9 @@ def _execute_share_update(db_conn, share_id, share_data, data):
     if err is not None:
         return (None, err, new_cloud_paths)
     if update_fields:
-        db_success = update_share(db_conn, share_id, **update_fields)
+        db_success = handler.get_service("share_service").update_share(
+            db_conn, share_id, **update_fields
+        )
         if not db_success:
             for rel_path in new_cloud_paths:
                 remove_cloud_file_if_exists(share_id, rel_path)
@@ -470,7 +464,7 @@ def _execute_share_update(db_conn, share_id, share_data, data):
     for rel_path in set(cloud_paths_to_remove):
         remove_cloud_file_if_exists(share_id, rel_path)
     cleanup_share_cloud_dir_if_empty(share_id)
-    updated_share = get_share_by_id(db_conn, share_id)
+    updated_share = handler.get_service("share_service").get_share(db_conn, share_id)
     return (
         _build_share_update_response(updated_share, share_id, db_success, data),
         None,
@@ -560,6 +554,7 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
                 return None
 
             success, secret_token = _create_share_record(
+                self,
                 self.db_conn,
                 sid,
                 final_paths,
@@ -573,7 +568,7 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
             )
             if success:
                 logging.info("Share %s created successfully in database", sid)
-                log_audit(
+                self.get_service("audit_service").log(
                     self.db_conn,
                     "share_create",
                     username=self.get_display_username(),
@@ -617,8 +612,8 @@ class ShareRevokeHandler(XSRFTokenMixin, BaseHandler):
 
         # Delete from database
         try:
-            delete_share(self.db_conn, sid)
-            log_audit(
+            self.get_service("share_service").delete_share(self.db_conn, sid)
+            self.get_service("audit_service").log(
                 self.db_conn,
                 "share_revoke",
                 username=self.get_display_username(),
@@ -660,7 +655,7 @@ class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
             try:
                 data = self.parse_json_body()
                 share_id, share_data, err_status, err_body = (
-                    _validate_share_update_request(self.db_conn, data)
+                    _validate_share_update_request(self, self.db_conn, data)
                 )
                 if err_status is not None:
                     self.set_status(err_status)
@@ -668,7 +663,7 @@ class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
                     return None
 
                 response_data, err, new_cloud_paths = _execute_share_update(
-                    self.db_conn, share_id, share_data, data
+                    self, self.db_conn, share_id, share_data, data
                 )
                 if err is not None:
                     self.set_status(err[0])
@@ -719,7 +714,7 @@ class TokenVerificationHandler(BaseHandler):
     @require_db
     def get(self, sid):
         """Show token verification page"""
-        share = get_share_by_id(self.db_conn, sid)
+        share = self.get_service("share_service").get_share(self.db_conn, sid)
         if not share:
             self.set_status(404)
             self.write(INVALID_SHARE_LINK)
@@ -735,7 +730,7 @@ class TokenVerificationHandler(BaseHandler):
             self.write_json_error(429, "Too many attempts. Please try again later.")
             return
 
-        share = get_share_by_id(self.db_conn, sid)
+        share = self.get_service("share_service").get_share(self.db_conn, sid)
         if not share:
             self.write_json_error(404, "Invalid share link")
             return
@@ -766,12 +761,12 @@ class TokenVerificationHandler(BaseHandler):
 class SharedListHandler(BaseHandler):
     @require_db
     def get(self, sid):
-        share = get_share_by_id(self.db_conn, sid)
+        share = self.get_service("share_service").get_share(self.db_conn, sid)
         if not share:
             self.set_status(404)
             self.write(INVALID_SHARE_LINK)
             return
-        if is_share_expired(share.get("expiry_date")):
+        if self.get_service("share_service").is_expired(share.get("expiry_date")):
             self.set_status(410)
             self.write("Share expired: This share is no longer available")
             return
@@ -799,12 +794,12 @@ class SharedListHandler(BaseHandler):
 class SharedFileHandler(BaseHandler):
     @require_db
     async def get(self, sid, path):
-        share = get_share_by_id(self.db_conn, sid)
+        share = self.get_service("share_service").get_share(self.db_conn, sid)
         if not share:
             self.set_status(404)
             self.write(INVALID_SHARE_LINK)
             return
-        if is_share_expired(share.get("expiry_date")):
+        if self.get_service("share_service").is_expired(share.get("expiry_date")):
             self.set_status(410)
             self.write("Share expired: This share is no longer available")
             return
@@ -828,7 +823,7 @@ class SharedFileHandler(BaseHandler):
         # Track download for analytics
         if self.db_conn:
             try:
-                log_audit(
+                self.get_service("audit_service").log(
                     self.db_conn,
                     "share_download",
                     details=f"share_id={sid} path={path}",

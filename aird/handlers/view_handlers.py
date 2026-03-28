@@ -11,7 +11,6 @@ import concurrent.futures
 import logging
 
 from aird.handlers.base_handler import BaseHandler, get_username_string_for_db
-from aird.adapters.persistence_adapter import get_all_shares, get_user_favorites
 from aird.utils.util import (
     get_files_in_directory,
     get_file_icon,
@@ -175,7 +174,9 @@ class MainHandler(BaseHandler):
             # Augment file data with shared status
             db_conn = self.db_conn
             if db_conn:
-                augment_with_shared_status(files, path, get_all_shares(db_conn))
+                augment_with_shared_status(
+                    files, path, self.get_service("share_service").list_shares(db_conn)
+                )
 
             parent_path = os.path.dirname(path) if path else None
             # Use SQLite-backed flags for template
@@ -185,7 +186,11 @@ class MainHandler(BaseHandler):
             if db_conn and flags_for_template.get("favorites"):
                 username = get_username_string_for_db(self)
                 if username:
-                    user_favorites = set(get_user_favorites(db_conn, username))
+                    user_favorites = set(
+                        self.get_service("favorites_service").get_favorites(
+                            db_conn, username
+                        )
+                    )
             self.render(
                 "browse.html",
                 current_path=path,

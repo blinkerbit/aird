@@ -29,21 +29,18 @@ from aird.db import (
     cleanup_expired_shares,
     save_allowed_extensions,
 )
-from aird.repositories import (
-    ConfigRepository,
-    NetworkShareRepository,
-    ShareRepository,
-    UserRepository,
-)
 from aird.services import (
+    AuditService,
     ConfigService,
     EventLoggingSubscriber,
     EventMetricsSubscriber,
+    FavoritesService,
     NetworkShareService,
+    P2PSignalingService,
+    QuotaService,
     ShareService,
+    UserService,
 )
-from aird.services.user_service import UserService
-from aird.services.p2p_service import P2PSignalingService
 
 from aird.database.db import get_data_dir
 from aird.network_share_manager import NetworkShareManager
@@ -123,21 +120,9 @@ from aird.handlers.p2p_handlers import (
 # Set up module logger
 logger = logging.getLogger(__name__)
 
-# Secure password hashing (Priority 1)
-try:
-    from argon2 import PasswordHasher
-
-    ARGON2_AVAILABLE = True
-    PH = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
-except Exception:
-    ARGON2_AVAILABLE = False
-    PH = None
-
 RUST_AVAILABLE = False
 HybridFileHandler = None
 HybridCompressionHandler = None
-
-# Import handlers from modules
 
 
 def make_app(
@@ -184,7 +169,6 @@ def make_app(
     settings["room_manager"] = app_context.room_manager
     settings["event_bus"] = app_context.event_bus
     settings["event_metrics"] = app_context.event_metrics
-    settings["repositories"] = app_context.repositories
     settings["services"] = app_context.services
 
     if ldap_enabled:
@@ -433,12 +417,6 @@ def _run_cleanup_expired_shares():
 
 def _build_app_context() -> AppContext:
     """Construct application-level dependencies in one place."""
-    repositories = {
-        "config_repo": ConfigRepository(),
-        "network_share_repo": NetworkShareRepository(),
-        "share_repo": ShareRepository(),
-        "user_repo": UserRepository(),
-    }
     room_manager = P2PRoomManager()
     event_bus = EventBus()
     event_metrics = EventMetricsSubscriber()
@@ -450,13 +428,14 @@ def _build_app_context() -> AppContext:
     event_bus.subscribe(TransferStartedEvent, event_metrics.on_transfer_started)
     event_bus.subscribe(TransferStartedEvent, event_logging.on_transfer_started)
     services = {
-        "config_service": ConfigService(repositories["config_repo"]),
-        "network_share_service": NetworkShareService(
-            repositories["network_share_repo"]
-        ),
-        "share_service": ShareService(repositories["share_repo"]),
-        "user_service": UserService(repositories["user_repo"]),
+        "audit_service": AuditService(),
+        "config_service": ConfigService(),
+        "favorites_service": FavoritesService(),
+        "network_share_service": NetworkShareService(),
         "p2p_signaling_service": P2PSignalingService(room_manager),
+        "quota_service": QuotaService(),
+        "share_service": ShareService(),
+        "user_service": UserService(),
     }
     return AppContext(
         db_conn=constants.DB_CONN,
@@ -466,7 +445,6 @@ def _build_app_context() -> AppContext:
         room_manager=room_manager,
         event_bus=event_bus,
         event_metrics=event_metrics,
-        repositories=repositories,
         services=services,
     )
 

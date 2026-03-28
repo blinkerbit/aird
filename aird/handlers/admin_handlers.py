@@ -17,24 +17,6 @@ from aird.handlers.api_handlers import (
     FileStreamHandler,
     SuperSearchWebSocketHandler,
 )
-from aird.adapters.persistence_adapter import (
-    get_all_users,
-    create_user,
-    update_user,
-    delete_user,
-    save_feature_flags,
-    save_websocket_config,
-    save_upload_config,
-    load_feature_flags,
-    get_audit_logs,
-    load_allowed_extensions,
-    save_allowed_extensions,
-    create_network_share,
-    get_all_network_shares,
-    update_network_share,
-    delete_network_share,
-    log_audit,
-)
 from aird.database.ldap import (
     create_ldap_config,
     delete_ldap_config,
@@ -109,7 +91,9 @@ class AdminHandler(BaseHandler):
         db_conn = self.db_conn
         if db_conn is not None:
             try:
-                persisted_flags = load_feature_flags(db_conn)
+                persisted_flags = self.get_service("config_service").load_feature_flags(
+                    db_conn
+                )
                 if persisted_flags:
                     current_features = persisted_flags.copy()
                     # Merge with any runtime changes
@@ -130,7 +114,7 @@ class AdminHandler(BaseHandler):
         # For "allowed file types" UI: list of options and currently allowed set
         db_conn = self.db_conn
         allowed_current = (
-            load_allowed_extensions(db_conn)
+            self.get_service("config_service").load_allowed_extensions(db_conn)
             if db_conn
             else set(constants_module.UPLOAD_ALLOWED_EXTENSIONS)
         )
@@ -227,10 +211,16 @@ class AdminHandler(BaseHandler):
         try:
             db_conn = self.db_conn
             if db_conn is not None:
-                save_feature_flags(db_conn, FEATURE_FLAGS)
+                self.get_service("config_service").save_feature_flags(
+                    db_conn, FEATURE_FLAGS
+                )
                 invalidate_feature_flags_cache()
-                save_websocket_config(db_conn, WEBSOCKET_CONFIG)
-                save_upload_config(db_conn, UPLOAD_CONFIG)
+                self.get_service("config_service").save_websocket_config(
+                    db_conn, WEBSOCKET_CONFIG
+                )
+                self.get_service("config_service").save_upload_config(
+                    db_conn, UPLOAD_CONFIG
+                )
                 # When "allow all file types" is off, persist selected extensions from checkboxes
                 if not UPLOAD_CONFIG.get("allow_all_file_types"):
                     selected_extensions = {
@@ -238,7 +228,9 @@ class AdminHandler(BaseHandler):
                         for e in self.get_arguments("allow_ext")
                         if e and e.startswith(".")
                     }
-                    save_allowed_extensions(db_conn, selected_extensions)
+                    self.get_service("config_service").save_allowed_extensions(
+                        db_conn, selected_extensions
+                    )
                     constants_module.UPLOAD_ALLOWED_EXTENSIONS = selected_extensions
         except Exception:
             pass
@@ -275,7 +267,9 @@ class AdminAuditHandler(BaseHandler):
         if self.get_argument("format", "") == "csv":
             self.set_header("Content-Type", CONTENT_TYPE_CSV)
             self.set_header("Content-Disposition", "attachment; filename=audit_log.csv")
-            rows = get_audit_logs(db_conn, limit=10000, offset=0)
+            rows = self.get_service("audit_service").get_logs(
+                db_conn, limit=10000, offset=0
+            )
             buf = io.StringIO()
             w = csv.writer(buf)
             w.writerow(["id", "created_at", "username", "action", "details", "ip"])
@@ -292,7 +286,9 @@ class AdminAuditHandler(BaseHandler):
                 )
             self.write(buf.getvalue())
             return
-        logs = get_audit_logs(db_conn, limit=limit, offset=offset)
+        logs = self.get_service("audit_service").get_logs(
+            db_conn, limit=limit, offset=offset
+        )
         self.render(
             "admin_audit.html",
             logs=logs,
@@ -315,7 +311,7 @@ class AdminUsersHandler(BaseHandler):
             if user_service is not None:
                 users = user_service.list_users(db_conn)
             else:
-                users = get_all_users(db_conn)
+                users = self.get_service("user_service").list_users(db_conn)
 
         self.render("admin_users.html", users=users)
 
@@ -373,7 +369,9 @@ class UserCreateHandler(BaseHandler):
             if user_service is not None:
                 user_service.create_user(db_conn, username, password, role=role)
             else:
-                create_user(db_conn, username, password, role)
+                self.get_service("user_service").create_user(
+                    db_conn, username, password, role
+                )
             self.redirect(URL_ADMIN_USERS)
         except ValueError as e:
             self.render(TEMPLATE_USER_CREATE, error=str(e))
@@ -419,7 +417,7 @@ class UserEditHandler(BaseHandler):
             if user_service is not None:
                 users = user_service.list_users(self.db_conn)
             else:
-                users = get_all_users(self.db_conn)
+                users = self.get_service("user_service").list_users(self.db_conn)
             user = next((u for u in users if u["id"] == user_id), None)
 
             if not user:
@@ -447,7 +445,7 @@ class UserEditHandler(BaseHandler):
             if user_service is not None:
                 users = user_service.list_users(self.db_conn)
             else:
-                users = get_all_users(self.db_conn)
+                users = self.get_service("user_service").list_users(self.db_conn)
             user = next((u for u in users if u["id"] == user_id), None)
 
             if not user:
@@ -472,7 +470,9 @@ class UserEditHandler(BaseHandler):
             if user_service is not None:
                 updated = user_service.update_user(self.db_conn, user_id, **update_data)
             else:
-                updated = update_user(self.db_conn, user_id, **update_data)
+                updated = self.get_service("user_service").update_user(
+                    self.db_conn, user_id, **update_data
+                )
             if updated:
                 self.redirect(URL_ADMIN_USERS)
             else:
@@ -513,7 +513,9 @@ class UserDeleteHandler(BaseHandler):
             if user_service is not None:
                 deleted = user_service.delete_user(self.db_conn, user_id)
             else:
-                deleted = delete_user(self.db_conn, user_id)
+                deleted = self.get_service("user_service").delete_user(
+                    self.db_conn, user_id
+                )
             if deleted:
                 self.redirect(URL_ADMIN_USERS)
             else:
@@ -732,7 +734,11 @@ class AdminNetworkSharesHandler(BaseHandler):
     @require_admin(redirect_url=URL_ADMIN_LOGIN)
     def get(self):
         db_conn = self.db_conn
-        shares = get_all_network_shares(db_conn) if db_conn else []
+        shares = (
+            self.get_service("network_share_service").list_all(db_conn)
+            if db_conn
+            else []
+        )
         mgr = self.network_share_manager
         for s in shares:
             s["running"] = mgr.is_running(s["id"]) if mgr else False
@@ -785,7 +791,7 @@ class AdminNetworkSharesHandler(BaseHandler):
             return
 
         share_id = _secrets.token_urlsafe(8)
-        ok = create_network_share(
+        ok = self.get_service("network_share_service").create(
             db_conn,
             share_id,
             name,
@@ -800,7 +806,7 @@ class AdminNetworkSharesHandler(BaseHandler):
             self.redirect(f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_FAILED_CREATE_SHARE}")
             return
 
-        log_audit(
+        self.get_service("audit_service").log(
             db_conn,
             "network_share_create",
             username=self.get_display_username(),
@@ -839,8 +845,8 @@ class AdminNetworkShareDeleteHandler(BaseHandler):
         if mgr:
             mgr.stop_share(share_id)
 
-        delete_network_share(db_conn, share_id)
-        log_audit(
+        self.get_service("network_share_service").delete(db_conn, share_id)
+        self.get_service("audit_service").log(
             db_conn,
             "network_share_delete",
             username=self.get_display_username(),
@@ -860,14 +866,16 @@ class AdminNetworkShareToggleHandler(BaseHandler):
             self.redirect(URL_ADMIN_NETWORK_SHARES)
             return
 
-        shares = get_all_network_shares(db_conn)
+        shares = self.get_service("network_share_service").list_all(db_conn)
         share = next((s for s in shares if s["id"] == share_id), None)
         if share is None:
             self.redirect(URL_ADMIN_NETWORK_SHARES)
             return
 
         new_enabled = not share["enabled"]
-        update_network_share(db_conn, share_id, enabled=new_enabled)
+        self.get_service("network_share_service").update(
+            db_conn, share_id, enabled=new_enabled
+        )
 
         mgr = self.network_share_manager
         if mgr:
@@ -877,7 +885,7 @@ class AdminNetworkShareToggleHandler(BaseHandler):
                 mgr.stop_share(share_id)
 
         action = "enabled" if new_enabled else "disabled"
-        log_audit(
+        self.get_service("audit_service").log(
             db_conn,
             "network_share_toggle",
             username=self.get_display_username(),
