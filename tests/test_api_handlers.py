@@ -6,7 +6,6 @@ import pytest
 import tornado.websocket
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from aird.core.mmap_handler import MMapFileHandler
 from aird.handlers.api_handlers import (
     DB_NOT_AVAILABLE_MSG,
     FavoriteToggleAPIHandler,
@@ -20,11 +19,10 @@ from aird.handlers.api_handlers import (
     SuperSearchHandler,
     SuperSearchWebSocketHandler,
     UserSearchAPIHandler,
-    WebSocketStatsHandler,
 )
 from aird.handlers.constants import AUTH_REQUIRED
 from aird.config import MAX_READABLE_FILE_SIZE
-from tests.handler_helpers import authenticate, patch_db_conn, prepare_handler
+from tests.handler_helpers import _default_services, authenticate, patch_db_conn, prepare_handler
 
 
 class _MockAioLinesCM:
@@ -57,7 +55,7 @@ class _AsyncLineIter:
 def make_request_handler(handler_cls):
     """Helper for BaseHandler descendants."""
     app = MagicMock()
-    app.settings = {"cookie_secret": "test_secret"}
+    app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
     request = MagicMock()
     request.protocol = "http"
     handler = prepare_handler(handler_cls(app, request))
@@ -67,7 +65,7 @@ def make_request_handler(handler_cls):
 
 def make_ws_handler(handler_cls):
     app = MagicMock()
-    app.settings = {"cookie_secret": "test_secret"}
+    app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
     request = MagicMock()
     request.headers = {}
     request.path = "/ws"
@@ -114,7 +112,7 @@ class TestFileListAPIHandler:
         ), patch_db_conn(
             MagicMock(), modules=["aird.handlers.api_handlers"]
         ), patch(
-            "aird.handlers.api_handlers.get_all_shares",
+            "aird.services.share_service.get_all_shares",
             return_value={"share": {"paths": ["path/file.txt"]}},
         ):
 
@@ -232,7 +230,7 @@ class TestUserSearchAPIHandler:
         handler.set_status = MagicMock()
         handler.get_argument = MagicMock(return_value="bob")
         with patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]), patch(
-            "aird.handlers.api_handlers.search_users", side_effect=RuntimeError("nope")
+            "aird.services.user_service.search_users", side_effect=RuntimeError("nope")
         ):
             handler.get()
             handler.set_status.assert_called_with(500)
@@ -242,7 +240,7 @@ class TestUserSearchAPIHandler:
         handler = make_request_handler(UserSearchAPIHandler)
         handler.get_argument = MagicMock(return_value="alice")
         with patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]), patch(
-            "aird.handlers.api_handlers.search_users",
+            "aird.services.user_service.search_users",
             return_value=[{"username": "alice"}],
         ):
             handler.get()
@@ -289,7 +287,7 @@ class TestShareDetailsAPIHandler:
         with patch(
             "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]), patch(
-            "aird.handlers.api_handlers.get_shares_for_path",
+            "aird.services.share_service.get_shares_for_path",
             return_value=[{"id": "s1", "paths": ["file.txt"]}],
         ):
             handler.get()
@@ -319,7 +317,7 @@ class TestShareDetailsByIdAPIHandler:
         with patch(
             "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]), patch(
-            "aird.handlers.api_handlers.get_share_by_id", return_value=None
+            "aird.services.share_service.get_share_by_id", return_value=None
         ):
             handler.get()
             handler.set_status.assert_called_with(404)
@@ -331,7 +329,7 @@ class TestShareDetailsByIdAPIHandler:
         with patch(
             "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]), patch(
-            "aird.handlers.api_handlers.get_share_by_id", return_value=share_data
+            "aird.services.share_service.get_share_by_id", return_value=share_data
         ):
             handler.get()
             payload = handler.write.call_args[0][0]
@@ -364,7 +362,7 @@ class TestShareListAPIHandler:
         with patch(
             "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]), patch(
-            "aird.handlers.api_handlers.get_all_shares",
+            "aird.services.share_service.get_all_shares",
             return_value={"s1": {"paths": []}},
         ):
             handler.get()
@@ -460,34 +458,6 @@ class TestFileStreamHandler:
         )
 
 
-class TestWebSocketStatsHandler:
-    def test_requires_admin(self):
-        handler = make_request_handler(WebSocketStatsHandler)
-        handler.set_status = MagicMock()
-        handler.is_admin_user = MagicMock(return_value=False)
-        handler.get()
-        handler.set_status.assert_called_with(403)
-        handler.write.assert_called_with("Access denied")
-
-    def test_returns_stats(self):
-        handler = make_request_handler(WebSocketStatsHandler)
-        handler.is_admin_user = MagicMock(return_value=True)
-        stats = {"connections": 1}
-        with patch.object(
-            FeatureFlagSocketHandler.connection_manager, "get_stats", return_value=stats
-        ), patch.object(
-            FileStreamHandler.connection_manager, "get_stats", return_value=stats
-        ), patch.object(
-            SuperSearchWebSocketHandler.connection_manager,
-            "get_stats",
-            return_value=stats,
-        ):
-            handler.get()
-            handler.write.assert_called()
-            payload = json.loads(handler.write.call_args[0][0])
-            assert "feature_flags" in payload
-
-
 class TestFavoriteToggleAPIHandler:
     def test_feature_disabled(self):
         handler = make_request_handler(FavoriteToggleAPIHandler)
@@ -547,7 +517,7 @@ class TestFavoriteToggleAPIHandler:
         with patch(
             "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(db, modules=["aird.handlers.api_handlers"]), patch(
-            "aird.handlers.api_handlers.toggle_favorite", return_value=True
+            "aird.services.favorites_service.toggle_favorite", return_value=True
         ) as mock_toggle:
             handler.post()
         mock_toggle.assert_called_once_with(db, "admin", "docs/a.txt")
@@ -590,7 +560,7 @@ class TestFavoritesListAPIHandler:
         with patch(
             "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(db, modules=["aird.handlers.api_handlers"]), patch(
-            "aird.handlers.api_handlers.get_user_favorites",
+            "aird.services.favorites_service.get_user_favorites",
             return_value=["p1", "p2"],
         ) as mock_gf:
             handler.get()
@@ -637,7 +607,7 @@ class TestFileListAPIHandlerExtra:
         ), patch_db_conn(
             None, modules=["aird.handlers.api_handlers"]
         ), patch(
-            "aird.handlers.api_handlers.get_all_shares"
+            "aird.services.share_service.get_all_shares"
         ) as mock_shares:
             handler.get("p")
         mock_shares.assert_not_called()
@@ -653,7 +623,7 @@ class TestShareDetailsAPIHandlerExtra:
         with patch("aird.handlers.base_handler.is_feature_enabled", return_value=True), patch_db_conn(
             MagicMock(), modules=["aird.handlers.api_handlers"]
         ), patch(
-            "aird.handlers.api_handlers.get_shares_for_path",
+            "aird.services.share_service.get_shares_for_path",
             side_effect=RuntimeError("db down"),
         ):
             handler.get()
@@ -674,7 +644,7 @@ class TestShareDetailsAPIHandlerExtra:
         with patch("aird.handlers.base_handler.is_feature_enabled", return_value=True), patch_db_conn(
             MagicMock(), modules=["aird.handlers.api_handlers"]
         ), patch(
-            "aird.handlers.api_handlers.get_shares_for_path", return_value=[share]
+            "aird.services.share_service.get_shares_for_path", return_value=[share]
         ):
             handler.get()
         payload = handler.write.call_args[0][0]
@@ -700,7 +670,7 @@ class TestShareDetailsByIdAPIHandlerExtra:
         with patch("aird.handlers.base_handler.is_feature_enabled", return_value=True), patch_db_conn(
             MagicMock(), modules=["aird.handlers.api_handlers"]
         ), patch(
-            "aird.handlers.api_handlers.get_share_by_id", side_effect=OSError("x")
+            "aird.services.share_service.get_share_by_id", side_effect=OSError("x")
         ):
             handler.get()
         handler.set_status.assert_called_with(500)

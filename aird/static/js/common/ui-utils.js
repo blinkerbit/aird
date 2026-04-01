@@ -17,12 +17,12 @@
     },
 
     getFileIcon(mime) {
-      if (mime && mime.startsWith("image/")) return "IMG";
-      if (mime && mime.startsWith("video/")) return "VID";
-      if (mime && mime.startsWith("audio/")) return "AUD";
-      if (mime && mime.includes("pdf")) return "PDF";
-      if (mime && mime.includes("zip")) return "ZIP";
-      if (mime && mime.includes("text")) return "TXT";
+      if (mime?.startsWith("image/")) return "IMG";
+      if (mime?.startsWith("video/")) return "VID";
+      if (mime?.startsWith("audio/")) return "AUD";
+      if (mime?.includes("pdf")) return "PDF";
+      if (mime?.includes("zip")) return "ZIP";
+      if (mime?.includes("text")) return "TXT";
       return "FILE";
     },
   };

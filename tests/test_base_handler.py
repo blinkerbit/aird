@@ -2,14 +2,14 @@ from unittest.mock import patch, MagicMock
 from aird.handlers.base_handler import BaseHandler
 import json
 
-from tests.handler_helpers import authenticate, prepare_handler
+from tests.handler_helpers import authenticate, prepare_handler, _default_services
 
 
 class TestBaseHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
         self.mock_request.headers = {}
         self.mock_request.protocol = "http"
 

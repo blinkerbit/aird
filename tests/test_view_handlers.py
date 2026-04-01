@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
+from tests.handler_helpers import _default_services
 from aird.handlers.view_handlers import (
     RootHandler,
     MainHandler,
@@ -17,7 +18,7 @@ class TestRootHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
 
     def test_root_redirect(self):
         handler = RootHandler(self.mock_app, self.mock_request)
@@ -30,7 +31,7 @@ class TestMainHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
 
     @pytest.mark.asyncio
     async def test_browse_directory(self):
@@ -40,7 +41,7 @@ class TestMainHandler:
         with patch("os.path.abspath", return_value="/root/dir"), patch(
             "aird.handlers.view_handlers.is_within_root", return_value=True
         ), patch("os.path.isdir", return_value=True), patch(
-            "aird.handlers.view_handlers.get_all_shares", return_value={}
+            "aird.services.share_service.get_all_shares", return_value={}
         ), patch(
             "aird.handlers.view_handlers.get_files_in_directory", return_value=[]
         ), patch(
@@ -198,7 +199,7 @@ class TestMainHandler:
         with patch("os.path.abspath", return_value="/root/dir"), patch(
             "aird.handlers.view_handlers.is_within_root", return_value=True
         ), patch("os.path.isdir", return_value=True), patch(
-            "aird.handlers.view_handlers.get_all_shares",
+            "aird.services.share_service.get_all_shares",
             return_value={"share1": {"paths": ["dir/file1"]}},
         ), patch(
             "aird.handlers.view_handlers.get_files_in_directory",
@@ -311,7 +312,7 @@ class TestEditViewHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
 
     @pytest.mark.asyncio
     async def test_edit_view(self):
@@ -528,7 +529,7 @@ class TestCloudProvidersHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
 
     def test_list_providers(self):
         handler = CloudProvidersHandler(self.mock_app, self.mock_request)
@@ -553,7 +554,7 @@ class TestCloudFilesHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
 
     @pytest.mark.asyncio
     async def test_list_files_success(self):
@@ -645,7 +646,7 @@ class TestCloudDownloadHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
 
     @pytest.mark.asyncio
     async def test_download_success(self):
@@ -825,7 +826,7 @@ class TestFourOhFourHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
 
     def test_prepare(self):
         handler = FourOhFourHandler(self.mock_app, self.mock_request)
@@ -843,7 +844,7 @@ class TestNoCacheStaticFileHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
 
     def test_set_extra_headers_logic(self):
         # Create a dummy class that inherits or just use the class

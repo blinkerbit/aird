@@ -9,7 +9,7 @@ import pytest
 import json
 from unittest.mock import patch, MagicMock
 
-from tests.handler_helpers import authenticate, patch_db_conn
+from tests.handler_helpers import authenticate, patch_db_conn, _default_services
 
 from aird.handlers.admin_handlers import (
     AdminHandler,
@@ -44,6 +44,7 @@ class TestAdminHandler:
             "debug": False,
             "login_url": "/login",
             "ldap_server": None,
+            "services": _default_services(),
         }
         self.mock_request.connection = MagicMock()
         self.mock_request.connection.context = MagicMock()
@@ -239,9 +240,9 @@ class TestAdminHandler:
         ), patch(
             "aird.handlers.admin_handlers.WEBSOCKET_CONFIG", websocket_config
         ), patch(
-            "aird.handlers.admin_handlers.save_feature_flags"
+            "aird.services.config_service.save_feature_flags"
         ) as mock_save_flags, patch(
-            "aird.handlers.admin_handlers.save_websocket_config"
+            "aird.services.config_service.save_websocket_config"
         ) as mock_save_ws_config, patch(
             "aird.handlers.api_handlers.FeatureFlagSocketHandler.send_updates"
         ) as mock_send_updates, patch.object(
@@ -297,9 +298,9 @@ class TestAdminHandler:
         ), patch(
             "aird.handlers.admin_handlers.WEBSOCKET_CONFIG", websocket_config
         ), patch(
-            "aird.handlers.admin_handlers.save_feature_flags"
+            "aird.services.config_service.save_feature_flags"
         ), patch(
-            "aird.handlers.admin_handlers.save_websocket_config"
+            "aird.services.config_service.save_websocket_config"
         ) as mock_save_ws_config, patch(
             "aird.handlers.api_handlers.FeatureFlagSocketHandler.send_updates"
         ), patch.object(
@@ -354,9 +355,9 @@ class TestAdminHandler:
             "aird.handlers.admin_handlers.WEBSOCKET_CONFIG",
             {"feature_flags_max_connections": 50},
         ), patch(
-            "aird.handlers.admin_handlers.save_feature_flags"
+            "aird.services.config_service.save_feature_flags"
         ), patch(
-            "aird.handlers.admin_handlers.save_websocket_config"
+            "aird.services.config_service.save_websocket_config"
         ), patch(
             "aird.handlers.api_handlers.FeatureFlagSocketHandler.send_updates"
         ), patch.object(
@@ -408,10 +409,10 @@ class TestAdminHandler:
         ), patch(
             "aird.handlers.admin_handlers.WEBSOCKET_CONFIG", {}
         ), patch(
-            "aird.handlers.admin_handlers.save_feature_flags",
+            "aird.services.config_service.save_feature_flags",
             side_effect=Exception("DB Error"),
         ), patch(
-            "aird.handlers.admin_handlers.save_websocket_config",
+            "aird.services.config_service.save_websocket_config",
             side_effect=Exception("DB Error"),
         ), patch(
             "aird.handlers.api_handlers.FeatureFlagSocketHandler.send_updates"
@@ -444,6 +445,7 @@ class TestAdminHandlerUploadConfig:
             "debug": False,
             "login_url": "/login",
             "ldap_server": None,
+            "services": _default_services(),
         }
         self.mock_request.connection = MagicMock()
         self.mock_request.connection.context = MagicMock()
@@ -468,7 +470,7 @@ class TestAdminHandlerUploadConfig:
         ), patch(
             "aird.handlers.admin_handlers.UPLOAD_CONFIG", upload_config
         ), patch(
-            "aird.handlers.admin_handlers.load_feature_flags",
+            "aird.services.config_service.load_feature_flags",
             return_value={"file_upload": True},
         ), patch(
             "aird.utils.util.get_current_websocket_config", return_value={}
@@ -530,11 +532,11 @@ class TestAdminHandlerUploadConfig:
         ), patch(
             "aird.handlers.admin_handlers.UPLOAD_CONFIG", upload_config
         ), patch(
-            "aird.handlers.admin_handlers.save_feature_flags"
+            "aird.services.config_service.save_feature_flags"
         ), patch(
-            "aird.handlers.admin_handlers.save_websocket_config"
+            "aird.services.config_service.save_websocket_config"
         ), patch(
-            "aird.handlers.admin_handlers.save_upload_config"
+            "aird.services.config_service.save_upload_config"
         ) as mock_save_upload, patch(
             "aird.handlers.api_handlers.FeatureFlagSocketHandler.send_updates"
         ), patch.object(
@@ -588,11 +590,11 @@ class TestAdminHandlerUploadConfig:
         ), patch(
             "aird.handlers.admin_handlers.UPLOAD_CONFIG", upload_config
         ), patch(
-            "aird.handlers.admin_handlers.save_feature_flags"
+            "aird.services.config_service.save_feature_flags"
         ), patch(
-            "aird.handlers.admin_handlers.save_websocket_config"
+            "aird.services.config_service.save_websocket_config"
         ), patch(
-            "aird.handlers.admin_handlers.save_upload_config"
+            "aird.services.config_service.save_upload_config"
         ), patch(
             "aird.handlers.api_handlers.FeatureFlagSocketHandler.send_updates"
         ), patch.object(
@@ -645,11 +647,11 @@ class TestAdminHandlerUploadConfig:
         ), patch(
             "aird.handlers.admin_handlers.UPLOAD_CONFIG", upload_config
         ), patch(
-            "aird.handlers.admin_handlers.save_feature_flags"
+            "aird.services.config_service.save_feature_flags"
         ), patch(
-            "aird.handlers.admin_handlers.save_websocket_config"
+            "aird.services.config_service.save_websocket_config"
         ), patch(
-            "aird.handlers.admin_handlers.save_upload_config"
+            "aird.services.config_service.save_upload_config"
         ), patch(
             "aird.handlers.api_handlers.FeatureFlagSocketHandler.send_updates"
         ), patch.object(
@@ -702,11 +704,11 @@ class TestAdminHandlerUploadConfig:
         ), patch(
             "aird.handlers.admin_handlers.UPLOAD_CONFIG", upload_config
         ), patch(
-            "aird.handlers.admin_handlers.save_feature_flags"
+            "aird.services.config_service.save_feature_flags"
         ), patch(
-            "aird.handlers.admin_handlers.save_websocket_config"
+            "aird.services.config_service.save_websocket_config"
         ), patch(
-            "aird.handlers.admin_handlers.save_upload_config"
+            "aird.services.config_service.save_upload_config"
         ), patch(
             "aird.handlers.api_handlers.FeatureFlagSocketHandler.send_updates"
         ), patch.object(
@@ -763,11 +765,11 @@ class TestAdminHandlerUploadConfig:
         ), patch(
             "aird.handlers.admin_handlers.constants_module"
         ) as mock_constants, patch(
-            "aird.handlers.admin_handlers.save_feature_flags"
+            "aird.services.config_service.save_feature_flags"
         ), patch(
-            "aird.handlers.admin_handlers.save_websocket_config"
+            "aird.services.config_service.save_websocket_config"
         ), patch(
-            "aird.handlers.admin_handlers.save_upload_config"
+            "aird.services.config_service.save_upload_config"
         ), patch(
             "aird.handlers.api_handlers.FeatureFlagSocketHandler.send_updates"
         ), patch.object(
@@ -821,11 +823,11 @@ class TestAdminHandlerUploadConfig:
         ), patch(
             "aird.handlers.admin_handlers.UPLOAD_CONFIG", upload_config
         ), patch(
-            "aird.handlers.admin_handlers.save_feature_flags"
+            "aird.services.config_service.save_feature_flags"
         ), patch(
-            "aird.handlers.admin_handlers.save_websocket_config"
+            "aird.services.config_service.save_websocket_config"
         ), patch(
-            "aird.handlers.admin_handlers.save_upload_config"
+            "aird.services.config_service.save_upload_config"
         ), patch(
             "aird.handlers.api_handlers.FeatureFlagSocketHandler.send_updates"
         ), patch.object(
@@ -962,7 +964,7 @@ class TestAdminUsersHandler:
         with patch.object(handler, "is_admin_user", return_value=True), patch_db_conn(
             mock_db_conn
         ), patch(
-            "aird.handlers.admin_handlers.get_all_users", return_value=sample_users
+            "aird.services.user_service.get_all_users", return_value=sample_users
         ), patch.object(
             handler, "render"
         ) as mock_render:
@@ -1014,13 +1016,13 @@ class TestUserCreateHandler:
         with patch.object(handler, "is_admin_user", return_value=True), patch_db_conn(
             mock_db_conn
         ), patch(
-            "aird.handlers.admin_handlers.create_user"
+            "aird.services.user_service.create_user"
         ) as mock_create_user, patch.object(
             handler, "redirect"
         ) as mock_redirect:
             handler.post()
             mock_create_user.assert_called_once_with(
-                mock_db_conn, "newuser", "SecurePass123!", "admin"
+                mock_db_conn, "newuser", "SecurePass123!", role="admin"
             )
             mock_redirect.assert_called_once_with("/admin/users")
 
@@ -1148,7 +1150,7 @@ class TestUserCreateHandler:
         with patch.object(handler, "is_admin_user", return_value=True), patch_db_conn(
             mock_db_conn
         ), patch(
-            "aird.handlers.admin_handlers.create_user",
+            "aird.services.user_service.create_user",
             side_effect=ValueError("duplicate"),
         ) as mock_create, patch.object(
             handler, "render"
@@ -1173,7 +1175,7 @@ class TestUserCreateHandler:
         with patch.object(handler, "is_admin_user", return_value=True), patch_db_conn(
             mock_db_conn
         ), patch(
-            "aird.handlers.admin_handlers.create_user", side_effect=Exception("boom")
+            "aird.services.user_service.create_user", side_effect=Exception("boom")
         ), patch.object(
             handler, "render"
         ) as mock_render:
@@ -1193,7 +1195,7 @@ class TestUserEditHandler:
         with patch.object(handler, "is_admin_user", return_value=True), patch_db_conn(
             mock_db_conn
         ), patch(
-            "aird.handlers.admin_handlers.get_all_users", return_value=[]
+            "aird.services.user_service.get_all_users", return_value=[]
         ), patch.object(
             handler, "set_status"
         ) as mock_status, patch.object(
@@ -1221,9 +1223,9 @@ class TestUserEditHandler:
         with patch.object(handler, "is_admin_user", return_value=True), patch_db_conn(
             mock_db_conn
         ), patch(
-            "aird.handlers.admin_handlers.get_all_users", return_value=[existing_user]
+            "aird.services.user_service.get_all_users", return_value=[existing_user]
         ), patch(
-            "aird.handlers.admin_handlers.update_user", return_value=True
+            "aird.services.user_service.update_user", return_value=True
         ) as mock_update_user, patch.object(
             handler, "redirect"
         ) as mock_redirect:
@@ -1308,7 +1310,7 @@ class TestUserEditHandler:
         with patch.object(handler, "is_admin_user", return_value=True), patch_db_conn(
             mock_db_conn
         ), patch(
-            "aird.handlers.admin_handlers.get_all_users", return_value=[]
+            "aird.services.user_service.get_all_users", return_value=[]
         ), patch.object(
             handler, "set_status"
         ) as mock_status, patch.object(
@@ -1336,7 +1338,7 @@ class TestUserEditHandler:
         with patch.object(handler, "is_admin_user", return_value=True), patch_db_conn(
             mock_db_conn
         ), patch(
-            "aird.handlers.admin_handlers.get_all_users", return_value=[existing_user]
+            "aird.services.user_service.get_all_users", return_value=[existing_user]
         ), patch.object(
             handler, "render"
         ) as mock_render:
@@ -1362,7 +1364,7 @@ class TestUserEditHandler:
         with patch.object(handler, "is_admin_user", return_value=True), patch_db_conn(
             mock_db_conn
         ), patch(
-            "aird.handlers.admin_handlers.get_all_users", return_value=[existing_user]
+            "aird.services.user_service.get_all_users", return_value=[existing_user]
         ), patch.object(
             handler, "render"
         ) as mock_render:
@@ -1390,7 +1392,7 @@ class TestUserEditHandler:
         with patch.object(handler, "is_admin_user", return_value=True), patch_db_conn(
             mock_db_conn
         ), patch(
-            "aird.handlers.admin_handlers.get_all_users", return_value=[existing_user]
+            "aird.services.user_service.get_all_users", return_value=[existing_user]
         ), patch.object(
             handler, "render"
         ) as mock_render:
@@ -1415,7 +1417,7 @@ class TestUserEditHandler:
         with patch.object(handler, "is_admin_user", return_value=True), patch_db_conn(
             mock_db_conn
         ), patch(
-            "aird.handlers.admin_handlers.get_all_users", return_value=[existing_user]
+            "aird.services.user_service.get_all_users", return_value=[existing_user]
         ), patch.object(
             handler, "render"
         ) as mock_render:
@@ -1441,7 +1443,7 @@ class TestUserEditHandler:
         with patch.object(handler, "is_admin_user", return_value=True), patch_db_conn(
             mock_db_conn
         ), patch(
-            "aird.handlers.admin_handlers.get_all_users", return_value=[existing_user]
+            "aird.services.user_service.get_all_users", return_value=[existing_user]
         ), patch.object(
             handler, "render"
         ) as mock_render:
@@ -1469,9 +1471,9 @@ class TestUserEditHandler:
         with patch.object(handler, "is_admin_user", return_value=True), patch_db_conn(
             mock_db_conn
         ), patch(
-            "aird.handlers.admin_handlers.get_all_users", return_value=[existing_user]
+            "aird.services.user_service.get_all_users", return_value=[existing_user]
         ), patch(
-            "aird.handlers.admin_handlers.update_user", return_value=False
+            "aird.services.user_service.update_user", return_value=False
         ), patch.object(
             handler, "render"
         ) as mock_render:
@@ -1511,9 +1513,9 @@ class TestUserEditHandler:
         with patch.object(handler, "is_admin_user", return_value=True), patch_db_conn(
             mock_db_conn
         ), patch(
-            "aird.handlers.admin_handlers.get_all_users", return_value=[existing_user]
+            "aird.services.user_service.get_all_users", return_value=[existing_user]
         ), patch(
-            "aird.handlers.admin_handlers.update_user", side_effect=Exception("boom")
+            "aird.services.user_service.update_user", side_effect=Exception("boom")
         ), patch.object(
             handler, "render"
         ) as mock_render:
@@ -1549,7 +1551,7 @@ class TestUserDeleteHandler:
         with patch.object(handler, "is_admin_user", return_value=True), patch_db_conn(
             mock_db_conn
         ), patch(
-            "aird.handlers.admin_handlers.delete_user", return_value=True
+            "aird.services.user_service.delete_user", return_value=True
         ) as mock_delete_user, patch.object(
             handler, "redirect"
         ) as mock_redirect:
@@ -1594,7 +1596,7 @@ class TestUserDeleteHandler:
         with patch.object(handler, "is_admin_user", return_value=True), patch_db_conn(
             mock_db_conn
         ), patch(
-            "aird.handlers.admin_handlers.delete_user", return_value=False
+            "aird.services.user_service.delete_user", return_value=False
         ), patch.object(
             handler, "set_status"
         ) as mock_status, patch.object(

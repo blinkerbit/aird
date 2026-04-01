@@ -23,14 +23,14 @@ from aird.handlers.share_handlers import (
 )
 from aird.cloud import CloudProviderError
 
-from tests.handler_helpers import authenticate, patch_db_conn, prepare_handler
+from tests.handler_helpers import _default_services, authenticate, patch_db_conn, prepare_handler
 
 
 class TestShareFilesHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
 
     def test_get_share_page(self):
         handler = prepare_handler(ShareFilesHandler(self.mock_app, self.mock_request))
@@ -66,6 +66,7 @@ class TestShareCreateHandler:
         self.mock_app.settings = {
             "cookie_secret": "test_secret",
             "db_conn": MagicMock(),
+            "services": _default_services(),
         }
 
     def _build_handler(self, body):
@@ -90,7 +91,7 @@ class TestShareCreateHandler:
         ), patch_db_conn(
             MagicMock(), modules=["aird.handlers.share_handlers"]
         ), patch(
-            "aird.handlers.share_handlers.insert_share", return_value=True
+            "aird.services.share_service.insert_share", return_value=True
         ), patch.object(
             handler, "write"
         ) as mock_write:
@@ -200,6 +201,7 @@ class TestShareRevokeHandler:
         self.mock_app.settings = {
             "cookie_secret": "test_secret",
             "db_conn": MagicMock(),
+            "services": _default_services(),
         }
 
     def test_revoke_share_redirect(self):
@@ -210,7 +212,7 @@ class TestShareRevokeHandler:
         with patch(
             "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch(
-            "aird.handlers.share_handlers.delete_share"
+            "aird.services.share_service.delete_share"
         ) as mock_delete, patch(
             "aird.handlers.share_handlers.remove_share_cloud_dir"
         ), patch.object(
@@ -230,7 +232,7 @@ class TestShareRevokeHandler:
         with patch(
             "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch(
-            "aird.handlers.share_handlers.delete_share"
+            "aird.services.share_service.delete_share"
         ), patch(
             "aird.handlers.share_handlers.remove_share_cloud_dir"
         ), patch.object(
@@ -248,6 +250,7 @@ class TestShareUpdateHandler:
         self.mock_app.settings = {
             "cookie_secret": "test_secret",
             "db_conn": MagicMock(),
+            "services": _default_services(),
         }
 
     def _build_handler(self, body):
@@ -275,7 +278,7 @@ class TestShareUpdateHandler:
         with patch(
             "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch(
-            "aird.handlers.share_handlers.get_share_by_id", return_value=None
+            "aird.services.share_service.get_share_by_id", return_value=None
         ), patch.object(
             handler, "write"
         ) as mock_write:
@@ -310,7 +313,7 @@ class TestShareUpdateHandler:
         with patch(
             "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch(
-            "aird.handlers.share_handlers.get_share_by_id",
+            "aird.services.share_service.get_share_by_id",
             return_value={"paths": [], "share_type": "static"},
         ), patch(
             "aird.handlers.share_handlers.download_cloud_items",
@@ -335,10 +338,10 @@ class TestShareUpdateHandler:
         with patch(
             "aird.handlers.base_handler.is_feature_enabled", return_value=True
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch(
-            "aird.handlers.share_handlers.get_share_by_id",
+            "aird.services.share_service.get_share_by_id",
             side_effect=[share_data, {"secret_token": "newtoken"}],
         ), patch(
-            "aird.handlers.share_handlers.update_share", return_value=True
+            "aird.services.share_service.update_share", return_value=True
         ), patch.object(
             handler, "write"
         ) as mock_write:
@@ -356,6 +359,7 @@ class TestTokenVerificationHandler:
         self.mock_app.settings = {
             "cookie_secret": "test_secret",
             "db_conn": MagicMock(),
+            "services": _default_services(),
         }
 
     def test_verify_token_success(self):
@@ -367,7 +371,7 @@ class TestTokenVerificationHandler:
         with patch_db_conn(
             MagicMock(), modules=["aird.handlers.share_handlers"]
         ), patch(
-            "aird.handlers.share_handlers.get_share_by_id",
+            "aird.services.share_service.get_share_by_id",
             return_value={"secret_token": "secret"},
         ), patch.object(
             handler, "write"
@@ -386,7 +390,7 @@ class TestTokenVerificationHandler:
         with patch_db_conn(
             MagicMock(), modules=["aird.handlers.share_handlers"]
         ), patch(
-            "aird.handlers.share_handlers.get_share_by_id",
+            "aird.services.share_service.get_share_by_id",
             return_value={"secret_token": "secret"},
         ), patch.object(
             handler, "write"
@@ -406,7 +410,7 @@ class TestTokenVerificationHandler:
         with patch_db_conn(
             MagicMock(), modules=["aird.handlers.share_handlers"]
         ), patch(
-            "aird.handlers.share_handlers.get_share_by_id",
+            "aird.services.share_service.get_share_by_id",
             return_value={"secret_token": "secret"},
         ), patch.object(
             handler, "write"
@@ -424,6 +428,7 @@ class TestSharedListHandler:
         self.mock_app.settings = {
             "cookie_secret": "test_secret",
             "db_conn": MagicMock(),
+            "services": _default_services(),
         }
 
     def test_get_shared_list_static(self):
@@ -437,9 +442,9 @@ class TestSharedListHandler:
         with patch_db_conn(
             MagicMock(), modules=["aird.handlers.share_handlers"]
         ), patch(
-            "aird.handlers.share_handlers.get_share_by_id", return_value=share_data
+            "aird.services.share_service.get_share_by_id", return_value=share_data
         ), patch(
-            "aird.handlers.share_handlers.is_share_expired", return_value=False
+            "aird.services.share_service.is_share_expired", return_value=False
         ), patch(
             "aird.handlers.share_handlers.filter_files_by_patterns",
             return_value=["test.txt"],
@@ -459,9 +464,9 @@ class TestSharedListHandler:
         with patch_db_conn(
             MagicMock(), modules=["aird.handlers.share_handlers"]
         ), patch(
-            "aird.handlers.share_handlers.get_share_by_id", return_value=share_data
+            "aird.services.share_service.get_share_by_id", return_value=share_data
         ), patch(
-            "aird.handlers.share_handlers.is_share_expired", return_value=True
+            "aird.services.share_service.is_share_expired", return_value=True
         ), patch.object(
             handler, "write"
         ) as mock_write:
@@ -489,9 +494,9 @@ class TestSharedListHandler:
         with patch_db_conn(
             MagicMock(), modules=["aird.handlers.share_handlers"]
         ), patch(
-            "aird.handlers.share_handlers.get_share_by_id", return_value=share_data
+            "aird.services.share_service.get_share_by_id", return_value=share_data
         ), patch(
-            "aird.handlers.share_handlers.is_share_expired", return_value=False
+            "aird.services.share_service.is_share_expired", return_value=False
         ):
 
             handler.get("share1")
@@ -505,6 +510,7 @@ class TestSharedFileHandler:
         self.mock_app.settings = {
             "cookie_secret": "test_secret",
             "db_conn": MagicMock(),
+            "services": _default_services(),
         }
 
     @pytest.mark.asyncio
@@ -520,9 +526,9 @@ class TestSharedFileHandler:
         with patch_db_conn(
             MagicMock(), modules=["aird.handlers.share_handlers"]
         ), patch(
-            "aird.handlers.share_handlers.get_share_by_id", return_value=share_data
+            "aird.services.share_service.get_share_by_id", return_value=share_data
         ), patch(
-            "aird.handlers.share_handlers.is_share_expired", return_value=False
+            "aird.services.share_service.is_share_expired", return_value=False
         ), patch(
             "aird.handlers.share_handlers.filter_files_by_patterns",
             return_value=["test.txt"],
@@ -560,9 +566,9 @@ class TestSharedFileHandler:
         with patch_db_conn(
             MagicMock(), modules=["aird.handlers.share_handlers"]
         ), patch(
-            "aird.handlers.share_handlers.get_share_by_id", return_value=share_data
+            "aird.services.share_service.get_share_by_id", return_value=share_data
         ), patch(
-            "aird.handlers.share_handlers.is_share_expired", return_value=False
+            "aird.services.share_service.is_share_expired", return_value=False
         ):
 
             await handler.get("share1", "test.txt")

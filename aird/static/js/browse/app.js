@@ -4,7 +4,7 @@
     // Configurable constants
     const RELOAD_DELAY_MS = 500;
     const MIN_COLUMN_WIDTH = 50;
-    const MAX_FILE_SIZE = window.__BROWSE_CONFIG ? window.__BROWSE_CONFIG.maxFileSize : 10737418240;
+    const MAX_FILE_SIZE = globalThis.__BROWSE_CONFIG ? globalThis.__BROWSE_CONFIG.maxFileSize : 10737418240;
 
     const SelectionStore = {
       KEY: 'aird_browse_selections',
@@ -129,17 +129,14 @@
     });
 
     // --- Folder drag-and-drop helpers ---
-    function readAllEntries(reader) {
-      return new Promise(function(resolve) {
-        var results = [];
-        (function read() {
-          reader.readEntries(function(entries) {
-            if (entries.length === 0) { resolve(results); return; }
-            results = results.concat(Array.from(entries));
-            read();
-          });
-        })();
-      });
+    async function readAllEntries(reader) {
+      const results = [];
+      let batch;
+      do {
+        batch = await new Promise((res) => reader.readEntries(res));
+        results.push(...batch);
+      } while (batch.length > 0);
+      return results;
     }
 
     function getFileFromEntry(entry) {
@@ -149,19 +146,20 @@
     }
 
     async function traverseEntries(entries, pathPrefix) {
-      var result = [];
-      for (var i = 0; i < entries.length; i++) {
-        var entry = entries[i];
+      const result = [];
+      for (const entry of entries) {
         if (entry.isFile) {
           try {
-            var file = await getFileFromEntry(entry);
-            result.push({ file: file, relativePath: pathPrefix + file.name });
-          } catch (e) { /* skip unreadable */ }
+            const file = await getFileFromEntry(entry);
+            result.push({ file, relativePath: pathPrefix + file.name });
+          } catch (e) {
+            console.warn('Skipping unreadable entry:', e);
+          }
         } else if (entry.isDirectory) {
-          var reader = entry.createReader();
-          var children = await readAllEntries(reader);
-          var sub = await traverseEntries(children, pathPrefix + entry.name + '/');
-          result = result.concat(sub);
+          const reader = entry.createReader();
+          const children = await readAllEntries(reader);
+          const sub = await traverseEntries(children, pathPrefix + entry.name + '/');
+          result.push(...sub);
         }
       }
       return result;
@@ -169,47 +167,44 @@
 
     function handleFilesWithPaths(filesWithPaths) {
       if (filesWithPaths.length === 0) return;
-      var rejected = [];
-      for (var i = 0; i < filesWithPaths.length; i++) {
-        var fw = filesWithPaths[i];
+      const rejected = [];
+      for (const fw of filesWithPaths) {
         if (fw.file.size > MAX_FILE_SIZE) { rejected.push(fw.relativePath); continue; }
 
-        var item = document.createElement("div");
+        const item = document.createElement("div");
         item.style.marginTop = "5px";
-        var nameEl = document.createElement("div");
+        const nameEl = document.createElement("div");
         nameEl.textContent = fw.relativePath;
-        var bar = document.createElement("progress");
+        const bar = document.createElement("progress");
         bar.max = 100; bar.value = 0; bar.style.width = "100%";
-        var info = document.createElement("span");
+        const info = document.createElement("span");
         info.style.display = "block"; info.style.fontSize = "12px";
-        var cancelBtn = document.createElement("button");
+        const cancelBtn = document.createElement("button");
         cancelBtn.textContent = "Cancel"; cancelBtn.style.marginTop = "2px";
         item.appendChild(nameEl); item.appendChild(bar); item.appendChild(info); item.appendChild(cancelBtn);
         progressContainer.appendChild(item);
 
         // Compute the upload dir: current path + relative folder path
-        var parts = fw.relativePath.split('/');
-        var fileName = parts.pop();
-        var subDir = parts.join('/');
-        var uploadDir = (document.getElementById('currentPath') || {}).value || '';
+        const parts = fw.relativePath.split('/');
+        const fileName = parts.pop();
+        const subDir = parts.join('/');
+        let uploadDir = document.getElementById('currentPath')?.value ?? '';
         if (subDir) uploadDir = uploadDir ? uploadDir + '/' + subDir : subDir;
 
-        var queueItem = { file: fw.file, bar: bar, info: info, cancelBtn: cancelBtn, item: item, xhr: null, start: null, uploadDir: uploadDir, uploadName: fileName };
-        (function(qi) {
-          qi.cancelBtn.addEventListener("click", function() {
-            if (qi.xhr) { qi.xhr.abort(); }
-            else {
-              var idx = uploadQueue.indexOf(qi);
-              if (idx !== -1) uploadQueue.splice(idx, 1);
-              progressContainer.removeChild(qi.item);
-              if (progressContainer.children.length === 0) progressContainer.style.display = "none";
-            }
-          });
-        })(queueItem);
+        const queueItem = { file: fw.file, bar, info, cancelBtn, item, xhr: null, start: null, uploadDir, uploadName: fileName };
+        queueItem.cancelBtn.addEventListener("click", function() {
+          if (queueItem.xhr) { queueItem.xhr.abort(); }
+          else {
+            const idx = uploadQueue.indexOf(queueItem);
+            if (idx !== -1) uploadQueue.splice(idx, 1);
+            queueItem.item.remove();
+            if (progressContainer.children.length === 0) progressContainer.style.display = "none";
+          }
+        });
         uploadQueue.push(queueItem);
       }
       if (rejected.length > 0) {
-        var limitGB = (MAX_FILE_SIZE / (1024 * 1024 * 1024)).toFixed(2);
+        const limitGB = (MAX_FILE_SIZE / (1024 * 1024 * 1024)).toFixed(2);
         showDialog('Files exceed the ' + limitGB + ' GB limit: ' + rejected.join(", "), 'File Size Limit');
       }
       fileInput.value = "";
@@ -265,7 +260,7 @@
             if (idx !== -1) {
               uploadQueue.splice(idx, 1);
             }
-            progressContainer.removeChild(item);
+            item.remove();
             if (progressContainer.children.length === 0) {
               progressContainer.style.display = "none";
             }
@@ -303,7 +298,7 @@
       try {
         await uploadFile(current);
       } catch (err) {
-        // error text already set in uploadFile
+        console.warn('Upload error (message already shown to user):', err);
       }
 
       processQueue();
@@ -320,7 +315,7 @@
 
     // CSRF Protection: Get XSRF token from cookie
     function getXSRFToken() {
-      const match = document.cookie.match(/_xsrf=([^;]*)/);
+      const match = /_xsrf=([^;]*)/.exec(document.cookie);
       return match ? decodeURIComponent(match[1]) : '';
     }
 
@@ -378,8 +373,8 @@
         });
 
         // Stream raw file bytes with headers the backend expects
-        var dir = item.uploadDir != null ? item.uploadDir : ((document.getElementById('currentPath') || {}).value || '');
-        var fname = item.uploadName || item.file.name;
+        const dir = item.uploadDir ?? document.getElementById('currentPath')?.value ?? '';
+        const fname = item.uploadName ?? item.file.name;
         xhr.setRequestHeader("X-Upload-Dir", encodeURIComponent(dir));
         xhr.setRequestHeader("X-Upload-Filename", encodeURIComponent(fname));
         xhr.setRequestHeader("Content-Type", "application/octet-stream");
@@ -486,9 +481,9 @@
         if (filesList) {
           const displayPaths = allPaths.slice(0, 10);
           filesList.innerHTML = displayPaths.map(function (p) {
-            const name = p.split('/').filter(Boolean).pop() || p;
-            return '<span class="selected-file" title="' + p.replace(/"/g, '&quot;') + '">' +
-              name.replace(/</g, '&lt;') + '</span>';
+            const name = p.split('/').findLast(Boolean) ?? p;
+            return '<span class="selected-file" title="' + p.replaceAll('"', '&quot;') + '">' +
+              name.replaceAll('<', '&lt;') + '</span>';
           }).join('');
           if (allPaths.length > 10) {
             filesList.innerHTML += '<span class="selected-file">+' + (allPaths.length - 10) + ' more</span>';
@@ -507,7 +502,7 @@
     }
 
     async function newFolder() {
-      const currentPath = (document.getElementById('currentPath') || {}).value || '';
+      const currentPath = document.getElementById('currentPath')?.value ?? '';
       const name = await showDialog('Enter folder name:', 'New folder', { prompt: true, showCancel: true });
       if (!name || !name.trim()) return;
       const formData = new URLSearchParams();
@@ -539,7 +534,7 @@
         });
         const data = await res.json();
         if (data.ok) { SelectionStore.clear(); location.reload(); }
-        else showDialog(data.results && data.results.find(r => !r.ok) ? data.results.map(r => r.error).filter(Boolean).join('; ') : 'Bulk delete failed', 'Error');
+        else showDialog(data.results?.some(r => !r.ok) ? data.results.map(r => r.error).filter(Boolean).join('; ') : 'Bulk delete failed', 'Error');
       } catch (e) {
         showDialog('Bulk delete failed: ' + e.message, 'Error');
       }
@@ -579,7 +574,7 @@
         this._titleEl.textContent = mode === 'copy' ? 'Copy to...' : 'Move to...';
         this._confirmBtn.textContent = mode === 'copy' ? 'Paste here' : 'Move here';
         this._overlay.classList.add('show');
-        const startPath = (document.getElementById('currentPath') || {}).value || '';
+        const startPath = document.getElementById('currentPath')?.value ?? '';
         this._navigate(startPath);
 
         return new Promise((resolve) => { this._resolve = resolve; });
@@ -606,6 +601,7 @@
           const folders = (data.files || []).filter(f => f.is_dir);
           this._renderFolders(folders);
         } catch (e) {
+          console.warn('Directory load failed:', e);
           this._body.innerHTML = '<div class="fp-empty">Failed to load directory</div>';
         }
       },
@@ -655,10 +651,10 @@
       },
 
       async _createFolder() {
-        const name = await showDialog('Enter folder name:', 'New folder', { prompt: true, showCancel: true });
-        if (!name || !name.trim()) return;
-        const formData = new URLSearchParams();
-        formData.append('parent', this._currentPath);
+      const name = await showDialog('Enter folder name:', 'New folder', { prompt: true, showCancel: true });
+      if (!name?.trim()) return;
+      const formData = new URLSearchParams();
+      formData.append('parent', this._currentPath);
         formData.append('name', name.trim());
         try {
           const res = await fetch('/mkdir', {
@@ -687,7 +683,7 @@
       if (destDir == null) return;
       let failed = 0;
       for (const path of paths) {
-        const base = path.split('/').filter(Boolean).pop() || path;
+        const base = path.split('/').findLast(Boolean) ?? path;
         const fullDest = destDir ? destDir + '/' + base : base;
         const formData = new URLSearchParams();
         formData.append('path', path);
@@ -706,7 +702,7 @@
       if (destDir == null) return;
       let failed = 0;
       for (const path of paths) {
-        const base = path.split('/').filter(Boolean).pop() || path;
+        const base = path.split('/').findLast(Boolean) ?? path;
         const fullDest = destDir ? destDir + '/' + base : base;
         const formData = new URLSearchParams();
         formData.append('path', path);
@@ -733,6 +729,7 @@
         const shares = data.shares || {};
         selectEl.innerHTML = Object.keys(shares).length ? Object.entries(shares).map(([id, s]) => '<option value="' + id + '">' + id + (s.paths && s.paths.length ? ' (' + s.paths.length + ' path(s))' : '') + '</option>').join('') : '<option value="">No shares</option>';
       } catch (e) {
+        console.warn('Failed to load shares:', e);
         selectEl.innerHTML = '<option value="">Error loading shares</option>';
       }
       const shareId = await new Promise((resolve) => {
@@ -748,7 +745,7 @@
         });
         const data = await res.json();
         if (data.ok) { SelectionStore.clear(); location.reload(); }
-        else showDialog(data.results && data.results.find(r => !r.ok) ? data.results.map(r => r.error).filter(Boolean).join('; ') : 'Add to share failed', 'Error');
+        else showDialog(data.results?.some(r => !r.ok) ? data.results.map(r => r.error).filter(Boolean).join('; ') : 'Add to share failed', 'Error');
       } catch (e) {
         showDialog('Add to share failed: ' + e.message, 'Error');
       }
@@ -785,21 +782,19 @@
         // Column indices: 0 = Name (checkbox+name), 1 = Size, 2 = Modified, 3 = Actions
         if (columnIndex === 1) {
           // Size column
-          aVal = parseInt(a.children[columnIndex].dataset.bytes) || -1;
-          bVal = parseInt(b.children[columnIndex].dataset.bytes) || -1;
+          aVal = Number.parseInt(a.children[columnIndex].dataset.bytes, 10) || -1;
+          bVal = Number.parseInt(b.children[columnIndex].dataset.bytes, 10) || -1;
           return bVal - aVal;
         } else if (columnIndex === 2) {
           // Modified column
-          aVal = parseInt(a.children[columnIndex].dataset.timestamp) || 0;
-          bVal = parseInt(b.children[columnIndex].dataset.timestamp) || 0;
+          aVal = Number.parseInt(a.children[columnIndex].dataset.timestamp, 10) || 0;
+          bVal = Number.parseInt(b.children[columnIndex].dataset.timestamp, 10) || 0;
           return bVal - aVal;
         }
 
         const nameCol = 0;
-        const aIsDir =
-          a.children[nameCol] && a.children[nameCol].querySelector(".file-icon") && a.children[nameCol].querySelector(".file-icon").textContent === "📁";
-        const bIsDir =
-          b.children[nameCol] && b.children[nameCol].querySelector(".file-icon") && b.children[nameCol].querySelector(".file-icon").textContent === "📁";
+        const aIsDir = a.children[nameCol]?.querySelector(".file-icon")?.textContent === "📁";
+        const bIsDir = b.children[nameCol]?.querySelector(".file-icon")?.textContent === "📁";
 
         if (aIsDir !== bIsDir) {
           return bIsDir ? 1 : -1;
@@ -824,10 +819,9 @@
           startX = e.pageX;
           startWidth = th.offsetWidth;
 
-          const headerCells = table.querySelectorAll('th');
-          headerCells.forEach(cell => {
+          for (const cell of table.querySelectorAll('th')) {
             cell.style.width = `${cell.offsetWidth}px`;
-          });
+          }
 
           document.addEventListener('mousemove', mouseMove);
           document.addEventListener('mouseup', mouseUp);
@@ -874,28 +868,30 @@
         document.querySelector('.popup-title').textContent = `Share Details - ${filePath.split('/').pop()}`;
 
         // Render share details
-        content.innerHTML = data.shares.map(share => `
+        content.innerHTML = data.shares.map(share => {
+          const accessClass = share.allowed_users ? 'restricted' : 'public';
+          const accessLabel = share.allowed_users
+            ? `Restricted (${share.allowed_users.length} user${share.allowed_users.length === 1 ? '' : 's'})`
+            : 'Public Access';
+          const usersHtml = share.allowed_users
+            ? `<div class="share-users"><div class="share-users-title">Allowed Users:</div>${share.allowed_users.map(u => `<span class="user-tag">${u}</span>`).join('')}</div>`
+            : '';
+          return `
             <div class="share-item">
               <div class="share-id">${share.id}</div>
               <div class="share-url">
-                <a href="${share.url}" target="_blank">${window.location.origin}${share.url}</a>
+                <a href="${share.url}" target="_blank">${location.origin}${share.url}</a>
               </div>
-              <div class="share-access ${share.allowed_users ? 'restricted' : 'public'}">
-                ${share.allowed_users ? `Restricted (${share.allowed_users.length} user${share.allowed_users.length !== 1 ? 's' : ''})` : 'Public Access'}
-              </div>
-              ${share.allowed_users ? `
-                <div class="share-users">
-                  <div class="share-users-title">Allowed Users:</div>
-                  ${share.allowed_users.map(username => `<span class="user-tag">${username}</span>`).join('')}
-                </div>
-              ` : ''}
+              <div class="share-access ${accessClass}">${accessLabel}</div>
+              ${usersHtml}
               <div class="share-actions">
-                <button class="btn" data-action="copyToClipboard" data-text="${window.location.origin}${share.url}">Copy Link</button>
+                <button class="btn" data-action="copyToClipboard" data-text="${location.origin}${share.url}">Copy Link</button>
                 <button class="btn" data-action="openShare" data-url="${share.url}">Open Share</button>
                 <button class="btn" data-action="revokeShare" data-id="${share.id}">Revoke</button>
               </div>
             </div>
-          `).join('');
+          `;
+        }).join('');
 
       } catch (error) {
         console.error('Error loading share details:', error);
@@ -923,57 +919,25 @@
       }
     });
 
-    function copyToClipboard(text, btn) {
-      // Check if the modern clipboard API is available
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(() => {
-          // Visual feedback
-          if (btn) {
-            const originalText = btn.textContent;
-            btn.textContent = 'Copied!';
-            setTimeout(() => btn.textContent = originalText, 1500);
-          }
-        }).catch(err => {
-          console.error('Clipboard API failed: ', err);
-          // Fall back to the old method
-          fallbackCopyTextToClipboard(text, btn);
-        });
-      } else {
-        // Fallback for older browsers or non-HTTPS contexts
-        fallbackCopyTextToClipboard(text, btn);
-      }
+    function _showCopiedFeedback(btn) {
+      if (!btn) return;
+      const originalText = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = originalText; }, 1500);
     }
 
-    function fallbackCopyTextToClipboard(text, btn) {
-      const textArea = document.createElement('textarea');
-      textArea.value = text;
-      textArea.style.position = 'fixed';
-      textArea.style.top = '-9999px';
-      textArea.style.left = '-9999px';
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-
-      try {
-        const successful = document.execCommand('copy');
-        if (successful && btn) {
-          const originalText = btn.textContent;
-          btn.textContent = 'Copied!';
-          setTimeout(() => btn.textContent = originalText, 1500);
-        } else if (!successful) {
-          console.error('Fallback copy command failed');
-          showDialog('Failed to copy to clipboard', 'Error');
-        }
-      } catch (err) {
-        console.error('Fallback copy failed: ', err);
-        showDialog('Failed to copy to clipboard', 'Error');
-      } finally {
-        document.body.removeChild(textArea);
+    function copyToClipboard(text, btn) {
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text)
+          .then(() => _showCopiedFeedback(btn))
+          .catch(() => showDialog('Failed to copy to clipboard', 'Error'));
+      } else {
+        showDialog('Clipboard not available', 'Error');
       }
     }
 
     function openShare(url) {
-      window.open(url, '_blank');
+      globalThis.open(url, '_blank');
     }
 
     async function revokeShare(shareId) {
@@ -1007,7 +971,7 @@
       // Sort headers
       document.querySelectorAll('[data-sort-column]').forEach(function (el) {
         el.addEventListener('click', function () {
-          sortTable(parseInt(this.dataset.sortColumn));
+          sortTable(Number.parseInt(this.dataset.sortColumn, 10));
         });
       });
 
@@ -1074,21 +1038,21 @@
           updateBulkToolbar();
         });
       });
-      var newFolderBtn = document.getElementById('newFolderBtn');
+      const newFolderBtn = document.getElementById('newFolderBtn');
       if (newFolderBtn) newFolderBtn.addEventListener('click', newFolder);
-      var bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+      const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
       if (bulkDeleteBtn) bulkDeleteBtn.addEventListener('click', bulkDelete);
-      var bulkCopyBtn = document.getElementById('bulkCopyBtn');
+      const bulkCopyBtn = document.getElementById('bulkCopyBtn');
       if (bulkCopyBtn) bulkCopyBtn.addEventListener('click', bulkCopy);
-      var bulkMoveBtn = document.getElementById('bulkMoveBtn');
+      const bulkMoveBtn = document.getElementById('bulkMoveBtn');
       if (bulkMoveBtn) bulkMoveBtn.addEventListener('click', bulkMove);
-      var bulkAddToShareBtn = document.getElementById('bulkAddToShareBtn');
+      const bulkAddToShareBtn = document.getElementById('bulkAddToShareBtn');
       if (bulkAddToShareBtn) bulkAddToShareBtn.addEventListener('click', bulkAddToShare);
-      var clearSelectionBtn = document.getElementById('clearSelectionBtn');
+      const clearSelectionBtn = document.getElementById('clearSelectionBtn');
       if (clearSelectionBtn) clearSelectionBtn.addEventListener('click', function () {
         SelectionStore.clear();
         document.querySelectorAll('.row-checkbox:checked').forEach(function (cb) { cb.checked = false; });
-        var sa = document.getElementById('selectAllCheckbox');
+        const sa = document.getElementById('selectAllCheckbox');
         if (sa) sa.checked = false;
         updateBulkToolbar();
       });
@@ -1112,16 +1076,17 @@
 
       // --- Favorites ---
       document.querySelectorAll('.fav-star').forEach(function(star) {
-        star.addEventListener('click', function(e) {
+        star.addEventListener('click', async function(e) {
           e.preventDefault();
           e.stopPropagation();
-          var path = star.dataset.favPath;
-          var xsrf = getXSRFToken();
-          fetch('/api/favorites/toggle', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-XSRFToken': xsrf },
-            body: JSON.stringify({ path: path })
-          }).then(function(r) { return r.json(); }).then(function(data) {
+          const path = star.dataset.favPath;
+          try {
+            const r = await fetch('/api/favorites/toggle', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
+              body: JSON.stringify({ path })
+            });
+            const data = await r.json();
             if (data.favorited) {
               star.textContent = '\u2605';
               star.classList.add('fav-active');
@@ -1129,20 +1094,22 @@
               star.textContent = '\u2606';
               star.classList.remove('fav-active');
             }
-          }).catch(function() {});
+          } catch (e) {
+            console.warn('Favorite toggle failed:', e);
+          }
         });
       });
 
       // --- Keyboard Shortcuts ---
-      var shortcutsOverlay = null;
+      let shortcutsOverlay = null;
 
       function showShortcutsHelp() {
         if (shortcutsOverlay) { hideShortcutsHelp(); return; }
         shortcutsOverlay = document.createElement('div');
         shortcutsOverlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
-        var card = document.createElement('div');
+        const card = document.createElement('div');
         card.style.cssText = 'background:#fff;border:2px solid #000;border-radius:8px;padding:24px 32px;max-width:420px;width:90%;font-family:monospace;font-size:13px;';
-        if (document.documentElement.getAttribute('data-theme') === 'dark') {
+        if (document.documentElement.dataset.theme === 'dark') {
           card.style.background = '#1e1e2e';
           card.style.color = '#e0e0e0';
           card.style.borderColor = '#444';
@@ -1167,62 +1134,56 @@
         if (shortcutsOverlay) { shortcutsOverlay.remove(); shortcutsOverlay = null; }
       }
 
+      function _isInputTarget(target) {
+        const tag = (target.tagName || '').toLowerCase();
+        return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
+      }
+
+      function _handleEscapeKey() {
+        if (shortcutsOverlay) { hideShortcutsHelp(); return; }
+        const fpOverlay = document.getElementById('folderPickerOverlay');
+        if (fpOverlay?.classList.contains('show')) { FolderPicker.close(null); return; }
+        const popup = document.querySelector('.popup-overlay.show');
+        if (popup) { popup.classList.remove('show'); return; }
+        SelectionStore.clear();
+        document.querySelectorAll('.row-checkbox:checked').forEach(function(cb) { cb.checked = false; });
+        const selectAll = document.getElementById('selectAllCheckbox');
+        if (selectAll) selectAll.checked = false;
+        updateBulkToolbar();
+      }
+
       document.addEventListener('keydown', function(e) {
-        // Don't trigger when typing in inputs
-        var tag = (e.target.tagName || '').toLowerCase();
-        var isInput = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable;
-
-        if (e.key === 'Escape') {
-          if (shortcutsOverlay) { hideShortcutsHelp(); return; }
-          // Close folder picker if open
-          var fpOverlay = document.getElementById('folderPickerOverlay');
-          if (fpOverlay && fpOverlay.classList.contains('show')) { FolderPicker.close(null); return; }
-          // Close any open popup
-          var popup = document.querySelector('.popup-overlay.show');
-          if (popup) { popup.classList.remove('show'); return; }
-          // Deselect all checkboxes and clear persistent store
-          SelectionStore.clear();
-          document.querySelectorAll('.row-checkbox:checked').forEach(function(cb) { cb.checked = false; });
-          var selectAll = document.getElementById('selectAllCheckbox');
-          if (selectAll) selectAll.checked = false;
-          updateBulkToolbar();
-          return;
-        }
-
-        if (isInput) return;
+        if (e.key === 'Escape') { _handleEscapeKey(); return; }
+        if (_isInputTarget(e.target)) return;
 
         if (e.key === '?') { e.preventDefault(); showShortcutsHelp(); return; }
         if (e.key === '/') {
           e.preventDefault();
-          var searchInput = document.querySelector('input[type="text"][placeholder*="earch"], input[type="search"]');
+          const searchInput = document.querySelector('input[type="text"][placeholder*="earch"], input[type="search"]');
           if (searchInput) searchInput.focus();
           return;
         }
         if (e.key === 'n' && !e.ctrlKey && !e.metaKey) {
           e.preventDefault();
-          var newFolderBtn = document.getElementById('newFolderBtn');
-          if (newFolderBtn) newFolderBtn.click();
+          document.getElementById('newFolderBtn')?.click();
           return;
         }
         if (e.key === 'u' && !e.ctrlKey && !e.metaKey) {
           e.preventDefault();
-          var fi = document.getElementById('fileInput');
-          if (fi) fi.click();
+          document.getElementById('fileInput')?.click();
           return;
         }
         if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
           e.preventDefault();
-          var selectAllCb = document.getElementById('selectAllCheckbox');
+          const selectAllCb = document.getElementById('selectAllCheckbox');
           if (selectAllCb) { selectAllCb.checked = true; selectAllCb.dispatchEvent(new Event('change', {bubbles:true})); }
           return;
         }
         if (e.key === 'Delete') {
-          var checked = document.querySelectorAll('.row-checkbox:checked');
+          const checked = document.querySelectorAll('.row-checkbox:checked');
           if (checked.length > 0) {
-            var bulkDelBtn = document.getElementById('bulkDeleteBtn');
-            if (bulkDelBtn) bulkDelBtn.click();
+            document.getElementById('bulkDeleteBtn')?.click();
           }
-          return;
         }
       });
     });

@@ -6,6 +6,29 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 
+def _default_services():
+    """Return real service instances so handler.get_service() never returns None."""
+    from aird.services import (
+        AuditService,
+        ConfigService,
+        FavoritesService,
+        NetworkShareService,
+        QuotaService,
+        ShareService,
+        UserService,
+    )
+
+    return {
+        "audit_service": AuditService(),
+        "config_service": ConfigService(),
+        "favorites_service": FavoritesService(),
+        "network_share_service": NetworkShareService(),
+        "quota_service": QuotaService(),
+        "share_service": ShareService(),
+        "user_service": UserService(),
+    }
+
+
 def _ensure_mock(attr_name, handler):
     attr = getattr(handler, attr_name, None)
     if not isinstance(attr, MagicMock):
@@ -50,6 +73,10 @@ def prepare_handler(handler):
         handler.get_secure_cookie = MagicMock(return_value=None)
     if not getattr(handler, "set_secure_cookie", None):
         handler.set_secure_cookie = MagicMock()
+
+    settings = getattr(handler.application, "settings", None)
+    if isinstance(settings, dict) and "services" not in settings:
+        settings["services"] = _default_services()
 
     return handler
 

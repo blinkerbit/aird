@@ -16,7 +16,7 @@ def test_argon2_hashing():
 
 def test_scrypt_fallback():
     """Test Scrypt fallback when Argon2 is not available"""
-    with patch("aird.db.ARGON2_AVAILABLE", False):
+    with patch("aird.db.users.ARGON2_AVAILABLE", False):
         password = "secure_password"
         # Force reload or adjust the module variable if needed.
         # Since we patched the imported name in aird.db (if it was imported that way),

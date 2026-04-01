@@ -30,7 +30,11 @@ export function showDialog(title, message, { showInput = false, inputDefault = '
     }
     function onConfirm() {
       cleanup();
-      resolve(showInput ? (inputEl ? inputEl.value : '') : true);
+      if (showInput) {
+        resolve(inputEl ? inputEl.value : '');
+      } else {
+        resolve(true);
+      }
     }
     function onCancel() {
       cleanup();

@@ -16,14 +16,14 @@ from aird.cloud import CloudProviderError
 import json
 import asyncio
 
-from tests.handler_helpers import authenticate, prepare_handler
+from tests.handler_helpers import _default_services, authenticate, prepare_handler
 
 
 class TestUploadHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
         self.mock_request.headers = {
             "X-Upload-Dir": "uploads",
             "X-Upload-Filename": "test.txt",
@@ -401,7 +401,7 @@ class TestUploadHandlerDynamicMaxSize:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
         self.mock_request.headers = {
             "X-Upload-Dir": "uploads",
             "X-Upload-Filename": "test.txt",
@@ -552,7 +552,7 @@ class TestDeleteHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
 
     def test_delete_file(self):
         handler = prepare_handler(DeleteHandler(self.mock_app, self.mock_request))
@@ -659,7 +659,7 @@ class TestRenameHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
 
     def test_rename_file(self):
         handler = prepare_handler(RenameHandler(self.mock_app, self.mock_request))
@@ -915,7 +915,7 @@ class TestEditHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
         self.mock_request.headers = {}
 
     def test_edit_file(self):
@@ -1135,7 +1135,7 @@ class TestCloudUploadHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
         self.mock_request.files = {
             "file": [{"body": b"content", "filename": "test.txt"}]
         }
@@ -1373,7 +1373,7 @@ class TestCreateFolderHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
         self.mock_request.headers = {}
 
     def test_create_folder_success(self):
@@ -1572,7 +1572,7 @@ class TestCopyHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
         self.mock_request.headers = {}
 
     def test_copy_file_success(self):
@@ -1751,7 +1751,7 @@ class TestMoveHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
         self.mock_request.headers = {}
 
     def test_move_success(self):
@@ -1901,7 +1901,7 @@ class TestBulkHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
         self.mock_request.headers = {}
 
     def test_bulk_invalid_json(self):
@@ -2058,9 +2058,9 @@ class TestBulkHandler:
         ), patch("os.path.abspath", side_effect=lambda p: p), patch(
             "os.path.exists", return_value=True
         ), patch(
-            "aird.handlers.file_op_handlers.get_share_by_id", return_value=mock_share
+            "aird.services.share_service.get_share_by_id", return_value=mock_share
         ), patch(
-            "aird.handlers.file_op_handlers.update_share", return_value=True
+            "aird.services.share_service.update_share", return_value=True
         ), patch.object(
             handler, "write"
         ) as mock_write:
@@ -2091,7 +2091,7 @@ class TestDeleteHandlerAdditional:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
         self.mock_request.headers = {}
 
     def test_delete_folder_feature_disabled(self):

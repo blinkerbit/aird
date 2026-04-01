@@ -285,7 +285,7 @@
             const k = 1024;
             const sizes = ['B', 'KB', 'MB', 'GB'];
             const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+            return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
         }
 
         // Function to open file with authentication
@@ -293,7 +293,7 @@
             const token = getAuthToken();
             if (!token) {
                 // No token available, redirect to verification
-                window.location.href = `/shared/${shareId}/verify`;
+                globalThis.location.href = `/shared/${shareId}/verify`;
                 return;
             }
 
@@ -304,46 +304,38 @@
 
         /** Normalize path segments (handles Windows backslashes in shared paths). */
         function pathParts(p) {
-            return String(p).replace(/\\/g, '/').split('/').filter(Boolean);
+            return String(p).replaceAll('\\', '/').split('/').filter(Boolean);
+        }
+
+        /** Insert one path into the tree; returns false if a conflict prevents insertion. */
+        function insertPathIntoTree(root, raw) {
+            const parts = pathParts(raw);
+            if (parts.length === 0) return;
+            let node = root;
+            for (let i = 0; i < parts.length; i++) {
+                const part = parts[i];
+                const last = i === parts.length - 1;
+                if (!node.children.has(part)) {
+                    node.children.set(part, { name: part, children: new Map(), isFile: last, fullPath: last ? raw : '' });
+                }
+                const child = node.children.get(part);
+                if (last) {
+                    if (!child.isFile && child.children.size > 0) return;
+                    child.isFile = true;
+                    child.fullPath = raw;
+                } else if (child.isFile) {
+                    return;
+                }
+                node = child;
+            }
         }
 
         /** Build a folder tree from flat path strings. Deeper paths are inserted first to reduce conflicts. */
         function buildPathTree(paths) {
             const root = { name: '', children: new Map(), isFile: false, fullPath: '' };
-            const list = [...paths].sort((a, b) => pathParts(b).length - pathParts(a).length);
-            for (const raw of list) {
-                const parts = pathParts(raw);
-                if (parts.length === 0) continue;
-                let node = root;
-                let skip = false;
-                for (let i = 0; i < parts.length; i++) {
-                    const part = parts[i];
-                    const last = i === parts.length - 1;
-                    if (!node.children.has(part)) {
-                        node.children.set(part, {
-                            name: part,
-                            children: new Map(),
-                            isFile: last,
-                            fullPath: last ? raw : '',
-                        });
-                    }
-                    const child = node.children.get(part);
-                    if (last) {
-                        if (!child.isFile && child.children.size > 0) {
-                            skip = true;
-                            break;
-                        }
-                        child.isFile = true;
-                        child.fullPath = raw;
-                    } else {
-                        if (child.isFile) {
-                            skip = true;
-                            break;
-                        }
-                    }
-                    node = child;
-                }
-                if (skip) continue;
+            const sorted = [...paths].sort((a, b) => pathParts(b).length - pathParts(a).length);
+            for (const raw of sorted) {
+                insertPathIntoTree(root, raw);
             }
             return root;
         }
@@ -449,7 +441,7 @@
             const token = getAuthToken();
             if (!token) {
                 // No token available, redirect to verification
-                window.location.href = `/shared/${shareId}/verify`;
+                globalThis.location.href = `/shared/${shareId}/verify`;
                 return;
             }
 

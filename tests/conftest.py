@@ -66,13 +66,16 @@ def reset_feature_flags():
 @pytest.fixture
 def mock_tornado_app():
     """Mock Tornado application for handler testing"""
+    from tests.handler_helpers import _default_services
+
     app = MagicMock()
     app.settings = {
         "cookie_secret": "test_secret_key_for_testing",
         "template_path": "templates",
         "debug": False,
         "login_url": "/login",
-        "ldap_server": None,  # LDAP disabled by default
+        "ldap_server": None,
+        "services": _default_services(),
     }
     return app
 

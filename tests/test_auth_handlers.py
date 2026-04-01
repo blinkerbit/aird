@@ -7,7 +7,7 @@ from aird.handlers.auth_handlers import (
     LDAPLoginHandler,
 )
 
-from tests.handler_helpers import authenticate, patch_db_conn, prepare_handler
+from tests.handler_helpers import authenticate, patch_db_conn, prepare_handler, _default_services
 
 
 class TestLoginHandler:
@@ -18,6 +18,7 @@ class TestLoginHandler:
             "cookie_secret": "test_secret",
             "login_url": "/login",
             "debug": False,
+            "services": _default_services(),
         }
         self.mock_request.connection = MagicMock()
         self.mock_request.protocol = "http"
@@ -47,7 +48,7 @@ class TestLoginHandler:
         )
 
         with patch_db_conn(MagicMock(), modules=["aird.handlers.auth_handlers"]), patch(
-            "aird.handlers.auth_handlers.authenticate_user",
+            "aird.services.user_service.authenticate_user",
             return_value={"username": "user", "role": "user"},
         ), patch.object(handler, "set_secure_cookie") as mock_cookie, patch.object(
             handler, "redirect"
@@ -66,7 +67,7 @@ class TestLoginHandler:
         )
 
         with patch_db_conn(MagicMock(), modules=["aird.handlers.auth_handlers"]), patch(
-            "aird.handlers.auth_handlers.authenticate_user", return_value=None
+            "aird.services.user_service.authenticate_user", return_value=None
         ), patch.object(handler, "render") as mock_render:
 
             handler.post()
@@ -78,7 +79,7 @@ class TestLogoutHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
 
     def test_logout(self):
         handler = prepare_handler(LogoutHandler(self.mock_app, self.mock_request))
@@ -94,7 +95,7 @@ class TestAdminLoginHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
         self.mock_request.protocol = "http"
 
     def test_get_admin_login(self):
@@ -115,7 +116,7 @@ class TestAdminLoginHandler:
         )
 
         with patch_db_conn(MagicMock(), modules=["aird.handlers.auth_handlers"]), patch(
-            "aird.handlers.auth_handlers.authenticate_user",
+            "aird.services.user_service.authenticate_user",
             return_value={"username": "admin", "role": "admin"},
         ), patch.object(handler, "set_secure_cookie") as mock_cookie, patch.object(
             handler, "redirect"
@@ -130,7 +131,7 @@ class TestProfileHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
         self.mock_request.protocol = "http"
 
     def test_get_profile(self):
@@ -152,10 +153,10 @@ class TestProfileHandler:
         )
 
         with patch_db_conn(MagicMock(), modules=["aird.handlers.auth_handlers"]), patch(
-            "aird.handlers.auth_handlers.get_user_by_username",
+            "aird.services.user_service.get_user_by_username",
             return_value={"id": 1, "username": "user"},
         ), patch(
-            "aird.handlers.auth_handlers.update_user"
+            "aird.services.user_service.update_user"
         ) as mock_update, patch.object(
             handler, "render"
         ) as mock_render:
@@ -179,6 +180,7 @@ class TestLDAPLoginHandler:
             "ldap_filter_template": "(uid={username})",
             "ldap_attributes": ["cn", "mail", "uid"],
             "ldap_attribute_map": [],
+            "services": _default_services(),
         }
         self.mock_request.protocol = "http"
 
@@ -214,9 +216,9 @@ class TestLDAPLoginHandler:
         with patch("aird.handlers.auth_handlers.Server"), patch(
             "aird.handlers.auth_handlers.Connection", return_value=mock_conn
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.auth_handlers"]), patch(
-            "aird.handlers.auth_handlers.get_user_by_username", return_value=None
+            "aird.services.user_service.get_user_by_username", return_value=None
         ), patch(
-            "aird.handlers.auth_handlers.create_user"
+            "aird.services.user_service.create_user"
         ) as mock_create, patch.object(
             handler, "set_secure_cookie"
         ) as mock_cookie, patch.object(

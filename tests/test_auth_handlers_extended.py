@@ -7,6 +7,7 @@ from aird.handlers.auth_handlers import (
     LogoutHandler,
 )
 from aird.handlers.base_handler import BaseHandler
+from tests.handler_helpers import _default_services
 
 
 class TestLDAPLoginHandlerExtended:
@@ -21,6 +22,7 @@ class TestLDAPLoginHandlerExtended:
             "ldap_filter_template": "(uid={username})",
             "ldap_attributes": ["cn", "mail"],
             "ldap_attribute_map": [{"member": "cn=admin,dc=example,dc=com"}],
+            "services": _default_services(),
         }
 
     def test_post_input_validation_length(self):
@@ -77,9 +79,9 @@ class TestLDAPLoginHandlerExtended:
             # Mock DB interactions - inject db_conn via settings
             self.mock_app.settings["db_conn"] = MagicMock()
             with patch(
-                "aird.handlers.auth_handlers.get_user_by_username", return_value=None
+                "aird.services.user_service.get_user_by_username", return_value=None
             ), patch(
-                "aird.handlers.auth_handlers.create_user",
+                "aird.services.user_service.create_user",
                 side_effect=Exception("DB Error"),
             ), patch.object(
                 handler, "set_secure_cookie"
@@ -111,10 +113,10 @@ class TestLDAPLoginHandlerExtended:
             # Mock DB interactions - inject db_conn via settings
             self.mock_app.settings["db_conn"] = MagicMock()
             with patch(
-                "aird.handlers.auth_handlers.get_user_by_username",
+                "aird.services.user_service.get_user_by_username",
                 return_value={"id": 1, "role": "user"},
             ), patch(
-                "aird.handlers.auth_handlers.update_user",
+                "aird.services.user_service.update_user",
                 side_effect=Exception("DB Error"),
             ), patch.object(
                 handler, "set_secure_cookie"
@@ -141,10 +143,10 @@ class TestLDAPLoginHandlerExtended:
 
             self.mock_app.settings["db_conn"] = MagicMock()
             with patch(
-                "aird.handlers.auth_handlers.get_user_by_username",
+                "aird.services.user_service.get_user_by_username",
                 side_effect=[None, {"role": "user"}],
             ), patch(
-                "aird.handlers.auth_handlers.create_user"
+                "aird.services.user_service.create_user"
             ) as mock_create, patch.object(
                 handler, "set_secure_cookie"
             ), patch.object(
@@ -172,10 +174,10 @@ class TestLDAPLoginHandlerExtended:
 
             self.mock_app.settings["db_conn"] = MagicMock()
             with patch(
-                "aird.handlers.auth_handlers.get_user_by_username",
+                "aird.services.user_service.get_user_by_username",
                 return_value={"id": 1, "role": "user"},
             ), patch(
-                "aird.handlers.auth_handlers.update_user"
+                "aird.services.user_service.update_user"
             ) as mock_update, patch.object(
                 handler, "set_secure_cookie"
             ), patch.object(
@@ -195,7 +197,7 @@ class TestLoginHandlerExtended:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
 
     def test_post_form_parsing_error(self):
         handler = LoginHandler(self.mock_app, self.mock_request)
@@ -299,7 +301,7 @@ class TestAdminLoginHandlerExtended:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
 
     def test_get_already_admin(self):
         handler = AdminLoginHandler(self.mock_app, self.mock_request)
@@ -349,7 +351,7 @@ class TestAdminLoginHandlerExtended:
 
         self.mock_app.settings["db_conn"] = MagicMock()
         with patch(
-            "aird.handlers.auth_handlers.authenticate_user",
+            "aird.services.user_service.authenticate_user",
             return_value={"role": "admin"},
         ), patch.object(handler, "set_secure_cookie"), patch.object(
             handler, "redirect"
@@ -366,7 +368,7 @@ class TestAdminLoginHandlerExtended:
 
         self.mock_app.settings["db_conn"] = MagicMock()
         with patch(
-            "aird.handlers.auth_handlers.authenticate_user",
+            "aird.services.user_service.authenticate_user",
             return_value={"role": "user"},
         ), patch.object(handler, "render") as mock_render:
 
@@ -380,7 +382,7 @@ class TestLogoutHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
 
     def test_get(self):
         handler = LogoutHandler(self.mock_app, self.mock_request)
@@ -397,7 +399,7 @@ class TestProfileHandlerExtended:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
 
     def test_post_password_update_success(self):
         handler = ProfileHandler(self.mock_app, self.mock_request)
@@ -408,9 +410,9 @@ class TestProfileHandlerExtended:
 
         self.mock_app.settings["db_conn"] = MagicMock()
         with patch(
-            "aird.handlers.auth_handlers.get_user_by_username", return_value={"id": 1}
+            "aird.services.user_service.get_user_by_username", return_value={"id": 1}
         ), patch(
-            "aird.handlers.auth_handlers.update_user"
+            "aird.services.user_service.update_user"
         ) as mock_update, patch.object(
             handler, "render"
         ) as mock_render:
@@ -441,7 +443,7 @@ class TestProfileHandlerExtended:
 
         self.mock_app.settings["db_conn"] = MagicMock()
         with patch(
-            "aird.handlers.auth_handlers.get_user_by_username", return_value={"id": 1}
+            "aird.services.user_service.get_user_by_username", return_value={"id": 1}
         ), patch.object(handler, "render") as mock_render:
 
             handler.post()
@@ -459,7 +461,7 @@ class TestBaseHandlerExtended:
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
 
     def test_get_current_user_json_error(self):
         handler = BaseHandler(self.mock_app, self.mock_request)

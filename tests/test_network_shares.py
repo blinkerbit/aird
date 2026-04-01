@@ -26,7 +26,7 @@ try:
         AdminNetworkShareDeleteHandler,
         AdminNetworkShareToggleHandler,
     )
-    from tests.handler_helpers import authenticate, patch_db_conn
+    from tests.handler_helpers import _default_services, authenticate, patch_db_conn
 
     HANDLERS_AVAILABLE = True
 except ImportError:
@@ -926,7 +926,7 @@ class TestAdminNetworkShareHandlers:
             }.get(name, default)
 
         with patch_db_conn(db), patch(
-            "aird.handlers.admin_handlers.create_network_share", return_value=False
+            "aird.services.network_share_service.create_network_share", return_value=False
         ), patch.object(handler, "get_argument", side_effect=get_arg), patch.object(
             handler, "redirect"
         ) as mock_redir:

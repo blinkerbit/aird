@@ -2,6 +2,7 @@ import asyncio
 import json
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
+from tests.handler_helpers import _default_services
 from aird.handlers.api_handlers import SuperSearchWebSocketHandler
 
 
@@ -10,7 +11,7 @@ class TestSuperSearchWebSocketHandler:
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
         self.mock_request.path = "/search"
-        self.mock_app.settings = {"cookie_secret": "test_secret"}
+        self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
         # Mock connection manager to avoid side effects
         self.mock_cm = MagicMock()
         self.mock_cm.add_connection.return_value = True

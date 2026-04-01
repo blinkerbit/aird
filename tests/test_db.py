@@ -814,7 +814,7 @@ class TestPasswordEdgeCases:
         assert verify_password("pass", "nocolon") is False
 
     def test_hash_scrypt_fallback(self):
-        with patch("aird.db.ARGON2_AVAILABLE", False), patch("aird.db.PH", None):
+        with patch("aird.db.users.ARGON2_AVAILABLE", False), patch("aird.db.users.PH", None):
             h = hash_password("test")
             assert h.startswith("scrypt:")
             assert verify_password("test", h) is True

@@ -3,7 +3,7 @@
 
   class P2PStateMachine {
     constructor(initialState) {
-      this.state = { ...(initialState || {}) };
+      this.state = initialState ? { ...initialState } : {};
       this.listeners = new Set();
     }
 
