@@ -309,8 +309,8 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
         self.stop_event.set()
         try:
             if self.file:
-                self.file.close()
-        except OSError as close_err:
+                asyncio.create_task(self.file.close())
+        except Exception as close_err:
             logging.debug("Error closing file stream: %s", close_err)
         super().on_close()
 
