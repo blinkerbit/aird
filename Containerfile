@@ -22,6 +22,10 @@ COPY Caddyfile /etc/caddy/Caddyfile
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
+# Setup default mount point and environment
+RUN mkdir -p /project_root
+ENV AIRD_ROOT="/project_root"
+
 # Expose port 80 (Caddy gateway)
 EXPOSE 80
 
