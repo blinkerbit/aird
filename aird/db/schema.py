@@ -9,6 +9,10 @@ PRAGMA_TABLE_INFO = "PRAGMA table_info(shares)"
 
 
 def init_db(conn: sqlite3.Connection) -> None:
+    # Enable Write-Ahead Logging (WAL) for high concurrency
+    conn.execute("PRAGMA journal_mode = WAL;")
+    conn.execute("PRAGMA synchronous = NORMAL;")
+    conn.execute("PRAGMA busy_timeout = 5000;")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS feature_flags (
             key TEXT PRIMARY KEY,

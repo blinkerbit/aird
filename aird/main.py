@@ -8,6 +8,7 @@ import ssl
 
 import tornado.ioloop
 import tornado.web
+import logging.handlers
 
 
 import aird.constants as constants
@@ -486,7 +487,24 @@ def _start_server(app, ssl_options, port: int, hostname: str) -> None:
 def main():
     print_banner()
     config.init_config()
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
+
+    log_file = os.path.join(get_data_dir(), "aird.log")
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_file, maxBytes=10 * 1024 * 1024, backupCount=5
+    )
+    console_handler = logging.StreamHandler()
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s:%(name)s:%(message)s")
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    for handler in list(root_logger.handlers):
+        root_logger.removeHandler(handler)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+
+    logger.info("Logging initialized. Writing logs to %s", log_file)
 
     if not _validate_ldap_config():
         return
