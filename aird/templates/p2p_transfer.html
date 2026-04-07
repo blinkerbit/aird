@@ -1942,7 +1942,7 @@
             fileInput.addEventListener('change', (e) => {
                 if (e.target.files.length > 0) {
                     selectedFiles = Array.from(e.target.files).map(f => {
-                        f.fileId = Math.random().toString(36).substr(2, 9);
+                        f.fileId = globalThis.crypto.randomUUID().replaceAll('-', '').substring(0, 9);
                         return f;
                     });
                     showSelectedFile();
@@ -1967,7 +1967,7 @@
                 dropZone.classList.remove('dragover');
                 if (e.dataTransfer.files.length > 0) {
                     selectedFiles = Array.from(e.dataTransfer.files).map(f => {
-                        f.fileId = Math.random().toString(36).substr(2, 9);
+                        f.fileId = globalThis.crypto.randomUUID().replaceAll('-', '').substring(0, 9);
                         return f;
                     });
                     showSelectedFile();
@@ -2358,7 +2358,7 @@
             const blob = new Blob(receivedChunks, { type: expectedFileInfo.mime || 'application/octet-stream' });
 
             const fileEntry = {
-                id: Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+                id: Date.now() + '_' + globalThis.crypto.randomUUID().replaceAll('-', '').substring(0, 9),
                 originalId: expectedFileInfo.id,
                 name: expectedFileInfo.name,
                 size: expectedFileInfo.size,

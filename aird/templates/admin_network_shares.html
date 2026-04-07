@@ -173,7 +173,7 @@
         var host = '{{ server_host }}';
 
         function cmdLine(label, cmd) {
-            var id = 'cmd-' + Math.random().toString(36).slice(2, 10);
+            var id = 'cmd-' + globalThis.crypto.randomUUID().replaceAll('-', '').slice(0, 8);
             return '<div style="margin-bottom:6px;"><strong>' + label + '</strong>' +
                    '<button type="button" class="copy-btn" data-cmd-id="' + id + '">Copy</button>' +
                    '<span class="copied-msg" id="msg-' + id + '" style="display:none;">Copied!</span></div>' +

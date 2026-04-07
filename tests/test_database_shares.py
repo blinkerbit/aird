@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 
-from aird.database.shares import (
+from aird.db.shares import (
     insert_share,
     delete_share,
     update_share,
@@ -32,7 +32,8 @@ def db_conn():
             share_type TEXT DEFAULT 'static',
             allow_list TEXT,
             avoid_list TEXT,
-            expiry_date TEXT
+            expiry_date TEXT,
+            modify_users TEXT
         )
     """)
     conn.commit()
@@ -111,21 +112,21 @@ class TestDeleteShare:
         """Test deleting an existing share"""
         insert_share(db_conn, "share123", "2024-01-01T00:00:00", ["/path/file.txt"])
 
-        with patch("aird.database.shares.remove_share_cloud_dir"):
+        with patch("aird.db.shares.remove_share_cloud_dir"):
             delete_share(db_conn, "share123")
 
         assert get_share_by_id(db_conn, "share123") is None
 
     def test_delete_nonexistent_share(self, db_conn):
         """Test deleting a non-existent share doesn't raise error"""
-        with patch("aird.database.shares.remove_share_cloud_dir"):
+        with patch("aird.db.shares.remove_share_cloud_dir"):
             delete_share(db_conn, "nonexistent")  # Should not raise
 
     def test_delete_share_calls_remove_cloud_dir(self, db_conn):
         """Test that delete_share calls remove_share_cloud_dir"""
         insert_share(db_conn, "share123", "2024-01-01T00:00:00", ["/path/file.txt"])
 
-        with patch("aird.database.shares.remove_share_cloud_dir") as mock_remove:
+        with patch("aird.db.shares.remove_share_cloud_dir") as mock_remove:
             delete_share(db_conn, "share123")
             mock_remove.assert_called_once_with("share123")
 
@@ -432,7 +433,8 @@ class TestSharesWithDifferentSchemas:
                 id TEXT PRIMARY KEY,
                 created TEXT NOT NULL,
                 paths TEXT NOT NULL,
-                allowed_users TEXT
+                allowed_users TEXT,
+                modify_users TEXT
             )
         """)
         conn.execute(

@@ -3,7 +3,7 @@ import hashlib
 import secrets
 
 # Import from the OTHER module this time
-from aird.database.users import hash_password, verify_password, ARGON2_AVAILABLE
+from aird.db.users import hash_password, verify_password, ARGON2_AVAILABLE
 
 
 def test_argon2_hashing_users_module():
@@ -22,7 +22,7 @@ def test_argon2_hashing_users_module():
 
 def test_scrypt_fallback_users_module():
     """Test Scrypt fallback when Argon2 is not available (users module)"""
-    with patch("aird.database.users.ARGON2_AVAILABLE", False):
+    with patch("aird.db.users.ARGON2_AVAILABLE", False):
         password = "secure_password"
         hashed = hash_password(password)
         assert hashed.startswith("scrypt:")

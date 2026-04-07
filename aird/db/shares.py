@@ -14,6 +14,7 @@ from aird.sql_identifiers import (
     format_shares_select_sql,
     format_update_by_id_sql,
 )
+from aird.core.file_operations import remove_share_cloud_dir
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,7 @@ def delete_share(conn: sqlite3.Connection, sid: str) -> None:
     try:
         with conn:
             conn.execute("DELETE FROM shares WHERE id = ?", (sid,))
+        remove_share_cloud_dir(sid)
     except Exception:
         logger.debug("delete_share failed for %s", sid, exc_info=True)
 

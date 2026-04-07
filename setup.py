@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="aird",
-    version="0.4.16",
+    version="0.4.17",
     packages=find_packages(),
     package_data={"aird": ["templates/*.html"]},
     entry_points={

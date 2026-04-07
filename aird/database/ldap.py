@@ -14,7 +14,7 @@ except ImportError:
     ALL = None
     LDAP3_AVAILABLE = False
 
-from aird.database.users import create_user, get_all_users, delete_user
+from aird.db.users import create_user, get_all_users, delete_user
 from aird.sql_identifiers import format_update_by_id_sql
 
 

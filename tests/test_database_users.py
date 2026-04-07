@@ -5,7 +5,7 @@ import sqlite3
 from datetime import datetime
 from unittest.mock import MagicMock
 
-from aird.database.users import (
+from aird.db.users import (
     hash_password,
     verify_password,
     create_user,

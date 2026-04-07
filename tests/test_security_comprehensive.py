@@ -25,7 +25,7 @@ from aird.core.security import (
     validate_password,
     join_path,
 )
-from aird.database.users import (
+from aird.db.users import (
     hash_password,
     verify_password,
     create_user,
@@ -198,8 +198,8 @@ class TestPasswordHashing:
         assert verify_password("wrong_password", h) is False
 
     def test_scrypt_fallback(self):
-        with patch("aird.database.users.ARGON2_AVAILABLE", False), patch(
-            "aird.database.users.PH", None
+        with patch("aird.db.users.ARGON2_AVAILABLE", False), patch(
+            "aird.db.users.PH", None
         ):
             h = hash_password("test_scrypt_pass")
             assert h.startswith("scrypt:")
@@ -580,11 +580,8 @@ class TestUserDatabaseSecurity:
         create_user(db, "hashcheck", "Str0ng!Pass#1")
         user = authenticate_user(db, "hashcheck", "Str0ng!Pass#1")
         assert user is not None
-        # hash should be present (for internal use) but must not be plaintext
-        assert user["password_hash"] != "Str0ng!Pass#1"
-        assert user["password_hash"].startswith("$argon2") or user[
-            "password_hash"
-        ].startswith("scrypt:")
+        # hash should NOT be present in auth result for security
+        assert "password_hash" not in user
 
     def test_update_password(self, db):
         user = create_user(db, "pwchange", "OldP@ss123!!")
