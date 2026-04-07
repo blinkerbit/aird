@@ -63,6 +63,7 @@ Aird provides a comprehensive file management solution with real-time streaming,
 - **Authentication Support** - Token-based and LDAP authentication for secure API access
 
 ### ⚙️ **Administration & Security**
+- **Multi-User Environments** - Enable isolated private home folders and storage quota limits per user.
 - **Feature Flags** - Granular control over file operations (upload, delete, rename, edit, download, share)
 - **User Management** - Database-based user authentication with role-based access control
 - **LDAP Integration** - Enterprise-grade authentication with Active Directory support
@@ -98,6 +99,9 @@ aird --token your-secure-token
 
 # Enable LDAP authentication
 aird --ldap --ldap-server ldap://your-server.com
+
+# Enable Multi-User Mode with isolated home folders
+aird --multi-user
 ```
 
 ### Docker Usage
