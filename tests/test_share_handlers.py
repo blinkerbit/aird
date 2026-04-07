@@ -695,12 +695,14 @@ class TestShareHandlerPathHelpers:
         assert err == (400, {"error": "x"})
 
     def test_collect_paths_from_request_skips_outside_root(self):
-        with patch("aird.handlers.share_handlers.ROOT_DIR", "/root"), patch(
+        with patch(
             "os.path.abspath", side_effect=lambda p: p
         ), patch(
             "aird.handlers.share_handlers.is_within_root", return_value=False
         ):
-            valid, dyn, remote = _collect_paths_from_request(["inside"], "static")
+            valid, dyn, remote = _collect_paths_from_request(
+                ["inside"], "static", root_dir="/root"
+            )
         assert valid == []
         assert dyn == []
         assert remote == []

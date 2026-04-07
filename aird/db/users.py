@@ -23,6 +23,8 @@ try:
 except ImportError:
     LDAP3_AVAILABLE = False
 
+from aird.sql_identifiers import format_update_by_id_sql
+
 logger = logging.getLogger(__name__)
 
 
@@ -195,23 +197,30 @@ def update_user(conn: sqlite3.Connection, user_id: int, **kwargs) -> bool:
         updates = []
         values = []
 
+        field_sql = {
+            "username": "username = ?",
+            "password_hash": "password_hash = ?",
+            "role": "role = ?",
+            "last_login": "last_login = ?",
+        }
         for field, value in kwargs.items():
             if field == "password" and value:
                 updates.append("password_hash = ?")
                 values.append(hash_password(value))
-            elif field in valid_fields:
-                if field == "active":
-                    updates.append("active = ?")
-                    values.append(1 if value else 0)
-                else:
-                    updates.append(f"{field} = ?")
-                    values.append(value)
+            elif field not in valid_fields:
+                continue
+            elif field == "active":
+                updates.append("active = ?")
+                values.append(1 if value else 0)
+            elif field in field_sql:
+                updates.append(field_sql[field])
+                values.append(value)
 
         if not updates:
             return False
 
         values.append(user_id)
-        query = f"UPDATE users SET {', '.join(updates)} WHERE id = ?"
+        query = format_update_by_id_sql("users", ", ".join(updates))
 
         with conn:
             conn.execute(query, values)

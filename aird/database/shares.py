@@ -8,6 +8,7 @@ import traceback
 from datetime import datetime
 
 from aird.core.file_operations import remove_share_cloud_dir
+from aird.sql_identifiers import format_update_by_id_sql
 
 PRAGMA_TABLE_INFO = "PRAGMA table_info(shares)"
 
@@ -100,22 +101,26 @@ def delete_share(conn: sqlite3.Connection, sid: str) -> None:
         # Also remove cloud files directory if exists
         remove_share_cloud_dir(sid)
     except Exception:
-        pass
+        logging.debug("delete_share failed for %s", sid, exc_info=True)
 
 
 def _build_legacy_updates(kwargs: dict):
     """Return (updates list, values list) for allowed_users/paths from kwargs."""
     updates = []
     values = []
-    valid_fields = ["allowed_users", "paths"]
+    field_sql = {
+        "allowed_users": "allowed_users = ?",
+        "paths": "paths = ?",
+    }
     for field, value in kwargs.items():
-        if field in valid_fields:
-            updates.append(f"{field} = ?")
-            values.append(
-                json.dumps(value)
-                if field in ("allowed_users", "paths") and value is not None
-                else value
-            )
+        if field not in field_sql:
+            continue
+        updates.append(field_sql[field])
+        values.append(
+            json.dumps(value)
+            if field in ("allowed_users", "paths") and value is not None
+            else value
+        )
     return (updates, values)
 
 
@@ -180,7 +185,8 @@ def update_share(
         values.append(sid)
         with conn:
             cursor = conn.execute(
-                f"UPDATE shares SET {', '.join(updates)} WHERE id = ?", values
+                format_update_by_id_sql("shares", ", ".join(updates)),
+                values,
             )
             logging.debug("Update executed, rows affected: %s", cursor.rowcount)
         return True

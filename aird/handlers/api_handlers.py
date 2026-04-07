@@ -26,6 +26,7 @@ from aird.handlers.base_handler import (
     ManagedWebSocketMixin,
     authenticate_handler,
     get_username_string_for_db,
+    get_user_root,
     require_db,
 )
 
@@ -43,7 +44,6 @@ from aird.core.security import (
 )
 from aird.core.filter_expression import FilterExpression
 from aird.config import (
-    ROOT_DIR,
     MAX_READABLE_FILE_SIZE,
 )
 from aird.core.mmap_handler import MMapFileHandler
@@ -111,8 +111,9 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
         if not self.register_connection():
             return
 
-        self.file_path = os.path.abspath(os.path.join(ROOT_DIR, unquote(path)))
-        if not is_within_root(self.file_path, ROOT_DIR) or not os.path.isfile(
+        user_root = get_user_root(self)
+        self.file_path = os.path.abspath(os.path.join(user_root, unquote(path)))
+        if not is_within_root(self.file_path, user_root) or not os.path.isfile(
             self.file_path
         ):
             self.close(code=1003, reason="File not found")
@@ -169,8 +170,9 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
                 json.dumps({"type": "error", "message": "file_path is required"})
             )
             return
-        abs_path = os.path.abspath(os.path.join(ROOT_DIR, rel_path))
-        if not is_within_root(abs_path, ROOT_DIR):
+        user_root = get_user_root(self)
+        abs_path = os.path.abspath(os.path.join(user_root, rel_path))
+        if not is_within_root(abs_path, user_root):
             self.write_message(
                 json.dumps({"type": "error", "message": "Forbidden path"})
             )
@@ -319,8 +321,9 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
 class FileListAPIHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self, path):
-        abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
-        if not is_within_root(abspath, ROOT_DIR):
+        user_root = get_user_root(self)
+        abspath = os.path.abspath(os.path.join(user_root, path))
+        if not is_within_root(abspath, user_root):
             self.set_status(403)
             self.write("Access denied")
             return
@@ -695,7 +698,7 @@ class SuperSearchWebSocketHandler(
 
             # Normalize pattern to use forward slashes for matching
             normalized_pattern = pattern.replace("\\", "/")
-            root_path = pathlib.Path(ROOT_DIR).resolve()
+            root_path = pathlib.Path(get_user_root(self)).resolve()
             result = await self._run_search_walk(
                 root_path, normalized_pattern, search_text, search_mode
             )

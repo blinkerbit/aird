@@ -21,6 +21,7 @@ DB_CONN = None
 DB_PATH = None
 CLOUD_MANAGER = CloudManager()
 CLOUD_SHARE_FOLDER = ".aird_cloud"
+MULTI_USER = False
 
 # Default feature flags (can be overridden by config.json or database)
 FEATURE_FLAGS = {

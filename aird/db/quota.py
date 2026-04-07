@@ -1,6 +1,9 @@
 """User quota database operations."""
 
+import logging
 import sqlite3
+
+logger = logging.getLogger(__name__)
 
 
 def get_user_quota(conn: sqlite3.Connection, username: str) -> dict:
@@ -15,7 +18,7 @@ def get_user_quota(conn: sqlite3.Connection, username: str) -> dict:
         if row:
             return {"quota_bytes": row[0], "used_bytes": row[1] or 0}
     except Exception:
-        pass
+        logger.debug("get_user_quota failed for %s", username, exc_info=True)
     return {"quota_bytes": None, "used_bytes": 0}
 
 
@@ -30,7 +33,7 @@ def update_user_used_bytes(conn: sqlite3.Connection, username: str, delta: int) 
                 (delta, username),
             )
     except Exception:
-        pass
+        logger.debug("update_user_used_bytes failed for %s", username, exc_info=True)
 
 
 def set_user_quota(conn: sqlite3.Connection, username: str, quota_bytes) -> None:
@@ -44,4 +47,4 @@ def set_user_quota(conn: sqlite3.Connection, username: str, quota_bytes) -> None
                 (quota_bytes, username),
             )
     except Exception:
-        pass
+        logger.debug("set_user_quota failed for %s", username, exc_info=True)

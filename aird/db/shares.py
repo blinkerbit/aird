@@ -8,6 +8,12 @@ import traceback
 from datetime import datetime
 
 from aird.db.schema import PRAGMA_TABLE_INFO
+from aird.sql_identifiers import (
+    format_select_columns,
+    format_shares_select_by_id_sql,
+    format_shares_select_sql,
+    format_update_by_id_sql,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +26,7 @@ _SHARE_OPTIONAL_COLS = [
     "avoid_list",
     "expiry_date",
 ]
+_SHARE_SELECT_COLS_ALLOWED = frozenset(_SHARE_BASE_COLS + _SHARE_OPTIONAL_COLS)
 
 
 def insert_share(
@@ -64,7 +71,7 @@ def delete_share(conn: sqlite3.Connection, sid: str) -> None:
         with conn:
             conn.execute("DELETE FROM shares WHERE id = ?", (sid,))
     except Exception:
-        pass
+        logger.debug("delete_share failed for %s", sid, exc_info=True)
 
 
 def _get_token_field_updates(
@@ -86,10 +93,15 @@ def _get_token_field_updates(
 
 def _get_kwargs_field_updates(kwargs: dict) -> tuple[list, list]:
     """Return (SET clauses, values) for legacy allowed_users/paths kwargs."""
+    field_sql = {
+        "allowed_users": "allowed_users = ?",
+        "modify_users": "modify_users = ?",
+        "paths": "paths = ?",
+    }
     updates, values = [], []
     for field, value in kwargs.items():
-        if field in ("allowed_users", "modify_users", "paths"):
-            updates.append(f"{field} = ?")
+        if field in field_sql:
+            updates.append(field_sql[field])
             values.append(json.dumps(value) if value is not None else value)
     return updates, values
 
@@ -139,7 +151,7 @@ def update_share(
             return False
 
         values.append(sid)
-        query = f"UPDATE shares SET {', '.join(updates)} WHERE id = ?"
+        query = format_update_by_id_sql("shares", ", ".join(updates))
 
         with conn:
             cursor = conn.execute(query, values)
@@ -229,9 +241,8 @@ def get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict | None:
         available = [row[1] for row in cursor.fetchall()]
         logging.debug(f"Table columns: {available}")
         col_names = _get_share_col_names(available)
-        cursor = conn.execute(
-            f"SELECT {', '.join(col_names)} FROM shares WHERE id = ?", (sid,)
-        )
+        cols = format_select_columns(col_names, _SHARE_SELECT_COLS_ALLOWED)
+        cursor = conn.execute(format_shares_select_by_id_sql(cols), (sid,))
         row = cursor.fetchone()
         if row:
             result = _row_to_share_dict(row, col_names)
@@ -239,7 +250,7 @@ def get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict | None:
             return result
         logging.debug(f"No share found for sid='{sid}'")
         return None
-    except Exception as e:  # NOSONAR
+    except Exception as e:
         logging.error(f"Error getting share {sid}: {e}")
         logging.debug(f"Traceback: {traceback.format_exc()}")
         return None
@@ -251,7 +262,8 @@ def get_all_shares(conn: sqlite3.Connection) -> dict:
         cursor = conn.execute(PRAGMA_TABLE_INFO)
         available = [row[1] for row in cursor.fetchall()]
         col_names = _get_share_col_names(available)
-        cursor = conn.execute(f"SELECT {', '.join(col_names)} FROM shares")
+        cols = format_select_columns(col_names, _SHARE_SELECT_COLS_ALLOWED)
+        cursor = conn.execute(format_shares_select_sql(cols))
         return {row[0]: _row_to_share_dict(row, col_names) for row in cursor}
     except Exception as e:
         print(f"Error getting all shares: {e}")
@@ -264,7 +276,8 @@ def get_shares_for_path(conn: sqlite3.Connection, file_path: str) -> list:
         cursor = conn.execute(PRAGMA_TABLE_INFO)
         available = [row[1] for row in cursor.fetchall()]
         col_names = _get_share_col_names(available)
-        cursor = conn.execute(f"SELECT {', '.join(col_names)} FROM shares")
+        cols = format_select_columns(col_names, _SHARE_SELECT_COLS_ALLOWED)
+        cursor = conn.execute(format_shares_select_sql(cols))
         matching = []
         for row in cursor:
             share = _row_to_share_dict(row, col_names)

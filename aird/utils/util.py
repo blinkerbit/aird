@@ -1,3 +1,4 @@
+import logging
 import os
 import json
 import sqlite3
@@ -19,6 +20,7 @@ from aird.constants.media import (
     EXTENSION_ICONS,
 )
 from aird.db import load_feature_flags, DB_CONN, load_websocket_config
+from aird.sql_identifiers import format_select_columns, format_shares_select_sql
 from aird.core.filter_expression import FilterExpression  # noqa: F401
 from aird.core.file_operations import (  # noqa: F401
     get_all_files_recursive,
@@ -42,7 +44,7 @@ def _parse_json_field(json_str, default):
         return default
     try:
         return json.loads(json_str)
-    except Exception:
+    except (ValueError, TypeError):
         return default
 
 
@@ -54,6 +56,9 @@ _SHARE_LOAD_OPTIONAL_COLS = [
     "avoid_list",
     "expiry_date",
 ]
+_SHARE_LOAD_COLS_ALLOWED = frozenset(
+    ["id", "created", "paths", *_SHARE_LOAD_OPTIONAL_COLS]
+)
 
 
 def _load_share_col_names(conn: sqlite3.Connection) -> list:
@@ -84,7 +89,8 @@ def _load_shares(conn: sqlite3.Connection) -> dict:
     loaded: dict = {}
     try:
         col_names = _load_share_col_names(conn)
-        rows = conn.execute(f"SELECT {', '.join(col_names)} FROM shares").fetchall()
+        cols = format_select_columns(col_names, _SHARE_LOAD_COLS_ALLOWED)
+        rows = conn.execute(format_shares_select_sql(cols)).fetchall()
         for row in rows:
             d = dict(zip(col_names, row))
             loaded[d["id"]] = _share_row_to_dict(row, col_names)
@@ -231,7 +237,9 @@ class WebSocketConnectionManager:
                     if hasattr(conn, "close"):
                         conn.close(code=1000, reason="Idle timeout")
                 except Exception:
-                    pass
+                    logging.getLogger(__name__).debug(
+                        "WebSocket close failed during idle cleanup", exc_info=True
+                    )
                 self.remove_connection(conn)
 
     def get_stats(self) -> dict:
@@ -362,7 +370,9 @@ def get_current_feature_flags() -> dict:
                 _feature_flags_cache_ts = now
                 return merged.copy()
         except Exception:
-            pass
+            logging.getLogger(__name__).debug(
+                "load_feature_flags failed; using in-memory flags", exc_info=True
+            )
 
     _feature_flags_cache = current
     _feature_flags_cache_ts = now
@@ -382,7 +392,9 @@ def get_current_websocket_config() -> dict:
                 for k, v in persisted.items():
                     current[k] = int(v)
         except Exception:
-            pass
+            logging.getLogger(__name__).debug(
+                "load_websocket_config failed; using defaults", exc_info=True
+            )
     return current
 
 

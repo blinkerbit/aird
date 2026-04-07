@@ -15,7 +15,7 @@ try:
 
     _SMB_AVAILABLE = True
 except Exception:
-    pass
+    logger.debug("pysmbserver not available", exc_info=True)
 
 try:
     from wsgidav.wsgidav_app import WsgiDAVApp
@@ -23,7 +23,7 @@ try:
 
     _WEBDAV_AVAILABLE = True
 except Exception:
-    pass
+    logger.debug("wsgidav/cheroot not available", exc_info=True)
 
 
 _DEFAULT_BIND_ADDRESS = "127.0.0.1"

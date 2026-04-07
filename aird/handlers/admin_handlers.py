@@ -233,7 +233,7 @@ class AdminHandler(BaseHandler):
                     )
                     constants_module.UPLOAD_ALLOWED_EXTENSIONS = selected_extensions
         except Exception:
-            pass
+            logging.debug("admin config save failed", exc_info=True)
 
         FeatureFlagSocketHandler.send_updates()
         self.redirect(URL_ADMIN)

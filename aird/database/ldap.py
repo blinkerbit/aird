@@ -1,5 +1,6 @@
 """LDAP configuration and synchronization functions."""
 
+import logging
 import sqlite3
 from datetime import datetime
 
@@ -14,6 +15,7 @@ except ImportError:
     LDAP3_AVAILABLE = False
 
 from aird.database.users import create_user, get_all_users, delete_user
+from aird.sql_identifiers import format_update_by_id_sql
 
 
 def create_ldap_config(
@@ -118,20 +120,28 @@ def update_ldap_config(conn: sqlite3.Connection, config_id: int, **kwargs) -> bo
         updates = []
         values = []
 
+        text_field_sql = {
+            "name": "name = ?",
+            "server": "server = ?",
+            "ldap_base_dn": "ldap_base_dn = ?",
+            "ldap_member_attributes": "ldap_member_attributes = ?",
+            "user_template": "user_template = ?",
+        }
         for field, value in kwargs.items():
-            if field in valid_fields:
-                if field == "active":
-                    updates.append("active = ?")
-                    values.append(1 if value else 0)
-                else:
-                    updates.append(f"{field} = ?")
-                    values.append(value)
+            if field not in valid_fields:
+                continue
+            if field == "active":
+                updates.append("active = ?")
+                values.append(1 if value else 0)
+            elif field in text_field_sql:
+                updates.append(text_field_sql[field])
+                values.append(value)
 
         if not updates:
             return False
 
         values.append(config_id)
-        query = f"UPDATE ldap_configs SET {', '.join(updates)} WHERE id = ?"
+        query = format_update_by_id_sql("ldap_configs", ", ".join(updates))
 
         with conn:
             conn.execute(query, values)
@@ -179,7 +189,7 @@ def log_ldap_sync(
                 ),
             )
     except Exception:
-        pass  # Don't fail the sync if logging fails
+        logging.debug("LDAP sync log insert failed", exc_info=True)
 
 
 def get_ldap_sync_logs(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:

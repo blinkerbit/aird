@@ -1,5 +1,6 @@
 """File operation utilities for scanning, filtering, and cloud file management."""
 
+import logging
 import os
 import re
 import shutil
@@ -7,6 +8,8 @@ import fnmatch
 from aird.constants import ROOT_DIR, CLOUD_SHARE_FOLDER, CLOUD_MANAGER
 from aird.core.security import is_within_root
 from aird.cloud import CloudProviderError
+
+logger = logging.getLogger(__name__)
 
 
 def get_all_files_recursive(root_path: str, base_path: str = "") -> list:
@@ -118,7 +121,7 @@ def cleanup_share_cloud_dir_if_empty(share_id: str) -> None:
         if os.path.isdir(share_dir) and not os.listdir(share_dir):
             shutil.rmtree(share_dir, ignore_errors=True)
     except Exception:
-        pass
+        logger.debug("cleanup_share_cloud_dir_if_empty failed", exc_info=True)
 
 
 def remove_share_cloud_dir(share_id: str) -> None:

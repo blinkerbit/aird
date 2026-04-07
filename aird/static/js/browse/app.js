@@ -91,6 +91,12 @@
       });
     }
 
+    /** True if keyboard events should be ignored (typing in a field). */
+    function isInputKeyTarget(target) {
+      const tag = (target.tagName || '').toLowerCase();
+      return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
+    }
+
     // File upload functionality
     const uploadZone = document.getElementById("uploadZone");
     const fileInput = document.getElementById("fileInput");
@@ -112,10 +118,10 @@
       uploadZone.classList.remove("dragover");
       // Try to detect folders via webkitGetAsEntry
       const items = e.dataTransfer.items;
-      if (items && items.length > 0 && typeof items[0].webkitGetAsEntry === 'function') {
+      if (items?.length > 0 && typeof items[0].webkitGetAsEntry === 'function') {
         const entries = [];
-        for (let i = 0; i < items.length; i++) {
-          const entry = items[i].webkitGetAsEntry();
+        for (const item of items) {
+          const entry = item.webkitGetAsEntry();
           if (entry) entries.push(entry);
         }
         const hasDir = entries.some(function(ent) { return ent.isDirectory; });
@@ -504,7 +510,7 @@
     async function newFolder() {
       const currentPath = document.getElementById('currentPath')?.value ?? '';
       const name = await showDialog('Enter folder name:', 'New folder', { prompt: true, showCancel: true });
-      if (!name || !name.trim()) return;
+      if (!name?.trim()) return;
       const formData = new URLSearchParams();
       formData.append('parent', currentPath);
       formData.append('name', name.trim());
@@ -727,7 +733,7 @@
         const data = await res.json();
         if (data.error) { showDialog(data.error, 'Error'); modal.classList.remove('show'); return; }
         const shares = data.shares || {};
-        selectEl.innerHTML = Object.keys(shares).length ? Object.entries(shares).map(([id, s]) => '<option value="' + id + '">' + id + (s.paths && s.paths.length ? ' (' + s.paths.length + ' path(s))' : '') + '</option>').join('') : '<option value="">No shares</option>';
+        selectEl.innerHTML = Object.keys(shares).length ? Object.entries(shares).map(([id, s]) => '<option value="' + id + '">' + id + (s.paths?.length ? ' (' + s.paths.length + ' path(s))' : '') + '</option>').join('') : '<option value="">No shares</option>';
       } catch (e) {
         console.warn('Failed to load shares:', e);
         selectEl.innerHTML = '<option value="">Error loading shares</option>';
@@ -842,6 +848,24 @@
     });
 
     // Share popup functions
+    function formatShareAccessLabel(share) {
+      const users = share.allowed_users;
+      if (!users) return 'Public Access';
+      const n = users.length;
+      let pluralSuffix = 's';
+      if (n === 1) pluralSuffix = '';
+      return 'Restricted (' + n + ' user' + pluralSuffix + ')';
+    }
+
+    function formatShareAllowedUsersHtml(share) {
+      const users = share.allowed_users;
+      if (!users) return '';
+      const tags = users.map(function (u) {
+        return '<span class="user-tag">' + u + '</span>';
+      }).join('');
+      return '<div class="share-users"><div class="share-users-title">Allowed Users:</div>' + tags + '</div>';
+    }
+
     async function showShareDetails(filePath) {
       const popup = document.getElementById('sharePopup');
       const content = document.getElementById('sharePopupContent');
@@ -868,29 +892,26 @@
         document.querySelector('.popup-title').textContent = `Share Details - ${filePath.split('/').pop()}`;
 
         // Render share details
-        content.innerHTML = data.shares.map(share => {
+        const origin = location.origin;
+        content.innerHTML = data.shares.map(function (share) {
           const accessClass = share.allowed_users ? 'restricted' : 'public';
-          const accessLabel = share.allowed_users
-            ? `Restricted (${share.allowed_users.length} user${share.allowed_users.length === 1 ? '' : 's'})`
-            : 'Public Access';
-          const usersHtml = share.allowed_users
-            ? `<div class="share-users"><div class="share-users-title">Allowed Users:</div>${share.allowed_users.map(u => `<span class="user-tag">${u}</span>`).join('')}</div>`
-            : '';
-          return `
-            <div class="share-item">
-              <div class="share-id">${share.id}</div>
-              <div class="share-url">
-                <a href="${share.url}" target="_blank">${location.origin}${share.url}</a>
-              </div>
-              <div class="share-access ${accessClass}">${accessLabel}</div>
-              ${usersHtml}
-              <div class="share-actions">
-                <button class="btn" data-action="copyToClipboard" data-text="${location.origin}${share.url}">Copy Link</button>
-                <button class="btn" data-action="openShare" data-url="${share.url}">Open Share</button>
-                <button class="btn" data-action="revokeShare" data-id="${share.id}">Revoke</button>
-              </div>
-            </div>
-          `;
+          const accessLabel = formatShareAccessLabel(share);
+          const usersHtml = formatShareAllowedUsersHtml(share);
+          return (
+            '<div class="share-item">' +
+            '<div class="share-id">' + share.id + '</div>' +
+            '<div class="share-url">' +
+            '<a href="' + share.url + '" target="_blank">' + origin + share.url + '</a>' +
+            '</div>' +
+            '<div class="share-access ' + accessClass + '">' + accessLabel + '</div>' +
+            usersHtml +
+            '<div class="share-actions">' +
+            '<button class="btn" data-action="copyToClipboard" data-text="' + origin + share.url + '">Copy Link</button>' +
+            '<button class="btn" data-action="openShare" data-url="' + share.url + '">Open Share</button>' +
+            '<button class="btn" data-action="revokeShare" data-id="' + share.id + '">Revoke</button>' +
+            '</div>' +
+            '</div>'
+          );
         }).join('');
 
       } catch (error) {
@@ -1134,11 +1155,6 @@
         if (shortcutsOverlay) { shortcutsOverlay.remove(); shortcutsOverlay = null; }
       }
 
-      function _isInputTarget(target) {
-        const tag = (target.tagName || '').toLowerCase();
-        return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
-      }
-
       function _handleEscapeKey() {
         if (shortcutsOverlay) { hideShortcutsHelp(); return; }
         const fpOverlay = document.getElementById('folderPickerOverlay');
@@ -1152,39 +1168,65 @@
         updateBulkToolbar();
       }
 
-      document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') { _handleEscapeKey(); return; }
-        if (_isInputTarget(e.target)) return;
+      function handleShortcutQuestionMark(e) {
+        if (e.key !== '?') return false;
+        e.preventDefault();
+        showShortcutsHelp();
+        return true;
+      }
 
-        if (e.key === '?') { e.preventDefault(); showShortcutsHelp(); return; }
-        if (e.key === '/') {
-          e.preventDefault();
-          const searchInput = document.querySelector('input[type="text"][placeholder*="earch"], input[type="search"]');
-          if (searchInput) searchInput.focus();
+      function handleShortcutSlash(e) {
+        if (e.key !== '/') return false;
+        e.preventDefault();
+        const searchInput = document.querySelector('input[type="text"][placeholder*="earch"], input[type="search"]');
+        if (searchInput) searchInput.focus();
+        return true;
+      }
+
+      function handleShortcutNewFolder(e) {
+        if (e.key !== 'n' || e.ctrlKey || e.metaKey) return false;
+        e.preventDefault();
+        document.getElementById('newFolderBtn')?.click();
+        return true;
+      }
+
+      function handleShortcutUpload(e) {
+        if (e.key !== 'u' || e.ctrlKey || e.metaKey) return false;
+        e.preventDefault();
+        document.getElementById('fileInput')?.click();
+        return true;
+      }
+
+      function handleShortcutSelectAll(e) {
+        if (e.key !== 'a' || (!e.ctrlKey && !e.metaKey)) return false;
+        e.preventDefault();
+        const selectAllCb = document.getElementById('selectAllCheckbox');
+        if (selectAllCb) {
+          selectAllCb.checked = true;
+          selectAllCb.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        return true;
+      }
+
+      function handleShortcutDelete(e) {
+        if (e.key !== 'Delete') return false;
+        const checked = document.querySelectorAll('.row-checkbox:checked');
+        if (checked.length > 0) document.getElementById('bulkDeleteBtn')?.click();
+        return true;
+      }
+
+      document.addEventListener('keydown', function browseGlobalKeydown(e) {
+        if (e.key === 'Escape') {
+          _handleEscapeKey();
           return;
         }
-        if (e.key === 'n' && !e.ctrlKey && !e.metaKey) {
-          e.preventDefault();
-          document.getElementById('newFolderBtn')?.click();
-          return;
-        }
-        if (e.key === 'u' && !e.ctrlKey && !e.metaKey) {
-          e.preventDefault();
-          document.getElementById('fileInput')?.click();
-          return;
-        }
-        if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
-          e.preventDefault();
-          const selectAllCb = document.getElementById('selectAllCheckbox');
-          if (selectAllCb) { selectAllCb.checked = true; selectAllCb.dispatchEvent(new Event('change', {bubbles:true})); }
-          return;
-        }
-        if (e.key === 'Delete') {
-          const checked = document.querySelectorAll('.row-checkbox:checked');
-          if (checked.length > 0) {
-            document.getElementById('bulkDeleteBtn')?.click();
-          }
-        }
+        if (isInputKeyTarget(e.target)) return;
+        if (handleShortcutQuestionMark(e)) return;
+        if (handleShortcutSlash(e)) return;
+        if (handleShortcutNewFolder(e)) return;
+        if (handleShortcutUpload(e)) return;
+        if (handleShortcutSelectAll(e)) return;
+        handleShortcutDelete(e);
       });
     });
 

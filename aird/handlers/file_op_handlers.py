@@ -11,7 +11,7 @@ import asyncio
 import aiofiles
 from typing import Protocol, Callable, Any
 
-from aird.handlers.base_handler import BaseHandler, require_modify_access
+from aird.handlers.base_handler import BaseHandler, require_modify_access, get_user_root
 from aird.utils.util import sanitize_cloud_filename, is_feature_enabled
 from aird.core.security import (  # noqa: F401
     is_within_root,
@@ -76,7 +76,6 @@ from aird.constants.file_ops import (
     MISSING_UPLOAD_FILENAME_HEADER,
 )
 from aird.config import (
-    ROOT_DIR,
     ALLOWED_UPLOAD_EXTENSIONS,
     CLOUD_MANAGER,
 )
@@ -92,12 +91,12 @@ FILES_URL_STRING = "/files/"
 # ---------------------------------------------------------------------------
 
 
-def _validate_upload_destination(upload_dir, filename):
+def _validate_upload_destination(upload_dir, filename, root_dir):
     """Validate upload dir and filename. Return (final_path_abs, None) or (None, (status, message))."""
     safe_dir_abs = os.path.realpath(
-        os.path.join(ROOT_DIR, (upload_dir or "").strip().strip("/"))
+        os.path.join(root_dir, (upload_dir or "").strip().strip("/"))
     )
-    if not is_within_root(safe_dir_abs, ROOT_DIR):
+    if not is_within_root(safe_dir_abs, root_dir):
         return (None, (403, ACCESS_DENIED_PATH))
     safe_filename = os.path.basename(filename)
     if not safe_filename or safe_filename in (".", ".."):
@@ -326,12 +325,12 @@ class UploadHandler(BaseHandler):
             try:
                 await self._writer_task
             except Exception:
-                pass
+                logging.debug("upload writer task await failed", exc_info=True)
         if self._aiofile is not None:
             try:
                 await self._aiofile.close()
             except Exception:
-                pass
+                logging.debug("upload aiofile close failed", exc_info=True)
 
     def _check_quota_exceeded(self) -> bool:
         """Return True and set error response if storage quota would be exceeded."""
@@ -376,7 +375,7 @@ class UploadHandler(BaseHandler):
             return
 
         final_path_abs, upload_err = _validate_upload_destination(
-            self.upload_dir, self.filename
+            self.upload_dir, self.filename, get_user_root(self)
         )
         if upload_err is not None:
             self.set_status(upload_err[0])
@@ -418,9 +417,9 @@ class UploadHandler(BaseHandler):
                     try:
                         os.remove(self._temp_path)
                     except Exception:
-                        pass
+                        logging.debug("temp upload file remove failed", exc_info=True)
         except Exception:
-            pass
+            logging.debug("upload on_finish cleanup failed", exc_info=True)
 
 
 class CreateFolderHandler(BaseHandler):
@@ -439,12 +438,13 @@ class CreateFolderHandler(BaseHandler):
             self.set_status(400)
             self.write(FOLDER_NAME_TOO_LONG)
             return
+        user_root = get_user_root(self)
         parent_abs = (
-            os.path.abspath(os.path.join(ROOT_DIR, parent)) if parent else ROOT_DIR
+            os.path.abspath(os.path.join(user_root, parent)) if parent else user_root
         )
         new_dir_abs = os.path.abspath(os.path.join(parent_abs, name))
-        if not is_within_root(parent_abs, ROOT_DIR) or not is_within_root(
-            new_dir_abs, ROOT_DIR
+        if not is_within_root(parent_abs, user_root) or not is_within_root(
+            new_dir_abs, user_root
         ):
             self.set_status(403)
             self.write(ACCESS_DENIED)
@@ -481,9 +481,13 @@ class CreateFolderHandler(BaseHandler):
         )
 
 
-def path_to_rel(abspath):
+def path_to_rel(abspath, root_dir=None):
     try:
-        return os.path.relpath(abspath, ROOT_DIR).replace("\\", "/")
+        if root_dir is None:
+            import aird.constants as _c
+
+            root_dir = _c.ROOT_DIR
+        return os.path.relpath(abspath, root_dir).replace("\\", "/")
     except Exception:
         return abspath
 
@@ -535,8 +539,9 @@ class DeleteHandler(BaseHandler):
     @require_modify_access()
     def post(self):
         path = self.get_argument("path", "")
-        abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
-        root = ROOT_DIR
+        user_root = get_user_root(self)
+        abspath = os.path.abspath(os.path.join(user_root, path))
+        root = user_root
         if not is_within_root(abspath, root):
             self.set_status(403)
             self.write(ACCESS_DENIED)
@@ -586,11 +591,11 @@ class RenameHandler(BaseHandler):
             self.write(FILENAME_TOO_LONG)
             return
 
-        abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
+        abspath = os.path.abspath(os.path.join(get_user_root(self), path))
         new_abspath = os.path.abspath(
-            os.path.join(ROOT_DIR, os.path.dirname(path), new_name)
+            os.path.join(get_user_root(self), os.path.dirname(path), new_name)
         )
-        root = ROOT_DIR
+        root = get_user_root(self)
         if not (is_within_root(abspath, root) and is_within_root(new_abspath, root)):
             self.set_status(403)
             self.write(ACCESS_DENIED)
@@ -635,10 +640,11 @@ class CopyHandler(BaseHandler):
             self.set_status(400)
             self.write(INVALID_REQUEST_PATH_DEST)
             return
-        src_abs = os.path.abspath(os.path.join(ROOT_DIR, path))
-        dest_abs = os.path.abspath(os.path.join(ROOT_DIR, dest))
-        if not is_within_root(src_abs, ROOT_DIR) or not is_within_root(
-            dest_abs, ROOT_DIR
+        user_root = get_user_root(self)
+        src_abs = os.path.abspath(os.path.join(user_root, path))
+        dest_abs = os.path.abspath(os.path.join(user_root, dest))
+        if not is_within_root(src_abs, user_root) or not is_within_root(
+            dest_abs, user_root
         ):
             self.set_status(403)
             self.write(ACCESS_DENIED_SHORT)
@@ -691,10 +697,11 @@ class MoveHandler(BaseHandler):
             self.set_status(400)
             self.write(INVALID_REQUEST_PATH_DEST)
             return
-        src_abs = os.path.abspath(os.path.join(ROOT_DIR, path))
-        dest_abs = os.path.abspath(os.path.join(ROOT_DIR, dest))
-        if not is_within_root(src_abs, ROOT_DIR) or not is_within_root(
-            dest_abs, ROOT_DIR
+        user_root = get_user_root(self)
+        src_abs = os.path.abspath(os.path.join(user_root, path))
+        dest_abs = os.path.abspath(os.path.join(user_root, dest))
+        if not is_within_root(src_abs, user_root) or not is_within_root(
+            dest_abs, user_root
         ):
             self.set_status(403)
             self.write(ACCESS_DENIED_SHORT)
@@ -750,7 +757,7 @@ class BulkHandler(BaseHandler):
             self.set_status(400)
             self.write(PATHS_REQUIRED)
             return
-        root = ROOT_DIR
+        root = get_user_root(self)
         results = {"ok": True, "results": []}
         remote_ip = self.request.remote_ip
         for path in paths:
@@ -760,7 +767,7 @@ class BulkHandler(BaseHandler):
                 )
                 continue
             path = path.strip().strip("/")
-            abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
+            abspath = os.path.abspath(os.path.join(root, path))
             if not is_within_root(abspath, root):
                 results["results"].append(
                     {"path": path, "ok": False, "error": ACCESS_DENIED_LOWER}
@@ -816,9 +823,10 @@ class EditHandler(BaseHandler):
             path = self.get_argument("path", "")
             content = self.get_argument("content", "")
 
-        abspath = (pathlib.Path(ROOT_DIR) / ("." + path)).absolute().resolve()
+        user_root = get_user_root(self)
+        abspath = (pathlib.Path(user_root) / ("." + path)).absolute().resolve()
 
-        if not is_within_root(str(abspath), ROOT_DIR):
+        if not is_within_root(str(abspath), user_root):
             logging.warning(f"EditHandler: access denied for path {path}.")
             self.set_status(403)
             self.write(ACCESS_DENIED_WITH_PERIOD)

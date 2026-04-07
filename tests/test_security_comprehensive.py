@@ -639,62 +639,54 @@ class TestUploadValidation:
     """Test file upload security checks."""
 
     def test_path_traversal_in_upload_dir(self, temp_root):
-        with patch("aird.handlers.file_op_handlers.ROOT_DIR", temp_root):
-            result, err = _validate_upload_destination("../../etc", "passwd")
-            assert err is not None
-            assert err[0] == 403
+        result, err = _validate_upload_destination("../../etc", "passwd", temp_root)
+        assert err is not None
+        assert err[0] == 403
 
     def test_path_traversal_in_filename(self, temp_root):
-        with patch("aird.handlers.file_op_handlers.ROOT_DIR", temp_root):
-            result, err = _validate_upload_destination("", "../../../etc/passwd")
-            # os.path.basename strips the traversal, so it becomes "passwd"
-            # which may fail on extension check instead
-            if err is not None:
-                assert err[0] in (400, 403, 415)
+        result, err = _validate_upload_destination("", "../../../etc/passwd", temp_root)
+        # os.path.basename strips the traversal, so it becomes "passwd"
+        # which may fail on extension check instead
+        if err is not None:
+            assert err[0] in (400, 403, 415)
 
     def test_dot_dot_filename_rejected(self, temp_root):
-        with patch("aird.handlers.file_op_handlers.ROOT_DIR", temp_root):
-            _, err = _validate_upload_destination("", "..")
-            assert err is not None
-            assert err[0] == 400
+        _, err = _validate_upload_destination("", "..", temp_root)
+        assert err is not None
+        assert err[0] == 400
 
     def test_dot_filename_rejected(self, temp_root):
-        with patch("aird.handlers.file_op_handlers.ROOT_DIR", temp_root):
-            _, err = _validate_upload_destination("", ".")
-            assert err is not None
-            assert err[0] == 400
+        _, err = _validate_upload_destination("", ".", temp_root)
+        assert err is not None
+        assert err[0] == 400
 
     def test_empty_filename_rejected(self, temp_root):
-        with patch("aird.handlers.file_op_handlers.ROOT_DIR", temp_root):
-            _, err = _validate_upload_destination("", "")
-            assert err is not None
+        _, err = _validate_upload_destination("", "", temp_root)
+        assert err is not None
 
     def test_disallowed_extension(self, temp_root):
-        with patch("aird.handlers.file_op_handlers.ROOT_DIR", temp_root), patch(
+        with patch(
             "aird.constants.UPLOAD_CONFIG", {"allow_all_file_types": 0}
         ):
-            _, err = _validate_upload_destination("", "malware.exe")
+            _, err = _validate_upload_destination("", "malware.exe", temp_root)
             assert err is not None
             assert err[0] == 415
 
     def test_allowed_extension(self, temp_root):
-        with patch("aird.handlers.file_op_handlers.ROOT_DIR", temp_root):
-            result, err = _validate_upload_destination("", "notes.txt")
-            assert err is None
-            assert result is not None
+        result, err = _validate_upload_destination("", "notes.txt", temp_root)
+        assert err is None
+        assert result is not None
 
     def test_filename_too_long(self, temp_root):
-        with patch("aird.handlers.file_op_handlers.ROOT_DIR", temp_root):
-            long_name = "a" * 256 + ".txt"
-            _, err = _validate_upload_destination("", long_name)
-            assert err is not None
-            assert err[0] == 400
+        long_name = "a" * 256 + ".txt"
+        _, err = _validate_upload_destination("", long_name, temp_root)
+        assert err is not None
+        assert err[0] == 400
 
     def test_filename_max_length_ok(self, temp_root):
-        with patch("aird.handlers.file_op_handlers.ROOT_DIR", temp_root):
-            name = "a" * 251 + ".txt"  # 255 total
-            result, err = _validate_upload_destination("", name)
-            assert err is None
+        name = "a" * 251 + ".txt"  # 255 total
+        result, err = _validate_upload_destination("", name, temp_root)
+        assert err is None
 
 
 # ===================================================================

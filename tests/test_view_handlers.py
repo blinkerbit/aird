@@ -243,7 +243,7 @@ class TestMainHandler:
         ), patch(
             "os.path.getsize", return_value=100
         ), patch(
-            "aird.handlers.view_handlers.ROOT_DIR", "/root"
+            "aird.handlers.view_handlers.get_user_root", return_value="/root"
         ), patch.object(
             handler, "render"
         ) as mock_render:
@@ -285,7 +285,7 @@ class TestMainHandler:
         ), patch(
             "aiofiles.open", new_callable=MagicMock
         ) as mock_open, patch(
-            "aird.handlers.view_handlers.ROOT_DIR", "/root"
+            "aird.handlers.view_handlers.get_user_root", return_value="/root"
         ), patch.object(
             handler, "write"
         ) as mock_write, patch.object(

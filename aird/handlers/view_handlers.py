@@ -10,7 +10,11 @@ import mmap
 import concurrent.futures
 import logging
 
-from aird.handlers.base_handler import BaseHandler, get_username_string_for_db
+from aird.handlers.base_handler import (
+    BaseHandler,
+    get_username_string_for_db,
+    get_user_root,
+)
 from aird.utils.util import (
     get_files_in_directory,
     get_file_icon,
@@ -26,7 +30,6 @@ from aird.core.security import (  # noqa: F401
 )
 from aird.core.mmap_handler import MMapFileHandler
 from aird.config import (
-    ROOT_DIR,
     MAX_READABLE_FILE_SIZE,
     CLOUD_MANAGER,
 )
@@ -36,6 +39,7 @@ from aird.handlers.constants import (
 )
 from aird.constants import CHUNK_SIZE
 from aird.cloud import CloudManager, CloudProviderError
+from aird.constants.file_ops import PROVIDER_NOT_CONFIGURED
 
 # ---------------------------------------------------------------------------
 # Helpers for MainHandler.serve_file (reduce cognitive complexity)
@@ -95,7 +99,7 @@ async def _serve_raw_mode(handler, abspath):
             if guessed_type:
                 mime_type = guessed_type
         except Exception:
-            pass
+            logging.debug("mimetypes.guess_type failed for raw serve", exc_info=True)
         handler.set_header("Content-Type", mime_type)
         handler.set_header("Content-Disposition", "inline")
         file_size = os.path.getsize(abspath)
@@ -117,9 +121,9 @@ async def _serve_raw_mode(handler, abspath):
         handler.write("Error serving file")
 
 
-def _serve_pdf_preview(handler, abspath, filename):
+def _serve_pdf_preview(handler, abspath, filename, user_root):
     """Render PDF preview page."""
-    rel_path = os.path.relpath(abspath, ROOT_DIR).replace("\\", "/")
+    rel_path = os.path.relpath(abspath, user_root).replace("\\", "/")
     handler.render(
         "pdf_preview.html",
         filename=filename,
@@ -129,14 +133,14 @@ def _serve_pdf_preview(handler, abspath, filename):
     )
 
 
-def _serve_file_view(handler, abspath, filename):
+def _serve_file_view(handler, abspath, filename, user_root):
     """Render file view template (client-side fetch)."""
     file_size = 0
     try:
         file_size = os.path.getsize(abspath)
     except OSError:
         pass
-    rel_path = os.path.relpath(abspath, ROOT_DIR).replace("\\", "/")
+    rel_path = os.path.relpath(abspath, user_root).replace("\\", "/")
     handler.render(
         "file.html",
         filename=filename,
@@ -159,9 +163,10 @@ class RootHandler(BaseHandler):
 class MainHandler(BaseHandler):
     @tornado.web.authenticated
     async def get(self, path):
-        abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
+        user_root = get_user_root(self)
+        abspath = os.path.abspath(os.path.join(user_root, path))
 
-        if not is_within_root(abspath, ROOT_DIR):
+        if not is_within_root(abspath, user_root):
             self.set_status(403)
             self.write(
                 "Access denied: You don't have permission to perform this action"
@@ -203,7 +208,7 @@ class MainHandler(BaseHandler):
                 user_favorites=user_favorites,
             )
         elif os.path.isfile(abspath):
-            await self.serve_file(self, abspath)
+            await self.serve_file(self, abspath, user_root)
         else:
             self.set_status(404)
             self.write(
@@ -211,7 +216,9 @@ class MainHandler(BaseHandler):
             )
 
     @staticmethod
-    async def serve_file(handler, abspath):
+    async def serve_file(handler, abspath, user_root=None):
+        if user_root is None:
+            user_root = get_user_root(handler)
         filename = os.path.basename(abspath)
         if handler.get_argument("download", None):
             await _serve_download(handler, abspath, filename)
@@ -221,9 +228,9 @@ class MainHandler(BaseHandler):
             await _serve_raw_mode(handler, abspath)
             return
         if filename.lower().endswith(".pdf"):
-            _serve_pdf_preview(handler, abspath, filename)
+            _serve_pdf_preview(handler, abspath, filename, user_root)
             return
-        _serve_file_view(handler, abspath, filename)
+        _serve_file_view(handler, abspath, filename, user_root)
 
 
 class EditViewHandler(BaseHandler):
@@ -236,8 +243,9 @@ class EditViewHandler(BaseHandler):
         ):
             return
 
-        abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
-        if not is_within_root(abspath, ROOT_DIR):
+        user_root = get_user_root(self)
+        abspath = os.path.abspath(os.path.join(user_root, path))
+        if not is_within_root(abspath, user_root):
             self.set_status(403)
             self.write(
                 "Access denied: You don't have permission to perform this action"
@@ -313,7 +321,7 @@ class CloudProviderMixin:
         provider = manager.get(provider_name)
         if not provider:
             self.set_status(404)
-            self.write({"error": "Provider not configured"})
+            self.write({"error": PROVIDER_NOT_CONFIGURED})
             return None
         return provider
 

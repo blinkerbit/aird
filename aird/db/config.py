@@ -1,6 +1,9 @@
 """Configuration database operations (feature flags, upload, websocket, extensions)."""
 
+import logging
 import sqlite3
+
+logger = logging.getLogger(__name__)
 
 
 def load_feature_flags(conn: sqlite3.Connection) -> dict:
@@ -20,7 +23,7 @@ def save_feature_flags(conn: sqlite3.Connection, flags: dict) -> None:
                     (k, 1 if v else 0),
                 )
     except Exception:
-        pass
+        logger.debug("save_feature_flags failed", exc_info=True)
 
 
 def load_upload_config(conn: sqlite3.Connection) -> dict:
@@ -48,7 +51,7 @@ def save_upload_config(conn: sqlite3.Connection, config: dict) -> None:
                     (key, int(value)),
                 )
     except Exception:
-        pass
+        logger.debug("save_upload_config failed", exc_info=True)
 
 
 def load_allowed_extensions(conn: sqlite3.Connection) -> set:
@@ -77,7 +80,7 @@ def save_allowed_extensions(conn: sqlite3.Connection, extensions: set) -> None:
                         "INSERT INTO upload_allowed_extensions (ext) VALUES (?)", (ext,)
                     )
     except Exception:
-        pass
+        logger.debug("save_allowed_extensions failed", exc_info=True)
 
 
 def load_websocket_config(conn: sqlite3.Connection) -> dict:
@@ -105,4 +108,4 @@ def save_websocket_config(conn: sqlite3.Connection, config: dict) -> None:
                     (key, int(value)),
                 )
     except Exception:
-        pass
+        logger.debug("save_websocket_config failed", exc_info=True)

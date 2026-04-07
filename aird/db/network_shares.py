@@ -4,6 +4,8 @@ import logging
 import sqlite3
 from datetime import datetime
 
+from aird.sql_identifiers import format_update_by_id_sql
+
 logger = logging.getLogger(__name__)
 
 
@@ -106,16 +108,27 @@ def update_network_share(conn: sqlite3.Connection, share_id: str, **kwargs) -> b
         "folder_path",
         "protocol",
     }
+    field_sql = {
+        "enabled": "enabled = ?",
+        "read_only": "read_only = ?",
+        "password": "password = ?",
+        "port": "port = ?",
+        "username": "username = ?",
+        "name": "name = ?",
+        "folder_path": "folder_path = ?",
+        "protocol": "protocol = ?",
+    }
     updates = []
     values = []
     for field, value in kwargs.items():
         if field not in valid_fields:
             continue
+        if field not in field_sql:
+            continue
+        updates.append(field_sql[field])
         if field in ("enabled", "read_only"):
-            updates.append(f"{field} = ?")
             values.append(1 if value else 0)
         else:
-            updates.append(f"{field} = ?")
             values.append(value)
     if not updates:
         return False
@@ -123,7 +136,8 @@ def update_network_share(conn: sqlite3.Connection, share_id: str, **kwargs) -> b
     try:
         with conn:
             conn.execute(
-                f"UPDATE network_shares SET {', '.join(updates)} WHERE id = ?", values
+                format_update_by_id_sql("network_shares", ", ".join(updates)),
+                values,
             )
         return True
     except Exception as e:

@@ -2,6 +2,7 @@ import base64
 import functools
 import json
 import logging
+import os
 import secrets
 from typing import Any, Callable, Protocol
 
@@ -9,12 +10,55 @@ import tornado.web
 import tornado.websocket
 
 import aird.config as config_module
+import aird.constants as constants_module
+from aird.core.security import sanitize_username_for_folder
 from aird.db import get_user_by_username
+from aird.handlers.constants import DB_NOT_AVAILABLE_MSG
 from aird.utils.util import is_feature_enabled
 
 logger = logging.getLogger(__name__)
-DISPLAY_ADMIN_TOKEN = "Admin (Token)"
-DISPLAY_ACCESS_TOKEN = "Access (Token)"
+DISPLAY_ADMIN_TOKEN = "Admin (Token)"  # nosec B105
+DISPLAY_ACCESS_TOKEN = "Access (Token)"  # nosec B105
+
+# Usernames that represent anonymous/token-based access (no personal folder)
+_TOKEN_ONLY_USERNAMES = {"token_user", "admin_token"}
+
+
+def get_user_root(handler) -> str:
+    """Return the effective root directory for the current user.
+
+    In single-user mode (default), this simply returns ``constants.ROOT_DIR``.
+    In multi-user mode, each authenticated user gets a private subdirectory
+    under ``ROOT_DIR`` named after their sanitised username.
+
+    Falls back to ``ROOT_DIR`` when:
+    - Multi-user mode is disabled
+    - The user is not authenticated
+    - The user is a token-only user (no personal folder)
+    - The username cannot be sanitised to a safe folder name
+    """
+    if not constants_module.MULTI_USER:
+        return constants_module.ROOT_DIR
+
+    user = handler.get_current_user() if hasattr(handler, "get_current_user") else None
+    if not user:
+        return constants_module.ROOT_DIR
+
+    username = user.get("username", "") if isinstance(user, dict) else str(user)
+    if not username or username in _TOKEN_ONLY_USERNAMES:
+        return constants_module.ROOT_DIR
+
+    safe_name = sanitize_username_for_folder(username)
+    if not safe_name:
+        logger.warning(
+            "Cannot create safe folder for username %r, using global root", username
+        )
+        return constants_module.ROOT_DIR
+
+    user_root = os.path.join(constants_module.ROOT_DIR, safe_name)
+    os.makedirs(user_root, exist_ok=True)
+    return user_root
+
 
 # ---------------------------------------------------------------------------
 # Decorators for common guard patterns
@@ -32,7 +76,7 @@ def require_db(method):
     def wrapper(self, *args, **kwargs):
         if self.db_conn is None:
             self.set_status(500)
-            self.write({"error": "Database connection not available"})
+            self.write({"error": DB_NOT_AVAILABLE_MSG})
             return
         return method(self, *args, **kwargs)
 
@@ -440,7 +484,7 @@ class BaseHandler(tornado.web.RequestHandler):
         self.set_status(status)
         self.write({"error": message})
 
-    def require_db_connection(self, message: str = "Database connection not available"):
+    def require_db_connection(self, message: str = DB_NOT_AVAILABLE_MSG):
         db_conn = self.db_conn
         if db_conn is None:
             self.write_json_error(500, message)
@@ -566,7 +610,7 @@ class BaseHandler(tornado.web.RequestHandler):
         try:
             super().on_finish()
         except Exception:
-            pass
+            logger.debug("BaseHandler.on_finish cleanup failed", exc_info=True)
 
     def is_admin_user(self) -> bool:
         """Return True if the current user is an admin.
@@ -578,14 +622,14 @@ class BaseHandler(tornado.web.RequestHandler):
                     if self.get_current_admin():
                         return True
                 except Exception:
-                    pass
+                    logger.debug("get_current_admin check failed", exc_info=True)
             user = self.get_current_user()
             if isinstance(user, dict) and user.get("role") == "admin":
                 return True
             # Note: Removed dangerous string check that matched any username containing 'admin'
             # Admin status should only be determined by role, not by username substring
         except Exception:
-            pass
+            logger.debug("is_admin_user role check failed", exc_info=True)
         try:
             return bool(self.get_secure_cookie("admin"))
         except Exception:

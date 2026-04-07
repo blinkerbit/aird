@@ -5,6 +5,89 @@ import re
 from urllib.parse import urlparse
 from aird.constants import FEATURE_FLAGS
 
+# Windows reserved device names that cannot be used as folder names
+_WINDOWS_RESERVED = frozenset(
+    {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        "COM1",
+        "COM2",
+        "COM3",
+        "COM4",
+        "COM5",
+        "COM6",
+        "COM7",
+        "COM8",
+        "COM9",
+        "LPT1",
+        "LPT2",
+        "LPT3",
+        "LPT4",
+        "LPT5",
+        "LPT6",
+        "LPT7",
+        "LPT8",
+        "LPT9",
+    }
+)
+
+# Only allow alphanumeric, underscore, hyphen, dot, @ in folder names
+_SAFE_FOLDER_CHAR_RE = re.compile(r"[^a-zA-Z0-9_\-\.@]")
+
+
+def sanitize_username_for_folder(username: str) -> str | None:
+    r"""Convert a username to a safe folder name.
+
+    Returns None if the username cannot be sanitised into a valid folder name.
+
+    Security measures:
+    - Replaces any character not in [a-zA-Z0-9_\-.@] with underscore
+    - Blocks path traversal sequences (.., /, \\)
+    - Rejects Windows reserved device names (CON, PRN, etc.)
+    - Strips leading dots and spaces (hidden dirs / whitespace tricks)
+    - Enforces 1-64 character length on the sanitised result
+    - Validates the result is a single path component (no separators)
+    """
+    if not isinstance(username, str) or not username.strip():
+        return None
+
+    # Strip whitespace
+    name = username.strip()
+
+    # Replace unsafe characters with underscore
+    name = _SAFE_FOLDER_CHAR_RE.sub("_", name)
+
+    # Strip leading dots and underscores to prevent hidden directories
+    name = name.lstrip("._")
+
+    # Strip trailing dots and spaces (Windows ignores them, creating ambiguity)
+    name = name.rstrip(". ")
+
+    # Block empty result
+    if not name:
+        return None
+
+    # Enforce length limit
+    if len(name) > 20:
+        name = name[:20]
+
+    # Block Windows reserved names (case-insensitive, with or without extension)
+    stem = name.split(".")[0].upper()
+    if stem in _WINDOWS_RESERVED:
+        return None
+
+    # Final safety: must be a single path component
+    if os.sep in name or "/" in name or "\\" in name:
+        return None
+
+    # Block remaining traversal patterns
+    if name in (".", "..") or ".." in name:
+        return None
+
+    return name
+
 
 def join_path(*parts):
     """Join path parts and normalize separators."""

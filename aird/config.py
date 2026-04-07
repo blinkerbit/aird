@@ -39,6 +39,7 @@ ADMIN_USERS = []
 FEATURE_FLAGS = {}
 CLOUD_MANAGER = CloudManager()
 WEBSOCKET_CONFIG = {}
+MULTI_USER = False
 DB_CONN = None
 MAX_FILE_SIZE = _MAX_FILE_SIZE
 MAX_READABLE_FILE_SIZE = _MAX_READABLE_FILE_SIZE
@@ -183,6 +184,7 @@ def init_config():
     global CONFIG_FILE, ROOT_DIR, PORT, ACCESS_TOKEN, ADMIN_TOKEN, LDAP_ENABLED, LDAP_SERVER
     global LDAP_BASE_DN, LDAP_USER_TEMPLATE, LDAP_FILTER_TEMPLATE, LDAP_ATTRIBUTES
     global LDAP_ATTRIBUTE_MAP, HOSTNAME, SSL_CERT, SSL_KEY, ADMIN_USERS, FEATURE_FLAGS, CLOUD_MANAGER
+    global MULTI_USER
 
     parser = argparse.ArgumentParser(description="Run Aird")
     parser.add_argument("--config", help="Path to JSON config file")
@@ -208,6 +210,12 @@ def init_config():
     parser.add_argument("--hostname", help="Host name for the server")
     parser.add_argument("--ssl-cert", help="Path to SSL certificate file")
     parser.add_argument("--ssl-key", help="Path to SSL private key file")
+    parser.add_argument(
+        "-mu",
+        "--multi-user",
+        action="store_true",
+        help="Enable multi-user mode (each user gets a private home directory)",
+    )
     args = parser.parse_args()
 
     config = {}
@@ -250,6 +258,8 @@ def init_config():
     LDAP_ATTRIBUTE_MAP = ldap_settings["attribute_map"]
 
     _apply_feature_flags_from_config(config)
+
+    MULTI_USER = args.multi_user or config.get("multi_user", False)
 
     SSL_CERT = args.ssl_cert or config.get("ssl_cert")
     SSL_KEY = args.ssl_key or config.get("ssl_key")

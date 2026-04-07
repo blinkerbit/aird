@@ -10,13 +10,14 @@ INVALID_SHARE_LINK = (
 )
 FS_DISABLED_MSG = "File sharing is disabled"
 APPLICATION_OCTET_STREAM = "application/octet-stream"
+CLOUD_DOWNLOAD_FAILED = "Failed to download cloud files"
 
 
 FILES_BASE_URL = "/files/"
 LOGIN_HTML = "login.html"
 TOO_MANY_LOGIN_ATTEMPTS_MSG = "Too many login attempts. Please try again later."
 INVALID_INPUT_LENGTH_MSG = "Invalid input length."
-INVALID_USERNAME_OR_PASSWORD_MSG = "Invalid username or password."
+INVALID_USERNAME_OR_PASSWORD_MSG = "Invalid username or password."  # nosec B105
 ADMIN_URL = "/admin"
 ADMIN_LOGIN_TEMPLATE = "admin_login.html"
 PROFILE_TEMPLATE = "profile.html"

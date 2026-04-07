@@ -31,13 +31,13 @@ INVALID_USER_ID = "Invalid request: Please provide a valid user ID"
 INVALID_USER_ID_SHORT = "Invalid user ID"
 INVALID_CONFIG_ID = "Invalid request: Please provide a valid configuration ID"
 DATABASE_NOT_AVAILABLE = "Database not available"
-USERNAME_PASSWORD_REQUIRED = "Username and password are required"
+USERNAME_PASSWORD_REQUIRED = "Username and password are required"  # nosec B105
 USERNAME_LENGTH = "Username must be between 3 and 50 characters"
 INVALID_ROLE = "Invalid role"
 USERNAME_FORMAT = "Username can only contain letters, numbers, underscores, and hyphens"
 FAILED_CREATE_USER = "Failed to create user"
 USERNAME_REQUIRED = "Username is required"
-LDAP_PASSWORD_CHANGE = (
+LDAP_PASSWORD_CHANGE = (  # nosec B105
     "Password changes are not allowed for LDAP users. "
     "Please change the password through the LDAP directory."
 )

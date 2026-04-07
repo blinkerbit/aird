@@ -20,6 +20,7 @@ from aird.handlers.constants import (
     PROFILE_TEMPLATE,
     FILES_BASE_URL,
     LOGIN_HTML,
+    DB_NOT_AVAILABLE_MSG,
 )
 import time
 
@@ -627,7 +628,7 @@ class ProfileHandler(BaseHandler):
             _profile_render(
                 self,
                 self.current_user,
-                error="Database connection not available",
+                error=DB_NOT_AVAILABLE_MSG,
                 ldap_enabled=ldap_enabled,
             )
             return

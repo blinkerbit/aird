@@ -496,6 +496,15 @@ def main():
     constants.ACCESS_TOKEN = config.ACCESS_TOKEN
     constants.ADMIN_TOKEN = config.ADMIN_TOKEN
     constants.ROOT_DIR = os.path.abspath(config.ROOT_DIR)
+    constants.MULTI_USER = config.MULTI_USER
+
+    if constants.MULTI_USER:
+        logger.info(
+            "Multi-user mode ENABLED — each user gets a private home folder under %s",
+            constants.ROOT_DIR,
+        )
+    else:
+        logger.info("Single-user mode — all users share root: %s", constants.ROOT_DIR)
 
     cookie_secret = secrets.token_urlsafe(64)
     settings = {

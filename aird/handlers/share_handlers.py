@@ -9,6 +9,7 @@ import logging
 from aird.handlers.base_handler import (
     BaseHandler,
     XSRFTokenMixin,
+    get_user_root,
     require_db,
     require_modify_access,
 )
@@ -30,6 +31,7 @@ from aird.handlers.constants import (
     FS_DISABLED_MSG,
     ACCESS_TOKEN_INVALID_OR_EXPIRED,
     INVALID_SHARE_LINK,
+    CLOUD_DOWNLOAD_FAILED,
 )
 from aird.config import ROOT_DIR
 from aird.cloud import CloudProviderError
@@ -72,8 +74,12 @@ def _add_local_path(ap, path_str, share_type, valid_paths, dynamic_folders):
                 logging.error("Error scanning directory %s: %s", path_str, e)
 
 
-def _collect_paths_from_request(paths, share_type):
+def _collect_paths_from_request(paths, share_type, root_dir=None):
     """Parse paths from request; return (valid_paths, dynamic_folders, remote_items)."""
+    if root_dir is None:
+        from aird.config import ROOT_DIR
+
+        root_dir = ROOT_DIR
     valid_paths = []
     dynamic_folders = []
     remote_items = []
@@ -85,8 +91,8 @@ def _collect_paths_from_request(paths, share_type):
             continue
         if not path_str:
             continue
-        ap = os.path.abspath(os.path.join(ROOT_DIR, path_str))
-        if not is_within_root(ap, ROOT_DIR):
+        ap = os.path.abspath(os.path.join(root_dir, path_str))
+        if not is_within_root(ap, root_dir):
             continue
         _add_local_path(ap, path_str, share_type, valid_paths, dynamic_folders)
     return valid_paths, dynamic_folders, remote_items
@@ -119,7 +125,7 @@ def _resolve_final_paths_static(valid_paths, remote_items, sid):
         except Exception:
             remove_share_cloud_dir(sid)
             logging.exception("Failed to download cloud files for share %s", sid)
-            return (None, (500, {"error": "Failed to download cloud files"}))
+            return (None, (500, {"error": CLOUD_DOWNLOAD_FAILED}))
     if not combined_paths:
         remove_share_cloud_dir(sid)
         return (None, (400, {"error": "No valid files or directories"}))
@@ -132,9 +138,9 @@ def _resolve_final_paths_static(valid_paths, remote_items, sid):
     return (final_paths, None)
 
 
-def _resolve_share_paths(paths, share_type, sid):
+def _resolve_share_paths(paths, share_type, sid, root_dir=None):
     valid_paths, dynamic_folders, remote_items = _collect_paths_from_request(
-        paths, share_type
+        paths, share_type, root_dir
     )
     if share_type == "dynamic":
         return _resolve_final_paths_dynamic(dynamic_folders, remote_items, sid)
@@ -255,7 +261,9 @@ def _get_share_file_list(share):
                     all_files = get_all_files_recursive(full_path, folder_path)
                     dynamic_files.extend(all_files)
             except Exception:
-                continue
+                logging.debug(
+                    "Skipping dynamic share folder %r", folder_path, exc_info=True
+                )
         return filter_files_by_patterns(dynamic_files, allow_list, avoid_list)
     return filter_files_by_patterns(share["paths"], allow_list, avoid_list)
 
@@ -277,7 +285,11 @@ def _is_path_in_share(share, path):
                 ):
                     return True
             except Exception:
-                continue
+                logging.debug(
+                    "Path-in-share check skipped for folder %r",
+                    folder_path,
+                    exc_info=True,
+                )
         return False
     filtered_paths = filter_files_by_patterns(share["paths"], allow_list, avoid_list)
     return path in filtered_paths
@@ -324,7 +336,7 @@ def _parse_paths_for_update(paths, share_id, requested_share_type, current_paths
             return (None, [], [], (400, {"error": str(cloud_error)}))
         except Exception:
             logging.exception("Failed to download cloud files for share %s", share_id)
-            return (None, [], [], (500, {"error": "Failed to download cloud files"}))
+            return (None, [], [], (500, {"error": CLOUD_DOWNLOAD_FAILED}))
 
     seen_paths = set()
     deduped_paths = []
@@ -545,7 +557,9 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
             req = ShareCreateRequest.from_payload(data)
 
             sid = secrets.token_urlsafe(64)
-            final_paths, err = _resolve_share_paths(req.paths, req.share_type, sid)
+            final_paths, err = _resolve_share_paths(
+                req.paths, req.share_type, sid, root_dir=get_user_root(self)
+            )
 
             if err is not None:
                 status, body = err
@@ -830,5 +844,5 @@ class SharedFileHandler(BaseHandler):
                     ip=self.request.remote_ip,
                 )
             except Exception:
-                pass
+                logging.debug("share_download audit log failed", exc_info=True)
         await MainHandler.serve_file(self, abspath)

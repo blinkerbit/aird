@@ -456,17 +456,17 @@ class TestUploadHandlerDynamicMaxSize:
         handler._buffer = []
         handler._writing = False
 
-        large_limit = 2 * 1024 * 1024 * 1024  # 2 GB
+        large_limit = 50 * 1024 * 1024  # 50 MB
 
         with patch(
             "aird.handlers.file_op_handlers.constants_module"
         ) as mock_constants, patch("asyncio.create_task"):
             mock_constants.MAX_FILE_SIZE = large_limit
 
-            chunk = b"x" * (500 * 1024 * 1024)
+            chunk = b"x" * (20 * 1024 * 1024)
             handler.data_received(chunk)
             assert handler._too_large is False
-            assert handler._bytes_received == 500 * 1024 * 1024
+            assert handler._bytes_received == 20 * 1024 * 1024
 
     @pytest.mark.asyncio
     async def test_too_large_error_shows_configured_limit(self):
@@ -1354,17 +1354,17 @@ class TestCloudUploadHandler:
 
 class TestPathToRel:
     def test_normal_path(self):
-        with patch("aird.handlers.file_op_handlers.ROOT_DIR", "/root"):
+        with patch("aird.constants.ROOT_DIR", "/root"):
             with patch("os.path.relpath", return_value="subdir/file.txt"):
                 assert path_to_rel("/root/subdir/file.txt") == "subdir/file.txt"
 
     def test_backslash_replaced(self):
-        with patch("aird.handlers.file_op_handlers.ROOT_DIR", "C:\\root"):
+        with patch("aird.constants.ROOT_DIR", "C:\\root"):
             with patch("os.path.relpath", return_value="subdir\\file.txt"):
                 assert path_to_rel("C:\\root\\subdir\\file.txt") == "subdir/file.txt"
 
     def test_exception_returns_original(self):
-        with patch("aird.handlers.file_op_handlers.ROOT_DIR", "/root"):
+        with patch("aird.constants.ROOT_DIR", "/root"):
             with patch("os.path.relpath", side_effect=ValueError("error")):
                 assert path_to_rel("/some/path") == "/some/path"
 
