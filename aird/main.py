@@ -499,7 +499,7 @@ def main():
 
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
-    for handler in list(root_logger.handlers):
+    for handler in root_logger.handlers:
         root_logger.removeHandler(handler)
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
