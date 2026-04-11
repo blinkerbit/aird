@@ -1772,6 +1772,11 @@
       uploading: false
     };
 
+    function getXSRFToken() {
+      const match = document.cookie.match(/_xsrf=([^;]*)/);
+      return match ? decodeURIComponent(match[1]) : '';
+    }
+
     function getFileIcon(filename) {
       const ext = filename.toLowerCase().split('.').pop();
       const lowerFilename = filename.toLowerCase();
@@ -2262,8 +2267,14 @@
       uploadInput.disabled = true;
 
       try {
+        const xsrfHeaders = {};
+        const xsrf = getXSRFToken();
+        if (xsrf) {
+          xsrfHeaders['X-XSRFToken'] = xsrf;
+        }
         const response = await fetch(`/api/cloud/${cloudState.currentProvider.name}/upload`, {
           method: 'POST',
+          headers: xsrfHeaders,
           body: formData
         });
         const payload = await response.json().catch(() => ({}));
@@ -2557,12 +2568,6 @@
         if (isSelected) row.classList.add('selected');
         elements.fileTableBody.appendChild(row);
       });
-    }
-
-    // CSRF Protection: Get XSRF token from cookie
-    function getXSRFToken() {
-      const match = document.cookie.match(/_xsrf=([^;]*)/);
-      return match ? decodeURIComponent(match[1]) : '';
     }
 
     // Share management functions
