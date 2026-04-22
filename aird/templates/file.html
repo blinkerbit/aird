@@ -338,7 +338,7 @@
 
     <!-- Filter Help Section -->
     <div id="filter-help"
-        style="margin: 10px 0; padding: 8px; border: 1px solid #e0e0e0; background-color: #f8f8ff; border-radius: 4px; font-size: 11px; display: none;">
+        style="margin: 10px 0; padding: 8px; border: 1px solid var(--ds-border); background-color: var(--ds-bg-muted); border-radius: 4px; font-size: 11px; display: none;">
         <strong>🔍 Filter Syntax Examples:</strong><br>
         <code>error</code> - Simple text match<br>
         <code>error OR warning</code> - Lines containing either term<br>
@@ -351,7 +351,7 @@
         <code>\ANDROID</code> - Use backslash to escape logical operators
     </div>
 
-    <div style="margin: 10px 0; padding: 10px; border: 1px solid #ccc; background-color: #f9f9f9;">
+    <div style="margin: 10px 0; padding: 10px; border: 1px solid var(--ds-border); background-color: var(--ds-bg-muted);">
         <label for="start">Start:</label>
         <input type="text" id="start" value="{{ start_line or 1 }}" style="width: 80px; margin-right: 10px;"
             title="Press Enter to submit">
@@ -361,10 +361,10 @@
         <button id="submit-btn">Submit</button>
         <button id="show-all-btn">Fetch All Lines</button>
         {% if start_line and end_line %}
-        <span style="margin-left: 10px; color: #0066cc;">Showing lines {{ start_line }} to {{ end_line }} ; reached EOF:
+        <span style="margin-left: 10px; color: var(--ds-primary);">Showing lines {{ start_line }} to {{ end_line }} ; reached EOF:
             {{ reached_EOF }}</span>
         {% elif start_line %}
-        <span style="margin-left: 10px; color: #0066cc;">Showing entire file from line {{ start_line }} ; reached EOF:
+        <span style="margin-left: 10px; color: var(--ds-primary);">Showing entire file from line {{ start_line }} ; reached EOF:
             {{ reached_EOF }}</span>
         {% end %}
     </div>
@@ -385,7 +385,7 @@
             </thead>
             <tbody id="file-content-body">
                 <tr>
-                    <td colspan="2" style="padding: 20px; text-align: center; color: #666;">Loading file content...</td>
+                    <td colspan="2" style="padding: 20px; text-align: center; color: var(--ds-text-subtle);">Loading file content...</td>
                 </tr>
             </tbody>
             <tfoot id="streaming-indicator" style="display:none;">
@@ -490,7 +490,7 @@
 
                 tr.appendChild(tdNum);
                 tr.appendChild(tdContent);
-                if ((i - start + 1) % 2 === 0) tr.style.backgroundColor = '#f8f8f8';
+                if ((i - start + 1) % 2 === 0) tr.style.backgroundColor = 'var(--ds-bg-muted)';
 
                 fragment.appendChild(tr);
             }
@@ -616,7 +616,7 @@
                     lineNumCell.textContent = lineCount;
                     lineContentCell.innerHTML = `<pre>${line || '\u00A0'}</pre>`;
                     if (!lineNumbersVisible) lineNumCell.classList.add('hidden');
-                    if (lineCount % 2 === 0) row.style.backgroundColor = '#f8f8f8';
+                    if (lineCount % 2 === 0) row.style.backgroundColor = 'var(--ds-bg-muted)';
                     globalThis.scrollTo(0, document.body.scrollHeight);
                 } catch {
                     // Fallback: treat as raw text
@@ -630,7 +630,7 @@
                     lineNumCell.textContent = lineCount;
                     lineContentCell.innerHTML = `<pre>${line || '\u00A0'}</pre>`;
                     if (!lineNumbersVisible) lineNumCell.classList.add('hidden');
-                    if (lineCount % 2 === 0) row.style.backgroundColor = '#f8f8f8';
+                    if (lineCount % 2 === 0) row.style.backgroundColor = 'var(--ds-bg-muted)';
                     globalThis.scrollTo(0, document.body.scrollHeight);
                 }
             };

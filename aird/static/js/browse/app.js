@@ -38,10 +38,9 @@
       }
     };
 
-    /** Last path segment; avoids Array.prototype.findLast (not in older browsers). */
     function pathBasename(p) {
       const segs = String(p).split('/').filter(Boolean);
-      return segs.length ? segs[segs.length - 1] : p;
+      return segs.length ? segs.at(-1) : p;
     }
 
     // Fallback for image thumbnails that fail to load
@@ -52,7 +51,7 @@
     }, true);
 
     // Custom dialog function
-    let _dialogState = null; // { resolve, hasCancel, opener }
+    let _dialogState = null;
 
     function showDialog(message, title = 'Confirm', options = {}) {
       return new Promise((resolve) => {
@@ -71,7 +70,7 @@
         input.value = options.prompt ? (options.defaultValue || '') : '';
 
         const opener = document.activeElement;
-        modal.classList.add('show');
+        modal.showModal();
 
         if (options.prompt) {
           input.focus();
@@ -81,7 +80,7 @@
         }
 
         const close = (value) => {
-          modal.classList.remove('show');
+          modal.close();
           _dialogState = null;
           if (opener && typeof opener.focus === 'function') {
             try { opener.focus(); } catch { /* ignore */ }
@@ -106,6 +105,11 @@
         }
       });
     }
+
+    document.getElementById('customDialogModal').addEventListener('cancel', (e) => {
+      e.preventDefault();
+      if (_dialogState) _dialogState.cancel();
+    });
 
     /** True if keyboard events should be ignored (typing in a field). */
     function isInputKeyTarget(target) {
@@ -1167,14 +1171,7 @@
           const path = document.getElementById('currentPath')?.value ?? '';
           const text = '/' + (path.replace(/^\/+/, ''));
           try {
-            if (navigator.clipboard?.writeText) {
-              await navigator.clipboard.writeText(text);
-            } else {
-              const ta = document.createElement('textarea');
-              ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-              document.body.appendChild(ta); ta.select();
-              try { document.execCommand('copy'); } finally { ta.remove(); }
-            }
+            await navigator.clipboard.writeText(text);
             const original = copyPathBtn.textContent;
             copyPathBtn.classList.add('copied');
             copyPathBtn.textContent = '✓';
@@ -1249,12 +1246,7 @@
         shortcutsOverlay = document.createElement('div');
         shortcutsOverlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
         const card = document.createElement('div');
-        card.style.cssText = 'background:#fff;border:2px solid #000;border-radius:8px;padding:24px 32px;max-width:420px;width:90%;font-family:monospace;font-size:13px;';
-        if (document.documentElement.dataset.theme === 'dark') {
-          card.style.background = '#1e1e2e';
-          card.style.color = '#e0e0e0';
-          card.style.borderColor = '#444';
-        }
+        card.style.cssText = 'background:var(--ds-surface);border:2px solid var(--ds-border-strong);border-radius:8px;padding:24px 32px;max-width:420px;width:90%;font-family:monospace;font-size:13px;color:var(--ds-text);';
         card.innerHTML = '<h3 style="margin:0 0 16px 0;">Keyboard Shortcuts</h3>' +
           '<table style="width:100%;border-collapse:collapse;">' +
           '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">?</td><td>Show this help</td></tr>' +

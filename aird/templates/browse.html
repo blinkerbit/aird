@@ -783,22 +783,17 @@
       }
     }
 
-    /* Custom dialog modal styles */
+    /* Custom dialog modal styles (native <dialog>) */
     .custom-dialog-modal {
-      display: none;
-      position: fixed;
-      z-index: 2000;
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: 100%;
-      background-color: rgba(0, 0, 0, 0.5);
-      align-items: center;
-      justify-content: center;
+      border: none;
+      padding: 0;
+      background: transparent;
+      max-width: 400px;
+      width: 90%;
     }
 
-    .custom-dialog-modal.show {
-      display: flex;
+    .custom-dialog-modal::backdrop {
+      background-color: var(--ds-overlay);
     }
 
     .custom-dialog-modal-content {
@@ -806,8 +801,7 @@
       padding: 25px;
       border-radius: 8px;
       box-shadow: var(--ds-shadow-md);
-      width: 90%;
-      max-width: 400px;
+      width: 100%;
       text-align: center;
     }
 
@@ -1340,7 +1334,7 @@
               class="file-link">
               {% set _ext = file['name'].rsplit('.', 1)[-1].lower() if '.' in file['name'] else '' %}
               {% if _ext in ('jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico') %}
-              <img src="/files/{{ escape(join_path(current_path, file['name'])) }}?mode=raw" alt="" loading="lazy" style="width:24px;height:24px;object-fit:cover;vertical-align:middle;margin-right:8px;border-radius:3px;border:1px solid #ddd;" data-fallback="<span class=file-icon>{{ get_file_icon(file['name']) }}</span>">
+              <img src="/files/{{ escape(join_path(current_path, file['name'])) }}?mode=raw" alt="" loading="lazy" style="width:24px;height:24px;object-fit:cover;vertical-align:middle;margin-right:8px;border-radius:3px;border:1px solid var(--ds-border);" data-fallback="<span class=file-icon>{{ get_file_icon(file['name']) }}</span>">
               {% else %}
               <span class="file-icon">{{ get_file_icon(file["name"]) }}</span>
               {% end %}{{
@@ -1486,7 +1480,7 @@
   </div>
 
   <!-- Custom dialog modal -->
-  <div id="customDialogModal" class="custom-dialog-modal" role="dialog" aria-modal="true"
+  <dialog id="customDialogModal" class="custom-dialog-modal"
     aria-labelledby="dialogTitle" aria-describedby="dialogMessage">
     <div class="custom-dialog-modal-content">
       <h2 id="dialogTitle">Dialog</h2>
@@ -1499,7 +1493,7 @@
         <button id="dialogCancelBtn">Cancel</button>
       </div>
     </div>
-  </div>
+  </dialog>
 
   <input type="hidden" id="currentPath" value="{{ current_path or '' }}" />
   <script nonce="{{ csp_nonce }}">
