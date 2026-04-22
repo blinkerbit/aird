@@ -899,7 +899,7 @@
       background-image:
         linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0) 100%),
         var(--ds-brand-gradient-soft);
-      color: #fff;
+      color: var(--ds-text-on-accent);
       padding: 12px 20px;
       z-index: 900;
       box-shadow: 0 -18px 40px -12px rgba(30, 27, 75, 0.45),
@@ -1008,27 +1008,27 @@
 
     /* Danger — Delete: red tint, stays restrained until hover. */
     .selection-bar-actions .danger-btn {
-      border-color: rgba(248, 113, 113, 0.45);
-      color: #fecaca;
-      background: rgba(248, 113, 113, 0.10);
+      border-color: color-mix(in srgb, var(--ds-danger) 45%, transparent);
+      color: color-mix(in srgb, var(--ds-danger) 80%, var(--ds-text-on-accent));
+      background: color-mix(in srgb, var(--ds-danger) 10%, transparent);
     }
     .selection-bar-actions .danger-btn:hover {
-      background: rgba(248, 113, 113, 0.20);
-      border-color: #f87171;
-      color: #fff;
+      background: color-mix(in srgb, var(--ds-danger) 20%, transparent);
+      border-color: var(--ds-danger);
+      color: var(--ds-text-on-accent);
     }
 
     /* Primary — Create share: full brand gradient; the hero CTA. */
     .selection-bar-actions .primary-btn {
       background: var(--ds-brand-gradient);
       border-color: transparent;
-      color: #fff;
+      color: var(--ds-text-on-accent);
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
     }
     .selection-bar-actions .primary-btn:hover {
       background: var(--ds-brand-gradient-hover);
       border-color: transparent;
-      color: #fff;
+      color: var(--ds-text-on-accent);
       box-shadow: var(--ds-shadow-brand-glow);
     }
 
@@ -1041,7 +1041,7 @@
     .selection-bar-actions .clear-btn:hover {
       background: rgba(255, 255, 255, 0.08);
       border-color: rgba(255, 255, 255, 0.28);
-      color: #fff;
+      color: var(--ds-text-on-accent);
     }
 
     @media (max-width: 768px) {
