@@ -1,70 +1,150 @@
-    /* Shared app navigation header (see _app_nav_header.html) */
-    .header {
+    /* Shared app navigation header (see _app_nav_header.html).
+       Keeps legacy class names (.header, .hdr-action-btn, .theme-toggle-btn)
+       intact, but uses the design-system tokens from /static/css/app.css. */
+    .header.app-main-header {
+      position: relative;
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      border-bottom: 2px solid black;
-      padding-bottom: 15px;
-      margin-bottom: 20px;
+      justify-content: space-between;
+      gap: var(--ds-space-4);
+      flex-wrap: wrap;
+      padding: var(--ds-space-3) var(--ds-space-4);
+      margin: var(--ds-space-3) 0 var(--ds-space-5);
+      background: var(--ds-surface-elev, var(--ds-surface));
+      border: 1px solid var(--ds-border-muted);
+      border-radius: var(--ds-radius-lg);
+      box-shadow: var(--ds-shadow-xs);
+      overflow: hidden;
     }
-    .header-left {
+    /* Brand gradient accent bar along the top edge of the header. */
+    .header.app-main-header::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: var(--ds-brand-gradient-line);
+      pointer-events: none;
+    }
+    .header.app-main-header .header-left { display: flex; flex-direction: column; min-width: 0; }
+    .header.app-main-header h1 {
+      font-size: var(--ds-fs-xl);
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      margin: 0;
+      /* Gradient-filled wordmark. The solid `color` is a fallback for
+         engines lacking -webkit-text-fill-color; modern browsers paint
+         the gradient via background-clip: text. */
+      color: var(--ds-primary);
+      background: var(--ds-brand-gradient);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .app-header-actions {
       display: flex;
-      flex-direction: column;
+      align-items: center;
+      gap: var(--ds-space-2);
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }
-    .header h1 {
-      font-size: 24px;
-      font-weight: bold;
-    }
+
     .hdr-action-btn {
-      display: inline-block;
-      padding: 6px 12px;
-      border: 2px solid #000;
-      background: #fff;
-      color: #000;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 12px;
+      border: 1px solid var(--ds-border);
+      background: var(--ds-surface);
+      color: var(--ds-text);
       text-decoration: none;
-      font-size: 12px;
-      font-weight: bold;
-      font-family: "Courier New", monospace;
-      text-transform: uppercase;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+      font-family: inherit;
+      font-size: var(--ds-fs-sm);
+      font-weight: 600;
+      border-radius: var(--ds-radius-sm);
+      line-height: 1;
       transition:
-        transform 0.15s ease-out,
-        box-shadow 0.15s ease-out,
-        background 0.15s ease-out;
+        background var(--ds-duration-fast) var(--ds-ease),
+        border-color var(--ds-duration-fast) var(--ds-ease),
+        color var(--ds-duration-fast) var(--ds-ease),
+        box-shadow var(--ds-duration-fast) var(--ds-ease),
+        transform var(--ds-duration-fast) var(--ds-ease);
     }
     .hdr-action-btn:hover {
-      background: #ebebeb;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+      background: var(--ds-bg-muted);
+      border-color: var(--ds-border-strong);
+      color: var(--ds-text);
       text-decoration: none;
-      color: #000;
+      box-shadow: var(--ds-shadow-xs);
     }
-    .hdr-action-btn:active {
-      transform: translateY(1px);
-      background: #e2e2e2;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-      transition-duration: 0.08s;
-    }
+    .hdr-action-btn:active { transform: translateY(1px); }
     .hdr-action-btn:focus-visible {
-      outline: 2px solid #000;
-      outline-offset: 3px;
+      outline: none;
+      box-shadow: var(--ds-focus-ring);
     }
-    [data-theme="dark"] .header { border-color: #444; }
-    [data-theme="dark"] .hdr-action-btn {
-      background: #1e1e2e;
-      color: #e0e0e0;
-      border-color: #666;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.35);
+
+    .hdr-action-btn--admin { color: var(--ds-primary); border-color: var(--ds-primary); background: var(--ds-primary-soft); }
+    .hdr-action-btn--admin:hover { color: var(--ds-primary); border-color: var(--ds-primary); background: var(--ds-primary-soft); filter: brightness(0.97); }
+    .hdr-action-btn--logout { color: var(--ds-danger); border-color: var(--ds-border); }
+    .hdr-action-btn--logout:hover { color: var(--ds-danger); border-color: var(--ds-danger); background: var(--ds-danger-soft); }
+    .hdr-action-btn--login { background: var(--ds-accent); color: var(--ds-text-on-accent); border-color: var(--ds-accent); }
+    .hdr-action-btn--login:hover { background: var(--ds-accent-hover); border-color: var(--ds-accent-hover); color: var(--ds-text-on-accent); }
+
+    /* Inline SVG icon used inside header buttons / chips */
+    .hdr-ico {
+      width: 16px; height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      flex-shrink: 0;
     }
-    [data-theme="dark"] .hdr-action-btn:hover {
-      background: #2c2c3c;
-      border-color: #888;
-      color: #e0e0e0;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+
+    /* Shared theme toggle button (reused on any page) */
+    .theme-toggle-btn, .hdr-theme-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--ds-surface);
+      border: 1px solid var(--ds-border);
+      border-radius: var(--ds-radius-sm);
+      cursor: pointer;
+      padding: 7px 10px;
+      line-height: 1;
+      color: var(--ds-text);
+      transition:
+        background var(--ds-duration-fast) var(--ds-ease),
+        border-color var(--ds-duration-fast) var(--ds-ease);
     }
-    [data-theme="dark"] .hdr-action-btn:active {
-      background: #333;
-      box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+    .theme-toggle-btn:hover, .hdr-theme-toggle:hover {
+      background: var(--ds-bg-muted);
+      border-color: var(--ds-border-strong);
     }
-    [data-theme="dark"] .hdr-action-btn:focus-visible {
-      outline-color: #e0e0e0;
+    .theme-toggle-btn:focus-visible, .hdr-theme-toggle:focus-visible {
+      outline: none; box-shadow: var(--ds-focus-ring);
     }
+    /* Show the correct sun/moon glyph based on the current theme */
+    .hdr-theme-toggle .hdr-ico-sun { display: none; }
+    .hdr-theme-toggle .hdr-ico-moon { display: inline-block; }
+    [data-theme="dark"] .hdr-theme-toggle .hdr-ico-sun { display: inline-block; }
+    [data-theme="dark"] .hdr-theme-toggle .hdr-ico-moon { display: none; }
+
+    /* Profile/user chip in the header */
+    .app-user-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      font-size: var(--ds-fs-sm);
+      color: var(--ds-text-muted);
+      border-radius: var(--ds-radius-pill);
+      background: var(--ds-bg-muted);
+      text-decoration: none;
+      border: 1px solid var(--ds-border-muted);
+      max-width: 220px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .app-user-chip:hover { color: var(--ds-text); border-color: var(--ds-border); }

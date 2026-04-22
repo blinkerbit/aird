@@ -1,103 +1,130 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>Edit User</title>
-    <style>
-        {% include "_user_form_styles.html" %}
-        .user-info {
-            background-color: #e9ecef;
-            padding: 10px;
-            margin: 10px 0;
-            border: 1px solid #ccc;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <title>Edit user  Aird</title>
+  <style>
+    {% include "_user_form_styles.html" %}
+    .user-meta {
+      display: grid;
+      grid-template-columns: max-content 1fr;
+      gap: 4px var(--ds-space-5);
+      padding: var(--ds-space-3) var(--ds-space-4);
+      margin: 0 0 var(--ds-space-4);
+      background: var(--ds-bg-muted);
+      border: 1px solid var(--ds-border-muted);
+      border-radius: var(--ds-radius-sm);
+      font-size: var(--ds-fs-sm);
+    }
+    .user-meta dt { color: var(--ds-text-muted); margin: 0; }
+    .user-meta dd { margin: 0; }
+    .inline-check {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: var(--ds-fs-md); font-weight: 600;
+    }
+    .inline-check input { width: auto; }
+  </style>
 </head>
 <body>
-    <div class="nav-links">
-        <a href="/admin/users">← Back to Users</a>
-        <a href="/admin">Admin Panel</a>
-        <a href="/logout">Logout</a>
-        <div style="float: right; font-size: 12px; color: #666;">👤 {{ handler.get_display_username() }}</div>
+  <header class="nav-links">
+    <div class="links">
+      <a href="/admin/users">← Back to users</a>
+      <a href="/admin">Admin panel</a>
+      <a href="/logout">Logout</a>
     </div>
-    
-    <h2>Edit User</h2>
-    
+    <span class="user-chip">👤 {{ handler.get_display_username() }}</span>
+  </header>
+
+  <main class="form-page">
+    <h1>Edit user</h1>
+
     {% if error %}
-        <div class="error">{{ escape(error) }}</div>
+    <div class="error"><span aria-hidden="true">⚠</span>&nbsp;{{ escape(error) }}</div>
     {% end %}
-    
-    <div class="section">
-        <div class="user-info">
-            <strong>User ID:</strong> {{ user['id'] }}<br>
-            <strong>Created:</strong> {{ user['created_at'][:19] if user['created_at'] else 'N/A' }}<br>
-            <strong>Last Login:</strong> {{ user['last_login'][:19] if user['last_login'] else 'Never' }}
+
+    <section class="section">
+      <dl class="user-meta">
+        <dt>User ID</dt>     <dd>#{{ user['id'] }}</dd>
+        <dt>Created</dt>     <dd>{{ user['created_at'][:19] if user['created_at'] else '' }}</dd>
+        <dt>Last login</dt>  <dd>{{ user['last_login'][:19] if user['last_login'] else 'Never' }}</dd>
+      </dl>
+
+      <form method="POST">
+        {% raw xsrf_form_html() %}
+
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" required
+                 pattern="[a-zA-Z0-9_-]+"
+                 title="Letters, numbers, underscore, and hyphen only"
+                 minlength="3" maxlength="50"
+                 value="{{ escape(user['username']) }}">
+          <span class="help-text">350 characters  letters, numbers, underscore (_), hyphen (-)</span>
         </div>
-        
-        <form method="POST">
-            {% raw xsrf_form_html() %}
-            
-            <div class="form-group">
-                <label for="username">Username:</label>
-                <input type="text" id="username" name="username" required 
-                       pattern="[a-zA-Z0-9_-]+" 
-                       title="Username can only contain letters, numbers, underscores, and hyphens"
-                       minlength="3" maxlength="50"
-                       value="{{ escape(user['username']) }}">
-                <div class="help-text">3-50 characters, letters, numbers, underscore, and hyphen only</div>
-            </div>
-            
-            {% if not settings.get('ldap_server') %}
-            <div class="form-group">
-                <label for="password">New Password:</label>
-                <input type="password" id="password" name="password">
-                <div class="help-text">Leave blank to keep current password. Check admin settings for complexity requirements</div>
-            </div>
-            {% else %}
-            <div class="form-group">
-                <span class="form-label-text">Password Management:</span>
-                <div class="info">
-                    <p><strong>LDAP User:</strong> Password changes are managed through the LDAP directory.</p>
-                    <p>To change this user's password, use your organization's LDAP management tools.</p>
-                </div>
-            </div>
-            {% end %}
-            
-            <div class="form-group">
-                <label for="role">Role:</label>
-                <select id="role" name="role">
-                    <option value="user" {% if user['role'] == 'user' %}selected{% end %}>User</option>
-                    <option value="admin" {% if user['role'] == 'admin' %}selected{% end %}>Admin</option>
-                </select>
-                <div class="help-text">Admin users can manage other users and system settings</div>
-            </div>
-            
-            <div class="form-group">
-                <label for="active">Status:</label>
-                <input type="checkbox" id="active" name="active" {% if user['active'] %}checked{% end %} style="width: auto;">
-                <label for="active" style="width: auto; margin-left: 5px;">Active</label>
-                <div class="help-text">Inactive users cannot log in</div>
-            </div>
-            
-            <div class="form-group">
-                <span></span>
-                <input type="submit" value="Update User" class="btn btn-primary">
-                <a href="/admin/users" class="btn">Cancel</a>
-            </div>
-        </form>
-    </div>
-    
-    <div class="section">
-        <h3>User Roles Explained</h3>
-        <ul>
-            <li><strong>User:</strong> Can access files, upload, download, and use all file management features based on system settings</li>
-            <li><strong>Admin:</strong> All user permissions plus ability to manage other users, modify system settings, and access admin panel</li>
-        </ul>
-        
-        <h3>Status Options</h3>
-        <ul>
-            <li><strong>Active:</strong> User can log in and use the system normally</li>
-            <li><strong>Inactive:</strong> User account exists but login is disabled (useful for temporary suspensions)</li>
-        </ul>
-    </div>
+
+        {% if not settings.get('ldap_server') %}
+        <div class="form-group">
+          <label for="password">New password</label>
+          <input type="password" id="password" name="password" autocomplete="new-password"
+                 placeholder="Leave blank to keep current password">
+          <span class="help-text">Leave blank to keep the current password.</span>
+        </div>
+        {% else %}
+        <div class="form-group">
+          <label>Password management</label>
+          <div class="info">
+            <strong>LDAP user</strong>  passwords are managed through the LDAP directory.
+            Use your organization's LDAP tools to change this user's password.
+          </div>
+        </div>
+        {% end %}
+
+        <div class="form-group">
+          <label for="role">Role</label>
+          <select id="role" name="role">
+            <option value="user"  {% if user['role'] == 'user' %}selected{% end %}>User</option>
+            <option value="admin" {% if user['role'] == 'admin' %}selected{% end %}>Admin</option>
+          </select>
+          <span class="help-text">Admin users can manage other users and system settings.</span>
+        </div>
+
+        <div class="form-group">
+          <label class="inline-check" for="active">
+            <input type="checkbox" id="active" name="active" {% if user['active'] %}checked{% end %}>
+            Active account
+          </label>
+          <span class="help-text">Inactive users cannot log in.</span>
+        </div>
+
+        <div class="form-actions">
+          <a href="/admin/users" class="btn">Cancel</a>
+          <input type="submit" value="Update user" class="btn btn-primary">
+        </div>
+      </form>
+    </section>
+
+    <section class="section">
+      <h3>Reference</h3>
+      <div class="ds-grid ds-grid--cols-2">
+        <div>
+          <h4 style="margin-bottom: var(--ds-space-2); font-size: var(--ds-fs-sm); color: var(--ds-text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Roles</h4>
+          <ul style="padding-left: 18px; color: var(--ds-text-muted); font-size: var(--ds-fs-sm);">
+            <li><strong style="color: var(--ds-text);">User</strong>  file features only.</li>
+            <li><strong style="color: var(--ds-text);">Admin</strong>  user & system management.</li>
+          </ul>
+        </div>
+        <div>
+          <h4 style="margin-bottom: var(--ds-space-2); font-size: var(--ds-fs-sm); color: var(--ds-text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Status</h4>
+          <ul style="padding-left: 18px; color: var(--ds-text-muted); font-size: var(--ds-fs-sm);">
+            <li><strong style="color: var(--ds-text);">Active</strong>  can log in normally.</li>
+            <li><strong style="color: var(--ds-text);">Inactive</strong>  login disabled.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="/static/js/theme.js"></script>
 </body>
 </html>

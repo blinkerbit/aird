@@ -1,23 +1,21 @@
-import os
 from setuptools import setup, find_packages
 
-def read_requirements(filename):
-    if not os.path.exists(filename):
-        return []
-    with open(filename, encoding="utf-8") as f:
-        return [
-            line.strip() 
-            for line in f 
-            if line.strip() and not line.startswith("#") and not line.startswith("-") and not line.startswith("pip==") and not line.startswith("setuptools==") and not line.startswith("wheel==") 
-        ]
-
-install_requires = read_requirements("requirements.txt")
-test_requires = read_requirements("requirements-test.txt")
-dev_requires = read_requirements("requirements-dev.txt")
+install_requires = [
+    "tornado>=6.5.1",
+    "ldap3>=2.9.1",
+    "aiofiles>=23.0.0",
+    "argon2-cffi>=23.1.0",
+    "requests>=2.31.0",
+    "chardet>=5.0.0,<6.0.0",
+    "pysmbserver>=0.1.0; python_version>='3.13'",
+    "wsgidav>=4.3.0",
+    "cheroot>=10.0.0",
+    "pyasn1>=0.6.2",
+]
 
 setup(
     name="aird",
-    version="0.4.17",
+    version="0.4.19",
     packages=find_packages(),
     package_data={"aird": ["templates/*.html"]},
     entry_points={
@@ -26,10 +24,6 @@ setup(
         ],
     },
     install_requires=install_requires,
-    extras_require={
-        "dev": dev_requires,
-        "test": test_requires,
-    },
     author="Viswantha Srinivas P",
     author_email="psviswanatha@gmail.com",  # Please fill this in
     description="Aird - A lightweight web-based file browser, editor, and streamer with real-time capabilities",

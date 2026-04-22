@@ -35,10 +35,12 @@ class ThemeManager {
         if (save !== false) {
             this.saveTheme(theme);
         }
-        // Update all toggle button icons
+        // Icons are pure CSS (sun/moon <svg>), so only the accessible title/label
+        // needs updating here.
         document.querySelectorAll('.theme-toggle-btn').forEach((btn) => {
-            btn.textContent = theme === 'dark' ? '\u2600\uFE0F' : '\uD83C\uDF19';
-            btn.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+            const nextLabel = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+            btn.title = nextLabel;
+            btn.setAttribute('aria-label', nextLabel);
         });
     }
 

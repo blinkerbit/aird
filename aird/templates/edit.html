@@ -4,172 +4,115 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/css/app.css" />
   <title>Edit {{ filename }}</title>
   <style>
-    body {
-      background-color: white;
-      color: black;
-      font-family: monospace;
-      margin: 0;
-    }
+    body { background: var(--ds-bg); margin: 0; }
 
-    header {
+    header.edit-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 10px 14px;
-      border-bottom: 2px solid black;
-      margin-bottom: 10px;
+      gap: var(--ds-space-3);
+      flex-wrap: wrap;
+      padding: 10px 16px;
+      background: var(--ds-surface);
+      border-bottom: 1px solid var(--ds-border);
+      box-shadow: var(--ds-shadow-xs);
     }
+    .edit-title { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
+    .edit-title .crumbs { font-size: var(--ds-fs-xs); color: var(--ds-text-muted); }
+    .edit-title .crumbs a { color: var(--ds-text); }
+    .edit-title .file { font-weight: 700; font-size: var(--ds-fs-md); }
+    .edit-title .path { font-size: var(--ds-fs-xs); color: var(--ds-text-subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 540px; }
 
-    .breadcrumb a {
-      color: black;
-      text-decoration: none;
-    }
+    .edit-actions { display: flex; gap: var(--ds-space-2); align-items: center; flex-wrap: wrap; }
+    .edit-actions .user-chip { color: var(--ds-text-muted); font-size: var(--ds-fs-sm); text-decoration: none; }
+    .edit-actions .user-chip:hover { color: var(--ds-text); text-decoration: none; }
 
-    .breadcrumb a:hover {
-      text-decoration: underline;
+    button.edit-btn, a.edit-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 12px; min-height: 32px;
+      background: var(--ds-surface); color: var(--ds-text);
+      border: 1px solid var(--ds-border);
+      border-radius: var(--ds-radius-sm);
+      font: inherit; font-size: var(--ds-fs-sm); font-weight: 600; line-height: 1;
+      cursor: pointer; text-decoration: none;
+      transition: background var(--ds-duration-fast) var(--ds-ease), border-color var(--ds-duration-fast) var(--ds-ease);
     }
+    button.edit-btn:hover, a.edit-btn:hover { background: var(--ds-bg-muted); border-color: var(--ds-border-strong); text-decoration: none; }
+    button.edit-btn[disabled] { opacity: 0.55; cursor: not-allowed; }
+    button.edit-btn.primary { background: var(--ds-primary); color: var(--ds-text-on-accent); border-color: var(--ds-primary); }
+    button.edit-btn.primary:hover { background: var(--ds-primary-hover); border-color: var(--ds-primary-hover); }
+    button.edit-btn.active-tab { background: var(--ds-bg-sunken); border-color: var(--ds-border-strong); }
 
-    .path {
-      color: #555;
-      font-size: 12px;
-    }
-
-    .btns {
-      display: flex;
-      gap: 8px;
-    }
-
-    button {
-      display: inline-flex;
-      align-items: center;
-      padding: 6px 12px;
-      background-color: white;
-      color: black;
-      text-decoration: none;
-      border-radius: 4px;
-      font-size: 12px;
-      border: 1px solid black;
-      font-family: monospace;
-      margin: 0;
-      cursor: pointer;
-    }
-
-    button:hover {
-      background-color: #f0f0f0;
-    }
-
-    button[disabled] {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
-    .status {
-      font-size: 12px;
-      color: #666;
-      margin-left: 10px;
-    }
+    .status { font-size: var(--ds-fs-sm); color: var(--ds-text-muted); margin-left: 10px; min-width: 120px; }
 
     .editor-wrap, .preview-wrap {
       display: flex;
-      height: calc(100vh - 60px);
-      margin: 10px 14px;
-    }
-    .preview-wrap {
-      overflow: auto;
-      padding: 10px 14px;
-    }
-    .markdown-preview {
-      max-width: 800px;
-      font-family: inherit;
-      line-height: 1.5;
-    }
-    .markdown-preview h1, .markdown-preview h2, .markdown-preview h3 { margin-top: 1em; margin-bottom: 0.5em; }
-    .markdown-preview pre { background: #f5f5f5; padding: 10px; overflow: auto; border: 1px solid #ddd; }
-    .markdown-preview code { background: #f5f5f5; padding: 2px 4px; }
-    .markdown-preview blockquote { border-left: 4px solid #ccc; margin: 0; padding-left: 1em; color: #555; }
-    button.active-tab { background-color: #ddd; }
-
-    /* Dark mode overrides */
-    [data-theme="dark"] body { background-color: #1a1a2e; color: #e0e0e0; }
-    [data-theme="dark"] header { border-color: #444; }
-    [data-theme="dark"] .breadcrumb a { color: #58a6ff; }
-    [data-theme="dark"] .path { color: #aaa; }
-    [data-theme="dark"] button { background-color: #2a2a3e; color: #e0e0e0; border-color: #555; }
-    [data-theme="dark"] button:hover { background-color: #333; }
-    [data-theme="dark"] button.active-tab { background-color: #444; }
-    [data-theme="dark"] .status { color: #aaa; }
-    [data-theme="dark"] .gutter { background-color: #1e1e2e; color: #888; border-color: #444; background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 1.2em, #222 1.2em, #222 2.4em); }
-    [data-theme="dark"] textarea { background-color: #1a1a2e; color: #e0e0e0; border-color: #444; background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 1.2em, #1e1e2e 1.2em, #1e1e2e 2.4em); }
-    [data-theme="dark"] .markdown-preview pre { background: #222; border-color: #444; }
-    [data-theme="dark"] .markdown-preview code { background: #222; }
-    [data-theme="dark"] .markdown-preview blockquote { border-color: #444; color: #aaa; }
-    [data-theme="dark"] a { color: #58a6ff; }
-
-    /* Line numbers gutter styled similar to file view */
-    .gutter {
-      width: 40px;
-      padding: 5px 5px 5px 2px;
-      background-color: #fff;
-      color: #595959;
-      text-align: right;
-      border: 1px solid #ccc;
-      border-right: 1px solid #ccc;
+      height: calc(100vh - 64px);
+      margin: var(--ds-space-3) var(--ds-space-4);
+      border: 1px solid var(--ds-border);
+      border-radius: var(--ds-radius-md);
       overflow: hidden;
-      /* hide own scrollbar; use editor's */
-      white-space: pre;
-      line-height: 1.2em;
-      user-select: none;
-      /* Alternating row tint matching file view */
-      background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 1.2em, #f8f8f8 1.2em, #f8f8f8 2.4em);
-      background-attachment: local;
-      background-origin: content-box;
-      background-clip: content-box;
+      background: var(--ds-surface);
+      box-shadow: var(--ds-shadow-xs);
     }
+    .preview-wrap { overflow: auto; padding: var(--ds-space-5); }
+    .markdown-preview { max-width: 820px; margin: 0 auto; line-height: var(--ds-lh-relaxed); font-family: var(--ds-font-sans); }
+    .markdown-preview h1, .markdown-preview h2, .markdown-preview h3 { margin-top: 1em; margin-bottom: 0.5em; }
+    .markdown-preview pre { background: var(--ds-bg-muted); padding: var(--ds-space-3); border: 1px solid var(--ds-border-muted); border-radius: var(--ds-radius-sm); overflow: auto; }
+    .markdown-preview code { background: var(--ds-bg-muted); border: 1px solid var(--ds-border-muted); padding: 1px 5px; border-radius: var(--ds-radius-xs); }
+    .markdown-preview blockquote { border-left: 4px solid var(--ds-border); margin: 0; padding: 4px 12px; color: var(--ds-text-muted); background: var(--ds-bg-muted); border-radius: 0 var(--ds-radius-sm) var(--ds-radius-sm) 0; }
 
-    textarea {
+    .gutter {
+      width: 48px;
+      padding: 6px 8px 6px 4px;
+      background-color: var(--ds-bg-muted);
+      color: var(--ds-text-subtle);
+      text-align: right;
+      border-right: 1px solid var(--ds-border-muted);
+      overflow: hidden;
+      white-space: pre;
+      line-height: 1.4em;
+      font-family: var(--ds-font-mono);
+      font-size: var(--ds-fs-sm);
+      user-select: none;
+    }
+    textarea#editor {
       flex: 1;
       height: 100%;
-      border: 1px solid #ccc;
-      border-left: none;
-      /* single divider like file view */
+      border: 0;
       outline: none;
-      padding: 5px;
-      font-family: inherit;
-      font-size: 1em;
-      line-height: 1.2em;
+      padding: 6px 10px;
+      font-family: var(--ds-font-mono);
+      font-size: var(--ds-fs-sm);
+      line-height: 1.4em;
       resize: none;
       white-space: pre;
       overflow: auto;
-      /* Alternating row tint matching file view */
-      background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 1.2em, #f8f8f8 1.2em, #f8f8f8 2.4em);
-      background-attachment: local;
-      background-origin: content-box;
-      background-clip: content-box;
+      background: var(--ds-surface);
+      color: var(--ds-text);
     }
   </style>
 </head>
 
 <body>
-  <header>
-    <div>
-      <div class="breadcrumb"><a href="/files/">🏠 Home</a></div>
-      <div><strong>Editing:</strong> {{ filename }}</div>
-      <div class="path">/{{ path }}</div>
+  <header class="edit-header">
+    <div class="edit-title">
+      <div class="crumbs"><a href="/files/">🏠 Home</a>  Editing</div>
+      <div class="file">{{ filename }}</div>
+      <div class="path" title="/{{ path }}">/{{ path }}</div>
     </div>
-    <div class="btns">
-      <a href="/profile" style="font-size: 12px; color: #666; margin-right: 15px; text-decoration: none;">👤 {{
-        handler.get_display_username() }}</a>
+    <div class="edit-actions">
+      <a href="/profile" class="user-chip" title="Profile">👤 {{ handler.get_display_username() }}</a>
       {% if is_markdown %}
-      <button id="tabEdit" type="button">Edit</button>
-      <button id="tabPreview" type="button">Preview</button>
+      <button id="tabEdit" type="button" class="edit-btn active-tab">✏ Edit</button>
+      <button id="tabPreview" type="button" class="edit-btn">👁 Preview</button>
       {% end %}
-      <button id="backBtn">Back</button>
-      <button id="saveBtn">Save (Ctrl/Cmd+S)</button>
-      <a href="/logout"
-        style="display:inline-flex;align-items:center;padding:6px 12px;background-color:white;color:black;text-decoration:none;border-radius:4px;font-size:12px;border:1px solid black;font-family: monospace;">↩
-        Logout</a>
+      <button id="backBtn" type="button" class="edit-btn">← Back</button>
+      <button id="saveBtn" type="button" class="edit-btn primary" title="Save (Ctrl/Cmd+S)">💾 Save</button>
+      <a href="/logout" class="edit-btn">↩ Logout</a>
       <span id="status" class="status"></span>
     </div>
   </header>
@@ -195,43 +138,32 @@
 
     function setStatus(text, ok = true) {
       statusEl.textContent = text || '';
-      statusEl.style.color = ok ? '#2a7' : '#d33';
+      statusEl.style.color = ok ? 'var(--ds-success)' : 'var(--ds-danger)';
     }
 
     function updateLineNumbers() {
       const lines = (editor.value.match(/\n/g) || []).length + 1;
-      // Build once as a single string for performance
       let buf = '';
-      for (let i = 1; i <= lines; i++) {
-        buf += i + (i === lines ? '' : '\n');
-      }
+      for (let i = 1; i <= lines; i++) buf += i + (i === lines ? '' : '\n');
       gutter.textContent = buf;
     }
 
     editor.addEventListener('input', () => {
       dirty = true;
-      setStatus('Unsaved changes', true);
+      setStatus('● Unsaved changes', true);
       updateLineNumbers();
     });
 
-    // Keep gutter scroll in sync with editor
-    editor.addEventListener('scroll', () => {
-      gutter.scrollTop = editor.scrollTop;
-    });
-    // Forward wheel events on gutter so only editor scroll bar is visible/used
+    editor.addEventListener('scroll', () => { gutter.scrollTop = editor.scrollTop; });
     gutter.addEventListener('wheel', (e) => {
       editor.scrollTop += e.deltaY;
       e.preventDefault();
     }, { passive: false });
 
     window.addEventListener('beforeunload', (e) => {
-      if (dirty) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
+      if (dirty) { e.preventDefault(); e.returnValue = ''; }
     });
 
-    // CSRF Protection: Get XSRF token from cookie
     function getXSRFToken() {
       const match = document.cookie.match(/_xsrf=([^;]*)/);
       return match ? decodeURIComponent(match[1]) : '';
@@ -239,7 +171,7 @@
 
     async function save() {
       saveBtn.disabled = true;
-      setStatus('Saving...');
+      setStatus('Saving');
       try {
         const res = await fetch('/edit', {
           method: 'POST',
@@ -255,9 +187,9 @@
           throw new Error(txt || 'Save failed');
         }
         dirty = false;
-        setStatus('Saved', true);
+        setStatus('✓ Saved', true);
       } catch (err) {
-        setStatus(err.message || 'Save failed', false);
+        setStatus('✗ ' + (err.message || 'Save failed'), false);
       } finally {
         saveBtn.disabled = false;
       }
@@ -271,15 +203,10 @@
       }
     });
 
-    // Initial render
     updateLineNumbers();
-    // Ensure initial scroll sync
     gutter.scrollTop = editor.scrollTop;
 
-    // Event listeners for CSP compliance
-    document.getElementById('backBtn').addEventListener('click', function () {
-      history.back();
-    });
+    document.getElementById('backBtn').addEventListener('click', function () { history.back(); });
 
     {% if is_markdown %}
     (function() {
@@ -303,10 +230,7 @@
           previewEl.innerHTML = marked.parse(editor.value);
         }
       }
-      if (tabEdit) {
-        tabEdit.classList.add('active-tab');
-        tabEdit.addEventListener('click', showEdit);
-      }
+      if (tabEdit) tabEdit.addEventListener('click', showEdit);
       if (tabPreview) tabPreview.addEventListener('click', showPreview);
     })();
     {% end %}

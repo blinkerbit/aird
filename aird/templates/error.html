@@ -1,60 +1,47 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Error {{ status_code }}</title>
-    <style>
-        body {
-            font-family: monospace;
-            background-color: white;
-            color: black;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-        }
-        .error-container {
-            text-align: center;
-            border: 2px solid black;
-            padding: 40px;
-            max-width: 500px;
-        }
-        h1 {
-            font-size: 48px;
-            margin: 0 0 20px 0;
-        }
-        h2 {
-            font-size: 24px;
-            margin: 0 0 20px 0;
-        }
-        a {
-            color: black;
-            text-decoration: none;
-            border: 1px solid black;
-            padding: 10px 20px;
-            display: inline-block;
-            margin-top: 20px;
-        }
-        a:hover {
-            background-color: #f0f0f0;
-        }
-
-        [data-theme="dark"] body { background-color: #1a1a2e; color: #e0e0e0; }
-        [data-theme="dark"] .error-container { border-color: #444; }
-        [data-theme="dark"] a { color: #e0e0e0; border-color: #555; }
-        [data-theme="dark"] a:hover { background-color: #2a2a3e; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <title>Error {{ status_code }}</title>
+  <style>
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--ds-space-6);
+      background:
+        radial-gradient(var(--ds-border-muted) 1px, transparent 1px) 0 0/22px 22px,
+        var(--ds-bg);
+    }
+    .err-shell { width: 100%; max-width: 540px; }
+    .err-code {
+      font-size: 72px;
+      line-height: 1;
+      letter-spacing: -0.04em;
+      font-weight: 800;
+      margin: 0;
+      color: var(--ds-text);
+    }
+    .err-msg { margin: var(--ds-space-2) 0 var(--ds-space-3); font-size: var(--ds-fs-xl); font-weight: 600; }
+    .err-hint { color: var(--ds-text-muted); margin: 0 0 var(--ds-space-5); }
+  </style>
 </head>
 <body>
-    <div class="error-container">
-        <h1>{{ status_code }}</h1>
-        <h2>{{ escape(message) }}</h2>
-        <p>Something went wrong. Please try again or contact your administrator.</p>
-        <a href="/files/">← Back to Files</a>
+  <div class="err-shell">
+    <div class="ds-card" style="text-align:center;">
+      <p style="margin:0 0 var(--ds-space-2); color: var(--ds-text-muted); font-size: var(--ds-fs-sm); letter-spacing:0.12em; text-transform:uppercase;">Aird</p>
+      <h1 class="err-code">{{ status_code }}</h1>
+      <p class="err-msg">{{ escape(message) }}</p>
+      <p class="err-hint">Something went wrong. Please try again or contact your administrator.</p>
+      <div class="ds-hstack" style="justify-content:center;">
+        <a href="/files/" class="ds-btn ds-btn--primary">← Back to files</a>
+        <a href="/" class="ds-btn ds-btn--ghost">Go home</a>
+      </div>
     </div>
-    <script src="/static/js/theme.js"></script>
+  </div>
+  <script src="/static/js/theme.js"></script>
 </body>
 </html>

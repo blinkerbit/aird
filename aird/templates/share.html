@@ -4,6 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/static/css/app.css" />
   <title>Share Files</title>
   <style>
     * {
@@ -13,45 +14,33 @@
     }
 
     body {
-      font-family: "Courier New", monospace;
-      background: white;
-      color: black;
+      background: var(--ds-bg);
+      color: var(--ds-text);
       line-height: 1.4;
     }
 
     .container {
       max-width: 100%;
       margin: 0 auto;
-      padding: 20px 10px;
+      padding: var(--ds-space-5) var(--ds-space-4);
     }
 
     {% include '_app_nav_header_styles.html' %}
 
-    .breadcrumb {
-      font-size: 14px;
-      color: #666;
-    }
-
-    .breadcrumb a {
-      color: black;
-      text-decoration: none;
-    }
-
-    .breadcrumb a:hover {
-      text-decoration: underline;
-    }
+    .breadcrumb { font-size: var(--ds-fs-sm); color: var(--ds-text-muted); }
+    .breadcrumb a { color: var(--ds-text); text-decoration: none; }
+    .breadcrumb a:hover { color: var(--ds-primary); }
 
     /* Path shown next to the folder list (not lost under the config panel) */
-    .file-browser-path {
-      margin-bottom: 12px;
-    }
+    .file-browser-path { margin-bottom: var(--ds-space-3); }
 
     .selection-panel {
-      background: #f9f9f9;
-      border: 1px solid #ccc;
-      padding: 15px;
-      margin-bottom: 20px;
-      border-radius: 4px;
+      background: var(--ds-surface);
+      border: 1px solid var(--ds-border);
+      padding: var(--ds-space-4);
+      margin-bottom: var(--ds-space-5);
+      border-radius: var(--ds-radius-md);
+      box-shadow: var(--ds-shadow-xs);
     }
 
     .selected-files {
@@ -60,19 +49,21 @@
     }
 
     .selected-file {
-      display: inline-block;
-      background: black;
-      color: white;
-      padding: 2px 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--ds-primary-soft);
+      color: var(--ds-primary);
+      border: 1px solid var(--ds-primary);
+      padding: 2px 10px;
       margin: 2px;
-      border-radius: 3px;
-      font-size: 12px;
+      border-radius: var(--ds-radius-pill);
+      font-size: var(--ds-fs-xs);
       cursor: pointer;
+      transition: background var(--ds-duration-fast) var(--ds-ease);
     }
 
-    .selected-file:hover {
-      background: #333;
-    }
+    .selected-file:hover { background: var(--ds-primary); color: var(--ds-text-on-accent); }
 
     .action-buttons {
       display: flex;
@@ -2388,13 +2379,16 @@
         selectionBar.classList.remove('visible');
         document.body.classList.remove('has-selection');
       } else {
+        elements.selectedFilesDiv.innerHTML = '';
         const chips = buildFileChips(selectedFiles);
-        elements.selectedFilesDiv.innerHTML = chips
-          .map(c => {
-            const safeKey = c.file.replaceAll("'", String.raw`\'`);
-            return `<span class="selected-file" data-action="removeFromSelection" data-path="${safeKey}">${c.icon} ${escapeHtml(c.label)} ×</span>`;
-          })
-          .join('');
+        for (const c of chips) {
+          const chip = document.createElement('span');
+          chip.className = 'selected-file';
+          chip.dataset.action = 'removeFromSelection';
+          chip.dataset.path = c.file;
+          chip.textContent = `${c.icon} ${c.label} ×`;
+          elements.selectedFilesDiv.appendChild(chip);
+        }
         selectionBar.classList.add('visible');
         document.body.classList.add('has-selection');
       }
@@ -2496,9 +2490,77 @@
       }
     }
 
+    function _makeCell(content, className) {
+      const td = document.createElement('td');
+      if (className) td.className = className;
+      if (content instanceof Node) td.appendChild(content);
+      else if (content != null) td.textContent = content;
+      return td;
+    }
+
+    function _makeCheckboxCell(filePath, isSelected) {
+      const td = document.createElement('td');
+      td.className = 'sq-style-cdd8ca';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = filePath;
+      cb.checked = !!isSelected;
+      cb.dataset.action = 'toggleSelection';
+      cb.dataset.path = filePath;
+      td.appendChild(cb);
+      return td;
+    }
+
+    function _makeNameCell({ isDir, iconText, name, filePath, isShared, navPath }) {
+      const td = document.createElement('td');
+      const wrap = document.createElement('div');
+      wrap.className = 'sq-style-bd9db1';
+
+      const link = document.createElement(isDir ? 'a' : 'span');
+      if (isDir) link.href = '#';
+      link.className = isDir ? 'file-link' : 'file-link sq-style-24b531';
+      link.dataset.action = isDir ? 'loadDirectory' : 'previewFile';
+      link.dataset.path = isDir ? navPath : filePath;
+      const icon = document.createElement('span');
+      icon.className = 'file-icon';
+      icon.textContent = iconText;
+      link.appendChild(icon);
+      link.appendChild(document.createTextNode(name));
+      wrap.appendChild(link);
+
+      if (isShared) {
+        const share = document.createElement('span');
+        share.className = 'shared-icon sq-style-e9dc52';
+        share.title = 'Click to view share details';
+        share.dataset.action = 'showShareDetails';
+        share.dataset.path = filePath;
+        share.textContent = '🔗';
+        wrap.appendChild(share);
+      }
+
+      td.appendChild(wrap);
+      return td;
+    }
+
+    function _makeActionButton(label, action, path) {
+      const btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.dataset.action = action;
+      btn.dataset.path = path;
+      btn.textContent = label;
+      return btn;
+    }
+
     function renderFiles() {
       if (allFiles.length === 0) {
-        elements.fileTableBody.innerHTML = '<tr><td colspan="5" class="loading">No files in this directory</td></tr>';
+        elements.fileTableBody.innerHTML = '';
+        const row = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 5;
+        td.className = 'loading';
+        td.textContent = 'No files in this directory';
+        row.appendChild(td);
+        elements.fileTableBody.appendChild(row);
         return;
       }
 
@@ -2507,13 +2569,23 @@
       if (currentPath) {
         const parentPath = currentPath.split('/').filter(Boolean).slice(0, -1).join('/');
         const row = document.createElement('tr');
-        row.innerHTML = `
-          <td></td>
-          <td><a href="#" class="file-link" data-action="loadDirectory" data-path="${parentPath}"><span class="file-icon">📁</span>..</a></td>
-          <td>-</td>
-          <td>-</td>
-          <td>-</td>
-        `;
+        row.appendChild(_makeCell(''));
+        const nameTd = document.createElement('td');
+        const parentLink = document.createElement('a');
+        parentLink.href = '#';
+        parentLink.className = 'file-link';
+        parentLink.dataset.action = 'loadDirectory';
+        parentLink.dataset.path = parentPath;
+        const icon = document.createElement('span');
+        icon.className = 'file-icon';
+        icon.textContent = '📁';
+        parentLink.appendChild(icon);
+        parentLink.appendChild(document.createTextNode('..'));
+        nameTd.appendChild(parentLink);
+        row.appendChild(nameTd);
+        row.appendChild(_makeCell('-'));
+        row.appendChild(_makeCell('-'));
+        row.appendChild(_makeCell('-'));
         elements.fileTableBody.appendChild(row);
       }
 
@@ -2522,48 +2594,23 @@
         const filePath = currentPath ? `${currentPath}/${file.name}` : file.name;
         const isSelected = selectedFiles.has(filePath);
 
-        if (file.is_dir) {
-          const newPath = currentPath ? `${currentPath}/${file.name}` : file.name;
-          row.innerHTML = `
-            <td class="sq-style-cdd8ca">
-              <input type="checkbox" value="${filePath}" ${isSelected ? 'checked' : ''}
-                     data-action="toggleSelection" data-path="${filePath}">
-            </td>
-            <td>
-              <div class="sq-style-bd9db1">
-                <a href="#" class="file-link" data-action="loadDirectory" data-path="${newPath}">
-                  <span class="file-icon">📁</span>${file.name}
-                </a>
-                ${file.is_shared ? `<span class="shared-icon sq-style-e9dc52" title="Click to view share details" data-action="showShareDetails" data-path="${filePath}">🔗</span>` : ''}
-              </div>
-            </td>
-            <td>-</td>
-            <td>${file.modified || '-'}</td>
-            <td>
-              <button class="btn" data-action="loadDirectory" data-path="${newPath}">Open</button>
-            </td>
-          `;
-        } else {
-          row.innerHTML = `
-            <td class="sq-style-cdd8ca">
-              <input type="checkbox" value="${filePath}" ${isSelected ? 'checked' : ''}
-                     data-action="toggleSelection" data-path="${filePath}">
-            </td>
-            <td>
-              <div class="sq-style-bd9db1">
-                <span class="file-link sq-style-24b531" data-action="previewFile" data-path="${filePath}">
-                  <span class="file-icon">${getFileIcon(file.name)}</span>${file.name}
-                </span>
-                ${file.is_shared ? `<span class="shared-icon sq-style-e9dc52" title="Click to view share details" data-action="showShareDetails" data-path="${filePath}">🔗</span>` : ''}
-              </div>
-            </td>
-            <td>${file.size_str || '-'}</td>
-            <td>${file.modified || '-'}</td>
-            <td>
-              <button class="btn" data-action="previewFile" data-path="${filePath}">Preview</button>
-            </td>
-          `;
-        }
+        row.appendChild(_makeCheckboxCell(filePath, isSelected));
+        row.appendChild(_makeNameCell({
+          isDir: !!file.is_dir,
+          iconText: file.is_dir ? '📁' : getFileIcon(file.name),
+          name: file.name,
+          filePath,
+          isShared: !!file.is_shared,
+          navPath: filePath,
+        }));
+        row.appendChild(_makeCell(file.is_dir ? '-' : (file.size_str || '-')));
+        row.appendChild(_makeCell(file.modified || '-'));
+
+        const actionTd = document.createElement('td');
+        actionTd.appendChild(file.is_dir
+          ? _makeActionButton('Open', 'loadDirectory', filePath)
+          : _makeActionButton('Preview', 'previewFile', filePath));
+        row.appendChild(actionTd);
 
         if (isSelected) row.classList.add('selected');
         elements.fileTableBody.appendChild(row);
@@ -3995,12 +4042,47 @@
     elements.clearSelection.onclick = clearSelection;
     elements.selectAllVisible.onclick = selectAllVisible;
 
+    // If the browse page handed us a selection via sessionStorage,
+    // pre-populate it on load and open the configure modal so the user
+    // lands straight on the configuration step.
+    function consumeShareCreatePrefill() {
+      let raw;
+      try {
+        raw = sessionStorage.getItem('airdShareCreatePrefill');
+      } catch (e) {
+        return;
+      }
+      if (!raw) return;
+      try {
+        sessionStorage.removeItem('airdShareCreatePrefill');
+      } catch (e) { /* ignore */ }
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (e) {
+        console.warn('Invalid share prefill payload:', e);
+        return;
+      }
+      const paths = Array.isArray(parsed?.paths) ? parsed.paths : [];
+      if (paths.length === 0) return;
+      // Drop anything older than 10 minutes so stale tabs don't hijack
+      // a fresh Share page visit.
+      if (parsed.created_at && (Date.now() - parsed.created_at) > 10 * 60 * 1000) return;
+      paths.forEach((p) => {
+        if (typeof p === 'string' && p.length > 0) addToSelection(p);
+      });
+      if (selectedFiles.size > 0) {
+        openShareConfigModal();
+      }
+    }
+
     // Initialize
     document.addEventListener('DOMContentLoaded', () => {
       loadDirectory();
       loadActiveShares();
       setupUserSearch();
       setupModifyUserSearch();
+      consumeShareCreatePrefill();
 
       // Refresh active shares every 30 seconds
       setInterval(loadActiveShares, 30000);

@@ -1,9 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/css/app.css" />
   <title>Browse</title>
   <style>
     * {
@@ -13,69 +14,157 @@
     }
 
     body {
-      font-family: "Courier New", monospace;
-      background: white;
-      color: black;
-      line-height: 1.2;
+      background: var(--ds-bg);
+      color: var(--ds-text);
+      line-height: 1.35;
     }
 
     .container {
       max-width: 100%;
       margin: 0 auto;
-      padding: 20px 10px;
+      padding: var(--ds-space-5) var(--ds-space-4);
     }
 
     {% include '_app_nav_header_styles.html' %}
 
     .breadcrumb {
-      margin-top: 10px;
-      font-size: 14px;
-      color: #666;
+      margin-top: var(--ds-space-2);
+      font-size: var(--ds-fs-sm);
+      color: var(--ds-text-muted);
     }
 
     /* Path shown directly above the file table (not under the title / upload zone) */
     .breadcrumb-above-file-list {
       margin-top: 0;
-      margin-bottom: 10px;
+      margin-bottom: var(--ds-space-3);
+      padding: 6px var(--ds-space-3);
+      background: var(--ds-bg-muted);
+      border: 1px solid var(--ds-border-muted);
+      border-radius: var(--ds-radius-sm);
+      display: inline-block;
     }
 
     .breadcrumb a {
-      color: black;
+      color: var(--ds-text);
       text-decoration: none;
     }
 
-    .breadcrumb a:hover {
-      text-decoration: underline;
+    .breadcrumb a:hover { color: var(--ds-primary); text-decoration: none; }
+
+    /* Generic inline icon used in this page */
+    .ico {
+      width: 16px; height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      vertical-align: -3px;
+      flex-shrink: 0;
     }
+    .ico--lg { width: 20px; height: 20px; }
 
     .upload-zone {
-      border: 2px dashed #ccc;
-      padding: 20px;
+      border: 2px dashed var(--ds-border);
+      padding: var(--ds-space-6) var(--ds-space-5);
       text-align: center;
-      margin-bottom: 20px;
-      background: #f9f9f9;
+      margin-bottom: var(--ds-space-4);
+      background: var(--ds-bg-muted);
+      border-radius: var(--ds-radius-lg);
+      color: var(--ds-text-muted);
+      cursor: pointer;
+      transition: border-color var(--ds-duration-fast) var(--ds-ease),
+                  background var(--ds-duration-fast) var(--ds-ease),
+                  color var(--ds-duration-fast) var(--ds-ease);
     }
 
+    .upload-zone:hover { border-color: var(--ds-border-strong); color: var(--ds-text); }
+
     .upload-zone.dragover {
-      border-color: black;
-      background: #f0f0f0;
+      border-color: var(--ds-primary);
+      background: var(--ds-primary-soft);
+      color: var(--ds-primary);
+      animation: uploadPulse 1.4s var(--ds-ease) infinite;
     }
+    .upload-zone.dragover .upload-zone-title .ico { animation: dsPop 1.4s var(--ds-ease) infinite; }
+    @keyframes uploadPulse {
+      0%, 100% { box-shadow: 0 0 0 0 var(--ds-primary-soft); }
+      50%      { box-shadow: 0 0 0 8px rgba(0,0,0,0); }
+    }
+
+    .upload-zone-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 4px;
+      font-size: var(--ds-fs-md);
+      color: var(--ds-text);
+    }
+    .upload-zone-title .ico { width: 22px; height: 22px; }
+    .upload-zone-hint { margin: 0; font-size: var(--ds-fs-sm); color: var(--ds-text-muted); }
+
+    .browse-toolbar {
+      display: flex;
+      gap: var(--ds-space-2);
+      margin-bottom: var(--ds-space-3);
+      flex-wrap: wrap;
+    }
+
+    .toolbar-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 14px;
+      border: 1px solid var(--ds-border);
+      background: var(--ds-surface);
+      color: var(--ds-text);
+      border-radius: var(--ds-radius-sm);
+      font: inherit;
+      font-size: var(--ds-fs-sm);
+      font-weight: 600;
+      cursor: pointer;
+      transition: background var(--ds-duration-fast) var(--ds-ease),
+                  border-color var(--ds-duration-fast) var(--ds-ease),
+                  box-shadow var(--ds-duration-fast) var(--ds-ease);
+    }
+    .toolbar-btn:hover { background: var(--ds-bg-muted); border-color: var(--ds-border-strong); }
+    .toolbar-btn:focus-visible { outline: none; box-shadow: var(--ds-focus-ring); }
+
+    .crumb-home {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .crumb-home .ico { width: 14px; height: 14px; }
+
+    .empty-state-cell { text-align: center; padding: var(--ds-space-8) var(--ds-space-4) !important; }
+    .empty-state { display: inline-flex; flex-direction: column; align-items: center; gap: 6px; color: var(--ds-text-muted); }
+    .empty-state-ico { width: 48px; height: 48px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; opacity: 0.55; }
+    .empty-state-title { font-size: var(--ds-fs-md); font-weight: 600; color: var(--ds-text); margin-top: 4px; }
+    .empty-state-hint { font-size: var(--ds-fs-sm); }
 
     .file-table {
       width: 100%;
-      border-collapse: collapse;
-      border: 1px solid black;
-      background: white;
+      border-collapse: separate;
+      border-spacing: 0;
+      border: 1px solid var(--ds-border);
+      border-radius: var(--ds-radius-lg);
+      background: var(--ds-surface);
       table-layout: fixed;
+      overflow: hidden;
+      box-shadow: var(--ds-shadow-xs);
     }
 
     .file-table th {
-      background: black;
-      color: white;
-      padding: 10px 12px;
+      background: var(--ds-bg-muted);
+      color: var(--ds-text-muted);
+      padding: 10px 14px;
       text-align: left;
-      font-weight: bold;
-      border-bottom: 2px solid black;
+      font-weight: 700;
+      font-size: var(--ds-fs-xs);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--ds-border);
       position: relative;
     }
 
@@ -90,15 +179,17 @@
     }
 
     .file-table td {
-      padding: 8px 12px;
-      border-bottom: 1px solid #ddd;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--ds-border-muted);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
-    .file-table tbody tr:hover {
-      background: #f5f5f5;
+    .file-table tbody tr:last-child td { border-bottom: 0; }
+
+    .file-table tbody tr:hover td {
+      background: var(--ds-bg-muted);
     }
 
     .file-table th,
@@ -136,42 +227,59 @@
     }
 
     .modified-cell {
-      font-family: monospace;
-      font-size: 12px;
-      color: #666;
+      font-family: var(--ds-font-mono);
+      font-size: var(--ds-fs-xs);
+      color: var(--ds-text-muted);
     }
 
+    .size-cell { font-family: var(--ds-font-mono); font-size: var(--ds-fs-xs); color: var(--ds-text-muted); }
+
     .file-link {
-      color: black;
+      color: var(--ds-text);
       text-decoration: none;
       display: block;
     }
 
-    .file-link:hover {
-      text-decoration: underline;
-    }
+    .file-link:hover { color: var(--ds-primary); text-decoration: none; }
 
     .shared-icon {
       cursor: pointer;
-      color: #0066cc;
+      color: var(--ds-primary);
       font-size: 14px;
-      transition: all 0.2s ease;
       display: inline-block;
       vertical-align: middle;
       padding: 2px 4px;
       border-radius: 3px;
-      background: rgba(0, 102, 204, 0.1);
+      background: var(--ds-primary-soft);
       margin-left: 8px;
+      transition:
+        color var(--ds-duration-fast) var(--ds-ease),
+        transform var(--ds-duration-fast) var(--ds-ease),
+        background var(--ds-duration-fast) var(--ds-ease);
     }
 
     .shared-icon:hover {
-      color: #004499;
-      transform: scale(1.2);
-      background: rgba(0, 102, 204, 0.2);
+      color: var(--ds-primary-hover);
+      transform: scale(1.2) rotate(-8deg);
+      background: var(--ds-primary-soft);
     }
 
     .file-icon {
       margin-right: 8px;
+      display: inline-block;
+      transition: transform var(--ds-duration-fast) var(--ds-ease);
+    }
+
+    .file-row:hover .file-icon { transform: scale(1.15) rotate(-4deg); }
+    .parent-folder-link:hover .file-icon { transform: translateX(-2px) rotate(-6deg); }
+    .parent-folder-link .parent-up-label {
+      display: inline-block;
+      transition: transform var(--ds-duration-fast) var(--ds-ease);
+    }
+    .parent-folder-link:hover .parent-up-label { transform: translateX(-2px); }
+
+    .file-link {
+      transition: color var(--ds-duration-fast) var(--ds-ease);
     }
 
     /* Checkbox + name share one cell so nothing can visually sit between columns */
@@ -244,8 +352,8 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%) scale(0.8);
-      background: white;
-      border: 2px solid black;
+      background: var(--ds-surface);
+      border: 2px solid var(--ds-accent);
       border-radius: 8px;
       padding: 20px;
       max-width: 500px;
@@ -253,7 +361,7 @@
       max-height: 80vh;
       overflow-y: auto;
       transition: all 0.3s ease;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      box-shadow: var(--ds-shadow-lg);
     }
 
     .popup-overlay.show .popup-content {
@@ -266,7 +374,7 @@
       align-items: center;
       margin-bottom: 15px;
       padding-bottom: 10px;
-      border-bottom: 1px solid #ccc;
+      border-bottom: 1px solid var(--ds-border);
     }
 
     .popup-title {
@@ -289,16 +397,16 @@
     }
 
     .popup-close:hover {
-      background: #f0f0f0;
+      background: var(--ds-bg-muted);
       border-radius: 50%;
     }
 
     .share-item {
-      border: 1px solid #ddd;
+      border: 1px solid var(--ds-border);
       border-radius: 4px;
       padding: 15px;
       margin-bottom: 15px;
-      background: #fafafa;
+      background: var(--ds-bg-muted);
     }
 
     .share-item:last-child {
@@ -307,7 +415,7 @@
 
     .share-id {
       font-family: monospace;
-      background: #e6f3ff;
+      background: var(--ds-primary-soft);
       padding: 4px 8px;
       border-radius: 3px;
       font-size: 12px;
@@ -320,7 +428,7 @@
     }
 
     .share-url a {
-      color: #0066cc;
+      color: var(--ds-primary);
       text-decoration: none;
       font-size: 14px;
     }
@@ -335,11 +443,11 @@
     }
 
     .share-access.public {
-      color: #4a934a;
+      color: var(--ds-success);
     }
 
     .share-access.restricted {
-      color: #cc6600;
+      color: var(--ds-warning);
     }
 
     .share-users {
@@ -348,14 +456,14 @@
 
     .share-users-title {
       font-size: 12px;
-      color: #666;
+      color: var(--ds-text-muted);
       margin-bottom: 5px;
     }
 
     .user-tag {
       display: inline-block;
-      background: #e6f3ff;
-      color: #0066cc;
+      background: var(--ds-primary-soft);
+      color: var(--ds-primary);
       padding: 2px 6px;
       margin: 2px;
       border-radius: 3px;
@@ -374,12 +482,12 @@
     }
 
     .action-link {
-      color: #555;
+      color: var(--ds-text-muted);
       text-decoration: none;
       margin-right: 4px;
       padding: 6px 8px;
-      border: 1px solid #e0e0e0;
-      background: #fafafa;
+      border: 1px solid var(--ds-border-muted);
+      background: var(--ds-bg-muted);
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -388,15 +496,32 @@
       text-align: center;
       position: relative;
       border-radius: 6px;
-      transition: all 0.15s ease;
+      will-change: transform, box-shadow;
+      transition:
+        background var(--ds-duration-fast) var(--ds-ease),
+        border-color var(--ds-duration-fast) var(--ds-ease),
+        color var(--ds-duration-fast) var(--ds-ease),
+        transform var(--ds-duration-fast) var(--ds-ease),
+        box-shadow var(--ds-duration-fast) var(--ds-ease);
     }
 
     .action-link:hover {
-      background: #f0f0f0;
-      border-color: #ccc;
+      background: var(--ds-bg-sunken);
+      border-color: var(--ds-border);
       text-decoration: none;
       transform: translateY(-1px);
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      box-shadow: var(--ds-shadow-sm);
+    }
+
+    .action-link:active {
+      transform: translateY(1px) scale(0.96);
+      box-shadow: none;
+      transition-duration: 60ms;
+    }
+
+    .action-link:focus-visible {
+      outline: none;
+      box-shadow: var(--ds-focus-ring);
     }
 
     .action-link svg {
@@ -405,50 +530,57 @@
       stroke: currentColor;
       stroke-width: 2;
       fill: none;
+      transition: transform var(--ds-duration-fast) var(--ds-ease);
     }
 
+    /* Icon micro-motion per action type */
+    .action-link.download-btn:hover svg { transform: translateY(2px); }
+    .action-link.edit-btn:hover svg     { transform: rotate(-12deg); }
+    .action-link.rename-btn:hover svg   { transform: rotate(-6deg) translateY(-1px); }
+    .action-link.delete-btn:hover svg   { transform: rotate(6deg); }
+
     .action-link.download-btn {
-      color: #2563eb;
-      border-color: #bfdbfe;
-      background: #eff6ff;
+      color: var(--ds-primary);
+      border-color: var(--ds-primary-soft);
+      background: var(--ds-primary-soft);
     }
 
     .action-link.download-btn:hover {
-      background: #dbeafe;
-      border-color: #93c5fd;
+      background: var(--ds-primary-soft);
+      border-color: var(--ds-primary);
     }
 
     .action-link.edit-btn {
-      color: #d97706;
-      border-color: #fde68a;
-      background: #fffbeb;
+      color: var(--ds-warning);
+      border-color: var(--ds-gold-soft);
+      background: var(--ds-warning-soft);
     }
 
     .action-link.edit-btn:hover {
-      background: #fef3c7;
-      border-color: #fcd34d;
+      background: var(--ds-warning-soft);
+      border-color: var(--ds-gold);
     }
 
     .action-link.rename-btn {
-      color: #7c3aed;
-      border-color: #ddd6fe;
-      background: #f5f3ff;
+      color: var(--ds-primary);
+      border-color: var(--ds-primary-soft);
+      background: var(--ds-primary-soft);
     }
 
     .action-link.rename-btn:hover {
-      background: #ede9fe;
-      border-color: #c4b5fd;
+      background: var(--ds-primary-soft);
+      border-color: var(--ds-primary);
     }
 
     .action-link.delete-btn {
-      color: #dc2626;
-      border-color: #fecaca;
-      background: #fef2f2;
+      color: var(--ds-danger);
+      border-color: var(--ds-danger-soft);
+      background: var(--ds-danger-soft);
     }
 
     .action-link.delete-btn:hover {
-      background: #fee2e2;
-      border-color: #fca5a5;
+      background: var(--ds-danger-soft);
+      border-color: var(--ds-danger);
     }
 
     /* Tooltip styles for icon buttons */
@@ -458,8 +590,8 @@
       bottom: 100%;
       left: 50%;
       transform: translateX(-50%);
-      background: #333;
-      color: white;
+      background: var(--ds-accent);
+      color: var(--ds-text-on-accent);
       padding: 4px 8px;
       border-radius: 4px;
       font-size: 11px;
@@ -475,7 +607,7 @@
       left: 50%;
       transform: translateX(-50%);
       border: 4px solid transparent;
-      border-top-color: #333;
+      border-top-color: var(--ds-accent);
       z-index: 1000;
       margin-bottom: 1px;
     }
@@ -483,10 +615,82 @@
     .sort-header {
       cursor: pointer;
       user-select: none;
+      transition: background var(--ds-duration-fast) var(--ds-ease),
+                  color var(--ds-duration-fast) var(--ds-ease);
     }
 
     .sort-header:hover {
-      background: #333;
+      background: var(--ds-bg-sunken);
+      color: var(--ds-text);
+    }
+    .sort-header:active { background: var(--ds-border-muted); }
+
+    .sort-indicator {
+      display: inline-block;
+      margin-left: 6px;
+      font-size: 11px;
+      opacity: 0;
+      min-width: 10px;
+      transform: translateY(-2px);
+      transition: opacity var(--ds-duration-fast) var(--ds-ease),
+                  transform var(--ds-duration-fast) var(--ds-ease);
+    }
+    .sort-header:hover .sort-indicator { opacity: 0.55; }
+    .sort-header[aria-sort="ascending"] .sort-indicator,
+    .sort-header[aria-sort="descending"] .sort-indicator { opacity: 1; transform: translateY(0); }
+
+    .sort-header[aria-sort="ascending"] .sort-indicator::after  { content: "▲"; }
+    .sort-header[aria-sort="descending"] .sort-indicator::after { content: "▼"; }
+
+    .copy-path-btn {
+      background: transparent;
+      border: 1px solid var(--ds-border);
+      border-radius: var(--ds-radius-sm);
+      cursor: pointer;
+      font-size: 12px;
+      padding: 4px 8px;
+      margin-left: 8px;
+      line-height: 1;
+      color: var(--ds-text-muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      vertical-align: middle;
+      will-change: transform;
+      transition:
+        background var(--ds-duration-fast) var(--ds-ease),
+        border-color var(--ds-duration-fast) var(--ds-ease),
+        color var(--ds-duration-fast) var(--ds-ease),
+        transform var(--ds-duration-fast) var(--ds-ease);
+    }
+    .copy-path-btn:hover { background: var(--ds-bg-muted); border-color: var(--ds-border-strong); color: var(--ds-text); transform: translateY(-1px); }
+    .copy-path-btn:active { transform: translateY(1px) scale(0.94); transition-duration: 60ms; }
+    .copy-path-btn:focus-visible { outline: none; box-shadow: var(--ds-focus-ring); }
+    .copy-path-btn.copied {
+      background: var(--ds-success-soft);
+      border-color: var(--ds-success);
+      color: var(--ds-success);
+      animation: dsPop 260ms var(--ds-ease);
+    }
+    .mobile-sort-control {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      margin: 10px 0 12px;
+      font-size: 13px;
+      color: var(--ds-text-muted);
+    }
+    .mobile-sort-control select {
+      padding: 6px 10px;
+      border: 1px solid var(--ds-border);
+      border-radius: 4px;
+      background: var(--ds-surface);
+      font-family: inherit;
+      font-size: 13px;
+    }
+
+    @media (max-width: 768px) {
+      .mobile-sort-control { display: flex; }
     }
 
     /* Responsive design */
@@ -525,7 +729,7 @@
 
       .file-table tr {
         margin-bottom: 15px;
-        border: 1px solid #ddd;
+        border: 1px solid var(--ds-border);
         border-radius: 5px;
         overflow: hidden;
       }
@@ -534,7 +738,7 @@
         text-align: right;
         padding-left: 50%;
         position: relative;
-        border-bottom: 1px solid #eee;
+        border-bottom: 1px solid var(--ds-border-muted);
       }
 
       .file-table td:last-child {
@@ -557,7 +761,7 @@
         text-align: left !important;
         font-size: 1.1em;
         font-weight: bold;
-        background: #f8f8f8;
+        background: var(--ds-bg-muted);
       }
 
       .name-cell::before {
@@ -598,10 +802,10 @@
     }
 
     .custom-dialog-modal-content {
-      background-color: #fff;
+      background-color: var(--ds-surface);
       padding: 25px;
       border-radius: 8px;
-      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+      box-shadow: var(--ds-shadow-md);
       width: 90%;
       max-width: 400px;
       text-align: center;
@@ -615,14 +819,14 @@
     .custom-dialog-modal-content p {
       margin: 15px 0;
       font-size: 1rem;
-      color: #333;
+      color: var(--ds-text);
     }
 
     .custom-dialog-input {
       width: calc(100% - 20px);
       padding: 10px;
       margin-bottom: 20px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--ds-border);
       border-radius: 4px;
       font-size: 14px;
     }
@@ -643,92 +847,82 @@
     }
 
     .custom-dialog-buttons button#dialogConfirmBtn {
-      background-color: #007bff;
-      color: white;
+      background-color: var(--ds-primary);
+      color: var(--ds-text-on-accent);
     }
 
     .custom-dialog-buttons button#dialogConfirmBtn:hover {
-      background-color: #0056b3;
+      background-color: var(--ds-primary-hover);
     }
 
     .custom-dialog-buttons button#dialogCancelBtn {
-      background-color: #ccc;
-      color: #333;
+      background-color: var(--ds-bg-sunken);
+      color: var(--ds-text);
     }
 
     .custom-dialog-buttons button#dialogCancelBtn:hover {
-      background-color: #999;
+      background-color: var(--ds-border);
     }
 
     /* Favorites */
     .fav-star {
       cursor: pointer;
       font-size: 16px;
-      color: #ccc;
+      color: var(--ds-text-subtle);
       margin-left: 6px;
-      transition: color 0.15s ease;
+      display: inline-block;
       user-select: none;
+      transition:
+        color var(--ds-duration-fast) var(--ds-ease),
+        transform var(--ds-duration-fast) var(--ds-ease);
     }
-    .fav-star:hover { color: #f59e0b; }
-    .fav-star.fav-active { color: #f59e0b; }
+    .fav-star:hover { color: var(--ds-gold); transform: rotate(-15deg) scale(1.15); }
+    .fav-star:active { transform: scale(0.9); transition-duration: 60ms; }
+    .fav-star.fav-active { color: var(--ds-gold); animation: favPop 280ms var(--ds-ease); }
+    @keyframes favPop {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.35) rotate(12deg); }
+      100% { transform: scale(1) rotate(0); }
+    }
 
-    /* Dark mode overrides */
-    [data-theme="dark"] body { background: #1a1a2e; color: #e0e0e0; }
-    [data-theme="dark"] .header { border-color: #444; }
-    [data-theme="dark"] .header h1 { color: #e0e0e0; }
-    [data-theme="dark"] .breadcrumb { color: #aaa; }
-    [data-theme="dark"] .breadcrumb a { color: #58a6ff; }
-    [data-theme="dark"] .upload-zone { background: #222; border-color: #444; color: #ccc; }
-    [data-theme="dark"] .upload-zone.dragover { background: #2a2a3e; border-color: #58a6ff; }
-    [data-theme="dark"] .file-table { background: #1e1e2e; border-color: #444; }
-    [data-theme="dark"] .file-table th { background: #2a2a3e; color: #e0e0e0; border-color: #444; }
-    [data-theme="dark"] .file-table td { border-color: #333; color: #e0e0e0; }
-    [data-theme="dark"] .file-table tbody tr:hover { background: #2a2a3e; }
-    [data-theme="dark"] .file-link { color: #58a6ff; }
-    [data-theme="dark"] .modified-cell { color: #aaa; }
-    [data-theme="dark"] .sort-header:hover { background: #444; }
-    [data-theme="dark"] .action-link { background: #2a2a3e; border-color: #444; color: #ccc; }
-    [data-theme="dark"] .action-link:hover { background: #333; border-color: #555; }
-    [data-theme="dark"] .action-link.download-btn { background: #1a2744; border-color: #2563eb; color: #58a6ff; }
-    [data-theme="dark"] .action-link.edit-btn { background: #2a2211; border-color: #d97706; color: #fbbf24; }
-    [data-theme="dark"] .action-link.rename-btn { background: #1f1533; border-color: #7c3aed; color: #a78bfa; }
-    [data-theme="dark"] .action-link.delete-btn { background: #2a1111; border-color: #dc2626; color: #f87171; }
-    [data-theme="dark"] .action-link[title]:hover::after { background: #555; }
-    [data-theme="dark"] .action-link[title]:hover::before { border-top-color: #555; }
-    [data-theme="dark"] .popup-overlay { background: rgba(0, 0, 0, 0.7); }
-    [data-theme="dark"] .popup-content { background: #1e1e2e; border-color: #444; color: #e0e0e0; }
-    [data-theme="dark"] .popup-header { border-color: #444; }
-    [data-theme="dark"] .popup-close:hover { background: #333; }
-    [data-theme="dark"] .share-item { background: #222; border-color: #444; }
-    [data-theme="dark"] .share-id { background: #1a2744; color: #58a6ff; }
-    [data-theme="dark"] .share-url a { color: #58a6ff; }
-    [data-theme="dark"] .share-users-title { color: #aaa; }
-    [data-theme="dark"] .user-tag { background: #1a2744; color: #58a6ff; }
-    [data-theme="dark"] input[type="text"],
-    [data-theme="dark"] input[type="file"],
-    [data-theme="dark"] select { background: #222; color: #e0e0e0; border-color: #444; }
-    [data-theme="dark"] .btn { background: #333; color: #e0e0e0; border-color: #555; }
-    [data-theme="dark"] .btn:hover { background: #444; }
-    [data-theme="dark"] .custom-dialog-overlay .custom-dialog { background: #1e1e2e; border-color: #444; color: #e0e0e0; }
-    [data-theme="dark"] .custom-dialog input { background: #222; color: #e0e0e0; border-color: #444; }
-
-    /* Sticky selection bar at bottom of viewport */
+    /* Sticky selection bar at bottom of viewport — uses the
+       Midnight Sapphire palette so it feels like a signature surface
+       rather than a flat black toolbar. */
     .selection-bar {
       position: fixed;
       bottom: 0;
       left: 0;
       right: 0;
-      background: #111;
-      color: white;
+      /* Deep navy base (token in light mode) / near-black navy (dark)
+         — both are jewel-tones when paired with the gradient accent. */
+      background: var(--ds-accent);
+      background-image:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0) 100%),
+        var(--ds-brand-gradient-soft);
+      color: #fff;
       padding: 12px 20px;
       z-index: 900;
-      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.25);
+      box-shadow: 0 -18px 40px -12px rgba(30, 27, 75, 0.45),
+                  0 -2px 8px rgba(0, 0, 0, 0.25);
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
       transform: translateY(100%);
-      transition: transform 0.25s ease;
+      opacity: 0;
+      transition: transform var(--ds-duration-normal) var(--ds-ease),
+                  opacity var(--ds-duration-fast) var(--ds-ease);
+    }
+    /* Gradient accent line traces the top edge of the toolbar. */
+    .selection-bar::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--ds-brand-gradient-line);
+      pointer-events: none;
     }
 
     .selection-bar.visible {
       transform: translateY(0);
+      opacity: 1;
     }
 
     .selection-bar-inner {
@@ -750,9 +944,10 @@
     }
 
     .selection-bar-count {
-      font-weight: bold;
+      font-weight: 700;
       font-size: 14px;
       white-space: nowrap;
+      letter-spacing: 0.02em;
     }
 
     .selection-bar .selected-files {
@@ -764,13 +959,14 @@
     }
 
     .selection-bar .selected-file {
-      background: #333;
-      color: #ddd;
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.85);
       font-size: 11px;
       white-space: nowrap;
       flex-shrink: 0;
       padding: 2px 8px;
-      border-radius: 3px;
+      border-radius: var(--ds-radius-pill);
+      border: 1px solid rgba(255, 255, 255, 0.08);
     }
 
     .selection-bar-actions {
@@ -780,37 +976,73 @@
       align-items: center;
     }
 
+    /* Base button — neutral "glass chip" on the dark bar. */
     .selection-bar-actions button {
-      padding: 6px 14px;
-      border: 1px solid #555;
-      color: #ddd;
-      background: #333;
+      padding: 7px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      color: rgba(255, 255, 255, 0.92);
+      background: rgba(255, 255, 255, 0.06);
       cursor: pointer;
       font-family: inherit;
       font-size: 13px;
-      border-radius: 4px;
-      transition: background 0.15s ease;
+      font-weight: 600;
+      border-radius: var(--ds-radius-sm);
+      line-height: 1;
+      transition:
+        background var(--ds-duration-fast) var(--ds-ease),
+        border-color var(--ds-duration-fast) var(--ds-ease),
+        color var(--ds-duration-fast) var(--ds-ease),
+        box-shadow var(--ds-duration-fast) var(--ds-ease),
+        transform var(--ds-duration-fast) var(--ds-ease);
     }
-
     .selection-bar-actions button:hover {
-      background: #444;
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(255, 255, 255, 0.24);
+      transform: translateY(-1px);
+    }
+    .selection-bar-actions button:active { transform: translateY(1px); }
+    .selection-bar-actions button:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.45);
     }
 
-    .selection-bar-actions .clear-btn {
-      background: transparent;
-      border-color: #666;
-      color: #aaa;
+    /* Danger — Delete: red tint, stays restrained until hover. */
+    .selection-bar-actions .danger-btn {
+      border-color: rgba(248, 113, 113, 0.45);
+      color: #fecaca;
+      background: rgba(248, 113, 113, 0.10);
     }
-
-    .selection-bar-actions .clear-btn:hover {
-      background: #222;
+    .selection-bar-actions .danger-btn:hover {
+      background: rgba(248, 113, 113, 0.20);
+      border-color: #f87171;
       color: #fff;
     }
 
-    [data-theme="dark"] .selection-bar { background: #0d0d1a; }
-    [data-theme="dark"] .selection-bar .selected-file { background: #2a2a3e; color: #ccc; }
-    [data-theme="dark"] .selection-bar-actions button { background: #2a2a3e; border-color: #444; color: #ccc; }
-    [data-theme="dark"] .selection-bar-actions button:hover { background: #333; }
+    /* Primary — Create share: full brand gradient; the hero CTA. */
+    .selection-bar-actions .primary-btn {
+      background: var(--ds-brand-gradient);
+      border-color: transparent;
+      color: #fff;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    }
+    .selection-bar-actions .primary-btn:hover {
+      background: var(--ds-brand-gradient-hover);
+      border-color: transparent;
+      color: #fff;
+      box-shadow: var(--ds-shadow-brand-glow);
+    }
+
+    /* Ghost — Clear: no fill, subtle text. */
+    .selection-bar-actions .clear-btn {
+      background: transparent;
+      border-color: rgba(255, 255, 255, 0.14);
+      color: rgba(255, 255, 255, 0.65);
+    }
+    .selection-bar-actions .clear-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.28);
+      color: #fff;
+    }
 
     @media (max-width: 768px) {
       .selection-bar-inner {
@@ -840,21 +1072,21 @@
     .folder-picker-overlay.show { display: flex; }
 
     .folder-picker {
-      background: #fff;
-      border: 2px solid #000;
+      background: var(--ds-surface);
+      border: 2px solid var(--ds-accent);
       border-radius: 10px;
       width: 90%;
       max-width: 560px;
       max-height: 80vh;
       display: flex;
       flex-direction: column;
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+      box-shadow: var(--ds-shadow-lg);
       overflow: hidden;
     }
 
     .fp-header {
       padding: 16px 20px;
-      border-bottom: 1px solid #ddd;
+      border-bottom: 1px solid var(--ds-border);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -866,26 +1098,26 @@
       display: flex; align-items: center; justify-content: center;
       border-radius: 50%;
     }
-    .fp-close:hover { background: #f0f0f0; }
+    .fp-close:hover { background: var(--ds-bg-muted); }
 
     .fp-breadcrumb {
       padding: 10px 20px;
       font-size: 13px;
-      background: #f8f8f8;
-      border-bottom: 1px solid #eee;
+      background: var(--ds-bg-muted);
+      border-bottom: 1px solid var(--ds-border-muted);
       display: flex;
       align-items: center;
       gap: 4px;
       flex-wrap: wrap;
     }
     .fp-breadcrumb a {
-      color: #0066cc;
+      color: var(--ds-primary);
       text-decoration: none;
       cursor: pointer;
     }
     .fp-breadcrumb a:hover { text-decoration: underline; }
-    .fp-breadcrumb .fp-sep { color: #999; }
-    .fp-breadcrumb .fp-current { font-weight: bold; color: #333; }
+    .fp-breadcrumb .fp-sep { color: var(--ds-text-subtle); }
+    .fp-breadcrumb .fp-current { font-weight: bold; color: var(--ds-text); }
 
     .fp-body {
       flex: 1;
@@ -897,13 +1129,13 @@
     .fp-loading {
       text-align: center;
       padding: 40px 20px;
-      color: #888;
+      color: var(--ds-text-subtle);
     }
 
     .fp-empty {
       text-align: center;
       padding: 40px 20px;
-      color: #999;
+      color: var(--ds-text-subtle);
       font-style: italic;
     }
 
@@ -919,45 +1151,45 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      border-bottom: 1px solid #f0f0f0;
+      border-bottom: 1px solid var(--ds-border-muted);
       transition: background 0.1s ease;
       font-size: 14px;
     }
-    .fp-folder-item:hover { background: #f0f5ff; }
+    .fp-folder-item:hover { background: var(--ds-primary-soft); }
     .fp-folder-item .fp-icon { font-size: 16px; flex-shrink: 0; }
     .fp-folder-item .fp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .fp-folder-item .fp-arrow { color: #bbb; font-size: 14px; flex-shrink: 0; }
+    .fp-folder-item .fp-arrow { color: var(--ds-text-subtle); font-size: 14px; flex-shrink: 0; }
 
     .fp-new-folder {
       padding: 10px 20px;
-      border-bottom: 1px solid #eee;
-      background: #fafafa;
+      border-bottom: 1px solid var(--ds-border-muted);
+      background: var(--ds-bg-muted);
     }
     .fp-new-folder button {
       padding: 5px 12px;
-      border: 1px dashed #ccc;
-      background: #fff;
+      border: 1px dashed var(--ds-border);
+      background: var(--ds-surface);
       cursor: pointer;
       font-family: inherit;
       font-size: 13px;
       border-radius: 4px;
-      color: #555;
+      color: var(--ds-text-muted);
     }
-    .fp-new-folder button:hover { border-color: #999; color: #000; }
+    .fp-new-folder button:hover { border-color: var(--ds-border-strong); color: var(--ds-text); }
 
     .fp-footer {
       padding: 14px 20px;
-      border-top: 1px solid #ddd;
+      border-top: 1px solid var(--ds-border);
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      background: #fafafa;
+      background: var(--ds-bg-muted);
     }
 
     .fp-dest-path {
       font-size: 12px;
-      color: #666;
+      color: var(--ds-text-muted);
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -965,7 +1197,7 @@
       flex: 1;
     }
     .fp-dest-path code {
-      background: #eee;
+      background: var(--ds-bg-sunken);
       padding: 2px 6px;
       border-radius: 3px;
       font-size: 12px;
@@ -978,7 +1210,7 @@
     }
     .fp-footer-actions button {
       padding: 8px 18px;
-      border: 1px solid #000;
+      border: 1px solid var(--ds-accent);
       cursor: pointer;
       font-family: inherit;
       font-size: 13px;
@@ -986,36 +1218,16 @@
       font-weight: bold;
     }
     .fp-cancel-btn {
-      background: #fff;
-      color: #333;
+      background: var(--ds-surface);
+      color: var(--ds-text);
     }
-    .fp-cancel-btn:hover { background: #f0f0f0; }
+    .fp-cancel-btn:hover { background: var(--ds-bg-muted); }
     .fp-confirm-btn {
-      background: #000;
-      color: #fff;
+      background: var(--ds-accent);
+      color: var(--ds-text-on-accent);
     }
-    .fp-confirm-btn:hover { background: #333; }
+    .fp-confirm-btn:hover { background: var(--ds-accent-hover); }
 
-    /* Folder picker dark mode */
-    [data-theme="dark"] .folder-picker { background: #1e1e2e; border-color: #444; color: #e0e0e0; }
-    [data-theme="dark"] .fp-header { border-color: #444; }
-    [data-theme="dark"] .fp-close:hover { background: #333; }
-    [data-theme="dark"] .fp-breadcrumb { background: #1a1a2a; border-color: #333; }
-    [data-theme="dark"] .fp-breadcrumb a { color: #58a6ff; }
-    [data-theme="dark"] .fp-breadcrumb .fp-current { color: #e0e0e0; }
-    [data-theme="dark"] .fp-breadcrumb .fp-sep { color: #666; }
-    [data-theme="dark"] .fp-folder-item { border-color: #2a2a3e; }
-    [data-theme="dark"] .fp-folder-item:hover { background: #2a2a3e; }
-    [data-theme="dark"] .fp-new-folder { background: #1a1a2a; border-color: #333; }
-    [data-theme="dark"] .fp-new-folder button { background: #222; border-color: #555; color: #ccc; }
-    [data-theme="dark"] .fp-new-folder button:hover { color: #fff; border-color: #888; }
-    [data-theme="dark"] .fp-footer { background: #1a1a2a; border-color: #444; }
-    [data-theme="dark"] .fp-dest-path { color: #aaa; }
-    [data-theme="dark"] .fp-dest-path code { background: #2a2a3e; color: #ccc; }
-    [data-theme="dark"] .fp-cancel-btn { background: #2a2a3e; color: #ccc; border-color: #555; }
-    [data-theme="dark"] .fp-cancel-btn:hover { background: #333; }
-    [data-theme="dark"] .fp-confirm-btn { background: #58a6ff; color: #000; border-color: #58a6ff; }
-    [data-theme="dark"] .fp-confirm-btn:hover { background: #79b8ff; }
   </style>
 </head>
 
@@ -1029,8 +1241,11 @@
     <!-- Upload Zone -->
     {% if features['file_upload'] %}
     <div class="upload-zone" id="uploadZone">
-      <p><strong>📁 Drop files here to upload</strong></p>
-      <p>Or click to select files</p>
+      <p class="upload-zone-title">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4v12"/><polyline points="7 9 12 4 17 9"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        <strong>Drop files here to upload</strong>
+      </p>
+      <p class="upload-zone-hint">or click to select files</p>
       <input type="file" id="fileInput" multiple style="display: none" />
     </div>
     <div id="progressContainer" style="display:none;width:100%;"></div>
@@ -1038,36 +1253,54 @@
 
     <!-- Toolbar: New folder -->
     {% if features.get('folder_create') %}
-    <div style="margin-bottom: 10px;">
-      <button type="button" id="newFolderBtn" style="padding:6px 12px;border:1px solid #000;background:#fff;cursor:pointer;font-family:inherit;">📁 New folder</button>
+    <div class="browse-toolbar">
+      <button type="button" id="newFolderBtn" class="toolbar-btn">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
+        New folder
+      </button>
     </div>
     {% end %}
 
     <div class="breadcrumb breadcrumb-above-file-list" aria-label="Current path">
-      <a href="/files/">🏠 Home</a>
+      <a href="/files/" class="crumb-home"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>Home</a>
       {% if current_user and current_path != "/" %} {% set path_parts = current_path.strip('/').split('/') %}
       {% for i, part in enumerate(path_parts) %}
       {% set partial_path = '/files/' + '/'.join(path_parts[:i+1]) %} /
       <a href="{{ partial_path }}">{{ part }}</a>
       {% end %} {% end %}
+      {% if current_path %}
+      <button type="button" id="copyPathBtn" class="copy-path-btn" title="Copy current path" aria-label="Copy current path"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="3" width="11" height="14" rx="2"/><path d="M5 7v12a2 2 0 0 0 2 2h10"/></svg></button>
+      {% end %}
+    </div>
+
+    <!-- Mobile sort control (visible only on small screens; the table header is hidden there) -->
+    <div class="mobile-sort-control" aria-label="Sort files">
+      <label for="mobileSortSelect">Sort by:</label>
+      <select id="mobileSortSelect">
+        <option value="0">Name</option>
+        <option value="1">Size</option>
+        <option value="2">Modified</option>
+      </select>
     </div>
 
     <!-- File Listing Table -->
     <table class="file-table" id="fileTable">
       <thead>
         <tr>
-          <th class="name-col sort-header" data-sort-column="0">
+          <th class="name-col sort-header" data-sort-column="0" aria-sort="none">
             <span class="th-checkbox-wrap">
-              <input type="checkbox" id="selectAllCheckbox" title="Select all" />
+              <input type="checkbox" id="selectAllCheckbox" title="Select all visible"
+                aria-label="Select all files on this page" aria-controls="fileTable" />
             </span>
-            📄 Name<div class="resizer"></div>
+            <span class="th-label">Name</span><span class="sort-indicator" aria-hidden="true"></span><div class="resizer"></div>
           </th>
-          <th class="size-col sort-header" data-sort-column="1">📊 Size<div class="resizer"></div>
+          <th class="size-col sort-header" data-sort-column="1" aria-sort="none">
+            <span class="th-label">Size</span><span class="sort-indicator" aria-hidden="true"></span><div class="resizer"></div>
           </th>
-          <th class="modified-col sort-header" data-sort-column="2">
-            🕐 Modified<div class="resizer"></div>
+          <th class="modified-col sort-header" data-sort-column="2" aria-sort="none">
+            <span class="th-label">Modified</span><span class="sort-indicator" aria-hidden="true"></span><div class="resizer"></div>
           </th>
-          <th class="actions-col">🛠️ Actions</th>
+          <th class="actions-col"><span class="th-label">Actions</span></th>
         </tr>
       </thead>
       <tbody>
@@ -1135,34 +1368,37 @@
             {% if not file["is_dir"] %}
             {% if features['file_download'] %}
             <a href="/files/{{ escape(join_path(current_path, file['name'])) }}?download=1"
-              class="action-link download-btn" title="Download"><svg viewBox="0 0 24 24">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
+              class="action-link download-btn" title="Download" aria-label="Download"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 3v12"/>
+                <path d="M7 10l5 5 5-5"/>
+                <path d="M5 21h14"/>
               </svg></a>
             {% end %}
             {% if features['file_edit'] %}
             <a href="/edit/{{ escape(join_path(current_path, file['name'])) }}" class="action-link edit-btn"
-              title="Edit"><svg viewBox="0 0 24 24">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              title="Edit" aria-label="Edit"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <rect x="3" y="3" width="18" height="18" rx="2.5"/>
+                <path d="M15.5 6.5a1.8 1.8 0 0 1 2.5 2.5L10 17l-3 1 1-3 7.5-8.5z"/>
               </svg></a>
             {% end %}
             {% end %}
             {% if features['file_rename'] %}
             <a href="#" data-rename-path="{{ escape(join_path(current_path, file['name'])) }}"
-              class="action-link rename-btn" title="Rename"><svg viewBox="0 0 24 24">
-                <path d="M12 20h9" />
-                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+              class="action-link rename-btn" title="Rename" aria-label="Rename"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M6 5h5"/>
+                <path d="M6 19h5"/>
+                <path d="M8.5 5v14"/>
+                <path d="M14 9h4a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-4z"/>
               </svg></a>
             {% end %}
             {% if features['file_delete'] %}
             <a href="#" data-delete-path="{{ escape(join_path(current_path, file['name'])) }}" data-is-dir="{{ '1' if file['is_dir'] else '0' }}"
-              class="action-link delete-btn" title="Delete"><svg viewBox="0 0 24 24">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                <line x1="10" y1="11" x2="10" y2="17" />
-                <line x1="14" y1="11" x2="14" y2="17" />
+              class="action-link delete-btn" title="Delete" aria-label="Delete"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M4 7h16"/>
+                <path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
+                <path d="M6 7l1 13a2 2 0 0 0 2 1.8h6a2 2 0 0 0 2-1.8l1-13"/>
+                <path d="M10 11v7"/>
+                <path d="M14 11v7"/>
               </svg></a>
             {% end %}
           </td>
@@ -1172,8 +1408,12 @@
         <!-- Empty Directory Message -->
         {% if not files %}
         <tr>
-          <td colspan="4" style="text-align: center; padding: 40px; color: #666">
-            📭 This directory is empty
+          <td colspan="4" class="empty-state-cell">
+            <div class="empty-state">
+              <svg class="empty-state-ico" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path d="M10 20a4 4 0 0 1 4-4h14l4 5h18a4 4 0 0 1 4 4v21a4 4 0 0 1-4 4H14a4 4 0 0 1-4-4V20z"/><path d="M10 28h44"/></svg>
+              <div class="empty-state-title">This directory is empty</div>
+              <div class="empty-state-hint">Drop files above to upload, or create a new folder.</div>
+            </div>
           </td>
         </tr>
         {% end %}
@@ -1191,7 +1431,7 @@
       </div>
       <div class="selection-bar-actions">
         {% if features.get('file_delete') %}
-        <button type="button" id="bulkDeleteBtn">Delete</button>
+        <button type="button" id="bulkDeleteBtn" class="danger-btn">Delete</button>
         {% end %}
         {% if features.get('file_rename') %}
         <button type="button" id="bulkCopyBtn">Copy</button>
@@ -1199,6 +1439,7 @@
         {% end %}
         {% if features.get('file_share') %}
         <button type="button" id="bulkAddToShareBtn">Add to share</button>
+        <button type="button" id="bulkCreateShareBtn" class="primary-btn" title="Create a new share from the selected items">Create share</button>
         {% end %}
         <button type="button" id="clearSelectionBtn" class="clear-btn" title="Clear all selections">✕ Clear</button>
       </div>
@@ -1245,7 +1486,8 @@
   </div>
 
   <!-- Custom dialog modal -->
-  <div id="customDialogModal" class="custom-dialog-modal">
+  <div id="customDialogModal" class="custom-dialog-modal" role="dialog" aria-modal="true"
+    aria-labelledby="dialogTitle" aria-describedby="dialogMessage">
     <div class="custom-dialog-modal-content">
       <h2 id="dialogTitle">Dialog</h2>
       <p id="dialogMessage"></p>

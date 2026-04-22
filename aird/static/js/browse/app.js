@@ -38,6 +38,12 @@
       }
     };
 
+    /** Last path segment; avoids Array.prototype.findLast (not in older browsers). */
+    function pathBasename(p) {
+      const segs = String(p).split('/').filter(Boolean);
+      return segs.length ? segs[segs.length - 1] : p;
+    }
+
     // Fallback for image thumbnails that fail to load
     document.addEventListener('error', function(e) {
       if (e.target.tagName === 'IMG' && e.target.dataset.fallback) {
@@ -46,8 +52,11 @@
     }, true);
 
     // Custom dialog function
+    let _dialogState = null; // { resolve, hasCancel, opener }
+
     function showDialog(message, title = 'Confirm', options = {}) {
       return new Promise((resolve) => {
+        const modal = document.getElementById('customDialogModal');
         document.getElementById('dialogTitle').textContent = title;
         document.getElementById('dialogMessage').textContent = message;
 
@@ -61,31 +70,38 @@
         inputContainer.style.display = options.prompt ? 'block' : 'none';
         input.value = options.prompt ? (options.defaultValue || '') : '';
 
-        document.getElementById('customDialogModal').classList.add('show');
+        const opener = document.activeElement;
+        modal.classList.add('show');
 
         if (options.prompt) {
           input.focus();
           input.select();
+        } else {
+          confirmBtn.focus();
         }
 
-        confirmBtn.onclick = () => {
-          document.getElementById('customDialogModal').classList.remove('show');
-          resolve(options.prompt ? input.value : true);
+        const close = (value) => {
+          modal.classList.remove('show');
+          _dialogState = null;
+          if (opener && typeof opener.focus === 'function') {
+            try { opener.focus(); } catch { /* ignore */ }
+          }
+          resolve(value);
         };
 
-        cancelBtn.onclick = () => {
-          document.getElementById('customDialogModal').classList.remove('show');
-          resolve(options.prompt ? null : false);
+        _dialogState = {
+          hasCancel: !!options.showCancel,
+          isPrompt: !!options.prompt,
+          cancel: () => close(options.prompt ? null : false),
         };
 
-        // Handle Enter key for prompt
+        confirmBtn.onclick = () => close(options.prompt ? input.value : true);
+        cancelBtn.onclick = () => close(options.prompt ? null : false);
+
         if (options.prompt) {
           input.onkeydown = (e) => {
-            if (e.key === 'Enter') {
-              confirmBtn.click();
-            } else if (e.key === 'Escape') {
-              cancelBtn.click();
-            }
+            if (e.key === 'Enter') { e.preventDefault(); confirmBtn.click(); }
+            else if (e.key === 'Escape') { e.preventDefault(); cancelBtn.click(); }
           };
         }
       });
@@ -97,7 +113,7 @@
       return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
     }
 
-    // File upload functionality
+    // File upload functionality (DOM only exists when feature file_upload is enabled)
     const uploadZone = document.getElementById("uploadZone");
     const fileInput = document.getElementById("fileInput");
     const progressContainer = document.getElementById("progressContainer");
@@ -105,6 +121,7 @@
     let isUploading = false;
     let reloadTimer = null;
 
+    if (uploadZone && fileInput && progressContainer) {
     uploadZone.addEventListener("click", () => fileInput.click());
     uploadZone.addEventListener("dragover", (e) => {
       e.preventDefault();
@@ -319,12 +336,6 @@
       }, RELOAD_DELAY_MS);
     }
 
-    // CSRF Protection: Get XSRF token from cookie
-    function getXSRFToken() {
-      const match = /_xsrf=([^;]*)/.exec(document.cookie);
-      return match ? decodeURIComponent(match[1]) : '';
-    }
-
     function formatBytes(bytes) {
       const units = ["B", "KB", "MB", "GB", "TB"];
       let i = 0;
@@ -362,6 +373,8 @@
           } else {
             item.info.textContent = "Failed";
             item.cancelBtn.remove();
+            const detail = (xhr.responseText || "").trim() || ("HTTP " + xhr.status);
+            showDialog("Upload failed (" + item.file.name + "): " + detail, "Upload failed");
             reject(new Error(xhr.responseText || `Upload of ${item.file.name} failed`));
           }
         });
@@ -369,6 +382,7 @@
         xhr.addEventListener("error", () => {
           item.info.textContent = "Error";
           item.cancelBtn.remove();
+          showDialog("Network error while uploading " + item.file.name + ".", "Upload failed");
           reject(new Error(`Upload of ${item.file.name} failed`));
         });
 
@@ -392,6 +406,14 @@
 
         xhr.send(item.file);
       });
+    }
+
+    } // end upload UI (uploadZone && fileInput && progressContainer)
+
+    // CSRF Protection: Get XSRF token from cookie (used by upload + rest of page)
+    function getXSRFToken() {
+      const match = /_xsrf=([^;]*)/.exec(document.cookie);
+      return match ? decodeURIComponent(match[1]) : '';
     }
 
     // Rename functionality
@@ -487,7 +509,7 @@
         if (filesList) {
           const displayPaths = allPaths.slice(0, 10);
           filesList.innerHTML = displayPaths.map(function (p) {
-            const name = p.split('/').findLast(Boolean) ?? p;
+            const name = pathBasename(p);
             return '<span class="selected-file" title="' + p.replaceAll('"', '&quot;') + '">' +
               name.replaceAll('<', '&lt;') + '</span>';
           }).join('');
@@ -600,13 +622,20 @@
         this._destDisplay.textContent = '/' + (path || '');
         this._body.innerHTML = '<div class="fp-loading">Loading...</div>';
 
+        if (this._abort) this._abort.abort();
+        const controller = new AbortController();
+        this._abort = controller;
+
         try {
-          const res = await fetch('/api/files/' + encodeURI(path));
+          const res = await fetch('/api/files/' + encodeURI(path), { signal: controller.signal });
+          if (controller.signal.aborted) return;
           if (!res.ok) throw new Error('Failed to load');
           const data = await res.json();
+          if (controller.signal.aborted) return;
           const folders = (data.files || []).filter(f => f.is_dir);
           this._renderFolders(folders);
         } catch (e) {
+          if (e?.name === 'AbortError') return;
           console.warn('Directory load failed:', e);
           this._body.innerHTML = '<div class="fp-empty">Failed to load directory</div>';
         }
@@ -689,7 +718,7 @@
       if (destDir == null) return;
       let failed = 0;
       for (const path of paths) {
-        const base = path.split('/').findLast(Boolean) ?? path;
+        const base = pathBasename(path);
         const fullDest = destDir ? destDir + '/' + base : base;
         const formData = new URLSearchParams();
         formData.append('path', path);
@@ -708,7 +737,7 @@
       if (destDir == null) return;
       let failed = 0;
       for (const path of paths) {
-        const base = path.split('/').findLast(Boolean) ?? path;
+        const base = pathBasename(path);
         const fullDest = destDir ? destDir + '/' + base : base;
         const formData = new URLSearchParams();
         formData.append('path', path);
@@ -718,6 +747,24 @@
       }
       if (failed === 0) { SelectionStore.clear(); location.reload(); }
       else showDialog(failed + ' of ' + paths.length + ' move operation(s) failed.', 'Move');
+    }
+
+    function bulkCreateShare() {
+      // Stash the current selection in sessionStorage and jump to the
+      // Share page, which picks the prefill up on load and opens the
+      // configuration modal. sessionStorage avoids URL-length and
+      // escaping issues for long/complex path lists.
+      const paths = getSelectedPaths();
+      if (paths.length === 0) return;
+      try {
+        sessionStorage.setItem('airdShareCreatePrefill', JSON.stringify({
+          paths: paths,
+          created_at: Date.now(),
+        }));
+      } catch (e) {
+        console.warn('Failed to stash share prefill:', e);
+      }
+      location.href = '/share';
     }
 
     async function bulkAddToShare() {
@@ -774,6 +821,19 @@
     }
 
     // Table sorting functionality
+    const _sortState = { column: null, direction: 'asc' };
+
+    function _updateSortIndicators(column, direction) {
+      document.querySelectorAll('[data-sort-column]').forEach((th) => {
+        const c = Number.parseInt(th.dataset.sortColumn, 10);
+        if (c === column) {
+          th.setAttribute('aria-sort', direction === 'asc' ? 'ascending' : 'descending');
+        } else {
+          th.setAttribute('aria-sort', 'none');
+        }
+      });
+    }
+
     function sortTable(columnIndex) {
       const table = document.getElementById("fileTable");
       const tbody = table.querySelector("tbody");
@@ -781,39 +841,49 @@
       const skipRows = calculateSkipRows(allRows);
       const rows = allRows.slice(skipRows);
 
+      // Toggle direction if re-clicking; otherwise pick a sensible default
+      let direction;
+      if (_sortState.column === columnIndex) {
+        direction = _sortState.direction === 'asc' ? 'desc' : 'asc';
+      } else {
+        direction = (columnIndex === 1 || columnIndex === 2) ? 'desc' : 'asc';
+      }
+      _sortState.column = columnIndex;
+      _sortState.direction = direction;
+      const mult = direction === 'asc' ? 1 : -1;
+
       rows.sort((a, b) => {
-        let aVal = a.children[columnIndex].textContent.trim();
-        let bVal = b.children[columnIndex].textContent.trim();
-
-        // Column indices: 0 = Name (checkbox+name), 1 = Size, 2 = Modified, 3 = Actions
         if (columnIndex === 1) {
-          // Size column
-          aVal = Number.parseInt(a.children[columnIndex].dataset.bytes, 10) || -1;
-          bVal = Number.parseInt(b.children[columnIndex].dataset.bytes, 10) || -1;
-          return bVal - aVal;
-        } else if (columnIndex === 2) {
-          // Modified column
-          aVal = Number.parseInt(a.children[columnIndex].dataset.timestamp, 10) || 0;
-          bVal = Number.parseInt(b.children[columnIndex].dataset.timestamp, 10) || 0;
-          return bVal - aVal;
+          const av = Number.parseInt(a.children[1].dataset.bytes, 10) || -1;
+          const bv = Number.parseInt(b.children[1].dataset.bytes, 10) || -1;
+          return (av - bv) * mult;
         }
-
+        if (columnIndex === 2) {
+          const av = Number.parseInt(a.children[2].dataset.timestamp, 10) || 0;
+          const bv = Number.parseInt(b.children[2].dataset.timestamp, 10) || 0;
+          return (av - bv) * mult;
+        }
+        // Name column (0): keep directory grouping regardless of direction
         const nameCol = 0;
         const aIsDir = a.children[nameCol]?.querySelector(".file-icon")?.textContent === "📁";
         const bIsDir = b.children[nameCol]?.querySelector(".file-icon")?.textContent === "📁";
-
-        if (aIsDir !== bIsDir) {
-          return bIsDir ? 1 : -1;
-        }
-
-        return aVal.localeCompare(bVal);
+        if (aIsDir !== bIsDir) return bIsDir ? 1 : -1;
+        const aVal = a.children[nameCol].textContent.trim();
+        const bVal = b.children[nameCol].textContent.trim();
+        return aVal.localeCompare(bVal) * mult;
       });
 
       rows.forEach((row) => tbody.appendChild(row));
+      _updateSortIndicators(columnIndex, direction);
+
+      // Keep mobile selector in sync when present
+      const mobileSel = document.getElementById('mobileSortSelect');
+      if (mobileSel) mobileSel.value = String(columnIndex);
     }
 
     document.addEventListener('DOMContentLoaded', function () {
       const table = document.getElementById('fileTable');
+      if (!table) return;
       const resizers = table.querySelectorAll('.resizer');
       let th = null;
       let startX, startWidth;
@@ -848,75 +918,94 @@
     });
 
     // Share popup functions
+    function _createEl(tag, props, text) {
+      const el = document.createElement(tag);
+      if (props) {
+        for (const key of Object.keys(props)) {
+          if (key === 'className') el.className = props[key];
+          else if (key === 'dataset') Object.assign(el.dataset, props[key]);
+          else el.setAttribute(key, props[key]);
+        }
+      }
+      if (text != null) el.textContent = text;
+      return el;
+    }
+
     function formatShareAccessLabel(share) {
       const users = share.allowed_users;
       if (!users) return 'Public Access';
       const n = users.length;
-      let pluralSuffix = 's';
-      if (n === 1) pluralSuffix = '';
-      return 'Restricted (' + n + ' user' + pluralSuffix + ')';
+      const suffix = n === 1 ? '' : 's';
+      return 'Restricted (' + n + ' user' + suffix + ')';
     }
 
-    function formatShareAllowedUsersHtml(share) {
-      const users = share.allowed_users;
-      if (!users) return '';
-      const tags = users.map(function (u) {
-        return '<span class="user-tag">' + u + '</span>';
-      }).join('');
-      return '<div class="share-users"><div class="share-users-title">Allowed Users:</div>' + tags + '</div>';
+    function _renderShareItem(share, origin) {
+      const item = _createEl('div', { className: 'share-item' });
+      item.appendChild(_createEl('div', { className: 'share-id' }, share.id));
+
+      const urlWrap = _createEl('div', { className: 'share-url' });
+      const a = _createEl('a', { href: share.url, target: '_blank', rel: 'noopener noreferrer' }, origin + share.url);
+      urlWrap.appendChild(a);
+      item.appendChild(urlWrap);
+
+      const accessClass = share.allowed_users ? 'restricted' : 'public';
+      item.appendChild(_createEl('div', { className: 'share-access ' + accessClass }, formatShareAccessLabel(share)));
+
+      if (share.allowed_users) {
+        const usersBox = _createEl('div', { className: 'share-users' });
+        usersBox.appendChild(_createEl('div', { className: 'share-users-title' }, 'Allowed Users:'));
+        for (const u of share.allowed_users) {
+          usersBox.appendChild(_createEl('span', { className: 'user-tag' }, u));
+        }
+        item.appendChild(usersBox);
+      }
+
+      const actions = _createEl('div', { className: 'share-actions' });
+      const copyBtn = _createEl('button', { className: 'btn', dataset: { action: 'copyToClipboard', text: origin + share.url } }, 'Copy Link');
+      const openBtn = _createEl('button', { className: 'btn', dataset: { action: 'openShare', url: share.url } }, 'Open Share');
+      const revokeBtn = _createEl('button', { className: 'btn', dataset: { action: 'revokeShare', id: share.id } }, 'Revoke');
+      actions.appendChild(copyBtn); actions.appendChild(openBtn); actions.appendChild(revokeBtn);
+      item.appendChild(actions);
+      return item;
     }
 
     async function showShareDetails(filePath) {
       const popup = document.getElementById('sharePopup');
       const content = document.getElementById('sharePopupContent');
 
-      // Show popup with loading state
       popup.classList.add('show');
-      content.innerHTML = '<div class="loading">Loading share details...</div>';
+      content.textContent = '';
+      content.appendChild(_createEl('div', { className: 'loading' }, 'Loading share details...'));
 
       try {
-        const response = await fetch(`/api/share/details?path=${encodeURIComponent(filePath)}`);
+        const response = await fetch('/api/share/details?path=' + encodeURIComponent(filePath));
         const data = await response.json();
 
+        content.textContent = '';
         if (data.error) {
-          content.innerHTML = `<div style="color: red; text-align: center; padding: 20px;">Error: ${data.error}</div>`;
+          const err = _createEl('div', null, 'Error: ' + data.error);
+          err.style.cssText = 'color: red; text-align: center; padding: 20px;';
+          content.appendChild(err);
+          return;
+        }
+        if (!data.shares || data.shares.length === 0) {
+          const none = _createEl('div', null, 'This file is not currently shared.');
+          none.style.cssText = 'text-align: center; padding: 20px; color: #666;';
+          content.appendChild(none);
           return;
         }
 
-        if (data.shares.length === 0) {
-          content.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">This file is not currently shared.</div>';
-          return;
-        }
-
-        // Update popup title with filename
-        document.querySelector('.popup-title').textContent = `Share Details - ${filePath.split('/').pop()}`;
-
-        // Render share details
+        document.querySelector('.popup-title').textContent = 'Share Details - ' + filePath.split('/').pop();
         const origin = location.origin;
-        content.innerHTML = data.shares.map(function (share) {
-          const accessClass = share.allowed_users ? 'restricted' : 'public';
-          const accessLabel = formatShareAccessLabel(share);
-          const usersHtml = formatShareAllowedUsersHtml(share);
-          return (
-            '<div class="share-item">' +
-            '<div class="share-id">' + share.id + '</div>' +
-            '<div class="share-url">' +
-            '<a href="' + share.url + '" target="_blank">' + origin + share.url + '</a>' +
-            '</div>' +
-            '<div class="share-access ' + accessClass + '">' + accessLabel + '</div>' +
-            usersHtml +
-            '<div class="share-actions">' +
-            '<button class="btn" data-action="copyToClipboard" data-text="' + origin + share.url + '">Copy Link</button>' +
-            '<button class="btn" data-action="openShare" data-url="' + share.url + '">Open Share</button>' +
-            '<button class="btn" data-action="revokeShare" data-id="' + share.id + '">Revoke</button>' +
-            '</div>' +
-            '</div>'
-          );
-        }).join('');
-
+        for (const share of data.shares) {
+          content.appendChild(_renderShareItem(share, origin));
+        }
       } catch (error) {
         console.error('Error loading share details:', error);
-        content.innerHTML = '<div style="color: red; text-align: center; padding: 20px;">Failed to load share details</div>';
+        content.textContent = '';
+        const err = _createEl('div', null, 'Failed to load share details');
+        err.style.cssText = 'color: red; text-align: center; padding: 20px;';
+        content.appendChild(err);
       }
     }
 
@@ -925,19 +1014,9 @@
       popup.classList.remove('show');
     }
 
-    // Close popup when clicking outside
     document.addEventListener('click', function (event) {
       const popup = document.getElementById('sharePopup');
-      if (event.target === popup) {
-        closeSharePopup();
-      }
-    });
-
-    // Close popup with Escape key
-    document.addEventListener('keydown', function (event) {
-      if (event.key === 'Escape') {
-        closeSharePopup();
-      }
+      if (event.target === popup) closeSharePopup();
     });
 
     function _showCopiedFeedback(btn) {
@@ -968,20 +1047,21 @@
       try {
         const formData = new URLSearchParams();
         formData.append('id', shareId);
-        await fetch('/share/revoke', {
+        const res = await fetch('/share/revoke', {
           method: 'POST',
-          headers: {
-            'X-XSRFToken': getXSRFToken()
-          },
+          headers: { 'X-XSRFToken': getXSRFToken() },
           body: formData
         });
-
-        // Close popup and refresh the page to update share status
+        if (!res.ok) {
+          const detail = (await res.text().catch(() => '')).trim() || ('HTTP ' + res.status);
+          showDialog('Failed to revoke share: ' + detail, 'Error');
+          return;
+        }
         closeSharePopup();
         location.reload();
       } catch (error) {
         console.error('Error revoking share:', error);
-        showDialog('Failed to revoke share', 'Error');
+        showDialog('Failed to revoke share: ' + (error.message || 'network error'), 'Error');
       }
     }
 
@@ -1069,6 +1149,8 @@
       if (bulkMoveBtn) bulkMoveBtn.addEventListener('click', bulkMove);
       const bulkAddToShareBtn = document.getElementById('bulkAddToShareBtn');
       if (bulkAddToShareBtn) bulkAddToShareBtn.addEventListener('click', bulkAddToShare);
+      const bulkCreateShareBtn = document.getElementById('bulkCreateShareBtn');
+      if (bulkCreateShareBtn) bulkCreateShareBtn.addEventListener('click', bulkCreateShare);
       const clearSelectionBtn = document.getElementById('clearSelectionBtn');
       if (clearSelectionBtn) clearSelectionBtn.addEventListener('click', function () {
         SelectionStore.clear();
@@ -1077,6 +1159,44 @@
         if (sa) sa.checked = false;
         updateBulkToolbar();
       });
+
+      // Copy current path button in breadcrumb
+      const copyPathBtn = document.getElementById('copyPathBtn');
+      if (copyPathBtn) {
+        copyPathBtn.addEventListener('click', async function () {
+          const path = document.getElementById('currentPath')?.value ?? '';
+          const text = '/' + (path.replace(/^\/+/, ''));
+          try {
+            if (navigator.clipboard?.writeText) {
+              await navigator.clipboard.writeText(text);
+            } else {
+              const ta = document.createElement('textarea');
+              ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+              document.body.appendChild(ta); ta.select();
+              try { document.execCommand('copy'); } finally { ta.remove(); }
+            }
+            const original = copyPathBtn.textContent;
+            copyPathBtn.classList.add('copied');
+            copyPathBtn.textContent = '✓';
+            setTimeout(() => {
+              copyPathBtn.classList.remove('copied');
+              copyPathBtn.textContent = original;
+            }, 1200);
+          } catch (e) {
+            console.warn('Copy path failed:', e);
+            showDialog('Failed to copy path to clipboard', 'Error');
+          }
+        });
+      }
+
+      // Mobile sort select (mirrors clicking the column header)
+      const mobileSortSelect = document.getElementById('mobileSortSelect');
+      if (mobileSortSelect) {
+        mobileSortSelect.addEventListener('change', function () {
+          const col = Number.parseInt(this.value, 10);
+          if (!Number.isNaN(col)) sortTable(col);
+        });
+      }
 
       // Event delegation for dynamically generated share popup buttons
       document.addEventListener('click', function (e) {
@@ -1157,8 +1277,16 @@
 
       function _handleEscapeKey() {
         if (shortcutsOverlay) { hideShortcutsHelp(); return; }
+        // Active custom dialog takes priority (except prompts, which handle Escape themselves)
+        if (_dialogState && !_dialogState.isPrompt) { _dialogState.cancel(); return; }
         const fpOverlay = document.getElementById('folderPickerOverlay');
         if (fpOverlay?.classList.contains('show')) { FolderPicker.close(null); return; }
+        const sharePicker = document.getElementById('sharePickerModal');
+        if (sharePicker?.classList.contains('show')) {
+          sharePicker.classList.remove('show');
+          document.getElementById('sharePickerCancel')?.click();
+          return;
+        }
         const popup = document.querySelector('.popup-overlay.show');
         if (popup) { popup.classList.remove('show'); return; }
         SelectionStore.clear();

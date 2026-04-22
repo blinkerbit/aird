@@ -1,67 +1,76 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>Create New User</title>
-    <style>
-        {% include "_user_form_styles.html" %}
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <title>Create user  Aird</title>
+  <style>
+    {% include "_user_form_styles.html" %}
+  </style>
 </head>
 <body>
-    <div class="nav-links">
-        <a href="/admin/users">← Back to Users</a>
-        <a href="/admin">Admin Panel</a>
-        <a href="/logout">Logout</a>
-        <div style="float: right; font-size: 12px; color: #666;">👤 {{ handler.get_display_username() }}</div>
+  <header class="nav-links">
+    <div class="links">
+      <a href="/admin/users">← Back to users</a>
+      <a href="/admin">Admin panel</a>
+      <a href="/logout">Logout</a>
     </div>
-    
-    <h2>Create New User</h2>
-    
+    <span class="user-chip">👤 {{ handler.get_display_username() }}</span>
+  </header>
+
+  <main class="form-page">
+    <h1>Create new user</h1>
+
     {% if error %}
-        <div class="error">{{ escape(error) }}</div>
+    <div class="error"><span aria-hidden="true">⚠</span>&nbsp;{{ escape(error) }}</div>
     {% end %}
-    
-    <div class="section">
-        <form method="POST">
-            {% raw xsrf_form_html() %}
-            
-            <div class="form-group">
-                <label for="username">Username:</label>
-                <input type="text" id="username" name="username" required 
-                       pattern="[a-zA-Z0-9_-]+" 
-                       title="Username can only contain letters, numbers, underscores, and hyphens"
-                       minlength="3" maxlength="50">
-                <div class="help-text">3-50 characters, letters, numbers, underscore, and hyphen only</div>
-            </div>
-            
-            <div class="form-group">
-                <label for="password">Password:</label>
-                <input type="password" id="password" name="password" required>
-                <div class="help-text">Check admin settings for password complexity requirements</div>
-            </div>
-            
-            <div class="form-group">
-                <label for="role">Role:</label>
-                <select id="role" name="role">
-                    <option value="user">User</option>
-                    <option value="admin">Admin</option>
-                </select>
-                <div class="help-text">Admin users can manage other users and system settings</div>
-            </div>
-            
-            <div class="form-group">
-                <span></span>
-                <input type="submit" value="Create User" class="btn btn-primary">
-                <a href="/admin/users" class="btn">Cancel</a>
-            </div>
-        </form>
-    </div>
-    
-    <div class="section">
-        <h3>User Roles Explained</h3>
-        <ul>
-            <li><strong>User:</strong> Can access files, upload, download, and use all file management features based on system settings</li>
-            <li><strong>Admin:</strong> All user permissions plus ability to manage other users, modify system settings, and access admin panel</li>
-        </ul>
-    </div>
+
+    <section class="section">
+      <form method="POST">
+        {% raw xsrf_form_html() %}
+
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" required
+                 placeholder="e.g. alex_doe"
+                 pattern="[a-zA-Z0-9_-]+"
+                 title="Letters, numbers, underscore, and hyphen only"
+                 minlength="3" maxlength="50">
+          <span class="help-text">350 characters  letters, numbers, underscore (_), hyphen (-)</span>
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required
+                 placeholder="At least 8 characters" autocomplete="new-password">
+          <span class="help-text">See admin settings for password complexity requirements.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="role">Role</label>
+          <select id="role" name="role">
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+          </select>
+          <span class="help-text">Admin users can manage other users and system settings.</span>
+        </div>
+
+        <div class="form-actions">
+          <a href="/admin/users" class="btn">Cancel</a>
+          <input type="submit" value="Create user" class="btn btn-primary">
+        </div>
+      </form>
+    </section>
+
+    <section class="section">
+      <h3>User roles explained</h3>
+      <ul style="padding-left: 20px; color: var(--ds-text-muted); font-size: var(--ds-fs-sm);">
+        <li style="margin-bottom: 6px;"><strong style="color: var(--ds-text);">User</strong>  can access files, upload, download, and use all enabled file features.</li>
+        <li><strong style="color: var(--ds-text);">Admin</strong>  all user permissions plus managing other users, system settings, and the admin panel.</li>
+      </ul>
+    </section>
+  </main>
+  <script src="/static/js/theme.js"></script>
 </body>
 </html>

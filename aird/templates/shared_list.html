@@ -2,473 +2,329 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shared Files</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <title>Shared files  Aird</title>
+  <style>
+    body { background: var(--ds-bg); }
 
-        body {
-            font-family: "Courier New", monospace;
-            background: white;
-            color: black;
-            line-height: 1.2;
-        }
+    .sl-head {
+      display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-3);
+      margin-bottom: var(--ds-space-4);
+      padding-bottom: var(--ds-space-3);
+      border-bottom: 1px solid var(--ds-border);
+    }
+    .sl-head h1 { margin: 0; font-size: var(--ds-fs-xl); }
+    .sl-access {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: var(--ds-fs-sm); color: var(--ds-text-muted);
+    }
 
-        .container {
-            max-width: 100%;
-            margin: 0 auto;
-            padding: 20px 10px;
-        }
+    .file-browser {
+      background: var(--ds-surface);
+      border: 1px solid var(--ds-border);
+      border-radius: var(--ds-radius-lg);
+      overflow: hidden;
+      box-shadow: var(--ds-shadow-xs);
+    }
 
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 2px solid black;
-            padding-bottom: 15px;
-            margin-bottom: 20px;
-        }
+    .file-header-row {
+      display: grid;
+      grid-template-columns: 1fr 110px;
+      align-items: center;
+      background: var(--ds-bg-muted);
+      color: var(--ds-text-muted);
+      padding: 10px 14px;
+      font-size: var(--ds-fs-xs);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 700;
+      border-bottom: 1px solid var(--ds-border);
+    }
+    .file-header-row .actions-col-h { text-align: right; }
 
-        .header h1 {
-            font-size: 24px;
-            font-weight: bold;
-        }
+    .tree-folder { border-bottom: 1px solid var(--ds-border-muted); }
+    .tree-folder:last-child { border-bottom: none; }
 
-        /* Folder tree (structured paths instead of one long path per row) */
-        .file-browser {
-            width: 100%;
-            border: 1px solid black;
-            background: white;
-        }
+    .folder-summary {
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      padding: 10px 14px;
+      font-weight: 600;
+      color: var(--ds-text);
+      user-select: none;
+      transition: background var(--ds-duration-fast) var(--ds-ease);
+    }
+    .folder-summary:hover { background: var(--ds-bg-muted); }
+    .folder-summary::-webkit-details-marker { display: none; }
+    .folder-summary::before {
+      content: '▶';
+      display: inline-block;
+      width: 1em;
+      margin-right: 8px;
+      font-size: 10px;
+      color: var(--ds-text-subtle);
+      transition: transform var(--ds-duration-fast) var(--ds-ease);
+    }
+    details[open] > .folder-summary::before { transform: rotate(90deg); }
 
-        .file-header-row {
-            display: grid;
-            grid-template-columns: 1fr 120px;
-            align-items: center;
-            background: black;
-            color: white;
-            padding: 10px 12px;
-            font-weight: bold;
-            border-bottom: 2px solid black;
-        }
+    .tree-children {
+      padding-left: 0;
+      border-left: 2px solid var(--ds-border-muted);
+      margin-left: 14px;
+    }
 
-        .file-header-row .actions-col-h {
-            text-align: right;
-        }
+    .file-row {
+      display: grid;
+      grid-template-columns: 1fr 110px;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--ds-border-muted);
+      background: var(--ds-surface);
+      transition: background var(--ds-duration-fast) var(--ds-ease);
+    }
+    .file-row:hover { background: var(--ds-bg-muted); }
+    .file-row .name-part {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--ds-text);
+    }
+    .file-row .actions-part { text-align: right; flex-shrink: 0; }
+    .file-icon { margin-right: 8px; }
 
-        .file-tree-body {
-            min-height: 40px;
-        }
+    .action-link {
+      color: var(--ds-primary);
+      text-decoration: none;
+      padding: 4px 10px;
+      border: 1px solid var(--ds-primary);
+      border-radius: var(--ds-radius-sm);
+      font-size: var(--ds-fs-sm);
+      background: var(--ds-primary-soft);
+      transition: background var(--ds-duration-fast) var(--ds-ease);
+    }
+    .action-link:hover { background: var(--ds-primary); color: var(--ds-text-on-accent); text-decoration: none; }
 
-        .tree-folder {
-            border-bottom: 1px solid #eee;
-        }
-
-        .tree-folder:last-child {
-            border-bottom: none;
-        }
-
-        .folder-summary {
-            cursor: pointer;
-            list-style: none;
-            display: flex;
-            align-items: center;
-            padding: 8px 12px;
-            font-weight: 600;
-            color: #111;
-            user-select: none;
-        }
-
-        .folder-summary::-webkit-details-marker {
-            display: none;
-        }
-
-        .folder-summary::before {
-            content: '▶';
-            display: inline-block;
-            width: 1em;
-            margin-right: 6px;
-            font-size: 10px;
-            transition: transform 0.15s ease;
-        }
-
-        details[open]>.folder-summary::before {
-            transform: rotate(90deg);
-        }
-
-        .tree-children {
-            padding-left: 0;
-            border-left: 2px solid #e8e8e8;
-            margin-left: 14px;
-        }
-
-        .file-row {
-            display: grid;
-            grid-template-columns: 1fr 120px;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 12px;
-            border-bottom: 1px solid #ddd;
-            background: #fff;
-        }
-
-        .file-row:hover {
-            background: #f0f7ff !important;
-        }
-
-        .file-row .name-part {
-            min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .file-row .actions-part {
-            text-align: right;
-            flex-shrink: 0;
-        }
-
-        .name-col {
-            width: 80%;
-        }
-
-        .actions-col {
-            width: 20%;
-            text-align: right;
-        }
-
-        .actions-cell {
-            text-align: right;
-        }
-
-        .file-link {
-            color: black;
-            text-decoration: none;
-            display: block;
-        }
-
-        .file-link:hover {
-            text-decoration: underline;
-        }
-
-        .file-icon {
-            margin-right: 8px;
-        }
-
-        .action-link {
-            color: #0066cc;
-            text-decoration: none;
-            margin-left: 8px;
-            font-size: 14px;
-        }
-
-        .action-link:hover {
-            text-decoration: underline;
-        }
-
-        /* Responsive design */
-        @media (max-width: 768px) {
-            .file-header-row {
-                grid-template-columns: 1fr 80px;
-                font-size: 13px;
-            }
-
-            .file-row {
-                grid-template-columns: 1fr 80px;
-                font-size: 13px;
-            }
-
-            .folder-summary {
-                font-size: 13px;
-                padding: 10px 8px;
-            }
-        }
-
-        [data-theme="dark"] body { background-color: #1a1a2e; color: #e0e0e0; }
-        [data-theme="dark"] .header { border-color: #444; }
-        [data-theme="dark"] .file-browser { background: #1e1e2e; border-color: #444; }
-        [data-theme="dark"] .file-header-row { background: #2a2a3e; color: #e0e0e0; border-color: #444; }
-        [data-theme="dark"] .file-row { border-color: #333; color: #e0e0e0; background: #1e1e2e; }
-        [data-theme="dark"] .file-row:hover { background: #2a2a3e !important; }
-        [data-theme="dark"] .folder-summary { color: #e0e0e0; }
-        [data-theme="dark"] .tree-children { border-left-color: #444; }
-        [data-theme="dark"] .tree-folder { border-color: #333; }
-        [data-theme="dark"] .action-link { color: #58a6ff; background: #1a2744; border-color: #2563eb; }
-        [data-theme="dark"] a { color: #58a6ff; }
-    </style>
+    @media (max-width: 640px) {
+      .file-header-row, .file-row { grid-template-columns: 1fr 80px; font-size: var(--ds-fs-sm); }
+    }
+  </style>
 </head>
 
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>📁 Shared Files</h1>
+  <div class="container">
+    <header class="sl-head">
+      <h1>🔗 Shared files</h1>
+      <span class="sl-access">
+        Access:
+        {% if can_modify %}
+        <span class="ds-badge ds-badge--primary">Modify</span>
+        {% else %}
+        <span class="ds-badge">Read-only</span>
+        {% end %}
+      </span>
+    </header>
+
+    <section class="file-browser" id="fileBrowser">
+      <div class="file-header-row">
+        <span class="name-col-h">Name</span>
+        <span class="actions-col-h">Download</span>
+      </div>
+      <div id="fileTreeBody" class="file-tree-body">
+        <div class="file-row" style="border: none;">
+          <span class="name-part ds-muted">Loading</span>
+          <span class="actions-part"></span>
         </div>
-        <div style="margin-bottom:12px; font-size:13px; color:#666;">
-            {% if can_modify %}
-            Access level: <strong>Modify</strong>
-            {% else %}
-            Access level: <strong>Read-only</strong>
-            {% end %}
-        </div>
+      </div>
+    </section>
+  </div>
 
-        <div class="file-browser" id="fileBrowser">
-            <div class="file-header-row">
-                <span class="name-col-h">📄 Name</span>
-                <span class="actions-col-h">⬇️ Download</span>
-            </div>
-            <div id="fileTreeBody" class="file-tree-body">
-                <div class="file-row" style="border: none;">
-                    <span class="name-part" style="color:#666;">Loading…</span>
-                    <span class="actions-part"></span>
-                </div>
-            </div>
-        </div>
+  <script id="files-json" type="application/json">{% raw files_json %}</script>
 
-    </div>
-    <script id="files-json" type="application/json">{% raw files_json %}</script>
+  <script nonce="{{ csp_nonce }}">
+    let currentAuthToken = null;
+    const shareId = '{{ share_id }}';
 
-    <script nonce="{{ csp_nonce }}">
-        // Global token management for shared files
-        let currentAuthToken = null;
-        const shareId = '{{ share_id }}';
+    function getAuthToken() {
+      if (!currentAuthToken) currentAuthToken = sessionStorage.getItem(`share_token_${shareId}`);
+      return currentAuthToken;
+    }
+    function setAuthToken(token) {
+      currentAuthToken = token;
+      sessionStorage.setItem(`share_token_${shareId}`, token);
+      const secureAttr = globalThis.location.protocol === 'https:' ? '; Secure' : '';
+      document.cookie = `share_token_${shareId}=${token}; path=/; max-age=3600; SameSite=Lax${secureAttr}`;
+    }
+    async function fetchWithAuth(url, options = {}) {
+      const token = getAuthToken();
+      if (token) options.headers = { ...options.headers, 'Authorization': `Bearer ${token}` };
+      return fetch(url, options);
+    }
 
-        // Function to get stored auth token
-        function getAuthToken() {
-            if (!currentAuthToken) {
-                currentAuthToken = sessionStorage.getItem(`share_token_${shareId}`);
-            }
-            return currentAuthToken;
+    function getFileIcon(filename) {
+      const ext = filename.split('.').pop().toLowerCase();
+      const iconMap = {
+        'txt':'📄','md':'📝','py':'🐍','js':'📜','html':'🌐','css':'🎨',
+        'json':'📋','xml':'📄','csv':'📊','pdf':'📕','doc':'📘','docx':'📘',
+        'xls':'📗','xlsx':'📗','ppt':'📙','pptx':'📙','zip':'📦','rar':'📦',
+        'jpg':'🖼️','jpeg':'🖼️','png':'🖼️','gif':'🖼️','svg':'🖼️',
+        'mp4':'🎬','avi':'🎬','mov':'🎬','mp3':'🎵','wav':'🎵',
+        'exe':'⚙️','dll':'⚙️','bat':'⚙️','sh':'⚙️'
+      };
+      return iconMap[ext] || '📄';
+    }
+
+    function openFileWithAuth(filePath) {
+      const token = getAuthToken();
+      if (!token) { globalThis.location.href = `/shared/${shareId}/verify`; return; }
+      const fileUrl = `/shared/${shareId}/file/${encodeURIComponent(filePath)}`;
+      window.open(fileUrl, '_blank');
+    }
+
+    function pathParts(p) { return String(p).replaceAll('\\', '/').split('/').filter(Boolean); }
+
+    function insertPathIntoTree(root, raw) {
+      const parts = pathParts(raw);
+      if (parts.length === 0) return;
+      let node = root;
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        const last = i === parts.length - 1;
+        if (!node.children.has(part)) {
+          node.children.set(part, { name: part, children: new Map(), isFile: last, fullPath: last ? raw : '' });
         }
-
-        // Function to set auth token
-        function setAuthToken(token) {
-            currentAuthToken = token;
-            sessionStorage.setItem(`share_token_${shareId}`, token);
-            // Also set a cookie for server-side access
-            const secureAttr = globalThis.location.protocol === 'https:' ? '; Secure' : '';
-            document.cookie = `share_token_${shareId}=${token}; path=/; max-age=3600; SameSite=Lax${secureAttr}`;
+        const child = node.children.get(part);
+        if (last) {
+          if (!child.isFile && child.children.size > 0) return;
+          child.isFile = true;
+          child.fullPath = raw;
+        } else if (child.isFile) {
+          return;
         }
+        node = child;
+      }
+    }
 
-        // Enhanced fetch function that automatically includes auth token
-        async function fetchWithAuth(url, options = {}) {
-            const token = getAuthToken();
-            if (token) {
-                options.headers = {
-                    ...options.headers,
-                    'Authorization': `Bearer ${token}`
-                };
-            }
-            return fetch(url, options);
+    function buildPathTree(paths) {
+      const root = { name: '', children: new Map(), isFile: false, fullPath: '' };
+      const sorted = [...paths].sort((a, b) => pathParts(b).length - pathParts(a).length);
+      for (const raw of sorted) insertPathIntoTree(root, raw);
+      return root;
+    }
+
+    function sortTreeEntries(childrenMap) {
+      return [...childrenMap.entries()].sort((a, b) => {
+        const A = a[1], B = b[1];
+        if (A.isFile !== B.isFile) return A.isFile ? 1 : -1;
+        return a[0].localeCompare(b[0], undefined, { sensitivity: 'base' });
+      });
+    }
+
+    function renderTreeNode(node, depth) {
+      if (node.isFile) {
+        const row = document.createElement('div');
+        row.className = 'file-row';
+        row.style.paddingLeft = `${14 + depth * 16}px`;
+        const nameEl = document.createElement('div');
+        nameEl.className = 'name-part';
+        const icon = document.createElement('span');
+        icon.className = 'file-icon';
+        icon.textContent = getFileIcon(node.name) + '\u00A0';
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = node.name;
+        nameEl.appendChild(icon);
+        nameEl.appendChild(nameSpan);
+
+        const action = document.createElement('div');
+        action.className = 'actions-part';
+        const a = document.createElement('a');
+        a.href = `/shared/${shareId}/file/${encodeURIComponent(node.fullPath)}?download=1`;
+        a.className = 'action-link';
+        a.title = 'Download';
+        a.textContent = '⬇ Download';
+        action.appendChild(a);
+
+        row.appendChild(nameEl);
+        row.appendChild(action);
+        if (node.fullPath) row.title = node.fullPath;
+        return row;
+      }
+
+      const details = document.createElement('details');
+      details.className = 'tree-folder';
+      if (depth === 0) details.open = true;
+
+      const summary = document.createElement('summary');
+      summary.className = 'folder-summary';
+      summary.style.paddingLeft = `${14 + depth * 16}px`;
+      summary.textContent = '📁 ' + node.name;
+
+      const wrap = document.createElement('div');
+      wrap.className = 'tree-children';
+      sortTreeEntries(node.children).forEach(([, child]) => {
+        wrap.appendChild(renderTreeNode(child, depth + 1));
+      });
+
+      details.appendChild(summary);
+      details.appendChild(wrap);
+      return details;
+    }
+
+    function renderFiles(files) {
+      const container = document.getElementById('fileTreeBody');
+      container.innerHTML = '';
+
+      if (!files || files.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'file-row';
+        empty.style.border = 'none';
+        empty.style.justifyContent = 'center';
+        empty.style.gridTemplateColumns = '1fr';
+        empty.style.textAlign = 'center';
+        empty.style.padding = '32px';
+        empty.style.color = 'var(--ds-text-muted)';
+        empty.textContent = 'No files available';
+        container.appendChild(empty);
+        return;
+      }
+
+      const tree = buildPathTree(files);
+      sortTreeEntries(tree.children).forEach(([, child]) => {
+        container.appendChild(renderTreeNode(child, 0));
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      const token = getAuthToken();
+      if (!token) { globalThis.location.href = `/shared/${shareId}/verify`; return; }
+      try {
+        const filesRaw = document.getElementById('files-json')?.textContent || '[]';
+        const files = JSON.parse(filesRaw);
+        renderFiles(Array.isArray(files) ? files : []);
+      } catch (error) {
+        console.error('Error processing files data:', error);
+        const el = document.getElementById('fileTreeBody');
+        if (el) {
+          el.innerHTML = '';
+          const err = document.createElement('div');
+          err.className = 'file-row';
+          err.style.border = 'none';
+          err.style.color = 'var(--ds-danger)';
+          err.style.padding = '20px';
+          err.style.textAlign = 'center';
+          err.style.gridTemplateColumns = '1fr';
+          err.textContent = 'Error loading files';
+          el.appendChild(err);
         }
-
-        // Function to get file icon based on extension
-        function getFileIcon(filename) {
-            const ext = filename.split('.').pop().toLowerCase();
-            const iconMap = {
-                'txt': '📄', 'md': '📝', 'py': '🐍', 'js': '📜', 'html': '🌐', 'css': '🎨',
-                'json': '📋', 'xml': '📄', 'csv': '📊', 'pdf': '📕', 'doc': '📘', 'docx': '📘',
-                'xls': '📗', 'xlsx': '📗', 'ppt': '📙', 'pptx': '📙', 'zip': '📦', 'rar': '📦',
-                'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'svg': '🖼️',
-                'mp4': '🎬', 'avi': '🎬', 'mov': '🎬', 'mp3': '🎵', 'wav': '🎵',
-                'exe': '⚙️', 'dll': '⚙️', 'bat': '⚙️', 'sh': '⚙️'
-            };
-            return iconMap[ext] || '📄';
-        }
-
-        // Function to format file size
-        function formatFileSize(bytes) {
-            if (bytes === 0) return '0 B';
-            const k = 1024;
-            const sizes = ['B', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-        }
-
-        // Function to open file with authentication
-        function openFileWithAuth(filePath) {
-            const token = getAuthToken();
-            if (!token) {
-                // No token available, redirect to verification
-                globalThis.location.href = `/shared/${shareId}/verify`;
-                return;
-            }
-
-            // Open file directly - the server will check the cookie
-            const fileUrl = `/shared/${shareId}/file/${encodeURIComponent(filePath)}`;
-            window.open(fileUrl, '_blank');
-        }
-
-        /** Normalize path segments (handles Windows backslashes in shared paths). */
-        function pathParts(p) {
-            return String(p).replaceAll('\\', '/').split('/').filter(Boolean);
-        }
-
-        /** Insert one path into the tree; returns false if a conflict prevents insertion. */
-        function insertPathIntoTree(root, raw) {
-            const parts = pathParts(raw);
-            if (parts.length === 0) return;
-            let node = root;
-            for (let i = 0; i < parts.length; i++) {
-                const part = parts[i];
-                const last = i === parts.length - 1;
-                if (!node.children.has(part)) {
-                    node.children.set(part, { name: part, children: new Map(), isFile: last, fullPath: last ? raw : '' });
-                }
-                const child = node.children.get(part);
-                if (last) {
-                    if (!child.isFile && child.children.size > 0) return;
-                    child.isFile = true;
-                    child.fullPath = raw;
-                } else if (child.isFile) {
-                    return;
-                }
-                node = child;
-            }
-        }
-
-        /** Build a folder tree from flat path strings. Deeper paths are inserted first to reduce conflicts. */
-        function buildPathTree(paths) {
-            const root = { name: '', children: new Map(), isFile: false, fullPath: '' };
-            const sorted = [...paths].sort((a, b) => pathParts(b).length - pathParts(a).length);
-            for (const raw of sorted) {
-                insertPathIntoTree(root, raw);
-            }
-            return root;
-        }
-
-        function sortTreeEntries(childrenMap) {
-            return [...childrenMap.entries()].sort((a, b) => {
-                const nodeA = a[1];
-                const nodeB = b[1];
-                if (nodeA.isFile !== nodeB.isFile) return nodeA.isFile ? 1 : -1;
-                return a[0].localeCompare(b[0], undefined, { sensitivity: 'base' });
-            });
-        }
-
-        function renderTreeNode(node, depth) {
-            if (node.isFile) {
-                const row = document.createElement('div');
-                row.className = 'file-row';
-                row.style.paddingLeft = `${12 + depth * 16}px`;
-
-                const nameEl = document.createElement('div');
-                nameEl.className = 'name-part';
-                const icon = document.createElement('span');
-                icon.className = 'file-icon';
-                icon.textContent = getFileIcon(node.name) + '\u00A0';
-                const nameSpan = document.createElement('span');
-                nameSpan.textContent = node.name;
-                nameEl.appendChild(icon);
-                nameEl.appendChild(nameSpan);
-
-                const action = document.createElement('div');
-                action.className = 'actions-part';
-                const a = document.createElement('a');
-                a.href = `/shared/${shareId}/file/${encodeURIComponent(node.fullPath)}?download=1`;
-                a.className = 'action-link';
-                a.title = 'Download';
-                a.textContent = '⬇️';
-                action.appendChild(a);
-
-                row.appendChild(nameEl);
-                row.appendChild(action);
-                if (node.fullPath) row.title = node.fullPath;
-                return row;
-            }
-
-            const details = document.createElement('details');
-            details.className = 'tree-folder';
-            if (depth === 0) details.open = true;
-
-            const summary = document.createElement('summary');
-            summary.className = 'folder-summary';
-            summary.style.paddingLeft = `${12 + depth * 16}px`;
-            summary.textContent = '📁 ' + node.name;
-
-            const wrap = document.createElement('div');
-            wrap.className = 'tree-children';
-            sortTreeEntries(node.children).forEach(([, child]) => {
-                wrap.appendChild(renderTreeNode(child, depth + 1));
-            });
-
-            details.appendChild(summary);
-            details.appendChild(wrap);
-            return details;
-        }
-
-        function renderFiles(files) {
-            const container = document.getElementById('fileTreeBody');
-            container.innerHTML = '';
-
-            if (!files || files.length === 0) {
-                const empty = document.createElement('div');
-                empty.className = 'file-row';
-                empty.style.border = 'none';
-                empty.style.justifyContent = 'center';
-                empty.style.gridTemplateColumns = '1fr';
-                empty.textContent = 'No files available';
-                empty.style.textAlign = 'center';
-                empty.style.padding = '20px';
-                empty.style.color = '#666';
-                container.appendChild(empty);
-                return;
-            }
-
-            const tree = buildPathTree(files);
-            sortTreeEntries(tree.children).forEach(([, child]) => {
-                container.appendChild(renderTreeNode(child, 0));
-            });
-            if (container.childElementCount === 0) {
-                const empty = document.createElement('div');
-                empty.className = 'file-row';
-                empty.style.border = 'none';
-                empty.style.gridTemplateColumns = '1fr';
-                empty.style.justifyContent = 'center';
-                empty.style.textAlign = 'center';
-                empty.style.padding = '20px';
-                empty.style.color = '#666';
-                empty.textContent = 'No files available';
-                container.appendChild(empty);
-            }
-        }
-
-        // Check if we have a token on page load
-        document.addEventListener('DOMContentLoaded', function () {
-            const token = getAuthToken();
-            if (!token) {
-                // No token available, redirect to verification
-                globalThis.location.href = `/shared/${shareId}/verify`;
-                return;
-            }
-
-            try {
-                const filesRaw =
-                    document.getElementById('files-json')?.textContent || '[]';
-                const files = JSON.parse(filesRaw);
-                renderFiles(Array.isArray(files) ? files : []);
-            } catch (error) {
-                console.error('Error processing files data:', error);
-                const el = document.getElementById('fileTreeBody');
-                if (el) {
-                    el.innerHTML = '';
-                    const err = document.createElement('div');
-                    err.className = 'file-row';
-                    err.style.border = 'none';
-                    err.style.color = 'red';
-                    err.style.padding = '20px';
-                    err.style.textAlign = 'center';
-                    err.textContent = 'Error loading files data';
-                    el.appendChild(err);
-                }
-            }
-        });
-    </script>
-    <script src="/static/js/theme.js"></script>
+      }
+    });
+  </script>
+  <script src="/static/js/theme.js"></script>
 </body>
 
 </html>

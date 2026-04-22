@@ -1,0 +1,1159 @@
+/*
+ * Aird Design System
+ *
+ * Single shared stylesheet loaded by every page. Airgap-safe: no web fonts,
+ * no remote imports, no external assets.
+ *
+ * Usage: <link rel="stylesheet" href="/static/css/app.css" />
+ *
+ * Sections:
+ *   1. Design tokens (CSS custom properties) for light + dark
+ *   2. Reset + base element styles
+ *   3. Legacy classes owned by the system: .btn, .error, .success, .info,
+ *      .warning, .form-group, .container, .section, .header (page-level)
+ *   4. Opt-in components with `ds-` prefix:
+ *      ds-page, ds-card, ds-stack, ds-hstack, ds-grid,
+ *      ds-btn / ds-btn--primary / ds-btn--ghost / ds-btn--danger,
+ *      ds-input / ds-select / ds-textarea / ds-field / ds-label / ds-hint,
+ *      ds-alert, ds-badge, ds-chip,
+ *      ds-modal, ds-modal__content, ds-table, ds-divider, ds-kbd,
+ *      ds-focus-ring / ds-sr-only / ds-truncate utilities.
+ */
+
+/* ==================================================================
+   1. Tokens
+   ================================================================== */
+:root {
+  color-scheme: light;
+
+  /* Palette (light) — "Midnight Sapphire + Gold" */
+  --ds-bg:            #fafbff;
+  --ds-bg-muted:      #f1f3fb;
+  --ds-bg-sunken:     #e6e9f5;
+  --ds-surface:       #ffffff;
+  --ds-surface-alt:   #fafbff;
+  --ds-overlay:       rgba(14, 18, 38, 0.50);
+
+  --ds-text:          #0e1226;
+  --ds-text-muted:    #555b75;
+  --ds-text-subtle:   #8a91aa;
+  --ds-text-on-accent:#ffffff;
+
+  --ds-border:        #d6d9e8;
+  --ds-border-strong: #1e1b4b;
+  --ds-border-muted:  #e7e9f5;
+
+  /* Monochrome "accent" kept for neutral CTAs; now a deep navy, not black. */
+  --ds-accent:        #1e1b4b;
+  --ds-accent-hover:  #312e81;
+  --ds-accent-active: #0f0d36;
+
+  /* Sapphire/indigo primary */
+  --ds-primary:       #4f46e5;
+  --ds-primary-hover: #4338ca;
+  --ds-primary-soft:  #eef2ff;
+
+  /* Gold — rich "old gold", not yellow */
+  --ds-gold:          #c9920f;
+  --ds-gold-hover:    #a37611;
+  --ds-gold-strong:   #8b6409;
+  --ds-gold-soft:     #fdf4d8;
+
+  --ds-success:       #059669;
+  --ds-success-soft:  #ecfdf5;
+  --ds-warning:       #b45309;
+  --ds-warning-soft:  #fef3c7;
+  --ds-danger:        #b91c1c;
+  --ds-danger-hover:  #991b1b;
+  --ds-danger-soft:   #fee2e2;
+  --ds-info:          #0369a1;
+  --ds-info-soft:     #e0f2fe;
+
+  --ds-focus-ring:    0 0 0 3px rgba(79, 70, 229, 0.35);
+
+  /* ---- Luxury gradient tokens ------------------------------------
+     Use these ONLY on hero/brand elements: header wordmark, header
+     accent bar, primary CTAs, login hero, ds-tab underline, info
+     banner backgrounds, card hover glow. Do NOT apply as body
+     background or to text-heavy surfaces. */
+  --ds-brand-gradient:
+    linear-gradient(135deg, #312e81 0%, #4f46e5 55%, #6366f1 100%);
+  --ds-brand-gradient-hover:
+    linear-gradient(135deg, #3730a3 0%, #4338ca 55%, #6366f1 100%);
+  --ds-brand-gradient-line:
+    linear-gradient(90deg, #312e81 0%, #4f46e5 50%, #6366f1 100%);
+  --ds-brand-gradient-soft:
+    linear-gradient(135deg, rgba(79, 70, 229, 0.10) 0%, rgba(99, 102, 241, 0.04) 100%);
+  --ds-gold-gradient:
+    linear-gradient(135deg, #fbbf24 0%, #c9920f 100%);
+  --ds-gold-gradient-soft:
+    linear-gradient(135deg, rgba(201, 146, 15, 0.10) 0%, rgba(251, 191, 36, 0.05) 100%);
+  --ds-surface-elev:
+    linear-gradient(180deg, #ffffff 0%, #fafbff 100%);
+
+  /* Radii */
+  --ds-radius-xs: 3px;
+  --ds-radius-sm: 6px;
+  --ds-radius-md: 8px;
+  --ds-radius-lg: 12px;
+  --ds-radius-xl: 16px;
+  --ds-radius-pill: 999px;
+
+  /* Shadows (light) — subtly tinted with the brand indigo so lifts feel
+     "lit from within" rather than the default grey box-shadow look. */
+  --ds-shadow-xs: 0 1px 2px rgba(30, 27, 75, 0.07);
+  --ds-shadow-sm: 0 1px 3px rgba(30, 27, 75, 0.09), 0 1px 2px rgba(30, 27, 75, 0.05);
+  --ds-shadow-md: 0 6px 18px rgba(30, 27, 75, 0.12), 0 2px 6px rgba(30, 27, 75, 0.06);
+  --ds-shadow-lg: 0 22px 48px rgba(30, 27, 75, 0.22), 0 6px 14px rgba(30, 27, 75, 0.10);
+  /* Brand-tinted glow reserved for primary CTAs and card hover. */
+  --ds-shadow-brand-glow:
+    0 8px 24px rgba(79, 70, 229, 0.28),
+    0 2px 8px rgba(99, 102, 241, 0.18);
+  --ds-shadow-gold-glow:
+    0 6px 20px rgba(201, 146, 15, 0.28),
+    0 2px 6px rgba(251, 191, 36, 0.18);
+
+  /* Spacing scale (4px base) */
+  --ds-space-0: 0;
+  --ds-space-1: 4px;
+  --ds-space-2: 8px;
+  --ds-space-3: 12px;
+  --ds-space-4: 16px;
+  --ds-space-5: 20px;
+  --ds-space-6: 24px;
+  --ds-space-8: 32px;
+  --ds-space-10: 40px;
+  --ds-space-12: 48px;
+  --ds-space-16: 64px;
+
+  /* Typography */
+  --ds-font-mono: "JetBrains Mono", "Fira Code", "SFMono-Regular", "Menlo", "Consolas",
+                  "Liberation Mono", "Courier New", monospace;
+  --ds-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Helvetica Neue",
+                  Arial, "Noto Sans", sans-serif;
+  --ds-font-base: var(--ds-font-sans);
+
+  --ds-fs-xs:   11px;
+  --ds-fs-sm:   12px;
+  --ds-fs-md:   14px;
+  --ds-fs-lg:   16px;
+  --ds-fs-xl:   20px;
+  --ds-fs-2xl:  24px;
+  --ds-fs-3xl:  30px;
+  --ds-fs-4xl:  42px;
+
+  --ds-lh-tight:  1.2;
+  --ds-lh-normal: 1.5;
+  --ds-lh-relaxed:1.65;
+
+  /* Motion */
+  --ds-duration-fast:   120ms;
+  --ds-duration-normal: 180ms;
+  --ds-duration-slow:   240ms;
+  --ds-ease:            cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Layering */
+  --ds-z-nav:     100;
+  --ds-z-sticky:  500;
+  --ds-z-dropdown:900;
+  --ds-z-modal:  1100;
+  --ds-z-toast:  1400;
+
+  /* Component tokens (derived) */
+  --ds-page-max:   1180px;
+  --ds-page-pad:   var(--ds-space-6);
+  --ds-control-h:  36px;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Palette (dark) — "Midnight Sapphire + Gold"
+     Deep midnight-navy base with a faint indigo undertone so the
+     sapphire primary and gold highlights both read as jewel-tones. */
+  --ds-bg:            #0a0d1f;
+  --ds-bg-muted:      #121634;
+  --ds-bg-sunken:     #06091a;
+  --ds-surface:       #151a36;
+  --ds-surface-alt:   #1c2148;
+  --ds-overlay:       rgba(5, 7, 20, 0.72);
+
+  --ds-text:          #e6e8f5;
+  --ds-text-muted:    #a1a6c0;
+  --ds-text-subtle:   #6b7195;
+  --ds-text-on-accent:#0a0d1f;
+
+  --ds-border:        #2a2f4e;
+  --ds-border-strong: #484f7e;
+  --ds-border-muted:  #1e2340;
+
+  --ds-accent:        #e6e8f5;
+  --ds-accent-hover:  #c8cbe0;
+  --ds-accent-active: #ffffff;
+
+  /* Luminous indigo in dark mode (still readable on navy) */
+  --ds-primary:       #818cf8;
+  --ds-primary-hover: #a5b4fc;
+  --ds-primary-soft:  rgba(129, 140, 248, 0.14);
+
+  /* Warm luminous gold */
+  --ds-gold:          #f5c451;
+  --ds-gold-hover:    #fcd34d;
+  --ds-gold-strong:   #fbbf24;
+  --ds-gold-soft:     rgba(245, 196, 81, 0.14);
+
+  --ds-success:       #34d399;
+  --ds-success-soft:  rgba(52, 211, 153, 0.14);
+  --ds-warning:       #fbbf24;
+  --ds-warning-soft:  rgba(251, 191, 36, 0.14);
+  --ds-danger:        #f87171;
+  --ds-danger-hover:  #fca5a5;
+  --ds-danger-soft:   rgba(248, 113, 113, 0.14);
+  --ds-info:          #38bdf8;
+  --ds-info-soft:     rgba(56, 189, 248, 0.14);
+
+  --ds-focus-ring:    0 0 0 3px rgba(129, 140, 248, 0.45);
+
+  /* Dark-mode brand gradient picks up a faint violet tail so it reads
+     luminous against the navy base. */
+  --ds-brand-gradient:
+    linear-gradient(135deg, #3730a3 0%, #6366f1 55%, #8b5cf6 100%);
+  --ds-brand-gradient-hover:
+    linear-gradient(135deg, #4338ca 0%, #818cf8 55%, #a78bfa 100%);
+  --ds-brand-gradient-line:
+    linear-gradient(90deg, #4338ca 0%, #6366f1 50%, #8b5cf6 100%);
+  --ds-brand-gradient-soft:
+    linear-gradient(135deg, rgba(129, 140, 248, 0.16) 0%, rgba(139, 92, 246, 0.06) 100%);
+  --ds-gold-gradient:
+    linear-gradient(135deg, #fcd34d 0%, #c9920f 100%);
+  --ds-gold-gradient-soft:
+    linear-gradient(135deg, rgba(245, 196, 81, 0.14) 0%, rgba(251, 191, 36, 0.06) 100%);
+  --ds-surface-elev:
+    linear-gradient(180deg, #1c2148 0%, #151a36 100%);
+
+  --ds-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.55);
+  --ds-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.60), 0 1px 2px rgba(0, 0, 0, 0.45);
+  --ds-shadow-md: 0 6px 18px rgba(0, 0, 0, 0.65), 0 2px 6px rgba(0, 0, 0, 0.40);
+  --ds-shadow-lg: 0 22px 48px rgba(0, 0, 0, 0.75), 0 6px 14px rgba(0, 0, 0, 0.45);
+  --ds-shadow-brand-glow:
+    0 8px 24px rgba(129, 140, 248, 0.34),
+    0 2px 8px rgba(139, 92, 246, 0.22);
+  --ds-shadow-gold-glow:
+    0 6px 20px rgba(245, 196, 81, 0.30),
+    0 2px 6px rgba(252, 211, 77, 0.20);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ds-duration-fast: 0ms;
+    --ds-duration-normal: 0ms;
+    --ds-duration-slow: 0ms;
+  }
+}
+
+/* ==================================================================
+   2. Reset & base
+   ================================================================== */
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  tab-size: 4;
+}
+
+body {
+  margin: 0;
+  background: var(--ds-bg);
+  color: var(--ds-text);
+  font-family: var(--ds-font-base);
+  font-size: var(--ds-fs-md);
+  line-height: var(--ds-lh-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  line-height: var(--ds-lh-tight);
+  color: var(--ds-text);
+  margin: 0 0 var(--ds-space-3);
+}
+h1 { font-size: var(--ds-fs-2xl); letter-spacing: -0.01em; }
+h2 { font-size: var(--ds-fs-xl); }
+h3 { font-size: var(--ds-fs-lg); }
+h4 { font-size: var(--ds-fs-md); }
+
+p { margin: 0 0 var(--ds-space-3); }
+
+a {
+  color: var(--ds-primary);
+  text-decoration: none;
+  transition: color var(--ds-duration-fast) var(--ds-ease);
+}
+a:hover { color: var(--ds-primary-hover); text-decoration: underline; }
+
+img, svg { max-width: 100%; height: auto; }
+
+hr {
+  height: 1px;
+  border: 0;
+  background: var(--ds-border-muted);
+  margin: var(--ds-space-5) 0;
+}
+
+code, kbd, pre, samp { font-family: var(--ds-font-mono); }
+code {
+  padding: 1px 5px;
+  background: var(--ds-bg-muted);
+  border: 1px solid var(--ds-border-muted);
+  border-radius: var(--ds-radius-xs);
+  font-size: 0.93em;
+}
+pre {
+  padding: var(--ds-space-4);
+  background: var(--ds-bg-muted);
+  border: 1px solid var(--ds-border-muted);
+  border-radius: var(--ds-radius-md);
+  overflow-x: auto;
+}
+pre code { padding: 0; background: transparent; border: 0; }
+
+:focus-visible {
+  outline: 2px solid var(--ds-primary);
+  outline-offset: 2px;
+}
+::selection { background: var(--ds-primary-soft); color: var(--ds-text); }
+
+button { cursor: pointer; font: inherit; color: inherit; }
+input, textarea, select { font: inherit; color: inherit; }
+
+@supports (scrollbar-color: auto) {
+  * { scrollbar-width: thin; scrollbar-color: var(--ds-border-strong) transparent; }
+}
+
+/* ==================================================================
+   3. Legacy primitives owned by the design system
+   (Pages should remove their own duplicate rules. Per-page styles
+   still win when they need to — this stylesheet loads before them.)
+   ================================================================== */
+
+/* Generic button ---------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-2);
+  padding: 8px 14px;
+  min-height: var(--ds-control-h);
+  border: 1px solid var(--ds-border);
+  background: var(--ds-surface);
+  color: var(--ds-text);
+  border-radius: var(--ds-radius-sm);
+  font-family: inherit;
+  font-size: var(--ds-fs-md);
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background var(--ds-duration-fast) var(--ds-ease),
+    border-color var(--ds-duration-fast) var(--ds-ease),
+    color var(--ds-duration-fast) var(--ds-ease),
+    box-shadow var(--ds-duration-fast) var(--ds-ease),
+    transform var(--ds-duration-fast) var(--ds-ease);
+  user-select: none;
+}
+.btn:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--ds-bg-muted);
+  border-color: var(--ds-border-strong);
+  color: var(--ds-text);
+  text-decoration: none;
+}
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:focus-visible { outline: none; box-shadow: var(--ds-focus-ring); }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; }
+
+.btn-primary, .btn.btn-primary {
+  background: var(--ds-brand-gradient);
+  color: var(--ds-text-on-accent);
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(30, 27, 75, 0.12);
+}
+.btn-primary:hover:not(:disabled), .btn.btn-primary:hover:not(:disabled) {
+  background: var(--ds-brand-gradient-hover);
+  border-color: transparent;
+  color: var(--ds-text-on-accent);
+  box-shadow: var(--ds-shadow-brand-glow);
+}
+
+.btn-secondary, .btn.btn-secondary {
+  background: var(--ds-surface);
+  color: var(--ds-text);
+  border-color: var(--ds-border);
+}
+.btn-secondary:hover:not(:disabled), .btn.btn-secondary:hover:not(:disabled) {
+  background: var(--ds-bg-muted);
+  border-color: var(--ds-border-strong);
+}
+
+.btn-danger, .btn.btn-danger {
+  background: var(--ds-surface);
+  color: var(--ds-danger);
+  border-color: var(--ds-danger);
+}
+.btn-danger:hover:not(:disabled), .btn.btn-danger:hover:not(:disabled) {
+  background: var(--ds-danger-soft);
+  color: var(--ds-danger);
+  border-color: var(--ds-danger);
+}
+
+.btn-success, .btn.btn-success {
+  background: var(--ds-success);
+  color: var(--ds-text-on-accent);
+  border-color: var(--ds-success);
+}
+.btn-success:hover:not(:disabled), .btn.btn-success:hover:not(:disabled) {
+  filter: brightness(0.95);
+  color: var(--ds-text-on-accent);
+}
+
+.btn-warning, .btn.btn-warning {
+  background: var(--ds-warning);
+  color: var(--ds-text-on-accent);
+  border-color: var(--ds-warning);
+}
+
+.btn-sm { padding: 5px 10px; min-height: 28px; font-size: var(--ds-fs-sm); }
+.btn-lg { padding: 12px 20px; min-height: 44px; font-size: var(--ds-fs-lg); }
+.btn-block { display: flex; width: 100%; }
+
+/* Alerts / status messages ----------------------------------------- */
+.error, .success, .info, .warning {
+  display: flex;
+  gap: var(--ds-space-2);
+  align-items: flex-start;
+  padding: var(--ds-space-3) var(--ds-space-4);
+  border-radius: var(--ds-radius-sm);
+  border: 1px solid var(--ds-border);
+  background: var(--ds-bg-muted);
+  color: var(--ds-text);
+  font-size: var(--ds-fs-md);
+  margin: 0 0 var(--ds-space-4);
+}
+.error   { background: var(--ds-danger-soft);  border-color: var(--ds-danger);  color: var(--ds-danger); }
+.success { background: var(--ds-success-soft); border-color: var(--ds-success); color: var(--ds-success); }
+.info    { background: var(--ds-info-soft);    border-color: var(--ds-info);    color: var(--ds-info); }
+.warning { background: var(--ds-warning-soft); border-color: var(--ds-warning); color: var(--ds-warning); }
+
+/* Form primitives --------------------------------------------------- */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 var(--ds-space-4);
+}
+.form-group > label,
+.form-group > .form-label {
+  font-size: var(--ds-fs-sm);
+  font-weight: 600;
+  color: var(--ds-text);
+  line-height: 1.3;
+}
+
+.form-group input[type="text"],
+.form-group input[type="password"],
+.form-group input[type="email"],
+.form-group input[type="number"],
+.form-group input[type="url"],
+.form-group input[type="search"],
+.form-group input[type="tel"],
+.form-group textarea,
+.form-group select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-surface);
+  color: var(--ds-text);
+  font: inherit;
+  font-size: var(--ds-fs-md);
+  transition: border-color var(--ds-duration-fast) var(--ds-ease),
+              box-shadow var(--ds-duration-fast) var(--ds-ease);
+}
+.form-group textarea { min-height: 88px; resize: vertical; }
+.form-group input:hover, .form-group textarea:hover, .form-group select:hover {
+  border-color: var(--ds-border-strong);
+}
+.form-group input:focus, .form-group textarea:focus, .form-group select:focus {
+  outline: none;
+  border-color: var(--ds-primary);
+  box-shadow: var(--ds-focus-ring);
+}
+.form-group input::placeholder, .form-group textarea::placeholder {
+  color: var(--ds-text-subtle);
+}
+.form-group input:disabled, .form-group textarea:disabled, .form-group select:disabled {
+  background: var(--ds-bg-muted);
+  color: var(--ds-text-muted);
+  cursor: not-allowed;
+}
+.form-group small,
+.form-group .help {
+  font-size: var(--ds-fs-xs);
+  color: var(--ds-text-muted);
+}
+
+/* Layout wrappers --------------------------------------------------- */
+.container {
+  width: 100%;
+  max-width: var(--ds-page-max);
+  margin: 0 auto;
+  padding: var(--ds-page-pad) var(--ds-space-4);
+}
+
+.section {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  padding: var(--ds-space-6);
+  margin: 0 0 var(--ds-space-5);
+  box-shadow: var(--ds-shadow-xs);
+}
+.section > h2:first-child,
+.section > h3:first-child { margin-top: 0; }
+
+/* Generic table styling (opt-out by giving the table its own class) */
+table.basic,
+.section > table,
+.container > table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-md);
+  overflow: hidden;
+}
+table.basic th, .section > table th, .container > table th {
+  text-align: left;
+  padding: 10px 12px;
+  background: var(--ds-bg-muted);
+  border-bottom: 1px solid var(--ds-border);
+  font-size: var(--ds-fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ds-text-muted);
+}
+table.basic td, .section > table td, .container > table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--ds-border-muted);
+}
+table.basic tbody tr:last-child td,
+.section > table tbody tr:last-child td,
+.container > table tbody tr:last-child td { border-bottom: 0; }
+
+/* ==================================================================
+   4. Components (opt-in, `ds-` prefix)
+   ================================================================== */
+
+/* Page wrappers */
+.ds-page       { max-width: var(--ds-page-max); margin: 0 auto; padding: var(--ds-page-pad) var(--ds-space-4); }
+.ds-page--narrow { max-width: 680px; }
+.ds-page--wide   { max-width: 1440px; }
+
+/* Stacks / rows / grids */
+.ds-stack { display: flex; flex-direction: column; }
+.ds-stack > * + * { margin-top: var(--ds-space-4); }
+.ds-stack--tight > * + * { margin-top: var(--ds-space-2); }
+.ds-stack--loose > * + * { margin-top: var(--ds-space-6); }
+
+.ds-hstack { display: flex; align-items: center; gap: var(--ds-space-3); flex-wrap: wrap; }
+.ds-hstack--tight { gap: var(--ds-space-2); }
+.ds-hstack--between { justify-content: space-between; }
+.ds-hstack--end { justify-content: flex-end; }
+
+.ds-grid { display: grid; gap: var(--ds-space-4); }
+.ds-grid--cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ds-grid--cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 720px) {
+  .ds-grid--cols-2, .ds-grid--cols-3 { grid-template-columns: 1fr; }
+}
+
+/* Card */
+.ds-card {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-sm);
+  padding: var(--ds-space-6);
+}
+.ds-card--quiet { box-shadow: none; border-color: var(--ds-border-muted); }
+.ds-card--flush { padding: 0; }
+.ds-card__header {
+  padding: var(--ds-space-4) var(--ds-space-6);
+  border-bottom: 1px solid var(--ds-border-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-3);
+}
+.ds-card__body { padding: var(--ds-space-6); }
+.ds-card__footer {
+  padding: var(--ds-space-4) var(--ds-space-6);
+  border-top: 1px solid var(--ds-border-muted);
+  background: var(--ds-bg-muted);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ds-space-3);
+}
+
+/* Divider */
+.ds-divider { height: 1px; background: var(--ds-border-muted); border: 0; margin: var(--ds-space-4) 0; }
+
+/* Buttons (ds-btn) */
+.ds-btn {
+  --btn-bg:      var(--ds-surface);
+  --btn-fg:      var(--ds-text);
+  --btn-border:  var(--ds-border);
+  --btn-bg-hover:var(--ds-bg-muted);
+  --btn-border-hover: var(--ds-border-strong);
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-2);
+  padding: 8px 14px;
+  min-height: var(--ds-control-h);
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  border-radius: var(--ds-radius-sm);
+  font-family: inherit;
+  font-size: var(--ds-fs-md);
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background var(--ds-duration-fast) var(--ds-ease),
+    border-color var(--ds-duration-fast) var(--ds-ease),
+    color var(--ds-duration-fast) var(--ds-ease),
+    box-shadow var(--ds-duration-fast) var(--ds-ease),
+    transform var(--ds-duration-fast) var(--ds-ease);
+  user-select: none;
+}
+.ds-btn:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--btn-bg-hover);
+  border-color: var(--btn-border-hover);
+  color: var(--btn-fg);
+  text-decoration: none;
+}
+.ds-btn:active:not(:disabled) { transform: translateY(1px); }
+.ds-btn:focus-visible { outline: none; box-shadow: var(--ds-focus-ring); }
+.ds-btn:disabled, .ds-btn[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; }
+.ds-btn--sm   { padding: 5px 10px; min-height: 28px; font-size: var(--ds-fs-sm); }
+.ds-btn--lg   { padding: 12px 20px; min-height: 44px; font-size: var(--ds-fs-lg); }
+.ds-btn--icon { padding: 7px; min-width: var(--ds-control-h); min-height: var(--ds-control-h); }
+.ds-btn--block{ display: flex; width: 100%; }
+
+.ds-btn--primary {
+  /* Brand gradient instead of flat fill. `background` below overrides
+     the slot in .ds-btn so that .ds-btn--primary picks up the brand
+     gradient, while variables still drive text/border colors. */
+  --btn-bg:      var(--ds-brand-gradient);
+  --btn-fg:      var(--ds-text-on-accent);
+  --btn-border:  transparent;
+  --btn-bg-hover:var(--ds-brand-gradient-hover);
+  --btn-border-hover: transparent;
+  background: var(--ds-brand-gradient);
+  box-shadow: 0 1px 2px rgba(30, 27, 75, 0.12);
+}
+.ds-btn--primary:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--ds-brand-gradient-hover);
+  box-shadow: var(--ds-shadow-brand-glow);
+}
+.ds-btn--accent {
+  --btn-bg:      var(--ds-accent);
+  --btn-fg:      var(--ds-text-on-accent);
+  --btn-border:  var(--ds-accent);
+  --btn-bg-hover:var(--ds-accent-hover);
+  --btn-border-hover: var(--ds-accent-hover);
+}
+/* Gold variant — reserve for "premium / highlight" CTAs (e.g. upgrade
+   callouts, favorite actions). Keep flat gold in light mode, subtly
+   glowing in dark. */
+.ds-btn--gold {
+  --btn-bg:      var(--ds-gold);
+  --btn-fg:      var(--ds-text-on-accent);
+  --btn-border:  var(--ds-gold);
+  --btn-bg-hover:var(--ds-gold-hover);
+  --btn-border-hover: var(--ds-gold-hover);
+}
+.ds-btn--gold:hover:not(:disabled):not([aria-disabled="true"]) {
+  box-shadow: var(--ds-shadow-gold-glow);
+}
+.ds-btn--ghost {
+  --btn-bg:      transparent;
+  --btn-border:  transparent;
+  --btn-bg-hover:var(--ds-bg-muted);
+  --btn-border-hover: var(--ds-border);
+}
+.ds-btn--quiet {
+  --btn-bg:      var(--ds-bg-muted);
+  --btn-border:  var(--ds-border-muted);
+  --btn-bg-hover:var(--ds-bg-sunken);
+  --btn-border-hover: var(--ds-border);
+}
+.ds-btn--danger {
+  --btn-bg:      var(--ds-surface);
+  --btn-fg:      var(--ds-danger);
+  --btn-border:  var(--ds-danger);
+  --btn-bg-hover:var(--ds-danger-soft);
+  --btn-border-hover: var(--ds-danger);
+}
+.ds-btn--danger-solid {
+  --btn-bg:      var(--ds-danger);
+  --btn-fg:      #fff;
+  --btn-border:  var(--ds-danger);
+  --btn-bg-hover:var(--ds-danger-hover);
+  --btn-border-hover: var(--ds-danger-hover);
+}
+
+/* Fields */
+.ds-field { display: flex; flex-direction: column; gap: 6px; }
+.ds-label { font-size: var(--ds-fs-sm); color: var(--ds-text); font-weight: 600; letter-spacing: 0.01em; }
+.ds-hint  { font-size: var(--ds-fs-xs); color: var(--ds-text-muted); }
+.ds-field--error .ds-input,
+.ds-field--error .ds-select,
+.ds-field--error .ds-textarea { border-color: var(--ds-danger); }
+.ds-field--error .ds-hint { color: var(--ds-danger); }
+
+.ds-input, .ds-select, .ds-textarea {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-surface);
+  color: var(--ds-text);
+  font-family: inherit;
+  font-size: var(--ds-fs-md);
+  line-height: var(--ds-lh-normal);
+  transition: border-color var(--ds-duration-fast) var(--ds-ease),
+              box-shadow var(--ds-duration-fast) var(--ds-ease);
+}
+.ds-textarea { min-height: 88px; resize: vertical; }
+.ds-input::placeholder, .ds-textarea::placeholder { color: var(--ds-text-subtle); }
+.ds-input:hover, .ds-select:hover, .ds-textarea:hover { border-color: var(--ds-border-strong); }
+.ds-input:focus, .ds-select:focus, .ds-textarea:focus {
+  outline: none;
+  border-color: var(--ds-primary);
+  box-shadow: var(--ds-focus-ring);
+}
+.ds-input:disabled, .ds-select:disabled, .ds-textarea:disabled {
+  background: var(--ds-bg-muted);
+  color: var(--ds-text-muted);
+  cursor: not-allowed;
+}
+.ds-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 34px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 18px) 52%, calc(100% - 12px) 52%;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+
+/* Alerts (ds-alert) */
+.ds-alert {
+  display: flex;
+  gap: var(--ds-space-3);
+  align-items: flex-start;
+  padding: var(--ds-space-3) var(--ds-space-4);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-bg-muted);
+  color: var(--ds-text);
+  font-size: var(--ds-fs-md);
+}
+.ds-alert__icon { flex-shrink: 0; line-height: 1.4; }
+.ds-alert__title { font-weight: 700; margin: 0 0 2px; font-size: var(--ds-fs-md); }
+.ds-alert__body { color: var(--ds-text-muted); font-size: var(--ds-fs-sm); margin: 0; }
+.ds-alert--info    {
+  /* Info banners use a soft brand gradient instead of flat sky-blue so
+     they read as "signature" in the new palette. */
+  background: var(--ds-info-soft);
+  background-image: var(--ds-brand-gradient-soft);
+  border-color: var(--ds-primary);
+  color: var(--ds-text);
+}
+.ds-alert--success { background: var(--ds-success-soft); border-color: var(--ds-success); }
+.ds-alert--warn    { background: var(--ds-warning-soft); border-color: var(--ds-warning); }
+.ds-alert--danger  { background: var(--ds-danger-soft);  border-color: var(--ds-danger); color: var(--ds-danger); }
+.ds-alert--danger .ds-alert__body { color: var(--ds-danger); }
+.ds-alert--gold    {
+  background: var(--ds-gold-soft);
+  background-image: var(--ds-gold-gradient-soft);
+  border-color: var(--ds-gold);
+  color: var(--ds-gold-strong);
+}
+
+/* Badges & Chips */
+.ds-badge, .ds-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  padding: 2px 8px;
+  font-size: var(--ds-fs-xs);
+  font-weight: 700;
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-bg-muted);
+  color: var(--ds-text-muted);
+  border: 1px solid var(--ds-border-muted);
+  line-height: 1.6;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.ds-chip { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.ds-badge--primary {
+  background: var(--ds-primary-soft);
+  background-image: var(--ds-brand-gradient-soft);
+  color: var(--ds-primary);
+  border-color: var(--ds-primary);
+}
+.ds-badge--success { background: var(--ds-success-soft); color: var(--ds-success); border-color: var(--ds-success); }
+.ds-badge--warn    { background: var(--ds-warning-soft); color: var(--ds-warning); border-color: var(--ds-warning); }
+.ds-badge--danger  { background: var(--ds-danger-soft);  color: var(--ds-danger);  border-color: var(--ds-danger); }
+.ds-badge--gold    {
+  background: var(--ds-gold-soft);
+  background-image: var(--ds-gold-gradient-soft);
+  color: var(--ds-gold-strong);
+  border-color: var(--ds-gold);
+}
+/* Solid-gradient badge for "premium" callouts (e.g. paid tier, pinned). */
+.ds-badge--brand {
+  background: var(--ds-brand-gradient);
+  color: var(--ds-text-on-accent);
+  border-color: transparent;
+}
+
+/* Modal */
+.ds-modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: var(--ds-space-6);
+  background: var(--ds-overlay);
+  z-index: var(--ds-z-modal);
+  backdrop-filter: blur(2px);
+}
+.ds-modal[aria-hidden="false"],
+.ds-modal.is-open,
+.ds-modal.show { display: flex; }
+.ds-modal__content {
+  background: var(--ds-surface);
+  color: var(--ds-text);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-lg);
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100vh - var(--ds-space-10));
+  overflow: auto;
+  animation: dsModalIn var(--ds-duration-normal) var(--ds-ease);
+}
+@keyframes dsModalIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Table (ds-table) */
+.ds-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-md);
+  overflow: hidden;
+}
+.ds-table thead th {
+  text-align: left;
+  font-size: var(--ds-fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ds-text-muted);
+  padding: 10px 14px;
+  background: var(--ds-bg-muted);
+  border-bottom: 1px solid var(--ds-border);
+  font-weight: 700;
+}
+.ds-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--ds-border-muted);
+  font-size: var(--ds-fs-md);
+  vertical-align: middle;
+}
+.ds-table tbody tr:last-child td { border-bottom: 0; }
+.ds-table tbody tr:hover td { background: var(--ds-bg-muted); }
+
+/* Keyboard hint */
+.ds-kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--ds-border);
+  border-bottom-width: 2px;
+  border-radius: var(--ds-radius-xs);
+  background: var(--ds-bg-muted);
+  color: var(--ds-text);
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-xs);
+  line-height: 1.4;
+}
+
+/* Utilities */
+.ds-sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+.ds-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-focus-ring:focus-visible { outline: none; box-shadow: var(--ds-focus-ring); }
+
+.ds-muted   { color: var(--ds-text-muted); }
+.ds-subtle  { color: var(--ds-text-subtle); }
+.ds-small   { font-size: var(--ds-fs-sm); }
+.ds-xs      { font-size: var(--ds-fs-xs); }
+.ds-text-center { text-align: center; }
+.ds-mono    { font-family: var(--ds-font-mono); }
+
+/* Gradient text: paints any element with the brand gradient. Use
+   sparingly — reserved for brand wordmarks, hero h1s, premium chips.
+   The solid `color` acts as the fallback for legacy engines without
+   -webkit-text-fill-color; modern browsers paint the gradient. */
+.ds-gradient-text {
+  color: var(--ds-primary);
+  background: var(--ds-brand-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.ds-gradient-text--gold {
+  color: var(--ds-gold-strong);
+  background: var(--ds-gold-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Gradient accent bar — drop in as a 3px strip above/below any block
+   (e.g. .ds-card, .header). Inherits the brand gradient automatically. */
+.ds-gradient-bar {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--ds-brand-gradient-line);
+}
+
+/* ==================================================================
+   5. Micro-interactions: hover / active / focus feedback
+   Designed to feel alive without being noisy. Respects
+   prefers-reduced-motion.
+   ================================================================== */
+
+/* Global keyframes reused below */
+@keyframes dsFadeInUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes dsPop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+@keyframes dsPulseRing {
+  0%   { box-shadow: 0 0 0 0 var(--ds-primary-soft); }
+  70%  { box-shadow: 0 0 0 10px rgba(0,0,0,0); }
+  100% { box-shadow: 0 0 0 0 rgba(0,0,0,0); }
+}
+@keyframes dsSpin { to { transform: rotate(360deg); } }
+
+/* Primary + generic .btn ----------------------------------------- */
+.btn, .ds-btn {
+  /* Ensure every button can lift / depress smoothly even if an older
+     page hasn't included transform in its transition list. */
+  will-change: transform, box-shadow;
+}
+.btn:hover:not(:disabled):not([aria-disabled="true"]),
+.ds-btn:hover:not(:disabled):not([aria-disabled="true"]) {
+  box-shadow: var(--ds-shadow-sm);
+  transform: translateY(-1px);
+}
+.btn:active:not(:disabled),
+.ds-btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
+  transition-duration: 60ms;
+}
+.btn-primary:hover:not(:disabled),
+.ds-btn--primary:hover:not(:disabled) {
+  /* Brand-tinted glow; overrides the generic grey lift from .btn:hover. */
+  box-shadow: var(--ds-shadow-brand-glow);
+}
+.ds-btn--gold:hover:not(:disabled) {
+  box-shadow: var(--ds-shadow-gold-glow);
+}
+
+/* Header action buttons feel like real chips */
+.hdr-action-btn { will-change: transform, box-shadow; }
+.hdr-action-btn:hover { transform: translateY(-1px); }
+.hdr-action-btn:active { transform: translateY(1px); transition-duration: 60ms; }
+.hdr-action-btn .hdr-ico {
+  transition: transform var(--ds-duration-fast) var(--ds-ease);
+}
+.hdr-action-btn:hover .hdr-ico { transform: translateX(1px); }
+.hdr-action-btn--browse:hover .hdr-ico,
+.hdr-action-btn--admin:hover  .hdr-ico { transform: rotate(-6deg); }
+.hdr-action-btn--search:hover .hdr-ico { transform: scale(1.1); }
+.hdr-action-btn--share:hover  .hdr-ico,
+.hdr-action-btn--p2p:hover    .hdr-ico { transform: rotate(8deg); }
+.hdr-action-btn--logout:hover .hdr-ico { transform: translateX(2px); }
+.hdr-action-btn--login:hover  .hdr-ico { transform: translateX(2px); }
+
+/* Theme toggle: icons swap with a soft rotate */
+.hdr-theme-toggle .hdr-ico {
+  transition: transform var(--ds-duration-normal) var(--ds-ease), opacity var(--ds-duration-fast) var(--ds-ease);
+}
+.hdr-theme-toggle:hover .hdr-ico-moon { transform: rotate(-20deg); }
+[data-theme="dark"] .hdr-theme-toggle:hover .hdr-ico-sun { transform: rotate(45deg); }
+
+/* Links: animated underline slide-in (for inline prose only -- opt-in
+   via `a:not(.hdr-action-btn):not(.btn):not(.ds-btn)...` keeps buttons/cards clean) */
+.ds-link, .ds-prose a {
+  position: relative;
+  text-decoration: none;
+  background-image: linear-gradient(currentColor, currentColor);
+  background-size: 0% 1px;
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  transition: background-size var(--ds-duration-normal) var(--ds-ease), color var(--ds-duration-fast) var(--ds-ease);
+}
+.ds-link:hover, .ds-prose a:hover {
+  background-size: 100% 1px;
+  text-decoration: none;
+}
+
+/* Inputs: lift border on focus */
+.ds-input, .ds-select, .ds-textarea {
+  transition:
+    border-color var(--ds-duration-fast) var(--ds-ease),
+    box-shadow var(--ds-duration-fast) var(--ds-ease),
+    background var(--ds-duration-fast) var(--ds-ease);
+}
+.ds-input:hover:not(:disabled):not(:focus),
+.ds-select:hover:not(:disabled):not(:focus),
+.ds-textarea:hover:not(:disabled):not(:focus) {
+  border-color: var(--ds-border-strong);
+}
+
+/* Checkboxes & radios: subtle pop when checked */
+input[type="checkbox"], input[type="radio"] {
+  transition: transform var(--ds-duration-fast) var(--ds-ease);
+}
+input[type="checkbox"]:active, input[type="radio"]:active { transform: scale(0.9); }
+input[type="checkbox"]:checked { animation: dsPop 220ms var(--ds-ease); }
+
+/* Card hover lift (opt-in via .ds-card--hover) */
+.ds-card { transition: transform var(--ds-duration-normal) var(--ds-ease), box-shadow var(--ds-duration-normal) var(--ds-ease); }
+.ds-card--hover:hover {
+  transform: translateY(-2px);
+  /* Layered: the base md shadow gives depth, the brand-glow tints it
+     indigo so hover feels signature rather than grey. */
+  box-shadow: var(--ds-shadow-md), var(--ds-shadow-brand-glow);
+}
+
+/* Table rows: left-accent slide-in on hover */
+.ds-table tbody tr,
+.file-table tbody tr {
+  transition: background var(--ds-duration-fast) var(--ds-ease);
+  position: relative;
+}
+.ds-table tbody tr td:first-child,
+.file-table tbody tr td:first-child {
+  box-shadow: inset 0 0 0 0 var(--ds-primary);
+  transition: box-shadow var(--ds-duration-fast) var(--ds-ease);
+}
+.ds-table tbody tr:hover td:first-child,
+.file-table tbody tr:hover td:first-child {
+  box-shadow: inset 3px 0 0 0 var(--ds-primary);
+}
+
+/* Modals / dialogs: fade-in backdrop + pop content */
+.ds-modal {
+  transition: opacity var(--ds-duration-fast) var(--ds-ease);
+}
+.ds-modal[aria-hidden="false"] .ds-modal__content,
+.ds-modal.is-open .ds-modal__content,
+.ds-modal.show .ds-modal__content { animation: dsModalIn var(--ds-duration-normal) var(--ds-ease); }
+
+/* Alerts / toasts slide-in */
+.ds-alert { animation: dsFadeInUp var(--ds-duration-normal) var(--ds-ease); }
+
+/* Tabs / segmented: underline transition */
+.ds-tab, [role="tab"] {
+  position: relative;
+  transition: color var(--ds-duration-fast) var(--ds-ease);
+}
+.ds-tab::after, [role="tab"]::after {
+  content: "";
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  bottom: -1px;
+  height: 2px;
+  background: var(--ds-brand-gradient-line);
+  transform: scaleX(0);
+  transition: transform var(--ds-duration-normal) var(--ds-ease);
+  transform-origin: center;
+  border-radius: 2px;
+}
+.ds-tab:hover::after, [role="tab"]:hover::after { transform: scaleX(0.6); }
+.ds-tab.is-active::after,
+[role="tab"][aria-selected="true"]::after { transform: scaleX(1); }
+
+/* Spinner utility */
+.ds-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: dsSpin 0.8s linear infinite;
+  vertical-align: -3px;
+}
+
+/* Reduced-motion: shut off all non-essential motion -------------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .btn:hover, .ds-btn:hover, .hdr-action-btn:hover,
+  .ds-card--hover:hover { transform: none !important; }
+}

@@ -533,15 +533,16 @@ class BaseHandler(tornado.web.RequestHandler):
         }
 
     def parse_json_body(self, default=None):
-        """Parse request body as JSON. Returns default if body is empty or invalid."""
+        """Parse request body as JSON. Returns default if the body is empty
+        or the JSON is malformed. Unexpected errors are allowed to propagate
+        so they surface in logs instead of being silently swallowed."""
         if default is None:
             default = {}
         raw = self.request.body or b"{}"
         try:
-            return json.loads(
-                raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
-            )
-        except Exception:
+            text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
+            return json.loads(text)
+        except json.JSONDecodeError:
             return default
 
     def prepare(self):

@@ -1,96 +1,112 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{{ filename }}</title>
-    <style>
-        body { margin: 0; background: #525659; color: #fff; font-family: sans-serif; }
-        .header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #323639; border-bottom: 1px solid #000; }
-        .header a { color: #8ab4f8; text-decoration: none; }
-        .header a:hover { text-decoration: underline; }
-        #toolbar { display: flex; align-items: center; gap: 10px; }
-        #toolbar button { padding: 6px 12px; background: #505050; color: #fff; border: 1px solid #666; border-radius: 4px; cursor: pointer; }
-        #toolbar button:hover { background: #606060; }
-        #pageInfo { font-size: 13px; color: #aaa; }
-        #canvas-wrap { overflow: auto; text-align: center; padding: 20px; min-height: calc(100vh - 50px); }
-        #pdf-canvas { box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
-        .error { padding: 20px; color: #f66; }
-
-        [data-theme="dark"] body { background: #1a1a2e; }
-        [data-theme="dark"] .header { background: #111; border-color: #333; }
-    </style>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" integrity="sha512-q+4liFwdPC/bNdhUpZx6aXDx/h77yEQtn4I1slHydcbZK34nLaR3cAeYSJshoxIOq3mjEf7xJE8YWIUHMn+oCQ==" crossorigin="anonymous" referrerpolicy="no-referrer" nonce="{{ csp_nonce }}"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <title>{{ filename }}</title>
+  <style>
+    /* PDF viewer — always uses the dark-mode surfaces from the sapphire
+       palette (even in light mode) because PDFs render on a white canvas
+       that needs contrast. We reference the dark-theme values directly. */
+    body { margin: 0; background: var(--ds-bg-sunken); color: var(--ds-text); }
+    .pdf-header {
+      display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-3);
+      padding: var(--ds-space-3) var(--ds-space-4);
+      background: var(--ds-accent);
+      background-image: var(--ds-brand-gradient-soft);
+      border-bottom: 1px solid var(--ds-border-muted);
+      flex-wrap: wrap;
+    }
+    .pdf-header .crumbs { color: var(--ds-text-muted); font-size: var(--ds-fs-sm); }
+    .pdf-header .crumbs a { color: var(--ds-primary); }
+    .pdf-header .crumbs a:hover { text-decoration: underline; }
+    #toolbar { display: flex; align-items: center; gap: var(--ds-space-3); }
+    #toolbar button, #toolbar a {
+      padding: 7px 14px;
+      background: var(--ds-surface);
+      color: var(--ds-text);
+      border: 1px solid var(--ds-border);
+      border-radius: var(--ds-radius-sm);
+      cursor: pointer; font: inherit; font-size: var(--ds-fs-sm); font-weight: 600;
+      text-decoration: none;
+      transition: all var(--ds-duration-fast) var(--ds-ease);
+    }
+    #toolbar button:hover, #toolbar a:hover { background: var(--ds-bg-muted); border-color: var(--ds-border-strong); }
+    #toolbar button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #pageInfo { font-size: var(--ds-fs-sm); color: var(--ds-text-muted); }
+    #canvas-wrap { overflow: auto; text-align: center; padding: var(--ds-space-6); min-height: calc(100vh - 62px); }
+    #pdf-canvas { box-shadow: var(--ds-shadow-lg); border-radius: var(--ds-radius-sm); background: var(--ds-surface); }
+    .error { padding: var(--ds-space-5); color: var(--ds-danger); font-size: var(--ds-fs-md); }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" integrity="sha512-q+4liFwdPC/bNdhUpZx6aXDx/h77yEQtn4I1slHydcbZK34nLaR3cAeYSJshoxIOq3mjEf7xJE8YWIUHMn+oCQ==" crossorigin="anonymous" referrerpolicy="no-referrer" nonce="{{ csp_nonce }}"></script>
 </head>
 <body>
-    <div class="header">
-        <div>
-            <a href="/files/">🏠 Home</a>
-            <span style="margin: 0 10px;">/</span>
-            <span>{{ filename }}</span>
-        </div>
-        <div id="toolbar">
-            <button id="prevBtn">Previous</button>
-            <span id="pageInfo">Page 1 of 1</span>
-            <button id="nextBtn">Next</button>
-            <a href="{{ pdf_download_url }}" style="padding:6px 12px;background:#505050;color:#fff;border:1px solid #666;border-radius:4px;text-decoration:none;">Download</a>
-        </div>
+  <header class="pdf-header">
+    <div class="crumbs">
+      <a href="/files/">🏠 Home</a>
+      <span style="margin: 0 8px; color: var(--ds-text-subtle);">/</span>
+      <span>{{ filename }}</span>
     </div>
-    <div id="canvas-wrap">
-        <canvas id="pdf-canvas"></canvas>
+    <div id="toolbar">
+      <button id="prevBtn" type="button">◀ Previous</button>
+      <span id="pageInfo">Page 1 of 1</span>
+      <button id="nextBtn" type="button">Next ▶</button>
+      <a href="{{ pdf_download_url }}">⬇ Download</a>
     </div>
-    <div id="error" class="error" style="display:none;"></div>
-    <script type="module" nonce="{{ csp_nonce }}">
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        const pdfUrl = "{{ pdf_url }}";
-        let pdfDoc = null;
-        let pageNum = 1;
-        let totalPages = 1;
-        const canvas = document.getElementById('pdf-canvas');
-        const ctx = canvas.getContext('2d');
-        const pageInfo = document.getElementById('pageInfo');
-        const errorEl = document.getElementById('error');
-        const wrap = document.getElementById('canvas-wrap');
+  </header>
+  <div id="canvas-wrap">
+    <canvas id="pdf-canvas"></canvas>
+  </div>
+  <div id="error" class="error" style="display:none;"></div>
 
-        function showError(msg) {
-            errorEl.textContent = msg;
-            errorEl.style.display = 'block';
-            wrap.style.display = 'none';
-        }
+  <script type="module" nonce="{{ csp_nonce }}">
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdfUrl = "{{ pdf_url }}";
+    let pdfDoc = null;
+    let pageNum = 1;
+    let totalPages = 1;
+    const canvas = document.getElementById('pdf-canvas');
+    const ctx = canvas.getContext('2d');
+    const pageInfo = document.getElementById('pageInfo');
+    const errorEl = document.getElementById('error');
+    const wrap = document.getElementById('canvas-wrap');
 
-        function renderPage(num) {
-            if (!pdfDoc) return;
-            pdfDoc.getPage(num).then(function(page) {
-                const scale = 1.5;
-                const viewport = page.getViewport({ scale: scale });
-                canvas.height = viewport.height;
-                canvas.width = viewport.width;
-                page.render({ canvasContext: ctx, viewport: viewport });
-                pageNum = num;
-                pageInfo.textContent = 'Page ' + num + ' of ' + totalPages;
-                document.getElementById('prevBtn').disabled = num <= 1;
-                document.getElementById('nextBtn').disabled = num >= totalPages;
-            }).catch(function(err) {
-                showError('Failed to render page: ' + err.message);
-            });
-        }
+    function showError(msg) {
+      errorEl.textContent = msg;
+      errorEl.style.display = 'block';
+      wrap.style.display = 'none';
+    }
 
-        try {
-            const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
-            pdfDoc = pdf;
-            totalPages = pdf.numPages;
-            renderPage(1);
-        } catch (err) {
-            showError('Failed to load PDF: ' + err.message);
-        }
+    function renderPage(num) {
+      if (!pdfDoc) return;
+      pdfDoc.getPage(num).then(function(page) {
+        const scale = 1.5;
+        const viewport = page.getViewport({ scale: scale });
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        page.render({ canvasContext: ctx, viewport: viewport });
+        pageNum = num;
+        pageInfo.textContent = 'Page ' + num + ' of ' + totalPages;
+        document.getElementById('prevBtn').disabled = num <= 1;
+        document.getElementById('nextBtn').disabled = num >= totalPages;
+      }).catch(function(err) {
+        showError('Failed to render page: ' + err.message);
+      });
+    }
 
-        document.getElementById('prevBtn').addEventListener('click', function() {
-            if (pageNum > 1) renderPage(pageNum - 1);
-        });
-        document.getElementById('nextBtn').addEventListener('click', function() {
-            if (pageNum < totalPages) renderPage(pageNum + 1);
-        });
-    </script>
-    <script src="/static/js/theme.js"></script>
+    try {
+      const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
+      pdfDoc = pdf;
+      totalPages = pdf.numPages;
+      renderPage(1);
+    } catch (err) {
+      showError('Failed to load PDF: ' + err.message);
+    }
+
+    document.getElementById('prevBtn').addEventListener('click', function() { if (pageNum > 1) renderPage(pageNum - 1); });
+    document.getElementById('nextBtn').addEventListener('click', function() { if (pageNum < totalPages) renderPage(pageNum + 1); });
+  </script>
+  <script src="/static/js/theme.js"></script>
 </body>
 </html>

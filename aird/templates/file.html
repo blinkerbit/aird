@@ -1,46 +1,49 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
+  <link rel="stylesheet" href="/static/css/app.css" />
     <title>{{ filename }}</title>
     <meta id="page-flags" data-open-editor="{{ open_editor }}">
     <style>
         body {
-            background-color: white;
-            color: black;
-            font-family: monospace;
+            background: var(--ds-bg);
+            color: var(--ds-text);
         }
 
         {% include "_app_nav_header_styles.html" %}
 
-        .breadcrumb a {
-            color: black;
-            text-decoration: none;
-        }
-
-        .breadcrumb a:hover {
-            text-decoration: underline;
-        }
+        .breadcrumb a { color: var(--ds-text); text-decoration: none; }
+        .breadcrumb a:hover { color: var(--ds-primary); }
 
         .download-btn,
         button {
             display: inline-flex;
             align-items: center;
-            padding: 6px 12px;
-            background-color: white;
-            color: black;
+            gap: 6px;
+            padding: 7px 12px;
+            background: var(--ds-surface);
+            color: var(--ds-text);
             text-decoration: none;
-            border-radius: 4px;
-            font-size: 12px;
-            border: 1px solid black;
-            font-family: monospace;
+            border-radius: var(--ds-radius-sm);
+            font-size: var(--ds-fs-sm);
+            font-weight: 600;
+            border: 1px solid var(--ds-border);
+            font-family: inherit;
             margin: 0;
             position: relative;
+            cursor: pointer;
+            transition: background var(--ds-duration-fast) var(--ds-ease),
+                        border-color var(--ds-duration-fast) var(--ds-ease);
         }
 
         .download-btn:hover,
         button:hover {
-            background-color: #f0f0f0;
+            background: var(--ds-bg-muted);
+            border-color: var(--ds-border-strong);
+        }
+        .download-btn:focus-visible, button:focus-visible {
+            outline: none; box-shadow: var(--ds-focus-ring);
         }
 
         /* Tooltip styles for icon buttons */
@@ -51,11 +54,11 @@
             bottom: 100%;
             left: 50%;
             transform: translateX(-50%);
-            background: #333;
-            color: white;
+            background: var(--ds-accent);
+            color: var(--ds-text-on-accent);
             padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 11px;
+            border-radius: var(--ds-radius-xs);
+            font-size: var(--ds-fs-xs);
             white-space: nowrap;
             z-index: 1000;
             margin-bottom: 5px;
@@ -69,7 +72,7 @@
             left: 50%;
             transform: translateX(-50%);
             border: 4px solid transparent;
-            border-top-color: #333;
+            border-top-color: var(--ds-accent);
             z-index: 1000;
             margin-bottom: 1px;
         }
@@ -92,26 +95,27 @@
         }
 
         .toolbar input[type="text"] {
-            padding: 6px 8px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            font-family: monospace;
-            font-size: 12px;
+            padding: 7px 10px;
+            border: 1px solid var(--ds-border);
+            border-radius: var(--ds-radius-sm);
+            background: var(--ds-surface);
+            color: var(--ds-text);
+            font: inherit;
+            font-size: var(--ds-fs-sm);
         }
 
         #stream-filter {
-            min-width: 150px;
+            min-width: 180px;
             margin-right: 8px;
         }
 
         #stream-filter:focus {
-            border-color: #0066cc;
+            border-color: var(--ds-primary);
             outline: none;
-            box-shadow: 0 0 5px rgba(0, 102, 204, 0.3);
+            box-shadow: var(--ds-focus-ring);
         }
 
         .line-numbers {
-            /* Shrink column to content; "1% + nowrap" is the standard table trick */
             width: 1%;
             max-width: 12ch;
             min-width: 3ch;
@@ -120,10 +124,12 @@
             text-align: right;
             padding: 2px 10px 2px 4px;
             box-sizing: border-box;
-            border-right: 1px solid #ccc;
-            background-color: #f5f5f5;
-            color: #595959;
+            border-right: 1px solid var(--ds-border-muted);
+            background: var(--ds-bg-muted);
+            color: var(--ds-text-subtle);
             user-select: none;
+            font-family: var(--ds-font-mono);
+            font-size: var(--ds-fs-xs);
         }
 
         /* Mobile responsive styles */
@@ -168,16 +174,45 @@
             display: none;
         }
 
-        td pre {
+        /* Per-line <pre> MUST NOT grow its own scrollbar (the global
+           `pre { overflow-x: auto }` rule would give every single line its
+           own horizontal scroll). Wrap long lines instead. */
+        #file-content td pre {
             margin: 0;
             padding: 0;
             min-height: 1.2em;
+            background: transparent;
+            border: 0;
+            border-radius: 0;
+            overflow: visible;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+            font-family: var(--ds-font-mono);
+            font-size: var(--ds-fs-sm);
+            line-height: 1.5;
+            color: inherit;
         }
 
         #file-content td:not(.line-numbers) {
             vertical-align: top;
             word-break: break-word;
             overflow-wrap: anywhere;
+        }
+
+        /* Toggle: opt-in "no wrap" mode (single shared horizontal scrollbar
+           lives on the table's scroll container, not on each line). */
+        #file-content.nowrap {
+            table-layout: auto;
+        }
+        #file-content.nowrap td pre {
+            white-space: pre;
+            overflow-wrap: normal;
+            word-break: normal;
+        }
+        .file-content-scroll {
+            width: 100%;
+            overflow-x: auto;
         }
 
         /* Hide line numbers when toggled */
@@ -198,15 +233,14 @@
         #line-numbers-editor {
             width: 40px;
             padding: 5px 5px 5px 2px;
-            /* top, right, bottom, left */
             text-align: right;
-            background-color: #f0f0f0;
-            color: #595959;
-            border: 1px solid #ccc;
+            background-color: var(--ds-bg-muted);
+            color: var(--ds-text-subtle);
+            border: 1px solid var(--ds-border);
             border-right: none;
             overflow-y: hidden;
             resize: none;
-            font-family: monospace;
+            font-family: var(--ds-font-mono);
             font-size: 1em;
             line-height: 1.2em;
         }
@@ -214,13 +248,14 @@
         #editor {
             width: calc(100% - 40px);
             height: 100%;
-            /* Fill the container */
-            border: 1px solid #ccc;
+            border: 1px solid var(--ds-border);
             resize: none;
-            font-family: monospace;
+            font-family: var(--ds-font-mono);
             font-size: 1em;
             line-height: 1.2em;
             padding: 5px;
+            background: var(--ds-surface);
+            color: var(--ds-text);
         }
 
         .streaming-indicator span {
@@ -249,33 +284,14 @@
         }
 
         #markdown-preview h1, #markdown-preview h2, #markdown-preview h3 { margin-top: 1em; margin-bottom: 0.5em; }
-        #markdown-preview pre { background: #f5f5f5; padding: 10px; overflow: auto; border: 1px solid #ddd; border-radius: 4px; }
-        #markdown-preview code { background: #f5f5f5; padding: 2px 4px; border-radius: 3px; font-family: monospace; }
+        #markdown-preview pre { background: var(--ds-bg-muted); padding: 10px; overflow: auto; border: 1px solid var(--ds-border-muted); border-radius: var(--ds-radius-sm); }
+        #markdown-preview code { background: var(--ds-bg-muted); padding: 2px 4px; border-radius: var(--ds-radius-xs); font-family: var(--ds-font-mono); }
         #markdown-preview pre code { background: none; padding: 0; }
-        #markdown-preview blockquote { border-left: 4px solid #ccc; margin: 0; padding-left: 1em; color: #555; }
+        #markdown-preview blockquote { border-left: 4px solid var(--ds-border); margin: 0; padding-left: 1em; color: var(--ds-text-muted); }
         #markdown-preview table { border-collapse: collapse; margin: 1em 0; }
-        #markdown-preview th, #markdown-preview td { border: 1px solid #ddd; padding: 6px 12px; }
+        #markdown-preview th, #markdown-preview td { border: 1px solid var(--ds-border-muted); padding: 6px 12px; }
         #markdown-preview img { max-width: 100%; }
-        [data-theme="dark"] #markdown-preview pre { background: #222; border-color: #444; }
-        [data-theme="dark"] #markdown-preview code { background: #222; }
-        [data-theme="dark"] #markdown-preview blockquote { border-color: #444; color: #aaa; }
-        [data-theme="dark"] #markdown-preview th, [data-theme="dark"] #markdown-preview td { border-color: #444; }
-
-        /* Dark mode */
-        [data-theme="dark"] body { background-color: #1a1a2e; color: #e0e0e0; }
-        [data-theme="dark"] .header { border-color: #444; }
-        [data-theme="dark"] .breadcrumb a { color: #58a6ff; }
-        [data-theme="dark"] h2 { color: #e0e0e0; }
-        [data-theme="dark"] .download-btn,
-        [data-theme="dark"] button { background-color: #2a2a3e; color: #e0e0e0; border-color: #555; }
-        [data-theme="dark"] .download-btn:hover,
-        [data-theme="dark"] button:hover { background-color: #333; }
-        [data-theme="dark"] select { background: #222; color: #e0e0e0; border-color: #555; }
-        [data-theme="dark"] .line-numbers { background-color: #1e1e2e; color: #888; border-color: #444; }
-        [data-theme="dark"] .code-content { background-color: #1a1a2e; color: #e0e0e0; border-color: #444; }
-        [data-theme="dark"] .file-info { color: #aaa; }
-        [data-theme="dark"] .loading span { color: #e0e0e0; }
-        [data-theme="dark"] a { color: #58a6ff; }
+        .file-info { color: var(--ds-text-muted); }
     </style>
 </head>
 
@@ -359,27 +375,29 @@
     </div>
     <div id="markdown-preview" style="display:none;padding:10px 20px;max-width:900px;line-height:1.6;font-family:sans-serif,monospace;">
     </div>
-    <table id="file-content">
-        <thead>
-            <tr>
-                <th class="line-numbers" scope="col" aria-label="Line number"></th>
-                <th scope="col" aria-label="Content"></th>
-            </tr>
-        </thead>
-        <tbody id="file-content-body">
-            <tr>
-                <td colspan="2" style="padding: 20px; text-align: center; color: #666;">Loading file content...</td>
-            </tr>
-        </tbody>
-        <tfoot id="streaming-indicator" style="display:none;">
-            <tr>
-                <td class="line-numbers streaming-indicator">
-                    <span>.</span><span>.</span><span>.</span>
-                </td>
-                <td></td>
-            </tr>
-        </tfoot>
-    </table>
+    <div class="file-content-scroll">
+        <table id="file-content">
+            <thead>
+                <tr>
+                    <th class="line-numbers" scope="col" aria-label="Line number"></th>
+                    <th scope="col" aria-label="Content"></th>
+                </tr>
+            </thead>
+            <tbody id="file-content-body">
+                <tr>
+                    <td colspan="2" style="padding: 20px; text-align: center; color: #666;">Loading file content...</td>
+                </tr>
+            </tbody>
+            <tfoot id="streaming-indicator" style="display:none;">
+                <tr>
+                    <td class="line-numbers streaming-indicator">
+                        <span>.</span><span>.</span><span>.</span>
+                    </td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
     <script nonce="{{ csp_nonce }}">
         const openEditor = (document.getElementById('page-flags')?.dataset.openEditor || 'False') === 'True';
         const streamBtn = document.getElementById('stream-btn');

@@ -1,255 +1,313 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <title>Network Shares</title>
-    <style>
-        body { background-color: white; color: black; font-family: monospace; margin: 20px; }
-        input, select { font-family: monospace; }
-        .section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; background-color: #f9f9f9; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 13px; }
-        th { background-color: #f0f0f0; }
-        .status-running { color: #28a745; font-weight: bold; }
-        .status-stopped { color: #dc3545; font-weight: bold; }
-        .btn { display: inline-block; padding: 4px 10px; border: 1px solid #ccc; background: #f5f5f5;
-               text-decoration: none; color: black; cursor: pointer; font-family: monospace; font-size: 12px; }
-        .btn-danger { border-color: #dc3545; color: #dc3545; }
-        .btn-success { border-color: #28a745; color: #28a745; }
-        .config-row { margin: 8px 0; display: flex; align-items: center; }
-        .config-row label { display: inline-block; width: 160px; margin-right: 10px; }
-        .config-row input[type="text"],
-        .config-row input[type="number"],
-        .config-row input[type="password"],
-        .config-row select { width: 280px; padding: 4px; }
-        .help-text { font-size: 0.9em; color: #666; margin-left: 8px; }
-        .error { color: #b02a37; margin-bottom: 12px; padding: 8px; border: 1px solid #dc3545; background: #ffeaea; }
-        .info-btn { display: inline-block; width: 20px; height: 20px; line-height: 20px; text-align: center;
-                     border-radius: 50%; background: #0056b3; color: #fff; font-size: 12px; font-weight: bold;
-                     cursor: pointer; border: none; font-family: serif; vertical-align: middle; }
-        .info-btn:hover { background: #0056b3; }
-        .mount-panel { display: none; margin-top: 6px; padding: 10px; background: #f0f7ff; border: 1px solid #b0d0ff;
-                       font-size: 12px; }
-        .mount-panel pre { background: #2d2d2d; color: #f8f8f2; padding: 8px; margin: 4px 0 8px; overflow-x: auto;
-                           position: relative; white-space: pre-wrap; word-break: break-all; }
-        .copy-btn { font-size: 11px; padding: 2px 8px; cursor: pointer; border: 1px solid #999; background: #e8e8e8;
-                    font-family: monospace; margin-left: 6px; }
-        .copy-btn:hover { background: #d0d0d0; }
-        .copied-msg { color: #28a745; font-size: 11px; margin-left: 6px; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <title>Network shares  Aird</title>
+  <style>
+    body { background: var(--ds-bg-muted); }
+    .sub-nav {
+      display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-3);
+      padding: var(--ds-space-4) var(--ds-space-5);
+      background: var(--ds-surface); border-bottom: 1px solid var(--ds-border);
+    }
+    .sub-nav .links a { margin-right: var(--ds-space-4); font-size: var(--ds-fs-sm); color: var(--ds-text); }
+    .sub-nav .links a:hover { color: var(--ds-primary); text-decoration: none; }
+
+    .config-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-3); margin: 0 0 var(--ds-space-3); }
+    .config-row > label { width: 160px; font-size: var(--ds-fs-sm); font-weight: 600; color: var(--ds-text); }
+    .config-row input[type="text"],
+    .config-row input[type="number"],
+    .config-row input[type="password"],
+    .config-row select {
+      width: 320px; max-width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--ds-border);
+      border-radius: var(--ds-radius-sm);
+      background: var(--ds-surface);
+      color: var(--ds-text);
+      font: inherit; font-size: var(--ds-fs-md);
+    }
+    .config-row input:focus, .config-row select:focus { outline: none; border-color: var(--ds-primary); box-shadow: var(--ds-focus-ring); }
+    .config-row .help-text { font-size: var(--ds-fs-xs); color: var(--ds-text-muted); }
+
+    .info-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 24px; height: 24px;
+      border-radius: var(--ds-radius-pill);
+      background: var(--ds-primary); color: var(--ds-text-on-accent);
+      border: 0; cursor: pointer; font-size: 12px; font-weight: 700;
+      transition: background var(--ds-duration-fast) var(--ds-ease);
+    }
+    .info-btn:hover { background: var(--ds-primary-hover); }
+
+    .mount-panel {
+      display: none; margin: 0;
+      padding: var(--ds-space-4);
+      background: var(--ds-primary-soft);
+      border-top: 1px solid var(--ds-primary);
+      font-size: var(--ds-fs-sm);
+    }
+    .mount-panel pre {
+      background: var(--ds-accent); color: var(--ds-text-on-accent);
+      padding: var(--ds-space-3); margin: 0 0 var(--ds-space-2);
+      border-radius: var(--ds-radius-sm);
+      overflow-x: auto;
+      white-space: pre-wrap; word-break: break-all;
+      font-size: var(--ds-fs-xs);
+    }
+    .copy-btn {
+      font-size: var(--ds-fs-xs); padding: 2px 10px;
+      cursor: pointer;
+      border: 1px solid var(--ds-border);
+      background: var(--ds-surface);
+      color: var(--ds-text);
+      border-radius: var(--ds-radius-sm);
+      margin-left: 8px;
+    }
+    .copy-btn:hover { background: var(--ds-bg-muted); border-color: var(--ds-border-strong); }
+    .copied-msg { color: var(--ds-success); font-size: var(--ds-fs-xs); margin-left: 6px; }
+
+    .actions-cell { white-space: nowrap; }
+    .actions-cell form { display: inline-flex; margin-left: 4px; }
+    .share-path { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+
+    .warn-note {
+      margin-top: var(--ds-space-2);
+      padding: var(--ds-space-3);
+      background: var(--ds-warning-soft);
+      border: 1px solid var(--ds-warning);
+      color: var(--ds-text);
+      border-radius: var(--ds-radius-sm);
+      font-size: var(--ds-fs-xs);
+    }
+  </style>
 </head>
 <body>
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-        <h2>Network Shares (SMB / WebDAV)</h2>
-        <a href="/admin" style="font-size: 12px; color: #666; text-decoration: none;">&larr; Admin Panel</a>
+  <header class="sub-nav">
+    <div class="links">
+      <a href="/admin">← Admin panel</a>
+      <a href="/logout">Logout</a>
+    </div>
+    <span class="ds-muted ds-small">👤 {{ handler.get_display_username() }}</span>
+  </header>
+
+  <main class="container">
+    <div class="ds-hstack ds-hstack--between" style="margin-bottom: var(--ds-space-4);">
+      <h1 style="margin:0;">Network shares <span class="ds-muted ds-small">(SMB / WebDAV)</span></h1>
     </div>
 
     {% if error %}
-    <div class="error">{{ error }}</div>
+    <div class="ds-alert ds-alert--danger" role="alert" style="margin-bottom: var(--ds-space-4);">
+      <span class="ds-alert__icon" aria-hidden="true">⚠</span><span>{{ error }}</span>
+    </div>
     {% end %}
 
-    <!-- Existing Shares -->
-    <div class="section">
-        <h3>Active Shares</h3>
-        {% if shares %}
-        <table>
-            <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Protocol</th>
-                    <th>Port</th>
-                    <th>Folder</th>
-                    <th>Username</th>
-                    <th>Read-only</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for s in shares %}
-                <tr>
-                    <td>{{ s["name"] }}</td>
-                    <td>{{ s["protocol"].upper() }}</td>
-                    <td>{{ s["port"] }}</td>
-                    <td style="max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ s['folder_path'] }}">{{ s["folder_path"] }}</td>
-                    <td>{{ s["username"] }}</td>
-                    <td>{{ "Yes" if s["read_only"] else "No" }}</td>
-                    <td>
-                        {% if s.get("running") %}
-                            <span class="status-running">Running</span>
-                        {% elif s.get("enabled") %}
-                            <span class="status-stopped">Stopped</span>
-                        {% else %}
-                            <span style="color:#999;">Disabled</span>
-                        {% end %}
-                    </td>
-                    <td style="white-space: nowrap;">
-                        <button type="button" class="info-btn" title="Mount commands"
-                                data-share-id="{{ s['id'] }}">i</button>
-                        <form method="POST" action="/admin/network-shares/toggle" style="display:inline; margin-left: 4px;">
-                            {% raw xsrf_form_html() %}
-                            <input type="hidden" name="share_id" value="{{ s['id'] }}" />
-                            <button type="submit" class="btn {% if s['enabled'] %}btn-danger{% else %}btn-success{% end %}">
-                                {{ "Disable" if s["enabled"] else "Enable" }}
-                            </button>
-                        </form>
-                        <form method="POST" action="/admin/network-shares/delete" style="display:inline; margin-left: 4px;"
-                              class="delete-share-form">
-                            {% raw xsrf_form_html() %}
-                            <input type="hidden" name="share_id" value="{{ s['id'] }}" />
-                            <button type="submit" class="btn btn-danger">Delete</button>
-                        </form>
-                    </td>
-                </tr>
-                <tr>
-                    <td colspan="8" style="padding:0; border-top:none;">
-                        <div class="mount-panel" id="mount-{{ s['id'] }}"
-                             data-protocol="{{ s['protocol'] }}"
-                             data-port="{{ s['port'] }}"
-                             data-name="{{ s['name'] }}"
-                             data-username="{{ s['username'] }}">
-                        </div>
-                    </td>
-                </tr>
-                {% end %}
-            </tbody>
-        </table>
-        {% else %}
-        <p style="color:#999;">No network shares configured yet.</p>
-        {% end %}
-    </div>
+    <section class="ds-card ds-card--flush">
+      <div class="ds-card__header">
+        <h2 style="margin:0; font-size: var(--ds-fs-md);">Active shares</h2>
+      </div>
+      {% if shares %}
+      <table class="ds-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Protocol</th>
+            <th>Port</th>
+            <th>Folder</th>
+            <th>User</th>
+            <th>R/O</th>
+            <th>Status</th>
+            <th style="text-align:right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in shares %}
+          <tr>
+            <td><strong>{{ s["name"] }}</strong></td>
+            <td><span class="ds-chip">{{ s["protocol"].upper() }}</span></td>
+            <td class="ds-mono ds-small">{{ s["port"] }}</td>
+            <td class="ds-small"><span class="share-path" title="{{ s['folder_path'] }}">{{ s["folder_path"] }}</span></td>
+            <td class="ds-small">{{ s["username"] }}</td>
+            <td class="ds-small">{{ "Yes" if s["read_only"] else "No" }}</td>
+            <td>
+              {% if s.get("running") %}
+              <span class="ds-badge ds-badge--success">Running</span>
+              {% elif s.get("enabled") %}
+              <span class="ds-badge ds-badge--danger">Stopped</span>
+              {% else %}
+              <span class="ds-badge">Disabled</span>
+              {% end %}
+            </td>
+            <td class="actions-cell" style="text-align:right;">
+              <button type="button" class="info-btn" title="Mount commands" data-share-id="{{ s['id'] }}">i</button>
+              <form method="POST" action="/admin/network-shares/toggle">
+                {% raw xsrf_form_html() %}
+                <input type="hidden" name="share_id" value="{{ s['id'] }}" />
+                <button type="submit" class="ds-btn ds-btn--sm {% if s['enabled'] %}ds-btn--danger{% else %}{% end %}">
+                  {{ "Disable" if s["enabled"] else "Enable" }}
+                </button>
+              </form>
+              <form method="POST" action="/admin/network-shares/delete" class="delete-share-form">
+                {% raw xsrf_form_html() %}
+                <input type="hidden" name="share_id" value="{{ s['id'] }}" />
+                <button type="submit" class="ds-btn ds-btn--sm ds-btn--danger">Delete</button>
+              </form>
+            </td>
+          </tr>
+          <tr>
+            <td colspan="8" style="padding:0;">
+              <div class="mount-panel" id="mount-{{ s['id'] }}"
+                   data-protocol="{{ s['protocol'] }}"
+                   data-port="{{ s['port'] }}"
+                   data-name="{{ s['name'] }}"
+                   data-username="{{ s['username'] }}">
+              </div>
+            </td>
+          </tr>
+          {% end %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="ds-card__body">
+        <div class="ds-alert ds-alert--info">
+          <span class="ds-alert__icon" aria-hidden="true">ℹ</span>
+          <span>No network shares configured yet.</span>
+        </div>
+      </div>
+      {% end %}
+    </section>
 
-    <!-- Create New Share -->
-    <div class="section">
-        <h3>Create New Share</h3>
-        <form method="POST" action="/admin/network-shares">
-            {% raw xsrf_form_html() %}
-            <div class="config-row">
-                <label for="name">Share Name:</label>
-                <input type="text" id="name" name="name" required placeholder="e.g. ProjectFiles" />
-            </div>
-            <div class="config-row">
-                <label for="folder_path">Folder Path:</label>
-                <input type="text" id="folder_path" name="folder_path" required placeholder="e.g. C:\Data\shared" />
-            </div>
-            <div class="config-row">
-                <label for="protocol">Protocol:</label>
-                <select id="protocol" name="protocol">
-                    <option value="webdav" selected>WebDAV (Class 2 - locking, digest auth)</option>
-                    <option value="smb">SMB (v1/v2)</option>
-                </select>
-                <span class="help-text">WebDAV is recommended -- full locking, Office support, cross-platform</span>
-            </div>
-            <div class="config-row">
-                <label for="port">Port:</label>
-                <input type="number" id="port" name="port" value="8443" min="1" max="65535" style="width:100px;" />
-                <span class="help-text">Use ports above 1024 to avoid needing admin privileges</span>
-            </div>
-            <div class="config-row">
-                <label for="share_username">Username:</label>
-                <input type="text" id="share_username" name="share_username" required placeholder="share access username" />
-            </div>
-            <div class="config-row">
-                <label for="share_password">Password:</label>
-                <input type="password" id="share_password" name="share_password" required placeholder="share access password" />
-            </div>
-            <div class="config-row">
-                <label>
-                    <input type="checkbox" name="read_only" /> Read-only
-                </label>
-            </div>
-            <div style="margin-top: 12px;">
-                <button type="submit" class="btn btn-success" style="padding: 6px 18px;">Create Share</button>
-            </div>
-        </form>
-    </div>
+    <section class="ds-card" style="margin-top: var(--ds-space-5);">
+      <h2 style="margin-top:0;">Create new share</h2>
+      <form method="POST" action="/admin/network-shares" style="margin-top: var(--ds-space-4);">
+        {% raw xsrf_form_html() %}
+        <div class="config-row">
+          <label for="name">Share name</label>
+          <input type="text" id="name" name="name" required placeholder="e.g. ProjectFiles" />
+        </div>
+        <div class="config-row">
+          <label for="folder_path">Folder path</label>
+          <input type="text" id="folder_path" name="folder_path" required placeholder="e.g. C:\Data\shared" />
+        </div>
+        <div class="config-row">
+          <label for="protocol">Protocol</label>
+          <select id="protocol" name="protocol">
+            <option value="webdav" selected>WebDAV (Class 2  locking, digest auth)</option>
+            <option value="smb">SMB (v1/v2)</option>
+          </select>
+          <span class="help-text">WebDAV is recommended  full locking, Office support, cross-platform.</span>
+        </div>
+        <div class="config-row">
+          <label for="port">Port</label>
+          <input type="number" id="port" name="port" value="8443" min="1" max="65535" style="width:120px;" />
+          <span class="help-text">Use ports above 1024 to avoid needing admin privileges.</span>
+        </div>
+        <div class="config-row">
+          <label for="share_username">Username</label>
+          <input type="text" id="share_username" name="share_username" required placeholder="share access username" />
+        </div>
+        <div class="config-row">
+          <label for="share_password">Password</label>
+          <input type="password" id="share_password" name="share_password" required placeholder="share access password" />
+        </div>
+        <div class="config-row">
+          <label>Access</label>
+          <label style="width: auto; font-weight: 400; display:inline-flex; align-items:center; gap:6px;">
+            <input type="checkbox" name="read_only" /> Read-only
+          </label>
+        </div>
+        <div class="ds-hstack ds-hstack--end" style="margin-top: var(--ds-space-4);">
+          <button type="submit" class="ds-btn ds-btn--primary">Create share</button>
+        </div>
+      </form>
+    </section>
+  </main>
 
-    <div style="margin-top: 20px;">
-        <a href="/admin">&larr; Back to Admin Panel</a>
-    </div>
-
-    <script nonce="{{ csp_nonce }}">
+  <script nonce="{{ csp_nonce }}">
     (function() {
-        var host = '{{ server_host }}';
+      var host = '{{ server_host }}';
 
-        function cmdLine(label, cmd) {
-            var id = 'cmd-' + globalThis.crypto.randomUUID().replaceAll('-', '').slice(0, 8);
-            return '<div style="margin-bottom:6px;"><strong>' + label + '</strong>' +
-                   '<button type="button" class="copy-btn" data-cmd-id="' + id + '">Copy</button>' +
-                   '<span class="copied-msg" id="msg-' + id + '" style="display:none;">Copied!</span></div>' +
-                   '<pre id="' + id + '">' + cmd + '</pre>';
+      function cmdLine(label, cmd) {
+        var id = 'cmd-' + globalThis.crypto.randomUUID().replaceAll('-', '').slice(0, 8);
+        return '<div style="margin-bottom:6px;"><strong>' + label + '</strong>' +
+               '<button type="button" class="copy-btn" data-cmd-id="' + id + '">Copy</button>' +
+               '<span class="copied-msg" id="msg-' + id + '" style="display:none;">Copied!</span></div>' +
+               '<pre id="' + id + '">' + cmd + '</pre>';
+      }
+
+      var smbNote = '<div class="warn-note">' +
+          '<strong>Windows SMB note:</strong> If you get error 1272 (guest access blocked), ' +
+          'run this in an elevated PowerShell and reboot:<br>' +
+          String.raw`<code>Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" ` +
+          '-Name "AllowInsecureGuestAuth" -Type DWord -Value 1</code><br>' +
+          'Or use <strong>WebDAV</strong> instead, which avoids this issue entirely.</div>';
+
+      function buildPanel(panel) {
+        var proto = panel.dataset.protocol;
+        var port  = panel.dataset.port;
+        var name  = panel.dataset.name;
+        var user  = panel.dataset.username;
+        var html  = '';
+        if (proto === 'webdav') {
+          html += cmdLine('Linux',
+            'sudo mount -t davfs http://' + host + ':' + port + '/ /mnt/' + name.toLowerCase());
+          html += cmdLine('Windows',
+            'net use Z: http://' + host + ':' + port + '/');
+        } else {
+          const mountCred = '<YOUR_SECRET>';
+          const mountLinuxCmd = 'sudo mount -t cifs //' + host + '/' + name.toUpperCase() +
+            ' /mnt/' + name.toLowerCase() +
+            ' \\\n  -o port=' + port + ',username=' + user +
+            ',password=' + mountCred +
+            ',uid=$(id -u),gid=$(id -g),cache=strict';
+          html += cmdLine('Linux', mountLinuxCmd);
+          html += cmdLine('Windows (CMD)',
+            'net use Z: \\\\' + host + '\\' + name.toUpperCase() + ' /user:' + user + ' ' + mountCred);
+          html += smbNote;
         }
+        panel.innerHTML = html;
+      }
 
-        var smbNote = '<div style="margin-top:8px;padding:8px;background:#fff8e1;border:1px solid #ffe082;font-size:11px;">' +
-            '<strong>Windows SMB note:</strong> If you get error 1272 (guest access blocked), ' +
-            'run this in an elevated PowerShell and reboot:<br>' +
-            String.raw`<code>Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" ` +
-            '-Name "AllowInsecureGuestAuth" -Type DWord -Value 1</code><br>' +
-            'Or use <strong>WebDAV</strong> instead, which avoids this issue entirely.</div>';
+      document.querySelectorAll('.mount-panel').forEach(buildPanel);
 
-        function buildPanel(panel) {
-            var proto = panel.dataset.protocol;
-            var port  = panel.dataset.port;
-            var name  = panel.dataset.name;
-            var user  = panel.dataset.username;
-            var html  = '';
-            if (proto === 'webdav') {
-                html += cmdLine('Linux',
-                    'sudo mount -t davfs http://' + host + ':' + port + '/ /mnt/' + name.toLowerCase());
-                html += cmdLine('Windows',
-                    'net use Z: http://' + host + ':' + port + '/');
-            } else {
-                const mountCred = '<YOUR_SECRET>'; // placeholder – not a real credential
-                const mountLinuxCmd = 'sudo mount -t cifs //' + host + '/' + name.toUpperCase() +
-                    ' /mnt/' + name.toLowerCase() +
-                    ' \\\n  -o port=' + port + ',username=' + user +
-                    ',password=' + mountCred + // NOSONAR: template placeholder, not a real credential
-                    ',uid=$(id -u),gid=$(id -g),cache=strict';
-                html += cmdLine('Linux', mountLinuxCmd);
-                html += cmdLine('Windows (CMD)',
-                    'net use Z: \\\\' + host + '\\' + name.toUpperCase() + ' /user:' + user + ' ' + mountCred);
-                html += smbNote;
-            }
-            panel.innerHTML = html;
+      document.querySelectorAll('.info-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var panel = document.getElementById('mount-' + this.dataset.shareId);
+          if (panel) {
+            panel.style.display = panel.style.display === 'none' || !panel.style.display ? 'block' : 'none';
+          }
+        });
+      });
+
+      document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('copy-btn')) {
+          var pre = document.getElementById(e.target.dataset.cmdId);
+          if (!pre) return;
+          var text = pre.textContent;
+          navigator.clipboard.writeText(text).then(function() {
+            var msg = document.getElementById('msg-' + e.target.dataset.cmdId);
+            if (msg) { msg.style.display = 'inline'; setTimeout(function(){ msg.style.display = 'none'; }, 1500); }
+          });
         }
+      });
 
-        document.querySelectorAll('.mount-panel').forEach(buildPanel);
-
-        document.querySelectorAll('.info-btn').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                var panel = document.getElementById('mount-' + this.dataset.shareId);
-                if (panel) {
-                    panel.style.display = panel.style.display === 'none' || !panel.style.display ? 'block' : 'none';
-                }
-            });
+      var protocolSelect = document.getElementById('protocol');
+      var portInput = document.getElementById('port');
+      if (protocolSelect && portInput) {
+        protocolSelect.addEventListener('change', function() {
+          portInput.value = this.value === 'smb' ? 4455 : 8443;
         });
+      }
 
-        document.addEventListener('click', function(e) {
-            if (e.target.classList.contains('copy-btn')) {
-                var pre = document.getElementById(e.target.dataset.cmdId);
-                if (!pre) return;
-                var text = pre.textContent;
-                navigator.clipboard.writeText(text).then(function() {
-                    var msg = document.getElementById('msg-' + e.target.dataset.cmdId);
-                    if (msg) { msg.style.display = 'inline'; setTimeout(function(){ msg.style.display = 'none'; }, 1500); }
-                });
-            }
+      document.querySelectorAll('.delete-share-form').forEach(function(form) {
+        form.addEventListener('submit', function(e) {
+          if (!confirm('Delete this share?')) e.preventDefault();
         });
-
-        var protocolSelect = document.getElementById('protocol');
-        var portInput = document.getElementById('port');
-        if (protocolSelect && portInput) {
-            protocolSelect.addEventListener('change', function() {
-                portInput.value = this.value === 'smb' ? 4455 : 8443;
-            });
-        }
-
-        document.querySelectorAll('.delete-share-form').forEach(function(form) {
-            form.addEventListener('submit', function(e) {
-                if (!confirm('Delete this share?')) e.preventDefault();
-            });
-        });
+      });
     })();
-    </script>
+  </script>
+  <script src="/static/js/theme.js"></script>
 </body>
 </html>
