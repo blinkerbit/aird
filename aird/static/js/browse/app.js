@@ -778,11 +778,11 @@
       const modal = document.getElementById('sharePickerModal');
       if (!selectEl || !modal) return;
       selectEl.innerHTML = '<option value="">Loading...</option>';
-      modal.classList.add('show');
+      modal.showModal();
       try {
         const res = await fetch('/share/list');
         const data = await res.json();
-        if (data.error) { showDialog(data.error, 'Error'); modal.classList.remove('show'); return; }
+        if (data.error) { showDialog(data.error, 'Error'); modal.close(); return; }
         const shares = data.shares || {};
         selectEl.innerHTML = Object.keys(shares).length ? Object.entries(shares).map(([id, s]) => '<option value="' + id + '">' + id + (s.paths?.length ? ' (' + s.paths.length + ' path(s))' : '') + '</option>').join('') : '<option value="">No shares</option>';
       } catch (e) {
@@ -790,8 +790,9 @@
         selectEl.innerHTML = '<option value="">Error loading shares</option>';
       }
       const shareId = await new Promise((resolve) => {
-        document.getElementById('sharePickerConfirm').onclick = () => { modal.classList.remove('show'); resolve(selectEl.value); };
-        document.getElementById('sharePickerCancel').onclick = () => { modal.classList.remove('show'); resolve(null); };
+        document.getElementById('sharePickerConfirm').onclick = () => { modal.close(); resolve(selectEl.value); };
+        document.getElementById('sharePickerCancel').onclick = () => { modal.close(); resolve(null); };
+        modal.addEventListener('cancel', (ev) => { ev.preventDefault(); modal.close(); resolve(null); }, { once: true });
       });
       if (!shareId) return;
       try {
@@ -1274,8 +1275,7 @@
         const fpOverlay = document.getElementById('folderPickerOverlay');
         if (fpOverlay?.classList.contains('show')) { FolderPicker.close(null); return; }
         const sharePicker = document.getElementById('sharePickerModal');
-        if (sharePicker?.classList.contains('show')) {
-          sharePicker.classList.remove('show');
+        if (sharePicker?.open) {
           document.getElementById('sharePickerCancel')?.click();
           return;
         }
