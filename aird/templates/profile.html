@@ -1,178 +1,144 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
   <title>Profile - Aird</title>
-  <style>
-    body { background: var(--ds-bg); color: var(--ds-text); }
-    .profile-layout { max-width: 960px; margin: 0 auto; padding: var(--ds-space-6) var(--ds-space-4); }
-
-    {% include '_app_nav_header_styles.html' %}
-
-    .profile-intro {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: var(--ds-space-3);
-      padding-bottom: var(--ds-space-3);
-      margin-bottom: var(--ds-space-6);
-      border-bottom: 1px solid var(--ds-border);
-    }
-    .profile-intro h1 { margin: 0; font-size: var(--ds-fs-2xl); font-weight: 700; }
-    .profile-intro small { color: var(--ds-text-muted); font-size: var(--ds-fs-sm); }
-
-    .quota-bar {
-      width: 100%;
-      height: 10px;
-      background: var(--ds-bg-muted);
-      border-radius: var(--ds-radius-pill);
-      overflow: hidden;
-      margin-top: var(--ds-space-2);
-    }
-    .quota-bar__fill {
-      height: 100%;
-      border-radius: var(--ds-radius-pill);
-      transition: width var(--ds-duration-normal) var(--ds-ease);
-    }
-
-    dl.kv {
-      display: grid;
-      grid-template-columns: max-content 1fr;
-      gap: var(--ds-space-2) var(--ds-space-5);
-      margin: 0;
-    }
-    dl.kv dt { color: var(--ds-text-muted); font-size: var(--ds-fs-sm); }
-    dl.kv dd { margin: 0; font-size: var(--ds-fs-md); word-break: break-word; }
-  </style>
 </head>
-<body>
-  <div class="profile-layout">
+<body class="bg-base-200 min-h-screen">
+  <div class="max-w-3xl mx-auto p-4">
     {% set nav_title = "Aird" %}
     {% set nav_search_path = "" %}
     {% set show_admin_link = True %}
     {% include '_app_nav_header.html' %}
 
-    <header class="profile-intro">
+    <header class="flex items-baseline justify-between flex-wrap gap-3 pb-3 mb-6 border-b border-base-300">
       <div>
-        <h1>Profile settings</h1>
+        <h1 class="text-2xl font-bold">Profile settings</h1>
         {% if user %}
-        <small>{{ escape(user['username']) }}  {{ escape(user['role']) }}</small>
+        <p class="text-sm text-base-content/60">{{ escape(user['username']) }} · {{ escape(user['role']) }}</p>
         {% end %}
       </div>
-      <a href="/files/" class="ds-btn ds-btn--ghost">← Back to browse</a>
+      <a href="/files/" class="btn btn-ghost btn-sm">← Back to browse</a>
     </header>
 
     {% if error %}
-    <div class="ds-alert ds-alert--danger" role="alert" style="margin-bottom: var(--ds-space-5);">
-      <span class="ds-alert__icon" aria-hidden="true">⚠</span><span>{{ escape(error) }}</span>
+    <div class="alert alert-error shadow-sm mb-4">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
+      <span>{{ escape(error) }}</span>
     </div>
     {% end %}
     {% if success %}
-    <div class="ds-alert ds-alert--success" role="status" style="margin-bottom: var(--ds-space-5);">
-      <span class="ds-alert__icon" aria-hidden="true">✓</span><span>{{ escape(success) }}</span>
+    <div class="alert alert-success shadow-sm mb-4">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+      <span>{{ escape(success) }}</span>
     </div>
     {% end %}
 
-    <div class="ds-stack ds-stack--loose">
-      <section class="ds-card">
-        <div class="ds-hstack ds-hstack--between" style="margin-bottom: var(--ds-space-3);">
-          <div>
-            <h3 style="margin:0;">Appearance</h3>
-            <p style="margin: var(--ds-space-1) 0 0; color: var(--ds-text-muted); font-size: var(--ds-fs-sm);">
-              Light or dark theme  saved per browser.
-            </p>
+    <div class="space-y-4">
+      <!-- Appearance -->
+      <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="font-semibold">Appearance</h3>
+              <p class="text-sm text-base-content/60 mt-1">Choose your preferred theme.</p>
+            </div>
+            <select class="select select-bordered select-sm theme-select" aria-label="Select theme"></select>
           </div>
-          <button type="button" class="ds-btn theme-toggle-btn" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
         </div>
-      </section>
+      </div>
 
       {% if not user %}
-      <div class="ds-alert ds-alert--info">
-        <span class="ds-alert__icon" aria-hidden="true">ℹ</span>
+      <div class="alert alert-info">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="h-5 w-5 shrink-0 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
         <span>Profile management is not available for token-authenticated sessions.</span>
       </div>
       {% else %}
         {% if not ldap_enabled %}
-        <section class="ds-card">
-          <h3 style="margin-top:0;">Change password</h3>
-          <p style="color: var(--ds-text-muted); font-size: var(--ds-fs-sm); margin-top: var(--ds-space-1);">
-            Update your account password. Use a strong, unique passphrase.
-          </p>
-          <form method="POST" class="ds-stack" style="margin-top: var(--ds-space-4);">
-            {% raw xsrf_form_html() %}
-            <input type="hidden" name="action" value="change_password">
-
-            <div class="ds-field">
-              <label class="ds-label" for="current_password_2">Current password</label>
-              <input class="ds-input" type="password" name="current_password" id="current_password_2"
-                placeholder="Your current password" autocomplete="current-password" required>
-            </div>
-            <div class="ds-field">
-              <label class="ds-label" for="new_password">New password</label>
-              <input class="ds-input" type="password" name="new_password" id="new_password"
-                placeholder="At least 8 characters" autocomplete="new-password" required>
-            </div>
-            <div class="ds-field">
-              <label class="ds-label" for="confirm_password">Confirm new password</label>
-              <input class="ds-input" type="password" name="confirm_password" id="confirm_password"
-                placeholder="Repeat the new password" autocomplete="new-password" required>
-            </div>
-            <div class="ds-hstack ds-hstack--end">
-              <button type="submit" class="ds-btn ds-btn--primary">Change password</button>
-            </div>
-          </form>
-        </section>
+        <div class="card bg-base-100 shadow-sm border border-base-300">
+          <div class="card-body">
+            <h3 class="font-semibold">Change password</h3>
+            <p class="text-sm text-base-content/60 mt-1">Update your account password. Use a strong, unique passphrase.</p>
+            <form method="POST" class="space-y-4 mt-3">
+              {% raw xsrf_form_html() %}
+              <input type="hidden" name="action" value="change_password">
+              <div class="form-control">
+                <label class="label" for="current_password_2"><span class="label-text font-semibold">Current password</span></label>
+                <input class="input input-bordered w-full" type="password" name="current_password" id="current_password_2"
+                  placeholder="Your current password" autocomplete="current-password" required>
+              </div>
+              <div class="form-control">
+                <label class="label" for="new_password"><span class="label-text font-semibold">New password</span></label>
+                <input class="input input-bordered w-full" type="password" name="new_password" id="new_password"
+                  placeholder="At least 8 characters" autocomplete="new-password" required>
+              </div>
+              <div class="form-control">
+                <label class="label" for="confirm_password"><span class="label-text font-semibold">Confirm new password</span></label>
+                <input class="input input-bordered w-full" type="password" name="confirm_password" id="confirm_password"
+                  placeholder="Repeat the new password" autocomplete="new-password" required>
+              </div>
+              <div class="flex justify-end">
+                <button type="submit" class="btn btn-primary">Change password</button>
+              </div>
+            </form>
+          </div>
+        </div>
         {% else %}
-        <section class="ds-card">
-          <h3 style="margin-top:0;">Password management</h3>
-          <div class="ds-alert ds-alert--info" style="margin-top: var(--ds-space-3);">
-            <span class="ds-alert__icon" aria-hidden="true">ℹ</span>
-            <div>
-              <p class="ds-alert__title">LDAP authentication</p>
-              <p class="ds-alert__body">Your account is managed through LDAP. Change your password using your
-                organization's password change system, or contact your administrator.</p>
+        <div class="card bg-base-100 shadow-sm border border-base-300">
+          <div class="card-body">
+            <h3 class="font-semibold">Password management</h3>
+            <div class="alert alert-info mt-2">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="h-5 w-5 shrink-0 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              <div>
+                <p class="font-semibold">LDAP authentication</p>
+                <p class="text-sm">Your account is managed through LDAP. Change your password using your organization's password change system, or contact your administrator.</p>
+              </div>
             </div>
           </div>
-        </section>
+        </div>
         {% end %}
 
-        <section class="ds-card">
-          <h3 style="margin-top:0;">Account</h3>
-          <dl class="kv" style="margin-top: var(--ds-space-3);">
-            <dt>Username</dt><dd>{{ escape(user['username']) }}</dd>
-            <dt>Role</dt><dd><span class="ds-badge{% if user['role'] == 'admin' %} ds-badge--primary{% end %}">{{ escape(user['role']) }}</span></dd>
-            <dt>Created</dt><dd>{{ escape(user['created_at'].split('T')[0] if 'T' in user['created_at'] else user['created_at']) }}</dd>
-            <dt>Status</dt><dd>
-              {% if user['active'] %}
-              <span class="ds-badge ds-badge--success">Active</span>
-              {% else %}
-              <span class="ds-badge ds-badge--warn">Inactive</span>
+        <!-- Account info -->
+        <div class="card bg-base-100 shadow-sm border border-base-300">
+          <div class="card-body">
+            <h3 class="font-semibold mb-2">Account</h3>
+            <dl class="grid grid-cols-[max-content_1fr] gap-x-5 gap-y-2 text-sm">
+              <dt class="text-base-content/50">Username</dt><dd>{{ escape(user['username']) }}</dd>
+              <dt class="text-base-content/50">Role</dt><dd>
+                <span class="badge {% if user['role'] == 'admin' %}badge-primary{% else %}badge-ghost{% end %} badge-sm">{{ escape(user['role']) }}</span>
+              </dd>
+              <dt class="text-base-content/50">Created</dt><dd>{{ escape(user['created_at'].split('T')[0] if 'T' in user['created_at'] else user['created_at']) }}</dd>
+              <dt class="text-base-content/50">Status</dt><dd>
+                {% if user['active'] %}
+                <span class="badge badge-success badge-sm">Active</span>
+                {% else %}
+                <span class="badge badge-warning badge-sm">Inactive</span>
+                {% end %}
+              </dd>
+              {% if user['last_login'] %}
+              <dt class="text-base-content/50">Last login</dt><dd>{{ escape(user['last_login'].split('T')[0] if 'T' in user['last_login'] else user['last_login']) }}</dd>
               {% end %}
-            </dd>
-            {% if user['last_login'] %}
-            <dt>Last login</dt><dd>{{ escape(user['last_login'].split('T')[0] if 'T' in user['last_login'] else user['last_login']) }}</dd>
-            {% end %}
-          </dl>
-        </section>
+            </dl>
+          </div>
+        </div>
 
         {% if quota and quota.get('quota_bytes') is not None %}
-        <section class="ds-card">
-          <h3 style="margin-top:0;">Storage usage</h3>
-          {% set used = quota.get('used_bytes', 0) %}
-          {% set total = quota.get('quota_bytes', 0) %}
-          {% set pct = int(used * 100 / total) if total > 0 else 0 %}
-          <p style="margin: var(--ds-space-2) 0 var(--ds-space-1); color: var(--ds-text-muted); font-size: var(--ds-fs-sm);">
-            <strong style="color: var(--ds-text);">{{ "%.1f" % (used / 1048576) }} MB</strong>
-            of {{ "%.1f" % (total / 1048576) }} MB used  {{ pct }}%
-          </p>
-          <div class="quota-bar" aria-label="Storage usage" role="progressbar"
-               aria-valuenow="{{ pct }}" aria-valuemin="0" aria-valuemax="100">
-            <div class="quota-bar__fill" style="width:{{ pct }}%;background:{{ 'var(--ds-danger)' if pct > 90 else 'var(--ds-warning)' if pct > 70 else 'var(--ds-success)' }};"></div>
+        <div class="card bg-base-100 shadow-sm border border-base-300">
+          <div class="card-body">
+            <h3 class="font-semibold mb-2">Storage usage</h3>
+            {% set used = quota.get('used_bytes', 0) %}
+            {% set total = quota.get('quota_bytes', 0) %}
+            {% set pct = int(used * 100 / total) if total > 0 else 0 %}
+            <p class="text-sm text-base-content/60">
+              <strong class="text-base-content">{{ "%.1f" % (used / 1048576) }} MB</strong>
+              of {{ "%.1f" % (total / 1048576) }} MB used · {{ pct }}%
+            </p>
+            <progress class="progress {% if pct > 90 %}progress-error{% elif pct > 70 %}progress-warning{% else %}progress-success{% end %} w-full mt-1"
+                      value="{{ pct }}" max="100"></progress>
           </div>
-        </section>
+        </div>
         {% end %}
       {% end %}
     </div>

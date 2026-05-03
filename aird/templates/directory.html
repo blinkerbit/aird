@@ -1,48 +1,31 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
-  <title>Directory listing  Aird</title>
-  <style>
-    .dir-head { margin-bottom: var(--ds-space-5); padding-bottom: var(--ds-space-3); border-bottom: 1px solid var(--ds-border); }
-    .dir-head .breadcrumb { color: var(--ds-text-muted); font-size: var(--ds-fs-sm); margin-top: var(--ds-space-2); }
-    .dir-head .breadcrumb a { color: var(--ds-text); }
-    .dir-list a.file-link {
-      display: flex; align-items: center; gap: 10px;
-      padding: 10px 14px;
-      color: var(--ds-text);
-      border-bottom: 1px solid var(--ds-border-muted);
-      transition: background var(--ds-duration-fast) var(--ds-ease);
-    }
-    .dir-list a.file-link:last-child { border-bottom: 0; }
-    .dir-list a.file-link:hover { background: var(--ds-bg-muted); text-decoration: none; }
-    .dir-list .icon { font-size: 16px; }
-  </style>
+  <title>Directory listing · Aird</title>
 </head>
-<body>
-  <div class="container">
-    <header class="dir-head">
-      <h1 style="margin:0;">All directories</h1>
-      <nav class="breadcrumb" aria-label="Breadcrumb"><a href="/">🏠 Home</a></nav>
+<body class="bg-base-200 min-h-screen">
+  <div class="max-w-4xl mx-auto p-4">
+    <header class="mb-4 pb-3 border-b border-base-300">
+      <h1 class="text-2xl font-bold">All directories</h1>
+      <nav class="text-sm text-base-content/50 mt-1" aria-label="Breadcrumb"><a href="/" class="text-base-content hover:text-primary">🏠 Home</a></nav>
     </header>
 
-    <section class="ds-card ds-card--flush">
-      <div class="dir-list">
+    <div class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="card-body p-0">
         {% for dir in dirs %}
-        <a href="{{ escape(dir.path) }}" class="file-link">
-          <span class="icon" aria-hidden="true">📁</span>
+        <a href="{{ escape(dir.path) }}" class="flex items-center gap-3 px-4 py-3 border-b border-base-200 hover:bg-base-200 transition-colors text-base-content no-underline">
+          <span aria-hidden="true">📁</span>
           <span>{{ escape(dir.name) }}</span>
         </a>
         {% end %}
         {% if not dirs %}
-        <div style="text-align:center; padding: var(--ds-space-8); color: var(--ds-text-muted);">
-          📭 No directories found.
-        </div>
+        <div class="text-center py-8 text-base-content/50">📭 No directories found.</div>
         {% end %}
       </div>
-    </section>
+    </div>
   </div>
   <script src="/static/js/theme.js"></script>
 </body>

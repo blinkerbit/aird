@@ -25,7 +25,7 @@
       padding: var(--ds-space-5) var(--ds-space-4);
     }
 
-    {% include '_app_nav_header_styles.html' %}
+
 
     .breadcrumb { font-size: var(--ds-fs-sm); color: var(--ds-text-muted); }
     .breadcrumb a { color: var(--ds-text); text-decoration: none; }
@@ -88,7 +88,7 @@
       padding: 4px 6px;
       border: 1px solid var(--ds-border);
       border-radius: 3px;
-      font-family: 'Courier New', monospace;
+      font-family: var(--font-mono, "Fira Code", monospace);
       font-size: 12px;
     }
 
@@ -102,7 +102,7 @@
     }
 
     .cloud-upload input[type="file"] {
-      font-family: 'Courier New', monospace;
+      font-family: var(--font-mono, "Fira Code", monospace);
       font-size: 12px;
     }
 
@@ -148,7 +148,7 @@
     }
 
     .btn {
-      font-family: "Courier New", monospace;
+      font-family: var(--font-mono, "Fira Code", monospace);
       border: 1px solid var(--ds-border);
       background: var(--ds-surface);
       color: var(--ds-text);
@@ -394,7 +394,7 @@
     }
 
     .share-id {
-      font-family: monospace;
+      font-family: var(--font-mono, "Fira Code", monospace);
       background: var(--ds-primary-soft);
       padding: 4px 8px;
       border-radius: 3px;
@@ -1003,7 +1003,7 @@
     .sq-style-bd9db1 { display: flex; align-items: center; gap: 8px; }
     .sq-style-fa0207 { display: none; margin-top: 10px; }
     .sq-style-ccd7dd { margin-bottom: 8px; }
-    .sq-style-9e615c { width: 100%; padding: 6px; border: 1px solid var(--ds-border); border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px; }
+    .sq-style-9e615c { width: 100%; padding: 6px; border: 1px solid var(--ds-border); border-radius: 3px; font-family: var(--font-mono, "Fira Code", monospace); font-size: 12px; }
     .sq-style-d63423 { max-height: 120px; overflow-y: auto; border: 1px solid var(--ds-border); padding: 8px; background: var(--ds-surface); }
     .sq-style-7c7bb5 { margin-top: 8px; min-height: 20px; }
     .sq-style-e0c770 { font-size: 12px; color: var(--ds-text-subtle); margin-bottom: 5px; }
@@ -1013,7 +1013,7 @@
     .sq-style-3c7c49 { display: block; margin-bottom: 5px; font-size: 12px; }
     .sq-style-d4eeac { font-size: 11px; color: var(--ds-text-subtle); margin-top: 3px; }
     .sq-style-0b9905 { margin-top: 8px; padding: 8px; background: var(--ds-warning-soft); border-radius: 3px; font-size: 12px; color: var(--ds-warning); }
-    .sq-style-7a5527 { width: 100%; padding: 6px; border: 1px solid var(--ds-border); border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px; height: 60px; resize: vertical; }
+    .sq-style-7a5527 { width: 100%; padding: 6px; border: 1px solid var(--ds-border); border-radius: 3px; font-family: var(--font-mono, "Fira Code", monospace); font-size: 12px; height: 60px; resize: vertical; }
     .sq-style-224b51 { display: none; }
     .sq-style-4dd6e6 { text-align: center; padding: 20px; color: var(--ds-danger); }
     .sq-style-cdd8ca { text-align: center; }
@@ -1021,7 +1021,7 @@
     .sq-style-24b531 { cursor: pointer; }
     .sq-style-fd1d87 { color: var(--ds-danger); text-align: center; padding: 20px; }
     .sq-style-8ecca8 { margin-top: 15px; }
-    .sq-style-889f05 { background: var(--ds-bg-muted); padding: 4px 8px; border-radius: 3px; font-family: monospace; font-size: 12px; word-break: break-all; display: inline-block; margin: 5px 0; }
+    .sq-style-889f05 { background: var(--ds-bg-muted); padding: 4px 8px; border-radius: 3px; font-family: var(--font-mono, "Fira Code", monospace); font-size: 12px; word-break: break-all; display: inline-block; margin: 5px 0; }
     .sq-style-9858f1 { margin-left: 10px; font-size: 11px; padding: 4px 8px; }
     .sq-style-79c262 { background: var(--ds-warning-soft); border: 1px solid color-mix(in srgb, var(--ds-warning) 30%, transparent); padding: 8px; border-radius: 4px; font-size: 11px; color: var(--ds-warning); margin-top: 8px; }
     .sq-style-be1381 { color: var(--ds-text-subtle); font-style: italic; }
@@ -1030,11 +1030,11 @@
     .sq-style-41e54b { text-align: center; padding: 20px; color: var(--ds-text-subtle); }
     .sq-style-f479d1 { color: var(--ds-danger); }
     .sq-style-d92075 { display: inline-block; background: var(--ds-primary-soft); color: var(--ds-primary); padding: 2px 6px; margin: 2px; border-radius: 3px; font-size: 11px; cursor: pointer; }
-    .sq-style-adfe87 { background: var(--ds-bg-muted); padding: 4px 8px; border-radius: 3px; font-family: monospace; font-size: 12px; word-break: break-all; }
+    .sq-style-adfe87 { background: var(--ds-bg-muted); padding: 4px 8px; border-radius: 3px; font-family: var(--font-mono, "Fira Code", monospace); font-size: 12px; word-break: break-all; }
     .sq-style-214d83 { margin-left: 10px; }
     .sq-style-568262 { background: var(--ds-warning-soft); border: 1px solid color-mix(in srgb, var(--ds-warning) 30%, transparent); padding: 10px; border-radius: 4px; font-size: 12px; color: var(--ds-warning); }
     .sq-style-fef9ee { margin: 10px 0; padding: 8px; background: var(--ds-bg-muted); border-radius: 4px; }
-    .sq-style-8c1855 { background: var(--ds-bg-sunken); padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 11px; word-break: break-all; }
+    .sq-style-8c1855 { background: var(--ds-bg-sunken); padding: 2px 6px; border-radius: 3px; font-family: var(--font-mono, "Fira Code", monospace); font-size: 11px; word-break: break-all; }
     .sq-style-bfef8f { margin-left: 8px; font-size: 10px; padding: 2px 6px; }
 
     /* File toolbar (breadcrumb + action buttons on same row) */
@@ -1053,106 +1053,116 @@
     }
 
     /* Sticky selection bar at bottom of viewport */
+    /* Sticky selection bar - Modern Floating Pill */
     .selection-bar {
       position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      background: var(--ds-accent);
-      color: var(--ds-text-on-accent);
-      padding: 12px 20px;
+      bottom: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(200%);
+      background: color-mix(in oklab, var(--color-base-100) 85%, transparent);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--color-base-300);
+      color: var(--color-base-content);
+      padding: 0.75rem 1.5rem;
       z-index: 900;
-      box-shadow: var(--ds-shadow-lg);
-      transform: translateY(100%);
-      transition: transform 0.25s ease;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+      border-radius: 9999px;
+      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      width: auto;
+      max-width: 90%;
     }
 
     .selection-bar.visible {
-      transform: translateY(0);
+      transform: translateX(-50%) translateY(0);
     }
 
     .selection-bar-inner {
-      max-width: 1200px;
-      margin: 0 auto;
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 16px;
+      gap: 1.5rem;
     }
 
     .selection-bar-info {
       display: flex;
       align-items: center;
       gap: 12px;
-      min-width: 0;
-      overflow: hidden;
+      padding-right: 1.5rem;
+      border-right: 1px solid var(--color-base-300);
     }
 
     .selection-bar-count {
-      font-weight: bold;
-      font-size: 14px;
+      font-weight: 800;
+      font-size: 0.875rem;
       white-space: nowrap;
+      color: var(--color-primary);
     }
 
     .selection-bar .selected-files {
       display: flex;
       flex-wrap: nowrap;
-      gap: 4px;
+      gap: 6px;
       overflow-x: auto;
-      max-width: 500px;
-      margin: 0;
-      min-height: auto;
+      max-width: 300px;
+      scrollbar-width: none;
     }
+    .selection-bar .selected-files::-webkit-scrollbar { display: none; }
 
     .selection-bar .selected-file {
-      background: color-mix(in srgb, var(--ds-text-on-accent) 15%, transparent);
-      color: var(--ds-text-on-accent);
+      background: var(--color-base-200);
+      color: var(--color-base-content);
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
       font-size: 11px;
+      border: 1px solid var(--color-base-300);
       white-space: nowrap;
-      flex-shrink: 0;
     }
 
     .selection-bar-actions {
       display: flex;
-      gap: 8px;
-      flex-shrink: 0;
+      gap: 12px;
     }
 
     .selection-bar-actions .btn {
-      border-color: color-mix(in srgb, var(--ds-text-on-accent) 25%, transparent);
-      color: var(--ds-text-on-accent);
-      background: color-mix(in srgb, var(--ds-text-on-accent) 12%, transparent);
+      border-radius: 9999px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 0.75rem;
+      height: 2.25rem;
+      min-height: 2.25rem;
+      background: var(--color-base-200);
+      color: var(--color-base-content);
+      border: 1px solid var(--color-base-300);
     }
-
     .selection-bar-actions .btn:hover {
-      background: color-mix(in srgb, var(--ds-text-on-accent) 20%, transparent);
+      background: var(--color-base-300);
+      border-color: color-mix(in oklab, var(--color-base-content) 20%, transparent);
     }
-
     .selection-bar-actions .btn.primary {
-      background: var(--ds-brand-gradient);
+      background: var(--color-primary);
+      color: var(--color-primary-content);
       border-color: transparent;
-      color: var(--ds-text-on-accent);
+    }
+    .selection-bar-actions .btn.danger {
+      background: color-mix(in oklab, var(--color-error) 10%, transparent);
+      color: var(--color-error);
+      border-color: color-mix(in oklab, var(--color-error) 30%, transparent);
     }
 
-    .selection-bar-actions .btn.primary:hover {
-      background: var(--ds-brand-gradient-hover);
-      box-shadow: var(--ds-shadow-brand-glow);
-    }
-
-    /* Share config modal */
+    /* Share config modal - Professional Glassmorphic */
     .share-config-overlay {
       position: fixed;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      background: var(--ds-overlay);
+      background: color-mix(in oklab, var(--color-base-300) 40%, transparent);
+      backdrop-filter: blur(8px);
       z-index: 1100;
       display: none;
-      align-items: flex-start;
+      align-items: center;
       justify-content: center;
-      padding: 40px 20px;
-      overflow-y: auto;
+      padding: 20px;
     }
 
     .share-config-overlay.show {
@@ -1160,60 +1170,68 @@
     }
 
     .share-config-modal {
-      background: var(--ds-surface);
-      border-radius: 10px;
+      background: var(--color-base-100);
+      border: 1px solid var(--color-base-300);
+      border-radius: 1.5rem;
       width: 100%;
-      max-width: 580px;
-      box-shadow: var(--ds-shadow-lg);
+      max-width: 640px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
       overflow: hidden;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
     }
 
     .share-config-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 18px 24px;
-      border-bottom: 1px solid var(--ds-border);
-      background: var(--ds-bg-muted);
+      padding: 1.5rem 2rem;
+      border-bottom: 1px solid var(--color-base-300);
+      background: color-mix(in oklab, var(--color-base-200) 50%, transparent);
     }
 
     .share-config-header h3 {
       margin: 0;
-      font-size: 18px;
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.025em;
     }
 
     .share-config-close {
-      background: none;
+      background: var(--color-base-300);
       border: none;
-      font-size: 22px;
+      font-size: 1.5rem;
       cursor: pointer;
-      width: 32px;
-      height: 32px;
+      width: 2.5rem;
+      height: 2.5rem;
       display: flex;
       align-items: center;
       justify-content: center;
       border-radius: 50%;
-      color: var(--ds-text-subtle);
+      color: var(--color-base-content);
+      transition: all 0.2s;
     }
 
     .share-config-close:hover {
-      background: var(--ds-bg-sunken);
-      color: var(--ds-text);
+      background: var(--color-primary);
+      color: var(--color-primary-content);
+      transform: rotate(90deg);
     }
 
     .share-config-body {
       padding: 0;
-      max-height: 60vh;
       overflow-y: auto;
+      flex: 1;
     }
 
     .share-config-footer {
-      padding: 16px 24px;
-      border-top: 1px solid var(--ds-border);
+      padding: 1.5rem 2rem;
+      border-top: 1px solid var(--color-base-300);
       display: flex;
       justify-content: flex-end;
-      gap: 10px;
-      background: var(--ds-bg-muted);
+      gap: 1rem;
+      background: color-mix(in oklab, var(--color-base-200) 50%, transparent);
     }
 
     .config-section {
@@ -1290,15 +1308,23 @@
     .config-field textarea,
     .config-field select {
       width: 100%;
-      padding: 8px 10px;
-      border: 1px solid var(--ds-border);
-      border-radius: 4px;
-      font-family: 'Courier New', monospace;
-      font-size: 12px;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--color-base-300);
+      background: color-mix(in oklab, var(--color-base-200) 50%, transparent);
+      border-radius: 0.75rem;
+      font-family: inherit;
+      font-size: 0.875rem;
+      transition: all 0.2s;
+      color: var(--color-base-content);
+    }
+
+    .config-field input:focus, .config-field textarea:focus, .config-field select:focus {
+      outline: 2px solid var(--color-primary);
+      background: var(--color-base-100);
     }
 
     .config-field textarea {
-      height: 50px;
+      height: 80px;
       resize: vertical;
     }
 
@@ -1568,8 +1594,8 @@
       </div>
 
       <div class="share-config-footer">
-        <button class="btn" id="cancelShareConfig">Cancel</button>
-        <button class="btn primary" id="createShareBtn">Create Share Link</button>
+        <button class="btn btn-ghost" id="cancelShareConfig">Cancel</button>
+        <button class="btn btn-primary px-8" id="createShareBtn">Create Share Link</button>
       </div>
     </div>
   </div>
@@ -2762,7 +2788,7 @@
             <div><strong>Share ID:</strong> <code>${share.id}</code></div>
             <div><strong>Access:</strong> <span class="${share.allowed_users ? 'restricted' : 'public'}">${accessInfo}</span>${modifyBadge}</div>
             <div><strong>Created:</strong> Just now</div>
-            <div><strong>URL:</strong> <a href="${share.url}" target="_blank">${globalThis.location.origin}${share.url}</a></div>
+            <div><strong>URL:</strong> <a href="${share.url}">${globalThis.location.origin}${share.url}</a></div>
             ${buildShareTokenHtml(share)}
           </div>
 
@@ -3652,7 +3678,7 @@
             </div>`;
       return `
             <strong>Share link created:</strong><br>
-            <a href="${data.url}" target="_blank">${data.url}</a>
+            <a href="${data.url}">${data.url}</a>
             <button class="btn sq-style-214d83" data-action="copyToClipboard" data-text="${fullUrl}">Copy Link</button>
             ${accessInfo}${modifyInfo}${shareTypeInfo}${tokenInfo}
             <br><br>
@@ -3833,7 +3859,7 @@
     }
 
     function openShare(url) {
-      window.open(url, '_blank');
+      window.location.href = url;
     }
 
     async function revokeShare(shareId) {
@@ -3859,7 +3885,7 @@
     }
 
     function previewFile(filePath) {
-      window.open(`/files/${filePath}`, '_blank');
+      window.location.href = `/files/${filePath}`;
     }
 
     // Share popup functions
@@ -3901,7 +3927,7 @@
           <div class="share-item">
             <div class="share-id">${share.id}</div>
             <div class="share-url">
-              <a href="${share.url}" target="_blank">${globalThis.location.origin}${share.url}</a>
+              <a href="${share.url}">${globalThis.location.origin}${share.url}</a>
             </div>
             <div class="share-access ${share.allowed_users ? 'restricted' : 'public'}">
               ${shareAccessInfo}

@@ -1,32 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
-  <title>User management  Aird</title>
-  <style>
-    body { background: var(--ds-bg-muted); }
-    .sub-nav {
-      display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-3);
-      padding: var(--ds-space-4) var(--ds-space-5);
-      background: var(--ds-surface);
-      border-bottom: 1px solid var(--ds-border);
-    }
-    .sub-nav .left a { margin-right: var(--ds-space-4); font-size: var(--ds-fs-sm); color: var(--ds-text); }
-    .sub-nav .left a:hover { color: var(--ds-primary); text-decoration: none; }
-    .sub-nav .user-chip { color: var(--ds-text-muted); font-size: var(--ds-fs-sm); }
-
-    .users-table td .actions { display: flex; gap: 6px; flex-wrap: wrap; }
-    .users-table code.id {
-      font-size: var(--ds-fs-xs);
-      color: var(--ds-text-muted);
-      background: transparent;
-      border: 0;
-      padding: 0;
-    }
-  </style>
+  <title>User management · Aird</title>
   <script nonce="{{ csp_nonce }}">
     function confirmDelete(username, userId) {
       if (confirm('Delete user "' + username + '"? This cannot be undone.')) {
@@ -57,81 +35,85 @@
     });
   </script>
 </head>
+<body class="bg-base-200 min-h-screen">
+  <div class="container mx-auto p-4">
+    {% set nav_title = "⚙ Admin Panel" %}
+    {% set show_admin_link = False %}
+    {% include '_app_nav_header.html' %}
+  </div>
 
-<body>
-  <header class="sub-nav">
-    <div class="left">
-      <a href="/admin">← Admin panel</a>
-      <a href="/logout">Logout</a>
+  <main class="max-w-5xl mx-auto p-4 space-y-4">
+    <div class="mb-2">
+      <a href="/admin" class="link link-hover text-sm text-base-content/70">← Back to Admin Settings</a>
     </div>
-    <span class="user-chip">👤 {{ handler.get_display_username() }}</span>
-  </header>
-
-  <main class="container">
-    <div class="ds-hstack ds-hstack--between" style="margin-bottom: var(--ds-space-4);">
-      <h1 style="margin:0;">User management</h1>
-      <a href="/admin/users/create" class="ds-btn ds-btn--primary">+ Create user</a>
+    <div class="flex items-center justify-between flex-wrap gap-3">
+      <h1 class="text-2xl font-bold">User management</h1>
+      <a href="/admin/users/create" class="btn btn-primary btn-sm">+ Create user</a>
     </div>
 
-    <section class="ds-card ds-card--flush">
-      <div class="ds-card__header">
-        <h2 style="margin:0; font-size: var(--ds-fs-md);">Users <span class="ds-muted ds-small">({{ len(users) }})</span></h2>
-      </div>
-
-      {% if users %}
-      <table class="ds-table users-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Username</th>
-            <th>Role</th>
-            <th>Status</th>
-            <th>Created</th>
-            <th>Last login</th>
-            <th style="text-align:right;">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for user in users %}
-          <tr>
-            <td><code class="id">#{{ user['id'] }}</code></td>
-            <td><strong>{{ escape(user['username']) }}</strong></td>
-            <td>
-              {% if user['role'] == 'admin' %}
-              <span class="ds-badge ds-badge--primary">Admin</span>
-              {% else %}
-              <span class="ds-badge">User</span>
-              {% end %}
-            </td>
-            <td>
-              {% if user['active'] %}
-              <span class="ds-badge ds-badge--success">Active</span>
-              {% else %}
-              <span class="ds-badge ds-badge--warn">Inactive</span>
-              {% end %}
-            </td>
-            <td class="ds-small ds-muted">{{ user['created_at'][:19] if user['created_at'] else '' }}</td>
-            <td class="ds-small ds-muted">{{ user['last_login'][:19] if user['last_login'] else 'Never' }}</td>
-            <td style="text-align:right;">
-              <div class="actions" style="justify-content:flex-end;">
-                <a href="/admin/users/edit/{{ user['id'] }}" class="ds-btn ds-btn--sm">Edit</a>
-                <a href="javascript:void(0)" data-delete-username="{{ escape(user['username']) }}"
-                   data-delete-userid="{{ user['id'] }}" class="ds-btn ds-btn--sm ds-btn--danger">Delete</a>
-              </div>
-            </td>
-          </tr>
-          {% end %}
-        </tbody>
-      </table>
-      {% else %}
-      <div class="ds-card__body">
-        <div class="ds-alert ds-alert--info">
-          <span class="ds-alert__icon" aria-hidden="true">ℹ</span>
-          <span>No users yet  create your first user to get started.</span>
+    <div class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="card-body p-0">
+        <div class="px-5 py-3 border-b border-base-300 bg-base-200/50">
+          <h2 class="font-semibold">Users <span class="text-base-content/50 text-sm">({{ len(users) }})</span></h2>
         </div>
+
+        {% if users %}
+        <div class="overflow-x-auto">
+          <table class="table table-zebra">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Last login</th>
+                <th class="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for user in users %}
+              <tr class="hover">
+                <td class="text-xs text-base-content/50 font-mono">#{{ user['id'] }}</td>
+                <td class="font-semibold">{{ escape(user['username']) }}</td>
+                <td>
+                  {% if user['role'] == 'admin' %}
+                  <span class="badge badge-primary badge-sm">Admin</span>
+                  {% else %}
+                  <span class="badge badge-ghost badge-sm">User</span>
+                  {% end %}
+                </td>
+                <td>
+                  {% if user['active'] %}
+                  <span class="badge badge-success badge-sm">Active</span>
+                  {% else %}
+                  <span class="badge badge-warning badge-sm">Inactive</span>
+                  {% end %}
+                </td>
+                <td class="text-xs text-base-content/50">{{ user['created_at'][:19] if user['created_at'] else '' }}</td>
+                <td class="text-xs text-base-content/50">{{ user['last_login'][:19] if user['last_login'] else 'Never' }}</td>
+                <td class="text-right">
+                  <div class="flex gap-1 justify-end">
+                    <a href="/admin/users/edit/{{ user['id'] }}" class="btn btn-ghost btn-xs">Edit</a>
+                    <a href="javascript:void(0)" data-delete-username="{{ escape(user['username']) }}"
+                       data-delete-userid="{{ user['id'] }}" class="btn btn-error btn-xs btn-outline">Delete</a>
+                  </div>
+                </td>
+              </tr>
+              {% end %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="p-6">
+          <div class="alert alert-info">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="h-5 w-5 shrink-0 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <span>No users yet — create your first user to get started.</span>
+          </div>
+        </div>
+        {% end %}
       </div>
-      {% end %}
-    </section>
+    </div>
   </main>
 
   <form style="display: none;">
@@ -139,5 +121,4 @@
   </form>
   <script src="/static/js/theme.js"></script>
 </body>
-
 </html>

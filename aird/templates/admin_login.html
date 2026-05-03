@@ -1,81 +1,56 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
-  <title>Admin login  Aird</title>
-  <style>
-    body {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: var(--ds-space-6) var(--ds-space-4);
-      background:
-        radial-gradient(var(--ds-border-muted) 1px, transparent 1px) 0 0/22px 22px,
-        var(--ds-bg);
-    }
-    .adm-login-shell { width: 100%; max-width: 480px; }
-    .adm-login-card { padding: var(--ds-space-8); }
-    .adm-login-head { text-align: center; margin-bottom: var(--ds-space-5); }
-    .adm-login-head h1 { margin: 0 0 var(--ds-space-1); }
-    .adm-login-head p  { margin: 0; color: var(--ds-text-muted); font-size: var(--ds-fs-sm); }
-    .adm-sep {
-      display: flex; align-items: center; gap: var(--ds-space-3);
-      color: var(--ds-text-subtle); font-size: var(--ds-fs-xs);
-      text-transform: uppercase; letter-spacing: 0.12em;
-      margin: var(--ds-space-5) 0;
-    }
-    .adm-sep::before, .adm-sep::after { content: ''; flex: 1; border-bottom: 1px solid var(--ds-border-muted); }
-  </style>
+  <title>Admin login · Aird</title>
 </head>
+<body class="min-h-screen flex items-center justify-center p-6 bg-base-200">
+  <div class="w-full max-w-md animate-fade-in-up">
+    <div class="card bg-base-100 shadow-2xl border border-base-300">
+      <div class="card-body">
+        <div class="text-center mb-4">
+          <h1 class="text-2xl font-bold">⚙ Admin login</h1>
+          <p class="text-sm text-base-content/60 mt-1">Sign in with an administrator account or admin token</p>
+        </div>
 
-<body>
-  <div class="adm-login-shell">
-    <div class="ds-card adm-login-card">
-      <div class="adm-login-head">
-        <h1>⚙ Admin login</h1>
-        <p>Sign in with an administrator account or admin token</p>
+        {% if error %}
+        <div class="alert alert-error shadow-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
+          <span>{{ escape(error) }}</span>
+        </div>
+        {% end %}
+
+        <form method="POST" class="space-y-4">
+          {% raw xsrf_form_html() %}
+          <div class="form-control">
+            <label class="label" for="adm-username"><span class="label-text font-semibold">Username</span></label>
+            <input class="input input-bordered w-full" type="text" id="adm-username" name="username"
+                   placeholder="admin-username" autocomplete="username">
+          </div>
+          <div class="form-control">
+            <label class="label" for="adm-password"><span class="label-text font-semibold">Password</span></label>
+            <input class="input input-bordered w-full" type="password" id="adm-password" name="password"
+                   placeholder="" autocomplete="current-password">
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+        </form>
+
+        <div class="divider text-xs uppercase tracking-widest">or</div>
+
+        <form method="POST" class="space-y-4">
+          {% raw xsrf_form_html() %}
+          <div class="form-control">
+            <label class="label" for="adm-token"><span class="label-text font-semibold">Admin token</span></label>
+            <input class="input input-bordered w-full" type="password" id="adm-token" name="token"
+                   placeholder="Paste admin token" autocomplete="off">
+          </div>
+          <button type="submit" class="btn btn-outline btn-block">Sign in with token</button>
+        </form>
       </div>
-
-      {% if error %}
-      <div class="ds-alert ds-alert--danger" role="alert">
-        <span class="ds-alert__icon" aria-hidden="true">⚠</span>
-        <span>{{ escape(error) }}</span>
-      </div>
-      {% end %}
-
-      <form method="POST" class="ds-stack">
-        {% raw xsrf_form_html() %}
-        <div class="ds-field">
-          <label class="ds-label" for="adm-username">Username</label>
-          <input class="ds-input" type="text" id="adm-username" name="username"
-                 placeholder="admin-username" autocomplete="username">
-        </div>
-        <div class="ds-field">
-          <label class="ds-label" for="adm-password">Password</label>
-          <input class="ds-input" type="password" id="adm-password" name="password"
-                 placeholder="" autocomplete="current-password">
-        </div>
-        <button type="submit" class="ds-btn ds-btn--primary ds-btn--block">Sign in</button>
-      </form>
-
-      <div class="adm-sep">or</div>
-
-      <form method="POST" class="ds-stack">
-        {% raw xsrf_form_html() %}
-        <div class="ds-field">
-          <label class="ds-label" for="adm-token">Admin token</label>
-          <input class="ds-input" type="password" id="adm-token" name="token"
-                 placeholder="Paste admin token" autocomplete="off">
-        </div>
-        <button type="submit" class="ds-btn ds-btn--block">Sign in with token</button>
-      </form>
     </div>
   </div>
   <script src="/static/js/theme.js"></script>
 </body>
-
 </html>

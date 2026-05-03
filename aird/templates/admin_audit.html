@@ -1,65 +1,62 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
-  <title>Audit log  Aird</title>
-  <style>
-    body { background: var(--ds-bg-muted); }
-    .sub-nav {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: var(--ds-space-4) var(--ds-space-5);
-      background: var(--ds-surface);
-      border-bottom: 1px solid var(--ds-border);
-    }
-    .sub-nav a { font-size: var(--ds-fs-sm); margin-right: var(--ds-space-4); color: var(--ds-text); }
-    .sub-nav a:hover { color: var(--ds-primary); text-decoration: none; }
-    .audit-meta { font-size: var(--ds-fs-sm); color: var(--ds-text-muted); margin-top: var(--ds-space-3); }
-  </style>
+  <title>Audit log · Aird</title>
 </head>
-<body>
-  <header class="sub-nav">
-    <div>
-      <a href="/admin">← Admin panel</a>
-      <a href="/admin/audit?format=csv">⬇ Export CSV</a>
+<body class="bg-base-200 min-h-screen">
+  <div class="container mx-auto p-4">
+    {% set nav_title = "⚙ Admin Panel" %}
+    {% set show_admin_link = False %}
+    {% include '_app_nav_header.html' %}
+  </div>
+
+  <main class="max-w-6xl mx-auto p-4 space-y-4">
+    <div class="mb-2">
+      <a href="/admin" class="link link-hover text-sm text-base-content/70">← Back to Admin Settings</a>
     </div>
-    <span class="ds-muted ds-small">👤 {{ handler.get_display_username() }}</span>
-  </header>
+    
+    <div class="flex items-center justify-between flex-wrap gap-3">
+      <h1 class="text-2xl font-bold">Audit log</h1>
+      <a href="/admin/audit?format=csv" class="btn btn-ghost btn-sm gap-1 border border-base-300">⬇ Export CSV</a>
+    </div>
 
-  <main class="container">
-    <h1 style="margin-bottom: var(--ds-space-4);">Audit log</h1>
-
-    <section class="ds-card ds-card--flush">
-      <table class="ds-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Time (UTC)</th>
-            <th>User</th>
-            <th>Action</th>
-            <th>Details</th>
-            <th>IP</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in logs %}
-          <tr>
-            <td class="ds-small ds-muted">#{{ r.get('id') }}</td>
-            <td class="ds-small ds-mono">{{ r.get('created_at', '') }}</td>
-            <td>{{ r.get('username') or '' }}</td>
-            <td><span class="ds-chip">{{ r.get('action') or '' }}</span></td>
-            <td class="ds-small">{{ r.get('details') or '' }}</td>
-            <td class="ds-small ds-mono ds-muted">{{ r.get('ip') or '' }}</td>
-          </tr>
-          {% end %}
-          {% if not logs %}
-          <tr><td colspan="6" style="text-align:center; color: var(--ds-text-muted); padding: var(--ds-space-6);">No audit entries.</td></tr>
-          {% end %}
-        </tbody>
-      </table>
-    </section>
-    <p class="audit-meta">Showing {{ logs_count }} entries  limit={{ limit }}  offset={{ offset }}</p>
+    <div class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="card-body p-0">
+        <div class="overflow-x-auto">
+          <table class="table table-zebra">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Time (UTC)</th>
+                <th>User</th>
+                <th>Action</th>
+                <th>Details</th>
+                <th>IP</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in logs %}
+              <tr class="hover">
+                <td class="text-xs text-base-content/50">#{{ r.get('id') }}</td>
+                <td class="text-xs font-mono">{{ r.get('created_at', '') }}</td>
+                <td>{{ r.get('username') or '' }}</td>
+                <td><span class="badge badge-ghost badge-sm">{{ r.get('action') or '' }}</span></td>
+                <td class="text-sm">{{ r.get('details') or '' }}</td>
+                <td class="text-xs font-mono text-base-content/50">{{ r.get('ip') or '' }}</td>
+              </tr>
+              {% end %}
+              {% if not logs %}
+              <tr><td colspan="6" class="text-center text-base-content/50 py-8">No audit entries.</td></tr>
+              {% end %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <p class="text-sm text-base-content/50">Showing {{ logs_count }} entries · limit={{ limit }} · offset={{ offset }}</p>
   </main>
   <script src="/static/js/theme.js"></script>
 </body>

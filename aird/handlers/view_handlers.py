@@ -22,6 +22,7 @@ from aird.utils.util import (
     get_current_feature_flags,
     sanitize_cloud_filename,
     augment_with_shared_status,
+    get_file_size_safe,
 )
 from aird.core.security import (  # noqa: F401
     is_within_root,
@@ -135,11 +136,7 @@ def _serve_pdf_preview(handler, abspath, filename, user_root):
 
 def _serve_file_view(handler, abspath, filename, user_root):
     """Render file view template (client-side fetch)."""
-    file_size = 0
-    try:
-        file_size = os.path.getsize(abspath)
-    except OSError:
-        pass
+    file_size = get_file_size_safe(abspath)
     rel_path = os.path.relpath(abspath, user_root).replace("\\", "/")
     handler.render(
         "file.html",
@@ -356,16 +353,12 @@ class CloudFilesHandler(BaseHandler, CloudProviderMixin):
             files = await asyncio.to_thread(
                 provider.list_files, folder_id or provider.root_identifier
             )
-        except CloudProviderError as exc:
-            self.set_status(400)
-            self.write({"error": str(exc)})
-            return
-        except Exception:
-            logging.exception(
-                "Failed to list cloud files for provider %s", provider_name
+        except Exception as exc:
+            self.handle_cloud_error(
+                exc,
+                f"Failed to list cloud files for provider {provider_name}",
+                "Failed to load cloud files",
             )
-            self.set_status(500)
-            self.write({"error": "Failed to load cloud files"})
             return
 
         payload = {
@@ -393,14 +386,12 @@ class CloudDownloadHandler(BaseHandler, CloudProviderMixin):
 
         try:
             download = await asyncio.to_thread(provider.download_file, file_id)
-        except CloudProviderError as exc:
-            self.set_status(400)
-            self.write({"error": str(exc)})
-            return
-        except Exception:
-            logging.exception("Failed to download cloud file from %s", provider_name)
-            self.set_status(500)
-            self.write({"error": "Failed to download cloud file"})
+        except Exception as exc:
+            self.handle_cloud_error(
+                exc,
+                f"Failed to download cloud file from {provider_name}",
+                "Failed to download cloud file",
+            )
             return
 
         filename = sanitize_cloud_filename(

@@ -41,6 +41,7 @@ class CloudFile:
     modified: Optional[str] = None
 
     def to_dict(self) -> dict:
+        """Convert the cloud file object into a dictionary for JSON serialization."""
         return {
             "id": self.id,
             "name": self.name,
@@ -71,11 +72,13 @@ class CloudDownload:
             self.content_length = None
 
     def iter_chunks(self, chunk_size: int = 65536) -> Iterator[bytes]:
+        """Iterate over the response content in chunks."""
         for chunk in self._response.iter_content(chunk_size=chunk_size):
             if chunk:
                 yield chunk
 
     def close(self) -> None:
+        """Close the underlying response stream."""
         self._response.close()
 
 
@@ -86,6 +89,7 @@ class CloudProvider:
     label: str = ""
 
     def metadata(self) -> dict:
+        """Return provider metadata."""
         return {
             "name": self.name,
             "label": self.label,
@@ -93,11 +97,13 @@ class CloudProvider:
 
     @property
     def root_identifier(self) -> str:
+        """ID representing the root folder."""
         return "root"
 
     def list_files(
         self, folder_id: str | None = None
     ) -> List[CloudFile]:  # pragma: no cover - interface
+        """List files in the specified folder (or root)."""
         raise NotImplementedError
 
     def download_file(
@@ -577,7 +583,9 @@ class OneDriveProvider(CloudProvider):
             session_resp = requests.post(
                 session_url,
                 headers=self._headers(),
-                json={"item": {"@microsoft.graph.conflictBehavior": "rename"}},
+                json={
+                    "item": {"@microsoft.graph.conflictBehavior": "rename"}
+                },
                 timeout=60,
             )
         except requests.RequestException as exc:

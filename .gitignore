@@ -38,3 +38,5 @@ main_backup.py
 *.tar.xz
 *.tar.gz.part
 .cursor
+node_modules/
+package-lock.json

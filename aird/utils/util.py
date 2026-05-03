@@ -138,6 +138,14 @@ def format_size(size: int) -> str:
     return f"{size:.2f} PB"
 
 
+def get_file_size_safe(abspath: str) -> int:
+    """Return the file size in bytes, or 0 if an OSError occurs."""
+    try:
+        return os.path.getsize(abspath)
+    except OSError:
+        return 0
+
+
 class WebSocketConnectionManager:
     def __init__(
         self, config_prefix="ws", default_max_connections=100, default_idle_timeout=60

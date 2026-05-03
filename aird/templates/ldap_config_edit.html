@@ -1,115 +1,97 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
-  <title>Edit LDAP configuration  Aird</title>
-  <style>
-    {% include "_user_form_styles.html" %}
-    {% include "_ldap_form_styles.html" %}
-    .inline-check { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
-    .inline-check input { width: auto; }
-    .cfg-meta {
-      display: grid; grid-template-columns: max-content 1fr;
-      gap: 4px var(--ds-space-5);
-      padding: var(--ds-space-3) var(--ds-space-4);
-      background: var(--ds-bg-muted);
-      border: 1px solid var(--ds-border-muted);
-      border-radius: var(--ds-radius-sm);
-      font-size: var(--ds-fs-sm);
-    }
-    .cfg-meta dt { color: var(--ds-text-muted); margin: 0; }
-    .cfg-meta dd { margin: 0; }
-  </style>
+  <title>Edit LDAP configuration · Aird</title>
 </head>
-<body>
-  <header class="nav-links">
-    <div class="links">
-      <a href="/admin/ldap">← Back to LDAP</a>
-      <a href="/admin">Admin panel</a>
-      <a href="/logout">Logout</a>
-    </div>
-    <span class="user-chip">👤 {{ handler.get_display_username() }}</span>
-  </header>
+<body class="bg-base-200 min-h-screen">
+  <div class="container mx-auto p-4">
+    {% set nav_title = "⚙ Admin Panel" %}
+    {% set show_admin_link = False %}
+    {% include '_app_nav_header.html' %}
+  </div>
 
-  <main class="form-page">
-    <h1>Edit LDAP configuration</h1>
+  <main class="max-w-2xl mx-auto p-4 space-y-4">
+    <div class="mb-2">
+      <a href="/admin/ldap" class="link link-hover text-sm text-base-content/70">← Back to LDAP settings</a>
+    </div>
+    <h1 class="text-2xl font-bold">Edit LDAP configuration</h1>
 
     {% if error %}
-    <div class="error"><span aria-hidden="true">⚠</span>&nbsp;{{ escape(error) }}</div>
+    <div class="alert alert-error shadow-sm">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
+      <span>{{ escape(error) }}</span>
+    </div>
     {% end %}
 
-    <section class="section">
-      <form method="POST">
-        {% raw xsrf_form_html() %}
+    <div class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="card-body">
+        <form method="POST" class="space-y-4">
+          {% raw xsrf_form_html() %}
+          <div class="form-control">
+            <label class="label" for="name"><span class="label-text font-semibold">Configuration name <span class="text-base-content/40">*</span></span></label>
+            <input type="text" id="name" name="name" class="input input-bordered w-full" required maxlength="50"
+                   value="{{ escape(config['name']) }}" placeholder="e.g. Main LDAP server">
+            <label class="label"><span class="label-text-alt text-base-content/50">3–50 characters.</span></label>
+          </div>
+          <div class="form-control">
+            <label class="label" for="server"><span class="label-text font-semibold">LDAP server URL <span class="text-base-content/40">*</span></span></label>
+            <input type="url" id="server" name="server" class="input input-bordered w-full" required
+                   value="{{ escape(config['server']) }}"
+                   placeholder="ldap://ldap.example.com:389 or ldaps://ldap.example.com:636">
+            <label class="label"><span class="label-text-alt text-base-content/50">Use <code>ldap://</code> for unencrypted and <code>ldaps://</code> for SSL/TLS.</span></label>
+          </div>
+          <div class="form-control">
+            <label class="label" for="ldap_base_dn"><span class="label-text font-semibold">Base DN <span class="text-base-content/40">*</span></span></label>
+            <input type="text" id="ldap_base_dn" name="ldap_base_dn" class="input input-bordered w-full" required
+                   value="{{ escape(config['ldap_base_dn']) }}" placeholder="ou=groups,dc=example,dc=com">
+            <label class="label"><span class="label-text-alt text-base-content/50">The base DN where LDAP groups are located.</span></label>
+          </div>
+          <div class="form-control">
+            <label class="label" for="ldap_member_attributes"><span class="label-text font-semibold">Member attribute</span></label>
+            <input type="text" id="ldap_member_attributes" name="ldap_member_attributes" class="input input-bordered w-full"
+                   value="{{ escape(config['ldap_member_attributes']) }}" placeholder="member">
+            <label class="label"><span class="label-text-alt text-base-content/50">LDAP attribute containing group members (default: <code>member</code>).</span></label>
+          </div>
+          <div class="form-control">
+            <label class="label" for="user_template"><span class="label-text font-semibold">User DN template <span class="text-base-content/40">*</span></span></label>
+            <input type="text" id="user_template" name="user_template" class="input input-bordered w-full" required
+                   value="{{ escape(config['user_template']) }}"
+                   placeholder="uid={username},ou=users,dc=example,dc=com">
+            <label class="label"><span class="label-text-alt text-base-content/50">Use <code>{username}</code> as the placeholder.</span></label>
+          </div>
+          <div class="form-control">
+            <label class="label cursor-pointer justify-start gap-3">
+              <input type="checkbox" name="active" class="checkbox checkbox-primary" {% if config['active'] %}checked{% end %}>
+              <span class="label-text font-semibold">Active configuration</span>
+            </label>
+            <label class="label"><span class="label-text-alt text-base-content/50">Only active configurations are used for user synchronization.</span></label>
+          </div>
+          <div class="flex gap-2 justify-end pt-2">
+            <a href="/admin/ldap" class="btn btn-ghost">Cancel</a>
+            <input type="submit" value="Update configuration" class="btn btn-primary">
+          </div>
+        </form>
+      </div>
+    </div>
 
-        <div class="form-group">
-          <label for="name">Configuration name <span class="ds-muted">*</span></label>
-          <input type="text" id="name" name="name" required maxlength="50"
-                 value="{{ escape(config['name']) }}" placeholder="e.g. Main LDAP server">
-          <span class="help-text">350 characters.</span>
-        </div>
-
-        <div class="form-group">
-          <label for="server">LDAP server URL <span class="ds-muted">*</span></label>
-          <input type="url" id="server" name="server" required
-                 value="{{ escape(config['server']) }}"
-                 placeholder="ldap://ldap.example.com:389 or ldaps://ldap.example.com:636">
-          <span class="help-text">Use <code>ldap://</code> for unencrypted and <code>ldaps://</code> for SSL/TLS.</span>
-        </div>
-
-        <div class="form-group">
-          <label for="ldap_base_dn">Base DN <span class="ds-muted">*</span></label>
-          <input type="text" id="ldap_base_dn" name="ldap_base_dn" required
-                 value="{{ escape(config['ldap_base_dn']) }}"
-                 placeholder="ou=groups,dc=example,dc=com">
-          <span class="help-text">The base DN where LDAP groups are located.</span>
-        </div>
-
-        <div class="form-group">
-          <label for="ldap_member_attributes">Member attribute</label>
-          <input type="text" id="ldap_member_attributes" name="ldap_member_attributes"
-                 value="{{ escape(config['ldap_member_attributes']) }}" placeholder="member">
-          <span class="help-text">LDAP attribute containing group members (default: <code>member</code>).</span>
-        </div>
-
-        <div class="form-group">
-          <label for="user_template">User DN template <span class="ds-muted">*</span></label>
-          <input type="text" id="user_template" name="user_template" required
-                 value="{{ escape(config['user_template']) }}"
-                 placeholder="uid={username},ou=users,dc=example,dc=com">
-          <span class="help-text">Use <code>{username}</code> as the placeholder.</span>
-        </div>
-
-        <div class="form-group">
-          <label class="inline-check">
-            <input type="checkbox" name="active" {% if config['active'] %}checked{% end %}>
-            Active configuration
-          </label>
-          <span class="help-text">Only active configurations are used for user synchronization.</span>
-        </div>
-
-        <div class="form-actions">
-          <a href="/admin/ldap" class="btn-secondary">Cancel</a>
-          <input type="submit" value="Update configuration" class="btn-primary">
-        </div>
-      </form>
-    </section>
-
-    <section class="section">
-      <h3>Details</h3>
-      <dl class="cfg-meta">
-        <dt>Created</dt> <dd>{{ config['created_at'][:19] if config['created_at'] else '' }}</dd>
-        <dt>Status</dt>  <dd>
-          {% if config['active'] %}
-          <span class="ds-badge ds-badge--success">Active</span>
-          {% else %}
-          <span class="ds-badge ds-badge--warn">Inactive</span>
-          {% end %}
-        </dd>
-      </dl>
-    </section>
+    <div class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="card-body">
+        <h3 class="font-semibold mb-2">Details</h3>
+        <dl class="grid grid-cols-[max-content_1fr] gap-x-5 gap-y-1 text-sm bg-base-200 rounded-lg p-3 border border-base-300">
+          <dt class="text-base-content/50">Created</dt><dd>{{ config['created_at'][:19] if config['created_at'] else '' }}</dd>
+          <dt class="text-base-content/50">Status</dt><dd>
+            {% if config['active'] %}
+            <span class="badge badge-success badge-sm">Active</span>
+            {% else %}
+            <span class="badge badge-warning badge-sm">Inactive</span>
+            {% end %}
+          </dd>
+        </dl>
+      </div>
+    </div>
   </main>
   <script src="/static/js/theme.js"></script>
 </body>

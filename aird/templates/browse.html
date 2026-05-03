@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -7,25 +7,31 @@
   <link rel="stylesheet" href="/static/css/app.css" />
   <title>Browse</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+    /* Modern styles are now handled by Tailwind and DaisyUI. */
+    .ico {
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      vertical-align: -3px;
+      flex-shrink: 0;
+    }
+    .ico--lg { width: 24px; height: 24px; }
+
+    /* Enhance table divider visibility */
+    .table :where(thead tr :is(td,th),tbody tr:not(:last-child) :is(td,th)) {
+      border-bottom-width: 1px;
+      border-bottom-color: oklch(from var(--color-base-content) l c h / 0.15) !important;
     }
 
-    body {
-      background: var(--ds-bg);
-      color: var(--ds-text);
-      line-height: 1.35;
+    /* Fix for squeezed alerts in vertical contexts */
+    .alert {
+      width: 100%;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      align-items: center;
     }
-
-    .container {
-      max-width: 100%;
-      margin: 0 auto;
-      padding: var(--ds-space-5) var(--ds-space-4);
-    }
-
-    {% include '_app_nav_header_styles.html' %}
 
     .breadcrumb {
       margin-top: var(--ds-space-2);
@@ -50,19 +56,6 @@
     }
 
     .breadcrumb a:hover { color: var(--ds-primary); text-decoration: none; }
-
-    /* Generic inline icon used in this page */
-    .ico {
-      width: 16px; height: 16px;
-      fill: none;
-      stroke: currentColor;
-      stroke-width: 2;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-      vertical-align: -3px;
-      flex-shrink: 0;
-    }
-    .ico--lg { width: 20px; height: 20px; }
 
     .upload-zone {
       border: 2px dashed var(--ds-border);
@@ -164,7 +157,7 @@
       font-size: var(--ds-fs-xs);
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      border-bottom: 1px solid var(--ds-border);
+      border-bottom: 1px solid var(--color-base-300);
       position: relative;
     }
 
@@ -180,7 +173,7 @@
 
     .file-table td {
       padding: 10px 14px;
-      border-bottom: 1px solid var(--ds-border-muted);
+      border-bottom: 1px solid var(--color-base-300);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -218,7 +211,7 @@
 
     .size-cell {
       text-align: left;
-      font-family: monospace;
+      font-family: var(--font-mono, "Fira Code", monospace);
       font-size: 12px;
     }
 
@@ -227,12 +220,12 @@
     }
 
     .modified-cell {
-      font-family: var(--ds-font-mono);
+      font-family: var(--font-mono, "Fira Code", monospace);
       font-size: var(--ds-fs-xs);
       color: var(--ds-text-muted);
     }
 
-    .size-cell { font-family: var(--ds-font-mono); font-size: var(--ds-fs-xs); color: var(--ds-text-muted); }
+    .size-cell { font-family: var(--font-mono, "Fira Code", monospace); font-size: var(--ds-fs-xs); color: var(--ds-text-muted); }
 
     .file-link {
       color: var(--ds-text);
@@ -882,160 +875,127 @@
     /* Sticky selection bar at bottom of viewport — uses the
        Midnight Sapphire palette so it feels like a signature surface
        rather than a flat black toolbar. */
+    /* Sticky selection bar - Modern Floating Pill */
     .selection-bar {
       position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      /* Deep navy base (token in light mode) / near-black navy (dark)
-         — both are jewel-tones when paired with the gradient accent. */
-      background: var(--ds-accent);
-      background-image:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0) 100%),
-        var(--ds-brand-gradient-soft);
-      color: var(--ds-text-on-accent);
-      padding: 12px 20px;
-      z-index: 900;
-      box-shadow: 0 -18px 40px -12px rgba(30, 27, 75, 0.45),
-                  0 -2px 8px rgba(0, 0, 0, 0.25);
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
-      transform: translateY(100%);
+      bottom: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(200%);
+      background: color-mix(in oklab, var(--color-base-100) 85%, transparent);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--color-base-300);
+      color: var(--color-base-content);
+      padding: 0.75rem 1.5rem;
+      z-index: 1000;
+      box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.4);
+      border-radius: 9999px;
+      transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+      width: auto;
+      max-width: 95%;
       opacity: 0;
-      transition: transform var(--ds-duration-normal) var(--ds-ease),
-                  opacity var(--ds-duration-fast) var(--ds-ease);
-    }
-    /* Gradient accent line traces the top edge of the toolbar. */
-    .selection-bar::before {
-      content: "";
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 2px;
-      background: var(--ds-brand-gradient-line);
-      pointer-events: none;
     }
 
     .selection-bar.visible {
-      transform: translateY(0);
+      transform: translateX(-50%) translateY(0);
       opacity: 1;
     }
 
     .selection-bar-inner {
-      max-width: 100%;
-      margin: 0 auto;
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 16px;
+      gap: 1.5rem;
     }
 
     .selection-bar-info {
       display: flex;
       align-items: center;
       gap: 12px;
-      min-width: 0;
-      overflow: hidden;
-      flex: 1;
+      padding-right: 1.5rem;
+      border-right: 1px solid var(--color-base-300);
     }
 
     .selection-bar-count {
-      font-weight: 700;
-      font-size: 14px;
+      font-weight: 800;
+      color: var(--color-primary);
+      font-size: 0.875rem;
       white-space: nowrap;
-      letter-spacing: 0.02em;
     }
 
     .selection-bar .selected-files {
       display: flex;
       flex-wrap: nowrap;
-      gap: 4px;
+      gap: 6px;
       overflow-x: auto;
-      max-width: 500px;
+      max-width: 200px;
+      scrollbar-width: none;
     }
+    .selection-bar .selected-files::-webkit-scrollbar { display: none; }
 
     .selection-bar .selected-file {
-      background: rgba(255, 255, 255, 0.08);
-      color: rgba(255, 255, 255, 0.85);
-      font-size: 11px;
+      background: var(--color-base-200);
+      color: var(--color-base-content);
+      padding: 0.35rem 0.8rem;
+      border-radius: 9999px;
+      font-size: 12px;
+      border: 1px solid var(--color-base-300);
       white-space: nowrap;
-      flex-shrink: 0;
-      padding: 2px 8px;
-      border-radius: var(--ds-radius-pill);
-      border: 1px solid rgba(255, 255, 255, 0.08);
     }
 
     .selection-bar-actions {
       display: flex;
       gap: 8px;
-      flex-shrink: 0;
-      align-items: center;
     }
 
-    /* Base button — neutral "glass chip" on the dark bar. */
+    .selection-bar-actions .btn, 
     .selection-bar-actions button {
-      padding: 7px 14px;
-      border: 1px solid rgba(255, 255, 255, 0.14);
-      color: rgba(255, 255, 255, 0.92);
-      background: rgba(255, 255, 255, 0.06);
+      border-radius: 9999px !important;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 0.75rem;
+      height: 2.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 1.25rem;
+      border: 1px solid var(--color-base-300);
+      background: var(--color-base-200);
+      color: var(--color-base-content);
       cursor: pointer;
-      font-family: inherit;
-      font-size: 13px;
-      font-weight: 600;
-      border-radius: var(--ds-radius-sm);
-      line-height: 1;
-      transition:
-        background var(--ds-duration-fast) var(--ds-ease),
-        border-color var(--ds-duration-fast) var(--ds-ease),
-        color var(--ds-duration-fast) var(--ds-ease),
-        box-shadow var(--ds-duration-fast) var(--ds-ease),
-        transform var(--ds-duration-fast) var(--ds-ease);
+      transition: all 0.2s;
     }
+    
     .selection-bar-actions button:hover {
-      background: rgba(255, 255, 255, 0.12);
-      border-color: rgba(255, 255, 255, 0.24);
-      transform: translateY(-1px);
-    }
-    .selection-bar-actions button:active { transform: translateY(1px); }
-    .selection-bar-actions button:focus-visible {
-      outline: none;
-      box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.45);
+      background: var(--color-base-300);
+      border-color: color-mix(in oklab, var(--color-base-content) 20%, transparent);
     }
 
-    /* Danger — Delete: red tint, stays restrained until hover. */
-    .selection-bar-actions .danger-btn {
-      border-color: color-mix(in srgb, var(--ds-danger) 45%, transparent);
-      color: color-mix(in srgb, var(--ds-danger) 80%, var(--ds-text-on-accent));
-      background: color-mix(in srgb, var(--ds-danger) 10%, transparent);
-    }
-    .selection-bar-actions .danger-btn:hover {
-      background: color-mix(in srgb, var(--ds-danger) 20%, transparent);
-      border-color: var(--ds-danger);
-      color: var(--ds-text-on-accent);
+    .selection-bar-actions .primary-btn,
+    .selection-bar-actions button.primary-btn {
+      background: var(--color-primary) !important;
+      color: var(--color-primary-content) !important;
+      border-color: transparent !important;
     }
 
-    /* Primary — Create share: full brand gradient; the hero CTA. */
-    .selection-bar-actions .primary-btn {
-      background: var(--ds-brand-gradient);
-      border-color: transparent;
-      color: var(--ds-text-on-accent);
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    .selection-bar-actions .danger-btn,
+    .selection-bar-actions button.danger-btn {
+      background: color-mix(in oklab, var(--color-error) 10%, transparent) !important;
+      color: var(--color-error) !important;
+      border-color: color-mix(in oklab, var(--color-error) 30%, transparent) !important;
     }
-    .selection-bar-actions .primary-btn:hover {
-      background: var(--ds-brand-gradient-hover);
-      border-color: transparent;
-      color: var(--ds-text-on-accent);
-      box-shadow: var(--ds-shadow-brand-glow);
+    .selection-bar-actions .danger-btn:hover { 
+      background: var(--color-error) !important; 
+      color: var(--color-error-content) !important; 
     }
 
-    /* Ghost — Clear: no fill, subtle text. */
     .selection-bar-actions .clear-btn {
-      background: transparent;
-      border-color: rgba(255, 255, 255, 0.14);
-      color: rgba(255, 255, 255, 0.65);
+      background: transparent !important;
+      border-color: transparent !important;
+      opacity: 0.7;
     }
-    .selection-bar-actions .clear-btn:hover {
-      background: rgba(255, 255, 255, 0.08);
-      border-color: rgba(255, 255, 255, 0.28);
-      color: var(--ds-text-on-accent);
+    .selection-bar-actions .clear-btn:hover { 
+      opacity: 1; 
+      background: var(--color-base-300) !important; 
     }
 
     @media (max-width: 768px) {
@@ -1226,7 +1186,7 @@
 </head>
 
 <body>
-  <div class="container">
+  <div class="container mx-auto p-4">
     {% set nav_title = "Aird" %}
 {% set nav_search_path = current_path or "" %}
 {% set show_admin_link = False %}
@@ -1234,36 +1194,35 @@
 
     <!-- Upload Zone -->
     {% if features['file_upload'] %}
-    <div class="upload-zone" id="uploadZone">
-      <p class="upload-zone-title">
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4v12"/><polyline points="7 9 12 4 17 9"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
-        <strong>Drop files here to upload</strong>
+    <div class="alert alert-neutral border-2 border-dashed flex flex-col items-center justify-center p-8 cursor-pointer hover:border-primary transition-all mb-6 group" id="uploadZone">
+      <p class="inline-flex items-center gap-3 mb-1 text-lg font-bold group-hover:text-primary transition-colors">
+        <svg class="ico ico--lg" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4v12"/><polyline points="7 9 12 4 17 9"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        <span>Drop files here to upload</span>
       </p>
-      <p class="upload-zone-hint">or click to select files</p>
+      <p class="text-sm opacity-60">or click to select files from your computer</p>
       <input type="file" id="fileInput" multiple style="display: none" />
     </div>
     <div id="progressContainer" style="display:none;width:100%;"></div>
     {% end %}
 
-    <!-- Toolbar: New folder -->
     {% if features.get('folder_create') %}
-    <div class="browse-toolbar">
-      <button type="button" id="newFolderBtn" class="toolbar-btn">
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
+    <div class="browse-toolbar mb-4">
+      <button type="button" id="newFolderBtn" class="btn btn-primary shadow-md">
+        <svg class="ico w-5 h-5" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
         New folder
       </button>
     </div>
     {% end %}
 
-    <div class="breadcrumb breadcrumb-above-file-list" aria-label="Current path">
-      <a href="/files/" class="crumb-home"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>Home</a>
+    <div class="flex items-center gap-2 bg-base-200/50 p-2 px-4 rounded-lg mb-4 text-sm" aria-label="Current path">
+      <a href="/files/" class="flex items-center gap-1 hover:text-primary transition-colors"><svg class="ico w-4 h-4" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>Home</a>
       {% if current_user and current_path != "/" %} {% set path_parts = current_path.strip('/').split('/') %}
       {% for i, part in enumerate(path_parts) %}
-      {% set partial_path = '/files/' + '/'.join(path_parts[:i+1]) %} /
-      <a href="{{ partial_path }}">{{ part }}</a>
+      {% set partial_path = '/files/' + '/'.join(path_parts[:i+1]) %} <span class="opacity-30">/</span>
+      <a href="{{ partial_path }}" class="hover:text-primary transition-colors">{{ part }}</a>
       {% end %} {% end %}
       {% if current_path %}
-      <button type="button" id="copyPathBtn" class="copy-path-btn" title="Copy current path" aria-label="Copy current path"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="3" width="11" height="14" rx="2"/><path d="M5 7v12a2 2 0 0 0 2 2h10"/></svg></button>
+      <button type="button" id="copyPathBtn" class="ml-2 opacity-50 hover:opacity-100 hover:text-primary transition-all" title="Copy current path" aria-label="Copy current path"><svg class="ico w-4 h-4" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="3" width="11" height="14" rx="2"/><path d="M5 7v12a2 2 0 0 0 2 2h10"/></svg></button>
       {% end %}
     </div>
 
@@ -1278,23 +1237,30 @@
     </div>
 
     <!-- File Listing Table -->
-    <table class="file-table" id="fileTable">
-      <thead>
+    <div class="overflow-x-auto bg-base-100 rounded-box border border-base-300 shadow-sm">
+    <table class="table table-zebra w-full" id="fileTable">
+      <thead class="bg-base-200">
         <tr>
-          <th class="name-col sort-header" data-sort-column="0" aria-sort="none">
-            <span class="th-checkbox-wrap">
-              <input type="checkbox" id="selectAllCheckbox" title="Select all visible"
-                aria-label="Select all files on this page" aria-controls="fileTable" />
-            </span>
-            <span class="th-label">Name</span><span class="sort-indicator" aria-hidden="true"></span><div class="resizer"></div>
+          <th class="sort-header hover:bg-base-300 transition-colors" data-sort-column="0" aria-sort="none">
+            <div class="flex items-center gap-2">
+              <input type="checkbox" id="selectAllCheckbox" class="checkbox checkbox-sm checkbox-primary" title="Select all visible" />
+              <span>Name</span>
+              <span class="sort-indicator opacity-50"></span>
+            </div>
           </th>
-          <th class="size-col sort-header" data-sort-column="1" aria-sort="none">
-            <span class="th-label">Size</span><span class="sort-indicator" aria-hidden="true"></span><div class="resizer"></div>
+          <th class="sort-header hover:bg-base-300 transition-colors" data-sort-column="1" aria-sort="none">
+            <div class="flex items-center gap-2">
+              <span>Size</span>
+              <span class="sort-indicator opacity-50"></span>
+            </div>
           </th>
-          <th class="modified-col sort-header" data-sort-column="2" aria-sort="none">
-            <span class="th-label">Modified</span><span class="sort-indicator" aria-hidden="true"></span><div class="resizer"></div>
+          <th class="sort-header hover:bg-base-300 transition-colors" data-sort-column="2" aria-sort="none">
+            <div class="flex items-center gap-2">
+              <span>Modified</span>
+              <span class="sort-indicator opacity-50"></span>
+            </div>
           </th>
-          <th class="actions-col"><span class="th-label">Actions</span></th>
+          <th class="text-right">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -1413,6 +1379,7 @@
         {% end %}
       </tbody>
     </table>
+    </div>
 
   </div>
 

@@ -1,75 +1,73 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
-  <title>Create user  Aird</title>
-  <style>
-    {% include "_user_form_styles.html" %}
-  </style>
+  <title>Create user · Aird</title>
 </head>
-<body>
-  <header class="nav-links">
-    <div class="links">
-      <a href="/admin/users">← Back to users</a>
-      <a href="/admin">Admin panel</a>
-      <a href="/logout">Logout</a>
-    </div>
-    <span class="user-chip">👤 {{ handler.get_display_username() }}</span>
-  </header>
+<body class="bg-base-200 min-h-screen">
+  <div class="container mx-auto p-4">
+    {% set nav_title = "⚙ Admin Panel" %}
+    {% set show_admin_link = False %}
+    {% include '_app_nav_header.html' %}
+  </div>
 
-  <main class="form-page">
-    <h1>Create new user</h1>
+  <main class="max-w-2xl mx-auto p-4 space-y-4">
+    <div class="mb-2">
+      <a href="/admin/users" class="link link-hover text-sm text-base-content/70">← Back to users</a>
+    </div>
+    <h1 class="text-2xl font-bold">Create new user</h1>
 
     {% if error %}
-    <div class="error"><span aria-hidden="true">⚠</span>&nbsp;{{ escape(error) }}</div>
+    <div class="alert alert-error shadow-sm">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
+      <span>{{ escape(error) }}</span>
+    </div>
     {% end %}
 
-    <section class="section">
-      <form method="POST">
-        {% raw xsrf_form_html() %}
+    <div class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="card-body">
+        <form method="POST" class="space-y-4">
+          {% raw xsrf_form_html() %}
+          <div class="form-control">
+            <label class="label" for="username"><span class="label-text font-semibold">Username</span></label>
+            <input type="text" id="username" name="username" class="input input-bordered w-full" required
+                   placeholder="e.g. alex_doe" pattern="[a-zA-Z0-9_-]+"
+                   title="Letters, numbers, underscore, and hyphen only" minlength="3" maxlength="50">
+            <label class="label"><span class="label-text-alt text-base-content/50">3–50 characters · letters, numbers, underscore (_), hyphen (-)</span></label>
+          </div>
+          <div class="form-control">
+            <label class="label" for="password"><span class="label-text font-semibold">Password</span></label>
+            <input type="password" id="password" name="password" class="input input-bordered w-full" required
+                   placeholder="At least 8 characters" autocomplete="new-password">
+            <label class="label"><span class="label-text-alt text-base-content/50">See admin settings for password complexity requirements.</span></label>
+          </div>
+          <div class="form-control">
+            <label class="label" for="role"><span class="label-text font-semibold">Role</span></label>
+            <select id="role" name="role" class="select select-bordered w-full">
+              <option value="user">User</option>
+              <option value="admin">Admin</option>
+            </select>
+            <label class="label"><span class="label-text-alt text-base-content/50">Admin users can manage other users and system settings.</span></label>
+          </div>
+          <div class="flex gap-2 justify-end pt-2">
+            <a href="/admin/users" class="btn btn-ghost">Cancel</a>
+            <input type="submit" value="Create user" class="btn btn-primary">
+          </div>
+        </form>
+      </div>
+    </div>
 
-        <div class="form-group">
-          <label for="username">Username</label>
-          <input type="text" id="username" name="username" required
-                 placeholder="e.g. alex_doe"
-                 pattern="[a-zA-Z0-9_-]+"
-                 title="Letters, numbers, underscore, and hyphen only"
-                 minlength="3" maxlength="50">
-          <span class="help-text">350 characters  letters, numbers, underscore (_), hyphen (-)</span>
-        </div>
-
-        <div class="form-group">
-          <label for="password">Password</label>
-          <input type="password" id="password" name="password" required
-                 placeholder="At least 8 characters" autocomplete="new-password">
-          <span class="help-text">See admin settings for password complexity requirements.</span>
-        </div>
-
-        <div class="form-group">
-          <label for="role">Role</label>
-          <select id="role" name="role">
-            <option value="user">User</option>
-            <option value="admin">Admin</option>
-          </select>
-          <span class="help-text">Admin users can manage other users and system settings.</span>
-        </div>
-
-        <div class="form-actions">
-          <a href="/admin/users" class="btn">Cancel</a>
-          <input type="submit" value="Create user" class="btn btn-primary">
-        </div>
-      </form>
-    </section>
-
-    <section class="section">
-      <h3>User roles explained</h3>
-      <ul style="padding-left: 20px; color: var(--ds-text-muted); font-size: var(--ds-fs-sm);">
-        <li style="margin-bottom: 6px;"><strong style="color: var(--ds-text);">User</strong>  can access files, upload, download, and use all enabled file features.</li>
-        <li><strong style="color: var(--ds-text);">Admin</strong>  all user permissions plus managing other users, system settings, and the admin panel.</li>
-      </ul>
-    </section>
+    <div class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="card-body">
+        <h3 class="font-semibold mb-2">User roles explained</h3>
+        <ul class="list-disc pl-5 text-sm text-base-content/60 space-y-1">
+          <li><strong class="text-base-content">User</strong> — can access files, upload, download, and use all enabled file features.</li>
+          <li><strong class="text-base-content">Admin</strong> — all user permissions plus managing other users, system settings, and the admin panel.</li>
+        </ul>
+      </div>
+    </div>
   </main>
   <script src="/static/js/theme.js"></script>
 </body>

@@ -567,6 +567,8 @@ class TestAdminNetworkShareHandlers:
             assert args[0] == "admin_network_shares.html"
             assert "shares" in kwargs
             assert "server_host" in kwargs
+            assert "server_host_js" in kwargs
+            assert kwargs["server_host_js"] == '"test.local"'
             assert "error" in kwargs
 
     def test_get_includes_running_status(
@@ -585,6 +587,7 @@ class TestAdminNetworkShareHandlers:
             handler.get()
             shares_passed = mock_render.call_args[1]["shares"]
             assert shares_passed[0]["running"] is True
+            assert shares_passed[0]["mount_idx"] == 0
 
     # -- AdminNetworkSharesHandler POST --
 

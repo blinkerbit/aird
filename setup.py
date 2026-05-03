@@ -15,9 +15,14 @@ install_requires = [
 
 setup(
     name="aird",
-    version="0.4.19",
+    version="0.4.21",
     packages=find_packages(),
-    package_data={"aird": ["templates/*.html"]},
+    package_data={"aird": [
+        "templates/*.html",
+        "static/css/*.css",
+        "static/js/*.js",
+        "static/js/**/*.js",
+    ]},
     entry_points={
         "console_scripts": [
             "aird=aird.main:main",

@@ -12,7 +12,7 @@ import aiofiles
 from typing import Protocol, Callable, Any
 
 from aird.handlers.base_handler import BaseHandler, require_modify_access, get_user_root
-from aird.utils.util import sanitize_cloud_filename, is_feature_enabled
+from aird.utils.util import sanitize_cloud_filename, is_feature_enabled, get_file_size_safe
 from aird.core.security import (  # noqa: F401
     is_within_root,
     is_valid_websocket_origin,
@@ -516,11 +516,7 @@ class DeleteHandler(BaseHandler):
         """Delete a file. Returns True if handled (caller should return early on failure)."""
         if not self.require_feature("file_delete", True, body=FILE_DELETE_DISABLED):
             return False
-        file_size = 0
-        try:
-            file_size = os.path.getsize(abspath)
-        except OSError:
-            pass
+        file_size = get_file_size_safe(abspath)
         os.remove(abspath)
         if is_feature_enabled("storage_quotas", False) and file_size > 0:
             self.get_service("quota_service").update_used_bytes(
@@ -926,16 +922,12 @@ class CloudUploadHandler(BaseHandler):
 
         try:
             cloud_file = await asyncio.to_thread(_do_upload)
-        except CloudProviderError as exc:
-            self.set_status(400)
-            self.write({"error": str(exc)})
-            return
-        except Exception:
-            logging.exception(
-                "Failed to upload file to cloud provider %s", provider_name
+        except Exception as exc:
+            self.handle_cloud_error(
+                exc,
+                f"Failed to upload file to cloud provider {provider_name}",
+                CLOUD_UPLOAD_FAILED,
             )
-            self.set_status(500)
-            self.write({"error": CLOUD_UPLOAD_FAILED})
             return
 
         self.write({"file": cloud_file.to_dict()})

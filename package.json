@@ -1,0 +1,15 @@
+{
+  "name": "aird-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Frontend build tooling for Aird (dev-only, not shipped)",
+  "scripts": {
+    "css:build": "npx @tailwindcss/cli -i ./src/input.css -o ./aird/static/css/app.css --minify",
+    "css:watch": "npx @tailwindcss/cli -i ./src/input.css -o ./aird/static/css/app.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^4",
+    "@tailwindcss/cli": "^4",
+    "daisyui": "^5"
+  }
+}

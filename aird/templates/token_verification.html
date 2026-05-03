@@ -1,74 +1,42 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/static/css/app.css" />
-  <title>Secure share access  Aird</title>
-  <style>
-    body {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: var(--ds-space-6) var(--ds-space-4);
-      background:
-        radial-gradient(var(--ds-border-muted) 1px, transparent 1px) 0 0/22px 22px,
-        var(--ds-bg);
-    }
-    .tv-shell { width: 100%; max-width: 460px; }
-    .tv-card { padding: var(--ds-space-8); }
-    .tv-head { text-align: center; margin-bottom: var(--ds-space-5); }
-    .tv-head h1 { font-size: var(--ds-fs-xl); margin: 0 0 var(--ds-space-1); }
-    .tv-head p  { margin: 0; color: var(--ds-text-muted); font-size: var(--ds-fs-sm); }
-    .tv-back  { text-align: center; margin-top: var(--ds-space-5); }
-    .tv-back a { color: var(--ds-text-subtle); font-size: var(--ds-fs-xs); }
-    .tv-icon {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 52px; height: 52px;
-      border-radius: var(--ds-radius-pill);
-      background: var(--ds-primary-soft);
-      color: var(--ds-primary);
-      font-size: 24px;
-      margin-bottom: var(--ds-space-3);
-    }
-  </style>
+  <title>Secure share access · Aird</title>
 </head>
-
-<body>
-  <div class="tv-shell">
-    <div class="ds-card tv-card">
-      <div class="tv-head">
-        <span class="tv-icon" aria-hidden="true">🔒</span>
-        <h1>Secure share access</h1>
-        <p>Enter the secret token to access this shared content</p>
-      </div>
-
-      <div id="errorMessage" class="ds-alert ds-alert--danger" role="alert" style="display:none;">
-        <span class="ds-alert__icon" aria-hidden="true">⚠</span>
-        <span id="errorMessageText"></span>
-      </div>
-      <div id="infoMessage" class="ds-alert ds-alert--info" role="status" style="display:none;">
-        <span class="ds-alert__icon" aria-hidden="true">ℹ</span>
-        <span id="infoMessageText"></span>
-      </div>
-
-      <form id="tokenForm" class="ds-stack">
-        <div class="ds-field">
-          <label class="ds-label" for="token">Secret token</label>
-          <input class="ds-input" type="text" id="token" name="token"
-            placeholder="Paste the secret token" required autocomplete="off" autofocus>
+<body class="min-h-screen flex items-center justify-center p-6 bg-base-200">
+  <div class="w-full max-w-md animate-fade-in-up">
+    <div class="card bg-base-100 shadow-2xl border border-base-300">
+      <div class="card-body">
+        <div class="text-center mb-4">
+          <div class="inline-flex items-center justify-center w-14 h-14 rounded-full bg-primary/10 text-primary text-2xl mb-3">🔒</div>
+          <h1 class="text-xl font-bold">Secure share access</h1>
+          <p class="text-sm text-base-content/60 mt-1">Enter the secret token to access this shared content</p>
         </div>
-        <button type="submit" class="ds-btn ds-btn--primary ds-btn--lg ds-btn--block" id="submitBtn">
-          Access share
-        </button>
-      </form>
 
-      <div class="tv-back">
-        <a href="/">← Back to home</a>
+        <div id="errorMessage" class="alert alert-error shadow-sm" role="alert" style="display:none;">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
+          <span id="errorMessageText"></span>
+        </div>
+        <div id="infoMessage" class="alert alert-info shadow-sm" role="status" style="display:none;">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="h-5 w-5 shrink-0 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          <span id="infoMessageText"></span>
+        </div>
+
+        <form id="tokenForm" class="space-y-4">
+          <div class="form-control">
+            <label class="label" for="token"><span class="label-text font-semibold">Secret token</span></label>
+            <input class="input input-bordered w-full" type="text" id="token" name="token"
+              placeholder="Paste the secret token" required autocomplete="off" autofocus>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block" id="submitBtn">Access share</button>
+        </form>
+
+        <div class="text-center mt-4">
+          <a href="/" class="text-xs text-base-content/40 hover:text-base-content/60">← Back to home</a>
+        </div>
       </div>
     </div>
   </div>
@@ -89,10 +57,8 @@
       e.preventDefault();
       const token = tokenInput.value.trim();
       if (!token) { showError('Please enter a secret token'); return; }
-
       submitBtn.disabled = true;
-      submitBtn.textContent = 'Verifying';
-
+      submitBtn.textContent = 'Verifying…';
       try {
         const response = await fetch(`/shared/${shareId}/verify`, {
           method: 'POST',
@@ -100,65 +66,32 @@
           body: JSON.stringify({ token: token })
         });
         const data = await response.json();
-        if (response.ok) {
-          setAuthToken(token);
-          accessShareWithToken(shareId, token);
-        } else {
-          showError(data.error || 'Invalid token');
-        }
-      } catch {
-        showError('Network error. Please try again.');
-      } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Access share';
-      }
+        if (response.ok) { setAuthToken(token); accessShareWithToken(shareId, token); }
+        else { showError(data.error || 'Invalid token'); }
+      } catch { showError('Network error. Please try again.'); }
+      finally { submitBtn.disabled = false; submitBtn.textContent = 'Access share'; }
     });
 
-    function showError(message) {
-      errorMessageText.textContent = message;
-      errorMessage.style.display = 'flex';
-      infoMessage.style.display = 'none';
-    }
-    function showInfo(message) {
-      infoMessageText.textContent = message;
-      infoMessage.style.display = 'flex';
-      errorMessage.style.display = 'none';
-    }
+    function showError(message) { errorMessageText.textContent = message; errorMessage.style.display = 'flex'; infoMessage.style.display = 'none'; }
+    function showInfo(message) { infoMessageText.textContent = message; infoMessage.style.display = 'flex'; errorMessage.style.display = 'none'; }
 
     let currentAuthToken = null;
-    function getAuthToken() {
-      if (!currentAuthToken) currentAuthToken = sessionStorage.getItem(`share_token_${shareId}`);
-      return currentAuthToken;
-    }
+    function getAuthToken() { if (!currentAuthToken) currentAuthToken = sessionStorage.getItem(`share_token_${shareId}`); return currentAuthToken; }
     function setAuthToken(token) {
       currentAuthToken = token;
       sessionStorage.setItem(`share_token_${shareId}`, token);
       const secureAttr = globalThis.location.protocol === 'https:' ? '; Secure' : '';
       document.cookie = `share_token_${shareId}=${token}; path=/; max-age=3600; SameSite=Lax${secureAttr}`;
     }
-    async function fetchWithAuth(url, options = {}) {
-      const token = getAuthToken();
-      if (token) options.headers = { ...options.headers, 'Authorization': `Bearer ${token}` };
-      return fetch(url, options);
-    }
+    async function fetchWithAuth(url, options = {}) { const token = getAuthToken(); if (token) options.headers = { ...options.headers, 'Authorization': `Bearer ${token}` }; return fetch(url, options); }
     async function accessShareWithToken(shareId, token) {
-      try {
-        setAuthToken(token);
-        const response = await fetchWithAuth(`/shared/${shareId}`, { method: 'GET' });
-        if (response.ok) globalThis.location.href = `/shared/${shareId}`;
-        else showError('Failed to access share with token');
-      } catch {
-        showError('Network error accessing share');
-      }
+      try { setAuthToken(token); const response = await fetchWithAuth(`/shared/${shareId}`, { method: 'GET' }); if (response.ok) globalThis.location.href = `/shared/${shareId}`; else showError('Failed to access share with token'); }
+      catch { showError('Network error accessing share'); }
     }
 
     const existingToken = sessionStorage.getItem(`share_token_${shareId}`);
-    if (existingToken) {
-      showInfo('You already have access to this share. Redirecting');
-      setTimeout(() => accessShareWithToken(shareId, existingToken), 800);
-    }
+    if (existingToken) { showInfo('You already have access to this share. Redirecting…'); setTimeout(() => accessShareWithToken(shareId, existingToken), 800); }
   </script>
   <script src="/static/js/theme.js"></script>
 </body>
-
 </html>

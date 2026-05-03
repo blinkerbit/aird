@@ -1,44 +1,23 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
   <title>Error {{ status_code }}</title>
-  <style>
-    body {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: var(--ds-space-6);
-      background:
-        radial-gradient(var(--ds-border-muted) 1px, transparent 1px) 0 0/22px 22px,
-        var(--ds-bg);
-    }
-    .err-shell { width: 100%; max-width: 540px; }
-    .err-code {
-      font-size: 72px;
-      line-height: 1;
-      letter-spacing: -0.04em;
-      font-weight: 800;
-      margin: 0;
-      color: var(--ds-text);
-    }
-    .err-msg { margin: var(--ds-space-2) 0 var(--ds-space-3); font-size: var(--ds-fs-xl); font-weight: 600; }
-    .err-hint { color: var(--ds-text-muted); margin: 0 0 var(--ds-space-5); }
-  </style>
 </head>
-<body>
-  <div class="err-shell">
-    <div class="ds-card" style="text-align:center;">
-      <p style="margin:0 0 var(--ds-space-2); color: var(--ds-text-muted); font-size: var(--ds-fs-sm); letter-spacing:0.12em; text-transform:uppercase;">Aird</p>
-      <h1 class="err-code">{{ status_code }}</h1>
-      <p class="err-msg">{{ escape(message) }}</p>
-      <p class="err-hint">Something went wrong. Please try again or contact your administrator.</p>
-      <div class="ds-hstack" style="justify-content:center;">
-        <a href="/files/" class="ds-btn ds-btn--primary">← Back to files</a>
-        <a href="/" class="ds-btn ds-btn--ghost">Go home</a>
+<body class="min-h-screen flex items-center justify-center p-6 bg-base-200">
+  <div class="w-full max-w-lg animate-fade-in-up">
+    <div class="card bg-base-100 shadow-2xl border border-base-300 text-center">
+      <div class="card-body items-center">
+        <p class="text-xs text-base-content/40 uppercase tracking-widest mb-2">Aird</p>
+        <h1 class="text-7xl font-extrabold leading-none">{{ status_code }}</h1>
+        <p class="text-xl font-semibold mt-2">{{ escape(message) }}</p>
+        <p class="text-base-content/60 mb-4">Something went wrong. Please try again or contact your administrator.</p>
+        <div class="flex gap-2">
+          <a href="/files/" class="btn btn-primary">← Back to files</a>
+          <a href="/" class="btn btn-ghost">Go home</a>
+        </div>
       </div>
     </div>
   </div>

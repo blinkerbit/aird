@@ -740,8 +740,9 @@ class AdminNetworkSharesHandler(BaseHandler):
             else []
         )
         mgr = self.network_share_manager
-        for s in shares:
+        for idx, s in enumerate(shares):
             s["running"] = mgr.is_running(s["id"]) if mgr else False
+            s["mount_idx"] = idx
         error = self.get_argument("error", None)
         # Resolve a network-reachable address for mount commands
         server_host = _socket.getfqdn()
@@ -755,6 +756,7 @@ class AdminNetworkSharesHandler(BaseHandler):
             shares=shares,
             error=error,
             server_host=server_host,
+            server_host_js=json.dumps(server_host),
         )
 
     @tornado.web.authenticated

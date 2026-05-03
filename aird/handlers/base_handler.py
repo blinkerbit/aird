@@ -523,6 +523,17 @@ class BaseHandler(tornado.web.RequestHandler):
         self.write(body if body is not None else "Feature disabled.")
         return False
 
+    def handle_cloud_error(self, exc: Exception, log_msg: str, client_err_msg: str) -> None:
+        """Helper to unify exception handling for cloud routes."""
+        from aird.cloud import CloudProviderError
+        if isinstance(exc, CloudProviderError):
+            self.set_status(400)
+            self.write({"error": str(exc)})
+        else:
+            logging.exception(log_msg)
+            self.set_status(500)
+            self.write({"error": client_err_msg})
+
     def session_cookie_opts(self, expires_days=1) -> dict:
         """Return common kwargs for secure session cookies (httponly, secure, samesite, expires_days)."""
         return {

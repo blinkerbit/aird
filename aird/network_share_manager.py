@@ -230,5 +230,5 @@ class NetworkShareManager:
         try:
             if hasattr(server, "stop"):
                 server.stop()
-        except Exception:
-            logger.debug("Error stopping server for share", exc_info=True)
+        except Exception as e:
+            logger.debug("Error stopping server for share: %s", e, exc_info=True)

@@ -949,7 +949,7 @@
       item.appendChild(_createEl('div', { className: 'share-id' }, share.id));
 
       const urlWrap = _createEl('div', { className: 'share-url' });
-      const a = _createEl('a', { href: share.url, target: '_blank', rel: 'noopener noreferrer' }, origin + share.url);
+      const a = _createEl('a', { href: share.url }, origin + share.url);
       urlWrap.appendChild(a);
       item.appendChild(urlWrap);
 
@@ -1042,7 +1042,7 @@
     }
 
     function openShare(url) {
-      globalThis.open(url, '_blank');
+      globalThis.location.href = url;
     }
 
     async function revokeShare(shareId) {

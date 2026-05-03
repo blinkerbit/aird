@@ -1,0 +1,290 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;500;600&display=swap');
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: light --default, dark --prefersdark, nord, dracula, cyberpunk, retro, autumn;
+}
+
+@theme {
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "Fira Code", monospace;
+}
+
+/* ================================================================
+   Aird Custom Utilities
+   Layered on top of Tailwind + DaisyUI. Keep this minimal —
+   only for things that don't have a DaisyUI/Tailwind equivalent.
+   ================================================================ */
+
+/* Smooth page entrance animation */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.3s ease-out both;
+}
+
+/* Gradient text utility (brand wordmark) */
+.text-gradient-brand {
+  background: linear-gradient(135deg, oklch(0.45 0.2 270) 0%, oklch(0.55 0.25 270) 55%, oklch(0.6 0.22 280) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Theme transition: smooth colour shifts when switching themes */
+html {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* File table specific overrides */
+.file-table th {
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Inline SVG icon base (used in nav header) */
+.hdr-ico {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+/* Show correct sun/moon icon based on theme.
+   Note: DaisyUI uses data-theme, our theme.js sets it. */
+.theme-icon-sun { display: none; }
+.theme-icon-moon { display: inline-block; }
+[data-theme="dark"] .theme-icon-sun,
+[data-theme="dracula"] .theme-icon-sun,
+[data-theme="cyberpunk"] .theme-icon-sun { display: inline-block; }
+[data-theme="dark"] .theme-icon-moon,
+[data-theme="dracula"] .theme-icon-moon,
+[data-theme="cyberpunk"] .theme-icon-moon { display: none; }
+
+/* ================================================================
+   Legacy --ds-* token compatibility shim
+   Maps the old design system variables to DaisyUI's color system.
+   This allows unmigrated templates (browse, share, p2p, etc.)
+   to work with all DaisyUI themes without rewriting inline CSS.
+   ================================================================ */
+:root, [data-theme] {
+  /* Backgrounds & surfaces */
+  --ds-bg: var(--color-base-200);
+  --ds-surface: var(--color-base-100);
+  --ds-bg-muted: var(--color-base-200);
+  --ds-bg-sunken: var(--color-base-300);
+
+  /* Typography */
+  --ds-text: var(--color-base-content);
+  --ds-text-muted: oklch(from var(--color-base-content) l c h / 0.6);
+  --ds-text-subtle: oklch(from var(--color-base-content) l c h / 0.4);
+  --ds-text-on-accent: var(--color-primary-content);
+
+  /* Interaction & Borders */
+  --ds-border: var(--color-base-300);
+  --ds-border-muted: oklch(from var(--color-base-content) l c h / 0.1);
+  --ds-primary: var(--color-primary);
+  --ds-primary-hover: oklch(from var(--color-primary) l c h / 0.85);
+  --ds-primary-soft: oklch(from var(--color-primary) l c h / 0.1);
+  --ds-accent: var(--color-neutral);
+  --ds-accent-active: var(--color-neutral);
+
+  /* Status Colors */
+  --ds-danger: var(--color-error);
+  --ds-success: var(--color-success);
+  --ds-info: var(--color-info);
+  --ds-gold: #f59e0b;
+
+  /* Shadows */
+  --ds-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --ds-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --ds-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+
+  /* Layout Tokens */
+  --ds-radius-sm: 0.375rem;
+  --ds-radius-md: 0.5rem;
+  --ds-radius-lg: 0.75rem;
+  --ds-radius-pill: 9999px;
+
+  /* Spacing Tokens */
+  --ds-space-1: 0.25rem;
+  --ds-space-2: 0.5rem;
+  --ds-space-3: 0.75rem;
+  --ds-space-4: 1rem;
+  --ds-space-5: 1.25rem;
+  --ds-space-6: 1.5rem;
+  --ds-space-8: 2rem;
+
+  /* Font Sizes */
+  --ds-fs-xs: 0.75rem;
+  --ds-fs-sm: 0.875rem;
+  --ds-fs-md: 1rem;
+  --ds-fs-lg: 1.125rem;
+  --ds-fs-xl: 1.25rem;
+
+  /* Line Heights */
+  --ds-lh-tight: 1.25;
+  --ds-lh-normal: 1.5;
+  --ds-lh-relaxed: 1.625;
+
+  /* Transitions */
+  --ds-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ds-duration-fast: 0.12s;
+  --ds-duration-normal: 0.2s;
+
+  /* Brand */
+  --ds-brand-gradient-soft: linear-gradient(135deg, oklch(35% 0.15 270) 0%, oklch(40% 0.18 275) 100%);
+  --ds-brand-gradient-line: linear-gradient(90deg, oklch(50% 0.2 270), oklch(60% 0.22 280), oklch(50% 0.2 290));
+}
+
+
+/* Legacy component classes used by unmigrated templates */
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: var(--ds-space-4);
+}
+
+.ds-card {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  padding: var(--ds-space-6);
+  box-shadow: var(--ds-shadow-sm);
+}
+
+.ds-card--flush { padding: 0; }
+
+.ds-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.5rem 1rem;
+  font-size: var(--ds-fs-sm);
+  font-weight: 600;
+  border-radius: var(--ds-radius-sm);
+  border: 1px solid var(--ds-border);
+  background: var(--ds-surface);
+  color: var(--ds-text);
+  cursor: pointer;
+  transition: background var(--ds-duration-fast) var(--ds-ease),
+              border-color var(--ds-duration-fast) var(--ds-ease);
+}
+.ds-btn:hover { background: var(--ds-bg-muted); }
+
+.ds-btn--primary {
+  background: var(--ds-primary);
+  color: var(--ds-text-on-accent);
+  border-color: var(--ds-primary);
+}
+.ds-btn--primary:hover { background: var(--ds-primary-hover); }
+
+.ds-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+}
+.ds-btn--ghost:hover { background: var(--ds-bg-muted); }
+
+.ds-btn--block { width: 100%; }
+.ds-btn--lg { padding: 0.75rem 1.5rem; font-size: var(--ds-fs-md); }
+
+.ds-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font-size: var(--ds-fs-sm);
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-sm);
+  color: var(--ds-text);
+  transition: border-color var(--ds-duration-fast) var(--ds-ease);
+}
+.ds-input:focus {
+  outline: 2px solid var(--ds-primary);
+  outline-offset: 1px;
+  border-color: var(--ds-primary);
+}
+
+.ds-label {
+  display: block;
+  font-size: var(--ds-fs-sm);
+  font-weight: 600;
+  color: var(--ds-text);
+  margin-bottom: var(--ds-space-1);
+}
+
+.ds-field { margin-bottom: var(--ds-space-4); }
+
+.ds-alert {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  padding: var(--ds-space-3) var(--ds-space-4);
+  border-radius: var(--ds-radius-sm);
+  font-size: var(--ds-fs-sm);
+  margin-bottom: var(--ds-space-4);
+}
+.ds-alert--danger { background: oklch(var(--er) / 0.1); color: var(--ds-danger); border: 1px solid oklch(var(--er) / 0.2); }
+.ds-alert--info { background: oklch(var(--in) / 0.1); color: var(--ds-info); border: 1px solid oklch(var(--in) / 0.2); }
+.ds-alert__icon { flex-shrink: 0; }
+
+.ds-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  font-size: var(--ds-fs-xs);
+  font-weight: 600;
+  border-radius: var(--ds-radius-pill);
+  border: 1px solid var(--ds-border);
+  background: var(--ds-bg-muted);
+  color: var(--ds-text-muted);
+}
+.ds-badge--primary { background: oklch(var(--p) / 0.1); color: var(--ds-primary); border-color: oklch(var(--p) / 0.2); }
+.ds-badge--success { background: oklch(var(--su) / 0.1); color: var(--ds-success); border-color: oklch(var(--su) / 0.2); }
+.ds-badge--warn { background: oklch(var(--wa) / 0.1); color: oklch(var(--wa)); border-color: oklch(var(--wa) / 0.2); }
+
+.ds-muted { color: var(--ds-text-muted); }
+
+.ds-stack > * + * { margin-top: var(--ds-space-4); }
+.ds-hstack { display: flex; align-items: center; gap: var(--ds-space-3); }
+.ds-grid { display: grid; gap: var(--ds-space-4); }
+.ds-grid--cols-2 { grid-template-columns: repeat(2, 1fr); }
+
+
+/* Global Theme Support */
+body {
+  background-color: var(--color-base-100);
+  color: var(--color-base-content);
+  min-height: 100vh;
+}
+
+/* Enhance table divider visibility in DaisyUI v5 */
+.table :where(thead tr :is(td,th),tbody tr:not(:last-child) :is(td,th)) {
+  border-bottom-width: 1px;
+  border-bottom-color: oklch(from var(--color-base-content) l c h / 0.1) !important;
+}
+
+/* Robust Alert Styles to prevent layout squeezing */
+.alert {
+  width: 100% !important;
+  display: grid !important;
+  grid-template-columns: auto 1fr !important;
+  align-items: center !important;
+  gap: 1rem !important;
+}
+
+/* Reduced motion: disable transitions */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+

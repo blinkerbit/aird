@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -7,608 +7,155 @@
   <link rel="stylesheet" href="/static/css/app.css" />
     <title>P2P File Transfer - Aird</title>
     <style>
-        body {
-            background-color: var(--ds-bg);
-            background-image: radial-gradient(var(--ds-border-muted) 1px, transparent 1px);
-            background-size: 22px 22px;
-            color: var(--ds-text);
-            line-height: var(--ds-lh-normal);
-            min-height: 100vh;
-        }
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-            padding: var(--ds-space-5) var(--ds-space-4);
-        }
+      /* ===== Mobile & Touch UX ===== */
+      * { -webkit-tap-highlight-color: transparent; }
+      html { scroll-behavior: smooth; }
 
-        {% include '_app_nav_header_styles.html' %}
+      /* Larger touch targets for buttons on mobile */
+      @media (max-width: 640px) {
+        .btn { min-height: 2.75rem; }
+        .mode-btn { padding: 1.5rem 1rem; }
+        #room-code-input { font-size: 1.5rem; }
+      }
 
-        /* Page title — gradient brand wordmark */
-        .p2p-page-title {
-            font-size: var(--ds-fs-2xl);
-            font-weight: 800;
-            letter-spacing: -0.02em;
-            text-transform: uppercase;
-            margin: 0 0 var(--ds-space-3);
-            line-height: var(--ds-lh-tight);
-            background: var(--ds-brand-gradient);
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            color: var(--ds-primary);
-        }
+      /* Drop zone drag-over effect */
+      .drop-zone.drag-over {
+        border-color: oklch(var(--p));
+        background-color: oklch(var(--p) / 0.08);
+        transform: scale(1.01);
+        transition: all 0.15s ease;
+      }
 
-        /* Breadcrumb chip */
-        .p2p-subnav .breadcrumb a {
-            color: var(--ds-text-on-accent);
-            background: var(--ds-accent);
-            text-decoration: none;
-            padding: 2px 10px;
-            font-weight: 600;
-            font-size: var(--ds-fs-sm);
-            border: 1px solid var(--ds-border);
-            border-radius: var(--ds-radius-sm);
-            box-shadow: var(--ds-shadow-xs);
-            transition: all var(--ds-duration-fast) var(--ds-ease);
-            display: inline-block;
-        }
-        .p2p-subnav .breadcrumb a:hover {
-            text-decoration: none;
-            background: var(--ds-accent-hover);
-            box-shadow: var(--ds-shadow-sm);
-        }
-        .p2p-subnav .breadcrumb a:active {
-            transform: translateY(1px);
-            box-shadow: none;
-        }
+      /* Mode button selected state */
+      .mode-btn.selected {
+        border-color: oklch(var(--p));
+        background-color: oklch(var(--p) / 0.08);
+        box-shadow: 0 0 0 2px oklch(var(--p) / 0.4);
+      }
 
-        /* Section cards */
-        .section {
-            margin-bottom: var(--ds-space-6);
-            padding: var(--ds-space-5);
-            background: var(--ds-surface);
-            border: 1px solid var(--ds-border);
-            border-radius: var(--ds-radius-lg);
-            box-shadow: var(--ds-shadow-sm);
-            animation: slideUp 0.5s var(--ds-ease) forwards;
-            opacity: 0;
-            transform: translateY(12px);
-        }
-        @keyframes slideUp {
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .section h2 {
-            font-size: var(--ds-fs-lg);
-            font-weight: 700;
-            margin-bottom: var(--ds-space-4);
-            padding-bottom: var(--ds-space-3);
-            border-bottom: 1px solid var(--ds-border-muted);
-            color: var(--ds-text);
-        }
+      /* File icon SVG sizing */
+      .file-icon-svg { width: 1.25rem; height: 1.25rem; stroke: currentColor; fill: none; stroke-width: 1.5; }
 
-        /* Send / Receive mode cards */
-        .mode-selector { display: flex; gap: var(--ds-space-4); margin-bottom: var(--ds-space-5); }
-        .mode-btn {
-            flex: 1;
-            padding: var(--ds-space-5);
-            border: 1px solid var(--ds-border);
-            border-radius: var(--ds-radius-lg);
-            background: var(--ds-surface);
-            cursor: pointer;
-            text-align: center;
-            transition: all var(--ds-duration-fast) var(--ds-ease);
-            box-shadow: var(--ds-shadow-xs);
-        }
-        .mode-btn:hover {
-            box-shadow: var(--ds-shadow-md);
-            border-color: var(--ds-primary);
-            transform: translateY(-2px);
-        }
-        .mode-btn:active { transform: translateY(1px); box-shadow: none; }
-        .mode-btn.active {
-            background: var(--ds-brand-gradient);
-            color: var(--ds-text-on-accent);
-            border-color: transparent;
-            box-shadow: var(--ds-shadow-brand-glow);
-        }
-        .mode-btn:active p, .mode-btn.active p { color: inherit; }
-        .mode-btn h3 { font-size: var(--ds-fs-md); font-weight: 700; margin-bottom: var(--ds-space-2); }
-        .mode-btn p { font-size: var(--ds-fs-sm); color: var(--ds-text-muted); }
-        .mode-btn.active p { color: rgba(255, 255, 255, 0.85); }
-        .mode-icon { font-size: 32px; margin-bottom: var(--ds-space-3); }
+      /* Smooth animate-in for cards */
+      @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(12px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      .animate-fade-in-up { animation: fadeInUp 0.3s ease both; }
 
-        /* Form elements */
-        .form-group { margin-bottom: var(--ds-space-4); }
-        .form-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 600;
-            font-size: var(--ds-fs-sm);
-            color: var(--ds-text);
-        }
-        .form-group input[type="text"],
-        .form-group input[type="file"] {
-            width: 100%;
-            padding: 10px 12px;
-            border: 1px solid var(--ds-border);
-            border-radius: var(--ds-radius-sm);
-            font-family: inherit;
-            font-size: var(--ds-fs-md);
-            background: var(--ds-surface);
-            color: var(--ds-text);
-            box-sizing: border-box;
-            outline: none;
-            transition: border-color var(--ds-duration-fast) var(--ds-ease),
-                        box-shadow var(--ds-duration-fast) var(--ds-ease);
-        }
-        .form-group input[type="text"]:focus,
-        .form-group input[type="file"]:focus {
-            border-color: var(--ds-primary);
-            box-shadow: var(--ds-focus-ring);
-        }
+      /* Custom thin scrollbar for file lists */
+      #send-files-list, #received-files-list, #available-files-list, #log-container {
+        scrollbar-width: thin;
+        scrollbar-color: oklch(var(--p) / 0.4) transparent;
+      }
 
-        /* Buttons */
-        .btn {
-            padding: 9px 18px;
-            background: var(--ds-brand-gradient);
-            color: var(--ds-text-on-accent);
-            border: 1px solid transparent;
-            border-radius: var(--ds-radius-sm);
-            font-family: inherit;
-            font-size: var(--ds-fs-sm);
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.03em;
-            cursor: pointer;
-            transition: all var(--ds-duration-fast) var(--ds-ease);
-            position: relative;
-            box-shadow: var(--ds-shadow-xs);
-        }
-        .btn:hover {
-            background: var(--ds-brand-gradient-hover);
-            box-shadow: var(--ds-shadow-brand-glow);
-            transform: translateY(-1px);
-        }
-        .btn:active { transform: translateY(1px); box-shadow: none; }
-        .btn:disabled {
-            background: var(--ds-bg-sunken);
-            border-color: var(--ds-border);
-            color: var(--ds-text-subtle);
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
-        .btn-secondary {
-            background: var(--ds-surface);
-            color: var(--ds-text);
-            border: 1px solid var(--ds-border);
-        }
-        .btn-secondary:hover {
-            background: var(--ds-bg-muted);
-            border-color: var(--ds-border-strong);
-            box-shadow: var(--ds-shadow-sm);
-        }
-        .btn-success {
-            background: var(--ds-success);
-            border-color: var(--ds-success);
-            color: var(--ds-text-on-accent);
-        }
-        .btn-success:hover { filter: brightness(1.08); box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3); }
+      /* Mobile: stack share-code buttons vertically */
+      @media (max-width: 400px) {
+        #copy-code-btn, #copy-link-btn, #qr-toggle-btn { width: 100%; }
+      }
 
-        /* Share code display — dark branded panel */
-        .share-code-display {
-            background: var(--ds-accent);
-            background-image: var(--ds-brand-gradient-soft);
-            color: var(--ds-text-on-accent);
-            padding: var(--ds-space-5);
-            border: 1px solid var(--ds-border-muted);
-            border-radius: var(--ds-radius-md);
-            text-align: center;
-            margin: var(--ds-space-4) 0;
-            overflow: hidden;
-            box-shadow: var(--ds-shadow-sm);
-            position: relative;
-        }
-        .share-code-display::before {
-            content: "";
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            height: 2px;
-            background: var(--ds-brand-gradient-line);
-        }
-        .share-code {
-            font-size: var(--ds-fs-xl);
-            font-weight: 700;
-            letter-spacing: 0.08em;
-            font-family: var(--ds-font-mono);
-            word-break: break-all;
-            overflow-wrap: break-word;
-            max-width: 100%;
-        }
-        .share-code-hint {
-            font-size: var(--ds-fs-xs);
-            color: var(--ds-text-subtle);
-            margin-top: var(--ds-space-3);
-        }
-
-        /* Status indicator */
-        .status-indicator {
-            display: flex;
-            align-items: center;
-            gap: var(--ds-space-2);
-            padding: var(--ds-space-3);
-            border: 1px solid var(--ds-border);
-            border-radius: var(--ds-radius-sm);
-            margin-bottom: var(--ds-space-4);
-            font-weight: 600;
-            font-size: var(--ds-fs-sm);
-            text-transform: uppercase;
-            letter-spacing: 0.03em;
-        }
-        .status-indicator.waiting {
-            background: var(--ds-bg-muted);
-            color: var(--ds-text-muted);
-            border-color: var(--ds-border);
-        }
-        .status-indicator.connected {
-            background: var(--ds-primary-soft);
-            color: var(--ds-primary);
-            border-color: var(--ds-primary);
-        }
-        .status-indicator.transferring {
-            background: var(--ds-brand-gradient);
-            color: var(--ds-text-on-accent);
-            border-color: transparent;
-        }
-        .status-indicator.error {
-            background: var(--ds-danger-soft);
-            color: var(--ds-danger);
-            border-color: var(--ds-danger);
-        }
-        .status-dot {
-            width: 8px; height: 8px;
-            border-radius: 50%;
-            animation: pulse 2s infinite;
-        }
-        .status-indicator.waiting .status-dot { background: var(--ds-text-subtle); }
-        .status-indicator.connected .status-dot { background: var(--ds-primary); }
-        .status-indicator.transferring .status-dot { background: var(--ds-text-on-accent); }
-        .status-indicator.error .status-dot { background: var(--ds-danger); }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-
-        /* File info panel */
-        .file-info {
-            background: var(--ds-surface);
-            border: 1px solid var(--ds-border);
-            border-radius: var(--ds-radius-md);
-            padding: var(--ds-space-4);
-            margin: var(--ds-space-4) 0;
-            box-shadow: var(--ds-shadow-xs);
-        }
-        .file-info-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 5px 0;
-            border-bottom: 1px solid var(--ds-border-muted);
-        }
-        .file-info-row:last-child { border-bottom: none; }
-        .file-info-label { font-size: var(--ds-fs-xs); font-weight: 700; text-transform: uppercase; color: var(--ds-text-muted); letter-spacing: 0.04em; }
-        .file-info-value { font-weight: 600; font-size: var(--ds-fs-sm); color: var(--ds-text); }
-
-        /* Progress */
-        .progress-container { margin: var(--ds-space-4) 0; }
-        .progress-bar {
-            width: 100%;
-            height: 22px;
-            background: var(--ds-bg-muted);
-            border: 1px solid var(--ds-border);
-            border-radius: var(--ds-radius-sm);
-            overflow: hidden;
-        }
-        .progress-fill {
-            height: 100%;
-            background: var(--ds-brand-gradient);
-            transition: width 0.3s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--ds-text-on-accent);
-            font-size: var(--ds-fs-xs);
-            font-weight: 700;
-            border-radius: var(--ds-radius-sm);
-        }
-        .progress-stats {
-            display: flex;
-            justify-content: space-between;
-            margin-top: var(--ds-space-2);
-            font-size: var(--ds-fs-xs);
-            color: var(--ds-text-muted);
-        }
-        .hidden { display: none !important; }
-
-        /* Drop zone */
-        .drop-zone {
-            border: 2px dashed var(--ds-border);
-            border-radius: var(--ds-radius-lg);
-            padding: var(--ds-space-10);
-            text-align: center;
-            cursor: pointer;
-            transition: all var(--ds-duration-fast) var(--ds-ease);
-            background: var(--ds-bg-muted);
-            font-weight: 600;
-            font-size: var(--ds-fs-sm);
-            color: var(--ds-text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.03em;
-        }
-        .drop-zone:hover,
-        .drop-zone.dragover {
-            border-color: var(--ds-primary);
-            background: var(--ds-primary-soft);
-            color: var(--ds-primary);
-            box-shadow: var(--ds-shadow-sm);
-        }
-        .drop-zone-icon { font-size: 48px; margin-bottom: var(--ds-space-3); display: none; }
-
-        /* Log */
-        .log-container {
-            max-height: 200px;
-            overflow-y: auto;
-            background: var(--ds-bg-sunken);
-            color: var(--ds-text);
-            border: 1px solid var(--ds-border-muted);
-            border-radius: var(--ds-radius-sm);
-            padding: var(--ds-space-3);
-            font-size: var(--ds-fs-xs);
-            font-family: var(--ds-font-mono);
-            margin-top: var(--ds-space-4);
-        }
-        .log-entry { padding: 3px 0; border-bottom: 1px solid var(--ds-border-muted); }
-        .log-entry.error { color: var(--ds-danger); }
-        .log-entry.success { color: var(--ds-success); }
-        .log-entry.info { color: var(--ds-text-muted); }
-
-        /* Received file items */
-        .received-file-item {
-            display: flex;
-            align-items: center;
-            padding: var(--ds-space-3) var(--ds-space-4);
-            border-bottom: 1px solid var(--ds-border-muted);
-            gap: var(--ds-space-3);
-            transition: background var(--ds-duration-fast) var(--ds-ease);
-        }
-        .received-file-item:last-child { border-bottom: none; }
-        .received-file-item:hover { background: var(--ds-bg-muted); }
-        .received-file-checkbox { width: 18px; height: 18px; cursor: pointer; }
-        .received-file-icon {
-            font-size: 24px; width: 32px; height: 32px;
-            text-align: center; display: flex; align-items: center; justify-content: center;
-            color: var(--ds-primary);
-        }
-        .received-file-details { flex: 1; min-width: 0; }
-        .received-file-name { font-weight: 600; font-size: var(--ds-fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ds-text); }
-        .received-file-meta { font-size: var(--ds-fs-xs); color: var(--ds-text-muted); margin-top: 2px; }
-        .received-file-actions { display: flex; gap: var(--ds-space-2); }
-
-        .received-file-btn {
-            padding: 6px 10px;
-            border: 1px solid var(--ds-border);
-            background: var(--ds-surface);
-            border-radius: var(--ds-radius-sm);
-            cursor: pointer;
-            font-size: var(--ds-fs-xs);
-            font-weight: 600;
-            transition: all var(--ds-duration-fast) var(--ds-ease);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 5px;
-            color: var(--ds-text);
-        }
-        .received-file-btn:hover { background: var(--ds-bg-muted); border-color: var(--ds-border-strong); box-shadow: var(--ds-shadow-xs); }
-        .received-file-btn:active { transform: translateY(1px); }
-        .received-file-btn svg { width: 14px; height: 14px; stroke: currentColor; stroke-width: 2; fill: none; }
-
-        .received-file-btn.download {
-            color: var(--ds-primary);
-            border-color: var(--ds-primary);
-            background: var(--ds-primary-soft);
-        }
-        .received-file-btn.download:hover { background: var(--ds-primary-soft); filter: brightness(0.96); box-shadow: var(--ds-shadow-brand-glow); }
-
-        .received-file-btn.remove {
-            color: var(--ds-danger);
-            border-color: var(--ds-danger);
-            background: var(--ds-danger-soft);
-            min-width: 32px;
-            padding: 6px 8px;
-        }
-        .received-file-btn.remove:hover { filter: brightness(0.96); }
-
-        .btn-icon-success {
-            color: var(--ds-success);
-            border-color: var(--ds-success);
-            background: var(--ds-success-soft);
-        }
-        .btn-icon-success:hover { filter: brightness(0.96); }
-        .btn-icon-success svg,
-        .btn-secondary svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 2; fill: none; }
-
-        /* QR code */
-        .qr-code-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            margin-top: var(--ds-space-4);
-            padding: var(--ds-space-4);
-            background: var(--ds-surface);
-            border-radius: var(--ds-radius-md);
-            border: 1px solid var(--ds-border-muted);
-        }
-        .qr-code-container canvas {
-            border: 4px solid var(--ds-surface);
-            box-shadow: var(--ds-shadow-sm);
-            border-radius: var(--ds-radius-sm);
-        }
-        .qr-code-label { margin-top: var(--ds-space-3); font-size: var(--ds-fs-xs); color: var(--ds-text-muted); }
-
-        .qr-toggle-btn {
-            padding: 6px 12px;
-            font-size: var(--ds-fs-xs);
-            cursor: pointer;
-            border: 1px solid var(--ds-border);
-            background: var(--ds-surface);
-            border-radius: var(--ds-radius-sm);
-            font-weight: 600;
-            margin-top: var(--ds-space-3);
-            box-shadow: var(--ds-shadow-xs);
-            transition: all var(--ds-duration-fast) var(--ds-ease);
-            color: var(--ds-text);
-        }
-        .qr-toggle-btn:hover { background: var(--ds-bg-muted); border-color: var(--ds-border-strong); }
-        .qr-toggle-btn:active { transform: translateY(1px); box-shadow: none; }
-
-        .received-file-icon svg { width: 24px; height: 24px; stroke: currentColor; stroke-width: 1.5; fill: none; }
-
-        @media (max-width: 600px) {
-            .mode-selector { flex-direction: column; }
-            .share-code { font-size: var(--ds-fs-md); letter-spacing: 0; }
-            .received-file-item { flex-wrap: wrap; padding: var(--ds-space-3); }
-            .received-file-details { flex: 1 1 calc(100% - 50px); order: 1; }
-            .received-file-actions { width: 100%; order: 3; margin-top: var(--ds-space-3); justify-content: flex-end; }
-            .received-file-checkbox { order: 0; }
-            .received-file-icon { order: 0; }
-        }
-
-    /* SonarQube-extracted utility styles (tokenized) */
-    .sq-style-f93d70 { display: none; background: var(--ds-warning-soft); background-image: var(--ds-gold-gradient-soft); color: var(--ds-text); padding: var(--ds-space-3); border: 1px solid var(--ds-warning); border-radius: var(--ds-radius-sm); box-shadow: var(--ds-shadow-xs); margin-bottom: var(--ds-space-5); align-items: center; gap: var(--ds-space-3); font-weight: 600; font-size: var(--ds-fs-sm); }
-    .sq-style-98ea50 { background: var(--ds-info-soft); background-image: var(--ds-brand-gradient-soft); color: var(--ds-text); padding: var(--ds-space-3); border: 1px dashed var(--ds-border); border-radius: var(--ds-radius-sm); margin-bottom: var(--ds-space-4); font-weight: 600; font-size: var(--ds-fs-sm); }
-    .sq-style-d0a913 { text-align: center; margin-top: var(--ds-space-3); font-size: var(--ds-fs-xs); color: var(--ds-text-muted); font-weight: 600; }
-    .sq-style-2bd300 { margin-top: var(--ds-space-5); border-top: 1px dashed var(--ds-border-muted); padding-top: var(--ds-space-4); }
-    .sq-style-1d7b9a { cursor: pointer; font-size: var(--ds-fs-md); font-weight: 700; color: var(--ds-text); }
-    .sq-style-0d9f0a { margin-top: var(--ds-space-3); padding: var(--ds-space-3); background: var(--ds-surface); border: 1px solid var(--ds-border-muted); border-radius: var(--ds-radius-sm); }
-    .sq-style-591b06 { width: 100%; padding: 8px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm); font-family: var(--ds-font-mono); background: var(--ds-surface); color: var(--ds-text); }
-    .sq-style-6b6318 { font-size: var(--ds-fs-xs); color: var(--ds-text-muted); margin-top: 5px; }
-    .sq-style-99890f { font-size: var(--ds-fs-sm); margin-top: var(--ds-space-3); font-weight: normal; }
-    .sq-style-224b51 { display: none; }
-    .sq-style-194b57 { margin-top: var(--ds-space-5); }
-    .sq-style-e77389 { font-size: var(--ds-fs-md); margin-bottom: var(--ds-space-3); font-weight: 700; }
-    .sq-style-98648e { background: var(--ds-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm); box-shadow: var(--ds-shadow-xs); max-height: 250px; overflow-y: auto; }
-    .sq-style-9241f8 { margin-top: var(--ds-space-4); display: flex; gap: var(--ds-space-3); flex-wrap: wrap; align-items: center; justify-content: space-between; }
-    .sq-style-d3ab62 { font-size: var(--ds-fs-sm); font-weight: 700; }
-    .sq-style-ae2dfd { text-align: center; margin-top: var(--ds-space-3); display: flex; justify-content: center; gap: var(--ds-space-3); }
-    .sq-style-759002 { width: 0%; }
-    .sq-style-8ecca8 { margin-top: var(--ds-space-4); }
-    .sq-style-73d774 { display: flex; align-items: center; gap: var(--ds-space-3); cursor: pointer; }
-    .sq-style-50b87a { width: 18px; height: 18px; cursor: pointer; }
-    .sq-style-da0682 { font-size: var(--ds-fs-xs); color: var(--ds-text-muted); margin-top: 5px; margin-left: 28px; }
-    .sq-style-640cf9 { margin-top: var(--ds-space-4); display: flex; gap: var(--ds-space-3); }
-    .sq-style-4f859d { text-transform: uppercase; letter-spacing: 0.08em; text-align: center; font-size: var(--ds-fs-xl); }
-    .sq-style-8c5c1b { margin-bottom: var(--ds-space-3); display: flex; align-items: center; gap: var(--ds-space-3); font-size: var(--ds-fs-sm); font-weight: 700; }
-    .sq-style-f3d19e { cursor: pointer; display: flex; align-items: center; gap: 5px; }
-    .sq-style-c0a39a { padding: 4px 8px; font-size: var(--ds-fs-xs); }
-    .sq-style-f0061d { padding: 4px 8px; font-size: var(--ds-fs-xs); margin-left: auto; }
-    .sq-style-a5e3c2 { color: var(--ds-success); }
-    .sq-style-28e6a7 { color: var(--ds-text-muted); }
-    .sq-style-6872ed { margin-right: var(--ds-space-3); }
-    .sq-style-f0acb3 { font-size: var(--ds-fs-sm); padding: 6px 10px; }
-    .sq-style-bccdd9 { color: var(--ds-info); }
-    .sq-style-e33b5b { color: var(--ds-primary); }
-    .sq-style-f79f7b { color: var(--ds-danger); }
-    .sq-style-610bd2 { color: var(--ds-danger); }
-    .sq-style-51f0e3 { color: var(--ds-gold); }
-    .sq-style-369042 { color: var(--ds-primary); }
-    .sq-style-f89798 { color: var(--ds-success); }
-    .sq-style-e60fe6 { color: var(--ds-primary); }
-    .sq-style-166c56 { color: var(--ds-text-muted); }
-  </style>
+      /* Progress pulse animation */
+      .progress-fill { transition: width 0.4s cubic-bezier(0.4,0,0.2,1); }
+    </style>
 </head>
 
-<body
+<body class="min-h-screen bg-base-100 text-base-content font-sans bg-[radial-gradient(var(--fallback-b3,oklch(var(--b3)/0.5))_1px,transparent_1px)] [background-size:22px_22px]"
     data-is-anonymous="{% if is_anonymous %}true{% else %}false{% end %}"
     data-pending-room-id="{% if room_id %}{{ room_id }}{% end %}"
 >
-    <div class="container">
+    <div class="max-w-4xl mx-auto p-5">
         {% set nav_title = "Aird" %}
 {% set nav_search_path = "" %}
 {% set show_admin_link = False %}
 {% include '_app_nav_header.html' %}
 
-        <h2 class="p2p-page-title">P2P FILE TRANSFER</h2>
-        <div class="breadcrumb p2p-subnav" style="margin-bottom: 16px;">
-            <a href="/files/">HOME</a> / P2P TRANSFER
-        </div>
+        <h2 class="text-3xl font-extrabold tracking-tight text-gradient-brand mb-2">P2P FILE TRANSFER</h2>
+        <div class="breadcrumbs text-sm mb-6 font-semibold">
+  <ul>
+    <li><a href="/files/">Home</a></li>
+    <li>P2P Transfer</li>
+  </ul>
+</div>
 
         <!-- Session Warning Banner -->
-        <div class="sq-style-f93d70" id="session-warning">
+        <div class="alert alert-warning mb-6 shadow-sm font-semibold text-sm" id="session-warning" style="display: none;">
             <div>
                 <strong>IMPORTANT:</strong> Do not close this tab or browser window until transfers are complete. Closing the window ends your session and the share room—the recipient will no longer be able to join or receive files.
             </div>
         </div>
 
         <!-- Mode Selection -->
-        <div class="section" id="mode-section">
-            <h2>Select Transfer Mode</h2>
+        <div class="card bg-base-200/50 shadow-xl border border-base-300 mb-8 p-6 animate-fade-in-up" id="mode-section">
+            <h2 class="text-xl font-bold mb-5 pb-3 border-b border-base-300/50">Select Transfer Mode</h2>
             {% if is_anonymous %}
-            <div class="sq-style-98ea50">
+            <div class="alert alert-info border-dashed mb-5 font-semibold text-sm">
                 [!] You are browsing as a guest. You can share and receive files without logging in.
             </div>
             {% end %}
-            <div class="mode-selector">
-                <div class="mode-btn" id="send-mode-btn">
-                    <div class="mode-icon">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6" id="mode-selector">
+                <div class="card bg-base-100 border border-base-300 hover:border-primary hover:shadow-md transition-all cursor-pointer p-6 text-center mode-btn" id="send-mode-btn">
+                    <div class="text-primary flex justify-center mb-4 mode-icon">
                         <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M12 2L2 14H8V22H16V14H22L12 2Z" />
                         </svg>
                     </div>
-                    <h3>SEND FILE</h3>
-                    <p>Share a file with another user</p>
+                    <h3 class="text-lg font-bold mb-2">SEND FILE</h3>
+                    <p class="text-sm text-base-content/70">Share a file with another user</p>
                 </div>
-                <div class="mode-btn" id="receive-mode-btn">
-                    <div class="mode-icon">
+                <div class="card bg-base-100 border border-base-300 hover:border-primary hover:shadow-md transition-all cursor-pointer p-6 text-center mode-btn" id="receive-mode-btn">
+                    <div class="text-primary flex justify-center mb-4 mode-icon">
                         <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M12 22L22 10H16V2H8V10H2L12 22Z" />
                         </svg>
                     </div>
-                    <h3>RECEIVE FILE</h3>
-                    <p>Enter a share code to receive a file</p>
+                    <h3 class="text-lg font-bold mb-2">RECEIVE FILE</h3>
+                    <p class="text-sm text-base-content/70">Enter a share code to receive a file</p>
                 </div>
             </div>
 
-            <div class="sq-style-d0a913">
+            <div class="text-center mt-4 text-xs text-base-content/60 font-semibold">
                 <p>[TIP] Use <strong>Connection Settings</strong> further down (below Send / Receive) if you have trouble connecting.</p>
             </div>
         </div>
 
         <!-- Send Mode Section -->
-        <div class="section hidden" id="send-section">
-            <h2>📤 Send File</h2>
+        <div class="card bg-base-200/50 shadow-xl border border-base-300 mb-8 p-6 animate-fade-in-up hidden" id="send-section">
+            <h2 class="text-xl font-bold mb-5 pb-3 border-b border-base-300/50">📤 Send File</h2>
 
-            <div id="send-status" class="status-indicator waiting">
-                <div class="status-dot"></div>
+            <div id="send-status" class="status-indicator waiting alert alert-neutral shadow-sm mb-6 flex items-center gap-3 p-3 font-bold text-sm tracking-wide uppercase border-base-300">
+                <div class="status-dot w-2 h-2 rounded-full animate-pulse bg-current opacity-70"></div>
                 <span id="send-status-text">Select a file to share</span>
             </div>
 
             <!-- File Selection -->
             <div id="file-selection">
-                <div class="drop-zone" id="drop-zone">
-                    <p><strong>DROP FILE(S) HERE</strong> OR CLICK TO SELECT</p>
-                    <p class="sq-style-99890f">Files transfer directly to the
-                        recipient - never stored on server</p>
+                <div class="drop-zone border-2 border-dashed border-base-300 hover:border-primary hover:bg-base-200/50 rounded-box p-10 text-center cursor-pointer transition-all font-bold text-sm uppercase tracking-wide text-base-content/60" id="drop-zone">
+                    <div class="flex flex-col items-center gap-4">
+                        <svg class="w-12 h-12 opacity-40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        <div>
+                            <p class="font-extrabold text-base">TAP OR CLICK TO SELECT FILES</p>
+                            <p class="hidden sm:block text-xs mt-1 font-normal normal-case opacity-70">or drag &amp; drop files here</p>
+                        </div>
+                        <p class="text-xs font-normal normal-case text-base-content/50">Files transfer directly — never stored on server</p>
+                    </div>
                 </div>
-                <input class="sq-style-224b51" type="file" id="file-input" multiple>
+                <input class="hidden" type="file" id="file-input" multiple>
             </div>
 
             <!-- File Info (Selected Files List) -->
-            <div id="send-file-info" class="hidden sq-style-194b57">
-                <h3 class="sq-style-e77389">
+            <div id="send-file-info" class="hidden mt-6">
+                <h3 class="text-base font-bold mb-3 uppercase tracking-wide">
                     SELECTED FILES TO SHARE
                 </h3>
-                <div class="sq-style-98648e" id="send-files-list">
+                <div class="bg-base-100 border border-base-300 rounded-box shadow-sm max-h-[250px] overflow-y-auto" id="send-files-list">
                     <!-- Files will be added here dynamically -->
                 </div>
-                <div class="sq-style-9241f8">
-                    <div class="sq-style-d3ab62">
+                <div class="mt-4 flex gap-3 flex-wrap items-center justify-between">
+                    <div class="text-sm font-bold">
                         TOTAL: <span id="send-total-size">0 B</span>
                     </div>
                 </div>
@@ -616,173 +163,174 @@
 
             <!-- Share Code Display -->
             <div id="share-code-container" class="hidden">
-                <div class="share-code-display">
-                    <div class="share-code" id="share-code">------</div>
-                    <div class="share-code-hint" id="share-code-hint">Share this code with the recipient</div>
+                <div class="share-code-display bg-base-100 border border-base-300 rounded-box p-6 text-center my-6 relative overflow-hidden shadow-sm">
+                    <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-secondary to-accent"></div>
+                    <div class="share-code text-4xl font-mono font-bold tracking-widest break-all" id="share-code">------</div>
+                    <div class="share-code-hint text-xs text-base-content/60 mt-3" id="share-code-hint">Share this code with the recipient</div>
                 </div>
 
                 <!-- QR Code Display -->
-                <div class="qr-code-container" id="qr-code-container">
-                    <canvas id="qr-code-canvas"></canvas>
-                    <div class="qr-code-label">Scan to receive file</div>
+                <div class="qr-code-container flex flex-col items-center mt-6 p-6 bg-base-100 rounded-box border border-base-300 shadow-sm" id="qr-code-container">
+                    <canvas id="qr-code-canvas" class="border-4 border-base-100 shadow-sm rounded-lg"></canvas>
+                    <div class="qr-code-label mt-4 text-xs text-base-content/60">Scan to receive file</div>
                 </div>
 
-                <div class="sq-style-ae2dfd">
-                    <button class="btn btn-secondary" id="copy-code-btn">[ COPY CODE ]</button>
-                    <button class="btn btn-secondary" id="copy-link-btn">[ COPY LINK ]</button>
-                    <button class="btn btn-secondary" id="qr-toggle-btn">[ HIDE QR ]</button>
+                <div class="text-center mt-4 flex flex-wrap justify-center gap-2">
+                    <button class="btn btn-outline btn-sm" id="copy-code-btn">[ COPY CODE ]</button>
+                    <button class="btn btn-outline btn-sm" id="copy-link-btn">[ COPY LINK ]</button>
+                    <button class="btn btn-outline btn-sm" id="qr-toggle-btn">[ HIDE QR ]</button>
                 </div>
             </div>
 
             <!-- Transfer Progress -->
-            <div id="send-progress" class="progress-container hidden">
-                <div class="progress-bar">
-                    <div class="progress-fill sq-style-759002" id="send-progress-fill">0%</div>
+            <div id="send-progress" class="progress-container hidden my-6">
+                <div class="w-full h-5 bg-base-300 border border-base-300 rounded-full overflow-hidden">
+                    <div class="progress-fill h-full bg-gradient-to-r from-primary to-accent transition-all duration-300 flex items-center justify-center text-primary-content text-[10px] font-bold w-0" id="send-progress-fill">0%</div>
                 </div>
-                <div class="progress-stats">
+                <div class="flex justify-between mt-2 text-xs text-base-content/60 font-semibold">
                     <span id="send-progress-transferred">0 B / 0 B</span>
                     <span id="send-progress-speed">0 KB/s</span>
                 </div>
             </div>
 
             <!-- Anonymous Sharing Option -->
-            <div class="form-group sq-style-8ecca8">
-                <label class="sq-style-73d774">
-                    <input class="sq-style-50b87a" type="checkbox" id="allow-anonymous">
-                    <strong>ALLOW ANONYMOUS ACCESS (NO LOGIN REQUIRED)</strong>
+            <div class="form-control mt-6">
+                <label class="label cursor-pointer justify-start gap-3">
+                    <input type="checkbox" class="checkbox checkbox-primary" id="allow-anonymous">
+                    <span class="label-text font-bold">ALLOW ANONYMOUS ACCESS (NO LOGIN REQUIRED)</span>
                 </label>
-                <p class="sq-style-da0682">
+                <p class="text-xs text-base-content/60 mt-1 ml-9">
                     ANYONE WITH THE SHARE LINK CAN RECEIVE THIS FILE
                 </p>
             </div>
 
-            <div class="sq-style-640cf9">
-                <button class="btn" id="create-room-btn" disabled>CREATE SHARE LINK</button>
-                <button class="btn btn-secondary" id="cancel-send-btn">CANCEL</button>
+            <div class="mt-8 flex flex-col sm:flex-row gap-3">
+                <button class="btn btn-primary shadow-md" id="create-room-btn" disabled>CREATE SHARE LINK</button>
+                <button class="btn btn-outline" id="cancel-send-btn">CANCEL</button>
             </div>
         </div>
 
         <!-- Receive Mode Section -->
-        <div class="section hidden" id="receive-section">
-            <h2>RECEIVE FILE</h2>
+        <div class="card bg-base-200/50 shadow-xl border border-base-300 mb-8 p-6 animate-fade-in-up hidden" id="receive-section">
+            <h2 class="text-xl font-bold mb-5 pb-3 border-b border-base-300/50">RECEIVE FILE</h2>
 
-            <div id="receive-status" class="status-indicator waiting">
-                <div class="status-dot"></div>
+            <div id="receive-status" class="status-indicator waiting alert alert-neutral shadow-sm mb-6 flex items-center gap-3 p-3 font-bold text-sm tracking-wide uppercase border-base-300">
+                <div class="status-dot w-2 h-2 rounded-full animate-pulse bg-current opacity-70"></div>
                 <span id="receive-status-text">ENTER SHARE CODE TO CONNECT</span>
             </div>
 
-            <div class="form-group">
-                <label for="room-code-input">Share Code</label>
-                <input class="sq-style-4f859d" type="text" id="room-code-input" placeholder="Enter the share code"
+            <div class="form-control mb-5">
+                <label class="label font-bold text-sm" for="room-code-input">Share Code</label>
+                <input class="input input-bordered input-lg uppercase tracking-widest text-center text-xl font-mono w-full" type="text" id="room-code-input" placeholder="Enter the share code"
                     maxlength="20">
             </div>
 
             <!-- Incoming File Info -->
-            <div id="receive-file-info" class="file-info hidden">
-                <div class="file-info-row">
-                    <span class="file-info-label">File Name</span>
-                    <span class="file-info-value" id="receive-file-name">-</span>
+            <div id="receive-file-info" class="bg-base-100 border border-base-300 rounded-box p-5 my-5 shadow-sm hidden">
+                <div class="flex justify-between py-2 border-b border-base-200/50 last:border-0">
+                    <span class="text-xs font-bold uppercase text-base-content/60 tracking-wider">File Name</span>
+                    <span class="font-bold text-sm" id="receive-file-name">-</span>
                 </div>
-                <div class="file-info-row">
-                    <span class="file-info-label">Size</span>
-                    <span class="file-info-value" id="receive-file-size">-</span>
+                <div class="flex justify-between py-2 border-b border-base-200/50 last:border-0">
+                    <span class="text-xs font-bold uppercase text-base-content/60 tracking-wider">Size</span>
+                    <span class="font-bold text-sm" id="receive-file-size">-</span>
                 </div>
-                <div class="file-info-row">
-                    <span class="file-info-label">From</span>
-                    <span class="file-info-value" id="receive-from-user">-</span>
+                <div class="flex justify-between py-2 border-b border-base-200/50 last:border-0">
+                    <span class="text-xs font-bold uppercase text-base-content/60 tracking-wider">From</span>
+                    <span class="font-bold text-sm" id="receive-from-user">-</span>
                 </div>
             </div>
 
             <!-- Transfer Progress -->
-            <div id="receive-progress" class="progress-container hidden">
-                <div class="progress-bar">
-                    <div class="progress-fill sq-style-759002" id="receive-progress-fill">0%</div>
+            <div id="receive-progress" class="progress-container hidden my-6">
+                <div class="w-full h-5 bg-base-300 border border-base-300 rounded-full overflow-hidden">
+                    <div class="progress-fill h-full bg-gradient-to-r from-primary to-accent transition-all duration-300 flex items-center justify-center text-primary-content text-[10px] font-bold w-0" id="receive-progress-fill">0%</div>
                 </div>
-                <div class="progress-stats">
+                <div class="flex justify-between mt-2 text-xs text-base-content/60 font-semibold">
                     <span id="receive-progress-transferred">0 B / 0 B</span>
                     <span id="receive-progress-speed">0 KB/s</span>
                 </div>
             </div>
 
             <!-- Available Files Section -->
-            <div id="available-files-section" class="hidden sq-style-194b57">
-                <h3 class="sq-style-e77389">
+            <div id="available-files-section" class="hidden mt-6">
+                <h3 class="text-base font-bold mb-3 uppercase tracking-wide">
                     AVAILABLE FILES
                 </h3>
-                <div class="sq-style-8c5c1b">
-                    <label class="sq-style-f3d19e">
+                <div class="mb-4 flex flex-wrap items-center gap-3 text-sm font-bold">
+                    <label class="cursor-pointer flex items-center gap-2">
                         <input type="checkbox" id="select-all-available" checked>
                         SELECT ALL
                     </label>
-                    <button class="btn btn-secondary sq-style-c0a39a" id="download-selected-available-btn">
+                    <button class="btn btn-outline btn-xs" id="download-selected-available-btn">
                         DOWNLOAD SELECTED
                     </button>
                 </div>
-                <div class="sq-style-98648e" id="available-files-list">
+                <div class="bg-base-100 border border-base-300 rounded-box shadow-sm max-h-[250px] overflow-y-auto" id="available-files-list">
                     <!-- Files will be added here dynamically -->
                 </div>
             </div>
 
             <!-- Received Files Section -->
-            <div id="received-files-section" class="hidden sq-style-194b57">
-                <h3 class="sq-style-e77389">
+            <div id="received-files-section" class="hidden mt-6">
+                <h3 class="text-base font-bold mb-3 uppercase tracking-wide">
                     FILES READY TO DOWNLOAD
                 </h3>
-                <div class="sq-style-8c5c1b">
-                    <label class="sq-style-f3d19e">
+                <div class="mb-4 flex flex-wrap items-center gap-3 text-sm font-bold">
+                    <label class="cursor-pointer flex items-center gap-2">
                         <input type="checkbox" id="select-all-received" checked>
                         SELECT ALL
                     </label>
-                    <button class="btn btn-secondary sq-style-c0a39a" id="download-all-btn">
+                    <button class="btn btn-outline btn-xs" id="download-all-btn">
                         DOWNLOAD SELECTED
                     </button>
-                    <button class="btn btn-secondary sq-style-f0061d" id="clear-files-btn">
+                    <button class="btn btn-error btn-outline btn-xs ml-auto" id="clear-files-btn">
                         CLEAR LIST
                     </button>
                 </div>
-                <div class="sq-style-98648e" id="received-files-list">
+                <div class="bg-base-100 border border-base-300 rounded-box shadow-sm max-h-[250px] overflow-y-auto" id="received-files-list">
                     <!-- Files will be added here dynamically -->
                 </div>
             </div>
 
-            <div class="sq-style-640cf9">
-                <button class="btn" id="join-room-btn">CONNECT</button>
-                <button class="btn btn-secondary" id="cancel-receive-btn">CANCEL</button>
+            <div class="mt-8 flex flex-col sm:flex-row gap-3">
+                <button class="btn btn-primary shadow-md" id="join-room-btn">CONNECT</button>
+                <button class="btn btn-outline" id="cancel-receive-btn">CANCEL</button>
             </div>
         </div>
 
         <!-- Connection Settings (always visible - below Send / Receive; can change even after room is created) -->
-        <div class="section" id="connection-settings-section">
+        <div class="card bg-base-200/50 shadow-xl border border-base-300 mb-8 p-6 animate-fade-in-up" id="connection-settings-section">
             <details>
-                <summary class="sq-style-1d7b9a">[+] CONNECTION SETTINGS (ADVANCED)</summary>
-                <div class="sq-style-0d9f0a">
-                    <div class="form-group">
+                <summary class="cursor-pointer text-base font-bold select-none p-2 hover:bg-base-100 rounded-lg transition-colors">[+] CONNECTION SETTINGS (ADVANCED)</summary>
+                <div class="mt-4 p-5 bg-base-100 border border-base-300 rounded-box">
+                    <div class="form-control mb-5">
                         <label for="stun-server-select">STUN Server (NAT Traversal)</label>
-                        <select class="sq-style-591b06" id="stun-server-select">
+                        <select class="select select-bordered w-full font-mono mt-2" id="stun-server-select">
                             <option value="google" selected>Google (Default - Reliable)</option>
                             <option value="mozilla">Mozilla Services</option>
                             <option value="openstun">OpenSTUN (Ekiga)</option>
                             <option value="blackberry">Blackberry VOIP</option>
                             <option value="framasoft">Framasoft</option>
                         </select>
-                        <p class="sq-style-6b6318">
+                        <p class="text-xs text-base-content/60 mt-2">
                             If connection fails, try selecting a different STUN server. These servers help establish
                             P2P connections across different networks. You can change this anytime—even after creating a room.
                         </p>
-                        <button type="button" class="btn btn-secondary" id="apply-reconnect-btn" style="margin-top:10px;">
+                        <button type="button" class="btn btn-outline btn-sm mt-3" id="apply-reconnect-btn">
                             Apply &amp; Reconnect
                         </button>
-                        <span class="sq-style-6b6318" style="display:block;margin-top:6px;">Reconnects with the new STUN server without leaving the room.</span>
+                        <span class="text-xs text-base-content/60 mt-2 block">Reconnects with the new STUN server without leaving the room.</span>
                     </div>
                 </div>
             </details>
         </div>
 
         <!-- Connection Log -->
-        <div class="section">
-            <h2>CONNECTION LOG</h2>
-            <div class="log-container" id="log-container">
-                <div class="log-entry info">Ready to start P2P transfer...</div>
+        <div class="card bg-base-200/50 shadow-xl border border-base-300 mb-8 p-6 animate-fade-in-up">
+            <h2 class="text-xl font-bold mb-5 pb-3 border-b border-base-300/50">CONNECTION LOG</h2>
+            <div class="mockup-code bg-base-300 text-base-content w-full max-h-[250px] overflow-y-auto mt-4 text-xs font-mono rounded-box shadow-inner p-4" id="log-container">
+                <div class="log-entry info text-base-content/60 py-1 border-b border-base-200/50">Ready to start P2P transfer...</div>
             </div>
         </div>
     </div>
@@ -1564,11 +1112,13 @@
             if (mode === 'send') {
                 document.getElementById('send-section').classList.remove('hidden');
                 document.getElementById('receive-section').classList.add('hidden');
-                document.getElementById('send-mode-btn').classList.add('active');
+                document.getElementById('send-mode-btn').classList.add('selected');
+                document.getElementById('receive-mode-btn').classList.remove('selected');
             } else {
                 document.getElementById('receive-section').classList.remove('hidden');
                 document.getElementById('send-section').classList.add('hidden');
-                document.getElementById('receive-mode-btn').classList.add('active');
+                document.getElementById('receive-mode-btn').classList.add('selected');
+                document.getElementById('send-mode-btn').classList.remove('selected');
             }
         }
 
@@ -1590,16 +1140,16 @@
 
             dropZone.addEventListener('dragover', (e) => {
                 e.preventDefault();
-                dropZone.classList.add('dragover');
+                dropZone.classList.add('drag-over');
             });
 
             dropZone.addEventListener('dragleave', () => {
-                dropZone.classList.remove('dragover');
+                dropZone.classList.remove('drag-over');
             });
 
             dropZone.addEventListener('drop', (e) => {
                 e.preventDefault();
-                dropZone.classList.remove('dragover');
+                dropZone.classList.remove('drag-over');
                 if (e.dataTransfer.files.length > 0) {
                     selectedFiles = Array.from(e.dataTransfer.files).map(f => {
                         f.fileId = globalThis.crypto.randomUUID().replaceAll('-', '').substring(0, 9);
@@ -1607,6 +1157,11 @@
                     });
                     showSelectedFile();
                 }
+            });
+
+            // Click/tap to open file picker (works on both desktop and mobile)
+            dropZone.addEventListener('click', () => {
+                document.getElementById('file-input').click();
             });
         }
 
@@ -1623,17 +1178,16 @@
             const totalSize = selectedFiles.reduce((acc, f) => acc + f.size, 0);
             
             container.innerHTML = selectedFiles.map((file) => `
-                <div class="received-file-item">
-                    <div class="received-file-icon">${getFileIcon(file.type)}</div>
-                    <div class="received-file-details">
-                        <div class="received-file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
-                        <div class="received-file-meta">
-                            ${formatBytes(file.size)}
-                        </div>
+                <div class="flex flex-col sm:flex-row sm:items-center gap-2 p-3 border-b border-base-200 hover:bg-base-200/40 transition-colors">
+                    <div class="text-primary flex-shrink-0 w-8 h-8 flex items-center justify-center">${getFileIcon(file.type)}</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-bold text-sm truncate" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
+                        <div class="text-xs text-base-content/60 mt-0.5">${formatBytes(file.size)}</div>
                     </div>
-                    <div class="received-file-actions">
-                        <button class="received-file-btn sender-remove-btn" data-action="remove-send" data-send-id="${file.fileId}" title="Remove">
-                            <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    <div class="flex-shrink-0">
+                        <button class="btn btn-ghost btn-xs text-error sender-remove-btn" data-action="remove-send" data-send-id="${file.fileId}" title="Remove">
+                            <svg class="w-3 h-3 file-icon-svg" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            Remove
                         </button>
                     </div>
                 </div>
@@ -2086,17 +1640,15 @@
                 else if(isRequested) btnText = 'REQUESTED...';
 
                 return `
-                <div class="received-file-item">
-                    <input type="checkbox" class="available-file-checkbox sq-style-6872ed" ${isBusy ? 'disabled' : 'checked'} data-file-id="${file.id}">
-                    <div class="received-file-icon">${getFileIcon(file.type)}</div>
-                    <div class="received-file-details">
-                        <div class="received-file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
-                        <div class="received-file-meta">
-                            ${formatBytes(file.size)}
-                        </div>
+                <div class="flex flex-col sm:flex-row sm:items-center gap-2 p-3 border-b border-base-200 hover:bg-base-200/40 transition-colors">
+                    <input type="checkbox" class="available-file-checkbox checkbox checkbox-primary checkbox-sm flex-shrink-0" ${isBusy ? 'disabled' : 'checked'} data-file-id="${file.id}">
+                    <div class="text-primary flex-shrink-0 w-8 h-8 flex items-center justify-center">${getFileIcon(file.type)}</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-bold text-sm truncate" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
+                        <div class="text-xs text-base-content/60 mt-0.5">${formatBytes(file.size)}</div>
                     </div>
-                    <div class="received-file-actions">
-                        <button class="received-file-btn available-file-btn ${isBusy ? '' : 'btn-secondary'} sq-style-f0acb3" data-file-id="${file.id}" ${isBusy ? 'disabled' : ''}>
+                    <div class="flex-shrink-0">
+                        <button class="btn btn-sm available-file-btn ${isBusy ? 'btn-disabled' : 'btn-primary'} w-full sm:w-auto" data-file-id="${file.id}" ${isBusy ? 'disabled' : ''}>
                             ${btnText}
                         </button>
                     </div>
@@ -2118,22 +1670,22 @@
             section.classList.remove('hidden');
 
             container.innerHTML = receivedFiles.map(file => `
-                <div class="received-file-item" data-file-id="${file.id}">
-                    <input type="checkbox" class="received-file-checkbox" checked data-file-id="${file.id}">
-                    <div class="received-file-icon">${getFileIcon(file.mime)}</div>
-                    <div class="received-file-details">
-                        <div class="received-file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
-                        <div class="received-file-meta">
-                            ${formatBytes(file.size)} • ${file.receivedAt.toLocaleTimeString()}
+                <div class="flex flex-col sm:flex-row sm:items-center gap-2 p-3 border-b border-base-200 hover:bg-base-200/40 transition-colors" data-file-id="${file.id}">
+                    <input type="checkbox" class="received-file-checkbox checkbox checkbox-primary checkbox-sm flex-shrink-0" checked data-file-id="${file.id}">
+                    <div class="text-primary flex-shrink-0 w-8 h-8 flex items-center justify-center">${getFileIcon(file.mime)}</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-bold text-sm truncate" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
+                        <div class="text-xs text-base-content/60 mt-0.5">
+                            ${formatBytes(file.size)} &bull; ${file.receivedAt.toLocaleTimeString()}
                         </div>
                     </div>
-                    <div class="received-file-actions">
-                        <button class="received-file-btn download" data-action="download" data-file-id="${file.id}" title="Download">
-                            <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <div class="flex gap-2 flex-shrink-0">
+                        <button class="btn btn-primary btn-xs received-file-btn" data-action="download" data-file-id="${file.id}" title="Download">
+                            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                             Download
                         </button>
-                        <button class="received-file-btn remove" data-action="remove" data-file-id="${file.id}" title="Remove">
-                            <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        <button class="btn btn-ghost btn-xs text-error received-file-btn" data-action="remove" data-file-id="${file.id}" title="Remove">
+                            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                         </button>
                     </div>
                 </div>
@@ -2259,15 +1811,24 @@
             document.getElementById('receive-progress-speed').textContent = `${formatBytes(speed)}/s`;
         }
 
+        const STATUS_CLASSES = {
+            waiting:     'alert alert-neutral',
+            connected:   'alert alert-info',
+            transferring:'alert alert-primary',
+            success:     'alert alert-success',
+            error:       'alert alert-error',
+        };
+        const STATUS_BASE = 'status-indicator shadow-sm mb-6 flex items-center gap-3 p-3 font-bold text-sm tracking-wide uppercase border';
+
         function updateSendStatus(status, text) {
             const el = document.getElementById('send-status');
-            el.className = `status-indicator ${status}`;
+            el.className = `${STATUS_BASE} ${STATUS_CLASSES[status] || STATUS_CLASSES.waiting} border-base-300`;
             document.getElementById('send-status-text').textContent = text;
         }
 
         function updateReceiveStatus(status, text) {
             const el = document.getElementById('receive-status');
-            el.className = `status-indicator ${status}`;
+            el.className = `${STATUS_BASE} ${STATUS_CLASSES[status] || STATUS_CLASSES.waiting} border-base-300`;
             document.getElementById('receive-status-text').textContent = text;
         }
 

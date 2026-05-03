@@ -1,131 +1,63 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/static/css/app.css" />
-  <title>Shared files  Aird</title>
+  <title>Shared files · Aird</title>
   <style>
-    body { background: var(--ds-bg); }
-
-    .sl-head {
-      display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-3);
-      margin-bottom: var(--ds-space-4);
-      padding-bottom: var(--ds-space-3);
-      border-bottom: 1px solid var(--ds-border);
-    }
-    .sl-head h1 { margin: 0; font-size: var(--ds-fs-xl); }
-    .sl-access {
-      display: inline-flex; align-items: center; gap: 6px;
-      font-size: var(--ds-fs-sm); color: var(--ds-text-muted);
-    }
-
     .file-browser {
-      background: var(--ds-surface);
-      border: 1px solid var(--ds-border);
-      border-radius: var(--ds-radius-lg);
+      background: oklch(var(--b1));
+      border: 1px solid oklch(var(--b3));
+      border-radius: 0.75rem;
       overflow: hidden;
-      box-shadow: var(--ds-shadow-xs);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.06);
     }
-
     .file-header-row {
-      display: grid;
-      grid-template-columns: 1fr 110px;
-      align-items: center;
-      background: var(--ds-bg-muted);
-      color: var(--ds-text-muted);
-      padding: 10px 14px;
-      font-size: var(--ds-fs-xs);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      font-weight: 700;
-      border-bottom: 1px solid var(--ds-border);
+      display: grid; grid-template-columns: 1fr 110px; align-items: center;
+      background: oklch(var(--b2)); padding: 10px 14px;
+      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em;
+      font-weight: 700; border-bottom: 1px solid oklch(var(--b3));
+      color: oklch(var(--bc) / 0.5);
     }
     .file-header-row .actions-col-h { text-align: right; }
-
-    .tree-folder { border-bottom: 1px solid var(--ds-border-muted); }
+    .tree-folder { border-bottom: 1px solid oklch(var(--b2)); }
     .tree-folder:last-child { border-bottom: none; }
-
     .folder-summary {
-      cursor: pointer;
-      list-style: none;
-      display: flex;
-      align-items: center;
-      padding: 10px 14px;
-      font-weight: 600;
-      color: var(--ds-text);
-      user-select: none;
-      transition: background var(--ds-duration-fast) var(--ds-ease);
+      cursor: pointer; list-style: none; display: flex; align-items: center;
+      padding: 10px 14px; font-weight: 600; user-select: none;
+      transition: background 0.12s ease;
     }
-    .folder-summary:hover { background: var(--ds-bg-muted); }
+    .folder-summary:hover { background: oklch(var(--b2)); }
     .folder-summary::-webkit-details-marker { display: none; }
     .folder-summary::before {
-      content: '▶';
-      display: inline-block;
-      width: 1em;
-      margin-right: 8px;
-      font-size: 10px;
-      color: var(--ds-text-subtle);
-      transition: transform var(--ds-duration-fast) var(--ds-ease);
+      content: '▶'; display: inline-block; width: 1em; margin-right: 8px;
+      font-size: 10px; opacity: 0.4; transition: transform 0.12s ease;
     }
     details[open] > .folder-summary::before { transform: rotate(90deg); }
-
-    .tree-children {
-      padding-left: 0;
-      border-left: 2px solid var(--ds-border-muted);
-      margin-left: 14px;
-    }
-
+    .tree-children { padding-left: 0; border-left: 2px solid oklch(var(--b2)); margin-left: 14px; }
     .file-row {
-      display: grid;
-      grid-template-columns: 1fr 110px;
-      align-items: center;
-      gap: 8px;
-      padding: 9px 14px;
-      border-bottom: 1px solid var(--ds-border-muted);
-      background: var(--ds-surface);
-      transition: background var(--ds-duration-fast) var(--ds-ease);
+      display: grid; grid-template-columns: 1fr 110px; align-items: center;
+      gap: 8px; padding: 9px 14px; border-bottom: 1px solid oklch(var(--b2));
+      transition: background 0.12s ease;
     }
-    .file-row:hover { background: var(--ds-bg-muted); }
-    .file-row .name-part {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      color: var(--ds-text);
-    }
+    .file-row:hover { background: oklch(var(--b2)); }
+    .file-row .name-part { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .file-row .actions-part { text-align: right; flex-shrink: 0; }
     .file-icon { margin-right: 8px; }
-
-    .action-link {
-      color: var(--ds-primary);
-      text-decoration: none;
-      padding: 4px 10px;
-      border: 1px solid var(--ds-primary);
-      border-radius: var(--ds-radius-sm);
-      font-size: var(--ds-fs-sm);
-      background: var(--ds-primary-soft);
-      transition: background var(--ds-duration-fast) var(--ds-ease);
-    }
-    .action-link:hover { background: var(--ds-primary); color: var(--ds-text-on-accent); text-decoration: none; }
-
-    @media (max-width: 640px) {
-      .file-header-row, .file-row { grid-template-columns: 1fr 80px; font-size: var(--ds-fs-sm); }
-    }
+    @media (max-width: 640px) { .file-header-row, .file-row { grid-template-columns: 1fr 80px; font-size: 0.8rem; } }
   </style>
 </head>
-
-<body>
-  <div class="container">
-    <header class="sl-head">
-      <h1>🔗 Shared files</h1>
-      <span class="sl-access">
+<body class="bg-base-200 min-h-screen">
+  <div class="max-w-4xl mx-auto p-4">
+    <header class="flex items-center justify-between gap-3 mb-4 pb-3 border-b border-base-300">
+      <h1 class="text-xl font-bold">🔗 Shared files</h1>
+      <span class="flex items-center gap-2 text-sm text-base-content/60">
         Access:
         {% if can_modify %}
-        <span class="ds-badge ds-badge--primary">Modify</span>
+        <span class="badge badge-primary badge-sm">Modify</span>
         {% else %}
-        <span class="ds-badge">Read-only</span>
+        <span class="badge badge-ghost badge-sm">Read-only</span>
         {% end %}
       </span>
     </header>
@@ -137,7 +69,7 @@
       </div>
       <div id="fileTreeBody" class="file-tree-body">
         <div class="file-row" style="border: none;">
-          <span class="name-part ds-muted">Loading</span>
+          <span class="name-part text-base-content/50">Loading…</span>
           <span class="actions-part"></span>
         </div>
       </div>
@@ -183,7 +115,7 @@
       const token = getAuthToken();
       if (!token) { globalThis.location.href = `/shared/${shareId}/verify`; return; }
       const fileUrl = `/shared/${shareId}/file/${encodeURIComponent(filePath)}`;
-      window.open(fileUrl, '_blank');
+      window.location.href = fileUrl;
     }
 
     function pathParts(p) { return String(p).replaceAll('\\', '/').split('/').filter(Boolean); }
@@ -244,7 +176,7 @@
         action.className = 'actions-part';
         const a = document.createElement('a');
         a.href = `/shared/${shareId}/file/${encodeURIComponent(node.fullPath)}?download=1`;
-        a.className = 'action-link';
+        a.className = 'btn btn-primary btn-xs';
         a.title = 'Download';
         a.textContent = '⬇ Download';
         action.appendChild(a);
@@ -287,7 +219,7 @@
         empty.style.gridTemplateColumns = '1fr';
         empty.style.textAlign = 'center';
         empty.style.padding = '32px';
-        empty.style.color = 'var(--ds-text-muted)';
+        empty.style.color = 'oklch(var(--bc) / 0.5)';
         empty.textContent = 'No files available';
         container.appendChild(empty);
         return;
@@ -314,7 +246,7 @@
           const err = document.createElement('div');
           err.className = 'file-row';
           err.style.border = 'none';
-          err.style.color = 'var(--ds-danger)';
+          err.style.color = 'oklch(var(--er))';
           err.style.padding = '20px';
           err.style.textAlign = 'center';
           err.style.gridTemplateColumns = '1fr';
@@ -326,5 +258,4 @@
   </script>
   <script src="/static/js/theme.js"></script>
 </body>
-
 </html>

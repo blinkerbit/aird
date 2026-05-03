@@ -1,64 +1,78 @@
-{# Main app header: Aird + profile + Browse + feature nav. Pass: nav_title (default Aird), nav_search_path (for Super Search link), show_admin_link (optional). #}
-<header class="header app-main-header" role="banner">
-  <div class="header-left">
-    <h1>{{ nav_title or "Aird" }}</h1>
+{# Main app header: Aird + profile + Browse + feature nav + theme selector.
+   Pass: nav_title (default Aird), nav_search_path (for Super Search link), show_admin_link (optional). #}
+<div class="navbar bg-base-200 shadow-sm rounded-box mb-4 flex-wrap gap-2">
+  <div class="flex-1">
+    <a href="/files/" class="btn btn-ghost text-xl font-extrabold tracking-wide text-gradient-brand">{{ nav_title or "Aird" }}</a>
   </div>
-  <nav class="app-header-actions" aria-label="Primary">
+  <div class="flex items-center gap-1 flex-wrap">
     {% if current_user %}
-    <a href="/profile" class="app-user-chip" title="Profile settings">
-      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
-      <span>{{ handler.get_display_username() }}</span>
+    <a href="/profile" class="btn btn-ghost btn-sm gap-1" title="Profile settings">
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+      <span class="hidden sm:inline">{{ handler.get_display_username() }}</span>
     </a>
     {% else %}
-    <span class="app-user-chip" aria-hidden="true">
-      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
-      <span>Guest</span>
+    <span class="btn btn-ghost btn-sm gap-1 no-animation cursor-default">
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+      <span class="hidden sm:inline">Guest</span>
     </span>
     {% end %}
-    <button type="button" class="theme-toggle-btn hdr-theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">
-      <svg class="hdr-ico hdr-ico-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-      <svg class="hdr-ico hdr-ico-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
-    </button>
-    <a href="/files/" class="hdr-action-btn hdr-action-btn--browse" title="Browse files">
-      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
-      <span>Browse</span>
+
+    <div class="dropdown dropdown-end">
+      <div tabindex="0" role="button" class="btn btn-ghost btn-sm" title="Change theme" aria-label="Change theme">
+        <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        <span class="hidden sm:inline text-xs">Theme</span>
+      </div>
+      <ul tabindex="0" class="dropdown-content menu bg-base-200 rounded-box z-50 w-44 p-2 shadow-lg border border-base-300">
+        <li><button type="button" data-set-theme="light" class="text-sm">☀️ Light</button></li>
+        <li><button type="button" data-set-theme="dark" class="text-sm">🌙 Dark</button></li>
+        <li><button type="button" data-set-theme="nord" class="text-sm">❄️ Nord</button></li>
+        <li><button type="button" data-set-theme="dracula" class="text-sm">🧛 Dracula</button></li>
+        <li><button type="button" data-set-theme="cyberpunk" class="text-sm">🤖 Cyberpunk</button></li>
+        <li><button type="button" data-set-theme="retro" class="text-sm">📺 Retro</button></li>
+        <li><button type="button" data-set-theme="autumn" class="text-sm">🍂 Autumn</button></li>
+      </ul>
+    </div>
+
+    <a href="/files/" class="btn btn-ghost btn-sm gap-1" title="Browse files">
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+      <span class="hidden sm:inline">Browse</span>
     </a>
     {% if is_feature_enabled('super_search', True) %}
-    <a href="/search?path={{ escape(nav_search_path or '') }}" class="hdr-action-btn hdr-action-btn--search" title="Super Search">
-      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <span>Search</span>
+    <a href="/search?path={{ escape(nav_search_path or '') }}" class="btn btn-ghost btn-sm gap-1" title="Super Search">
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span class="hidden sm:inline">Search</span>
     </a>
     {% end %}
     {% if is_feature_enabled('file_share', True) %}
-    <a href="/share" class="hdr-action-btn hdr-action-btn--share" title="Share files">
-      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-      <span>Share</span>
+    <a href="/share" class="btn btn-ghost btn-sm gap-1" title="Share files">
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+      <span class="hidden sm:inline">Share</span>
     </a>
     {% end %}
     {% if is_feature_enabled('p2p_transfer', True) %}
-    <a href="/p2p" class="hdr-action-btn hdr-action-btn--p2p" title="Peer-to-peer transfer">
-      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-      <span>P2P</span>
+    <a href="/p2p" class="btn btn-ghost btn-sm gap-1" title="Peer-to-peer transfer">
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+      <span class="hidden sm:inline">P2P</span>
     </a>
     {% end %}
     {% if show_admin_link %}
     {% if user and user["role"] == "admin" %}
-    <a href="/admin" class="hdr-action-btn hdr-action-btn--admin" title="Administration">
-      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      <span>Admin</span>
+    <a href="/admin" class="btn btn-primary btn-sm gap-1" title="Administration">
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span class="hidden sm:inline">Admin</span>
     </a>
     {% end %}
     {% end %}
     {% if current_user %}
-    <a href="/logout" class="hdr-action-btn hdr-action-btn--logout" title="Log out">
-      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-      <span>Logout</span>
+    <a href="/logout" class="btn btn-ghost btn-sm gap-1 text-error" title="Log out">
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      <span class="hidden sm:inline">Logout</span>
     </a>
     {% else %}
-    <a href="/login" class="hdr-action-btn hdr-action-btn--login" title="Log in">
-      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-      <span>Login</span>
+    <a href="/login" class="btn btn-neutral btn-sm gap-1" title="Log in">
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+      <span class="hidden sm:inline">Login</span>
     </a>
     {% end %}
-  </nav>
-</header>
+  </div>
+</div>

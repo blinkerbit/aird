@@ -1,183 +1,98 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/static/css/app.css" />
   <title>Aird - Login</title>
-  <style>
-    body {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: var(--ds-space-6) var(--ds-space-4);
-      background-color: var(--ds-bg);
-      background-image:
-        radial-gradient(var(--ds-border-muted) 1px, transparent 1px);
-      background-size: 22px 22px;
-    }
-
-    .login-shell {
-      width: 100%;
-      max-width: 440px;
-    }
-
-    .login-card {
-      position: relative;
-      padding: var(--ds-space-8);
-      animation: loginIn 0.35s var(--ds-ease) both;
-      overflow: hidden;
-    }
-    /* Gradient accent bar at the top edge of the login card. */
-    .login-card::before {
-      content: "";
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 3px;
-      background: var(--ds-brand-gradient-line);
-      pointer-events: none;
-    }
-
-    @keyframes loginIn {
-      from { opacity: 0; transform: translateY(12px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-
-    .login-brand {
-      text-align: center;
-      margin-bottom: var(--ds-space-6);
-    }
-
-    .login-brand h1 {
-      margin: 0 0 var(--ds-space-1);
-      font-size: var(--ds-fs-3xl);
-      letter-spacing: 0.04em;
-      font-weight: 800;
-      text-transform: uppercase;
-      /* Gradient-filled wordmark for the login hero. Solid colour is a
-         fallback for engines without -webkit-text-fill-color. */
-      color: var(--ds-primary);
-      background: var(--ds-brand-gradient);
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    .login-brand .subtitle {
-      color: var(--ds-text-muted);
-      font-size: var(--ds-fs-sm);
-      letter-spacing: 0.04em;
-    }
-
-    .theme-switch {
-      position: absolute;
-      top: var(--ds-space-4);
-      right: var(--ds-space-4);
-    }
-
-    .login-mode-hint {
-      color: var(--ds-text-muted);
-      font-size: var(--ds-fs-sm);
-      text-align: center;
-      margin-bottom: var(--ds-space-4);
-    }
-
-    .login-sep {
-      display: flex;
-      align-items: center;
-      gap: var(--ds-space-3);
-      color: var(--ds-text-subtle);
-      font-size: var(--ds-fs-xs);
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      margin: var(--ds-space-5) 0;
-    }
-    .login-sep::before, .login-sep::after {
-      content: '';
-      flex: 1;
-      border-bottom: 1px solid var(--ds-border-muted);
-    }
-
-    .login-footer {
-      margin-top: var(--ds-space-6);
-      text-align: center;
-      color: var(--ds-text-subtle);
-      font-size: var(--ds-fs-xs);
-    }
-  </style>
 </head>
 
-<body>
-  <button type="button" class="ds-btn ds-btn--ghost ds-btn--icon theme-switch theme-toggle-btn"
-    aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
-
-  <div class="login-shell">
-    <div class="ds-card login-card">
-      <div class="login-brand">
-        <h1>Aird</h1>
-        <div class="subtitle">Secure file access</div>
+<body class="min-h-screen flex items-center justify-center p-6 bg-base-200">
+  <div class="absolute top-4 right-4">
+    <div class="dropdown dropdown-end">
+      <div tabindex="0" role="button" class="btn btn-ghost btn-sm" aria-label="Change theme">
+        🎨 Theme
       </div>
+      <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-50 w-44 p-2 shadow-lg border border-base-300">
+        <li><button type="button" data-set-theme="light">☀️ Light</button></li>
+        <li><button type="button" data-set-theme="dark">🌙 Dark</button></li>
+        <li><button type="button" data-set-theme="nord">❄️ Nord</button></li>
+        <li><button type="button" data-set-theme="dracula">🧛 Dracula</button></li>
+        <li><button type="button" data-set-theme="cyberpunk">🤖 Cyberpunk</button></li>
+        <li><button type="button" data-set-theme="retro">📺 Retro</button></li>
+        <li><button type="button" data-set-theme="autumn">🍂 Autumn</button></li>
+      </ul>
+    </div>
+  </div>
 
-      {% if error %}
-      <div class="ds-alert ds-alert--danger" role="alert">
-        <span class="ds-alert__icon" aria-hidden="true">⚠</span>
-        <span>{{ escape(error) }}</span>
-      </div>
-      {% end %}
+  <div class="w-full max-w-md animate-fade-in-up">
+    <div class="card bg-base-100 shadow-2xl border border-base-300">
+      <div class="card-body">
+        <div class="text-center mb-4">
+          <h1 class="text-4xl font-extrabold tracking-widest uppercase text-gradient-brand">Aird</h1>
+          <p class="text-sm text-base-content/60 mt-1">Secure file access</p>
+        </div>
 
-      <form method="POST" class="ds-stack">
-        {% raw xsrf_form_html() %}
-        {% if next_url %}
-        <input type="hidden" name="next" value="{{ escape(next_url) }}">
+        {% if error %}
+        <div class="alert alert-error shadow-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
+          <span>{{ escape(error) }}</span>
+        </div>
         {% end %}
 
-        {% if settings.get("ldap_server") %}
-        <p class="login-mode-hint">Sign in with your LDAP credentials</p>
-        <div class="ds-field">
-          <label class="ds-label" for="username">LDAP Username</label>
-          <input class="ds-input" type="text" id="username" name="username"
-            placeholder="username" autocomplete="username" required autofocus>
-        </div>
-        <div class="ds-field">
-          <label class="ds-label" for="password">Password</label>
-          <input class="ds-input" type="password" id="password" name="password"
-            placeholder="" autocomplete="current-password" required>
-        </div>
-        <button type="submit" class="ds-btn ds-btn--primary ds-btn--lg ds-btn--block">Sign in with LDAP</button>
-        {% else %}
-        <p class="login-mode-hint">Use a username + password, or an access token</p>
-        <div class="ds-field">
-          <label class="ds-label" for="local-username">Username</label>
-          <input class="ds-input" type="text" id="local-username" name="username"
-            placeholder="your-username" autocomplete="username">
-        </div>
-        <div class="ds-field">
-          <label class="ds-label" for="local-password">Password</label>
-          <input class="ds-input" type="password" id="local-password" name="password"
-            placeholder="" autocomplete="current-password">
-        </div>
+        <form method="POST" class="space-y-4">
+          {% raw xsrf_form_html() %}
+          {% if next_url %}
+          <input type="hidden" name="next" value="{{ escape(next_url) }}">
+          {% end %}
 
-        <div class="login-sep">or</div>
+          {% if settings.get("ldap_server") %}
+          <p class="text-center text-sm text-base-content/60">Sign in with your LDAP credentials</p>
+          <div class="form-control">
+            <label class="label" for="username"><span class="label-text font-semibold">LDAP Username</span></label>
+            <input class="input input-bordered w-full" type="text" id="username" name="username"
+              placeholder="username" autocomplete="username" required autofocus>
+          </div>
+          <div class="form-control">
+            <label class="label" for="password"><span class="label-text font-semibold">Password</span></label>
+            <input class="input input-bordered w-full" type="password" id="password" name="password"
+              placeholder="" autocomplete="current-password" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Sign in with LDAP</button>
+          {% else %}
+          <p class="text-center text-sm text-base-content/60">Use a username + password, or an access token</p>
+          <div class="form-control">
+            <label class="label" for="local-username"><span class="label-text font-semibold">Username</span></label>
+            <input class="input input-bordered w-full" type="text" id="local-username" name="username"
+              placeholder="your-username" autocomplete="username">
+          </div>
+          <div class="form-control">
+            <label class="label" for="local-password"><span class="label-text font-semibold">Password</span></label>
+            <input class="input input-bordered w-full" type="password" id="local-password" name="password"
+              placeholder="" autocomplete="current-password">
+          </div>
 
-        <div class="ds-field">
-          <label class="ds-label" for="token">Access token</label>
-          <input class="ds-input" type="password" id="token" name="token"
-            placeholder="Paste your token" autocomplete="off">
-        </div>
+          <div class="divider text-xs uppercase tracking-widest">or</div>
 
-        <button type="submit" class="ds-btn ds-btn--primary ds-btn--lg ds-btn--block">Log in</button>
+          <div class="form-control">
+            <label class="label" for="token"><span class="label-text font-semibold">Access token</span></label>
+            <input class="input input-bordered w-full" type="password" id="token" name="token"
+              placeholder="Paste your token" autocomplete="off">
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-block">Log in</button>
+          {% end %}
+        </form>
+
+        {% if is_feature_enabled("p2p_transfer", True) %}
+        <div class="divider text-xs uppercase tracking-widest">Public features</div>
+        <a href="/p2p" class="btn btn-outline btn-block">🔀 Anonymous P2P transfer</a>
         {% end %}
-      </form>
-
-      {% if is_feature_enabled("p2p_transfer", True) %}
-      <div class="login-sep">Public features</div>
-      <a href="/p2p" class="ds-btn ds-btn--block">🔀 Anonymous P2P transfer</a>
-      {% end %}
+      </div>
     </div>
 
-    <p class="login-footer">Aird  secure, lightweight file access</p>
+    <p class="text-center text-xs text-base-content/40 mt-4">Aird · secure, lightweight file access</p>
   </div>
 
   <script src="/static/js/theme.js"></script>

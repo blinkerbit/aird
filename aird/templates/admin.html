@@ -1,289 +1,187 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
-  <title>Admin  Aird</title>
-  <style>
-    body { background: var(--ds-bg-muted); }
-
-    /* Topbar */
-    .adm-topbar {
-      background: var(--ds-text);
-      color: var(--ds-bg);
-      padding: var(--ds-space-4) var(--ds-space-6);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--ds-space-4);
-      flex-wrap: wrap;
-    }
-    .adm-topbar h1 { font-size: var(--ds-fs-lg); margin: 0; color: inherit; letter-spacing: 0.02em; }
-    .adm-topbar-right { display: flex; gap: var(--ds-space-3); align-items: center; font-size: var(--ds-fs-sm); }
-    .adm-topbar-right a { color: rgba(255,255,255,0.78); }
-    .adm-topbar-right a:hover { color: var(--ds-text-on-accent); text-decoration: none; }
-
-    /* Tabs */
-    .adm-tabs {
-      background: var(--ds-text);
-      border-top: 1px solid rgba(255,255,255,0.08);
-      padding: 0 var(--ds-space-5);
-      display: flex;
-      gap: var(--ds-space-1);
-      overflow-x: auto;
-    }
-    .adm-tabs a {
-      color: rgba(255,255,255,0.7);
-      padding: 10px 14px;
-      font-size: var(--ds-fs-sm);
-      white-space: nowrap;
-      border-bottom: 2px solid transparent;
-      transition: color var(--ds-duration-fast) var(--ds-ease),
-                  border-color var(--ds-duration-fast) var(--ds-ease),
-                  background var(--ds-duration-fast) var(--ds-ease);
-    }
-    .adm-tabs a:hover {
-      color: var(--ds-text-on-accent);
-      background: rgba(255,255,255,0.05);
-      text-decoration: none;
-      border-bottom-color: rgba(255,255,255,0.3);
-    }
-    .adm-tabs a[aria-current="page"] {
-      color: var(--ds-text-on-accent);
-      border-bottom-color: var(--ds-primary);
-    }
-
-    .adm-page { max-width: 980px; margin: var(--ds-space-6) auto; padding: 0 var(--ds-space-4); }
-
-    .adm-card {
-      background: var(--ds-surface);
-      border: 1px solid var(--ds-border);
-      border-radius: var(--ds-radius-lg);
-      box-shadow: var(--ds-shadow-xs);
-      margin-bottom: var(--ds-space-5);
-      overflow: hidden;
-    }
-    .adm-card > header {
-      padding: var(--ds-space-4) var(--ds-space-5);
-      border-bottom: 1px solid var(--ds-border-muted);
-      background: var(--ds-surface-alt);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--ds-space-3);
-    }
-    .adm-card > header h2 { font-size: var(--ds-fs-md); margin: 0; }
-    .adm-card > .body { padding: var(--ds-space-5); }
-
-    /* Feature flag grid */
-    .flag-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-      gap: var(--ds-space-2) var(--ds-space-5);
-    }
-    .flag-grid label {
-      display: flex; align-items: center; gap: var(--ds-space-2);
-      padding: 8px 10px;
-      border: 1px solid var(--ds-border-muted);
-      border-radius: var(--ds-radius-sm);
-      font-size: var(--ds-fs-sm);
-      background: var(--ds-surface);
-      cursor: pointer;
-      transition: border-color var(--ds-duration-fast) var(--ds-ease),
-                  background var(--ds-duration-fast) var(--ds-ease);
-    }
-    .flag-grid label:hover { border-color: var(--ds-border); background: var(--ds-bg-muted); }
-    .flag-grid input[type="checkbox"] { accent-color: var(--ds-primary); width: 15px; height: 15px; }
-
-    /* Field rows */
-    .field-row {
-      display: flex; align-items: center; gap: var(--ds-space-3); flex-wrap: wrap;
-      margin: 0 0 var(--ds-space-3);
-    }
-    .field-row > label {
-      min-width: 200px; font-size: var(--ds-fs-sm); color: var(--ds-text); font-weight: 600;
-    }
-    .field-row input[type="number"] {
-      width: 110px;
-      padding: 7px 10px;
-      border: 1px solid var(--ds-border);
-      border-radius: var(--ds-radius-sm);
-      background: var(--ds-surface);
-      color: var(--ds-text);
-      font: inherit;
-      font-size: var(--ds-fs-sm);
-    }
-    .field-row input[type="number"]:focus { outline: none; border-color: var(--ds-primary); box-shadow: var(--ds-focus-ring); }
-    .field-row .help { font-size: var(--ds-fs-xs); color: var(--ds-text-muted); }
-
-    /* Sections inside cards */
-    .sub-section {
-      border: 1px solid var(--ds-border-muted);
-      border-radius: var(--ds-radius-md);
-      padding: var(--ds-space-4);
-      margin-bottom: var(--ds-space-3);
-      background: var(--ds-surface-alt);
-    }
-    .sub-section:last-child { margin-bottom: 0; }
-    .sub-section h4 { font-size: var(--ds-fs-sm); margin: 0 0 var(--ds-space-3); color: var(--ds-text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
-
-    .ext-grid {
-      display: flex; flex-wrap: wrap; gap: 6px 14px;
-    }
-    .ext-grid label {
-      display: inline-flex; align-items: center; gap: 5px;
-      font-size: var(--ds-fs-sm);
-      padding: 4px 8px;
-      border: 1px solid var(--ds-border-muted);
-      border-radius: var(--ds-radius-pill);
-      background: var(--ds-surface);
-    }
-    .ext-grid code { background: transparent; border: 0; padding: 0; color: var(--ds-text-muted); }
-
-    .save-bar {
-      position: sticky; bottom: 0;
-      background: var(--ds-surface);
-      border-top: 1px solid var(--ds-border-muted);
-      padding: var(--ds-space-3) var(--ds-space-5);
-      text-align: right;
-      backdrop-filter: blur(4px);
-    }
-  </style>
+  <title>Admin · Aird</title>
 </head>
-<body>
-  <header class="adm-topbar">
-    <h1>⚙ Admin panel</h1>
-    <div class="adm-topbar-right">
-      <a href="/profile">{{ handler.get_display_username() }}</a>
-      <a href="/files/">Files</a>
-      <a href="/logout">Logout</a>
-    </div>
-  </header>
-  <nav class="adm-tabs" aria-label="Admin sections">
-    <a href="/admin" aria-current="page">Overview</a>
-    <a href="/admin/users">Users</a>
-    {% if ldap_enabled %}
-    <a href="/admin/ldap">LDAP</a>
-    {% end %}
-    <a href="/admin/audit">Audit log</a>
-    <a href="/admin/network-shares">Network shares</a>
-    <a href="/admin/websocket-stats" target="_blank">WebSocket stats ↗</a>
-  </nav>
+<body class="bg-base-200 min-h-screen">
+  <!-- Topbar -->
+  <div class="container mx-auto p-4">
+    {% set nav_title = "⚙ Admin Panel" %}
+    {% set show_admin_link = False %}
+    {% include '_app_nav_header.html' %}
+  </div>
 
-  <main class="adm-page">
-    <form method="POST">
+  <!-- Admin Tabs -->
+  <div class="max-w-4xl mx-auto px-4 mt-2 mb-2">
+    <div role="tablist" class="tabs tabs-bordered">
+      <a role="tab" href="/admin" class="tab tab-active font-bold">Overview</a>
+      <a role="tab" href="/admin/users" class="tab hover:text-base-content hover:bg-base-200/50">Users</a>
+      {% if ldap_enabled %}
+      <a role="tab" href="/admin/ldap" class="tab hover:text-base-content hover:bg-base-200/50">LDAP</a>
+      {% end %}
+      <a role="tab" href="/admin/audit" class="tab hover:text-base-content hover:bg-base-200/50">Audit log</a>
+      <a role="tab" href="/admin/network-shares" class="tab hover:text-base-content hover:bg-base-200/50">Network shares</a>
+      <a role="tab" href="/admin/websocket-stats" class="tab hover:text-base-content hover:bg-base-200/50">WebSocket stats ↗</a>
+    </div>
+  </div>
+
+  <!-- Page -->
+  <main class="max-w-4xl mx-auto p-4 space-y-6 mt-6">
+    <form method="POST" class="space-y-6">
       {% raw xsrf_form_html() %}
 
-      <section class="adm-card">
-        <header><h2>Feature flags</h2></header>
-        <div class="body">
-          <div class="flag-grid">
-            <label><input type="checkbox" name="file_upload" {% if features.get('file_upload') %}checked{% end %}> File upload</label>
-            <label><input type="checkbox" name="file_download" {% if features.get('file_download') %}checked{% end %}> File download</label>
-            <label><input type="checkbox" name="file_edit" {% if features.get('file_edit') %}checked{% end %}> File edit</label>
-            <label><input type="checkbox" name="file_rename" {% if features.get('file_rename') %}checked{% end %}> File rename</label>
-            <label><input type="checkbox" name="file_delete" {% if features.get('file_delete') %}checked{% end %}> File delete</label>
-            <label><input type="checkbox" name="file_share" {% if features.get('file_share') %}checked{% end %}> File share</label>
-            <label><input type="checkbox" name="folder_create" {% if features.get('folder_create') %}checked{% end %}> Create folder</label>
-            <label><input type="checkbox" name="folder_delete" {% if features.get('folder_delete') %}checked{% end %}> Delete folder</label>
-            <label><input type="checkbox" name="super_search" {% if features.get('super_search') %}checked{% end %}> Super search</label>
-            <label><input type="checkbox" name="p2p_transfer" {% if features.get('p2p_transfer') %}checked{% end %}> P2P transfer</label>
-            <label><input type="checkbox" name="compression" {% if features.get('compression') %}checked{% end %}> Gzip compression</label>
-            <label><input type="checkbox" name="allow_simple_passwords" {% if features.get('allow_simple_passwords') %}checked{% end %}> Allow simple passwords</label>
+      <!-- Feature flags -->
+      <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body">
+          <h2 class="card-title text-base">Feature flags</h2>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-2">
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+              <input type="checkbox" name="file_upload" class="toggle toggle-primary toggle-sm" {% if features.get('file_upload') %}checked{% end %}>
+              <span class="label-text">File upload</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+              <input type="checkbox" name="file_download" class="toggle toggle-primary toggle-sm" {% if features.get('file_download') %}checked{% end %}>
+              <span class="label-text">File download</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+              <input type="checkbox" name="file_edit" class="toggle toggle-primary toggle-sm" {% if features.get('file_edit') %}checked{% end %}>
+              <span class="label-text">File edit</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+              <input type="checkbox" name="file_rename" class="toggle toggle-primary toggle-sm" {% if features.get('file_rename') %}checked{% end %}>
+              <span class="label-text">File rename</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+              <input type="checkbox" name="file_delete" class="toggle toggle-primary toggle-sm" {% if features.get('file_delete') %}checked{% end %}>
+              <span class="label-text">File delete</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+              <input type="checkbox" name="file_share" class="toggle toggle-primary toggle-sm" {% if features.get('file_share') %}checked{% end %}>
+              <span class="label-text">File share</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+              <input type="checkbox" name="folder_create" class="toggle toggle-primary toggle-sm" {% if features.get('folder_create') %}checked{% end %}>
+              <span class="label-text">Create folder</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+              <input type="checkbox" name="folder_delete" class="toggle toggle-primary toggle-sm" {% if features.get('folder_delete') %}checked{% end %}>
+              <span class="label-text">Delete folder</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+              <input type="checkbox" name="super_search" class="toggle toggle-primary toggle-sm" {% if features.get('super_search') %}checked{% end %}>
+              <span class="label-text">Super search</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+              <input type="checkbox" name="p2p_transfer" class="toggle toggle-primary toggle-sm" {% if features.get('p2p_transfer') %}checked{% end %}>
+              <span class="label-text">P2P transfer</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+              <input type="checkbox" name="compression" class="toggle toggle-primary toggle-sm" {% if features.get('compression') %}checked{% end %}>
+              <span class="label-text">Gzip compression</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+              <input type="checkbox" name="allow_simple_passwords" class="toggle toggle-primary toggle-sm" {% if features.get('allow_simple_passwords') %}checked{% end %}>
+              <span class="label-text">Allow simple passwords</span>
+            </label>
           </div>
         </div>
-      </section>
+      </div>
 
-      <section class="adm-card">
-        <header><h2>Upload settings</h2></header>
-        <div class="body">
-          <div class="field-row">
-            <label for="max_file_size_mb">Max file size (MB)</label>
-            <input type="number" id="max_file_size_mb" name="max_file_size_mb"
-                   value="{{ upload_config.get('max_file_size_mb', 512) }}"
-                   min="1" max="10240" step="1">
-            <span class="help">1  10240 MB  default 512</span>
+      <!-- Upload settings -->
+      <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body space-y-4">
+          <h2 class="card-title text-base">Upload settings</h2>
+          <div class="flex flex-wrap items-center gap-3">
+            <label for="max_file_size_mb" class="text-sm font-semibold w-48">Max file size (MB)</label>
+            <input type="number" id="max_file_size_mb" name="max_file_size_mb" class="input input-bordered input-sm w-28"
+                   value="{{ upload_config.get('max_file_size_mb', 512) }}" min="1" max="10240" step="1">
+            <span class="text-xs text-base-content/50">1 – 10240 MB · default 512</span>
           </div>
-          <div class="field-row">
-            <label style="min-width:auto;">
-              <input type="checkbox" name="allow_all_file_types" id="allowAllFileTypes"
+          <div class="flex flex-wrap items-center gap-3">
+            <label class="label cursor-pointer justify-start gap-2">
+              <input type="checkbox" name="allow_all_file_types" id="allowAllFileTypes" class="checkbox checkbox-sm checkbox-primary"
                      {% if upload_config.get('allow_all_file_types', 0) %}checked{% end %}>
-              Allow all file types
+              <span class="label-text font-semibold">Allow all file types</span>
             </label>
-            <span class="help">When unchecked, only the selected extensions below are allowed.</span>
+            <span class="text-xs text-base-content/50">When unchecked, only selected extensions below are allowed.</span>
           </div>
-          <div id="allowedExtensionsSection" class="sub-section"
+          <div id="allowedExtensionsSection" class="bg-base-200 rounded-lg p-4 border border-base-300"
                style="{% if upload_config.get('allow_all_file_types', 0) %}display: none;{% end %}">
-            <h4>Allowed extensions</h4>
-            <div class="ext-grid">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/60 mb-3">Allowed extensions</h4>
+            <div class="flex flex-wrap gap-2">
               {% for ext in available_extensions %}
-              <label>
-                <input type="checkbox" name="allow_ext" value="{{ ext }}"
+              <label class="badge badge-outline gap-1 cursor-pointer hover:badge-primary transition-colors py-2.5">
+                <input type="checkbox" name="allow_ext" value="{{ ext }}" class="checkbox checkbox-xs"
                        {% if ext in allowed_extensions_current %}checked{% end %}>
-                <code>{{ ext }}</code>
+                <code class="text-xs">{{ ext }}</code>
               </label>
               {% end %}
             </div>
           </div>
         </div>
-      </section>
+      </div>
 
-      <section class="adm-card">
-        <header><h2>WebSocket connections</h2></header>
-        <div class="body">
-          <div class="sub-section">
-            <h4>Feature flags</h4>
-            <div class="field-row">
-              <label for="feature_flags_max_connections">Max connections</label>
-              <input type="number" id="feature_flags_max_connections" name="feature_flags_max_connections"
+      <!-- WebSocket connections -->
+      <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body space-y-4">
+          <h2 class="card-title text-base">WebSocket connections</h2>
+
+          <div class="bg-base-200 rounded-lg p-4 border border-base-300 space-y-3">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/60">Feature flags</h4>
+            <div class="flex flex-wrap items-center gap-3">
+              <label for="feature_flags_max_connections" class="text-sm font-semibold w-48">Max connections</label>
+              <input type="number" id="feature_flags_max_connections" name="feature_flags_max_connections" class="input input-bordered input-sm w-28"
                      value="{{ websocket_config.get('feature_flags_max_connections', 50) }}" min="1" max="1000">
-              <span class="help">1  1000</span>
+              <span class="text-xs text-base-content/50">1 – 1000</span>
             </div>
-            <div class="field-row">
-              <label for="feature_flags_idle_timeout">Idle timeout (sec)</label>
-              <input type="number" id="feature_flags_idle_timeout" name="feature_flags_idle_timeout"
+            <div class="flex flex-wrap items-center gap-3">
+              <label for="feature_flags_idle_timeout" class="text-sm font-semibold w-48">Idle timeout (sec)</label>
+              <input type="number" id="feature_flags_idle_timeout" name="feature_flags_idle_timeout" class="input input-bordered input-sm w-28"
                      value="{{ websocket_config.get('feature_flags_idle_timeout', 600) }}" min="30" max="7200">
-              <span class="help">30  7200</span>
+              <span class="text-xs text-base-content/50">30 – 7200</span>
             </div>
           </div>
 
-          <div class="sub-section">
-            <h4>File streaming</h4>
-            <div class="field-row">
-              <label for="file_streaming_max_connections">Max connections</label>
-              <input type="number" id="file_streaming_max_connections" name="file_streaming_max_connections"
+          <div class="bg-base-200 rounded-lg p-4 border border-base-300 space-y-3">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/60">File streaming</h4>
+            <div class="flex flex-wrap items-center gap-3">
+              <label for="file_streaming_max_connections" class="text-sm font-semibold w-48">Max connections</label>
+              <input type="number" id="file_streaming_max_connections" name="file_streaming_max_connections" class="input input-bordered input-sm w-28"
                      value="{{ websocket_config.get('file_streaming_max_connections', 200) }}" min="1" max="1000">
-              <span class="help">1  1000</span>
+              <span class="text-xs text-base-content/50">1 – 1000</span>
             </div>
-            <div class="field-row">
-              <label for="file_streaming_idle_timeout">Idle timeout (sec)</label>
-              <input type="number" id="file_streaming_idle_timeout" name="file_streaming_idle_timeout"
+            <div class="flex flex-wrap items-center gap-3">
+              <label for="file_streaming_idle_timeout" class="text-sm font-semibold w-48">Idle timeout (sec)</label>
+              <input type="number" id="file_streaming_idle_timeout" name="file_streaming_idle_timeout" class="input input-bordered input-sm w-28"
                      value="{{ websocket_config.get('file_streaming_idle_timeout', 300) }}" min="30" max="7200">
-              <span class="help">30  7200</span>
+              <span class="text-xs text-base-content/50">30 – 7200</span>
             </div>
           </div>
 
-          <div class="sub-section">
-            <h4>Search</h4>
-            <div class="field-row">
-              <label for="search_max_connections">Max connections</label>
-              <input type="number" id="search_max_connections" name="search_max_connections"
+          <div class="bg-base-200 rounded-lg p-4 border border-base-300 space-y-3">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/60">Search</h4>
+            <div class="flex flex-wrap items-center gap-3">
+              <label for="search_max_connections" class="text-sm font-semibold w-48">Max connections</label>
+              <input type="number" id="search_max_connections" name="search_max_connections" class="input input-bordered input-sm w-28"
                      value="{{ websocket_config.get('search_max_connections', 100) }}" min="1" max="1000">
-              <span class="help">1  1000</span>
+              <span class="text-xs text-base-content/50">1 – 1000</span>
             </div>
-            <div class="field-row">
-              <label for="search_idle_timeout">Idle timeout (sec)</label>
-              <input type="number" id="search_idle_timeout" name="search_idle_timeout"
+            <div class="flex flex-wrap items-center gap-3">
+              <label for="search_idle_timeout" class="text-sm font-semibold w-48">Idle timeout (sec)</label>
+              <input type="number" id="search_idle_timeout" name="search_idle_timeout" class="input input-bordered input-sm w-28"
                      value="{{ websocket_config.get('search_idle_timeout', 180) }}" min="30" max="7200">
-              <span class="help">30  7200</span>
+              <span class="text-xs text-base-content/50">30 – 7200</span>
             </div>
           </div>
+
+          <div class="card-actions justify-end sticky bottom-0 bg-base-100/90 backdrop-blur-sm pt-3 pb-1 border-t border-base-300 -mx-6 px-6">
+            <button type="submit" class="btn btn-primary">Save configuration</button>
+          </div>
         </div>
-        <div class="save-bar">
-          <button type="submit" class="ds-btn ds-btn--primary">Save configuration</button>
-        </div>
-      </section>
+      </div>
     </form>
   </main>
 
