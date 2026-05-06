@@ -39,19 +39,19 @@
   </div>
 
   <main class="max-w-6xl mx-auto p-4 space-y-6">\n    <div class="mb-2"><a href="/admin" class="link link-hover text-sm text-base-content/70">← Back to Admin Settings</a></div>
-    <div class="flex items-center justify-between flex-wrap gap-3" style="margin-bottom: var(--ds-space-4);">
-      <h1 style="margin:0;">Network shares <span class="text-base-content/50 text-base font-normal">(SMB / WebDAV)</span></h1>
+    <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
+      <h1 class="text-2xl font-bold m-0">Network shares <span class="text-base-content/50 text-base font-normal">(SMB / WebDAV)</span></h1>
     </div>
 
     {% if error %}
-    <div class="alert alert-error shadow-sm" role="alert" style="margin-bottom: var(--ds-space-4);">
+    <div class="alert alert-error shadow-sm mb-4" role="alert">
       <span class="h-5 w-5 shrink-0" aria-hidden="true">⚠</span><span>{{ error }}</span>
     </div>
     {% end %}
 
     <section class="card bg-base-100 shadow-sm border border-base-300 overflow-visible">
-      <div class="card bg-base-100 shadow-sm border border-base-300__header">
-        <h2 style="margin:0; font-size: var(--ds-fs-md);">Active shares</h2>
+      <div class="px-5 py-3 border-b border-base-300 bg-base-200/50">
+        <h2 class="font-semibold m-0 text-base">Active shares</h2>
       </div>
       {% if shares %}
       <table class="table table-zebra overflow-visible">
@@ -64,7 +64,7 @@
             <th>User</th>
             <th>R/O</th>
             <th>Status</th>
-            <th style="text-align:right;">Actions</th>
+            <th class="text-right">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -85,7 +85,7 @@
               <span class="badge badge-ghost badge-sm">Disabled</span>
               {% end %}
             </td>
-            <td class="actions-cell" style="text-align:right;">
+            <td class="actions-cell text-right">
               <button type="button" class="btn btn-square btn-ghost btn-xs" title="Show mount commands"
                 aria-expanded="false" aria-controls="mount-panel-{{ s['mount_idx'] }}"
                 data-mount-idx="{{ s['mount_idx'] }}">i</button>
@@ -104,7 +104,7 @@
             </td>
           </tr>
           <tr>
-            <td colspan="8" style="padding:0;">
+            <td colspan="8" class="p-0">
               <div class="mount-panel" id="mount-panel-{{ s['mount_idx'] }}"
                    data-protocol="{{ s['protocol'] }}"
                    data-port="{{ s['port'] }}"
@@ -117,7 +117,7 @@
         </tbody>
       </table>
       {% else %}
-      <div class="card bg-base-100 shadow-sm border border-base-300__body">
+      <div class="card-body">
         <div class="alert alert-info shadow-sm">
           <span class="h-5 w-5 shrink-0" aria-hidden="true">ℹ</span>
           <span>No network shares configured yet.</span>
@@ -126,49 +126,51 @@
       {% end %}
     </section>
 
-    <section class="card bg-base-100 shadow-sm border border-base-300" style="margin-top: var(--ds-space-5);">
-      <h2 style="margin-top:0;">Create new share</h2>
-      <form method="POST" action="/admin/network-shares" class="card-body space-y-4" style="margin-top: var(--ds-space-4);">
-        {% raw xsrf_form_html() %}
-        <div class="flex flex-wrap items-center gap-3" style="align-items: center;">
-          <label for="name" class="label-text font-semibold" style="min-width: 160px;">Share name</label>
-          <input type="text" id="name" name="name" class="input input-bordered input-sm" style="width: 320px;" required placeholder="e.g. ProjectFiles" />
-        </div>
-        <div class="flex flex-wrap items-center gap-3" style="align-items: center;">
-          <label for="folder_path" class="label-text font-semibold" style="min-width: 160px;">Folder path</label>
-          <input type="text" id="folder_path" name="folder_path" class="input input-bordered input-sm" style="width: 320px;" required placeholder="e.g. C:\Data\shared" />
-        </div>
-        <div class="flex flex-wrap items-center gap-3" style="align-items: center;">
-          <label for="protocol" class="label-text font-semibold" style="min-width: 160px;">Protocol</label>
-          <select id="protocol" name="protocol" class="select select-bordered select-sm" style="width: 320px;">
-            <option value="webdav" selected>WebDAV (Class 2  locking, digest auth)</option>
-            <option value="smb">SMB (v1/v2)</option>
-          </select>
-          <span class="text-xs text-base-content/50">WebDAV is recommended  full locking, Office support, cross-platform.</span>
-        </div>
-        <div class="flex flex-wrap items-center gap-3" style="align-items: center;">
-          <label for="port" class="label-text font-semibold" style="min-width: 160px;">Port</label>
-          <input type="number" id="port" name="port" class="input input-bordered input-sm" value="8443" min="1" max="65535" style="width:120px;" />
-          <span class="text-xs text-base-content/50">Use ports above 1024 to avoid needing admin privileges.</span>
-        </div>
-        <div class="flex flex-wrap items-center gap-3" style="align-items: center;">
-          <label for="share_username" class="label-text font-semibold" style="min-width: 160px;">Username</label>
-          <input type="text" id="share_username" name="share_username" class="input input-bordered input-sm" style="width: 320px;" required placeholder="share access username" />
-        </div>
-        <div class="flex flex-wrap items-center gap-3" style="align-items: center;">
-          <label for="share_password" class="label-text font-semibold" style="min-width: 160px;">Password</label>
-          <input type="password" id="share_password" name="share_password" class="input input-bordered input-sm" style="width: 320px;" required placeholder="share access password" />
-        </div>
-        <div class="flex flex-wrap items-center gap-3" style="align-items: center;">
-          <label class="label-text font-semibold" style="min-width: 160px;">Access</label>
-          <label class="label cursor-pointer justify-start gap-3 w-auto font-normal inline-flex items-center" style="width: auto; font-weight: 400; display:inline-flex; align-items:center; gap:6px;">
-            <input type="checkbox" name="read_only" class="checkbox checkbox-primary checkbox-sm" /> Read-only
-          </label>
-        </div>
-        <div class="flex gap-2 justify-end pt-2" style="margin-top: var(--ds-space-4);">
-          <button type="submit" class="btn btn-primary">Create share</button>
-        </div>
-      </form>
+    <section class="card bg-base-100 shadow-sm border border-base-300 mt-5">
+      <div class="card-body">
+        <h2 class="card-title text-base mt-0">Create new share</h2>
+        <form method="POST" action="/admin/network-shares" class="space-y-4 mt-4">
+          {% raw xsrf_form_html() %}
+          <div class="flex flex-wrap items-center gap-3">
+            <label for="name" class="label-text font-semibold min-w-[160px]">Share name</label>
+            <input type="text" id="name" name="name" class="input input-bordered input-sm w-80" required placeholder="e.g. ProjectFiles" />
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <label for="folder_path" class="label-text font-semibold min-w-[160px]">Folder path</label>
+            <input type="text" id="folder_path" name="folder_path" class="input input-bordered input-sm w-80" required placeholder="e.g. C:\Data\shared" />
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <label for="protocol" class="label-text font-semibold min-w-[160px]">Protocol</label>
+            <select id="protocol" name="protocol" class="select select-bordered select-sm w-80">
+              <option value="webdav" selected>WebDAV (Class 2 locking, digest auth)</option>
+              <option value="smb">SMB (v1/v2)</option>
+            </select>
+            <span class="text-xs text-base-content/50">WebDAV is recommended for full locking, Office support, cross-platform.</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <label for="port" class="label-text font-semibold min-w-[160px]">Port</label>
+            <input type="number" id="port" name="port" class="input input-bordered input-sm w-32" value="8443" min="1" max="65535" />
+            <span class="text-xs text-base-content/50">Use ports above 1024 to avoid needing admin privileges.</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <label for="share_username" class="label-text font-semibold min-w-[160px]">Username</label>
+            <input type="text" id="share_username" name="share_username" class="input input-bordered input-sm w-80" required placeholder="share access username" />
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <label for="share_password" class="label-text font-semibold min-w-[160px]">Password</label>
+            <input type="password" id="share_password" name="share_password" class="input input-bordered input-sm w-80" required placeholder="share access password" />
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <label class="label-text font-semibold min-w-[160px]">Access</label>
+            <label class="label cursor-pointer justify-start gap-3 w-auto font-normal inline-flex items-center">
+              <input type="checkbox" name="read_only" class="checkbox checkbox-primary checkbox-sm" /> Read-only
+            </label>
+          </div>
+          <div class="flex gap-2 justify-end pt-2 mt-4">
+            <button type="submit" class="btn btn-primary">Create share</button>
+          </div>
+        </form>
+      </div>
     </section>
   </main>
 
@@ -179,9 +181,9 @@
       var _cmdSeq = 0;
       function cmdLine(label, cmd) {
         var id = 'cmd-' + (++_cmdSeq);
-        return '<div style="margin-bottom:6px;"><strong>' + label + '</strong>' +
-               '<button type="button" class="btn btn-xs btn-ghost border border-base-300 copy-btn" data-cmd-id="' + id + '">Copy</button>' +
-               '<span class="copied-msg" id="msg-' + id + '" style="display:none;">Copied!</span></div>' +
+        return '<div class="mb-1.5"><strong>' + label + '</strong>' +
+               '<button type="button" class="btn btn-xs btn-ghost border border-base-300 ml-2 copy-btn" data-cmd-id="' + id + '">Copy</button>' +
+               '<span class="copied-msg hidden ml-2 text-success text-xs" id="msg-' + id + '">Copied!</span></div>' +
                '<pre id="' + id + '">' + cmd + '</pre>';
       }
 
@@ -215,7 +217,7 @@
             'net use Z: \\\\' + host + '\\' + name.toUpperCase() + ' /user:' + user + ' ' + mountCred);
           html += smbNote;
         } else {
-          html = '<p class="text-base-content/50 text-base font-normal" style="margin:0;">Unknown or missing protocol. Expected <code>webdav</code> or <code>smb</code>.</p>';
+          html = '<p class="text-base-content/50 text-base font-normal m-0">Unknown or missing protocol. Expected <code>webdav</code> or <code>smb</code>.</p>';
         }
         panel.innerHTML = html;
       }

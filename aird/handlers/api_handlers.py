@@ -831,11 +831,13 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
             db_conn = self.require_db_connection(DB_NOT_AVAILABLE_MSG)
             if not db_conn:
                 return None
+            
             share_service = self.get_service("share_service")
-            if share_service is not None:
-                share = share_service.get_share(db_conn, share_id)
-            else:
-                share = self.get_service("share_service").get_share(db_conn, share_id)
+            if share_service is None:
+                self.write_json_error(500, "Share service not available")
+                return None
+                
+            share = share_service.get_share(db_conn, share_id)
             if not share:
                 self.write_json_error(404, "Share not found")
                 return None
@@ -850,11 +852,12 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
                 "url": f"/shared/{share['id']}",
                 "paths": share.get("paths", []),
                 "has_token": share.get("secret_token") is not None,
+                "secret_token": share.get("secret_token"), # Include token for management
                 "share_type": share.get("share_type", "static"),
                 "allow_list": share.get("allow_list", []),
                 "avoid_list": share.get("avoid_list", []),
                 "expiry_date": share.get("expiry_date"),
-                "download_count": self.get_service("share_service").get_download_count(
+                "download_count": share_service.get_download_count(
                     db_conn, share_id
                 ),
             }

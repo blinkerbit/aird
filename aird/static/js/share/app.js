@@ -1,0 +1,2524 @@
+let currentPath = '';
+    let selectedFiles = new Set();
+    let allFiles = [];
+    let allUsers = [];
+    let selectedUsers = new Set();
+    let selectedModifyUsers = new Set();
+
+    const elements = {
+      currentPath: document.getElementById('currentPath'),
+      selectedCount: document.getElementById('selectedCount'),
+      selectedFilesDiv: document.getElementById('selectedFiles'),
+      generateLink: document.getElementById('generateLink'),
+      clearSelection: document.getElementById('clearSelection'),
+      selectAllVisible: document.getElementById('selectAllVisible'),
+      shareResult: document.getElementById('shareResult'),
+      fileTableBody: document.getElementById('fileTableBody'),
+      sharesTableBody: document.getElementById('sharesTableBody'),
+      activeSharesCount: document.getElementById('activeSharesCount')
+    };
+
+    const selectedFileMetadata = new Map();
+
+    const cloudElements = {
+      modal: document.getElementById('cloudBrowserModal'),
+      providerSelect: document.getElementById('cloudProviderSelect'),
+      pathDisplay: document.getElementById('cloudPathDisplay'),
+      statusMessage: document.getElementById('cloudStatusMessage'),
+      tableBody: document.getElementById('cloudFilesTableBody'),
+      upButton: document.getElementById('cloudUpButton'),
+      uploadInput: document.getElementById('cloudUploadInput'),
+      uploadButton: document.getElementById('cloudUploadButton'),
+      uploadStatus: document.getElementById('cloudUploadStatus')
+    };
+
+    const cloudState = {
+      providers: [],
+      currentProvider: null,
+      currentFolder: null,
+      currentFiles: [],
+      pathStack: [],
+      loading: false,
+      uploading: false
+    };
+
+    function getXSRFToken() {
+      const match = document.cookie.match(/_xsrf=([^;]*)/);
+      return match ? decodeURIComponent(match[1]) : '';
+    }
+
+    function getFileIcon(filename) {
+      const ext = filename.toLowerCase().split('.').pop();
+      const lowerFilename = filename.toLowerCase();
+
+      // Special files by name - IDE-style
+      if (['readme', 'readme.md', 'readme.txt'].includes(lowerFilename)) return '📖';
+      if (['license', 'licence', 'copying'].includes(lowerFilename)) return '📜';
+      if (['makefile', 'cmake', 'cmakelists.txt'].includes(lowerFilename)) return '🔨';
+      if (['dockerfile', 'docker-compose.yml', 'docker-compose.yaml'].includes(lowerFilename)) return '🐳';
+      if (['.gitignore', '.gitattributes', '.gitmodules'].includes(lowerFilename)) return '🔧';
+      if (lowerFilename.startsWith('.env')) return '🔐';
+
+      const iconMap = {
+        // Document files - IDE-style
+        'txt': '📄', 'md': '📄', 'rst': '📄', 'text': '📄',
+        'doc': '📝', 'docx': '📝', 'rtf': '📝', 'odt': '📝',
+        'pdf': '📕',
+        'xls': '📊', 'xlsx': '📊', 'ods': '📊', 'csv': '📊',
+        'ppt': '📋', 'pptx': '📋', 'odp': '📋',
+
+        // Image files - IDE-style
+        'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'bmp': '🖼️', 'webp': '🖼️', 'tiff': '🖼️', 'tif': '🖼️',
+        'svg': '🎨', 'ico': '🎨',
+        'psd': '🎭', 'ai': '🎭', 'sketch': '🎭',
+
+        // Programming files - IDE-style (VS Code inspired)
+        'py': '🐍', 'pyw': '🐍', 'pyc': '🐍', 'pyo': '🐍',
+        'js': '🟨', 'jsx': '🟨', 'ts': '🟨', 'tsx': '🟨', 'mjs': '🟨',
+        'java': '☕', 'class': '☕', 'jar': '☕',
+        'cpp': '⚙️', 'cxx': '⚙️', 'cc': '⚙️', 'c': '⚙️', 'h': '⚙️', 'hpp': '⚙️',
+        'cs': '🔷', 'vb': '🔷', 'fs': '🔷',
+        'php': '🐘', 'phtml': '🐘',
+        'rb': '💎', 'rake': '💎', 'gem': '💎',
+        'go': '🐹',
+        'rs': '🦀',
+        'swift': '🦉',
+        'kt': '🟣', 'kts': '🟣',
+        'scala': '🔴',
+        'r': '📊', 'rmd': '📊',
+        'm': '🍎', 'mm': '🍎',
+        'pl': '🐪', 'pm': '🐪',
+        'sh': '📟', 'bash': '📟', 'zsh': '📟', 'fish': '📟', 'bat': '📟', 'cmd': '📟', 'ps1': '📟',
+        'lua': '🌙',
+        'dart': '🎯',
+
+        // Web files - IDE-style
+        'html': '🌐', 'htm': '🌐', 'xhtml': '🌐',
+        'css': '🎨', 'scss': '🎨', 'sass': '🎨', 'less': '🎨',
+        'xml': '📰', 'xsl': '📰', 'xsd': '📰',
+        'json': '📋', 'jsonl': '📋',
+        'yaml': '📄', 'yml': '📄',
+        'toml': '⚙️', 'ini': '⚙️', 'cfg': '⚙️', 'conf': '⚙️',
+
+        // Archive files - IDE-style
+        'zip': '🗜️', 'rar': '🗜️', '7z': '🗜️', 'tar': '🗜️', 'gz': '🗜️', 'bz2': '🗜️', 'xz': '🗜️', 'lz': '🗜️', 'lzma': '🗜️',
+        'deb': '📦', 'rpm': '📦', 'pkg': '📦', 'dmg': '📦', 'msi': '📦', 'exe': '📦',
+
+        // Video files - IDE-style
+        'mp4': '🎬', 'avi': '🎬', 'mkv': '🎬', 'mov': '🎬', 'wmv': '🎬', 'flv': '🎬', 'webm': '🎬', 'm4v': '🎬', '3gp': '🎬', 'ogv': '🎬', 'mpg': '🎬', 'mpeg': '🎬',
+
+        // Audio files - IDE-style
+        'mp3': '🎵', 'wav': '🎵', 'flac': '🎵', 'aac': '🎵', 'ogg': '🎵', 'm4a': '🎵', 'wma': '🎵', 'opus': '🎵', 'aiff': '🎵',
+
+        // Font files - IDE-style
+        'ttf': '🔤', 'otf': '🔤', 'woff': '🔤', 'woff2': '🔤', 'eot': '🔤',
+
+        // Database files - IDE-style
+        'db': '🗃️', 'sqlite': '🗃️', 'sqlite3': '🗃️', 'mdb': '🗃️', 'accdb': '🗃️',
+
+        // Log files - IDE-style
+        'log': '📜', 'out': '📜', 'err': '📜',
+
+        // Data files - IDE-style
+        'sql': '🗄️',
+        'parquet': '📊', 'avro': '📊', 'orc': '📊',
+
+        // Notebook files - IDE-style
+        'ipynb': '📓'
+      };
+
+      return iconMap[ext] || '📦';
+    }
+
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function escapeHtml(text) {
+      if (text === undefined || text === null) {
+        return '';
+      }
+      return String(text)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function cloudSelectionKey(providerName, fileId) {
+      return `cloud:${providerName}:${fileId}`;
+    }
+
+    function isCloudFileSelected(providerName, fileId) {
+      return selectedFiles.has(cloudSelectionKey(providerName, fileId));
+    }
+
+    function setCloudStatus(message, isError = false) {
+      if (!cloudElements.statusMessage) return;
+      cloudElements.statusMessage.textContent = message || '';
+      cloudElements.statusMessage.classList.toggle('error', Boolean(isError) && Boolean(message));
+    }
+
+    function clearCloudStatus() {
+      setCloudStatus('');
+    }
+
+    function setCloudUploadStatus(message, isError = false) {
+      if (!cloudElements.uploadStatus) return;
+      cloudElements.uploadStatus.textContent = message || '';
+      cloudElements.uploadStatus.classList.toggle('error', Boolean(isError) && Boolean(message));
+    }
+
+    function clearCloudUploadStatus() {
+      setCloudUploadStatus('');
+    }
+
+    function updateCloudPathDisplay() {
+      if (!cloudElements.pathDisplay) return;
+      if (!cloudState.currentProvider) {
+        cloudElements.pathDisplay.textContent = '';
+        return;
+      }
+
+      const providerLabel = cloudState.currentProvider.label || cloudState.currentProvider.name;
+      if (!cloudState.pathStack.length) {
+        cloudElements.pathDisplay.textContent = providerLabel;
+        return;
+      }
+
+      const parts = cloudState.pathStack.map(entry => entry.name).filter(Boolean);
+      cloudElements.pathDisplay.textContent = `${providerLabel} / ${parts.join(' / ')}`;
+    }
+
+    function updateCloudNavigationState() {
+      if (cloudElements.upButton) {
+        const disableUp = cloudState.loading || cloudState.uploading || cloudState.pathStack.length === 0;
+        cloudElements.upButton.disabled = disableUp;
+      }
+      if (cloudElements.uploadButton) {
+        const disableUpload = cloudState.loading || cloudState.uploading || !cloudState.currentProvider;
+        cloudElements.uploadButton.disabled = disableUpload;
+      }
+      if (cloudElements.providerSelect) {
+        cloudElements.providerSelect.disabled = cloudState.uploading;
+      }
+    }
+
+    function renderCloudProviders(providers) {
+      if (!cloudElements.providerSelect) return;
+
+      cloudElements.providerSelect.innerHTML = '';
+
+      if (!providers || providers.length === 0) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'No providers available';
+        option.disabled = true;
+        option.selected = true;
+        cloudElements.providerSelect.appendChild(option);
+        setCloudStatus('No cloud providers configured.', true);
+        return;
+      }
+
+      providers.forEach((provider, index) => {
+        const option = document.createElement('option');
+        option.value = provider.name;
+        option.textContent = provider.label || provider.name;
+        if (index === 0) {
+          option.selected = true;
+        }
+        cloudElements.providerSelect.appendChild(option);
+      });
+
+      clearCloudStatus();
+    }
+
+    async function loadCloudProviders(forceReload = false) {
+      if (!cloudElements.providerSelect) return;
+
+      clearCloudUploadStatus();
+
+      if (!forceReload && cloudState.providers.length) {
+        renderCloudProviders(cloudState.providers);
+        if (!cloudState.currentProvider && cloudState.providers.length) {
+          switchCloudProvider(cloudState.providers[0].name);
+        }
+        return;
+      }
+
+      try {
+        setCloudStatus('Loading providers...');
+        const response = await fetch('/api/cloud/providers');
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const payload = await response.json();
+        cloudState.providers = Array.isArray(payload.providers) ? payload.providers : [];
+        renderCloudProviders(cloudState.providers);
+
+        if (cloudState.providers.length) {
+          switchCloudProvider(cloudState.providers[0].name);
+        } else {
+          cloudState.currentProvider = null;
+          cloudState.currentFiles = [];
+          cloudState.pathStack = [];
+          if (cloudElements.tableBody) {
+            cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="loading">Connect a cloud provider to browse files.</td></tr>';
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load cloud providers:', error);
+        setCloudStatus('Unable to load cloud providers.', true);
+        if (cloudElements.tableBody) {
+          cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="loading">Error loading providers</td></tr>';
+        }
+      }
+    }
+
+    function switchCloudProvider(providerName) {
+      if (!providerName) return;
+      const provider = cloudState.providers.find(p => p.name === providerName);
+      if (!provider) {
+        setCloudStatus('Selected provider is not configured.', true);
+        return;
+      }
+
+      cloudState.currentProvider = provider;
+      cloudState.currentFolder = provider.root || 'root';
+      cloudState.currentFiles = [];
+      cloudState.pathStack = [];
+
+      if (cloudElements.uploadInput) {
+        cloudElements.uploadInput.value = '';
+      }
+      clearCloudUploadStatus();
+
+      if (cloudElements.providerSelect && cloudElements.providerSelect.value !== provider.name) {
+        cloudElements.providerSelect.value = provider.name;
+      }
+
+      updateCloudPathDisplay();
+      updateCloudNavigationState();
+      loadCloudFolder(cloudState.currentFolder, { reset: true });
+    }
+
+    function openCloudBrowser() {
+      const shareTypeRadio = document.querySelector('input[name="shareType"]:checked');
+      if (shareTypeRadio && shareTypeRadio.value === 'dynamic') {
+        showDialog('Cloud files are not supported when creating a dynamic share.', 'Cloud Files');
+        return;
+      }
+
+      clearCloudUploadStatus();
+      if (cloudElements.uploadInput) {
+        cloudElements.uploadInput.value = '';
+        cloudElements.uploadInput.disabled = false;
+      }
+      cloudState.uploading = false;
+      updateCloudNavigationState();
+
+      if (cloudElements.modal) {
+        cloudElements.modal.showModal();
+      }
+
+      if (cloudElements.tableBody) {
+        cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="loading">Loading cloud files...</td></tr>';
+      }
+
+      loadCloudProviders();
+    }
+
+    function closeCloudBrowser() {
+      if (cloudElements.modal) {
+        cloudElements.modal.close();
+      }
+      clearCloudStatus();
+      clearCloudUploadStatus();
+    }
+
+    async function loadCloudFolder(folderId, options = {}) {
+      if (!cloudState.currentProvider) return;
+
+      const provider = cloudState.currentProvider;
+      const targetFolder = folderId || provider.root || 'root';
+
+      if (cloudElements.tableBody) {
+        cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="loading">Loading...</td></tr>';
+      }
+      setCloudStatus('Loading files...');
+      cloudState.loading = true;
+      updateCloudNavigationState();
+
+      const previousFolder = cloudState.currentFolder;
+      const previousStack = cloudState.pathStack.slice();
+
+      try {
+        const params = new URLSearchParams();
+        if (targetFolder) {
+          params.set('folder', targetFolder);
+        }
+        const query = params.toString();
+        const url = query ? `/api/cloud/${provider.name}/files?${query}` : `/api/cloud/${provider.name}/files`;
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const payload = await response.json();
+        const files = Array.isArray(payload.files) ? payload.files : [];
+
+        if (options.reset) {
+          cloudState.pathStack = [];
+        } else if (options.pop) {
+          cloudState.pathStack = cloudState.pathStack.slice(0, -1);
+        } else if (options.pushEntry) {
+          cloudState.pathStack = cloudState.pathStack.concat(options.pushEntry);
+        }
+
+        cloudState.currentFolder = targetFolder;
+        cloudState.currentFiles = files;
+
+        renderCloudFiles(files);
+        clearCloudStatus();
+      } catch (error) {
+        console.error('Failed to load cloud files:', error);
+        cloudState.currentFolder = previousFolder;
+        cloudState.pathStack = previousStack;
+        setCloudStatus('Failed to load cloud files.', true);
+        if (cloudElements.tableBody) {
+          cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="loading">Error loading files</td></tr>';
+        }
+      } finally {
+        cloudState.loading = false;
+        updateCloudPathDisplay();
+        updateCloudNavigationState();
+      }
+    }
+
+    function cloudNavigateUp() {
+      if (!cloudState.currentProvider || cloudState.pathStack.length === 0 || cloudState.loading) {
+        return;
+      }
+
+      const parentEntry = cloudState.pathStack.length > 1
+        ? cloudState.pathStack[cloudState.pathStack.length - 2]
+        : null;
+      const parentFolder = parentEntry ? parentEntry.id : (cloudState.currentProvider.root || 'root');
+      loadCloudFolder(parentFolder, { pop: true });
+    }
+
+    function handleCloudFolderNavigation(file) {
+      if (!file || !file.is_dir) return;
+      const entry = { id: file.id, name: file.name || 'Folder' };
+      loadCloudFolder(file.id, { pushEntry: entry });
+    }
+
+    function renderCloudFiles(files) {
+      if (!cloudElements.tableBody) return;
+
+      cloudElements.tableBody.innerHTML = '';
+
+      if (!files || files.length === 0) {
+        cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="loading">No items found in this folder.</td></tr>';
+        return;
+      }
+
+      files.forEach(file => {
+        const row = document.createElement('tr');
+
+        const nameCell = document.createElement('td');
+        nameCell.className = 'name-col';
+
+        const iconSpan = document.createElement('span');
+        iconSpan.className = 'file-icon';
+        iconSpan.textContent = file.is_dir ? '📁' : '📄';
+
+        const nameText = document.createTextNode(file.name || 'Unnamed');
+
+        if (file.is_dir) {
+          const link = document.createElement('a');
+          link.href = '#';
+          link.className = 'file-link';
+          link.appendChild(iconSpan);
+          link.appendChild(nameText);
+          link.addEventListener('click', event => {
+            event.preventDefault();
+            handleCloudFolderNavigation(file);
+          });
+          nameCell.appendChild(link);
+        } else {
+          nameCell.appendChild(iconSpan);
+          nameCell.appendChild(nameText);
+        }
+
+        const sizeCell = document.createElement('td');
+        sizeCell.className = 'size-col';
+        if (file.is_dir || typeof file.size !== 'number') {
+          sizeCell.textContent = '-';
+        } else {
+          sizeCell.textContent = formatFileSize(file.size);
+        }
+
+        const modifiedCell = document.createElement('td');
+        modifiedCell.className = 'modified-col';
+        modifiedCell.textContent = file.modified ? file.modified : '-';
+
+        const actionCell = document.createElement('td');
+        actionCell.className = 'actions-col';
+
+        if (file.is_dir) {
+          const openBtn = document.createElement('button');
+          openBtn.className = 'btn';
+          openBtn.type = 'button';
+          openBtn.textContent = 'Open';
+          openBtn.addEventListener('click', () => handleCloudFolderNavigation(file));
+          actionCell.appendChild(openBtn);
+        } else {
+          const key = cloudSelectionKey(cloudState.currentProvider.name, file.id);
+          const button = document.createElement('button');
+          button.className = isCloudFileSelected(cloudState.currentProvider.name, file.id) ? 'btn' : 'btn primary';
+          button.type = 'button';
+          button.textContent = isCloudFileSelected(cloudState.currentProvider.name, file.id) ? 'Remove' : 'Select';
+          button.addEventListener('click', () => {
+            if (isCloudFileSelected(cloudState.currentProvider.name, file.id)) {
+              removeCloudSelection(key);
+            } else {
+              selectCloudFile(file);
+            }
+          });
+          actionCell.appendChild(button);
+
+          if (isCloudFileSelected(cloudState.currentProvider.name, file.id)) {
+            row.classList.add('selected');
+          }
+        }
+
+        row.appendChild(nameCell);
+        row.appendChild(sizeCell);
+        row.appendChild(modifiedCell);
+        row.appendChild(actionCell);
+
+        cloudElements.tableBody.appendChild(row);
+      });
+    }
+
+    function buildCloudFormData(file) {
+      const formData = new FormData();
+      formData.append('file', file);
+      const targetFolder = cloudState.currentFolder || cloudState.currentProvider.root;
+      if (targetFolder) {
+        formData.append('parent_id', targetFolder);
+      }
+      return formData;
+    }
+
+    async function handleCloudUpload() {
+      if (!cloudState.currentProvider) {
+        setCloudUploadStatus('Select a cloud provider before uploading.', true);
+        return;
+      }
+
+      const uploadInput = cloudElements.uploadInput;
+      if (!uploadInput || !uploadInput.files || !uploadInput.files.length) {
+        setCloudUploadStatus('Choose a file to upload.', true);
+        return;
+      }
+
+      const file = uploadInput.files[0];
+      const formData = buildCloudFormData(file);
+
+      cloudState.uploading = true;
+      setCloudUploadStatus(`Uploading ${file.name || 'file'}...`);
+      updateCloudNavigationState();
+      uploadInput.disabled = true;
+
+      try {
+        const xsrfHeaders = {};
+        const xsrf = getXSRFToken();
+        if (xsrf) {
+          xsrfHeaders['X-XSRFToken'] = xsrf;
+        }
+        const response = await fetch(`/api/cloud/${cloudState.currentProvider.name}/upload`, {
+          method: 'POST',
+          headers: xsrfHeaders,
+          body: formData
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.error || `Upload failed (HTTP ${response.status})`);
+        }
+
+        const uploadedName = (payload.file && payload.file.name) ? payload.file.name : (file.name || 'file');
+        setCloudUploadStatus(`Uploaded ${uploadedName}.`);
+        uploadInput.value = '';
+
+        await loadCloudFolder(cloudState.currentFolder, {});
+        setCloudStatus(`Uploaded ${uploadedName} to ${cloudState.currentProvider.label || cloudState.currentProvider.name}.`);
+      } catch (error) {
+        console.error('Cloud upload failed:', error);
+        setCloudUploadStatus((error && error.message) ? error.message : 'Upload failed.', true);
+      } finally {
+        cloudState.uploading = false;
+        uploadInput.disabled = false;
+        updateCloudNavigationState();
+      }
+    }
+
+    function selectCloudFile(file) {
+      if (!cloudState.currentProvider || !file || file.is_dir) return;
+
+      const key = cloudSelectionKey(cloudState.currentProvider.name, file.id);
+      const metadata = {
+        type: 'cloud',
+        provider: cloudState.currentProvider.name,
+        id: file.id,
+        name: file.name,
+        is_dir: !!file.is_dir
+      };
+
+      addToSelection(key, metadata);
+      setCloudStatus(`Added ${file.name || 'Unnamed file'} from ${cloudState.currentProvider.label || cloudState.currentProvider.name}.`);
+      renderCloudFiles(cloudState.currentFiles);
+    }
+
+    function removeCloudSelection(key) {
+      removeFromSelection(key);
+      renderCloudFiles(cloudState.currentFiles);
+    }
+
+    const openCloudButton = document.getElementById('openCloudBrowser');
+    if (openCloudButton) {
+      openCloudButton.addEventListener('click', openCloudBrowser);
+    }
+
+    if (cloudElements.providerSelect) {
+      cloudElements.providerSelect.addEventListener('change', event => {
+        switchCloudProvider(event.target.value);
+      });
+    }
+
+    if (cloudElements.upButton) {
+      cloudElements.upButton.addEventListener('click', cloudNavigateUp);
+    }
+
+    if (cloudElements.uploadButton) {
+      cloudElements.uploadButton.addEventListener('click', handleCloudUpload);
+    }
+
+    if (cloudElements.uploadInput) {
+      cloudElements.uploadInput.addEventListener('change', () => {
+        clearCloudUploadStatus();
+      });
+    }
+
+    if (cloudElements.modal) {
+      cloudElements.modal.addEventListener('click', event => {
+        if (event.target === cloudElements.modal) {
+          closeCloudBrowser();
+        }
+      });
+    }
+
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && cloudElements.modal && cloudElements.modal.classList.contains('show')) {
+        closeCloudBrowser();
+      }
+    });
+
+    function buildFileChips(files) {
+      return Array.from(files).map(file => {
+        const meta = selectedFileMetadata.get(file);
+        let icon;
+        let label = '';
+        if (meta && meta.type === 'cloud') {
+          const providerLabel = meta.provider ? meta.provider.toUpperCase() : 'CLOUD';
+          icon = '☁️';
+          label = `${providerLabel} · ${meta.name || 'Unnamed'}`;
+        } else {
+          const fileName = file.split('/').pop();
+          const isDir = file.endsWith('/') || (allFiles.find(f => f.name === fileName && f.is_dir));
+          icon = isDir ? '📁' : '📄';
+          label = fileName;
+        }
+        return { icon, label, file };
+      });
+    }
+
+    function updateSelectedDisplay() {
+      elements.selectedCount.textContent = selectedFiles.size;
+      elements.generateLink.disabled = selectedFiles.size === 0;
+
+      const selectionBar = document.getElementById('selectionBar');
+      if (selectedFiles.size === 0) {
+        elements.selectedFilesDiv.innerHTML = '';
+        selectionBar.classList.remove('visible');
+        document.body.classList.remove('has-selection');
+      } else {
+        elements.selectedFilesDiv.innerHTML = '';
+        const chips = buildFileChips(selectedFiles);
+        for (const c of chips) {
+          const chip = document.createElement('span');
+          chip.className = 'selected-file';
+          chip.dataset.action = 'removeFromSelection';
+          chip.dataset.path = c.file;
+          chip.textContent = `${c.icon} ${c.label} ×`;
+          elements.selectedFilesDiv.appendChild(chip);
+        }
+        selectionBar.classList.add('visible');
+        document.body.classList.add('has-selection');
+      }
+
+      document.querySelectorAll('#fileTableBody tr').forEach(row => {
+        const checkbox = row.querySelector('input[type="checkbox"]');
+        if (checkbox) {
+          row.classList.toggle('selected', checkbox.checked);
+        }
+      });
+    }
+
+    function updateConfigSelectedFiles() {
+      const container = document.getElementById('configSelectedFiles');
+      if (!container) return;
+      if (selectedFiles.size === 0) {
+        container.innerHTML = '<em style="font-size:12px; color:var(--ds-text-subtle);">No files selected</em>';
+        return;
+      }
+      const chips = buildFileChips(selectedFiles);
+      container.innerHTML = chips
+        .map(c => `<span class="config-file-chip">${c.icon} ${escapeHtml(c.label)}</span>`)
+        .join('');
+    }
+
+    function addToSelection(filePath, metadata = null) {
+      selectedFiles.add(filePath);
+      if (metadata) {
+        selectedFileMetadata.set(filePath, metadata);
+      }
+      updateSelectedDisplay();
+    }
+
+    function removeFromSelection(filePath) {
+      selectedFiles.delete(filePath);
+      if (selectedFileMetadata.has(filePath)) {
+        selectedFileMetadata.delete(filePath);
+      }
+      const checkbox = document.querySelector(`input[value="${filePath}"]`);
+      if (checkbox) checkbox.checked = false;
+      updateSelectedDisplay();
+    }
+
+    function clearSelection() {
+      selectedFiles.clear();
+      selectedFileMetadata.clear();
+      selectedModifyUsers.clear();
+      document.querySelectorAll('#fileTableBody input[type="checkbox"]').forEach(cb => cb.checked = false);
+      updateSelectedDisplay();
+      updateSelectedModifyUsersDisplay();
+    }
+    function selectAllVisible() {
+      const visibleFiles = document.querySelectorAll('#fileTableBody input[type="checkbox"]');
+      visibleFiles.forEach(checkbox => {
+        checkbox.checked = true;
+        selectedFiles.add(checkbox.value);
+      });
+      updateSelectedDisplay();
+    }
+
+    function updateBreadcrumb(path) {
+      if (!path) {
+        elements.currentPath.innerHTML = 'Root Directory';
+        return;
+      }
+      const parts = path.split('/').filter(Boolean);
+      const crumbs = parts.map((part, i) => {
+        const partPath = parts.slice(0, i + 1).join('/');
+        if (i === parts.length - 1) {
+          return `<strong>${escapeHtml(part)}</strong>`;
+        }
+        return `<a href="#" data-action="loadDirectory" data-path="${partPath}">${escapeHtml(part)}</a>`;
+      });
+      elements.currentPath.innerHTML = crumbs.join(' / ');
+    }
+
+    async function loadDirectory(path = '') {
+      try {
+        currentPath = path;
+        updateBreadcrumb(path);
+        elements.fileTableBody.innerHTML = '<tr><td colspan="5" class="loading">Loading...</td></tr>';
+
+        const response = await fetch(`/api/files/${path}`);
+
+        if (response.ok) {
+          const data = await response.json();
+          allFiles = data.files;
+          renderFiles();
+          updateSelectedDisplay();
+        } else {
+          const errorText = await response.text();
+          console.error('API error:', errorText);
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+      } catch (error) {
+        console.error('Error loading directory:', error);
+        elements.fileTableBody.innerHTML = '<tr><td class="sq-style-4dd6e6" colspan="5">Error loading files</td></tr>';
+      }
+    }
+
+    function _makeCell(content, className) {
+      const td = document.createElement('td');
+      if (className) td.className = className;
+      if (content instanceof Node) td.appendChild(content);
+      else if (content != null) td.textContent = content;
+      return td;
+    }
+
+    function _makeCheckboxCell(filePath, isSelected) {
+      const td = document.createElement('td');
+      td.className = 'sq-style-cdd8ca';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = filePath;
+      cb.checked = !!isSelected;
+      cb.dataset.action = 'toggleSelection';
+      cb.dataset.path = filePath;
+      td.appendChild(cb);
+      return td;
+    }
+
+    function _makeNameCell({ isDir, iconText, name, filePath, isShared, navPath }) {
+      const td = document.createElement('td');
+      const wrap = document.createElement('div');
+      wrap.className = 'sq-style-bd9db1';
+
+      const link = document.createElement(isDir ? 'a' : 'span');
+      if (isDir) link.href = '#';
+      link.className = isDir ? 'file-link' : 'file-link sq-style-24b531';
+      link.dataset.action = isDir ? 'loadDirectory' : 'previewFile';
+      link.dataset.path = isDir ? navPath : filePath;
+      const icon = document.createElement('span');
+      icon.className = 'file-icon';
+      icon.textContent = iconText;
+      link.appendChild(icon);
+      link.appendChild(document.createTextNode(name));
+      wrap.appendChild(link);
+
+      if (isShared) {
+        const share = document.createElement('span');
+        share.className = 'shared-icon sq-style-e9dc52';
+        share.title = 'Click to view share details';
+        share.dataset.action = 'showShareDetails';
+        share.dataset.path = filePath;
+        share.textContent = '🔗';
+        wrap.appendChild(share);
+      }
+
+      td.appendChild(wrap);
+      return td;
+    }
+
+    function _makeActionButton(label, action, path) {
+      const btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.dataset.action = action;
+      btn.dataset.path = path;
+      btn.textContent = label;
+      return btn;
+    }
+
+    function renderFiles() {
+      if (allFiles.length === 0) {
+        elements.fileTableBody.innerHTML = '';
+        const row = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 5;
+        td.className = 'loading';
+        td.textContent = 'No files in this directory';
+        row.appendChild(td);
+        elements.fileTableBody.appendChild(row);
+        return;
+      }
+
+      elements.fileTableBody.innerHTML = '';
+
+      if (currentPath) {
+        const parentPath = currentPath.split('/').filter(Boolean).slice(0, -1).join('/');
+        const row = document.createElement('tr');
+        row.appendChild(_makeCell(''));
+        const nameTd = document.createElement('td');
+        const parentLink = document.createElement('a');
+        parentLink.href = '#';
+        parentLink.className = 'file-link';
+        parentLink.dataset.action = 'loadDirectory';
+        parentLink.dataset.path = parentPath;
+        const icon = document.createElement('span');
+        icon.className = 'file-icon';
+        icon.textContent = '📁';
+        parentLink.appendChild(icon);
+        parentLink.appendChild(document.createTextNode('..'));
+        nameTd.appendChild(parentLink);
+        row.appendChild(nameTd);
+        row.appendChild(_makeCell('-'));
+        row.appendChild(_makeCell('-'));
+        row.appendChild(_makeCell('-'));
+        elements.fileTableBody.appendChild(row);
+      }
+
+      allFiles.forEach(file => {
+        const row = document.createElement('tr');
+        const filePath = currentPath ? `${currentPath}/${file.name}` : file.name;
+        const isSelected = selectedFiles.has(filePath);
+
+        row.appendChild(_makeCheckboxCell(filePath, isSelected));
+        row.appendChild(_makeNameCell({
+          isDir: !!file.is_dir,
+          iconText: file.is_dir ? '📁' : getFileIcon(file.name),
+          name: file.name,
+          filePath,
+          isShared: !!file.is_shared,
+          navPath: filePath,
+        }));
+        row.appendChild(_makeCell(file.is_dir ? '-' : (file.size_str || '-')));
+        row.appendChild(_makeCell(file.modified || '-'));
+
+        const actionTd = document.createElement('td');
+        actionTd.appendChild(file.is_dir
+          ? _makeActionButton('Open', 'loadDirectory', filePath)
+          : _makeActionButton('Preview', 'previewFile', filePath));
+        row.appendChild(actionTd);
+
+        if (isSelected) row.classList.add('selected');
+        elements.fileTableBody.appendChild(row);
+      });
+    }
+
+    // Share management functions
+    let currentShareData = null;
+
+    async function manageShare(shareId) {
+      const modal = document.getElementById('shareManagementModal');
+      const body = document.getElementById('shareManagementBody');
+
+      modal.showModal();
+      body.innerHTML = '<div class="flex flex-col items-center py-10"><span class="loading loading-spinner loading-lg text-primary"></span><div class="mt-4 text-base-content/60">Loading share details...</div></div>';
+
+      try {
+        console.log(`Fetching details for share: ${shareId}`);
+        const detailsResponse = await fetch(`/api/share/details_by_id?id=${encodeURIComponent(shareId)}`, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'X-XSRFToken': getXSRFToken()
+          },
+          cache: 'no-store'
+        });
+
+        if (!detailsResponse.ok) {
+          const errorText = await detailsResponse.text();
+          let errorMessage = `Server error: ${detailsResponse.status}`;
+          try {
+            const errorJson = JSON.parse(errorText);
+            errorMessage = errorJson.error || errorMessage;
+          } catch (e) {
+            // Not JSON
+          }
+          throw new Error(errorMessage);
+        }
+
+        const detailsData = await detailsResponse.json();
+        currentShareData = detailsData.share;
+        renderShareManagementModal(currentShareData);
+
+      } catch (error) {
+        console.error('Error loading share details:', error);
+        body.innerHTML = `
+          <div class="alert alert-error shadow-lg">
+            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <span>Failed to load share details: ${error.message}</span>
+          </div>
+        `;
+      }
+    }
+
+    function buildShareTokenHtml(share) {
+      if (!share.secret_token) return '';
+      return `
+            <div class="mt-4 p-4 bg-base-300 rounded-lg border border-base-300">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="text-lg">🔐</span>
+                <strong class="text-sm">Secret Token:</strong>
+              </div>
+              <div class="flex items-center gap-2">
+                <code class="bg-base-100 px-3 py-2 rounded font-mono text-primary text-xs flex-grow truncate">${share.secret_token}</code>
+                <button class="btn btn-xs btn-ghost" data-action="copyToClipboard" data-text="${share.secret_token}">Copy</button>
+              </div>
+              <div class="mt-2 text-[10px] opacity-60 flex items-start gap-1">
+                <span>⚠️</span>
+                <span>Important: Users need this token to access the share. It will not be shown again.</span>
+              </div>
+            </div>`;
+    }
+
+    function buildShareUsersHtml(allowedUsers) {
+      if (!allowedUsers || allowedUsers.length === 0) {
+        return '<div class="sq-style-be1381">No users specified (public access)</div>';
+      }
+      return allowedUsers.map(user => `
+                  <span class="access-user-tag">
+                    ${user}
+                    <button class="access-user-remove" data-action="removeUserFromShare" data-user="${user}">&times;</button>
+                  </span>`).join('');
+    }
+
+    function buildModifyUsersHtml(modifyUsers) {
+      if (!modifyUsers || modifyUsers.length === 0) {
+        return '<div class="sq-style-be1381">No modify users (read-only share)</div>';
+      }
+      return modifyUsers.map(user => `
+                  <span class="modify-user-tag">
+                    ✏️ ${user}
+                    <button class="modify-user-remove" data-action="removeModifyUserFromShare" data-user="${user}">&times;</button>
+                  </span>`).join('');
+    }
+
+    function buildSharePathsHtml(paths) {
+      if (!paths || paths.length === 0) {
+        return '<div class="sq-style-8eb9ea">No files in this share</div>';
+      }
+      return paths.map(path => `
+                  <div class="share-file-item">
+                    <span>${path}</span>
+                    <button class="share-file-remove" data-action="removeFileFromShare" data-path="${path}">Remove</button>
+                  </div>`).join('');
+    }
+
+    function buildShareTypeHtml(isStatic, isDynamic, currentBadge) {
+      const staticChecked = isStatic ? 'checked' : '';
+      const staticBadge = isStatic ? currentBadge : '';
+      const dynamicChecked = isDynamic ? 'checked' : '';
+      const dynamicBadge = isDynamic ? currentBadge : '';
+      return `
+            <div class="sq-style-3301ea">
+              <label class="sq-style-bd9db1">
+                <input type="radio" name="shareTypeEdit" value="static" ${staticChecked}>
+                <span>Static (Snapshot of current files)</span>
+                ${staticBadge}
+              </label>
+            </div>
+            <div class="sq-style-3301ea">
+              <label class="sq-style-bd9db1">
+                <input type="radio" name="shareTypeEdit" value="dynamic" ${dynamicChecked}>
+                <span>Dynamic (Live folder sharing)</span>
+                ${dynamicBadge}
+              </label>
+            </div>`;
+    }
+
+    function setupTokenEditCheckboxes() {
+      const disableTokenCheckbox = document.getElementById('disableTokenEdit');
+      const enableTokenCheckbox = document.getElementById('enableTokenEdit');
+      if (!disableTokenCheckbox || !enableTokenCheckbox) return;
+      disableTokenCheckbox.addEventListener('change', function () {
+        if (this.checked) enableTokenCheckbox.checked = false;
+      });
+      enableTokenCheckbox.addEventListener('change', function () {
+        if (this.checked) disableTokenCheckbox.checked = false;
+      });
+    }
+
+    function buildAccessInfoText(share) {
+      if (!share.allowed_users) return 'Public';
+      const suffix = share.allowed_users.length === 1 ? '' : 's';
+      return `Restricted (${share.allowed_users.length} user${suffix})`;
+    }
+
+    function buildModifyBadgeHtml(share) {
+      const modifyCount = share.modify_users ? share.modify_users.length : 0;
+      if (modifyCount > 0) {
+        const editorSuffix = modifyCount === 1 ? '' : 's';
+        return ` <span class="permission-badge editor">${modifyCount} editor${editorSuffix}</span>`;
+      }
+      return ' <span class="permission-badge viewer">read-only</span>';
+    }
+
+    function buildSecurityOptionsHtml(share, currentBadge) {
+      const disabledChecked = share.secret_token ? '' : 'checked';
+      const enabledChecked = share.secret_token ? 'checked' : '';
+      const disabledBadge = share.secret_token ? '' : currentBadge;
+      const enabledBadge = share.secret_token ? currentBadge : '';
+      return `
+            <div class="sq-style-3301ea">
+              <label class="sq-style-bd9db1">
+                <input type="checkbox" id="disableTokenEdit" ${disabledChecked}>
+                <span>Disable Secret Token (Public Access)</span>
+                ${disabledBadge}
+              </label>
+            </div>
+            <div class="sq-style-3301ea">
+              <label class="sq-style-bd9db1">
+                <input type="checkbox" id="enableTokenEdit" ${enabledChecked}>
+                <span>Enable Secret Token (Secure Access)</span>
+                ${enabledBadge}
+              </label>
+            </div>`;
+    }
+
+    function renderShareManagementModal(share) {
+      const body = document.getElementById('shareManagementBody');
+      const isStatic = (share.share_type || 'static') === 'static';
+      const expiryValue = share.expiry_date ? new Date(share.expiry_date).toISOString().slice(0, 16) : '';
+
+      const tokenHtml = share.secret_token
+        ? '<div class="bg-base-200 p-3 rounded-lg flex items-center gap-2">'
+          + '<code class="text-xs font-mono flex-grow truncate">' + share.secret_token + '</code>'
+          + '<button class="btn btn-xs btn-ghost" data-action="copyToClipboard" data-text="' + share.secret_token + '">Copy</button>'
+          + '</div>'
+        : '';
+
+      const pathsHtml = (share.paths || []).length > 0
+        ? (share.paths || []).map(p =>
+            '<div class="flex items-center justify-between p-1.5 bg-base-200 rounded text-xs group">'
+            + '<span class="font-mono truncate flex-grow">' + p + '</span>'
+            + '<button class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100" data-action="removeFileFromShare" data-path="' + p + '">✕</button>'
+            + '</div>'
+          ).join('')
+        : '<div class="text-center py-4 opacity-40 text-xs italic">No files in this share</div>';
+
+      body.innerHTML = `
+        <div class="space-y-4 pb-4">
+          <div class="card bg-base-200 shadow-inner">
+            <div class="card-body p-4">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div class="form-control">
+                  <label class="label pt-0"><span class="label-text font-bold text-xs uppercase opacity-60">Share ID</span></label>
+                  <div class="flex items-center gap-2">
+                    <code class="bg-base-300 px-2 py-1 rounded text-primary font-mono text-xs flex-grow overflow-hidden text-ellipsis">${share.id}</code>
+                    <button class="btn btn-ghost btn-xs btn-square" data-action="copyToClipboard" data-text="${share.id}" title="Copy ID">⎘</button>
+                  </div>
+                </div>
+                <div class="form-control">
+                  <label class="label pt-0"><span class="label-text font-bold text-xs uppercase opacity-60">Link</span></label>
+                  <div class="flex items-center gap-2">
+                    <a href="${share.url}" target="_blank" class="link link-primary text-xs truncate flex-grow">${globalThis.location.origin}${share.url}</a>
+                    <button class="btn btn-ghost btn-xs btn-square" data-action="copyToClipboard" data-text="${globalThis.location.origin}${share.url}" title="Copy">⎘</button>
+                  </div>
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-3 mt-2 text-xs">
+                <span><span class="opacity-60">Downloads:</span> <span class="badge badge-ghost badge-sm">${share.download_count || 0}</span></span>
+                <span><span class="opacity-60">Access:</span> <span class="badge ${share.allowed_users && share.allowed_users.length > 0 ? 'badge-warning' : 'badge-success'} badge-sm">${share.allowed_users && share.allowed_users.length > 0 ? 'Restricted' : 'Public'}</span></span>
+                <span><span class="opacity-60">Type:</span> <span class="badge badge-info badge-sm capitalize">${share.share_type || 'static'}</span></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="collapse collapse-arrow bg-base-100 border border-base-300 rounded-box">
+            <input type="radio" name="mgmt-accordion" checked="checked" />
+            <div class="collapse-title font-semibold text-sm">General Settings</div>
+            <div class="collapse-content space-y-4">
+              <div class="form-control">
+                <label class="label pb-1"><span class="label-text font-bold text-sm">Share Type</span></label>
+                <div class="flex gap-3">
+                  <label class="label cursor-pointer justify-start gap-2 bg-base-200 px-3 py-2 rounded-lg flex-1">
+                    <input type="radio" name="shareTypeEdit" value="static" class="radio radio-primary radio-sm" ${isStatic ? 'checked' : ''}>
+                    <span class="label-text font-semibold text-sm">Static</span>
+                  </label>
+                  <label class="label cursor-pointer justify-start gap-2 bg-base-200 px-3 py-2 rounded-lg flex-1">
+                    <input type="radio" name="shareTypeEdit" value="dynamic" class="radio radio-primary radio-sm" ${!isStatic ? 'checked' : ''}>
+                    <span class="label-text font-semibold text-sm">Dynamic</span>
+                  </label>
+                </div>
+              </div>
+              <div class="form-control">
+                <label class="label pb-1" for="expiryDateEdit"><span class="label-text font-bold text-sm">Expiration Date</span></label>
+                <input type="datetime-local" id="expiryDateEdit" class="input input-bordered input-sm w-full" value="${expiryValue}">
+              </div>
+              <div class="form-control">
+                <label class="label pb-1"><span class="label-text font-bold text-sm">Filter Rules</span></label>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label class="label-text text-xs opacity-60 mb-1 block">Allow List</label>
+                    <textarea id="allowListEdit" class="textarea textarea-bordered textarea-sm w-full h-16" placeholder="*.txt, *.pdf">${(share.allow_list || []).join(', ')}</textarea>
+                  </div>
+                  <div>
+                    <label class="label-text text-xs opacity-60 mb-1 block">Avoid List</label>
+                    <textarea id="avoidListEdit" class="textarea textarea-bordered textarea-sm w-full h-16" placeholder="*.tmp, .git/**">${(share.avoid_list || []).join(', ')}</textarea>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="collapse collapse-arrow bg-base-100 border border-base-300 rounded-box">
+            <input type="radio" name="mgmt-accordion" />
+            <div class="collapse-title font-semibold text-sm">Security & Token</div>
+            <div class="collapse-content space-y-3">
+              <label class="label cursor-pointer justify-start gap-3">
+                <input type="checkbox" id="disableTokenEdit" class="checkbox checkbox-error checkbox-sm" ${!share.secret_token ? 'checked' : ''}>
+                <span class="label-text text-sm">Disable Secret Token (Public Access)</span>
+              </label>
+              <label class="label cursor-pointer justify-start gap-3">
+                <input type="checkbox" id="enableTokenEdit" class="checkbox checkbox-primary checkbox-sm" ${share.secret_token ? 'checked' : ''}>
+                <span class="label-text text-sm">Enable / Rotate Secret Token</span>
+              </label>
+              ${tokenHtml}
+            </div>
+          </div>
+
+          <div class="collapse collapse-arrow bg-base-100 border border-base-300 rounded-box">
+            <input type="radio" name="mgmt-accordion" />
+            <div class="collapse-title font-semibold text-sm">Shared Files (${(share.paths || []).length})</div>
+            <div class="collapse-content">
+              <div class="max-h-48 overflow-y-auto space-y-1 mt-1" id="manageSharePathsList">
+                ${pathsHtml}
+              </div>
+              <button class="btn btn-sm btn-outline w-full mt-3" data-action="showAddFilesModalInManagement">+ Add More Files</button>
+            </div>
+          </div>
+
+          <div class="collapse collapse-arrow bg-base-100 border border-base-300 rounded-box">
+            <input type="radio" name="mgmt-accordion" />
+            <div class="collapse-title font-semibold text-sm">Access Control</div>
+            <div class="collapse-content space-y-4">
+              <div>
+                <label class="label-text font-semibold text-sm mb-2 block">Allowed Viewers</label>
+                <div id="accessUsersList" class="flex flex-wrap gap-1.5 min-h-8 p-2 bg-base-200 rounded-lg mb-2">
+                  ${buildShareUsersHtml(share.allowed_users)}
+                </div>
+                <div class="join w-full">
+                  <input type="text" id="newUserInput" placeholder="Enter username" class="input input-bordered input-xs join-item flex-grow">
+                  <button class="btn btn-xs btn-primary join-item" data-action="addUserToShare">Add</button>
+                </div>
+              </div>
+              <div class="divider my-1"></div>
+              <div>
+                <label class="label-text font-semibold text-sm mb-2 block">Authorized Editors</label>
+                <div id="modifyUsersList" class="flex flex-wrap gap-1.5 min-h-8 p-2 bg-base-200 rounded-lg mb-2">
+                  ${buildModifyUsersHtml(share.modify_users)}
+                </div>
+                <div class="join w-full">
+                  <input type="text" id="newModifyUserInput" placeholder="Enter username" class="input input-bordered input-xs join-item flex-grow">
+                  <button class="btn btn-xs btn-secondary join-item" data-action="addModifyUserToShare">Add</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      currentShareData = share;
+      document.querySelector('.share-management-title').textContent = 'Manage Share';
+      setupTokenEditCheckboxes();
+    }
+
+    async function updateShare() {
+      if (!currentShareData) {
+        showDialog('No share data available', 'Error');
+        return;
+      }
+
+      try {
+        // Get form values
+        const shareType = document.querySelector('input[name="shareTypeEdit"]:checked').value;
+        const disableToken = document.getElementById('disableTokenEdit').checked;
+        const enableToken = document.getElementById('enableTokenEdit').checked;
+        const allowListText = document.getElementById('allowListEdit').value.trim();
+        const avoidListText = document.getElementById('avoidListEdit').value.trim();
+
+        // Determine token setting
+        // If disableToken is checked, we want to disable the token (set to null)
+        // If enableToken is checked, we want to enable the token (generate new token)
+        // If neither is checked, we don't change the token setting
+        let tokenDisabled = null;
+        if (disableToken) {
+          tokenDisabled = true;  // Disable token (set to null)
+        } else if (enableToken) {
+          tokenDisabled = false; // Enable token (generate new token)
+        }
+        // If neither is checked, tokenDisabled remains null (no change)
+
+        const allowList = allowListText ? allowListText.split(',').map(s => s.trim()).filter(Boolean) : [];
+        const avoidList = avoidListText ? avoidListText.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+        // Get expiry date (store as system time)
+        const expiryDateInput = document.getElementById('expiryDateEdit').value;
+        const expiryDate = expiryDateInput ? new Date(expiryDateInput).toISOString().replace('Z', '') : null;
+
+        console.log('Updating share with values:', {
+          share_id: currentShareData.id,
+          share_type: shareType,
+          disable_token: tokenDisabled,
+          disableToken_checked: disableToken,
+          enableToken_checked: enableToken,
+          allow_list: allowList,
+          avoid_list: avoidList,
+          expiry_date: expiryDate
+        });
+
+        const response = await fetch('/share/update', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-XSRFToken': getXSRFToken()
+          },
+          body: JSON.stringify({
+            share_id: currentShareData.id,
+            share_type: shareType,
+            disable_token: tokenDisabled,
+            allow_list: allowList,
+            avoid_list: avoidList,
+            expiry_date: expiryDate
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+          showDialog('Error: ' + data.error, 'Error');
+        } else {
+          let message = 'Share updated successfully!';
+          if (data.new_token) {
+            message += `\n\nNew secret token: ${data.new_token}\n\nPlease save this token - it won't be shown again!`;
+          }
+          showDialog(message, 'Success');
+          closeShareManagementModal();
+          loadActiveShares();
+        }
+      } catch (error) {
+        console.error('Error updating share:', error);
+        showDialog('Failed to update share', 'Error');
+      }
+    }
+
+    function closeShareManagementModal() {
+      const modal = document.getElementById('shareManagementModal');
+      modal.close();
+      currentShareData = null;
+    }
+
+    // Add Files Modal Functions
+    let addFilesModalData = {
+      currentPath: '',
+      selectedFiles: new Set(),
+      allFiles: []
+    };
+
+    function showAddFilesModal() {
+      const modal = document.getElementById('addFilesModal');
+      modal.showModal();
+      addFilesModalData.currentPath = '';
+      addFilesModalData.selectedFiles.clear();
+      loadFilesForAddModal();
+    }
+
+    function closeAddFilesModal() {
+      const modal = document.getElementById('addFilesModal');
+      modal.close();
+      addFilesModalData.selectedFiles.clear();
+      updateSelectedFilesPreview();
+    }
+
+    async function loadFilesForAddModal() {
+      const content = document.getElementById('fileBrowserContent');
+      const pathDisplay = document.getElementById('currentBrowsePath');
+
+      content.innerHTML = '<div class="loading">Loading files...</div>';
+      pathDisplay.textContent = addFilesModalData.currentPath || 'Root Directory';
+
+      try {
+        const apiPath = addFilesModalData.currentPath || '';
+        console.log('Loading files for path:', apiPath);
+        const response = await fetch(`/api/files/${apiPath}`);
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log('API response:', data);
+
+          // Transform the API response to include full paths
+          addFilesModalData.allFiles = data.files.map(file => ({
+            ...file,
+            path: addFilesModalData.currentPath ? `${addFilesModalData.currentPath}/${file.name}` : file.name
+          }));
+
+          console.log('Transformed files:', addFilesModalData.allFiles);
+          renderFilesForAddModal();
+        } else {
+          const errorText = await response.text();
+          console.error('API error:', response.status, errorText);
+          content.innerHTML = '';
+          const errDiv = document.createElement('div');
+          errDiv.style.color = 'red';
+          errDiv.style.textAlign = 'center';
+          errDiv.style.padding = '20px';
+          errDiv.textContent = `Error loading files: ${response.status}`;
+          content.appendChild(errDiv);
+        }
+      } catch (error) {
+        console.error('Error loading files:', error);
+        content.innerHTML = '<div class="sq-style-fd1d87">Error loading files</div>';
+      }
+    }
+
+    function renderFilesForAddModal() {
+      const content = document.getElementById('fileBrowserContent');
+      const files = addFilesModalData.allFiles;
+
+      console.log('Rendering files:', files);
+
+      if (!files || files.length === 0) {
+        content.innerHTML = '<div class="sq-style-41e54b">No files in this directory</div>';
+        return;
+      }
+
+      content.innerHTML = '';
+      files.forEach(file => {
+        const isSelected = addFilesModalData.selectedFiles.has(file.path);
+        const icon = file.is_dir ? '📁' : getFileIcon(file.name);
+
+        console.log('Rendering file:', file.name, 'is_dir:', file.is_dir, 'path:', file.path);
+
+        const itemDiv = document.createElement('div');
+        itemDiv.className = `file-browser-item ${isSelected && !file.is_dir ? 'selected' : ''}`;
+        itemDiv.dataset.action = file.is_dir ? 'navigateToDirectory' : 'toggleFileSelection';
+        itemDiv.dataset.path = file.path;
+
+        if (!file.is_dir) {
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.checked = isSelected;
+          checkbox.dataset.action = 'toggleFileSelection';
+          checkbox.dataset.path = file.path;
+          itemDiv.appendChild(checkbox);
+        }
+
+        const span = document.createElement('span');
+        span.textContent = ` ${icon} ${file.name}`;
+        itemDiv.appendChild(span);
+
+        content.appendChild(itemDiv);
+      });
+    }
+
+    function toggleFileSelection(filePath) {
+      console.log('Toggling file selection:', filePath);
+      if (addFilesModalData.selectedFiles.has(filePath)) {
+        addFilesModalData.selectedFiles.delete(filePath);
+        console.log('Removed from selection');
+      } else {
+        addFilesModalData.selectedFiles.add(filePath);
+        console.log('Added to selection');
+      }
+      console.log('Current selection:', Array.from(addFilesModalData.selectedFiles));
+      renderFilesForAddModal();
+      updateSelectedFilesPreview();
+    }
+
+    function updateSelectedFilesPreview() {
+      const preview = document.getElementById('selectedFilesPreview');
+      const selectedFiles = Array.from(addFilesModalData.selectedFiles);
+
+      if (selectedFiles.length === 0) {
+        preview.innerHTML = '<div class="sq-style-be1381">No files selected</div>';
+        return;
+      }
+
+      preview.innerHTML = selectedFiles.map(filePath => {
+        const fileName = filePath.split('/').pop();
+        return `
+            <div class="selected-file-item">
+              <span>${fileName}</span>
+              <button class="remove-btn" data-action="removeFromAddModalSelection" data-path="${filePath}">&times;</button>
+            </div>
+          `;
+      }).join('');
+    }
+
+    function removeFromAddModalSelection(filePath) {
+      addFilesModalData.selectedFiles.delete(filePath);
+      renderFilesForAddModal();
+      updateSelectedFilesPreview();
+    }
+
+    function navigateUp() {
+      if (addFilesModalData.currentPath) {
+        const pathParts = addFilesModalData.currentPath.split('/').filter(part => part.length > 0);
+        pathParts.pop();
+        addFilesModalData.currentPath = pathParts.join('/');
+        console.log('Navigating up to:', addFilesModalData.currentPath);
+        loadFilesForAddModal();
+      }
+    }
+
+    function navigateToDirectory(dirPath) {
+      console.log('Navigating to directory:', dirPath);
+      addFilesModalData.currentPath = dirPath;
+      loadFilesForAddModal();
+    }
+
+        async function addSelectedFilesToShare() {
+      const modal = document.getElementById('addFilesModal');
+      const isManagement = modal.dataset.mode === 'management';
+      
+      const newPaths = Array.from(addFilesModalData.selectedFiles);
+      if (newPaths.length === 0) {
+        closeAddFilesModal();
+        return;
+      }
+
+      if (isManagement) {
+        if (!currentShareData.paths) currentShareData.paths = [];
+        newPaths.forEach(p => {
+          if (!currentShareData.paths.includes(p)) currentShareData.paths.push(p);
+        });
+        renderShareManagementModal(currentShareData);
+        closeAddFilesModal();
+        modal.dataset.mode = ''; // Reset mode
+      } else {
+        // Normal creation mode - prefill the share creation form
+        newPaths.forEach(p => addToSelection(p));
+        closeAddFilesModal();
+        openShareConfigModal();
+      }
+    }
+
+
+    async function removeFileFromShare(filePath) {
+      if (!currentShareData) return;
+
+      const confirmed = await showDialog(`Remove "${filePath}" from this share?`, 'Confirm Removal', { showCancel: true });
+      if (!confirmed) return;
+
+      try {
+        const response = await fetch('/share/update', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-XSRFToken': getXSRFToken()
+          },
+          body: JSON.stringify({
+            share_id: currentShareData.id,
+            remove_files: [filePath]
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+          showDialog('Error removing file: ' + data.error, 'Error');
+        } else {
+          showDialog('File removed successfully!', 'Success');
+          // Refresh the modal
+          manageShare(currentShareData.id);
+        }
+      } catch (error) {
+        console.error('Error removing file:', error);
+        showDialog('Failed to remove file', 'Error');
+      }
+    }
+
+    async function addUserToShare() {
+      const input = document.getElementById('newUserInput');
+      const user = input.value.trim();
+      if (!user) return;
+
+      if (!currentShareData.allowed_users) currentShareData.allowed_users = [];
+      if (!currentShareData.allowed_users.includes(user)) {
+        currentShareData.allowed_users.push(user);
+        renderShareManagementModal(currentShareData);
+      }
+      input.value = '';
+    }
+
+
+    async function removeUserFromShare(username) {
+      if (!currentShareData) return;
+
+      const confirmed = await showDialog(`Remove access for "${username}"?`, 'Confirm Removal', { showCancel: true });
+      if (!confirmed) return;
+
+      const currentUsers = currentShareData.allowed_users || [];
+      const updatedUsers = currentUsers.filter(u => u !== username);
+
+      try {
+        const response = await fetch('/share/update', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-XSRFToken': getXSRFToken()
+          },
+          body: JSON.stringify({
+            share_id: currentShareData.id,
+            allowed_users: updatedUsers
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+          showDialog('Error removing user: ' + data.error, 'Error');
+        } else {
+          showDialog('User access removed successfully!', 'Success');
+          manageShare(currentShareData.id);
+        }
+      } catch (error) {
+        console.error('Error removing user:', error);
+        showDialog('Failed to remove user', 'Error');
+      }
+    }
+
+    async function addModifyUserToShare() {
+      const input = document.getElementById('newModifyUserInput');
+      const user = input.value.trim();
+      if (!user) return;
+
+      if (!currentShareData.modify_users) currentShareData.modify_users = [];
+      if (!currentShareData.modify_users.includes(user)) {
+        currentShareData.modify_users.push(user);
+        renderShareManagementModal(currentShareData);
+      }
+      input.value = '';
+    }
+
+    async function removeModifyUserFromShare(username) {
+      if (!currentShareData) return;
+      const confirmed = await showDialog(`Remove modify access for "${username}"?`, 'Confirm Removal', { showCancel: true });
+      if (!confirmed) return;
+      const currentModifyUsers = currentShareData.modify_users || [];
+      const updatedUsers = currentModifyUsers.filter(u => u !== username);
+      try {
+        const response = await fetch('/share/update', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-XSRFToken': getXSRFToken()
+          },
+          body: JSON.stringify({
+            share_id: currentShareData.id,
+            modify_users: updatedUsers
+          })
+        });
+        const data = await response.json();
+        if (data.error) {
+          showDialog('Error removing modify access: ' + data.error, 'Error');
+        } else {
+          showDialog('Modify access removed!', 'Success');
+          manageShare(currentShareData.id);
+        }
+      } catch (error) {
+        console.error('Error removing modify user:', error);
+        showDialog('Failed to remove modify user', 'Error');
+      }
+    }
+
+    // Close modal when clicking outside
+    document.addEventListener('click', function (event) {
+      const modal = document.getElementById('shareManagementModal');
+      if (event.target === modal) {
+        closeShareManagementModal();
+      }
+    });
+
+    // Close modals with Escape key
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') {
+        closeShareManagementModal();
+        closeShareConfigModal();
+      }
+    });
+
+    // Share access editing functions
+    async function editShareAccess(shareId, currentAllowedUsers) {
+      const newAllowedUsers = await showDialog('Enter allowed users (comma-separated usernames, empty for public access):', 'Update Access', {
+        prompt: true,
+        defaultValue: currentAllowedUsers.join(', ') || '',
+        showCancel: true
+      });
+
+      if (newAllowedUsers === null) {
+        return; // User cancelled
+      }
+
+      let allowedUsersArray = [];
+      if (newAllowedUsers.trim() !== '') {
+        allowedUsersArray = newAllowedUsers.split(',').map(user => user.trim()).filter(user => user !== '');
+      }
+
+      try {
+        const response = await fetch('/share/update', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-XSRFToken': getXSRFToken()
+          },
+          body: JSON.stringify({
+            share_id: shareId,
+            allowed_users: allowedUsersArray
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+          showDialog('Error updating share access: ' + data.error, 'Error');
+        } else {
+          showDialog('Share access updated successfully!', 'Success');
+          // Reload the active shares list
+          loadActiveShares();
+        }
+      } catch (error) {
+        console.error('Error updating share access:', error);
+        showDialog('Failed to update share access', 'Error');
+      }
+    }
+
+    // User management functions
+    let searchTimeout = null;
+
+    function toggleUserSelectionPanel() {
+      const accessType = document.querySelector('input[name="accessType"]:checked').value;
+      const userSelection = document.getElementById('userSelection');
+
+      if (accessType === 'restricted') {
+        userSelection.style.display = 'block';
+        // Clear previous search and selections
+        document.getElementById('userSearchInput').value = '';
+        document.getElementById('userList').innerHTML = '<em class="sq-style-169f06">Type to search for users...</em>';
+        updateSelectedUsersDisplay();
+      } else {
+        userSelection.style.display = 'none';
+        selectedUsers.clear();
+        updateSelectedUsersDisplay();
+      }
+    }
+
+    function toggleShareTypeInfo() {
+      const shareType = document.querySelector('input[name="shareType"]:checked').value;
+      const shareTypeInfo = document.getElementById('shareTypeInfo');
+
+      if (shareType === 'static') {
+        shareTypeInfo.textContent = 'Static share creates a snapshot. New files added later won\'t appear.';
+      } else {
+        shareTypeInfo.textContent = 'Dynamic share is live. New files added to the folder will appear automatically.';
+      }
+    }
+
+    function toggleTokenInfo() {
+      const disableToken = document.getElementById('disableToken').checked;
+      const tokenInfo = document.getElementById('tokenInfo');
+
+      if (disableToken) {
+        tokenInfo.textContent = 'Public access — anyone with the link can view without a token.';
+      } else {
+        tokenInfo.textContent = 'Token enabled — users need a secret token to access shared files.';
+      }
+    }
+
+    function setupUserSearch() {
+      const searchInput = document.getElementById('userSearchInput');
+      searchInput.addEventListener('input', function () {
+        const query = this.value.trim();
+
+        // Clear previous timeout
+        if (searchTimeout) {
+          clearTimeout(searchTimeout);
+        }
+
+        if (query.length < 1) {
+          document.getElementById('userList').innerHTML = '<em class="sq-style-169f06">Type to search for users...</em>';
+          return;
+        }
+
+        // Debounce search requests
+        searchTimeout = setTimeout(() => {
+          searchUsers(query);
+        }, 300);
+      });
+    }
+
+    async function searchUsers(query) {
+      try {
+        const response = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`);
+        if (response.ok) {
+          const data = await response.json();
+          renderUserList(data.users || []);
+        } else {
+          document.getElementById('userList').innerHTML = '<em class="sq-style-f479d1">Error searching users</em>';
+        }
+      } catch (error) {
+        console.error('Error searching users:', error);
+        document.getElementById('userList').innerHTML = '<em class="sq-style-f479d1">Error searching users</em>';
+      }
+    }
+
+    function renderUserList(users) {
+      const userList = document.getElementById('userList');
+
+      if (users.length === 0) {
+        userList.innerHTML = '<em class="sq-style-169f06">No users found</em>';
+        return;
+      }
+
+      userList.innerHTML = '';
+      users.forEach(user => {
+        const userDiv = document.createElement('div');
+        userDiv.style.marginBottom = '5px';
+        const isSelected = selectedUsers.has(user.username);
+        const label = document.createElement('label');
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '8px';
+        label.style.cursor = 'pointer';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = user.username;
+        checkbox.checked = isSelected;
+        checkbox.dataset.action = 'toggleUserSelection';
+        checkbox.dataset.user = user.username;
+
+        const span = document.createElement('span');
+        span.textContent = `${user.username} ${user.role === 'admin' ? '(Admin)' : ''}`;
+
+        label.appendChild(checkbox);
+        label.appendChild(span);
+        userDiv.appendChild(label);
+        userList.appendChild(userDiv);
+      });
+    }
+
+    function toggleUserSelection(username) {
+      if (selectedUsers.has(username)) {
+        selectedUsers.delete(username);
+      } else {
+        selectedUsers.add(username);
+      }
+      updateSelectedUsersDisplay();
+    }
+
+    function updateSelectedUsersDisplay() {
+      const selectedUsersList = document.getElementById('selectedUsersList');
+
+      if (selectedUsers.size === 0) {
+        selectedUsersList.innerHTML = '<em class="sq-style-e1b789">No users selected</em>';
+        return;
+      }
+
+      selectedUsersList.innerHTML = Array.from(selectedUsers)
+        .map(username => `<span class="config-tag access" data-action="removeSelectedUser" data-user="${username}">${username} ×</span>`)
+        .join('');
+    }
+
+    function removeSelectedUser(username) {
+      selectedUsers.delete(username);
+      updateSelectedUsersDisplay();
+
+      // Update checkbox in search results if visible
+      const checkbox = document.querySelector(`input[value="${username}"]`);
+      if (checkbox) {
+        checkbox.checked = false;
+      }
+    }
+
+    let modifySearchTimeout = null;
+
+    function setupModifyUserSearch() {
+      const searchInput = document.getElementById('modifyUserSearchInput');
+      if (!searchInput) return;
+      searchInput.addEventListener('input', function () {
+        const query = this.value.trim();
+        if (modifySearchTimeout) clearTimeout(modifySearchTimeout);
+        if (query.length < 1) {
+          document.getElementById('modifyUserList').innerHTML = '<em class="sq-style-169f06">Type to search for users...</em>';
+          return;
+        }
+        modifySearchTimeout = setTimeout(() => searchModifyUsers(query), 300);
+      });
+    }
+
+    async function searchModifyUsers(query) {
+      try {
+        const response = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`);
+        if (response.ok) {
+          const data = await response.json();
+          renderModifyUserList(data.users || []);
+        } else {
+          document.getElementById('modifyUserList').innerHTML = '<em class="sq-style-f479d1">Error searching users</em>';
+        }
+      } catch (error) {
+        console.error('Error searching modify users:', error);
+        document.getElementById('modifyUserList').innerHTML = '<em class="sq-style-f479d1">Error searching users</em>';
+      }
+    }
+
+    function renderModifyUserList(users) {
+      const userList = document.getElementById('modifyUserList');
+      if (users.length === 0) {
+        userList.innerHTML = '<em class="sq-style-169f06">No users found</em>';
+        return;
+      }
+      userList.innerHTML = '';
+      users.forEach(user => {
+        const userDiv = document.createElement('div');
+        userDiv.style.marginBottom = '5px';
+        const isSelected = selectedModifyUsers.has(user.username);
+        const label = document.createElement('label');
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '8px';
+        label.style.cursor = 'pointer';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = user.username;
+        checkbox.checked = isSelected;
+        checkbox.dataset.action = 'toggleModifyUserSelection';
+        checkbox.dataset.user = user.username;
+        const span = document.createElement('span');
+        span.textContent = `${user.username} ${user.role === 'admin' ? '(Admin)' : ''}`;
+        label.appendChild(checkbox);
+        label.appendChild(span);
+        userDiv.appendChild(label);
+        userList.appendChild(userDiv);
+      });
+    }
+
+    function toggleModifyUserSelection(username) {
+      if (selectedModifyUsers.has(username)) {
+        selectedModifyUsers.delete(username);
+      } else {
+        selectedModifyUsers.add(username);
+      }
+      updateSelectedModifyUsersDisplay();
+    }
+
+    function updateSelectedModifyUsersDisplay() {
+      const list = document.getElementById('selectedModifyUsersList');
+      if (selectedModifyUsers.size === 0) {
+        list.innerHTML = '<em class="sq-style-e1b789">No modify users (read-only)</em>';
+        return;
+      }
+      list.innerHTML = Array.from(selectedModifyUsers)
+        .map(u => `<span class="config-tag editor" data-action="removeSelectedModifyUser" data-user="${u}">✏️ ${u} ×</span>`)
+        .join('');
+    }
+
+    function removeSelectedModifyUser(username) {
+      selectedModifyUsers.delete(username);
+      updateSelectedModifyUsersDisplay();
+      const checkbox = document.querySelector(`#modifyUserList input[value="${username}"]`);
+      if (checkbox) checkbox.checked = false;
+    }
+
+    function buildPathsPayload(files, metadataMap) {
+      return Array.from(files).map(item => {
+        const meta = metadataMap.get(item);
+        if (meta && meta.type === 'cloud') {
+          return { type: 'cloud', provider: meta.provider, id: meta.id, name: meta.name, is_dir: !!meta.is_dir };
+        }
+        return item;
+      });
+    }
+
+    function buildShareResultHtml(data, fullUrl, accessType, allowedUsers, shareType, disableToken) {
+      const modifyUsers = Array.from(selectedModifyUsers);
+      const accessInfo = accessType === 'restricted'
+        ? `<br><small>Access restricted to: ${allowedUsers.join(', ') || 'No users selected'}</small>`
+        : '<br><small>Public access (anyone with link)</small>';
+      const modifyInfo = modifyUsers.length > 0
+        ? `<br><small>✏️ Modify access: ${modifyUsers.join(', ')}</small>`
+        : '<br><small>📖 Read-only share</small>';
+      const shareTypeInfo = shareType === 'dynamic'
+        ? '<br><small>🔄 Dynamic share (live folder)</small>'
+        : '<br><small>📸 Static share (snapshot)</small>';
+      const tokenInfo = disableToken
+        ? '<br><small>🌐 Public access (no token required)</small>'
+        : '<br><small>🔐 Token required</small>';
+      const tokenSection = disableToken ? '' : `<strong>🔐 Secret Token:</strong><br>
+            <code class="sq-style-adfe87">${data.secret_token}</code>
+            <button class="btn sq-style-214d83" data-action="copyToClipboard" data-text="${data.secret_token}">Copy Token</button>
+            <br><br>
+            <div class="sq-style-568262">
+              <strong>⚠️ Important:</strong> Share this secret token with users who need access. They will need to enter this token to view the shared files.
+            </div>`;
+      return `
+            <strong>Share link created:</strong><br>
+            <a href="${data.url}">${data.url}</a>
+            <button class="btn sq-style-214d83" data-action="copyToClipboard" data-text="${fullUrl}">Copy Link</button>
+            ${accessInfo}${modifyInfo}${shareTypeInfo}${tokenInfo}
+            <br><br>
+            ${tokenSection}
+            ${accessInfo}
+          `;
+    }
+
+    async function generateShareLink() {
+      if (selectedFiles.size === 0) return;
+
+      const createBtn = document.getElementById('createShareBtn');
+      createBtn.disabled = true;
+      createBtn.textContent = 'Creating...';
+
+      try {
+        const accessType = document.querySelector('input[name="accessType"]:checked').value;
+        const shareType = document.querySelector('input[name="shareType"]:checked').value;
+        const allowedUsers = accessType === 'restricted' ? Array.from(selectedUsers) : [];
+        const modifyUsers = Array.from(selectedModifyUsers);
+        const disableToken = document.getElementById('disableToken').checked;
+
+        const allowListText = document.getElementById('allowList').value.trim();
+        const avoidListText = document.getElementById('avoidList').value.trim();
+        const allowList = allowListText ? allowListText.split(',').map(s => s.trim()).filter(Boolean) : [];
+        const avoidList = avoidListText ? avoidListText.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+        const expiryDateInput = document.getElementById('expiryDate').value;
+        const expiryDate = expiryDateInput ? new Date(expiryDateInput).toISOString().replace('Z', '') : null;
+
+        const pathsPayload = buildPathsPayload(selectedFiles, selectedFileMetadata);
+
+        const response = await fetch('/share/create', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-XSRFToken': getXSRFToken()
+          },
+          body: JSON.stringify({
+            paths: pathsPayload,
+            allowed_users: allowedUsers,
+            modify_users: modifyUsers,
+            share_type: shareType,
+            allow_list: allowList,
+            avoid_list: avoidList,
+            disable_token: disableToken,
+            expiry_date: expiryDate
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+          showDialog('Error: ' + data.error, 'Error');
+        } else {
+          closeShareConfigModal();
+          const fullUrl = `${globalThis.location.origin}${data.url}`;
+          elements.shareResult.style.display = 'block';
+          elements.shareResult.innerHTML = buildShareResultHtml(
+            data, fullUrl, accessType, allowedUsers, shareType, disableToken
+          );
+          clearSelection();
+          loadActiveShares();
+          elements.shareResult.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      } catch (error) {
+        console.error('Error generating share link:', error);
+        showDialog('Failed to generate share link', 'Error');
+      } finally {
+        createBtn.disabled = false;
+        createBtn.textContent = 'Create Share Link';
+      }
+    }
+
+    async function loadActiveShares() {
+      try {
+        const response = await fetch('/share/list');
+        const data = await response.json();
+
+
+        // Convert shares object to array
+        const sharesArray = data.shares ? Object.keys(data.shares).map(id => ({
+          id: id,
+          ...data.shares[id],
+          count: data.shares[id].paths ? data.shares[id].paths.length : 0
+        })) : [];
+
+        elements.activeSharesCount.textContent = sharesArray.length;
+
+        if (sharesArray.length === 0) {
+          elements.sharesTableBody.innerHTML = '<tr><td colspan="6" class="loading">No active shares</td></tr>';
+          return;
+        }
+
+        elements.sharesTableBody.innerHTML = '';
+        sharesArray.forEach(share => {
+          const row = document.createElement('tr');
+          let accessInfo;
+          if (share.allowed_users) {
+            const suffix = share.allowed_users.length === 1 ? '' : 's';
+            accessInfo = `Restricted (${share.allowed_users.length} user${suffix})`;
+          } else {
+            accessInfo = 'Public';
+          }
+          const modifyCount = share.modify_users ? share.modify_users.length : 0;
+          if (modifyCount > 0) {
+            accessInfo += ` <span class="permission-badge editor">${modifyCount} editor${modifyCount === 1 ? '' : 's'}</span>`;
+          }
+
+          const createdDate = share.created ? new Date(share.created).toLocaleString() : 'Just now';
+          
+          row.innerHTML = `
+            <td><code class="text-xs font-mono opacity-70">${share.id.substring(0, 8)}...</code></td>
+            <td>
+              <div class="flex items-center gap-2">
+                <span class="badge badge-sm badge-ghost font-bold">${share.count || (share.paths ? share.paths.length : 0)}</span>
+                <span class="text-sm">file${(share.count || (share.paths ? share.paths.length : 0)) === 1 ? '' : 's'}</span>
+              </div>
+            </td>
+            <td>${accessInfo}</td>
+            <td class="text-sm opacity-60">${createdDate}</td>
+            <td>
+              <div class="flex flex-nowrap gap-2 items-center justify-end">
+                <button class="btn btn-sm btn-ghost" data-action="copyToClipboard" data-text="${globalThis.location.origin}/shared/${share.id}" title="Copy Link">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                </button>
+                <button class="btn btn-sm btn-ghost" data-action="openShare" data-url="/shared/${share.id}" title="Open Share">
+                   <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                </button>
+                <button class="btn btn-sm btn-primary btn-outline" data-action="manageShare" data-id="${share.id}">Manage</button>
+                <button class="btn btn-sm btn-error btn-ghost btn-square" data-action="revokeShare" data-id="${share.id}" title="Revoke">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                </button>
+              </div>
+            </td>
+          `;
+          elements.sharesTableBody.appendChild(row);
+        });
+      } catch (error) {
+        console.error('Error loading active shares:', error);
+        elements.sharesTableBody.innerHTML = '<tr><td colspan="6" class="p-10 text-center"><div class="alert alert-error">Error loading shares</div></td></tr>';
+      }
+    }
+
+    function copyToClipboard(text, btn) {
+      // Check if the modern clipboard API is available
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          // Visual feedback
+          if (btn) {
+            const originalText = btn.textContent;
+            btn.textContent = 'Copied!';
+            setTimeout(() => btn.textContent = originalText, 1500);
+          }
+        }).catch(err => {
+          console.error('Clipboard API failed: ', err);
+          // Fall back to the old method
+          fallbackCopyTextToClipboard(text, btn);
+        });
+      } else {
+        // Fallback for older browsers or non-HTTPS contexts
+        fallbackCopyTextToClipboard(text, btn);
+      }
+    }
+
+    function fallbackCopyTextToClipboard(text, btn) {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.top = '-9999px';
+      textArea.style.left = '-9999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+
+      try {
+        const successful = document.execCommand('copy');
+        if (successful && btn) {
+          const originalText = btn.textContent;
+          btn.textContent = 'Copied!';
+          setTimeout(() => btn.textContent = originalText, 1500);
+        } else if (!successful) {
+          console.error('Fallback copy command failed');
+          showDialog('Failed to copy to clipboard', 'Error');
+        }
+      } catch (err) {
+        console.error('Fallback copy failed: ', err);
+        showDialog('Failed to copy to clipboard', 'Error');
+      } finally {
+        textArea.remove();
+      }
+    }
+
+    function openShare(url) {
+      window.location.href = url;
+    }
+
+    function removeFileFromShare(path) {
+      if (!currentShareData || !currentShareData.paths) return;
+      currentShareData.paths = currentShareData.paths.filter(p => p !== path);
+      renderShareManagementModal(currentShareData);
+    }
+
+    function removeUserFromShare(user) {
+      if (!currentShareData || !currentShareData.allowed_users) return;
+      currentShareData.allowed_users = currentShareData.allowed_users.filter(u => u !== user);
+      renderShareManagementModal(currentShareData);
+    }
+
+    function removeModifyUserFromShare(user) {
+      if (!currentShareData || !currentShareData.modify_users) return;
+      currentShareData.modify_users = currentShareData.modify_users.filter(u => u !== user);
+      renderShareManagementModal(currentShareData);
+    }
+
+    async function revokeShare(shareId) {
+      const confirmed = await showDialog('Are you sure you want to revoke this share?', 'Confirm Revocation', { showCancel: true });
+      if (!confirmed) return;
+
+      try {
+        const formData = new URLSearchParams();
+        formData.append('id', shareId);
+        await fetch('/share/revoke', {
+          method: 'POST',
+          headers: {
+            'X-XSRFToken': getXSRFToken()
+          },
+          body: formData
+        });
+
+        loadActiveShares();
+      } catch (error) {
+        console.error('Error revoking share:', error);
+        showDialog('Failed to revoke share', 'Error');
+      }
+    }
+
+    function previewFile(filePath) {
+      window.location.href = `/files/${filePath}`;
+    }
+
+    // Share popup functions
+    async function showShareDetails(filePath) {
+      const popup = document.getElementById('sharePopup');
+      const content = document.getElementById('sharePopupContent');
+
+      // Show popup with loading state
+      popup.showModal();
+      content.innerHTML = '<div class="loading">Loading share details...</div>';
+
+      try {
+        const response = await fetch(`/api/share/details?path=${encodeURIComponent(filePath)}`);
+        const data = await response.json();
+
+        if (data.error) {
+          content.innerHTML = `<div class="sq-style-fd1d87">Error: ${data.error}</div>`;
+          return;
+        }
+
+        if (data.shares.length === 0) {
+          content.innerHTML = '<div class="sq-style-41e54b">This file is not currently shared.</div>';
+          return;
+        }
+
+        // Update popup title with filename
+        document.querySelector('.popup-title').textContent = `Share Details - ${filePath.split('/').pop()}`;
+
+        // Render share details
+        content.innerHTML = data.shares.map(share => {
+          let shareAccessInfo;
+          if (share.allowed_users) {
+            const suffix = share.allowed_users.length === 1 ? '' : 's';
+            shareAccessInfo = `Restricted (${share.allowed_users.length} user${suffix})`;
+          } else {
+            shareAccessInfo = 'Public Access';
+          }
+          return `
+          <div class="share-item">
+            <div class="share-id">${share.id}</div>
+            <div class="share-url">
+              <a href="${share.url}">${globalThis.location.origin}${share.url}</a>
+            </div>
+            <div class="share-access ${share.allowed_users ? 'restricted' : 'public'}">
+              ${shareAccessInfo}
+            </div>
+            ${share.secret_token ? `
+              <div class="sq-style-fef9ee">
+                <strong>🔐 Secret Token:</strong><br>
+                <code class="sq-style-8c1855">${share.secret_token}</code>
+                <button class="btn sq-style-bfef8f" data-action="copyToClipboard" data-text="${share.secret_token}">Copy</button>
+              </div>
+            ` : ''}
+            ${share.allowed_users ? `
+              <div class="share-users">
+                <div class="share-users-title">Allowed Users:</div>
+                ${share.allowed_users.map(username => `<span class="user-tag">${username}</span>`).join('')}
+              </div>
+            ` : ''}
+            ${share.modify_users && share.modify_users.length > 0 ? `
+              <div class="share-users" style="margin-top:6px;">
+                <div class="share-users-title">Modify Users:</div>
+                ${share.modify_users.map(username => `<span class="user-tag" style="background:var(--ds-warning-soft);color:var(--ds-warning);">✏️ ${username}</span>`).join('')}
+              </div>
+            ` : ''}
+            <div class="share-actions">
+              <button class="btn" data-action="copyToClipboard" data-text="${globalThis.location.origin}${share.url}">Copy Link</button>
+              <button class="btn" data-action="openShare" data-url="${share.url}">Open Share</button>
+              <button class="btn" data-action="revokeShare" data-id="${share.id}">Revoke</button>
+            </div>
+          </div>
+        `; }).join('');
+
+      } catch (error) {
+        console.error('Error loading share details:', error);
+        content.innerHTML = '<div class="sq-style-fd1d87">Failed to load share details</div>';
+      }
+    }
+
+    function closeSharePopup() {
+      const popup = document.getElementById('sharePopup');
+      popup.close();
+    }
+
+    // Close popup when clicking outside
+    document.addEventListener('click', function (event) {
+      const popup = document.getElementById('sharePopup');
+      if (event.target === popup) {
+        closeSharePopup();
+      }
+    });
+
+    // Close popup with Escape key
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') {
+        closeSharePopup();
+      }
+    });
+
+    function showDialog(message, title = 'Confirm', options = {}) {
+      return new Promise((resolve) => {
+        document.getElementById('dialogTitle').textContent = title;
+        document.getElementById('dialogMessage').textContent = message;
+
+        const confirmBtn = document.getElementById('dialogConfirmBtn');
+        const cancelBtn = document.getElementById('dialogCancelBtn');
+        const inputContainer = document.getElementById('dialogInputContainer');
+        const input = document.getElementById('dialogInput');
+
+        confirmBtn.textContent = options.confirmText || 'OK';
+        cancelBtn.style.display = options.showCancel ? 'inline-block' : 'none';
+        inputContainer.style.display = options.prompt ? 'block' : 'none';
+        input.value = options.prompt ? (options.defaultValue || '') : '';
+
+        document.getElementById('customDialogModal').showModal();
+
+        confirmBtn.onclick = () => {
+          document.getElementById('customDialogModal').close();
+          resolve(options.prompt ? input.value : true);
+        };
+
+        cancelBtn.onclick = () => {
+          document.getElementById('customDialogModal').close();
+          resolve(options.prompt ? null : false);
+        };
+      });
+    }
+
+    function closeShareModal() {
+      const modal = document.getElementById('shareModal');
+      modal.close();
+    }
+
+    function openShareConfigModal() {
+      if (selectedFiles.size === 0) return;
+      updateConfigSelectedFiles();
+      document.getElementById('shareConfigModal').showModal();
+    }
+
+    function closeShareConfigModal() {
+      document.getElementById('shareConfigModal').close();
+    }
+
+    // Event listeners
+    elements.generateLink.onclick = openShareConfigModal;
+    elements.clearSelection.onclick = clearSelection;
+    elements.selectAllVisible.onclick = selectAllVisible;
+
+    // If the browse page handed us a selection via sessionStorage,
+    // pre-populate it on load and open the configure modal so the user
+    // lands straight on the configuration step.
+    function consumeShareCreatePrefill() {
+      let raw;
+      try {
+        raw = sessionStorage.getItem('airdShareCreatePrefill');
+      } catch (e) {
+        return;
+      }
+      if (!raw) return;
+      try {
+        sessionStorage.removeItem('airdShareCreatePrefill');
+      } catch (e) { /* ignore */ }
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (e) {
+        console.warn('Invalid share prefill payload:', e);
+        return;
+      }
+      const paths = Array.isArray(parsed?.paths) ? parsed.paths : [];
+      if (paths.length === 0) return;
+      // Drop anything older than 10 minutes so stale tabs don't hijack
+      // a fresh Share page visit.
+      if (parsed.created_at && (Date.now() - parsed.created_at) > 10 * 60 * 1000) return;
+      paths.forEach((p) => {
+        if (typeof p === 'string' && p.length > 0) addToSelection(p);
+      });
+      if (selectedFiles.size > 0) {
+        openShareConfigModal();
+      }
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      loadDirectory();
+      loadActiveShares();
+      setupUserSearch();
+      setupModifyUserSearch();
+      consumeShareCreatePrefill();
+
+      // Refresh active shares every 30 seconds
+      setInterval(loadActiveShares, 30000);
+
+      // Event listeners for CSP compliance - static elements
+      document.getElementById('cloudBrowserClose')?.addEventListener('click', closeCloudBrowser);
+      document.getElementById('sharePopupClose')?.addEventListener('click', closeSharePopup);
+      document.getElementById('shareManagementClose')?.addEventListener('click', closeShareManagementModal);
+      document.getElementById('shareManagementCancel')?.addEventListener('click', closeShareManagementModal);
+      document.getElementById('updateShareBtn')?.addEventListener('click', updateShare);
+      document.getElementById('addFilesClose')?.addEventListener('click', closeAddFilesModal);
+      document.getElementById('navigateUpBtn')?.addEventListener('click', navigateUp);
+      document.getElementById('addSelectedFilesBtn')?.addEventListener('click', addSelectedFilesToShare);
+      document.getElementById('addFilesCancel')?.addEventListener('click', closeAddFilesModal);
+
+      // Share config modal
+      document.getElementById('shareConfigClose')?.addEventListener('click', closeShareConfigModal);
+      document.getElementById('cancelShareConfig')?.addEventListener('click', closeShareConfigModal);
+      document.getElementById('createShareBtn')?.addEventListener('click', generateShareLink);
+
+      // Close share config modal when clicking overlay
+      document.getElementById('shareConfigModal')?.addEventListener('click', function (e) {
+        if (e.target === this) closeShareConfigModal();
+      });
+
+      // Static form controls
+      document.querySelectorAll('input[name="accessType"]').forEach(r => r.addEventListener('change', toggleUserSelectionPanel));
+      document.querySelectorAll('input[name="shareType"]').forEach(r => r.addEventListener('change', toggleShareTypeInfo));
+      document.getElementById('disableToken')?.addEventListener('change', toggleTokenInfo);
+
+      // Global event delegation for all data-action elements
+      document.addEventListener('click', function (e) {
+        const el = e.target.closest('[data-action]');
+        if (!el) return;
+        const action = el.dataset.action;
+
+        switch (action) {
+          case 'removeFromSelection':
+            e.preventDefault();
+            removeFromSelection(el.dataset.path);
+            break;
+          case 'loadDirectory':
+            e.preventDefault();
+            loadDirectory(el.dataset.path);
+            break;
+          case 'previewFile':
+            e.preventDefault();
+            previewFile(el.dataset.path);
+            break;
+          case 'showShareDetails':
+            e.preventDefault();
+            e.stopPropagation();
+            showShareDetails(el.dataset.path);
+            break;
+          case 'copyToClipboard':
+            e.preventDefault();
+            copyToClipboard(el.dataset.text, el);
+            break;
+          case 'openShare':
+            e.preventDefault();
+            openShare(el.dataset.url);
+            break;
+          case 'manageShare':
+            e.preventDefault();
+            manageShare(el.dataset.id);
+            break;
+          case 'showAddFilesModalInManagement':
+            e.preventDefault();
+            showAddFilesModal();
+            // Flag that we are in management mode
+            document.getElementById('addFilesModal').dataset.mode = 'management';
+            break;
+          case 'revokeShare':
+            e.preventDefault();
+            revokeShare(el.dataset.id);
+            break;
+          case 'removeUserFromShare':
+            e.preventDefault();
+            removeUserFromShare(el.dataset.user);
+            break;
+          case 'addUserToShare':
+            e.preventDefault();
+            addUserToShare();
+            break;
+          case 'removeFileFromShare':
+            e.preventDefault();
+            removeFileFromShare(el.dataset.path);
+            break;
+          case 'showAddFilesModal':
+            e.preventDefault();
+            showAddFilesModal();
+            break;
+          case 'navigateToDirectory':
+            e.preventDefault();
+            navigateToDirectory(el.dataset.path);
+            break;
+          case 'toggleFileSelection':
+            toggleFileSelection(el.dataset.path);
+            break;
+          case 'removeFromAddModalSelection':
+            e.preventDefault();
+            removeFromAddModalSelection(el.dataset.path);
+            break;
+          case 'removeSelectedUser':
+            e.preventDefault();
+            removeSelectedUser(el.dataset.user);
+            break;
+          case 'addModifyUserToShare':
+            e.preventDefault();
+            addModifyUserToShare();
+            break;
+          case 'removeModifyUserFromShare':
+            e.preventDefault();
+            removeModifyUserFromShare(el.dataset.user);
+            break;
+          case 'removeSelectedModifyUser':
+            e.preventDefault();
+            removeSelectedModifyUser(el.dataset.user);
+            break;
+        }
+      });
+
+      // Separate change handler for checkboxes with data-action
+      document.addEventListener('change', function (e) {
+        const el = e.target.closest('[data-action]');
+        if (!el) return;
+        const action = el.dataset.action;
+
+        switch (action) {
+          case 'toggleSelection':
+            if (el.checked) {
+              addToSelection(el.dataset.path);
+            } else {
+              removeFromSelection(el.dataset.path);
+            }
+            break;
+          case 'toggleUserSelection':
+            toggleUserSelection(el.dataset.user);
+            break;
+          case 'toggleModifyUserSelection':
+            toggleModifyUserSelection(el.dataset.user);
+            break;
+          case 'toggleFileSelection':
+            toggleFileSelection(el.dataset.path);
+            break;
+        }
+      });
+    });

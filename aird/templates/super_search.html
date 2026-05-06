@@ -6,27 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
   <title>Super Search - Aird</title>
-  <style>
-    /* Modern styles are now handled by Tailwind and DaisyUI. 
-       Legacy shim for specific components that still use ds-* classes is in app.css */
-    
-    .file-section { margin-bottom: 0.75rem; border-radius: 0.75rem; overflow: hidden; border: 1px solid oklch(var(--b3)); background: oklch(var(--b2) / 0.3); }
-    .file-header { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 1rem; background: oklch(var(--b3) / 0.5); cursor: pointer; transition: background 0.2s; }
-    .file-header:hover { background: oklch(var(--b3)); }
-    .file-path { display: flex; align-items: center; gap: 0.5rem; color: oklch(var(--bc)); text-decoration: none; font-weight: 600; font-size: 0.875rem; flex: 1; }
-    .file-path:hover { color: oklch(var(--p)); }
-    .file-toggle { transition: transform 0.2s ease; opacity: 0.6; }
-    .file-toggle.collapsed { transform: rotate(-90deg); }
-    .match-list { background: oklch(var(--b1)); font-family: var(--font-mono, "Fira Code", monospace); font-size: 0.8125rem; }
-    .match-list.collapsed { display: none; }
-    .match-item { display: flex; padding: 0.25rem 1rem; border-bottom: 1px solid oklch(var(--b2) / 0.5); border-left: 3px solid transparent; transition: background 0.1s; }
-    .match-item:hover { background: oklch(var(--b2) / 0.3); border-left-color: oklch(var(--p)); }
-    .line-number { width: 3rem; flex-shrink: 0; color: oklch(var(--bc) / 0.4); text-align: right; margin-right: 1.25rem; font-size: 0.75rem; user-select: none; }
-    .line-content { white-space: pre-wrap; word-break: break-all; color: oklch(var(--bc) / 0.8); }
-    .highlight { background: oklch(var(--p) / 0.2); color: oklch(var(--p)); border-radius: 0.2rem; padding: 0 0.2rem; font-weight: 700; }
-    .filename-match { font-weight: 600; color: oklch(var(--p)); }
-  </style>
-</head>
+  </head>
 
 <body>
   <div class="container mx-auto p-4">
@@ -129,7 +109,7 @@
     </div>
 
 
-    <div id="results" class="results" style="display: none;">
+    <div id="results" class="results hidden">
       <div id="resultsContent"></div>
       <div id="stats" class="stats"></div>
     </div>
@@ -467,22 +447,22 @@
 
       createFileSection(filePath) {
         const section = document.createElement('div');
-        section.className = 'file-section';
+        section.className = 'mb-3 rounded-xl overflow-hidden border border-base-300 bg-base-200/30';
         section.id = `file-${this.escapeId(filePath)}`;
 
         const header = document.createElement('div');
-        header.className = 'file-header';
+        header.className = 'flex items-center justify-between py-2 px-4 bg-base-300/50 cursor-pointer hover:bg-base-300 transition-colors';
         
         const pathSegments = filePath.split(/[/\\]/);
         const fileName = pathSegments[pathSegments.length - 1];
         const dirName = pathSegments.slice(0, -1).join('/') || '/';
         
         header.innerHTML = `
-            <a href="/files/${encodeURIComponent(dirName.replace(/^\/+/, ''))}" class="file-path truncate" title="Click to open folder">
+            <a href="/files/${encodeURIComponent(dirName.replace(/^\/+/, ''))}" class="flex items-center gap-2 text-base-content no-underline font-semibold text-sm flex-1 hover:text-primary truncate" title="Click to open folder">
               <svg class="w-4 h-4 opacity-50 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
               <span class="opacity-50 truncate hidden sm:inline">${dirName}/</span><span class="font-bold underline hover:text-primary">${fileName}</span>
             </a>
-            <button type="button" class="file-toggle btn btn-xs btn-outline btn-circle border-base-content/20 shrink-0 ml-2" title="Hide/Show results in this file">
+            <button type="button" class="file-toggle btn btn-xs btn-outline btn-circle border-base-content/20 shrink-0 ml-2 transition-transform duration-200 opacity-60" title="Hide/Show results in this file">
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
             </button>
           `;
@@ -493,7 +473,7 @@
         });
 
         const matchList = document.createElement('div');
-        matchList.className = 'match-list';
+        matchList.className = 'bg-base-100 font-mono text-[13px]';
         matchList.id = `matches-${this.escapeId(filePath)}`;
 
         section.appendChild(header);
@@ -508,7 +488,7 @@
       addMatchToDOM(filePath, matchData) {
         const matchList = document.getElementById(`matches-${this.escapeId(filePath)}`);
         const matchItem = document.createElement('div');
-        matchItem.className = 'match-item';
+        matchItem.className = 'flex py-1 px-4 border-b border-base-200/50 border-l-[3px] border-l-transparent transition-colors hover:bg-base-200/30 hover:border-l-primary';
 
         const highlightedContent = this.highlightMatches(matchData.line_content, matchData.search_text, matchData.match_positions);
 
@@ -516,14 +496,14 @@
         if (matchData.line_number === 0) {
           // This is a filename match
           matchItem.innerHTML = `
-              <span class="line-number">📁</span>
-              <span class="line-content filename-match">${highlightedContent}</span>
+              <span class="w-12 shrink-0 text-base-content/40 text-right mr-5 text-xs select-none">📁</span>
+              <span class="whitespace-pre-wrap break-all text-base-content/80 font-semibold text-primary">${highlightedContent}</span>
             `;
         } else {
           // This is a content match
           matchItem.innerHTML = `
-              <span class="line-number">${matchData.line_number}:</span>
-              <span class="line-content">${highlightedContent}</span>
+              <span class="w-12 shrink-0 text-base-content/40 text-right mr-5 text-xs select-none">${matchData.line_number}:</span>
+              <span class="whitespace-pre-wrap break-all text-base-content/80">${highlightedContent}</span>
             `;
         }
 
@@ -542,7 +522,7 @@
           // Add text before match
           result += this.escapeHtml(content.substring(lastIndex, pos));
           // Add highlighted match
-          result += `<span class="highlight">${this.escapeHtml(content.substring(pos, pos + searchText.length))}</span>`;
+          result += `<span class="bg-primary/20 text-primary rounded-[0.2rem] px-[0.2rem] font-bold">${this.escapeHtml(content.substring(pos, pos + searchText.length))}</span>`;
           lastIndex = pos + searchText.length;
         });
 
@@ -559,11 +539,11 @@
         fileData.collapsed = !fileData.collapsed;
 
         if (fileData.collapsed) {
-          matchList.classList.add('collapsed');
-          toggle.classList.add('collapsed');
+          matchList.classList.add('hidden');
+          toggle.classList.add('-rotate-90');
         } else {
-          matchList.classList.remove('collapsed');
-          toggle.classList.remove('collapsed');
+          matchList.classList.remove('hidden');
+          toggle.classList.remove('-rotate-90');
         }
       }
 

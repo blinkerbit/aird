@@ -5,310 +5,22 @@
   <link rel="stylesheet" href="/static/css/app.css" />
     <title>{{ filename }}</title>
     <meta id="page-flags" data-open-editor="{{ open_editor }}">
-    <style>
-        body {
-            background: var(--ds-bg);
-            color: var(--ds-text);
-        }
-
-
-
-        .breadcrumb a { color: var(--ds-text); text-decoration: none; }
-        .breadcrumb a:hover { color: var(--ds-primary); }
-
-        .download-btn,
-        button {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 7px 12px;
-            background: var(--ds-surface);
-            color: var(--ds-text);
-            text-decoration: none;
-            border-radius: var(--ds-radius-sm);
-            font-size: var(--ds-fs-sm);
-            font-weight: 600;
-            border: 1px solid var(--ds-border);
-            font-family: inherit;
-            margin: 0;
-            position: relative;
-            cursor: pointer;
-            transition: background var(--ds-duration-fast) var(--ds-ease),
-                        border-color var(--ds-duration-fast) var(--ds-ease);
-        }
-
-        .download-btn:hover,
-        button:hover {
-            background: var(--ds-bg-muted);
-            border-color: var(--ds-border-strong);
-        }
-        .download-btn:focus-visible, button:focus-visible {
-            outline: none; box-shadow: var(--ds-focus-ring);
-        }
-
-        /* Tooltip styles for icon buttons */
-        .download-btn[title]:hover::after,
-        button[title]:hover::after {
-            content: attr(title);
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            background: var(--ds-accent);
-            color: var(--ds-text-on-accent);
-            padding: 4px 8px;
-            border-radius: var(--ds-radius-xs);
-            font-size: var(--ds-fs-xs);
-            white-space: nowrap;
-            z-index: 1000;
-            margin-bottom: 5px;
-        }
-
-        .download-btn[title]:hover::before,
-        button[title]:hover::before {
-            content: '';
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            border: 4px solid transparent;
-            border-top-color: var(--ds-accent);
-            z-index: 1000;
-            margin-bottom: 1px;
-        }
-
-        .toolbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin: 10px 0;
-            padding: 8px 0;
-        }
-
-        .toolbar-left,
-        .toolbar-right {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .toolbar input[type="text"] {
-            padding: 7px 10px;
-            border: 1px solid var(--ds-border);
-            border-radius: var(--ds-radius-sm);
-            background: var(--ds-surface);
-            color: var(--ds-text);
-            font: inherit;
-            font-size: var(--ds-fs-sm);
-        }
-
-        #stream-filter {
-            min-width: 180px;
-            margin-right: 8px;
-        }
-
-        #stream-filter:focus {
-            border-color: var(--ds-primary);
-            outline: none;
-            box-shadow: var(--ds-focus-ring);
-        }
-
-        .line-numbers {
-            width: 1%;
-            max-width: 12ch;
-            min-width: 3ch;
-            white-space: nowrap;
-            vertical-align: top;
-            text-align: right;
-            padding: 2px 10px 2px 4px;
-            box-sizing: border-box;
-            border-right: 1px solid var(--ds-border-muted);
-            background: var(--ds-bg-muted);
-            color: var(--ds-text-subtle);
-            user-select: none;
-            font-family: var(--ds-font-mono);
-            font-size: var(--ds-fs-xs);
-        }
-
-        /* Mobile responsive styles */
-        @media (max-width: 768px) {
-
-            .download-btn,
-            button {
-                font-size: 14px;
-                padding: 8px 10px;
-                touch-action: manipulation;
-            }
-
-            .toolbar {
-                flex-direction: column;
-                align-items: stretch;
-                gap: 15px;
-            }
-
-            .toolbar-left,
-            .toolbar-right {
-                flex-wrap: wrap;
-                justify-content: center;
-            }
-
-            /* Increase tooltip size on mobile */
-            .download-btn[title]:hover::after,
-            button[title]:hover::after {
-                font-size: 12px;
-                padding: 6px 10px;
-            }
-        }
-
-        /* Line + content: keep gutter narrow and flush left (no huge gap before numbers) */
-        #file-content {
-            border-collapse: collapse;
-            width: 100%;
-            table-layout: fixed;
-        }
-
-        /* Empty header row should not steal width — columns come from tbody */
-        #file-content thead {
-            display: none;
-        }
-
-        /* Per-line <pre> MUST NOT grow its own scrollbar (the global
-           `pre { overflow-x: auto }` rule would give every single line its
-           own horizontal scroll). Wrap long lines instead. */
-        #file-content td pre {
-            margin: 0;
-            padding: 0;
-            min-height: 1.2em;
-            background: transparent;
-            border: 0;
-            border-radius: 0;
-            overflow: visible;
-            white-space: pre-wrap;
-            word-break: break-word;
-            overflow-wrap: anywhere;
-            font-family: var(--ds-font-mono);
-            font-size: var(--ds-fs-sm);
-            line-height: 1.5;
-            color: inherit;
-        }
-
-        #file-content td:not(.line-numbers) {
-            vertical-align: top;
-            word-break: break-word;
-            overflow-wrap: anywhere;
-        }
-
-        /* Toggle: opt-in "no wrap" mode (single shared horizontal scrollbar
-           lives on the table's scroll container, not on each line). */
-        #file-content.nowrap {
-            table-layout: auto;
-        }
-        #file-content.nowrap td pre {
-            white-space: pre;
-            overflow-wrap: normal;
-            word-break: normal;
-        }
-        .file-content-scroll {
-            width: 100%;
-            overflow-x: auto;
-        }
-
-        /* Hide line numbers when toggled */
-        .line-numbers.hidden {
-            display: none;
-        }
-
-        /* Ensure content takes full width when line numbers are hidden */
-        .line-numbers.hidden+td {
-            padding-left: 0;
-        }
-
-        #editor-container {
-            display: flex;
-            height: 60vh;
-        }
-
-        #line-numbers-editor {
-            width: 40px;
-            padding: 5px 5px 5px 2px;
-            text-align: right;
-            background-color: var(--ds-bg-muted);
-            color: var(--ds-text-subtle);
-            border: 1px solid var(--ds-border);
-            border-right: none;
-            overflow-y: hidden;
-            resize: none;
-            font-family: var(--ds-font-mono);
-            font-size: 1em;
-            line-height: 1.2em;
-        }
-
-        #editor {
-            width: calc(100% - 40px);
-            height: 100%;
-            border: 1px solid var(--ds-border);
-            resize: none;
-            font-family: var(--ds-font-mono);
-            font-size: 1em;
-            line-height: 1.2em;
-            padding: 5px;
-            background: var(--ds-surface);
-            color: var(--ds-text);
-        }
-
-        .streaming-indicator span {
-            animation: blink 1.4s infinite both;
-        }
-
-        .streaming-indicator span:nth-child(2) {
-            animation-delay: 0.2s;
-        }
-
-        .streaming-indicator span:nth-child(3) {
-            animation-delay: 0.4s;
-        }
-
-        @keyframes blink {
-
-            0%,
-            80%,
-            100% {
-                opacity: 0;
-            }
-
-            40% {
-                opacity: 1;
-            }
-        }
-
-        #markdown-preview h1, #markdown-preview h2, #markdown-preview h3 { margin-top: 1em; margin-bottom: 0.5em; }
-        #markdown-preview pre { background: var(--ds-bg-muted); padding: 10px; overflow: auto; border: 1px solid var(--ds-border-muted); border-radius: var(--ds-radius-sm); }
-        #markdown-preview code { background: var(--ds-bg-muted); padding: 2px 4px; border-radius: var(--ds-radius-xs); font-family: var(--ds-font-mono); }
-        #markdown-preview pre code { background: none; padding: 0; }
-        #markdown-preview blockquote { border-left: 4px solid var(--ds-border); margin: 0; padding-left: 1em; color: var(--ds-text-muted); }
-        #markdown-preview table { border-collapse: collapse; margin: 1em 0; }
-        #markdown-preview th, #markdown-preview td { border: 1px solid var(--ds-border-muted); padding: 6px 12px; }
-        #markdown-preview img { max-width: 100%; }
-        .file-info { color: var(--ds-text-muted); }
-    </style>
-</head>
+    </head>
 
 <body>
     {% set nav_title = "Aird" %}
 {% set nav_search_path = "" %}
 {% set show_admin_link = False %}
 {% include '_app_nav_header.html' %}
-    <div class="breadcrumb" style="margin-bottom: 10px;">
+    <div class="text-sm text-base-content/60 flex items-center gap-2 mb-4">
         <a href="/files/">🏠 Home</a>
     </div>
     <h2>{{ filename }}</h2>
-    <div class="toolbar">
-        <div class="toolbar-left">
-            <a href="/files/{{ path }}?download=1" class="download-btn" data-feature="file_download">⬇️ Download</a>
+    <div class="flex items-center justify-between gap-2 flex-wrap my-4 py-2">
+        <div class="flex items-center gap-2 flex-wrap">
+            <a href="/files/{{ path }}?download=1" class="btn btn-sm btn-outline" data-feature="file_download">⬇️ Download</a>
             <select id="encoding-select" title="File Encoding"
-                style="padding: 6px; border-radius: 4px; border: 1px solid black; font-size: 12px; font-family: var(--font-mono, 'Fira Code', monospace);">
+                class="select select-sm select-bordered font-mono text-xs">
                 <option value="utf-8">UTF-8</option>
                 <option value="windows-1252">Windows-1252</option>
                 <option value="iso-8859-1">ISO-8859-1</option>
@@ -319,26 +31,26 @@
                 <option value="gb18030">GB18030</option>
                 <option value="big5">Big5</option>
             </select>
-            <button id="copy-btn">📋 Copy Content</button>
-            <button id="toggle-lines-btn">🔢 Hide Line Numbers</button>
-            <button id="edit-btn" data-feature="file_edit">📝 Edit</button>
-            <button id="save-btn" style="display:none;">💾 Save</button>
+            <button class="btn btn-sm btn-outline" id="copy-btn">📋 Copy Content</button>
+            <button class="btn btn-sm btn-outline" id="toggle-lines-btn">🔢 Hide Line Numbers</button>
+            <button class="btn btn-sm btn-outline" id="edit-btn" data-feature="file_edit">📝 Edit</button>
+            <button class="btn btn-sm btn-outline" id="save-btn" class="hidden">💾 Save</button>
             {% if filename.lower().endswith('.md') %}
-            <button id="md-toggle-btn" type="button">📖 Rendered</button>
+            <button class="btn btn-sm btn-outline" id="md-toggle-btn" type="button">📖 Rendered</button>
             {% end %}
         </div>
-        <div class="toolbar-right">
-            <input type="text" id="stream-filter" placeholder="Filter: error OR warning AND user123"
+        <div class="flex items-center gap-2 flex-wrap">
+            <input type="text" id="stream-filter" class="input input-sm input-bordered w-full max-w-xs" placeholder="Filter: error OR warning AND user123"
                 title="Complex filters: 'term1 AND term2', 'term1 OR term2', 'quoted phrases', (grouping)">
-            <input type="text" id="last-n" inputmode="numeric" pattern="[0-9]*" placeholder="Last N (100)">
-            <button id="stream-btn">▶️ Stream</button>
-            <button id="stop-stream-btn" style="display:none;">⏹ Stop</button>
+            <input type="text" id="last-n" class="input input-sm input-bordered w-24" inputmode="numeric" pattern="[0-9]*" placeholder="Last N (100)">
+            <button class="btn btn-sm btn-outline" id="stream-btn">▶️ Stream</button>
+            <button class="btn btn-sm btn-outline" id="stop-stream-btn" class="hidden">⏹ Stop</button>
         </div>
     </div>
 
     <!-- Filter Help Section -->
     <div id="filter-help"
-        style="margin: 10px 0; padding: 8px; border: 1px solid var(--ds-border); background-color: var(--ds-bg-muted); border-radius: 4px; font-size: 11px; display: none;">
+        class="my-4 p-3 border border-base-300 bg-base-200 rounded-lg text-xs hidden">
         <strong>🔍 Filter Syntax Examples:</strong><br>
         <code>error</code> - Simple text match<br>
         <code>error OR warning</code> - Lines containing either term<br>
@@ -351,32 +63,32 @@
         <code>\ANDROID</code> - Use backslash to escape logical operators
     </div>
 
-    <div style="margin: 10px 0; padding: 10px; border: 1px solid var(--ds-border); background-color: var(--ds-bg-muted);">
+    <div class="my-4 p-4 border border-base-300 bg-base-200 rounded-lg flex items-center gap-3 flex-wrap">
         <label for="start">Start:</label>
-        <input type="text" id="start" value="{{ start_line or 1 }}" style="width: 80px; margin-right: 10px;"
+        <input type="text" id="start" value="{{ start_line or 1 }}" class="input input-sm input-bordered w-24"
             title="Press Enter to submit">
         <label for="end">End:</label>
         <input type="text" id="end" value="{{ end_line or '' }}" placeholder="End line"
-            style="width: 80px; margin-right: 10px;" title="Press Enter to submit">
-        <button id="submit-btn">Submit</button>
-        <button id="show-all-btn">Fetch All Lines</button>
+            class="input input-sm input-bordered w-24" title="Press Enter to submit">
+        <button class="btn btn-sm btn-outline" id="submit-btn">Submit</button>
+        <button class="btn btn-sm btn-outline" id="show-all-btn">Fetch All Lines</button>
         {% if start_line and end_line %}
-        <span style="margin-left: 10px; color: var(--ds-primary);">Showing lines {{ start_line }} to {{ end_line }} ; reached EOF:
+        <span class="ml-3 text-primary text-sm font-medium">Showing lines {{ start_line }} to {{ end_line }} ; reached EOF:
             {{ reached_EOF }}</span>
         {% elif start_line %}
-        <span style="margin-left: 10px; color: var(--ds-primary);">Showing entire file from line {{ start_line }} ; reached EOF:
+        <span class="ml-3 text-primary text-sm font-medium">Showing entire file from line {{ start_line }} ; reached EOF:
             {{ reached_EOF }}</span>
         {% end %}
     </div>
     <hr>
-    <div id="editor-container" style="display:none;">
-        <textarea id="line-numbers-editor" readonly></textarea>
-        <textarea id="editor">{% if open_editor %}{{ full_file_content }}{% end %}</textarea>
+    <div id="editor-container" class="flex h-[60vh] hidden">
+        <textarea id="line-numbers-editor" class="w-10 p-1 text-right bg-base-200 text-base-content/50 border border-base-300 border-r-0 overflow-y-hidden resize-none font-mono text-base leading-snug" readonly></textarea>
+        <textarea id="editor" class="flex-1 h-full border border-base-300 resize-none font-mono text-base leading-snug p-2 bg-base-100 text-base-content focus:outline-none focus:border-primary">{% if open_editor %}{{ full_file_content }}{% end %}</textarea>
     </div>
-    <div id="markdown-preview" style="display:none;padding:10px 20px;max-width:900px;line-height:1.6;font-family:var(--font-sans, 'Inter', sans-serif);">
+    <div id="markdown-preview" class="hidden p-4 max-w-4xl leading-relaxed font-sans prose prose-sm">
     </div>
-    <div class="file-content-scroll">
-        <table id="file-content">
+    <div class="w-full overflow-x-auto border border-base-300 rounded-lg">
+        <table id="file-content" class="w-full table-fixed border-collapse">
             <thead>
                 <tr>
                     <th class="line-numbers" scope="col" aria-label="Line number"></th>
@@ -385,12 +97,12 @@
             </thead>
             <tbody id="file-content-body">
                 <tr>
-                    <td colspan="2" style="padding: 20px; text-align: center; color: var(--ds-text-subtle);">Loading file content...</td>
+                    <td colspan="2" class="p-5 text-center text-base-content/50">Loading file content...</td>
                 </tr>
             </tbody>
-            <tfoot id="streaming-indicator" style="display:none;">
+            <tfoot id="streaming-indicator" class="hidden">
                 <tr>
-                    <td class="line-numbers streaming-indicator">
+                    <td class="w-12 text-right px-2 border-r border-base-300 bg-base-200 text-base-content/50 select-none font-mono text-xs animate-pulse">
                         <span>.</span><span>.</span><span>.</span>
                     </td>
                     <td></td>
@@ -430,7 +142,7 @@
                 renderContent();
             } catch (e) {
                 console.error("Fetch error:", e);
-                tableBody.innerHTML = `<tr><td colspan="2" style="color: red; padding: 10px;">Error loading file: ${e.message}</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="2" class="text-error p-3">Error loading file: ${e.message}</td></tr>`;
             }
         }
 
@@ -479,12 +191,13 @@
             for (let i = start - 1; i < end; i++) {
                 const tr = document.createElement('tr');
                 const tdNum = document.createElement('td');
-                tdNum.className = 'line-numbers';
+                tdNum.className = 'w-12 text-right px-2 border-r border-base-300 bg-base-200 text-base-content/50 select-none font-mono text-xs';
                 if (!lineNumbersVisible) tdNum.classList.add('hidden');
                 tdNum.textContent = i + 1;
 
                 const tdContent = document.createElement('td');
                 const pre = document.createElement('pre');
+                pre.className = 'whitespace-pre-wrap break-words font-mono text-sm leading-relaxed bg-transparent border-none p-0 m-0 overflow-visible';
                 pre.textContent = lines[i] || '\u00A0';
                 tdContent.appendChild(pre);
 
@@ -612,9 +325,9 @@
                     const row = tableBody.insertRow();
                     const lineNumCell = row.insertCell(0);
                     const lineContentCell = row.insertCell(1);
-                    lineNumCell.className = 'line-numbers';
+                    lineNumCell.className = 'w-12 text-right px-2 border-r border-base-300 bg-base-200 text-base-content/50 select-none font-mono text-xs';
                     lineNumCell.textContent = lineCount;
-                    lineContentCell.innerHTML = `<pre>${line || '\u00A0'}</pre>`;
+                    lineContentCell.innerHTML = `<pre class="whitespace-pre-wrap break-words font-mono text-sm leading-relaxed bg-transparent border-none p-0 m-0 overflow-visible">${line || '\u00A0'}</pre>`;
                     if (!lineNumbersVisible) lineNumCell.classList.add('hidden');
                     if (lineCount % 2 === 0) row.style.backgroundColor = 'var(--ds-bg-muted)';
                     globalThis.scrollTo(0, document.body.scrollHeight);
@@ -626,9 +339,9 @@
                     const row = tableBody.insertRow();
                     const lineNumCell = row.insertCell(0);
                     const lineContentCell = row.insertCell(1);
-                    lineNumCell.className = 'line-numbers';
+                    lineNumCell.className = 'w-12 text-right px-2 border-r border-base-300 bg-base-200 text-base-content/50 select-none font-mono text-xs';
                     lineNumCell.textContent = lineCount;
-                    lineContentCell.innerHTML = `<pre>${line || '\u00A0'}</pre>`;
+                    lineContentCell.innerHTML = `<pre class="whitespace-pre-wrap break-words font-mono text-sm leading-relaxed bg-transparent border-none p-0 m-0 overflow-visible">${line || '\u00A0'}</pre>`;
                     if (!lineNumbersVisible) lineNumCell.classList.add('hidden');
                     if (lineCount % 2 === 0) row.style.backgroundColor = 'var(--ds-bg-muted)';
                     globalThis.scrollTo(0, document.body.scrollHeight);
@@ -646,7 +359,7 @@
 
         toggleLinesBtn.onclick = function () {
             lineNumbersVisible = !lineNumbersVisible;
-            document.querySelectorAll('.line-numbers').forEach(cell => {
+            document.querySelectorAll('.w-12.text-right').forEach(cell => {
                 cell.classList.toggle('hidden', !lineNumbersVisible);
             });
             toggleLinesBtn.textContent = lineNumbersVisible ? 'Hide Line Numbers' : 'Show Line Numbers';

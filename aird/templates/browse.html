@@ -1200,9 +1200,9 @@
         <span>Drop files here to upload</span>
       </p>
       <p class="text-sm opacity-60">or click to select files from your computer</p>
-      <input type="file" id="fileInput" multiple style="display: none" />
+      <input type="file" id="fileInput" multiple class="hidden" />
     </div>
-    <div id="progressContainer" style="display:none;width:100%;"></div>
+    <div id="progressContainer" class="hidden w-full"></div>
     {% end %}
 
     {% if features.get('folder_create') %}
@@ -1300,7 +1300,7 @@
               class="file-link">
               {% set _ext = file['name'].rsplit('.', 1)[-1].lower() if '.' in file['name'] else '' %}
               {% if _ext in ('jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico') %}
-              <img src="/files/{{ escape(join_path(current_path, file['name'])) }}?mode=raw" alt="" loading="lazy" style="width:24px;height:24px;object-fit:cover;vertical-align:middle;margin-right:8px;border-radius:3px;border:1px solid var(--ds-border);" data-fallback="<span class=file-icon>{{ get_file_icon(file['name']) }}</span>">
+              <img src="/files/{{ escape(join_path(current_path, file['name'])) }}?mode=raw" alt="" loading="lazy" class="w-6 h-6 object-cover align-middle mr-2 rounded-sm border border-base-300" data-fallback="<span class=file-icon>{{ get_file_icon(file['name']) }}</span>">
               {% else %}
               <span class="file-icon">{{ get_file_icon(file["name"]) }}</span>
               {% end %}{{
@@ -1436,7 +1436,7 @@
     <div class="custom-dialog-modal-content">
       <h2>Add to share</h2>
       <p>Select a share to add the selected items to:</p>
-      <select id="sharePickerSelect" class="custom-dialog-input" style="width: 100%; margin-bottom: 15px;">
+      <select id="sharePickerSelect" class="custom-dialog-input" class="w-full mb-4">
         <option value="">Loading...</option>
       </select>
       <div class="custom-dialog-buttons">
@@ -1452,7 +1452,7 @@
     <div class="custom-dialog-modal-content">
       <h2 id="dialogTitle">Dialog</h2>
       <p id="dialogMessage"></p>
-      <div id="dialogInputContainer" style="display: none;">
+      <div id="dialogInputContainer" class="hidden">
         <input type="text" id="dialogInput" class="custom-dialog-input">
       </div>
       <div class="custom-dialog-buttons">

@@ -45,7 +45,7 @@
   <header class="pdf-header">
     <div class="crumbs">
       <a href="/files/">🏠 Home</a>
-      <span style="margin: 0 8px; color: var(--ds-text-subtle);">/</span>
+      <span class="mx-2 text-base-content/40">/</span>
       <span>{{ filename }}</span>
     </div>
     <div id="toolbar">
@@ -58,7 +58,7 @@
   <div id="canvas-wrap">
     <canvas id="pdf-canvas"></canvas>
   </div>
-  <div id="error" class="error" style="display:none;"></div>
+  <div id="error" class="error" class="hidden"></div>
 
   <script type="module" nonce="{{ csp_nonce }}">
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';

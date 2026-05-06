@@ -2,7 +2,12 @@
    Pass: nav_title (default Aird), nav_search_path (for Super Search link), show_admin_link (optional). #}
 <div class="navbar bg-base-200 shadow-sm rounded-box mb-4 flex-wrap gap-2">
   <div class="flex-1">
-    <a href="/files/" class="btn btn-ghost text-xl font-extrabold tracking-wide text-gradient-brand">{{ nav_title or "Aird" }}</a>
+    <a href="/files/" class="btn btn-ghost text-xl font-extrabold tracking-wide gap-2" aria-label="Aird Home">
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 12l4-4 4 4 4-4 4 4v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6z" />
+      </svg>
+      <span class="text-gradient-brand">{{ nav_title or "Aird" }}</span>
+    </a>
   </div>
   <div class="flex items-center gap-1 flex-wrap">
     {% if current_user %}

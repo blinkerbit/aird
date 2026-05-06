@@ -108,8 +108,7 @@
             </label>
             <span class="text-xs text-base-content/50">When unchecked, only selected extensions below are allowed.</span>
           </div>
-          <div id="allowedExtensionsSection" class="bg-base-200 rounded-lg p-4 border border-base-300"
-               style="{% if upload_config.get('allow_all_file_types', 0) %}display: none;{% end %}">
+          <div id="allowedExtensionsSection" class="bg-base-200 rounded-lg p-4 border border-base-300 {% if upload_config.get('allow_all_file_types', 0) %}hidden{% end %}">
             <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/60 mb-3">Allowed extensions</h4>
             <div class="flex flex-wrap gap-2">
               {% for ext in available_extensions %}

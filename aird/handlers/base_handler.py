@@ -582,7 +582,8 @@ class BaseHandler(tornado.web.RequestHandler):
         csp = (
             f"default-src 'self'; "
             f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
-            f"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            f"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+            f"font-src 'self' data: https://fonts.gstatic.com; "
             f"img-src 'self' data:; "
             f"connect-src 'self' ws: wss:;"
         )

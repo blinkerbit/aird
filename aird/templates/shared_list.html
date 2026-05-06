@@ -5,47 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/static/css/app.css" />
   <title>Shared files · Aird</title>
-  <style>
-    .file-browser {
-      background: oklch(var(--b1));
-      border: 1px solid oklch(var(--b3));
-      border-radius: 0.75rem;
-      overflow: hidden;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.06);
-    }
-    .file-header-row {
-      display: grid; grid-template-columns: 1fr 110px; align-items: center;
-      background: oklch(var(--b2)); padding: 10px 14px;
-      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em;
-      font-weight: 700; border-bottom: 1px solid oklch(var(--b3));
-      color: oklch(var(--bc) / 0.5);
-    }
-    .file-header-row .actions-col-h { text-align: right; }
-    .tree-folder { border-bottom: 1px solid oklch(var(--b2)); }
-    .tree-folder:last-child { border-bottom: none; }
-    .folder-summary {
-      cursor: pointer; list-style: none; display: flex; align-items: center;
-      padding: 10px 14px; font-weight: 600; user-select: none;
-      transition: background 0.12s ease;
-    }
-    .folder-summary:hover { background: oklch(var(--b2)); }
+    <style>
     .folder-summary::-webkit-details-marker { display: none; }
     .folder-summary::before {
       content: '▶'; display: inline-block; width: 1em; margin-right: 8px;
       font-size: 10px; opacity: 0.4; transition: transform 0.12s ease;
     }
     details[open] > .folder-summary::before { transform: rotate(90deg); }
-    .tree-children { padding-left: 0; border-left: 2px solid oklch(var(--b2)); margin-left: 14px; }
-    .file-row {
-      display: grid; grid-template-columns: 1fr 110px; align-items: center;
-      gap: 8px; padding: 9px 14px; border-bottom: 1px solid oklch(var(--b2));
-      transition: background 0.12s ease;
-    }
-    .file-row:hover { background: oklch(var(--b2)); }
-    .file-row .name-part { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .file-row .actions-part { text-align: right; flex-shrink: 0; }
-    .file-icon { margin-right: 8px; }
-    @media (max-width: 640px) { .file-header-row, .file-row { grid-template-columns: 1fr 80px; font-size: 0.8rem; } }
   </style>
 </head>
 <body class="bg-base-200 min-h-screen">
@@ -62,13 +28,13 @@
       </span>
     </header>
 
-    <section class="file-browser" id="fileBrowser">
-      <div class="file-header-row">
-        <span class="name-col-h">Name</span>
-        <span class="actions-col-h">Download</span>
+    <section class="bg-base-100 border border-base-300 rounded-xl overflow-hidden shadow-sm" id="fileBrowser">
+      <div class="grid grid-cols-[1fr_110px] items-center bg-base-200 px-3.5 py-2.5 text-[0.7rem] uppercase tracking-wider font-bold border-b border-base-300 text-base-content/50 max-sm:grid-cols-[1fr_80px] max-sm:text-[0.8rem]">
+        <span >Name</span>
+        <span class="text-right">Download</span>
       </div>
-      <div id="fileTreeBody" class="file-tree-body">
-        <div class="file-row" style="border: none;">
+      <div id="fileTreeBody" >
+        <div class="grid grid-cols-[1fr_110px] items-center gap-2 px-3.5 py-2 border-b border-base-200 transition-colors hover:bg-base-200 max-sm:grid-cols-[1fr_80px] max-sm:text-[0.8rem] border-none">
           <span class="name-part text-base-content/50">Loading…</span>
           <span class="actions-part"></span>
         </div>
@@ -160,12 +126,12 @@
     function renderTreeNode(node, depth) {
       if (node.isFile) {
         const row = document.createElement('div');
-        row.className = 'file-row';
+        row.className = 'grid grid-cols-[1fr_110px] items-center gap-2 px-3.5 py-2 border-b border-base-200 transition-colors hover:bg-base-200 max-sm:grid-cols-[1fr_80px] max-sm:text-[0.8rem]';
         row.style.paddingLeft = `${14 + depth * 16}px`;
         const nameEl = document.createElement('div');
-        nameEl.className = 'name-part';
+        nameEl.className = 'min-w-0 overflow-hidden text-ellipsis whitespace-nowrap';
         const icon = document.createElement('span');
-        icon.className = 'file-icon';
+        icon.className = 'mr-2 inline-block';
         icon.textContent = getFileIcon(node.name) + '\u00A0';
         const nameSpan = document.createElement('span');
         nameSpan.textContent = node.name;
@@ -173,7 +139,7 @@
         nameEl.appendChild(nameSpan);
 
         const action = document.createElement('div');
-        action.className = 'actions-part';
+        action.className = 'text-right shrink-0';
         const a = document.createElement('a');
         a.href = `/shared/${shareId}/file/${encodeURIComponent(node.fullPath)}?download=1`;
         a.className = 'btn btn-primary btn-xs';
@@ -188,16 +154,16 @@
       }
 
       const details = document.createElement('details');
-      details.className = 'tree-folder';
+      details.className = 'border-b border-base-200 last:border-b-0';
       if (depth === 0) details.open = true;
 
       const summary = document.createElement('summary');
-      summary.className = 'folder-summary';
+      summary.className = 'folder-summary cursor-pointer list-none flex items-center px-3.5 py-2.5 font-semibold select-none transition-colors hover:bg-base-200';
       summary.style.paddingLeft = `${14 + depth * 16}px`;
       summary.textContent = '📁 ' + node.name;
 
       const wrap = document.createElement('div');
-      wrap.className = 'tree-children';
+      wrap.className = 'pl-0 border-l-2 border-base-200 ml-3.5';
       sortTreeEntries(node.children).forEach(([, child]) => {
         wrap.appendChild(renderTreeNode(child, depth + 1));
       });
