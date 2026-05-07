@@ -4,9 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <title>Admin login · Aird</title>
 </head>
 <body class="min-h-screen flex items-center justify-center p-6 bg-base-200">
+  {% include '_theme_login_corner.html' %}
   <div class="w-full max-w-md animate-fade-in-up">
     <div class="card bg-base-100 shadow-2xl border border-base-300">
       <div class="card-body">
@@ -27,7 +29,7 @@
           <div class="form-control">
             <label class="label" for="adm-username"><span class="label-text font-semibold">Username</span></label>
             <input class="input input-bordered w-full" type="text" id="adm-username" name="username"
-                   placeholder="admin-username" autocomplete="username">
+                   placeholder="username" autocomplete="username">
           </div>
           <div class="form-control">
             <label class="label" for="adm-password"><span class="label-text font-semibold">Password</span></label>
@@ -51,6 +53,6 @@
       </div>
     </div>
   </div>
-  <script src="/static/js/theme.js"></script>
+  <script src="/static/js/theme.js" defer></script>
 </body>
 </html>

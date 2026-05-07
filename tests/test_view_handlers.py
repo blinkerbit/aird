@@ -836,7 +836,7 @@ class TestFourOhFourHandler:
             handler.prepare()
             mock_status.assert_called_with(404)
             mock_render.assert_called_with(
-                "error.html", error_code=404, error_message="Page not found"
+                "error.html", status_code=404, error_message="Page not found"
             )
 
 

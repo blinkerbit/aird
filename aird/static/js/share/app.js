@@ -1,7 +1,6 @@
 let currentPath = '';
     let selectedFiles = new Set();
     let allFiles = [];
-    let allUsers = [];
     let selectedUsers = new Set();
     let selectedModifyUsers = new Set();
 
@@ -43,8 +42,7 @@ let currentPath = '';
     };
 
     function getXSRFToken() {
-      const match = document.cookie.match(/_xsrf=([^;]*)/);
-      return match ? decodeURIComponent(match[1]) : '';
+      return globalThis.AirdCore.getXSRFToken();
     }
 
     function getFileIcon(filename) {
@@ -131,23 +129,19 @@ let currentPath = '';
     }
 
     function formatFileSize(bytes) {
-      if (bytes === 0) return '0 B';
-      const k = 1024;
-      const sizes = ['B', 'KB', 'MB', 'GB'];
-      const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+      return globalThis.AirdCore.formatBytes(bytes);
     }
 
     function escapeHtml(text) {
-      if (text === undefined || text === null) {
-        return '';
+      return globalThis.AirdCore.escapeHtml(text);
+    }
+
+    function findCheckboxByValue(scopeRoot, value) {
+      if (!scopeRoot) return null;
+      for (const el of scopeRoot.querySelectorAll('input[type="checkbox"]')) {
+        if (el.value === value) return el;
       }
-      return String(text)
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#39;');
+      return null;
     }
 
     function cloudSelectionKey(providerName, fileId) {
@@ -309,7 +303,7 @@ let currentPath = '';
 
     function openCloudBrowser() {
       const shareTypeRadio = document.querySelector('input[name="shareType"]:checked');
-      if (shareTypeRadio && shareTypeRadio.value === 'dynamic') {
+      if (shareTypeRadio?.value === 'dynamic') {
         showDialog('Cloud files are not supported when creating a dynamic share.', 'Cloud Files');
         return;
       }
@@ -322,9 +316,7 @@ let currentPath = '';
       cloudState.uploading = false;
       updateCloudNavigationState();
 
-      if (cloudElements.modal) {
-        cloudElements.modal.showModal();
-      }
+      cloudElements.modal?.showModal();
 
       if (cloudElements.tableBody) {
         cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="loading">Loading cloud files...</td></tr>';
@@ -334,9 +326,7 @@ let currentPath = '';
     }
 
     function closeCloudBrowser() {
-      if (cloudElements.modal) {
-        cloudElements.modal.close();
-      }
+      cloudElements.modal?.close();
       clearCloudStatus();
       clearCloudUploadStatus();
     }
@@ -404,15 +394,13 @@ let currentPath = '';
         return;
       }
 
-      const parentEntry = cloudState.pathStack.length > 1
-        ? cloudState.pathStack[cloudState.pathStack.length - 2]
-        : null;
+      const parentEntry = cloudState.pathStack.length > 1 ? cloudState.pathStack.at(-2) : null;
       const parentFolder = parentEntry ? parentEntry.id : (cloudState.currentProvider.root || 'root');
       loadCloudFolder(parentFolder, { pop: true });
     }
 
     function handleCloudFolderNavigation(file) {
-      if (!file || !file.is_dir) return;
+      if (!file?.is_dir) return;
       const entry = { id: file.id, name: file.name || 'Folder' };
       loadCloudFolder(file.id, { pushEntry: entry });
     }
@@ -523,7 +511,7 @@ let currentPath = '';
       }
 
       const uploadInput = cloudElements.uploadInput;
-      if (!uploadInput || !uploadInput.files || !uploadInput.files.length) {
+      if (!uploadInput?.files?.length) {
         setCloudUploadStatus('Choose a file to upload.', true);
         return;
       }
@@ -552,15 +540,15 @@ let currentPath = '';
           throw new Error(payload.error || `Upload failed (HTTP ${response.status})`);
         }
 
-        const uploadedName = (payload.file && payload.file.name) ? payload.file.name : (file.name || 'file');
+        const uploadedName = payload.file?.name ?? (file.name || 'file');
         setCloudUploadStatus(`Uploaded ${uploadedName}.`);
         uploadInput.value = '';
 
         await loadCloudFolder(cloudState.currentFolder, {});
-        setCloudStatus(`Uploaded ${uploadedName} to ${cloudState.currentProvider.label || cloudState.currentProvider.name}.`);
+        setCloudStatus(`Uploaded ${uploadedName} to ${cloudState.currentProvider?.label ?? cloudState.currentProvider.name}.`);
       } catch (error) {
         console.error('Cloud upload failed:', error);
-        setCloudUploadStatus((error && error.message) ? error.message : 'Upload failed.', true);
+        setCloudUploadStatus(error?.message ?? 'Upload failed.', true);
       } finally {
         cloudState.uploading = false;
         uploadInput.disabled = false;
@@ -581,7 +569,7 @@ let currentPath = '';
       };
 
       addToSelection(key, metadata);
-      setCloudStatus(`Added ${file.name || 'Unnamed file'} from ${cloudState.currentProvider.label || cloudState.currentProvider.name}.`);
+        setCloudStatus(`Added ${file.name || 'Unnamed file'} from ${cloudState.currentProvider?.label ?? cloudState.currentProvider.name}.`);
       renderCloudFiles(cloudState.currentFiles);
     }
 
@@ -624,7 +612,7 @@ let currentPath = '';
     }
 
     document.addEventListener('keydown', function (event) {
-      if (event.key === 'Escape' && cloudElements.modal && cloudElements.modal.classList.contains('show')) {
+      if (event.key === 'Escape' && cloudElements.modal?.classList.contains('show')) {
         closeCloudBrowser();
       }
     });
@@ -634,13 +622,13 @@ let currentPath = '';
         const meta = selectedFileMetadata.get(file);
         let icon;
         let label = '';
-        if (meta && meta.type === 'cloud') {
-          const providerLabel = meta.provider ? meta.provider.toUpperCase() : 'CLOUD';
+        if (meta?.type === 'cloud') {
+          const providerLabel = meta.provider?.toUpperCase() ?? 'CLOUD';
           icon = '☁️';
           label = `${providerLabel} · ${meta.name || 'Unnamed'}`;
         } else {
           const fileName = file.split('/').pop();
-          const isDir = file.endsWith('/') || (allFiles.find(f => f.name === fileName && f.is_dir));
+          const isDir = file.endsWith('/') || allFiles.some(f => f.name === fileName && f.is_dir);
           icon = isDir ? '📁' : '📄';
           label = fileName;
         }
@@ -706,7 +694,7 @@ let currentPath = '';
       if (selectedFileMetadata.has(filePath)) {
         selectedFileMetadata.delete(filePath);
       }
-      const checkbox = document.querySelector(`input[value="${filePath}"]`);
+      const checkbox = findCheckboxByValue(document.getElementById('fileTableBody'), filePath);
       if (checkbox) checkbox.checked = false;
       updateSelectedDisplay();
     }
@@ -923,8 +911,8 @@ let currentPath = '';
           try {
             const errorJson = JSON.parse(errorText);
             errorMessage = errorJson.error || errorMessage;
-          } catch (e) {
-            // Not JSON
+          } catch (parseErr) {
+            console.debug('Share details error body was not JSON', parseErr);
           }
           throw new Error(errorMessage);
         }
@@ -938,29 +926,10 @@ let currentPath = '';
         body.innerHTML = `
           <div class="alert alert-error shadow-lg">
             <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            <span>Failed to load share details: ${error.message}</span>
+            <span>Failed to load share details: ${escapeHtml(error.message)}</span>
           </div>
         `;
       }
-    }
-
-    function buildShareTokenHtml(share) {
-      if (!share.secret_token) return '';
-      return `
-            <div class="mt-4 p-4 bg-base-300 rounded-lg border border-base-300">
-              <div class="flex items-center gap-2 mb-2">
-                <span class="text-lg">🔐</span>
-                <strong class="text-sm">Secret Token:</strong>
-              </div>
-              <div class="flex items-center gap-2">
-                <code class="bg-base-100 px-3 py-2 rounded font-mono text-primary text-xs flex-grow truncate">${share.secret_token}</code>
-                <button class="btn btn-xs btn-ghost" data-action="copyToClipboard" data-text="${share.secret_token}">Copy</button>
-              </div>
-              <div class="mt-2 text-[10px] opacity-60 flex items-start gap-1">
-                <span>⚠️</span>
-                <span>Important: Users need this token to access the share. It will not be shown again.</span>
-              </div>
-            </div>`;
     }
 
     function buildShareUsersHtml(allowedUsers) {
@@ -969,8 +938,8 @@ let currentPath = '';
       }
       return allowedUsers.map(user => `
                   <span class="access-user-tag">
-                    ${user}
-                    <button class="access-user-remove" data-action="removeUserFromShare" data-user="${user}">&times;</button>
+                    ${escapeHtml(user)}
+                    <button class="access-user-remove" data-action="removeUserFromShare" data-user="${escapeHtml(user)}">&times;</button>
                   </span>`).join('');
     }
 
@@ -980,42 +949,9 @@ let currentPath = '';
       }
       return modifyUsers.map(user => `
                   <span class="modify-user-tag">
-                    ✏️ ${user}
-                    <button class="modify-user-remove" data-action="removeModifyUserFromShare" data-user="${user}">&times;</button>
+                    ✏️ ${escapeHtml(user)}
+                    <button class="modify-user-remove" data-action="removeModifyUserFromShare" data-user="${escapeHtml(user)}">&times;</button>
                   </span>`).join('');
-    }
-
-    function buildSharePathsHtml(paths) {
-      if (!paths || paths.length === 0) {
-        return '<div class="sq-style-8eb9ea">No files in this share</div>';
-      }
-      return paths.map(path => `
-                  <div class="share-file-item">
-                    <span>${path}</span>
-                    <button class="share-file-remove" data-action="removeFileFromShare" data-path="${path}">Remove</button>
-                  </div>`).join('');
-    }
-
-    function buildShareTypeHtml(isStatic, isDynamic, currentBadge) {
-      const staticChecked = isStatic ? 'checked' : '';
-      const staticBadge = isStatic ? currentBadge : '';
-      const dynamicChecked = isDynamic ? 'checked' : '';
-      const dynamicBadge = isDynamic ? currentBadge : '';
-      return `
-            <div class="sq-style-3301ea">
-              <label class="sq-style-bd9db1">
-                <input type="radio" name="shareTypeEdit" value="static" ${staticChecked}>
-                <span>Static (Snapshot of current files)</span>
-                ${staticBadge}
-              </label>
-            </div>
-            <div class="sq-style-3301ea">
-              <label class="sq-style-bd9db1">
-                <input type="radio" name="shareTypeEdit" value="dynamic" ${dynamicChecked}>
-                <span>Dynamic (Live folder sharing)</span>
-                ${dynamicBadge}
-              </label>
-            </div>`;
     }
 
     function setupTokenEditCheckboxes() {
@@ -1030,43 +966,6 @@ let currentPath = '';
       });
     }
 
-    function buildAccessInfoText(share) {
-      if (!share.allowed_users) return 'Public';
-      const suffix = share.allowed_users.length === 1 ? '' : 's';
-      return `Restricted (${share.allowed_users.length} user${suffix})`;
-    }
-
-    function buildModifyBadgeHtml(share) {
-      const modifyCount = share.modify_users ? share.modify_users.length : 0;
-      if (modifyCount > 0) {
-        const editorSuffix = modifyCount === 1 ? '' : 's';
-        return ` <span class="permission-badge editor">${modifyCount} editor${editorSuffix}</span>`;
-      }
-      return ' <span class="permission-badge viewer">read-only</span>';
-    }
-
-    function buildSecurityOptionsHtml(share, currentBadge) {
-      const disabledChecked = share.secret_token ? '' : 'checked';
-      const enabledChecked = share.secret_token ? 'checked' : '';
-      const disabledBadge = share.secret_token ? '' : currentBadge;
-      const enabledBadge = share.secret_token ? currentBadge : '';
-      return `
-            <div class="sq-style-3301ea">
-              <label class="sq-style-bd9db1">
-                <input type="checkbox" id="disableTokenEdit" ${disabledChecked}>
-                <span>Disable Secret Token (Public Access)</span>
-                ${disabledBadge}
-              </label>
-            </div>
-            <div class="sq-style-3301ea">
-              <label class="sq-style-bd9db1">
-                <input type="checkbox" id="enableTokenEdit" ${enabledChecked}>
-                <span>Enable Secret Token (Secure Access)</span>
-                ${enabledBadge}
-              </label>
-            </div>`;
-    }
-
     function renderShareManagementModal(share) {
       const body = document.getElementById('shareManagementBody');
       const isStatic = (share.share_type || 'static') === 'static';
@@ -1074,16 +973,16 @@ let currentPath = '';
 
       const tokenHtml = share.secret_token
         ? '<div class="bg-base-200 p-3 rounded-lg flex items-center gap-2">'
-          + '<code class="text-xs font-mono flex-grow truncate">' + share.secret_token + '</code>'
-          + '<button class="btn btn-xs btn-ghost" data-action="copyToClipboard" data-text="' + share.secret_token + '">Copy</button>'
+          + '<code class="text-xs font-mono flex-grow truncate">' + escapeHtml(share.secret_token) + '</code>'
+          + '<button class="btn btn-xs btn-ghost" data-action="copyToClipboard" data-text="' + escapeHtml(share.secret_token) + '">Copy</button>'
           + '</div>'
         : '';
 
       const pathsHtml = (share.paths || []).length > 0
         ? (share.paths || []).map(p =>
             '<div class="flex items-center justify-between p-1.5 bg-base-200 rounded text-xs group">'
-            + '<span class="font-mono truncate flex-grow">' + p + '</span>'
-            + '<button class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100" data-action="removeFileFromShare" data-path="' + p + '">✕</button>'
+            + '<span class="font-mono truncate flex-grow">' + escapeHtml(p) + '</span>'
+            + '<button class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100" data-action="removeFileFromShare" data-path="' + escapeHtml(p) + '">✕</button>'
             + '</div>'
           ).join('')
         : '<div class="text-center py-4 opacity-40 text-xs italic">No files in this share</div>';
@@ -1096,22 +995,22 @@ let currentPath = '';
                 <div class="form-control">
                   <label class="label pt-0"><span class="label-text font-bold text-xs uppercase opacity-60">Share ID</span></label>
                   <div class="flex items-center gap-2">
-                    <code class="bg-base-300 px-2 py-1 rounded text-primary font-mono text-xs flex-grow overflow-hidden text-ellipsis">${share.id}</code>
-                    <button class="btn btn-ghost btn-xs btn-square" data-action="copyToClipboard" data-text="${share.id}" title="Copy ID">⎘</button>
+                    <code class="bg-base-300 px-2 py-1 rounded text-primary font-mono text-xs flex-grow overflow-hidden text-ellipsis">${escapeHtml(share.id)}</code>
+                    <button class="btn btn-ghost btn-xs btn-square" data-action="copyToClipboard" data-text="${escapeHtml(share.id)}" title="Copy ID">⎘</button>
                   </div>
                 </div>
                 <div class="form-control">
                   <label class="label pt-0"><span class="label-text font-bold text-xs uppercase opacity-60">Link</span></label>
                   <div class="flex items-center gap-2">
-                    <a href="${share.url}" target="_blank" class="link link-primary text-xs truncate flex-grow">${globalThis.location.origin}${share.url}</a>
-                    <button class="btn btn-ghost btn-xs btn-square" data-action="copyToClipboard" data-text="${globalThis.location.origin}${share.url}" title="Copy">⎘</button>
+                    <a href="${escapeHtml(share.url)}" target="_blank" class="link link-primary text-xs truncate flex-grow">${escapeHtml(globalThis.location.origin + share.url)}</a>
+                    <button class="btn btn-ghost btn-xs btn-square" data-action="copyToClipboard" data-text="${escapeHtml(globalThis.location.origin + share.url)}" title="Copy">⎘</button>
                   </div>
                 </div>
               </div>
               <div class="flex flex-wrap gap-3 mt-2 text-xs">
                 <span><span class="opacity-60">Downloads:</span> <span class="badge badge-ghost badge-sm">${share.download_count || 0}</span></span>
                 <span><span class="opacity-60">Access:</span> <span class="badge ${share.allowed_users && share.allowed_users.length > 0 ? 'badge-warning' : 'badge-success'} badge-sm">${share.allowed_users && share.allowed_users.length > 0 ? 'Restricted' : 'Public'}</span></span>
-                <span><span class="opacity-60">Type:</span> <span class="badge badge-info badge-sm capitalize">${share.share_type || 'static'}</span></span>
+                <span><span class="opacity-60">Type:</span> <span class="badge badge-info badge-sm capitalize">${escapeHtml(share.share_type || 'static')}</span></span>
               </div>
             </div>
           </div>
@@ -1128,25 +1027,25 @@ let currentPath = '';
                     <span class="label-text font-semibold text-sm">Static</span>
                   </label>
                   <label class="label cursor-pointer justify-start gap-2 bg-base-200 px-3 py-2 rounded-lg flex-1">
-                    <input type="radio" name="shareTypeEdit" value="dynamic" class="radio radio-primary radio-sm" ${!isStatic ? 'checked' : ''}>
+                    <input type="radio" name="shareTypeEdit" value="dynamic" class="radio radio-primary radio-sm" ${isStatic ? '' : 'checked'}>
                     <span class="label-text font-semibold text-sm">Dynamic</span>
                   </label>
                 </div>
               </div>
               <div class="form-control">
                 <label class="label pb-1" for="expiryDateEdit"><span class="label-text font-bold text-sm">Expiration Date</span></label>
-                <input type="datetime-local" id="expiryDateEdit" class="input input-bordered input-sm w-full" value="${expiryValue}">
+                <input type="datetime-local" id="expiryDateEdit" class="input input-bordered input-sm w-full" value="${escapeHtml(expiryValue)}">
               </div>
               <div class="form-control">
                 <label class="label pb-1"><span class="label-text font-bold text-sm">Filter Rules</span></label>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label class="label-text text-xs opacity-60 mb-1 block">Allow List</label>
-                    <textarea id="allowListEdit" class="textarea textarea-bordered textarea-sm w-full h-16" placeholder="*.txt, *.pdf">${(share.allow_list || []).join(', ')}</textarea>
+                    <textarea id="allowListEdit" class="textarea textarea-bordered textarea-sm w-full h-16" placeholder="*.txt, *.pdf">${escapeHtml((share.allow_list || []).join(', '))}</textarea>
                   </div>
                   <div>
                     <label class="label-text text-xs opacity-60 mb-1 block">Avoid List</label>
-                    <textarea id="avoidListEdit" class="textarea textarea-bordered textarea-sm w-full h-16" placeholder="*.tmp, .git/**">${(share.avoid_list || []).join(', ')}</textarea>
+                    <textarea id="avoidListEdit" class="textarea textarea-bordered textarea-sm w-full h-16" placeholder="*.tmp, .git/**">${escapeHtml((share.avoid_list || []).join(', '))}</textarea>
                   </div>
                 </div>
               </div>
@@ -1158,7 +1057,7 @@ let currentPath = '';
             <div class="collapse-title font-semibold text-sm">Security & Token</div>
             <div class="collapse-content space-y-3">
               <label class="label cursor-pointer justify-start gap-3">
-                <input type="checkbox" id="disableTokenEdit" class="checkbox checkbox-error checkbox-sm" ${!share.secret_token ? 'checked' : ''}>
+                <input type="checkbox" id="disableTokenEdit" class="checkbox checkbox-error checkbox-sm" ${share.secret_token ? '' : 'checked'}>
                 <span class="label-text text-sm">Disable Secret Token (Public Access)</span>
               </label>
               <label class="label cursor-pointer justify-start gap-3">
@@ -1630,51 +1529,6 @@ let currentPath = '';
       }
     });
 
-    // Share access editing functions
-    async function editShareAccess(shareId, currentAllowedUsers) {
-      const newAllowedUsers = await showDialog('Enter allowed users (comma-separated usernames, empty for public access):', 'Update Access', {
-        prompt: true,
-        defaultValue: currentAllowedUsers.join(', ') || '',
-        showCancel: true
-      });
-
-      if (newAllowedUsers === null) {
-        return; // User cancelled
-      }
-
-      let allowedUsersArray = [];
-      if (newAllowedUsers.trim() !== '') {
-        allowedUsersArray = newAllowedUsers.split(',').map(user => user.trim()).filter(user => user !== '');
-      }
-
-      try {
-        const response = await fetch('/share/update', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-XSRFToken': getXSRFToken()
-          },
-          body: JSON.stringify({
-            share_id: shareId,
-            allowed_users: allowedUsersArray
-          })
-        });
-
-        const data = await response.json();
-
-        if (data.error) {
-          showDialog('Error updating share access: ' + data.error, 'Error');
-        } else {
-          showDialog('Share access updated successfully!', 'Success');
-          // Reload the active shares list
-          loadActiveShares();
-        }
-      } catch (error) {
-        console.error('Error updating share access:', error);
-        showDialog('Failed to update share access', 'Error');
-      }
-    }
-
     // User management functions
     let searchTimeout = null;
 
@@ -1808,7 +1662,7 @@ let currentPath = '';
       }
 
       selectedUsersList.innerHTML = Array.from(selectedUsers)
-        .map(username => `<span class="config-tag access" data-action="removeSelectedUser" data-user="${username}">${username} ×</span>`)
+        .map(username => `<span class="config-tag access" data-action="removeSelectedUser" data-user="${escapeHtml(username)}">${escapeHtml(username)} ×</span>`)
         .join('');
     }
 
@@ -1817,7 +1671,7 @@ let currentPath = '';
       updateSelectedUsersDisplay();
 
       // Update checkbox in search results if visible
-      const checkbox = document.querySelector(`input[value="${username}"]`);
+      const checkbox = findCheckboxByValue(document.getElementById('userList'), username);
       if (checkbox) {
         checkbox.checked = false;
       }
@@ -1908,14 +1762,14 @@ let currentPath = '';
     function removeSelectedModifyUser(username) {
       selectedModifyUsers.delete(username);
       updateSelectedModifyUsersDisplay();
-      const checkbox = document.querySelector(`#modifyUserList input[value="${username}"]`);
+      const checkbox = findCheckboxByValue(document.getElementById('modifyUserList'), username);
       if (checkbox) checkbox.checked = false;
     }
 
     function buildPathsPayload(files, metadataMap) {
       return Array.from(files).map(item => {
         const meta = metadataMap.get(item);
-        if (meta && meta.type === 'cloud') {
+        if (meta?.type === 'cloud') {
           return { type: 'cloud', provider: meta.provider, id: meta.id, name: meta.name, is_dir: !!meta.is_dir };
         }
         return item;
@@ -1925,33 +1779,38 @@ let currentPath = '';
     function buildShareResultHtml(data, fullUrl, accessType, allowedUsers, shareType, disableToken) {
       const modifyUsers = Array.from(selectedModifyUsers);
       const accessInfo = accessType === 'restricted'
-        ? `<br><small>Access restricted to: ${allowedUsers.join(', ') || 'No users selected'}</small>`
-        : '<br><small>Public access (anyone with link)</small>';
+        ? `<p class="text-sm opacity-90">Access restricted to: ${allowedUsers.map((u) => escapeHtml(u)).join(', ') || 'No users selected'}</p>`
+        : '<p class="text-sm opacity-90">Public access (anyone with link)</p>';
       const modifyInfo = modifyUsers.length > 0
-        ? `<br><small>✏️ Modify access: ${modifyUsers.join(', ')}</small>`
-        : '<br><small>📖 Read-only share</small>';
+        ? `<p class="text-sm opacity-90">✏️ Modify access: ${modifyUsers.map((u) => escapeHtml(u)).join(', ')}</p>`
+        : '<p class="text-sm opacity-90">📖 Read-only share</p>';
       const shareTypeInfo = shareType === 'dynamic'
-        ? '<br><small>🔄 Dynamic share (live folder)</small>'
-        : '<br><small>📸 Static share (snapshot)</small>';
+        ? '<p class="text-sm opacity-90">🔄 Dynamic share (live folder)</p>'
+        : '<p class="text-sm opacity-90">📸 Static share (snapshot)</p>';
       const tokenInfo = disableToken
-        ? '<br><small>🌐 Public access (no token required)</small>'
-        : '<br><small>🔐 Token required</small>';
-      const tokenSection = disableToken ? '' : `<strong>🔐 Secret Token:</strong><br>
-            <code class="sq-style-adfe87">${data.secret_token}</code>
-            <button class="btn sq-style-214d83" data-action="copyToClipboard" data-text="${data.secret_token}">Copy Token</button>
-            <br><br>
-            <div class="sq-style-568262">
-              <strong>⚠️ Important:</strong> Share this secret token with users who need access. They will need to enter this token to view the shared files.
+        ? '<p class="text-sm opacity-90">🌐 Public access (no token required)</p>'
+        : '<p class="text-sm opacity-90">🔐 Token required</p>';
+      const tokenSection = disableToken ? '' : `
+            <div class="flex flex-col gap-2 mt-1">
+              <span class="font-semibold">🔐 Secret Token</span>
+              <div class="flex flex-wrap items-center gap-2">
+                <code class="break-all text-xs font-mono bg-base-200 px-2 py-1 rounded flex-1 min-w-0">${escapeHtml(data.secret_token)}</code>
+                <button type="button" class="btn btn-sm shrink-0" data-action="copyToClipboard" data-text="${escapeHtml(data.secret_token)}">Copy Token</button>
+              </div>
+              <div class="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm mt-1">
+                <strong>⚠️ Important:</strong> Share this secret token with users who need access. They will need to enter this token to view the shared files.
+              </div>
             </div>`;
       return `
-            <strong>Share link created:</strong><br>
-            <a href="${data.url}">${data.url}</a>
-            <button class="btn sq-style-214d83" data-action="copyToClipboard" data-text="${fullUrl}">Copy Link</button>
+          <div class="flex flex-col gap-3 w-full min-w-0">
+            <p class="font-bold text-base">Share link created</p>
+            <div class="flex flex-wrap items-center gap-2 gap-y-2">
+              <a class="link link-hover break-all text-sm flex-1 min-w-0" href="${escapeHtml(data.url)}">${escapeHtml(data.url)}</a>
+              <button type="button" class="btn btn-sm shrink-0" data-action="copyToClipboard" data-text="${escapeHtml(fullUrl)}">Copy Link</button>
+            </div>
             ${accessInfo}${modifyInfo}${shareTypeInfo}${tokenInfo}
-            <br><br>
             ${tokenSection}
-            ${accessInfo}
-          `;
+          </div>`;
     }
 
     async function generateShareLink() {
@@ -2003,7 +1862,8 @@ let currentPath = '';
         } else {
           closeShareConfigModal();
           const fullUrl = `${globalThis.location.origin}${data.url}`;
-          elements.shareResult.style.display = 'block';
+          elements.shareResult.className =
+            'alert alert-success shadow-sm mb-6 flex flex-col items-stretch text-start gap-0';
           elements.shareResult.innerHTML = buildShareResultHtml(
             data, fullUrl, accessType, allowedUsers, shareType, disableToken
           );
@@ -2023,20 +1883,30 @@ let currentPath = '';
     async function loadActiveShares() {
       try {
         const response = await fetch('/share/list');
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
         const data = await response.json();
-
 
         // Convert shares object to array
         const sharesArray = data.shares ? Object.keys(data.shares).map(id => ({
           id: id,
           ...data.shares[id],
-          count: data.shares[id].paths ? data.shares[id].paths.length : 0
+          count: data.shares[id].paths?.length ?? 0
         })) : [];
+
+        sharesArray.sort((a, b) => {
+          const ta = new Date(a.created || 0).getTime();
+          const tb = new Date(b.created || 0).getTime();
+          return tb - ta;
+        });
 
         elements.activeSharesCount.textContent = sharesArray.length;
 
         if (sharesArray.length === 0) {
-          elements.sharesTableBody.innerHTML = '<tr><td colspan="6" class="loading">No active shares</td></tr>';
+          // Do not use DaisyUI "loading" class here — it renders as an infinite spinner.
+          elements.sharesTableBody.innerHTML =
+            '<tr><td colspan="5" class="p-8 text-center text-base-content/50">No active shares</td></tr>';
           return;
         }
 
@@ -2044,39 +1914,56 @@ let currentPath = '';
         sharesArray.forEach(share => {
           const row = document.createElement('tr');
           let accessInfo;
-          if (share.allowed_users) {
-            const suffix = share.allowed_users.length === 1 ? '' : 's';
-            accessInfo = `Restricted (${share.allowed_users.length} user${suffix})`;
+          const au = share.allowed_users;
+          if (Array.isArray(au) && au.length > 0) {
+            const suffix = au.length === 1 ? '' : 's';
+            accessInfo = `Restricted (${au.length} user${suffix})`;
           } else {
             accessInfo = 'Public';
           }
-          const modifyCount = share.modify_users ? share.modify_users.length : 0;
+          const modifyCount = share.modify_users?.length ?? 0;
           if (modifyCount > 0) {
             accessInfo += ` <span class="permission-badge editor">${modifyCount} editor${modifyCount === 1 ? '' : 's'}</span>`;
           }
 
           const createdDate = share.created ? new Date(share.created).toLocaleString() : 'Just now';
           
+          const rawShareId = String(share.id);
+          const sid = escapeHtml(rawShareId);
+          const shareLink = escapeHtml(`${globalThis.location.origin}/shared/${rawShareId}`);
+          const sharePath = escapeHtml(`/shared/${rawShareId}`);
+          const idPreviewEsc = escapeHtml(rawShareId.length > 8 ? `${rawShareId.substring(0, 8)}...` : rawShareId);
+          const pathFileCount = share.paths ? share.paths.length : 0;
+          const shareFileCount = share.count || pathFileCount;
+          const filePlural = shareFileCount === 1 ? '' : 's';
+          const secretToken = share.secret_token;
+          const copyTokenBtn = secretToken
+            ? `<button type="button" class="btn btn-sm btn-ghost gap-1" data-action="copyToClipboard" data-text="${escapeHtml(String(secretToken))}" title="Copy secret token">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
+                <span class="hidden sm:inline text-xs">Token</span>
+              </button>`
+            : '';
           row.innerHTML = `
-            <td><code class="text-xs font-mono opacity-70">${share.id.substring(0, 8)}...</code></td>
-            <td>
+            <td class="align-middle"><code class="text-xs font-mono opacity-70">${idPreviewEsc}</code></td>
+            <td class="align-middle">
               <div class="flex items-center gap-2">
-                <span class="badge badge-sm badge-ghost font-bold">${share.count || (share.paths ? share.paths.length : 0)}</span>
-                <span class="text-sm">file${(share.count || (share.paths ? share.paths.length : 0)) === 1 ? '' : 's'}</span>
+                <span class="badge badge-sm badge-ghost font-bold">${shareFileCount}</span>
+                <span class="text-sm">file${filePlural}</span>
               </div>
             </td>
-            <td>${accessInfo}</td>
-            <td class="text-sm opacity-60">${createdDate}</td>
-            <td>
+            <td class="align-middle">${accessInfo}</td>
+            <td class="align-middle text-sm opacity-60">${escapeHtml(createdDate)}</td>
+            <td class="align-middle">
               <div class="flex flex-nowrap gap-2 items-center justify-end">
-                <button class="btn btn-sm btn-ghost" data-action="copyToClipboard" data-text="${globalThis.location.origin}/shared/${share.id}" title="Copy Link">
+                <button class="btn btn-sm btn-ghost" data-action="copyToClipboard" data-text="${shareLink}" title="Copy link">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
                 </button>
-                <button class="btn btn-sm btn-ghost" data-action="openShare" data-url="/shared/${share.id}" title="Open Share">
+                ${copyTokenBtn}
+                <button class="btn btn-sm btn-ghost" data-action="openShare" data-url="${sharePath}" title="Open Share">
                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </button>
-                <button class="btn btn-sm btn-primary btn-outline" data-action="manageShare" data-id="${share.id}">Manage</button>
-                <button class="btn btn-sm btn-error btn-ghost btn-square" data-action="revokeShare" data-id="${share.id}" title="Revoke">
+                <button class="btn btn-sm btn-primary btn-outline" data-action="manageShare" data-id="${sid}">Manage</button>
+                <button class="btn btn-sm btn-error btn-ghost btn-square" data-action="revokeShare" data-id="${sid}" title="Revoke">
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                 </button>
               </div>
@@ -2086,79 +1973,16 @@ let currentPath = '';
         });
       } catch (error) {
         console.error('Error loading active shares:', error);
-        elements.sharesTableBody.innerHTML = '<tr><td colspan="6" class="p-10 text-center"><div class="alert alert-error">Error loading shares</div></td></tr>';
+        elements.sharesTableBody.innerHTML = '<tr><td colspan="5" class="p-10 text-center"><div class="alert alert-error">Error loading shares</div></td></tr>';
       }
     }
 
     function copyToClipboard(text, btn) {
-      // Check if the modern clipboard API is available
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(() => {
-          // Visual feedback
-          if (btn) {
-            const originalText = btn.textContent;
-            btn.textContent = 'Copied!';
-            setTimeout(() => btn.textContent = originalText, 1500);
-          }
-        }).catch(err => {
-          console.error('Clipboard API failed: ', err);
-          // Fall back to the old method
-          fallbackCopyTextToClipboard(text, btn);
-        });
-      } else {
-        // Fallback for older browsers or non-HTTPS contexts
-        fallbackCopyTextToClipboard(text, btn);
-      }
-    }
-
-    function fallbackCopyTextToClipboard(text, btn) {
-      const textArea = document.createElement('textarea');
-      textArea.value = text;
-      textArea.style.position = 'fixed';
-      textArea.style.top = '-9999px';
-      textArea.style.left = '-9999px';
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-
-      try {
-        const successful = document.execCommand('copy');
-        if (successful && btn) {
-          const originalText = btn.textContent;
-          btn.textContent = 'Copied!';
-          setTimeout(() => btn.textContent = originalText, 1500);
-        } else if (!successful) {
-          console.error('Fallback copy command failed');
-          showDialog('Failed to copy to clipboard', 'Error');
-        }
-      } catch (err) {
-        console.error('Fallback copy failed: ', err);
-        showDialog('Failed to copy to clipboard', 'Error');
-      } finally {
-        textArea.remove();
-      }
+      globalThis.AirdCore.copyToClipboard(text, btn);
     }
 
     function openShare(url) {
-      window.location.href = url;
-    }
-
-    function removeFileFromShare(path) {
-      if (!currentShareData || !currentShareData.paths) return;
-      currentShareData.paths = currentShareData.paths.filter(p => p !== path);
-      renderShareManagementModal(currentShareData);
-    }
-
-    function removeUserFromShare(user) {
-      if (!currentShareData || !currentShareData.allowed_users) return;
-      currentShareData.allowed_users = currentShareData.allowed_users.filter(u => u !== user);
-      renderShareManagementModal(currentShareData);
-    }
-
-    function removeModifyUserFromShare(user) {
-      if (!currentShareData || !currentShareData.modify_users) return;
-      currentShareData.modify_users = currentShareData.modify_users.filter(u => u !== user);
-      renderShareManagementModal(currentShareData);
+      globalThis.location.href = url;
     }
 
     async function revokeShare(shareId) {
@@ -2184,7 +2008,7 @@ let currentPath = '';
     }
 
     function previewFile(filePath) {
-      window.location.href = `/files/${filePath}`;
+      globalThis.location.href = `/files/${filePath}`;
     }
 
     // Share popup functions
@@ -2201,7 +2025,7 @@ let currentPath = '';
         const data = await response.json();
 
         if (data.error) {
-          content.innerHTML = `<div class="sq-style-fd1d87">Error: ${data.error}</div>`;
+          content.innerHTML = `<div class="sq-style-fd1d87">Error: ${escapeHtml(data.error)}</div>`;
           return;
         }
 
@@ -2214,7 +2038,7 @@ let currentPath = '';
         document.querySelector('.popup-title').textContent = `Share Details - ${filePath.split('/').pop()}`;
 
         // Render share details
-        content.innerHTML = data.shares.map(share => {
+        content.innerHTML = data.shares.map((share) => {
           let shareAccessInfo;
           if (share.allowed_users) {
             const suffix = share.allowed_users.length === 1 ? '' : 's';
@@ -2222,41 +2046,59 @@ let currentPath = '';
           } else {
             shareAccessInfo = 'Public Access';
           }
-          return `
-          <div class="share-item">
-            <div class="share-id">${share.id}</div>
-            <div class="share-url">
-              <a href="${share.url}">${globalThis.location.origin}${share.url}</a>
-            </div>
-            <div class="share-access ${share.allowed_users ? 'restricted' : 'public'}">
-              ${shareAccessInfo}
-            </div>
-            ${share.secret_token ? `
+          const fullShareUrl = globalThis.location.origin + share.url;
+
+          let secretBlock = '';
+          const token = share.secret_token;
+          if (token) {
+            secretBlock = `
               <div class="sq-style-fef9ee">
                 <strong>🔐 Secret Token:</strong><br>
-                <code class="sq-style-8c1855">${share.secret_token}</code>
-                <button class="btn sq-style-bfef8f" data-action="copyToClipboard" data-text="${share.secret_token}">Copy</button>
-              </div>
-            ` : ''}
-            ${share.allowed_users ? `
+                <code class="sq-style-8c1855">${escapeHtml(token)}</code>
+                <button class="btn sq-style-bfef8f" data-action="copyToClipboard" data-text="${escapeHtml(token)}">Copy</button>
+              </div>`;
+          }
+
+          let allowedBlock = '';
+          const allowed = share.allowed_users;
+          if (allowed) {
+            allowedBlock = `
               <div class="share-users">
                 <div class="share-users-title">Allowed Users:</div>
-                ${share.allowed_users.map(username => `<span class="user-tag">${username}</span>`).join('')}
-              </div>
-            ` : ''}
-            ${share.modify_users && share.modify_users.length > 0 ? `
+                ${allowed.map((username) => `<span class="user-tag">${escapeHtml(username)}</span>`).join('')}
+              </div>`;
+          }
+
+          let modifyBlock = '';
+          const modifyUsers = share.modify_users;
+          if (modifyUsers?.length) {
+            modifyBlock = `
               <div class="share-users" style="margin-top:6px;">
                 <div class="share-users-title">Modify Users:</div>
-                ${share.modify_users.map(username => `<span class="user-tag" style="background:var(--ds-warning-soft);color:var(--ds-warning);">✏️ ${username}</span>`).join('')}
-              </div>
-            ` : ''}
+                ${modifyUsers.map((username) => `<span class="user-tag" style="background:var(--ds-warning-soft);color:var(--ds-warning);">✏️ ${escapeHtml(username)}</span>`).join('')}
+              </div>`;
+          }
+
+          return `
+          <div class="share-item">
+            <div class="share-id">${escapeHtml(share.id)}</div>
+            <div class="share-url">
+              <a href="${escapeHtml(share.url)}">${escapeHtml(fullShareUrl)}</a>
+            </div>
+            <div class="share-access ${allowed ? 'restricted' : 'public'}">
+              ${shareAccessInfo}
+            </div>
+            ${secretBlock}
+            ${allowedBlock}
+            ${modifyBlock}
             <div class="share-actions">
-              <button class="btn" data-action="copyToClipboard" data-text="${globalThis.location.origin}${share.url}">Copy Link</button>
-              <button class="btn" data-action="openShare" data-url="${share.url}">Open Share</button>
-              <button class="btn" data-action="revokeShare" data-id="${share.id}">Revoke</button>
+              <button class="btn" data-action="copyToClipboard" data-text="${escapeHtml(fullShareUrl)}">Copy Link</button>
+              <button class="btn" data-action="openShare" data-url="${escapeHtml(share.url)}">Open Share</button>
+              <button class="btn" data-action="revokeShare" data-id="${escapeHtml(share.id)}">Revoke</button>
             </div>
           </div>
-        `; }).join('');
+        `;
+        }).join('');
 
       } catch (error) {
         console.error('Error loading share details:', error);
@@ -2313,11 +2155,6 @@ let currentPath = '';
       });
     }
 
-    function closeShareModal() {
-      const modal = document.getElementById('shareModal');
-      modal.close();
-    }
-
     function openShareConfigModal() {
       if (selectedFiles.size === 0) return;
       updateConfigSelectedFiles();
@@ -2341,12 +2178,15 @@ let currentPath = '';
       try {
         raw = sessionStorage.getItem('airdShareCreatePrefill');
       } catch (e) {
+        console.debug('sessionStorage unavailable for share prefill', e);
         return;
       }
       if (!raw) return;
       try {
         sessionStorage.removeItem('airdShareCreatePrefill');
-      } catch (e) { /* ignore */ }
+      } catch (e) {
+        console.debug('sessionStorage removeItem failed', e);
+      }
       let parsed;
       try {
         parsed = JSON.parse(raw);

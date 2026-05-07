@@ -39,7 +39,7 @@ from aird.handlers.constants import (
     APPLICATION_OCTET_STREAM,
 )
 from aird.constants import CHUNK_SIZE
-from aird.cloud import CloudManager, CloudProviderError
+from aird.cloud import CloudManager
 from aird.constants.file_ops import PROVIDER_NOT_CONFIGURED
 
 # ---------------------------------------------------------------------------
@@ -425,7 +425,7 @@ class CloudDownloadHandler(BaseHandler, CloudProviderMixin):
 class FourOhFourHandler(BaseHandler):
     def prepare(self):
         self.set_status(404)
-        self.render("error.html", error_code=404, error_message="Page not found")
+        self.render("error.html", status_code=404, error_message="Page not found")
 
 
 class NoCacheStaticFileHandler(tornado.web.StaticFileHandler):

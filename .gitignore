@@ -39,4 +39,3 @@ main_backup.py
 *.tar.gz.part
 .cursor
 node_modules/
-package-lock.json

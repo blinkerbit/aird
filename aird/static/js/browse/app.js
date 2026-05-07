@@ -43,6 +43,14 @@
       return segs.length ? segs.at(-1) : p;
     }
 
+    function escapeHtml(text) {
+      return globalThis.AirdCore.escapeHtml(text);
+    }
+
+    function escapeAttr(text) {
+      return globalThis.AirdCore.escapeAttr(text);
+    }
+
     // Fallback for image thumbnails that fail to load
     document.addEventListener('error', function(e) {
       if (e.target.tagName === 'IMG' && e.target.dataset.fallback) {
@@ -335,19 +343,13 @@
       clearTimeout(reloadTimer);
       reloadTimer = setTimeout(() => {
         if (uploadQueue.length === 0 && !isUploading) {
-          location.reload();
+          globalThis.location.reload();
         }
       }, RELOAD_DELAY_MS);
     }
 
     function formatBytes(bytes) {
-      const units = ["B", "KB", "MB", "GB", "TB"];
-      let i = 0;
-      while (bytes >= 1024 && i < units.length - 1) {
-        bytes /= 1024;
-        i++;
-      }
-      return `${bytes.toFixed(1)} ${units[i]}`;
+      return globalThis.AirdCore.formatBytes(bytes);
     }
 
     function uploadFile(item) {
@@ -416,8 +418,7 @@
 
     // CSRF Protection: Get XSRF token from cookie (used by upload + rest of page)
     function getXSRFToken() {
-      const match = /_xsrf=([^;]*)/.exec(document.cookie);
-      return match ? decodeURIComponent(match[1]) : '';
+      return globalThis.AirdCore.getXSRFToken();
     }
 
     // Rename functionality
@@ -438,7 +439,7 @@
         .then((res) => {
           if (res.ok) {
             SelectionStore.remove(filepath);
-            location.reload();
+            globalThis.location.reload();
           } else {
             res.text().then((t) => showDialog("Rename failed: " + t, "Error"));
           }
@@ -467,7 +468,7 @@
         .then((res) => {
           if (res.ok) {
             SelectionStore.remove(filepath);
-            location.reload();
+            globalThis.location.reload();
           } else {
             res.text().then((t) => showDialog("Delete failed: " + t, "Error"));
           }
@@ -514,8 +515,7 @@
           const displayPaths = allPaths.slice(0, 10);
           filesList.innerHTML = displayPaths.map(function (p) {
             const name = pathBasename(p);
-            return '<span class="selected-file" title="' + p.replaceAll('"', '&quot;') + '">' +
-              name.replaceAll('<', '&lt;') + '</span>';
+            return '<span class="selected-file" title="' + escapeAttr(p) + '">' + escapeHtml(name) + '</span>';
           }).join('');
           if (allPaths.length > 10) {
             filesList.innerHTML += '<span class="selected-file">+' + (allPaths.length - 10) + ' more</span>';
@@ -546,7 +546,7 @@
           headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRFToken': getXSRFToken() },
           body: formData.toString(),
         });
-        if (res.ok) location.reload();
+        if (res.ok) globalThis.location.reload();
         else showDialog('Create folder failed: ' + (await res.text()), 'Error');
       } catch (e) {
         showDialog('Create folder failed: ' + e.message, 'Error');
@@ -565,7 +565,7 @@
           body: JSON.stringify({ action: 'delete', paths }),
         });
         const data = await res.json();
-        if (data.ok) { SelectionStore.clear(); location.reload(); }
+        if (data.ok) { SelectionStore.clear(); globalThis.location.reload(); }
         else showDialog(data.results?.some(r => !r.ok) ? data.results.map(r => r.error).filter(Boolean).join('; ') : 'Bulk delete failed', 'Error');
       } catch (e) {
         showDialog('Bulk delete failed: ' + e.message, 'Error');
@@ -654,7 +654,7 @@
           if (i === parts.length - 1) {
             html += '<span class="fp-current">' + this._esc(part) + '</span>';
           } else {
-            html += '<a data-fp-nav="' + partPath + '">' + this._esc(part) + '</a>';
+            html += '<a data-fp-nav="' + escapeAttr(partPath) + '">' + this._esc(part) + '</a>';
           }
         });
         this._breadcrumb.innerHTML = html;
@@ -690,10 +690,10 @@
       },
 
       async _createFolder() {
-      const name = await showDialog('Enter folder name:', 'New folder', { prompt: true, showCancel: true });
-      if (!name?.trim()) return;
-      const formData = new URLSearchParams();
-      formData.append('parent', this._currentPath);
+        const name = await showDialog('Enter folder name:', 'New folder', { prompt: true, showCancel: true });
+        if (!name?.trim()) return;
+        const formData = new URLSearchParams();
+        formData.append('parent', this._currentPath);
         formData.append('name', name.trim());
         try {
           const res = await fetch('/mkdir', {
@@ -709,9 +709,7 @@
       },
 
       _esc(str) {
-        const el = document.createElement('span');
-        el.textContent = str;
-        return el.innerHTML;
+        return escapeHtml(str);
       }
     };
 
@@ -730,7 +728,7 @@
         const res = await fetch('/copy', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRFToken': getXSRFToken() }, body: formData.toString() });
         if (!res.ok) failed++;
       }
-      if (failed === 0) { SelectionStore.clear(); location.reload(); }
+      if (failed === 0) { SelectionStore.clear(); globalThis.location.reload(); }
       else showDialog(failed + ' of ' + paths.length + ' copy operation(s) failed.', 'Copy');
     }
 
@@ -749,7 +747,7 @@
         const res = await fetch('/move', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRFToken': getXSRFToken() }, body: formData.toString() });
         if (!res.ok) failed++;
       }
-      if (failed === 0) { SelectionStore.clear(); location.reload(); }
+      if (failed === 0) { SelectionStore.clear(); globalThis.location.reload(); }
       else showDialog(failed + ' of ' + paths.length + ' move operation(s) failed.', 'Move');
     }
 
@@ -768,7 +766,7 @@
       } catch (e) {
         console.warn('Failed to stash share prefill:', e);
       }
-      location.href = '/share';
+      globalThis.location.href = '/share';
     }
 
     async function bulkAddToShare() {
@@ -802,7 +800,7 @@
           body: JSON.stringify({ action: 'add_to_share', share_id: shareId, paths }),
         });
         const data = await res.json();
-        if (data.ok) { SelectionStore.clear(); location.reload(); }
+        if (data.ok) { SelectionStore.clear(); globalThis.location.reload(); }
         else showDialog(data.results?.some(r => !r.ok) ? data.results.map(r => r.error).filter(Boolean).join('; ') : 'Add to share failed', 'Error');
       } catch (e) {
         showDialog('Add to share failed: ' + e.message, 'Error');
@@ -1024,21 +1022,8 @@
       if (event.target === popup) closeSharePopup();
     });
 
-    function _showCopiedFeedback(btn) {
-      if (!btn) return;
-      const originalText = btn.textContent;
-      btn.textContent = 'Copied!';
-      setTimeout(() => { btn.textContent = originalText; }, 1500);
-    }
-
     function copyToClipboard(text, btn) {
-      if (navigator.clipboard?.writeText) {
-        navigator.clipboard.writeText(text)
-          .then(() => _showCopiedFeedback(btn))
-          .catch(() => showDialog('Failed to copy to clipboard', 'Error'));
-      } else {
-        showDialog('Clipboard not available', 'Error');
-      }
+      globalThis.AirdCore.copyToClipboard(text, btn);
     }
 
     function openShare(url) {
@@ -1063,7 +1048,7 @@
           return;
         }
         closeSharePopup();
-        location.reload();
+        globalThis.location.reload();
       } catch (error) {
         console.error('Error revoking share:', error);
         showDialog('Failed to revoke share: ' + (error.message || 'network error'), 'Error');

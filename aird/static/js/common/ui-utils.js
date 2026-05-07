@@ -1,8 +1,13 @@
+/** Page loads `aird-core.js` before this when using shared helpers (`getXSRFToken`, escaping, clipboard). */
 (function () {
   "use strict";
 
   const AirdUtils = {
     formatBytes(bytes) {
+      const fmt = globalThis.AirdCore?.formatBytes;
+      if (typeof fmt === "function") {
+        return fmt(bytes);
+      }
       if (bytes === 0) return "0 B";
       const k = 1024;
       const sizes = ["B", "KB", "MB", "GB", "TB"];
@@ -11,6 +16,10 @@
     },
 
     escapeHtml(text) {
+      const esc = globalThis.AirdCore?.escapeHtml;
+      if (typeof esc === "function") {
+        return esc(text);
+      }
       const div = document.createElement("div");
       div.textContent = text == null ? "" : String(text);
       return div.innerHTML;

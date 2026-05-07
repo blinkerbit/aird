@@ -79,7 +79,7 @@ from aird.config import (
     ALLOWED_UPLOAD_EXTENSIONS,
     CLOUD_MANAGER,
 )
-from aird.cloud import CloudManager, CloudProviderError
+from aird.cloud import CloudManager
 from io import BytesIO
 
 HEADER_APPLICATION_JSON = "application/json"

@@ -19,6 +19,16 @@ def run_command(cmd, shell=True):
         print(f"\nError: Command failed with exit code {e.returncode}")
         sys.exit(e.returncode)
 
+
+def run_shell_command_checked(cmd, shell=True):
+    """Run a shell command without exiting; True on success."""
+    try:
+        subprocess.check_call(cmd, shell=shell)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"\nError: Command failed with exit code {e.returncode}")
+        return False
+
 def clean():
     """Clean up build and temporary files."""
     print("Cleaning up build artifacts...")
@@ -49,17 +59,16 @@ def build():
     """Build the Python package binaries."""
     clean()
     build_css()
-    try:
-        run_command("uv build")
-    except SystemExit:
-        try:
-            # Fallback to modern Python build package
-            run_command(f"{sys.executable} -m pip install build")
-            run_command(f"{sys.executable} -m build")
-        except SystemExit:
-            # Final fallback to setup.py
-            run_command(f"{sys.executable} -m pip install setuptools wheel")
-            run_command(f"{sys.executable} {SETUP_FILE} sdist bdist_wheel")
+    if run_shell_command_checked("uv build"):
+        return
+    if (
+        run_shell_command_checked(f"{sys.executable} -m pip install build")
+        and run_shell_command_checked(f"{sys.executable} -m build")
+    ):
+        return
+    if not run_shell_command_checked(f"{sys.executable} -m pip install setuptools wheel"):
+        sys.exit(1)
+    run_command(f"{sys.executable} {SETUP_FILE} sdist bdist_wheel")
 
 def install():
     """Build and install the package binaries."""
@@ -70,10 +79,9 @@ def install():
     if not wheels:
         print("Error: No wheel found in dist/ after build.")
         sys.exit(1)
-    try:
-        run_command(f"uv pip install dist/{wheels[0]} --force-reinstall")
-    except SystemExit:
-        run_command(f"{sys.executable} -m pip install dist/{wheels[0]} --force-reinstall")
+    if run_shell_command_checked(f"uv pip install dist/{wheels[0]} --force-reinstall"):
+        return
+    run_command(f"{sys.executable} -m pip install dist/{wheels[0]} --force-reinstall")
 
 def test(verbose=False, quick=False):
     """Run tests using pytest."""
@@ -104,9 +112,15 @@ def bump_version(part='patch'):
         sys.exit(1)
 
     major, minor, patch = map(int, match.groups())
-    if part == 'major': major += 1; minor = 0; patch = 0
-    elif part == 'minor': minor += 1; patch = 0
-    else: patch += 1
+    if part == 'major':
+        major += 1
+        minor = 0
+        patch = 0
+    elif part == 'minor':
+        minor += 1
+        patch = 0
+    else:
+        patch += 1
 
     new_version = f"{major}.{minor}.{patch}"
     new_content = re.sub(r'version="\d+\.\d+\.\d+"', f'version="{new_version}"', content)
@@ -148,12 +162,18 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command == "clean": clean()
-    elif args.command == "build": build()
-    elif args.command == "install": install()
-    elif args.command == "lint": lint()
-    elif args.command == "test": test(verbose=args.verbose, quick=args.quick)
-    elif args.command == "release": release(args.part)
+    if args.command == "clean":
+        clean()
+    elif args.command == "build":
+        build()
+    elif args.command == "install":
+        install()
+    elif args.command == "lint":
+        lint()
+    elif args.command == "test":
+        test(verbose=args.verbose, quick=args.quick)
+    elif args.command == "release":
+        release(args.part)
     else:
         parser.print_help()
 

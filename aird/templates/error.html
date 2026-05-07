@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
-  <title>Error {{ status_code }}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <title>Error {{ status_code }} · Aird</title>
 </head>
 <body class="min-h-screen flex items-center justify-center p-6 bg-base-200">
   <div class="w-full max-w-lg animate-fade-in-up">
@@ -12,7 +13,7 @@
       <div class="card-body items-center">
         <p class="text-xs text-base-content/40 uppercase tracking-widest mb-2">Aird</p>
         <h1 class="text-7xl font-extrabold leading-none">{{ status_code }}</h1>
-        <p class="text-xl font-semibold mt-2">{{ escape(message) }}</p>
+        <p class="text-xl font-semibold mt-2">{{ escape(error_message or "") }}</p>
         <p class="text-base-content/60 mb-4">Something went wrong. Please try again or contact your administrator.</p>
         <div class="flex gap-2">
           <a href="/files/" class="btn btn-primary">← Back to files</a>
@@ -21,6 +22,6 @@
       </div>
     </div>
   </div>
-  <script src="/static/js/theme.js"></script>
+  <script src="/static/js/theme.js" defer></script>
 </body>
 </html>

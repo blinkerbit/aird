@@ -5,10 +5,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/static/css/app.css" />
-  <title>Share Files</title>
-  <style>
-    /* Modern styles are now handled by Tailwind and DaisyUI. */
-  </style>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <title>Share · Aird</title>
 </head>
 
 <body>
@@ -48,8 +46,8 @@
     </table>
     </div>
 
-    <!-- Share result banner (appears after successful share creation) -->
-    <div class="alert alert-success shadow-sm mb-6 hidden" id="shareResult"></div>
+    <!-- Success banner: no DaisyUI alert colors until JS fills content (avoids empty green strip after refresh) -->
+    <output class="mb-6 hidden block w-full" id="shareResult" aria-live="polite"></output>
 
     <!-- Active Shares -->
     <div class="mt-8">
@@ -59,27 +57,28 @@
       <table class="table table-zebra w-full" id="sharesTable">
         <thead class="bg-base-200">
         <tr>
-          <th class="select-col px-4 py-3">✓</th>
-          <th class="name-col px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Name</th>
-          <th class="size-col px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Size</th>
-          <th class="modified-col px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Modified</th>
-          <th class="actions-col px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70 text-right">Actions</th>
+          <th class="px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Share ID</th>
+          <th class="px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Files</th>
+          <th class="px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Access</th>
+          <th class="px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Created</th>
+          <th class="px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70 text-right">Actions</th>
         </tr>
       </thead>
         <tbody id="sharesTableBody">
           <tr>
-            <td colspan="6" class="loading">Loading active shares...</td>
+            <td colspan="5" class="p-6 text-center text-base-content/50">
+              <span class="loading loading-spinner loading-sm text-primary align-middle" aria-hidden="true"></span>
+              <span class="ml-2 align-middle">Loading active shares…</span>
+            </td>
           </tr>
         </tbody>
       </table>
       </div>
     </div>
     </div>
-    <form method="dialog" class="modal-backdrop"><button>close</button></form>
-  </dialog>
 
-  <!-- Sticky selection bar (appears when files are selected) -->
-  <div class="fixed bottom-6 left-1/2 -translate-x-1/2 translate-y-[200%] bg-base-100/85 backdrop-blur-md border border-base-300 text-base-content px-6 py-3 z-50 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.4)] rounded-full transition-all duration-400 ease-[cubic-bezier(0.34,1.56,0.64,1)] w-auto max-w-[95%] opacity-0" id="selectionBar">
+  <!-- Sticky selection bar (appears when files are selected); uses .selection-bar.visible from app.css (same as browse) -->
+  <div class="selection-bar" id="selectionBar">
     <div class="flex items-center gap-6">
       <div class="flex items-center gap-3 pr-6 border-r border-base-300">
         <span class="font-extrabold text-primary text-sm whitespace-nowrap"><span id="selectedCount">0</span> selected</span>
@@ -90,8 +89,7 @@
         <button class="btn btn-sm btn-primary rounded-full font-bold uppercase tracking-wider text-xs px-5" id="generateLink" disabled>Share Selected</button>
       </div>
     </div>
-    <form method="dialog" class="modal-backdrop"><button>close</button></form>
-  </dialog>
+  </div>
 
   <!-- Share Configuration Modal -->
   <dialog id="shareConfigModal" class="modal">
@@ -123,7 +121,8 @@
             </div>
             <div id="userSelection" style="display:none; margin-top: 10px;">
               <div class="mb-4 last:mb-0 form-control">
-                <input type="text" id="userSearchInput" placeholder="Search users to grant access...">
+                <label class="label" for="userSearchInput"><span class="label-text text-sm font-semibold">Search users (grant access)</span></label>
+                <input type="text" id="userSearchInput" class="input input-bordered w-full" placeholder="Type a username…" autocomplete="off">
                 <div class="config-user-search-results" id="userList">
                   <em class="sq-style-169f06">Type to search...</em>
                 </div>
@@ -138,7 +137,8 @@
                 Users with modify access can add, edit, rename, move, and delete files. Leave empty for read-only.
               </div>
               <div class="mb-4 last:mb-0 form-control">
-                <input type="text" id="modifyUserSearchInput" placeholder="Search users for modify access...">
+                <label class="label" for="modifyUserSearchInput"><span class="label-text text-sm font-semibold">Search users (modify access)</span></label>
+                <input type="text" id="modifyUserSearchInput" class="input input-bordered w-full" placeholder="Type a username…" autocomplete="off">
                 <div class="config-user-search-results" id="modifyUserList">
                   <em class="sq-style-169f06">Type to search...</em>
                 </div>
@@ -198,12 +198,12 @@
           <div class="collapse-content px-6 py-4">
             <div class="mb-4 last:mb-0 form-control">
               <label for="allowList" style="display: block; margin-bottom: 4px;">Allow List (Glob Patterns)</label>
-              <textarea id="allowList" placeholder="*.txt, *.pdf, images/*.jpg"></textarea>
+              <textarea id="allowList" class="textarea textarea-bordered w-full font-mono text-sm" rows="3" placeholder="*.txt, *.pdf, images/*.jpg"></textarea>
               <div class="text-xs text-base-content/60 mt-1">Comma-separated patterns. If empty, all files are allowed.</div>
             </div>
             <div class="mb-4 last:mb-0 form-control">
               <label for="avoidList" style="display: block; margin-bottom: 4px;">Avoid List (Glob Patterns)</label>
-              <textarea id="avoidList" placeholder="*.tmp, *.log, .git/**"></textarea>
+              <textarea id="avoidList" class="textarea textarea-bordered w-full font-mono text-sm" rows="3" placeholder="*.tmp, *.log, .git/**"></textarea>
               <div class="text-xs text-base-content/60 mt-1">Files matching these patterns will be excluded (takes priority over allow list).</div>
             </div>
           </div>
@@ -215,7 +215,7 @@
         <button class="btn btn-primary" id="createShareBtn">Create Share Link</button>
       </div>
     </div>
-    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    <form method="dialog" class="modal-backdrop"><button type="submit">Close</button></form>
   </dialog>
 
   <!-- Cloud Browser Modal -->
@@ -253,24 +253,23 @@
             </tr>
           </tbody>
         </table>
-    </div>
       </div>
     </div>
-    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    <form method="dialog" class="modal-backdrop"><button type="submit">Close</button></form>
   </dialog>
 
   <!-- Share Details Popup -->
   <dialog id="sharePopup" class="modal">
     <div class="modal-box w-11/12 max-w-xl p-5 overflow-y-auto">
       <div class="flex justify-between items-center mb-4 pb-2 border-b border-base-300">
-        <h3 class="text-lg font-bold m-0">Share Details</h3>
+        <h3 class="text-lg font-bold m-0 popup-title">Share Details</h3>
         <button class="btn btn-ghost btn-circle btn-sm" id="sharePopupClose">&times;</button>
       </div>
       <div id="sharePopupContent">
         <div class="loading">Loading share details...</div>
       </div>
     </div>
-    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    <form method="dialog" class="modal-backdrop"><button type="submit">Close</button></form>
   </dialog>
 
   <!-- Share Management Modal -->
@@ -288,7 +287,7 @@
         <button class="btn" id="shareManagementCancel">Cancel</button>
       </div>
     </div>
-    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    <form method="dialog" class="modal-backdrop"><button type="submit">Close</button></form>
   </dialog>
 
   <dialog id="customDialogModal" class="modal">
@@ -307,7 +306,7 @@
         </div>
       </div>
     </div>
-    <form method="dialog" class="modal-backdrop bg-base-900/40 backdrop-blur-sm"><button>close</button></form>
+    <form method="dialog" class="modal-backdrop bg-base-900/40 backdrop-blur-sm"><button type="submit">Close</button></form>
   </dialog>
 
   <!-- Add Files Modal -->
@@ -335,11 +334,12 @@
         <button class="btn btn-secondary" id="addFilesCancel">Cancel</button>
       </div>
     </div>
-    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    <form method="dialog" class="modal-backdrop"><button type="submit">Close</button></form>
   </dialog>
 
+  <script src="/static/js/aird-core.js"></script>
   <script src="/static/js/share/app.js"></script>
-  <script src="/static/js/theme.js"></script>
+  <script src="/static/js/theme.js" defer></script>
 </body>
 
 </html>

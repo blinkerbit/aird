@@ -26,7 +26,7 @@ class ThemeManager {
         const saved = this.getSavedTheme();
         if (saved && this.availableThemes.some(t => t.id === saved)) {
             this.setTheme(saved, false);
-        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        } else if (globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches) {
             this.setTheme('dark', false);
         } else {
             this.setTheme('light', false);
@@ -37,78 +37,76 @@ class ThemeManager {
     }
 
     bindThemeSelectorLinks() {
-        const self = this;
-        // Bind to any element with data-set-theme (dropdown items, etc.)
-        document.querySelectorAll('[data-set-theme]').forEach(el => {
-            el.addEventListener('click', function(e) {
+        document.querySelectorAll('[data-set-theme]').forEach((el) => {
+            el.addEventListener('click', (e) => {
                 e.preventDefault();
-                const theme = this.getAttribute('data-set-theme');
-                console.log('Switching to theme:', theme);
-                self.setTheme(theme);
+                const theme = e.currentTarget.dataset.setTheme;
+                this.setTheme(theme);
             });
         });
     }
 
     getSavedTheme() {
-        var match = new RegExp('(?:^|; )' + this.storageKey + '=([^;]*)').exec(document.cookie);
-        return match ? decodeURIComponent(match[1]) : null;
+        const keyEsc = this.storageKey.replaceAll(
+            /[\\^$*+?.()|[\]{}]/g,
+            (ch) => String.fromCodePoint(92) + ch
+        );
+        const re = new RegExp('(?:^|; )' + keyEsc + '=([^;]*)');
+        const m = re.exec(document.cookie);
+        return m ? decodeURIComponent(m[1]) : null;
     }
 
     saveTheme(theme) {
-        var expires = new Date(Date.now() + 365 * 864e5).toUTCString();
+        const expires = new Date(Date.now() + 365 * 864e5).toUTCString();
+        const secure = globalThis.location?.protocol === 'https:' ? '; Secure' : '';
         document.cookie = this.storageKey + '=' + encodeURIComponent(theme) +
-            '; expires=' + expires + '; path=/; SameSite=Lax';
+            '; expires=' + expires + '; path=/; SameSite=Lax' + secure;
     }
 
     setTheme(theme, save) {
-        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.dataset.theme = theme;
         if (save !== false) {
             this.saveTheme(theme);
         }
-        // Update all theme selector dropdowns to reflect current theme
-        document.querySelectorAll('.theme-select').forEach(function(sel) {
+        document.querySelectorAll('.theme-select').forEach((sel) => {
             sel.value = theme;
         });
-        // Update toggle button accessibility labels
-        var isDark = this.availableThemes.find(function(t) { return t.id === theme; });
-        var label = isDark && isDark.dark ? 'Current: ' + theme + ' (dark)' : 'Current: ' + theme;
-        document.querySelectorAll('.theme-toggle-btn').forEach(function(btn) {
+        const matched = this.availableThemes.find((t) => t.id === theme);
+        const label = matched?.dark ? `Current: ${theme} (dark)` : `Current: ${theme}`;
+        document.querySelectorAll('.theme-toggle-btn').forEach((btn) => {
             btn.title = label;
             btn.setAttribute('aria-label', label);
         });
     }
 
     toggle() {
-        var current = document.documentElement.getAttribute('data-theme') || 'light';
+        const current = document.documentElement.dataset.theme || 'light';
         this.setTheme(current === 'dark' ? 'light' : 'dark');
     }
 
     bindToggleButtons() {
-        var self = this;
-        document.querySelectorAll('.theme-toggle-btn').forEach(function(btn) {
-            btn.addEventListener('click', function(e) {
+        document.querySelectorAll('.theme-toggle-btn').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
                 e.preventDefault();
-                self.toggle();
+                this.toggle();
             });
         });
     }
 
     buildThemeDropdowns() {
-        var self = this;
-        var current = document.documentElement.getAttribute('data-theme') || 'light';
-        document.querySelectorAll('.theme-select').forEach(function(sel) {
-            // Only populate if empty (avoid duplicating on re-init)
+        const current = document.documentElement.dataset.theme || 'light';
+        document.querySelectorAll('.theme-select').forEach((sel) => {
             if (sel.options.length === 0) {
-                self.availableThemes.forEach(function(t) {
-                    var opt = document.createElement('option');
+                this.availableThemes.forEach((t) => {
+                    const opt = document.createElement('option');
                     opt.value = t.id;
                     opt.textContent = t.label;
                     sel.appendChild(opt);
                 });
             }
             sel.value = current;
-            sel.addEventListener('change', function() {
-                self.setTheme(this.value);
+            sel.addEventListener('change', () => {
+                this.setTheme(sel.value);
             });
         });
     }
@@ -118,7 +116,6 @@ function initThemeManager() {
     globalThis.themeManager = new ThemeManager();
 }
 
-// Support both standard page loads and cases where script executes after DOM ready.
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initThemeManager);
 } else {

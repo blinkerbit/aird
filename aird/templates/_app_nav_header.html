@@ -1,5 +1,5 @@
 {# Main app header: Aird + profile + Browse + feature nav + theme selector.
-   Pass: nav_title (default Aird), nav_search_path (for Super Search link), show_admin_link (optional). #}
+   Optional overrides: nav_title, nav_search_path, show_admin_link (defaults come from BaseHandler.get_template_namespace). #}
 <div class="navbar bg-base-200 shadow-sm rounded-box mb-4 flex-wrap gap-2">
   <div class="flex-1">
     <a href="/files/" class="btn btn-ghost text-xl font-extrabold tracking-wide gap-2" aria-label="Aird Home">
@@ -23,11 +23,11 @@
     {% end %}
 
     <div class="dropdown dropdown-end">
-      <div tabindex="0" role="button" class="btn btn-ghost btn-sm" title="Change theme" aria-label="Change theme">
+      <button type="button" tabindex="0" class="btn btn-ghost btn-sm" title="Change theme" aria-haspopup="menu" aria-label="Theme menu">
         <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
         <span class="hidden sm:inline text-xs">Theme</span>
-      </div>
-      <ul tabindex="0" class="dropdown-content menu bg-base-200 rounded-box z-50 w-44 p-2 shadow-lg border border-base-300">
+      </button>
+      <ul class="dropdown-content menu bg-base-200 rounded-box z-50 w-44 p-2 shadow-lg border border-base-300">
         <li><button type="button" data-set-theme="light" class="text-sm">☀️ Light</button></li>
         <li><button type="button" data-set-theme="dark" class="text-sm">🌙 Dark</button></li>
         <li><button type="button" data-set-theme="nord" class="text-sm">❄️ Nord</button></li>

@@ -5,11 +5,15 @@
   "description": "Frontend build tooling for Aird (dev-only, not shipped)",
   "scripts": {
     "css:build": "npx @tailwindcss/cli -i ./src/input.css -o ./aird/static/css/app.css --minify",
-    "css:watch": "npx @tailwindcss/cli -i ./src/input.css -o ./aird/static/css/app.css --watch"
+    "css:watch": "npx @tailwindcss/cli -i ./src/input.css -o ./aird/static/css/app.css --watch",
+    "lint:js": "eslint aird/static/js"
   },
   "devDependencies": {
-    "tailwindcss": "^4",
     "@tailwindcss/cli": "^4",
-    "daisyui": "^5"
+    "daisyui": "^5",
+    "eslint": "^9",
+    "eslint-plugin-sonarjs": "^4.0.3",
+    "globals": "^15",
+    "tailwindcss": "^4"
   }
 }

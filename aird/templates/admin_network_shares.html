@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
-  <title>Network shares  Aird</title>
+  <title>Network shares · Aird</title>
   <style>
     .mount-panel {
       display: none; margin: 0;
@@ -38,7 +38,8 @@
     {% include '_app_nav_header.html' %}
   </div>
 
-  <main class="max-w-6xl mx-auto p-4 space-y-6">\n    <div class="mb-2"><a href="/admin" class="link link-hover text-sm text-base-content/70">← Back to Admin Settings</a></div>
+  <main class="max-w-6xl mx-auto p-4 space-y-6">
+    <div class="mb-2"><a href="/admin" class="link link-hover text-sm text-base-content/70">← Back to Admin Settings</a></div>
     <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
       <h1 class="text-2xl font-bold m-0">Network shares <span class="text-base-content/50 text-base font-normal">(SMB / WebDAV)</span></h1>
     </div>
@@ -161,9 +162,10 @@
             <input type="password" id="share_password" name="share_password" class="input input-bordered input-sm w-80" required placeholder="share access password" />
           </div>
           <div class="flex flex-wrap items-center gap-3">
-            <label class="label-text font-semibold min-w-[160px]">Access</label>
-            <label class="label cursor-pointer justify-start gap-3 w-auto font-normal inline-flex items-center">
-              <input type="checkbox" name="read_only" class="checkbox checkbox-primary checkbox-sm" /> Read-only
+            <label class="label cursor-pointer justify-start gap-3 w-auto font-normal inline-flex items-center flex-nowrap" for="network_share_read_only">
+              <span class="label-text font-semibold min-w-[160px]">Access</span>
+              <input type="checkbox" id="network_share_read_only" name="read_only" class="checkbox checkbox-primary checkbox-sm" />
+              <span>Read-only</span>
             </label>
           </div>
           <div class="flex gap-2 justify-end pt-2 mt-4">
@@ -176,60 +178,98 @@
 
   <script nonce="{{ csp_nonce }}">
     (function() {
-      var host = {% raw server_host_js %};
-      /* Monotonic ids: avoid crypto.randomUUID() which is missing outside secure contexts (e.g. http://LAN). */
-      var _cmdSeq = 0;
-      function cmdLine(label, cmd) {
-        var id = 'cmd-' + (++_cmdSeq);
-        return '<div class="mb-1.5"><strong>' + label + '</strong>' +
-               '<button type="button" class="btn btn-xs btn-ghost border border-base-300 ml-2 copy-btn" data-cmd-id="' + id + '">Copy</button>' +
-               '<span class="copied-msg hidden ml-2 text-success text-xs" id="msg-' + id + '">Copied!</span></div>' +
-               '<pre id="' + id + '">' + cmd + '</pre>';
+      const host = {% raw server_host_js %};
+      let _cmdSeq = 0;
+
+      function appendCmdBlock(panel, labelText, cmdText) {
+        let id = 'cmd-' + (++_cmdSeq);
+        let labelRow = document.createElement('div');
+        labelRow.className = 'mb-1.5';
+        let strong = document.createElement('strong');
+        strong.textContent = labelText;
+        labelRow.appendChild(strong);
+        let copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'btn btn-xs btn-ghost border border-base-300 ml-2 copy-btn';
+        copyBtn.dataset.cmdId = id;
+        copyBtn.textContent = 'Copy';
+        labelRow.appendChild(copyBtn);
+        let msg = document.createElement('span');
+        msg.className = 'copied-msg hidden ml-2 text-success text-xs';
+        msg.id = 'msg-' + id;
+        msg.textContent = 'Copied!';
+        labelRow.appendChild(msg);
+        let pre = document.createElement('pre');
+        pre.id = id;
+        pre.textContent = cmdText;
+        panel.appendChild(labelRow);
+        panel.appendChild(pre);
       }
 
-      var smbNote = '<div class="warn-note">' +
-          '<strong>Windows SMB note:</strong> If you get error 1272 (guest access blocked), ' +
-          'run this in an elevated PowerShell and reboot:<br>' +
-          String.raw`<code>Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" ` +
-          '-Name "AllowInsecureGuestAuth" -Type DWord -Value 1</code><br>' +
-          'Or use <strong>WebDAV</strong> instead, which avoids this issue entirely.</div>';
+      function appendSmbNote(panel) {
+        let note = document.createElement('div');
+        note.className = 'warn-note';
+        note.appendChild(document.createElement('strong')).textContent = 'Windows SMB note:';
+        note.appendChild(document.createTextNode(' If you get error 1272 (guest access blocked), run this in an elevated PowerShell and reboot:'));
+        note.appendChild(document.createElement('br'));
+        let code = document.createElement('code');
+        code.textContent = 'Set-ItemProperty -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters" -Name "AllowInsecureGuestAuth" -Type DWord -Value 1';
+        note.appendChild(code);
+        note.appendChild(document.createElement('br'));
+        note.appendChild(document.createTextNode('Or use '));
+        let w = document.createElement('strong');
+        w.textContent = 'WebDAV';
+        note.appendChild(w);
+        note.appendChild(document.createTextNode(' instead, which avoids this issue entirely.'));
+        panel.appendChild(note);
+      }
 
       function buildPanel(panel) {
-        var proto = (panel.dataset.protocol || '').toLowerCase().trim();
-        var port  = String(panel.dataset.port || '');
-        var name  = panel.dataset.name || '';
-        var user  = panel.dataset.username || '';
-        var html  = '';
+        let proto = (panel.dataset.protocol || '').toLowerCase().trim();
+        let port = String(panel.dataset.port || '');
+        let name = panel.dataset.name || '';
+        let user = panel.dataset.username || '';
+        panel.replaceChildren();
         if (proto === 'webdav') {
-          html += cmdLine('Linux',
+          appendCmdBlock(panel, 'Linux',
             'sudo mount -t davfs http://' + host + ':' + port + '/ /mnt/' + name.toLowerCase());
-          html += cmdLine('Windows',
+          appendCmdBlock(panel, 'Windows',
             'net use Z: http://' + host + ':' + port + '/');
         } else if (proto === 'smb') {
-          var mountCred = '<YOUR_SECRET>';
-          var mountLinuxCmd = 'sudo mount -t cifs //' + host + '/' + name.toUpperCase() +
+          let mountCred = '<YOUR_SECRET>';
+          let mountLinuxCmd = 'sudo mount -t cifs //' + host + '/' + name.toUpperCase() +
             ' /mnt/' + name.toLowerCase() +
             ' \\\n  -o port=' + port + ',username=' + user +
             ',password=' + mountCred +
             ',uid=$(id -u),gid=$(id -g),cache=strict';
-          html += cmdLine('Linux', mountLinuxCmd);
-          html += cmdLine('Windows (CMD)',
+          appendCmdBlock(panel, 'Linux', mountLinuxCmd);
+          appendCmdBlock(panel, 'Windows (CMD)',
             'net use Z: \\\\' + host + '\\' + name.toUpperCase() + ' /user:' + user + ' ' + mountCred);
-          html += smbNote;
+          appendSmbNote(panel);
         } else {
-          html = '<p class="text-base-content/50 text-base font-normal m-0">Unknown or missing protocol. Expected <code>webdav</code> or <code>smb</code>.</p>';
+          let p = document.createElement('p');
+          p.className = 'text-base-content/50 text-base font-normal m-0';
+          p.textContent = 'Unknown or missing protocol. Expected ';
+          let c1 = document.createElement('code');
+          c1.textContent = 'webdav';
+          p.appendChild(c1);
+          p.appendChild(document.createTextNode(' or '));
+          let c2 = document.createElement('code');
+          c2.textContent = 'smb';
+          p.appendChild(c2);
+          p.appendChild(document.createTextNode('.'));
+          panel.appendChild(p);
         }
-        panel.innerHTML = html;
       }
 
       document.querySelectorAll('.mount-panel').forEach(buildPanel);
 
       document.querySelectorAll('.btn.btn-square.btn-ghost.btn-xs').forEach(function(btn) {
         btn.addEventListener('click', function() {
-          var idx = this.getAttribute('data-mount-idx');
-          var panel = idx !== null ? document.getElementById('mount-panel-' + idx) : null;
+          let idx = this.dataset.mountIdx;
+          let panel = idx !== null ? document.getElementById('mount-panel-' + idx) : null;
           if (!panel) return;
-          var opening = !panel.classList.contains('mount-panel--open');
+          let opening = !panel.classList.contains('mount-panel--open');
           document.querySelectorAll('.mount-panel--open').forEach(function(p) {
             p.classList.remove('mount-panel--open');
           });
@@ -244,27 +284,29 @@
       });
 
       document.addEventListener('click', function(e) {
-        if (e.target.classList.contains('copy-btn')) {
-          var pre = document.getElementById(e.target.dataset.cmdId);
-          if (!pre) return;
-          var text = pre.textContent;
-          var cmdId = e.target.dataset.cmdId;
-          function showCopied() {
-            var msg = document.getElementById('msg-' + cmdId);
-            if (msg) { msg.style.display = 'inline'; setTimeout(function(){ msg.style.display = 'none'; }, 1500); }
+        if (!e.target.classList || !e.target.classList.contains('copy-btn')) return;
+        let pre = document.getElementById(e.target.dataset.cmdId);
+        if (!pre) return;
+        let text = pre.textContent;
+        let cmdId = e.target.dataset.cmdId;
+        function showCopied() {
+          let msgEl = document.getElementById('msg-' + cmdId);
+          if (msgEl) {
+            msgEl.classList.remove('hidden');
+            setTimeout(function() { msgEl.classList.add('hidden'); }, 1500);
           }
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(text).then(showCopied).catch(function() {
-              window.prompt('Copy this command:', text);
-            });
-          } else {
-            window.prompt('Copy this command:', text);
-          }
+        }
+        if (navigator.clipboard?.writeText) {
+          navigator.clipboard.writeText(text).then(showCopied).catch(function() {
+            globalThis.prompt('Copy this command:', text);
+          });
+        } else {
+          globalThis.prompt('Copy this command:', text);
         }
       });
 
-      var protocolSelect = document.getElementById('protocol');
-      var portInput = document.getElementById('port');
+      let protocolSelect = document.getElementById('protocol');
+      let portInput = document.getElementById('port');
       if (protocolSelect && portInput) {
         protocolSelect.addEventListener('change', function() {
           portInput.value = this.value === 'smb' ? 4455 : 8443;
@@ -273,11 +315,11 @@
 
       document.querySelectorAll('.delete-share-form').forEach(function(form) {
         form.addEventListener('submit', function(e) {
-          if (!confirm('Delete this share?')) e.preventDefault();
+          if (!globalThis.confirm('Delete this share?')) e.preventDefault();
         });
       });
     })();
   </script>
-  <script src="/static/js/theme.js"></script>
+  <script src="/static/js/theme.js" defer></script>
 </body>
 </html>

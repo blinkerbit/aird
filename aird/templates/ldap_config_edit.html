@@ -34,40 +34,40 @@
             <label class="label" for="name"><span class="label-text font-semibold">Configuration name <span class="text-base-content/40">*</span></span></label>
             <input type="text" id="name" name="name" class="input input-bordered w-full" required maxlength="50"
                    value="{{ escape(config['name']) }}" placeholder="e.g. Main LDAP server">
-            <label class="label"><span class="label-text-alt text-base-content/50">3–50 characters.</span></label>
+            <p class="label-text-alt text-base-content/50 px-1 pt-1">3–50 characters.</p>
           </div>
           <div class="form-control">
             <label class="label" for="server"><span class="label-text font-semibold">LDAP server URL <span class="text-base-content/40">*</span></span></label>
             <input type="url" id="server" name="server" class="input input-bordered w-full" required
                    value="{{ escape(config['server']) }}"
                    placeholder="ldap://ldap.example.com:389 or ldaps://ldap.example.com:636">
-            <label class="label"><span class="label-text-alt text-base-content/50">Use <code>ldap://</code> for unencrypted and <code>ldaps://</code> for SSL/TLS.</span></label>
+            <p class="label-text-alt text-base-content/50 px-1 pt-1">Use <code>ldap://</code> for unencrypted and <code>ldaps://</code> for SSL/TLS.</p>
           </div>
           <div class="form-control">
             <label class="label" for="ldap_base_dn"><span class="label-text font-semibold">Base DN <span class="text-base-content/40">*</span></span></label>
             <input type="text" id="ldap_base_dn" name="ldap_base_dn" class="input input-bordered w-full" required
                    value="{{ escape(config['ldap_base_dn']) }}" placeholder="ou=groups,dc=example,dc=com">
-            <label class="label"><span class="label-text-alt text-base-content/50">The base DN where LDAP groups are located.</span></label>
+            <p class="label-text-alt text-base-content/50 px-1 pt-1">The base DN where LDAP groups are located.</p>
           </div>
           <div class="form-control">
             <label class="label" for="ldap_member_attributes"><span class="label-text font-semibold">Member attribute</span></label>
             <input type="text" id="ldap_member_attributes" name="ldap_member_attributes" class="input input-bordered w-full"
                    value="{{ escape(config['ldap_member_attributes']) }}" placeholder="member">
-            <label class="label"><span class="label-text-alt text-base-content/50">LDAP attribute containing group members (default: <code>member</code>).</span></label>
+            <p class="label-text-alt text-base-content/50 px-1 pt-1">LDAP attribute containing group members (default: <code>member</code>).</p>
           </div>
           <div class="form-control">
             <label class="label" for="user_template"><span class="label-text font-semibold">User DN template <span class="text-base-content/40">*</span></span></label>
             <input type="text" id="user_template" name="user_template" class="input input-bordered w-full" required
                    value="{{ escape(config['user_template']) }}"
                    placeholder="uid={username},ou=users,dc=example,dc=com">
-            <label class="label"><span class="label-text-alt text-base-content/50">Use <code>{username}</code> as the placeholder.</span></label>
+            <p class="label-text-alt text-base-content/50 px-1 pt-1">Use <code>{username}</code> as the placeholder.</p>
           </div>
           <div class="form-control">
-            <label class="label cursor-pointer justify-start gap-3">
-              <input type="checkbox" name="active" class="checkbox checkbox-primary" {% if config['active'] %}checked{% end %}>
+            <label class="label cursor-pointer justify-start gap-3" for="ldap_config_active">
+              <input type="checkbox" id="ldap_config_active" name="active" class="checkbox checkbox-primary" {% if config['active'] %}checked{% end %}>
               <span class="label-text font-semibold">Active configuration</span>
             </label>
-            <label class="label"><span class="label-text-alt text-base-content/50">Only active configurations are used for user synchronization.</span></label>
+            <p class="label-text-alt text-base-content/50 px-1 pt-1">Only active configurations are used for user synchronization.</p>
           </div>
           <div class="flex gap-2 justify-end pt-2">
             <a href="/admin/ldap" class="btn btn-ghost">Cancel</a>

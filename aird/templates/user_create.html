@@ -35,13 +35,13 @@
             <input type="text" id="username" name="username" class="input input-bordered w-full" required
                    placeholder="e.g. alex_doe" pattern="[a-zA-Z0-9_-]+"
                    title="Letters, numbers, underscore, and hyphen only" minlength="3" maxlength="50">
-            <label class="label"><span class="label-text-alt text-base-content/50">3–50 characters · letters, numbers, underscore (_), hyphen (-)</span></label>
+            <p class="label-text-alt text-base-content/50 px-1 pt-1">3–50 characters · letters, numbers, underscore (_), hyphen (-)</p>
           </div>
           <div class="form-control">
             <label class="label" for="password"><span class="label-text font-semibold">Password</span></label>
             <input type="password" id="password" name="password" class="input input-bordered w-full" required
                    placeholder="At least 8 characters" autocomplete="new-password">
-            <label class="label"><span class="label-text-alt text-base-content/50">See admin settings for password complexity requirements.</span></label>
+            <p class="label-text-alt text-base-content/50 px-1 pt-1">See admin settings for password complexity requirements.</p>
           </div>
           <div class="form-control">
             <label class="label" for="role"><span class="label-text font-semibold">Role</span></label>
@@ -49,7 +49,7 @@
               <option value="user">User</option>
               <option value="admin">Admin</option>
             </select>
-            <label class="label"><span class="label-text-alt text-base-content/50">Admin users can manage other users and system settings.</span></label>
+            <p class="label-text-alt text-base-content/50 px-1 pt-1">Admin users can manage other users and system settings.</p>
           </div>
           <div class="flex gap-2 justify-end pt-2">
             <a href="/admin/users" class="btn btn-ghost">Cancel</a>

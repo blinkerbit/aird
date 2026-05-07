@@ -6,6 +6,7 @@ import os
 import secrets
 from typing import Any, Callable, Protocol
 
+import tornado.escape
 import tornado.web
 import tornado.websocket
 
@@ -571,9 +572,17 @@ class BaseHandler(tornado.web.RequestHandler):
         # Security headers
         self.set_header("X-Content-Type-Options", "nosniff")
         self.set_header("X-Frame-Options", "DENY")
-        self.set_header("X-XSS-Protection", "1; mode=block")
         self.set_header("Referrer-Policy", "strict-origin-when-cross-origin")
-        # Note: CSP with nonce is set in prepare() after nonce generation
+        self.set_header(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=(), payment=()",
+        )
+        if getattr(self.request, "protocol", None) == "https":
+            self.set_header(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains",
+            )
+        # Note: CSP with nonce is set in render() after nonce generation
 
     def _set_csp_header(self):
         """Set CSP header with the request-specific nonce."""
@@ -582,10 +591,11 @@ class BaseHandler(tornado.web.RequestHandler):
         csp = (
             f"default-src 'self'; "
             f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
-            f"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
-            f"font-src 'self' data: https://fonts.gstatic.com; "
+            f"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            f"font-src 'self' data:; "
             f"img-src 'self' data:; "
-            f"connect-src 'self' ws: wss:;"
+            f"connect-src 'self'; "
+            f"frame-ancestors 'none'; "
         )
         self.set_header("Content-Security-Policy", csp)
 
@@ -599,6 +609,10 @@ class BaseHandler(tornado.web.RequestHandler):
         namespace = super().get_template_namespace()
         namespace["csp_nonce"] = self.get_csp_nonce()
         namespace["is_feature_enabled"] = is_feature_enabled
+        # _app_nav_header.html expects these; missing keys raise when Super Search link renders.
+        namespace.setdefault("nav_search_path", "")
+        namespace.setdefault("nav_title", "")
+        namespace.setdefault("show_admin_link", False)
         return namespace
 
     def get_current_user(self):
@@ -614,8 +628,9 @@ class BaseHandler(tornado.web.RequestHandler):
             )
         except Exception:
             # Fallback if template rendering fails
+            safe = tornado.escape.xhtml_escape(str(self._reason or ""))
             self.write(
-                f"<html><body><h1>Error {status_code}</h1><p>{self._reason}</p></body></html>"
+                f"<html><body><h1>Error {status_code}</h1><p>{safe}</p></body></html>"
             )
 
     def on_finish(self):

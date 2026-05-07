@@ -1,12 +1,14 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;500;600&display=swap');
 @import "tailwindcss";
+@import "./browse-page.css";
 @plugin "daisyui" {
   themes: light --default, dark --prefersdark, nord, dracula, cyberpunk, retro, autumn;
 }
 
 @theme {
-  --font-sans: "Inter", system-ui, sans-serif;
-  --font-mono: "Fira Code", monospace;
+  --font-sans:
+    ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-mono:
+    ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
 }
 
 /* ================================================================

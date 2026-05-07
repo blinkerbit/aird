@@ -5,7 +5,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
-  <title>Edit {{ filename }}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <title>Edit {{ filename }} · Aird</title>
+  <script src="/static/js/aird-core.js"></script>
   <style>
     body { background: var(--ds-bg); margin: 0; }
 
@@ -46,7 +48,9 @@
     button.edit-btn.primary:hover { background: var(--ds-primary-hover); border-color: var(--ds-primary-hover); }
     button.edit-btn.active-tab { background: var(--ds-bg-sunken); border-color: var(--ds-border-strong); }
 
+    /* Avoid an empty min-width strip at the end of the toolbar (looked like a grey “dash”). */
     .status { font-size: var(--ds-fs-sm); color: var(--ds-text-muted); margin-left: 10px; min-width: 120px; }
+    .status:empty { display: none; }
 
     .editor-wrap, .preview-wrap {
       display: flex;
@@ -117,6 +121,7 @@
     </div>
   </header>
   {% if is_markdown %}
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js" integrity="sha512-Y1p/STLW/B+l+MPJ5K5OdILMwJa2gMFXXmC/qsyDuGH9uc1MZMUo6/8YQUg9Ut4ns8KGCrCtt+58UwmNFFiVvA==" crossorigin="anonymous" referrerpolicy="no-referrer" nonce="{{ csp_nonce }}"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/16.3.0/marked.min.js" integrity="sha512-gxBP/mcwo9A5lJDFbVfXNb1hSLpOkHLLXAjld8HfCWjVIZnA3nlNnIqSTLvtwF4t55Dt4Rzh7phL3tJuKZ+teQ==" crossorigin="anonymous" referrerpolicy="no-referrer" nonce="{{ csp_nonce }}"></script>
   {% end %}
   <input type="hidden" id="path" value="/{{ path }}" />
@@ -124,7 +129,7 @@
     <div id="gutter" class="gutter"></div>
     <textarea id="editor" spellcheck="false" wrap="off">{{ full_file_content }}</textarea>
   </div>
-  <div id="previewWrap" class="preview-wrap" class="hidden">
+  <div id="previewWrap" class="preview-wrap hidden">
     <div id="markdownPreview" class="markdown-preview"></div>
   </div>
 
@@ -142,7 +147,7 @@
     }
 
     function updateLineNumbers() {
-      const lines = (editor.value.match(/\n/g) || []).length + 1;
+      const lines = editor.value.split('\n').length;
       let buf = '';
       for (let i = 1; i <= lines; i++) buf += i + (i === lines ? '' : '\n');
       gutter.textContent = buf;
@@ -160,13 +165,12 @@
       e.preventDefault();
     }, { passive: false });
 
-    window.addEventListener('beforeunload', (e) => {
+    globalThis.addEventListener('beforeunload', (e) => {
       if (dirty) { e.preventDefault(); e.returnValue = ''; }
     });
 
     function getXSRFToken() {
-      const match = document.cookie.match(/_xsrf=([^;]*)/);
-      return match ? decodeURIComponent(match[1]) : '';
+      return globalThis.AirdCore.getXSRFToken();
     }
 
     async function save() {
@@ -227,7 +231,12 @@
         if (tabPreview) tabPreview.classList.add('active-tab');
         if (tabEdit) tabEdit.classList.remove('active-tab');
         if (typeof marked !== 'undefined' && previewEl) {
-          previewEl.innerHTML = marked.parse(editor.value);
+          const mdHtml = marked.parse(editor.value);
+          if (typeof DOMPurify !== 'undefined' && DOMPurify.sanitize) {
+            previewEl.innerHTML = DOMPurify.sanitize(mdHtml);
+          } else {
+            previewEl.textContent = editor.value;
+          }
         }
       }
       if (tabEdit) tabEdit.addEventListener('click', showEdit);
@@ -235,7 +244,7 @@
     })();
     {% end %}
   </script>
-  <script src="/static/js/theme.js"></script>
+  <script src="/static/js/theme.js" defer></script>
 </body>
 
 </html>

@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
-  <title>Profile - Aird</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <title>Profile · Aird</title>
 </head>
 <body class="bg-base-200 min-h-screen">
   <div class="max-w-3xl mx-auto p-4">
@@ -45,7 +46,15 @@
               <h3 class="font-semibold">Appearance</h3>
               <p class="text-sm text-base-content/60 mt-1">Choose your preferred theme.</p>
             </div>
-            <select class="select select-bordered select-sm theme-select" aria-label="Select theme"></select>
+            <select class="select select-bordered select-sm theme-select" aria-label="Select theme">
+              <option value="light">☀️ Light</option>
+              <option value="dark">🌙 Dark</option>
+              <option value="nord">❄️ Nord</option>
+              <option value="dracula">🧛 Dracula</option>
+              <option value="cyberpunk">🤖 Cyberpunk</option>
+              <option value="retro">📺 Retro</option>
+              <option value="autumn">🍂 Autumn</option>
+            </select>
           </div>
         </div>
       </div>
@@ -143,6 +152,6 @@
       {% end %}
     </div>
   </div>
-  <script src="/static/js/theme.js"></script>
+  <script src="/static/js/theme.js" defer></script>
 </body>
 </html>

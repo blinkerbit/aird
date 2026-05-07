@@ -81,7 +81,7 @@
       const token = getAuthToken();
       if (!token) { globalThis.location.href = `/shared/${shareId}/verify`; return; }
       const fileUrl = `/shared/${shareId}/file/${encodeURIComponent(filePath)}`;
-      window.location.href = fileUrl;
+      globalThis.location.href = fileUrl;
     }
 
     function pathParts(p) { return String(p).replaceAll('\\', '/').split('/').filter(Boolean); }
