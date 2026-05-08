@@ -122,17 +122,6 @@ async def _serve_raw_mode(handler, abspath):
         handler.write("Error serving file")
 
 
-def _serve_pdf_preview(handler, abspath, filename, user_root):
-    """Render PDF preview page."""
-    rel_path = os.path.relpath(abspath, user_root).replace("\\", "/")
-    handler.render(
-        "pdf_preview.html",
-        filename=filename,
-        path=rel_path,
-        pdf_url=handler.request.path + "?mode=raw",
-        pdf_download_url=handler.request.path + "?download=1",
-    )
-
 
 def _serve_file_view(handler, abspath, filename, user_root):
     """Render file view template (client-side fetch)."""
@@ -223,7 +212,7 @@ class MainHandler(BaseHandler):
             await _serve_raw_mode(handler, abspath)
             return
         if filename.lower().endswith(".pdf"):
-            _serve_pdf_preview(handler, abspath, filename, user_root)
+            await _serve_download(handler, abspath, filename)
             return
         _serve_file_view(handler, abspath, filename, user_root)
 
@@ -295,7 +284,6 @@ class EditViewHandler(BaseHandler):
                 full_file_content = await f.read()
 
         total_lines = full_file_content.count("\n") + 1 if full_file_content else 0
-        is_markdown = filename.lower().endswith(".md")
 
         self.render(
             "edit.html",
@@ -304,7 +292,6 @@ class EditViewHandler(BaseHandler):
             full_file_content=full_file_content,
             total_lines=total_lines,
             features=get_current_feature_flags(),
-            is_markdown=is_markdown,
         )
 
 

@@ -730,8 +730,8 @@ class BaseHandler(tornado.web.RequestHandler):
         # Use nonce for scripts, keep unsafe-inline for styles (inline style attributes are common)
         csp = (
             f"default-src 'self'; "
-            f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
-            f"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            f"script-src 'self' 'nonce-{nonce}'; "
+            f"style-src 'self' 'unsafe-inline'; "
             f"font-src 'self' data:; "
             f"img-src 'self' data:; "
             f"connect-src 'self'; "
