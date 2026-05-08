@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v=3" />
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <title>Browse · Aird</title>
 </head>
@@ -134,6 +134,19 @@
                 data-share-path="{{ escape(join_path(current_path, file['name'])) }}">🔗</span>
               {% end %}
             </a>
+            {% end %}
+            {% set _file_tags = file_tags_map.get(file['name'], []) %}
+            {% if _file_tags %}
+            <span class="file-tag-list" title="{{ escape(', '.join(_file_tags)) }}">
+              {% set _max_show = 2 %}
+              {% for _ti in range(min(len(_file_tags), _max_show)) %}
+              <a href="/tagged/{{ escape(_file_tags[_ti]) }}"
+                 class="file-tag-chip" onclick="event.stopPropagation()">{{ escape(_file_tags[_ti]) }}</a>
+              {% end %}
+              {% if len(_file_tags) > _max_show %}
+              <span class="file-tag-more">+{{ len(_file_tags) - _max_show }}</span>
+              {% end %}
+            </span>
             {% end %}
             {% if features.get('favorites') %}
             {% set _fav_path = join_path(current_path, file['name']) %}
