@@ -492,37 +492,122 @@
       }
     }
 
+    let _selectionDrawerIsOpen = false;
+    let _lastBulkCount = 0;
+    let _selectionInitDone = false;
+
+    function _setDrawerExpandedAttrs(expanded) {
+      const v = expanded ? 'true' : 'false';
+      const t = document.getElementById('selectionCountBtn');
+      if (t) t.setAttribute('aria-expanded', v);
+    }
+
+    function closeSelectionDrawer() {
+      const drawer = document.getElementById('browseSelectionDrawer');
+      const backdrop = document.getElementById('browseSelectionBackdrop');
+      if (!drawer) return;
+      drawer.style.transform = 'translateX(100%)';
+      drawer.setAttribute('aria-hidden', 'true');
+      if (backdrop) backdrop.style.display = 'none';
+      document.body.style.overflow = '';
+      _selectionDrawerIsOpen = false;
+      _setDrawerExpandedAttrs(false);
+    }
+
+    function openSelectionDrawer() {
+      const drawer = document.getElementById('browseSelectionDrawer');
+      const backdrop = document.getElementById('browseSelectionBackdrop');
+      if (!drawer) return;
+      drawer.style.transform = 'translateX(0)';
+      drawer.setAttribute('aria-hidden', 'false');
+      if (backdrop) backdrop.style.display = 'block';
+      document.body.style.overflow = 'hidden';
+      _selectionDrawerIsOpen = true;
+      _setDrawerExpandedAttrs(true);
+    }
+
+    function toggleSelectionDrawer() {
+      if (_selectionDrawerIsOpen) {
+        closeSelectionDrawer();
+      } else {
+        openSelectionDrawer();
+      }
+    }
+
+    function bulkSelectionLabel(totalCount, otherCount) {
+      let label = String(totalCount);
+      if (otherCount > 0) label += ' (' + otherCount + ' from other folders)';
+      return label;
+    }
+
+    function renderBulkDrawerList(listEl, allPaths) {
+      if (!listEl) return;
+      /* Build a path→isDir map from visible checkboxes */
+      const dirSet = new Set();
+      document.querySelectorAll('.row-checkbox').forEach(function (cb) {
+        if (cb.dataset.isDir === '1') dirSet.add(cb.dataset.path);
+      });
+      const sorted = allPaths.slice().sort(function (a, b) {
+        return String(a).localeCompare(String(b));
+      });
+      listEl.innerHTML = sorted
+        .map(function (p) {
+          const isDir = dirSet.has(p);
+          const icon = isDir ? '📁' : '📄';
+          const disp = p.startsWith('/') ? p : '/' + p.replace(/^\/+/, '');
+          const parts = disp.split('/');
+          const name = parts.at(-1) || disp;
+          const dir = parts.slice(0, -1).join('/') || '/';
+          return '<li style="display:flex;gap:0.5rem;align-items:flex-start;padding:0.4rem 0.5rem;'
+            + 'border-radius:0.375rem;background:var(--color-base-200);'
+            + 'border:1px solid var(--color-base-300);">'
+            + '<span style="font-size:0.85rem;flex-shrink:0;margin-top:1px;" aria-hidden="true">' + icon + '</span>'
+            + '<span style="min-width:0;">'
+            + '<span style="display:block;font-size:0.8rem;font-weight:600;word-break:break-all;">'
+            + escapeHtml(name) + '</span>'
+            + '<span style="display:block;font-size:0.7rem;opacity:0.55;word-break:break-all;margin-top:1px;">'
+            + escapeHtml(dir) + '</span>'
+            + '</span></li>';
+        })
+        .join('');
+    }
+
+    function bulkDrawerMetaText(otherCount) {
+      return otherCount > 0
+        ? otherCount + ' item(s) from other folders · paths from your home root'
+        : 'Paths are relative to your home folder';
+    }
+
+    function bulkToolbarClearEmpty(countBtn) {
+      _lastBulkCount = 0;
+      if (countBtn) countBtn.hidden = true;
+      closeSelectionDrawer();
+    }
+
+    function bulkToolbarShowSelection(countEl, countBtn, listEl, metaEl, allPaths, totalCount, otherCount) {
+      countEl.textContent = bulkSelectionLabel(totalCount, otherCount);
+      if (countBtn) countBtn.hidden = false;
+      renderBulkDrawerList(listEl, allPaths);
+      if (metaEl) metaEl.textContent = bulkDrawerMetaText(otherCount);
+      if (_lastBulkCount === 0 && _selectionInitDone) openSelectionDrawer();
+      _lastBulkCount = totalCount;
+    }
+
     function updateBulkToolbar() {
       const allPaths = SelectionStore.getAll();
       const totalCount = allPaths.length;
       const pageCount = getPageSelectedPaths().length;
       const otherCount = totalCount - pageCount;
-      const bar = document.getElementById('selectionBar');
       const countEl = document.getElementById('bulkCount');
-      const filesList = document.getElementById('selectedFilesList');
-      if (!bar || !countEl) return;
+      const listEl = document.getElementById('selectionDrawerList');
+      const metaEl = document.getElementById('selectionDrawerMeta');
+      const countBtn = document.getElementById('selectionCountBtn');
+      if (!countEl) return;
 
       if (totalCount === 0) {
-        bar.classList.remove('visible');
+        bulkToolbarClearEmpty(countBtn);
       } else {
-        let label = totalCount + ' selected';
-        if (otherCount > 0) {
-          label += ' (' + otherCount + ' from other folders)';
-        }
-        countEl.textContent = label;
-
-        if (filesList) {
-          const displayPaths = allPaths.slice(0, 10);
-          filesList.innerHTML = displayPaths.map(function (p) {
-            const name = pathBasename(p);
-            return '<span class="selected-file" title="' + escapeAttr(p) + '">' + escapeHtml(name) + '</span>';
-          }).join('');
-          if (allPaths.length > 10) {
-            filesList.innerHTML += '<span class="selected-file">+' + (allPaths.length - 10) + ' more</span>';
-          }
-        }
-
-        bar.classList.add('visible');
+        bulkToolbarShowSelection(countEl, countBtn, listEl, metaEl, allPaths, totalCount, otherCount);
       }
 
       const selectAll = document.getElementById('selectAllCheckbox');
@@ -804,6 +889,222 @@
         else showDialog(data.results?.some(r => !r.ok) ? data.results.map(r => r.error).filter(Boolean).join('; ') : 'Add to share failed', 'Error');
       } catch (e) {
         showDialog('Add to share failed: ' + e.message, 'Error');
+      }
+    }
+
+    /* -----------------------------------------------------------------------
+     * Tag: add glob-exact tag rules for every selected file
+     * ----------------------------------------------------------------------- */
+    /* --- Tag-picker chip helpers (module-level to avoid nesting violations) --- */
+
+    function _tagChipHtml(t) {
+      return '<span style="display:inline-flex;align-items:center;gap:0.2rem;'
+        + 'background:var(--color-primary);color:var(--color-primary-content);'
+        + 'font-size:0.75rem;padding:0.15rem 0.5rem;border-radius:9999px;">'
+        + escapeHtml(t)
+        + '<button type="button" data-tag="' + escapeAttr(t) + '" '
+        + 'style="background:none;border:none;cursor:pointer;font-size:0.8rem;'
+        + 'color:inherit;padding:0 0 0 0.2rem;line-height:1;" aria-label="Remove ' + escapeAttr(t) + '">×</button>'
+        + '</span>';
+    }
+
+    function _renderTagChips(chipsEl, pendingTags, onRemove) {
+      chipsEl.innerHTML = [...pendingTags].map(_tagChipHtml).join('');
+      chipsEl.querySelectorAll('button[data-tag]').forEach(function (btn) {
+        btn.addEventListener('click', function () { onRemove(btn.dataset.tag); });
+      });
+    }
+
+    function _commitTagInput(inputEl, pendingTags) {
+      inputEl.value.split(',')
+        .map(function (s) { return s.trim().toLowerCase().replace(/\s+/g, '-'); })
+        .filter(Boolean)
+        .forEach(function (t) { pendingTags.add(t); });
+      inputEl.value = '';
+    }
+
+    function _renderTagSuggestions(inputEl, existingTagNames, pendingTags, onPick) {
+      const q = inputEl.value.trim().toLowerCase();
+      const matches = q ? existingTagNames.filter(function (n) { return n.includes(q) && !pendingTags.has(n); }) : [];
+      let sug = document.getElementById('tagPickerSuggestions');
+      if (!sug) {
+        sug = document.createElement('div');
+        sug.id = 'tagPickerSuggestions';
+        sug.style.cssText = 'position:absolute;z-index:100;background:var(--color-base-100);'
+          + 'border:1px solid var(--color-base-300);border-radius:0.375rem;'
+          + 'max-height:8rem;overflow-y:auto;font-size:0.8rem;width:100%;';
+        inputEl.parentNode.style.position = 'relative';
+        inputEl.insertAdjacentElement('afterend', sug);
+      }
+      sug.innerHTML = matches.map(function (n) {
+        return '<div data-sug="' + escapeAttr(n) + '" style="padding:0.3rem 0.6rem;cursor:pointer;">'
+          + escapeHtml(n) + '</div>';
+      }).join('');
+      sug.querySelectorAll('[data-sug]').forEach(function (el) {
+        el.addEventListener('mousedown', function (e) {
+          e.preventDefault();
+          onPick(el.dataset.sug);
+          sug.innerHTML = '';
+        });
+      });
+    }
+
+    async function _postTagRule(tag, globPattern) {
+      const res = await fetch('/admin/api/abac/tags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
+        body: JSON.stringify({ tag, glob_pattern: globPattern }),
+      });
+      return res.ok || res.status === 409;
+    }
+
+    function _setupTagPickerListeners(inputEl, chipsEl, pendingTags, existingTagNames) {
+      function refresh() {
+        _renderTagChips(chipsEl, pendingTags, function (t) { pendingTags.delete(t); refresh(); });
+      }
+      inputEl.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); _commitTagInput(inputEl, pendingTags); refresh(); return; }
+        if (e.key === 'Backspace' && !inputEl.value && pendingTags.size) { pendingTags.delete([...pendingTags].at(-1)); refresh(); }
+      });
+      inputEl.addEventListener('blur', function () { _commitTagInput(inputEl, pendingTags); refresh(); });
+      inputEl.addEventListener('input', function () {
+        _renderTagSuggestions(inputEl, existingTagNames, pendingTags, function (picked) { pendingTags.add(picked); inputEl.value = ''; refresh(); });
+      });
+      return refresh;
+    }
+
+    function _awaitTagPickerClose(modal, inputEl, errEl, pendingTags, refresh) {
+      return new Promise(function (resolve) {
+        document.getElementById('tagPickerConfirm').onclick = function () {
+          _commitTagInput(inputEl, pendingTags); refresh();
+          if (!pendingTags.size) { errEl.textContent = 'Add at least one tag.'; errEl.style.display = ''; return; }
+          modal.close(); resolve([...pendingTags]);
+        };
+        document.getElementById('tagPickerCancel').onclick = function () { modal.close(); resolve(null); };
+        modal.addEventListener('cancel', function (ev) { ev.preventDefault(); modal.close(); resolve(null); }, { once: true });
+      });
+    }
+
+    async function _applyTagRules(tags, paths) {
+      let created = 0;
+      let failed = 0;
+      for (const path of paths) {
+        const norm = path.startsWith('/') ? path : '/' + path.replace(/^\/+/, '');
+        for (const tag of tags) {
+          try {
+            if (await _postTagRule(tag, norm)) { created++; } else { failed++; }
+          } catch { failed++; }
+        }
+      }
+      return { created, failed };
+    }
+
+    async function bulkAddTags() {
+      const paths = SelectionStore.getAll();
+      if (!paths.length) { showDialog('No files selected.', 'Info'); return; }
+      const modal = document.getElementById('tagPickerModal');
+      const inputEl = document.getElementById('tagPickerInput');
+      const chipsEl = document.getElementById('tagPickerChips');
+      const descEl = document.getElementById('tagPickerDesc');
+      const errEl = document.getElementById('tagPickerError');
+      if (!modal || !inputEl) return;
+
+      descEl.textContent = 'Will tag ' + paths.length + ' selected item(s).';
+      inputEl.value = '';
+      errEl.style.display = 'none';
+
+      const pendingTags = new Set();
+      let existingTagNames = [];
+      try {
+        const res = await fetch('/admin/api/abac/tags', { headers: { 'X-XSRFToken': getXSRFToken() } });
+        if (res.ok) {
+          const data = await res.json();
+          existingTagNames = [...new Set((data.tags || []).map(function (t) { return t.tag; }))].sort();
+        }
+      } catch { /* autocomplete is best-effort */ }
+
+      const refresh = _setupTagPickerListeners(inputEl, chipsEl, pendingTags, existingTagNames);
+      refresh();
+      modal.showModal();
+
+      const tags = await _awaitTagPickerClose(modal, inputEl, errEl, pendingTags, refresh);
+      if (!tags) return;
+
+      const { created, failed } = await _applyTagRules(tags, paths);
+      const msg = created + ' tag rule(s) created for [' + tags.join(', ') + '].'
+        + (failed ? ' ' + failed + ' already existed or failed.' : '');
+      showDialog(msg, 'Tags applied');
+    }
+
+    /* -----------------------------------------------------------------------
+     * Share by tag: create a dynamic share from a tag's glob patterns
+     * ----------------------------------------------------------------------- */
+    async function openShareByTag() {
+      const modal = document.getElementById('shareByTagModal');
+      const selectEl = document.getElementById('shareByTagSelect');
+      const patternsEl = document.getElementById('shareByTagPatterns');
+      const errEl = document.getElementById('shareByTagError');
+      if (!modal || !selectEl) return;
+      selectEl.innerHTML = '<option value="">Loading tags…</option>';
+      patternsEl.textContent = '';
+      errEl.style.display = 'none';
+      let allTagRules = [];
+      try {
+        const res = await fetch('/admin/api/abac/tags', { headers: { 'X-XSRFToken': getXSRFToken() } });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        allTagRules = data.tags || [];
+      } catch {
+        selectEl.innerHTML = '<option value="">Failed to load tags</option>';
+      }
+      /* Build unique tag names */
+      const tagNames = [...new Set(allTagRules.map(function (r) { return r.tag; }))].sort();
+      if (!tagNames.length) {
+        selectEl.innerHTML = '<option value="">No tags defined — create one in Admin → Tags</option>';
+      } else {
+        selectEl.innerHTML = tagNames.map(function (t) {
+          return '<option value="' + escapeAttr(t) + '">' + escapeHtml(t) + '</option>';
+        }).join('');
+      }
+      function updatePatternPreview() {
+        const chosen = selectEl.value;
+        const patterns = allTagRules.filter(function (r) { return r.tag === chosen; }).map(function (r) { return r.glob_pattern; });
+        patternsEl.textContent = patterns.length
+          ? 'Patterns: ' + patterns.join(', ')
+          : '';
+      }
+      selectEl.addEventListener('change', updatePatternPreview);
+      updatePatternPreview();
+      modal.showModal();
+      const chosenTag = await new Promise(function (resolve) {
+        document.getElementById('shareByTagConfirm').onclick = function () {
+          if (!selectEl.value) { errEl.textContent = 'Please select a tag.'; errEl.style.display = ''; return; }
+          modal.close(); resolve(selectEl.value);
+        };
+        document.getElementById('shareByTagCancel').onclick = function () { modal.close(); resolve(null); };
+        modal.addEventListener('cancel', function (ev) { ev.preventDefault(); modal.close(); resolve(null); }, { once: true });
+      });
+      if (!chosenTag) return;
+      const patterns = allTagRules.filter(function (r) { return r.tag === chosenTag; }).map(function (r) { return r.glob_pattern; });
+      if (!patterns.length) { showDialog('No glob patterns defined for tag "' + chosenTag + '".', 'Error'); return; }
+      try {
+        const res = await fetch('/share/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
+          body: JSON.stringify({
+            paths: [''],
+            share_type: 'dynamic',
+            allow_list: patterns,
+            avoid_list: [],
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) { showDialog(data.error || ('Share creation failed (HTTP ' + res.status + ')'), 'Error'); return; }
+        const shareId = data.share_id || data.id || '';
+        const tokenLine = data.secret_token ? '\nToken: ' + data.secret_token : '';
+        showDialog('Dynamic share created for tag "' + chosenTag + '".' + tokenLine + '\nShare ID: ' + shareId + '\n\nAccess it at /shared/' + shareId, 'Share created');
+      } catch (e) {
+        showDialog('Failed to create share: ' + e.message, 'Error');
       }
     }
 
@@ -1105,6 +1406,7 @@
         }
       });
       updateBulkToolbar();
+      _selectionInitDone = true;
 
       // Select all checkbox
       const selectAllCheckbox = document.getElementById('selectAllCheckbox');
@@ -1141,6 +1443,10 @@
       if (bulkAddToShareBtn) bulkAddToShareBtn.addEventListener('click', bulkAddToShare);
       const bulkCreateShareBtn = document.getElementById('bulkCreateShareBtn');
       if (bulkCreateShareBtn) bulkCreateShareBtn.addEventListener('click', bulkCreateShare);
+      const bulkAddTagsBtn = document.getElementById('bulkAddTagsBtn');
+      if (bulkAddTagsBtn) bulkAddTagsBtn.addEventListener('click', bulkAddTags);
+      const shareByTagBtn = document.getElementById('shareByTagBtn');
+      if (shareByTagBtn) shareByTagBtn.addEventListener('click', openShareByTag);
       const clearSelectionBtn = document.getElementById('clearSelectionBtn');
       if (clearSelectionBtn) clearSelectionBtn.addEventListener('click', function () {
         SelectionStore.clear();
@@ -1148,6 +1454,24 @@
         const sa = document.getElementById('selectAllCheckbox');
         if (sa) sa.checked = false;
         updateBulkToolbar();
+      });
+
+      const selectionCountBtn = document.getElementById('selectionCountBtn');
+      if (selectionCountBtn) {
+        selectionCountBtn.addEventListener('click', toggleSelectionDrawer);
+      }
+      const selectionDrawerClose = document.getElementById('selectionDrawerClose');
+      if (selectionDrawerClose) {
+        selectionDrawerClose.addEventListener('click', closeSelectionDrawer);
+      }
+      const browseSelectionBackdrop = document.getElementById('browseSelectionBackdrop');
+      if (browseSelectionBackdrop) {
+        browseSelectionBackdrop.addEventListener('click', closeSelectionDrawer);
+      }
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && _selectionDrawerIsOpen) {
+          closeSelectionDrawer();
+        }
       });
 
       // Copy current path button in breadcrumb

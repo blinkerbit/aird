@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import secrets
+from datetime import datetime
 from typing import Any, Callable, Protocol
 
 import tornado.escape
@@ -13,7 +14,14 @@ import tornado.websocket
 import aird.config as config_module
 import aird.constants as constants_module
 from aird.core.security import sanitize_username_for_folder
-from aird.db import get_user_by_username
+from aird.db import get_user_attributes, get_user_by_username
+from aird.domain.models import (
+    AccessDecision,
+    AccessRequest,
+    EnvironmentContext,
+    ResourceAttributes,
+    SubjectAttributes,
+)
 from aird.handlers.constants import DB_NOT_AVAILABLE_MSG
 from aird.utils.util import is_feature_enabled
 
@@ -91,17 +99,10 @@ def require_admin(
 ):
     """Decorator factory: ensures the current user is an admin.
 
-    Parameters
-    ----------
-    deny_status : int
-        HTTP status code when the user is not an admin (ignored when
-        *redirect_url* is set).
-    deny_body : str | dict
-        Response body when the user is not an admin (ignored when
-        *redirect_url* is set).
-    redirect_url : str | None
-        If set, redirect non-admin users instead of returning an error
-        response.
+    When the ``abac_engine`` feature flag is **on**, this decorator
+    additionally consults the PDP for ``admin.access`` so admin routes
+    are governed by the same decision logs as the rest of the system.
+    With the flag off, the legacy RBAC path runs unchanged.
     """
 
     def decorator(method):
@@ -114,6 +115,49 @@ def require_admin(
                     self.set_status(deny_status)
                     self.write(deny_body)
                 return
+            if is_feature_enabled("abac_engine", False):
+                decision = self.check_access("admin.access")
+                if decision is not None and decision.is_deny:
+                    if redirect_url:
+                        self.redirect(redirect_url)
+                    else:
+                        self.set_status(deny_status)
+                        self.write(deny_body)
+                    return
+            return method(self, *args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+def require_action(action: str, resource_arg: str | None = None):
+    """Decorator factory: enforces an ABAC action via the PDP.
+
+    The decorator is a no-op when the ``abac_engine`` feature flag is
+    disabled (callers fall back to the route's existing checks). When
+    enabled, it builds an :class:`~aird.domain.models.AccessRequest`,
+    asks the PDP, and short-circuits with HTTP 403 on deny.
+
+    *resource_arg* names a path-like keyword argument on the wrapped
+    handler method that should be treated as the resource identifier.
+    """
+
+    def decorator(method):
+        @functools.wraps(method)
+        def wrapper(self, *args, **kwargs):
+            if not is_feature_enabled("abac_engine", False):
+                return method(self, *args, **kwargs)
+            resource_path = None
+            if resource_arg and resource_arg in kwargs:
+                resource_path = kwargs.get(resource_arg)
+            elif resource_arg and args:
+                resource_path = args[0] if isinstance(args[0], str) else None
+            decision = self.check_access(action, resource_path=resource_path)
+            if decision is not None and decision.is_deny:
+                self.set_status(403)
+                self.write({"error": "Access denied", "reason": decision.reason})
+                return None
             return method(self, *args, **kwargs)
 
         return wrapper
@@ -468,6 +512,102 @@ class BaseHandler(tornado.web.RequestHandler):
             return False
         role = str(user.get("role", "user")).lower()
         return role in {"admin", "user"}
+
+    # ------------------------------------------------------------------
+    # ABAC PEP helpers
+    # ------------------------------------------------------------------
+
+    def _build_access_request(
+        self, action: str, resource_path: str | None = None
+    ) -> AccessRequest:
+        user = self.get_current_user()
+        if isinstance(user, dict):
+            username = user.get("username", "anonymous")
+            role = user.get("role", "user")
+        elif isinstance(user, (bytes, str)):
+            username = (
+                user.decode("utf-8", "ignore") if isinstance(user, bytes) else user
+            )
+            role = "admin" if self.is_admin_user() else "user"
+        else:
+            username = "anonymous"
+            role = "anonymous"
+
+        clearance = "admin" if role == "admin" else "internal"
+        extra_attrs: list[tuple[str, str]] = []
+        try:
+            db_conn = self.db_conn
+            if db_conn is not None and username and username != "anonymous":
+                attrs = get_user_attributes(db_conn, username)
+                if attrs.get("clearance"):
+                    clearance = attrs["clearance"]
+                for key, value in attrs.items():
+                    if key == "clearance":
+                        continue
+                    extra_attrs.append((key, value))
+        except Exception:
+            logger.debug("user_attributes lookup failed", exc_info=True)
+
+        groups: tuple[str, ...] = ()
+        for key, value in list(extra_attrs):
+            if key == "groups" and value:
+                groups = tuple(g.strip() for g in value.split(",") if g.strip())
+                break
+
+        subject = SubjectAttributes(
+            username=username,
+            role=role,
+            clearance=clearance,
+            groups=groups,
+            extra=tuple(extra_attrs),
+        )
+
+        ext = None
+        if resource_path and "." in resource_path:
+            ext = resource_path.rsplit(".", 1)[-1].lower()
+        resource = ResourceAttributes(path=resource_path, extension=ext)
+
+        environment = EnvironmentContext(
+            timestamp=datetime.now(),
+            ip=getattr(self.request, "remote_ip", None),
+        )
+        return AccessRequest(
+            subject=subject,
+            action=action,
+            resource=resource,
+            environment=environment,
+        )
+
+    def check_access(
+        self,
+        action: str,
+        resource_path: str | None = None,
+        *,
+        raise_on_deny: bool = False,
+    ) -> AccessDecision | None:
+        """Evaluate *action* against the PDP.
+
+        Returns the :class:`AccessDecision`, or ``None`` when the engine is
+        disabled or unavailable. If *raise_on_deny* is true, deny decisions
+        raise ``tornado.web.HTTPError(403)``.
+        """
+        if not is_feature_enabled("abac_engine", False):
+            return None
+        policy_service = self.get_service("policy_service")
+        if policy_service is None:
+            return None
+        try:
+            request = self._build_access_request(action, resource_path)
+            audit = is_feature_enabled("abac_audit_decisions", True)
+            decision = policy_service.evaluate(
+                self.db_conn, request, audit=audit
+            )
+        except Exception:
+            logger.debug("PDP evaluation failed", exc_info=True)
+            return None
+        if decision.is_deny and raise_on_deny:
+            raise tornado.web.HTTPError(403, decision.reason)
+        return decision
 
     def require_modify_privileges(
         self,

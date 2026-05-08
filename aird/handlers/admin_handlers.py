@@ -154,6 +154,12 @@ class AdminHandler(BaseHandler):
         FEATURE_FLAGS["allow_simple_passwords"] = (
             self.get_argument("allow_simple_passwords", "off") == "on"
         )
+        FEATURE_FLAGS["abac_engine"] = (
+            self.get_argument("abac_engine", "off") == "on"
+        )
+        FEATURE_FLAGS["abac_audit_decisions"] = (
+            self.get_argument("abac_audit_decisions", "off") == "on"
+        )
 
         # Update WebSocket configuration
         websocket_config = {}

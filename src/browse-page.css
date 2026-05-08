@@ -897,6 +897,54 @@
       gap: 1.5rem;
     }
 
+    .selection-bar-inner--minimal {
+      justify-content: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    /* Count acts as control to open the drawer (stack above modals/popups). */
+    .selection-bar-count-btn {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 0 0.35rem;
+      margin: 0;
+      border-radius: 0.5rem;
+      display: inline-flex;
+      align-items: center;
+      max-width: min(60vw, 20rem);
+      text-align: center;
+    }
+    .selection-bar-count-btn:hover .selection-bar-count {
+      text-decoration: underline;
+    }
+    .selection-bar-count-btn:focus-visible {
+      outline: 2px solid var(--color-primary);
+      outline-offset: 2px;
+    }
+
+    .selection-bar-open-btn {
+      border-radius: 9999px !important;
+      font-weight: 700;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      height: 2.5rem;
+      padding: 0 1.25rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--color-primary) !important;
+      color: var(--color-primary-content) !important;
+      border: none;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .selection-bar-open-btn:hover {
+      filter: brightness(0.95);
+    }
+
     .selection-bar-info {
       display: flex;
       align-items: center;
@@ -934,7 +982,11 @@
 
     .selection-bar-actions {
       display: flex;
+      flex-wrap: wrap;
+      align-items: center;
       gap: 8px;
+      justify-content: flex-end;
+      min-width: 0;
     }
 
     .selection-bar-actions .btn, 
@@ -954,6 +1006,9 @@
       color: var(--color-base-content);
       cursor: pointer;
       transition: all 0.2s;
+      /* Keep one line per button — long labels were shrinking and stacking (e.g. Add to share). */
+      white-space: nowrap;
+      flex-shrink: 0;
     }
     
     .selection-bar-actions button:hover {
@@ -1002,6 +1057,115 @@
         justify-content: flex-end;
         flex-wrap: wrap;
       }
+    }
+
+    /* Right drawer: full paths + bulk actions */
+    .browse-selection-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 10050;
+      background: color-mix(in oklab, #000 45%, transparent);
+    }
+
+    .browse-selection-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 10060;
+      width: min(22rem, 94vw);
+      max-width: 100%;
+      background: var(--color-base-100);
+      border-left: 1px solid var(--color-base-300);
+      box-shadow: -8px 0 32px color-mix(in oklab, #000 20%, transparent);
+      transform: translateX(100%);
+      transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+    }
+    .browse-selection-drawer.browse-selection-drawer--open {
+      transform: translateX(0);
+    }
+    .browse-selection-drawer.browse-selection-drawer--wide {
+      width: min(40rem, 96vw);
+    }
+
+    .browse-selection-drawer-panel {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .browse-selection-drawer-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 1rem 1rem 0.75rem;
+      border-bottom: 1px solid var(--color-base-300);
+      flex-shrink: 0;
+    }
+    .browse-selection-drawer-title {
+      font-weight: 800;
+      font-size: 1.05rem;
+      line-height: 1.25;
+    }
+    .browse-selection-drawer-meta {
+      font-size: 0.75rem;
+      color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
+      margin-top: 0.25rem;
+    }
+
+    .browse-selection-drawer-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 0.75rem 1rem;
+    }
+
+    .browse-selection-drawer-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .browse-selection-drawer-list li {
+      margin: 0;
+      padding: 0.5rem 0.65rem;
+      border-radius: 0.5rem;
+      background: var(--color-base-200);
+      border: 1px solid var(--color-base-300);
+    }
+    .browse-selection-drawer-list code {
+      font-size: 0.75rem;
+      word-break: break-all;
+      white-space: pre-wrap;
+      display: block;
+    }
+
+    .browse-selection-drawer-actions {
+      flex-shrink: 0;
+      padding: 1rem;
+      border-top: 1px solid var(--color-base-300);
+      background: color-mix(in oklab, var(--color-base-200) 50%, var(--color-base-100));
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      justify-content: flex-start;
+    }
+    .browse-selection-drawer-actions.selection-bar-actions .btn,
+    .browse-selection-drawer-actions.selection-bar-actions button {
+      flex: 1 1 auto;
+      min-width: min(100%, 8rem);
+    }
+
+    body.browse-selection-drawer-open {
+      overflow: hidden;
     }
 
     /* Folder picker modal */

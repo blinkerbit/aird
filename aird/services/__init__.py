@@ -5,12 +5,15 @@ from aird.services.config_service import ConfigService
 from aird.services.event_subscribers import (
     EventLoggingSubscriber,
     EventMetricsSubscriber,
+    PolicyDecisionMetricsSubscriber,
 )
 from aird.services.favorites_service import FavoritesService
 from aird.services.network_share_service import NetworkShareService
 from aird.services.p2p_service import P2PSignalingService
+from aird.services.policy_service import PolicyService
 from aird.services.quota_service import QuotaService
 from aird.services.share_service import ShareService
+from aird.services.tag_service import TagService
 from aird.services.user_service import UserService
 
 __all__ = [
@@ -18,10 +21,13 @@ __all__ = [
     "ConfigService",
     "EventLoggingSubscriber",
     "EventMetricsSubscriber",
+    "PolicyDecisionMetricsSubscriber",
     "FavoritesService",
     "NetworkShareService",
     "P2PSignalingService",
+    "PolicyService",
     "QuotaService",
     "ShareService",
+    "TagService",
     "UserService",
 ]

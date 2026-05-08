@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <title>ABAC policies · Aird</title>
+  <style>
+    .policy-row td { vertical-align: top; }
+    .condition-json {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.75rem;
+      max-width: 28rem;
+      max-height: 6rem;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      background: var(--color-base-200);
+      padding: 0.5rem;
+      border-radius: 0.5rem;
+    }
+  </style>
+</head>
+<body class="bg-base-200 min-h-screen">
+  <div class="container mx-auto p-4">
+    {% set nav_title = "⚙ Admin Panel" %}
+    {% set show_admin_link = False %}
+    {% include '_app_nav_header.html' %}
+  </div>
+
+  <main class="max-w-6xl mx-auto p-4 space-y-6">
+    <div class="mb-2">
+      <a href="/admin" class="link link-hover text-sm text-base-content/70">← Back to Admin Settings</a>
+    </div>
+
+    <div class="flex items-center justify-between flex-wrap gap-3">
+      <h1 class="text-2xl font-bold m-0">ABAC policies</h1>
+      <div class="flex items-center gap-2">
+        <a href="/admin/tags" class="btn btn-ghost btn-sm border border-base-300">Manage tags →</a>
+        <button id="new-policy-btn" type="button" class="btn btn-primary btn-sm">+ New policy</button>
+      </div>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-error" role="alert"><span>{{ error }}</span></div>
+    {% end %}
+
+    <section class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="card-body p-0">
+        <div class="px-5 py-3 border-b border-base-300 bg-base-200/50">
+          <h2 class="font-semibold m-0 text-base">Policies <span class="text-base-content/50 text-sm">({{ len(policies) }})</span></h2>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="table" id="policies-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Effect</th>
+                <th>Actions</th>
+                <th>Priority</th>
+                <th>Condition</th>
+                <th>Status</th>
+                <th class="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for p in policies %}
+              <tr class="policy-row" data-policy-id="{{ p['id'] }}">
+                <td class="text-xs text-base-content/50 font-mono">#{{ p['id'] }}</td>
+                <td>
+                  <div class="font-semibold">{{ escape(p['name']) }}</div>
+                  {% if p.get('description') %}
+                  <div class="text-xs text-base-content/60">{{ escape(p['description']) }}</div>
+                  {% end %}
+                </td>
+                <td>
+                  {% if p['effect'] == 'permit' %}
+                  <span class="badge badge-success">Permit</span>
+                  {% else %}
+                  <span class="badge badge-error">Deny</span>
+                  {% end %}
+                </td>
+                <td class="text-sm">
+                  {% for action in p['target_actions'] %}
+                  <span class="badge badge-ghost badge-sm">{{ escape(action) }}</span>
+                  {% end %}
+                </td>
+                <td class="text-sm">{{ p['priority'] }}</td>
+                <td><pre class="condition-json">{{ escape(p.get('condition_json_str', '{}')) }}</pre></td>
+                <td>
+                  {% if p['enabled'] %}
+                  <span class="badge badge-success badge-sm">Enabled</span>
+                  {% else %}
+                  <span class="badge badge-ghost badge-sm">Disabled</span>
+                  {% end %}
+                </td>
+                <td class="text-right whitespace-nowrap">
+                  <button type="button" class="btn btn-ghost btn-xs border border-base-300"
+                          data-edit-policy-id="{{ p['id'] }}">Edit</button>
+                  <button type="button" class="btn btn-error btn-outline btn-xs"
+                          data-delete-policy-id="{{ p['id'] }}">Delete</button>
+                </td>
+              </tr>
+              {% end %}
+              {% if not policies %}
+              <tr><td colspan="8" class="text-center text-base-content/50 py-8">No policies defined yet.</td></tr>
+              {% end %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="policy-dialog" class="modal">
+    <form method="dialog" class="modal-box max-w-2xl">
+      <h3 class="font-bold text-lg" id="policy-dialog-title">New policy</h3>
+      {% raw xsrf_form_html() %}
+      <input type="hidden" id="policy-id" />
+      <div class="space-y-3 mt-4">
+        <label class="form-control">
+          <div class="label"><span class="label-text">Name</span></div>
+          <input id="policy-name" required minlength="1" maxlength="120"
+                 class="input input-bordered input-sm" />
+        </label>
+        <label class="form-control">
+          <div class="label"><span class="label-text">Description (optional)</span></div>
+          <textarea id="policy-description" rows="2" class="textarea textarea-bordered textarea-sm"></textarea>
+        </label>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <label class="form-control">
+            <div class="label"><span class="label-text">Effect</span></div>
+            <select id="policy-effect" class="select select-bordered select-sm">
+              <option value="permit">Permit</option>
+              <option value="deny">Deny</option>
+            </select>
+          </label>
+          <label class="form-control md:col-span-2">
+            <div class="label"><span class="label-text">Target actions (comma separated, "*" matches everything)</span></div>
+            <input id="policy-actions" class="input input-bordered input-sm" placeholder="file.read, file.download" />
+          </label>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label class="form-control">
+            <div class="label"><span class="label-text">Priority (higher wins)</span></div>
+            <input id="policy-priority" type="number" value="100" min="0" max="9999" class="input input-bordered input-sm" />
+          </label>
+          <label class="label cursor-pointer mt-6 justify-start gap-3 border border-base-300 rounded-lg px-3 py-2">
+            <input id="policy-enabled" type="checkbox" class="toggle toggle-primary toggle-sm" checked />
+            <span class="label-text">Enabled</span>
+          </label>
+        </div>
+        <label class="form-control">
+          <div class="label">
+            <span class="label-text">Condition (AST as JSON)</span>
+            <span class="label-text-alt text-base-content/60">supports and / or / not / equals / in / tag_present / time_between / ip_in_cidr</span>
+          </div>
+          <textarea id="policy-condition" rows="8" class="textarea textarea-bordered textarea-sm font-mono">{}</textarea>
+        </label>
+        <p id="policy-dialog-error" class="text-error text-sm hidden"></p>
+      </div>
+      <div class="modal-action">
+        <button type="button" id="policy-dialog-cancel" class="btn btn-ghost btn-sm">Cancel</button>
+        <button type="button" id="policy-dialog-save" class="btn btn-primary btn-sm">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/js/theme.js"></script>
+  <script nonce="{{ csp_nonce }}">
+    (function () {
+      const _xm = /(?:^|; )_xsrf=([^;]*)/.exec(document.cookie);
+      const xsrfToken = _xm ? decodeURIComponent(_xm[1]) : '';
+      const dialog = document.getElementById('policy-dialog');
+      const titleEl = document.getElementById('policy-dialog-title');
+      const errorEl = document.getElementById('policy-dialog-error');
+      const idInput = document.getElementById('policy-id');
+      const nameInput = document.getElementById('policy-name');
+      const descInput = document.getElementById('policy-description');
+      const effectInput = document.getElementById('policy-effect');
+      const actionsInput = document.getElementById('policy-actions');
+      const priorityInput = document.getElementById('policy-priority');
+      const enabledInput = document.getElementById('policy-enabled');
+      const conditionInput = document.getElementById('policy-condition');
+
+      function showError(msg) {
+        errorEl.textContent = msg || '';
+        errorEl.classList.toggle('hidden', !msg);
+      }
+
+      function openDialog(policy) {
+        showError('');
+        if (policy) {
+          titleEl.textContent = 'Edit policy #' + policy.id;
+          idInput.value = policy.id;
+          nameInput.value = policy.name || '';
+          descInput.value = policy.description || '';
+          effectInput.value = policy.effect || 'permit';
+          actionsInput.value = (policy.target_actions || []).join(', ');
+          priorityInput.value = policy.priority != null ? policy.priority : 100;
+          enabledInput.checked = policy.enabled !== false;
+          conditionInput.value = JSON.stringify(policy.condition || {}, null, 2);
+        } else {
+          titleEl.textContent = 'New policy';
+          idInput.value = '';
+          nameInput.value = '';
+          descInput.value = '';
+          effectInput.value = 'permit';
+          actionsInput.value = '';
+          priorityInput.value = '100';
+          enabledInput.checked = true;
+          conditionInput.value = '{}';
+        }
+        dialog.showModal();
+      }
+
+      document.getElementById('new-policy-btn').addEventListener('click', function () {
+        openDialog(null);
+      });
+      document.getElementById('policy-dialog-cancel').addEventListener('click', function () {
+        dialog.close();
+      });
+
+      document.querySelectorAll('[data-edit-policy-id]').forEach(function (btn) {
+        btn.addEventListener('click', async function () {
+          const id = btn.getAttribute('data-edit-policy-id');
+          try {
+            const res = await fetch('/admin/api/abac/policies/' + id, {
+              headers: { 'X-XSRFToken': xsrfToken },
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const policy = await res.json();
+            openDialog(policy);
+          } catch (err) {
+            alert('Failed to load policy: ' + (err.message || err));
+          }
+        });
+      });
+
+      document.querySelectorAll('[data-delete-policy-id]').forEach(function (btn) {
+        btn.addEventListener('click', async function () {
+          const id = btn.getAttribute('data-delete-policy-id');
+          if (!confirm('Delete policy #' + id + '?')) return;
+          try {
+            const res = await fetch('/admin/api/abac/policies/' + id, {
+              method: 'DELETE',
+              headers: { 'X-XSRFToken': xsrfToken },
+            });
+            if (!res.ok) {
+              const body = await res.json().catch(() => ({}));
+              throw new Error(body.error || ('HTTP ' + res.status));
+            }
+            const row = btn.closest('tr');
+            if (row) row.remove();
+          } catch (err) {
+            alert('Failed to delete: ' + (err.message || err));
+          }
+        });
+      });
+
+      document.getElementById('policy-dialog-save').addEventListener('click', async function () {
+        showError('');
+        let condition;
+        try {
+          condition = conditionInput.value.trim() ? JSON.parse(conditionInput.value) : {};
+        } catch (err) {
+          showError('Invalid condition JSON: ' + err.message);
+          return;
+        }
+        const payload = {
+          name: nameInput.value.trim(),
+          description: descInput.value.trim(),
+          effect: effectInput.value,
+          target_actions: actionsInput.value
+            .split(',')
+            .map(function (s) { return s.trim(); })
+            .filter(Boolean),
+          priority: Number(priorityInput.value || 0),
+          enabled: enabledInput.checked,
+          condition: condition,
+        };
+        const id = idInput.value.trim();
+        const url = id ? '/admin/api/abac/policies/' + id : '/admin/api/abac/policies';
+        try {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-XSRFToken': xsrfToken },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.error || ('HTTP ' + res.status));
+          }
+          dialog.close();
+          window.location.reload();
+        } catch (err) {
+          showError(err.message || 'Save failed');
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

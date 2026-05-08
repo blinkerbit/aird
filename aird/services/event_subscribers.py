@@ -6,6 +6,7 @@ import logging
 from collections import Counter
 
 from aird.core.events import (
+    PolicyDecisionEvent,
     ShareCreatedEvent,
     TransferStartedEvent,
     UserAuthenticatedEvent,
@@ -59,3 +60,27 @@ class EventLoggingSubscriber:
             event.initiator,
             event.allow_anonymous,
         )
+
+    def on_policy_decision(self, event: PolicyDecisionEvent) -> None:
+        logger.info(
+            "event=policy_decision username=%s action=%s decision=%s policy=%s reason=%s",
+            event.username,
+            event.action,
+            event.decision,
+            event.matched_policy_name,
+            event.reason,
+        )
+
+
+class PolicyDecisionMetricsSubscriber:
+    """Counts policy decisions by effect."""
+
+    def __init__(self) -> None:
+        self._counter: Counter[str] = Counter()
+
+    def on_policy_decision(self, event: PolicyDecisionEvent) -> None:
+        self._counter[f"policy_{event.decision}"] += 1
+        self._counter[f"policy_action_{event.action}"] += 1
+
+    def snapshot(self) -> dict[str, int]:
+        return dict(self._counter)

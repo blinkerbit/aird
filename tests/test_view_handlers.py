@@ -12,6 +12,7 @@ from aird.handlers.view_handlers import (
     NoCacheStaticFileHandler,
 )
 from aird.cloud import CloudProviderError
+import aird.constants as aird_constants
 
 
 class TestRootHandler:
@@ -258,6 +259,10 @@ class TestMainHandler:
             kwargs = args[1]
             assert kwargs["lines"] == []  # Should be empty for client-side rendering
             assert kwargs["file_size"] == 100
+            assert (
+                kwargs["default_file_view_line_limit"]
+                == aird_constants.DEFAULT_FILE_VIEW_LINE_LIMIT
+            )
 
     @pytest.mark.asyncio
     async def test_serve_file_raw(self):

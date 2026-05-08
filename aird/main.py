@@ -16,6 +16,7 @@ import aird.config as config
 from aird.app_context import AppContext
 from aird.core.events import (
     EventBus,
+    PolicyDecisionEvent,
     ShareCreatedEvent,
     TransferStartedEvent,
     UserAuthenticatedEvent,
@@ -38,13 +39,24 @@ from aird.services import (
     FavoritesService,
     NetworkShareService,
     P2PSignalingService,
+    PolicyDecisionMetricsSubscriber,
+    PolicyService,
     QuotaService,
     ShareService,
+    TagService,
     UserService,
 )
 
 from aird.database.db import get_data_dir
 from aird.network_share_manager import NetworkShareManager
+from aird.handlers.abac_handlers import (
+    AdminPoliciesHandler,
+    AdminPolicyAPIHandler,
+    AdminTagAPIHandler,
+    AdminTagsHandler,
+    PolicyDecisionsAPIHandler,
+    PolicyDecisionsWebSocket,
+)
 from aird.handlers.admin_handlers import (
     AdminAuditHandler,
     AdminHandler,
@@ -200,6 +212,13 @@ def make_app(
         (r"/admin/network-shares", AdminNetworkSharesHandler),
         (r"/admin/network-shares/delete", AdminNetworkShareDeleteHandler),
         (r"/admin/network-shares/toggle", AdminNetworkShareToggleHandler),
+        (r"/admin/tags", AdminTagsHandler),
+        (r"/admin/api/abac/tags", AdminTagAPIHandler),
+        (r"/admin/policies", AdminPoliciesHandler),
+        (r"/admin/api/abac/policies", AdminPolicyAPIHandler),
+        (r"/admin/api/abac/policies/([0-9]+)", AdminPolicyAPIHandler),
+        (r"/admin/api/abac/decisions", PolicyDecisionsAPIHandler),
+        (r"/ws/policy-decisions", PolicyDecisionsWebSocket),
         (r"/stream/(.*)", FileStreamHandler),
         (r"/features", FeatureFlagSocketHandler),
         (r"/upload", UploadHandler),
@@ -422,20 +441,30 @@ def _build_app_context() -> AppContext:
     event_bus = EventBus()
     event_metrics = EventMetricsSubscriber()
     event_logging = EventLoggingSubscriber()
+    policy_metrics = PolicyDecisionMetricsSubscriber()
     event_bus.subscribe(UserAuthenticatedEvent, event_metrics.on_user_authenticated)
     event_bus.subscribe(UserAuthenticatedEvent, event_logging.on_user_authenticated)
     event_bus.subscribe(ShareCreatedEvent, event_metrics.on_share_created)
     event_bus.subscribe(ShareCreatedEvent, event_logging.on_share_created)
     event_bus.subscribe(TransferStartedEvent, event_metrics.on_transfer_started)
     event_bus.subscribe(TransferStartedEvent, event_logging.on_transfer_started)
+    event_bus.subscribe(PolicyDecisionEvent, event_logging.on_policy_decision)
+    event_bus.subscribe(PolicyDecisionEvent, policy_metrics.on_policy_decision)
+
+    tag_service = TagService()
+    policy_service = PolicyService(tag_service, event_bus=event_bus)
+
     services = {
         "audit_service": AuditService(),
         "config_service": ConfigService(),
         "favorites_service": FavoritesService(),
         "network_share_service": NetworkShareService(),
         "p2p_signaling_service": P2PSignalingService(room_manager),
+        "policy_service": policy_service,
+        "policy_decision_metrics": policy_metrics,
         "quota_service": QuotaService(),
         "share_service": ShareService(),
+        "tag_service": tag_service,
         "user_service": UserService(),
     }
     return AppContext(

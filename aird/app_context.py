@@ -12,8 +12,10 @@ from aird.services.event_subscribers import EventMetricsSubscriber
 from aird.services.favorites_service import FavoritesService
 from aird.services.network_share_service import NetworkShareService
 from aird.services.p2p_service import P2PSignalingService
+from aird.services.policy_service import PolicyService
 from aird.services.quota_service import QuotaService
 from aird.services.share_service import ShareService
+from aird.services.tag_service import TagService
 from aird.services.user_service import UserService
 
 
@@ -64,3 +66,11 @@ class AppContext:
     @property
     def user_service(self) -> UserService | None:
         return self.services.get("user_service")
+
+    @property
+    def tag_service(self) -> TagService | None:
+        return self.services.get("tag_service")
+
+    @property
+    def policy_service(self) -> PolicyService | None:
+        return self.services.get("policy_service")

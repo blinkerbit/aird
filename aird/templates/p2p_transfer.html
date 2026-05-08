@@ -64,12 +64,13 @@
     data-is-anonymous="{% if is_anonymous %}true{% else %}false{% end %}"
     data-pending-room-id="{% if room_id %}{{ room_id }}{% end %}"
 >
-    <div class="max-w-4xl mx-auto p-5">
+    <div class="container mx-auto p-4">
         {% set nav_title = "Aird" %}
-{% set nav_search_path = "" %}
-{% set show_admin_link = False %}
-{% include '_app_nav_header.html' %}
+        {% set nav_search_path = "" %}
+        {% set show_admin_link = False %}
+        {% include '_app_nav_header.html' %}
 
+        <div class="max-w-4xl mx-auto">
         <h2 class="text-3xl font-extrabold tracking-tight text-gradient-brand mb-2">P2P FILE TRANSFER</h2>
         <div class="breadcrumbs text-sm mb-6 font-semibold">
   <ul>

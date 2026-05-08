@@ -24,6 +24,8 @@
       {% end %}
       <a role="tab" href="/admin/audit" class="tab hover:text-base-content hover:bg-base-200/50">Audit log</a>
       <a role="tab" href="/admin/network-shares" class="tab hover:text-base-content hover:bg-base-200/50">Network shares</a>
+      <a role="tab" href="/admin/tags" class="tab hover:text-base-content hover:bg-base-200/50">Tags</a>
+      <a role="tab" href="/admin/policies" class="tab hover:text-base-content hover:bg-base-200/50">Policies</a>
       <a role="tab" href="/admin/websocket-stats" class="tab hover:text-base-content hover:bg-base-200/50">WebSocket stats ↗</a>
     </div>
   </div>
@@ -85,6 +87,14 @@
             <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
               <input type="checkbox" name="allow_simple_passwords" class="toggle toggle-primary toggle-sm" {% if features.get('allow_simple_passwords') %}checked{% end %}>
               <span class="label-text">Allow simple passwords</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+              <input type="checkbox" name="abac_engine" class="toggle toggle-primary toggle-sm" {% if features.get('abac_engine') %}checked{% end %}>
+              <span class="label-text">ABAC engine</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+              <input type="checkbox" name="abac_audit_decisions" class="toggle toggle-primary toggle-sm" {% if features.get('abac_audit_decisions') %}checked{% end %}>
+              <span class="label-text">ABAC decision audit</span>
             </label>
           </div>
         </div>

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <title>Resource tags · Aird</title>
+</head>
+<body class="bg-base-200 min-h-screen">
+  <div class="container mx-auto p-4">
+    {% set nav_title = "⚙ Admin Panel" %}
+    {% set show_admin_link = False %}
+    {% include '_app_nav_header.html' %}
+  </div>
+
+  <main class="max-w-5xl mx-auto p-4 space-y-6">
+    <div class="mb-2">
+      <a href="/admin" class="link link-hover text-sm text-base-content/70">← Back to Admin Settings</a>
+    </div>
+
+    <div class="flex items-center justify-between flex-wrap gap-3">
+      <h1 class="text-2xl font-bold m-0">Resource tags</h1>
+      <span class="text-sm text-base-content/60">Glob patterns map files to ABAC tags consumed by policies.</span>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-error" role="alert"><span>{{ error }}</span></div>
+    {% end %}
+
+    <section class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="card-body">
+        <h2 class="card-title text-base">Add a tag rule</h2>
+        <form id="tag-create-form" class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end mt-2">
+          {% raw xsrf_form_html() %}
+          <label class="form-control">
+            <div class="label"><span class="label-text">Tag</span></div>
+            <input name="tag" required minlength="1" maxlength="64"
+                   class="input input-bordered input-sm" placeholder="pii" />
+          </label>
+          <label class="form-control md:col-span-2">
+            <div class="label"><span class="label-text">Glob pattern</span></div>
+            <input name="glob_pattern" required minlength="1" maxlength="255"
+                   class="input input-bordered input-sm" placeholder="finance/*.pdf" />
+          </label>
+          <label class="form-control">
+            <div class="label"><span class="label-text">Priority</span></div>
+            <input name="priority" type="number" value="0" min="0" max="9999"
+                   class="input input-bordered input-sm" />
+          </label>
+          <div class="md:col-span-4 flex justify-end">
+            <button type="submit" class="btn btn-primary btn-sm">+ Create tag</button>
+          </div>
+        </form>
+        <p id="tag-create-error" class="text-error text-sm mt-1 hidden"></p>
+      </div>
+    </section>
+
+    <section class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="card-body p-0">
+        <div class="px-5 py-3 border-b border-base-300 bg-base-200/50">
+          <h2 class="font-semibold m-0 text-base">Existing tags <span class="text-base-content/50 text-sm">({{ len(tags) }})</span></h2>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="table table-zebra" id="tags-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Tag</th>
+                <th>Glob pattern</th>
+                <th>Priority</th>
+                <th>Created</th>
+                <th>By</th>
+                <th class="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for t in tags %}
+              <tr data-tag-id="{{ t['id'] }}">
+                <td class="text-xs text-base-content/50 font-mono">#{{ t['id'] }}</td>
+                <td><span class="badge badge-primary badge-outline">{{ escape(t['tag']) }}</span></td>
+                <td class="font-mono text-sm">{{ escape(t['glob_pattern']) }}</td>
+                <td class="text-sm">{{ t['priority'] }}</td>
+                <td class="text-xs text-base-content/60 font-mono">{{ t['created_at'] }}</td>
+                <td class="text-sm">{{ escape(t['created_by'] or '') }}</td>
+                <td class="text-right">
+                  <button type="button" class="btn btn-error btn-outline btn-xs"
+                          data-delete-tag-id="{{ t['id'] }}">Delete</button>
+                </td>
+              </tr>
+              {% end %}
+              {% if not tags %}
+              <tr><td colspan="7" class="text-center text-base-content/50 py-8">No tag rules defined yet.</td></tr>
+              {% end %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/js/theme.js"></script>
+  <script nonce="{{ csp_nonce }}">
+    (function () {
+      const m = /(?:^|; )_xsrf=([^;]*)/.exec(document.cookie);
+      const xsrfToken = m ? decodeURIComponent(m[1]) : '';
+      const errorEl = document.getElementById('tag-create-error');
+
+      function showError(msg) {
+        if (!errorEl) return;
+        errorEl.textContent = msg || '';
+        errorEl.classList.toggle('hidden', !msg);
+      }
+
+      document.getElementById('tag-create-form').addEventListener('submit', async function (ev) {
+        ev.preventDefault();
+        showError('');
+        const form = ev.currentTarget;
+        const data = {
+          tag: form.tag.value.trim(),
+          glob_pattern: form.glob_pattern.value.trim(),
+          priority: Number(form.priority.value || 0),
+        };
+        try {
+          const res = await fetch('/admin/api/abac/tags', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-XSRFToken': xsrfToken },
+            body: JSON.stringify(data),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.error || ('HTTP ' + res.status));
+          }
+          window.location.reload();
+        } catch (err) {
+          showError(err.message || 'Failed to create tag');
+        }
+      });
+
+      document.querySelectorAll('[data-delete-tag-id]').forEach(function (btn) {
+        btn.addEventListener('click', async function () {
+          const id = btn.getAttribute('data-delete-tag-id');
+          if (!confirm('Delete tag rule #' + id + '?')) return;
+          try {
+            const res = await fetch('/admin/api/abac/tags', {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json', 'X-XSRFToken': xsrfToken },
+              body: JSON.stringify({ id: Number(id) }),
+            });
+            if (!res.ok) {
+              const body = await res.json().catch(() => ({}));
+              throw new Error(body.error || ('HTTP ' + res.status));
+            }
+            const row = btn.closest('tr');
+            if (row) row.remove();
+          } catch (err) {
+            alert('Failed to delete: ' + (err.message || err));
+          }
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

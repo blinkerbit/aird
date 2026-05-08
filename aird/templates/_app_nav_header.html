@@ -1,5 +1,7 @@
 {# Main app header: Aird + profile + Browse + feature nav + theme selector.
-   Optional overrides: nav_title, nav_search_path, show_admin_link (defaults come from BaseHandler.get_template_namespace). #}
+   Optional overrides: nav_title, nav_search_path, show_admin_link (BaseHandler defaults).
+   Layout: place this include inside the same outer wrapper as page content, e.g.
+   <div class="container mx-auto p-4"> …header… …content… </div> (same as browse/share/search). #}
 <div class="navbar bg-base-200 shadow-sm rounded-box mb-4 flex-wrap gap-2">
   <div class="flex-1">
     <a href="/files/" class="btn btn-ghost text-xl font-extrabold tracking-wide gap-2" aria-label="Aird Home">
@@ -69,6 +71,13 @@
     {% end %}
     {% end %}
     {% if current_user %}
+    <button type="button" class="btn btn-ghost btn-sm gap-1" title="Command palette (Cmd+K / Ctrl+K)"
+            data-aird-cmdk>
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span class="hidden sm:inline">⌘K</span>
+    </button>
+    {% end %}
+    {% if current_user %}
     <a href="/logout" class="btn btn-ghost btn-sm gap-1 text-error" title="Log out">
       <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       <span class="hidden sm:inline">Logout</span>
@@ -81,3 +90,4 @@
     {% end %}
   </div>
 </div>
+<script src="/static/js/common/command-palette.js" defer></script>
