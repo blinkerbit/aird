@@ -61,9 +61,6 @@
             <button class="btn btn-sm btn-outline" id="toggle-lines-btn">🔢 Hide Line Numbers</button>
             <button class="btn btn-sm btn-outline" id="edit-btn" data-feature="file_edit">📝 Edit</button>
             <button type="button" class="btn btn-sm btn-outline hidden" id="save-btn">💾 Save</button>
-            {% if filename.lower().endswith('.md') %}
-            <button class="btn btn-sm btn-outline" id="md-toggle-btn" type="button">📖 Rendered</button>
-            {% end %}
         </div>
         <div class="flex flex-wrap items-center gap-2">
             <label for="stream-filter" class="sr-only">Stream line filter expression</label>
@@ -111,8 +108,6 @@
     <div id="editor-container" class="flex h-[60vh] hidden">
         <textarea id="line-numbers-editor" class="w-10 p-1 text-right bg-base-200 text-base-content/50 border border-base-300 border-r-0 overflow-y-hidden resize-none font-mono text-base leading-snug" readonly></textarea>
         <textarea id="editor" class="flex-1 h-full border border-base-300 resize-none font-mono text-base leading-snug p-2 bg-base-100 text-base-content focus:outline-none focus:border-primary">{% if open_editor %}{{ full_file_content }}{% end %}</textarea>
-    </div>
-    <div id="markdown-preview" class="hidden p-4 w-full max-w-none leading-relaxed font-sans prose prose-sm">
     </div>
     <div class="w-full overflow-x-auto border border-base-300 rounded-lg bg-base-100">
         <table id="file-content" class="w-full table-fixed border-collapse text-left">
@@ -516,48 +511,6 @@
             });
         });
     </script>
-    {% if filename.lower().endswith('.md') %}
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js" integrity="sha512-Y1p/STLW/B+l+MPJ5K5OdILMwJa2gMFXXmC/qsyDuGH9uc1MZMUo6/8YQUg9Ut4ns8KGCrCtt+58UwmNFFiVvA==" crossorigin="anonymous" referrerpolicy="no-referrer" nonce="{{ csp_nonce }}"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/16.3.0/marked.min.js" integrity="sha512-gxBP/mcwo9A5lJDFbVfXNb1hSLpOkHLLXAjld8HfCWjVIZnA3nlNnIqSTLvtwF4t55Dt4Rzh7phL3tJuKZ+teQ==" crossorigin="anonymous" referrerpolicy="no-referrer" nonce="{{ csp_nonce }}"></script>
-    <script nonce="{{ csp_nonce }}">
-    (function() {
-        const mdBtn = document.getElementById('md-toggle-btn');
-        const mdPreview = document.getElementById('markdown-preview');
-        const fileTable = document.getElementById('file-content');
-        let showing = false;
-        if (!mdBtn || !mdPreview || !fileTable) return;
-        mdBtn.addEventListener('click', function() {
-            showing = !showing;
-            if (showing) {
-                const rows = fileTable.querySelectorAll('#file-content-body tr');
-                const text = [];
-                rows.forEach(function(r) {
-                    const cells = r.querySelectorAll('td');
-                    if (cells.length >= 2) text.push(cells[1].textContent);
-                });
-                const raw = text.join('\n');
-                if (typeof marked === 'undefined') {
-                    mdPreview.textContent = raw;
-                } else {
-                    const html = marked.parse(raw);
-                    if (typeof DOMPurify !== 'undefined' && DOMPurify.sanitize) {
-                        mdPreview.innerHTML = DOMPurify.sanitize(html);
-                    } else {
-                        mdPreview.textContent = raw;
-                    }
-                }
-                mdPreview.style.display = 'block';
-                fileTable.style.display = 'none';
-                mdBtn.textContent = '📄 Raw';
-            } else {
-                mdPreview.style.display = 'none';
-                fileTable.style.display = '';
-                mdBtn.textContent = '📖 Rendered';
-            }
-        });
-    })();
-    </script>
-    {% end %}
     <script src="/static/js/theme.js" defer></script>
     </main>
   </div>

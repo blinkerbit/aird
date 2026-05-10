@@ -41,7 +41,7 @@ class SuperSearch {
 
       setupPlatformDefaults() {
         // Detect platform and set appropriate examples
-        const isWindows = navigator.platform.includes('Win');
+        const isWindows = (navigator.userAgentData?.platform ?? navigator.userAgent).includes('Win');
         const separator = isWindows ? '\\' : '/';
 
         const currentPath = document.body?.dataset.searchBasePath ?? '';

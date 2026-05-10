@@ -110,29 +110,17 @@
     </div>
     <div class="edit-actions">
       <a href="/profile" class="user-chip" title="Profile">👤 {{ handler.get_display_username() }}</a>
-      {% if is_markdown %}
-      <button id="tabEdit" type="button" class="edit-btn active-tab">✏ Edit</button>
-      <button id="tabPreview" type="button" class="edit-btn">👁 Preview</button>
-      {% end %}
       <button id="backBtn" type="button" class="edit-btn">← Back</button>
       <button id="saveBtn" type="button" class="edit-btn primary" title="Save (Ctrl/Cmd+S)">💾 Save</button>
       <a href="/logout" class="edit-btn">↩ Logout</a>
       <span id="status" class="status"></span>
     </div>
   </header>
-  {% if is_markdown %}
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js" integrity="sha512-Y1p/STLW/B+l+MPJ5K5OdILMwJa2gMFXXmC/qsyDuGH9uc1MZMUo6/8YQUg9Ut4ns8KGCrCtt+58UwmNFFiVvA==" crossorigin="anonymous" referrerpolicy="no-referrer" nonce="{{ csp_nonce }}"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/16.3.0/marked.min.js" integrity="sha512-gxBP/mcwo9A5lJDFbVfXNb1hSLpOkHLLXAjld8HfCWjVIZnA3nlNnIqSTLvtwF4t55Dt4Rzh7phL3tJuKZ+teQ==" crossorigin="anonymous" referrerpolicy="no-referrer" nonce="{{ csp_nonce }}"></script>
-  {% end %}
   <input type="hidden" id="path" value="/{{ path }}" />
   <div class="editor-wrap" id="editorWrap">
     <div id="gutter" class="gutter"></div>
     <textarea id="editor" spellcheck="false" wrap="off">{{ full_file_content }}</textarea>
   </div>
-  <div id="previewWrap" class="preview-wrap hidden">
-    <div id="markdownPreview" class="markdown-preview"></div>
-  </div>
-
   <script nonce="{{ csp_nonce }}">
     const path = document.getElementById('path').value;
     const saveBtn = document.getElementById('saveBtn');
@@ -212,37 +200,6 @@
 
     document.getElementById('backBtn').addEventListener('click', function () { history.back(); });
 
-    {% if is_markdown %}
-    (function() {
-      const editorWrap = document.getElementById('editorWrap');
-      const previewWrap = document.getElementById('previewWrap');
-      const tabEdit = document.getElementById('tabEdit');
-      const tabPreview = document.getElementById('tabPreview');
-      const previewEl = document.getElementById('markdownPreview');
-      function showEdit() {
-        editorWrap.style.display = 'flex';
-        previewWrap.style.display = 'none';
-        if (tabEdit) tabEdit.classList.add('active-tab');
-        if (tabPreview) tabPreview.classList.remove('active-tab');
-      }
-      function showPreview() {
-        editorWrap.style.display = 'none';
-        previewWrap.style.display = 'flex';
-        if (tabPreview) tabPreview.classList.add('active-tab');
-        if (tabEdit) tabEdit.classList.remove('active-tab');
-        if (typeof marked !== 'undefined' && previewEl) {
-          const mdHtml = marked.parse(editor.value);
-          if (typeof DOMPurify !== 'undefined' && DOMPurify.sanitize) {
-            previewEl.innerHTML = DOMPurify.sanitize(mdHtml);
-          } else {
-            previewEl.textContent = editor.value;
-          }
-        }
-      }
-      if (tabEdit) tabEdit.addEventListener('click', showEdit);
-      if (tabPreview) tabPreview.addEventListener('click', showPreview);
-    })();
-    {% end %}
   </script>
   <script src="/static/js/theme.js" defer></script>
 </body>
