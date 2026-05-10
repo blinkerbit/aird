@@ -161,102 +161,28 @@
   </div>
 
   <script src="/static/js/theme.js" defer></script>
+  <script src="/static/js/login-ui.js" defer></script>
   <script nonce="{{ csp_nonce }}">
-  (function () {
-    var tabCreds  = document.getElementById('adm-tab-creds');
-    var tabToken  = document.getElementById('adm-tab-token');
-    var formCreds = document.getElementById('adm-form-creds');
-    var formToken = document.getElementById('adm-form-token');
-    var indicator = document.getElementById('adm-tab-indicator');
-    var switcher  = document.getElementById('adm-tab-switcher');
-    if (!tabCreds || !tabToken || !formCreds || !formToken) return;
-
-    function moveIndicator(tok) {
-      if (!indicator || !switcher) return;
-      var half = (switcher.offsetWidth - 8) / 2;
-      indicator.style.width = half + 'px';
-      indicator.style.left  = (tok ? half + 4 : 4) + 'px';
-    }
-
-    function fadeIn(el) {
-      el.style.display = '';
-      el.style.opacity = '0';
-      el.style.transform = 'translateY(6px)';
-      el.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
-      requestAnimationFrame(function () {
-        requestAnimationFrame(function () {
-          el.style.opacity = '1';
-          el.style.transform = 'translateY(0)';
-        });
+  window.addEventListener('load', function () {
+    if (window.AirdLoginUI) {
+      window.AirdLoginUI.init({
+        tabCreds:     'adm-tab-creds',
+        tabToken:     'adm-tab-token',
+        formCreds:    'adm-form-creds',
+        formToken:    'adm-form-token',
+        indicator:    'adm-tab-indicator',
+        switcher:     'adm-tab-switcher',
+        storageKey:   'aird-adm-tab',
+        tokenArea:    'adm-token',
+        usernameField:'adm-username',
+        pasteBtn:     'adm-paste-btn',
+        pasteLabel:   'adm-paste-label',
+        pwdInput:     'adm-password',
+        pwdEye:       'adm-pwd-eye',
+        pwdIcon:      'adm-pwd-eye-icon',
       });
     }
-
-    function switchTab(name) {
-      var tok = name === 'token';
-      if (tok) { formCreds.style.display = 'none'; fadeIn(formToken); }
-      else      { formToken.style.display = 'none'; fadeIn(formCreds); }
-      tabCreds.style.opacity = tok ? '0.45' : '1';
-      tabToken.style.opacity = tok ? '1'    : '0.45';
-      moveIndicator(tok);
-      var el = document.getElementById(tok ? 'adm-token' : 'adm-username');
-      if (el) setTimeout(function(){ el.focus(); }, 50);
-      try { sessionStorage.setItem('aird-adm-tab', name); } catch(e) {}
-    }
-
-    window.addEventListener('resize', function () {
-      var tok = tabToken.style.opacity === '1';
-      moveIndicator(tok);
-    });
-
-    tabCreds.addEventListener('click', function () { switchTab('creds'); });
-    tabToken.addEventListener('click', function () { switchTab('token'); });
-
-    /* remember tab on submit so error page restores it */
-    formCreds.addEventListener('submit', function () { try { sessionStorage.setItem('aird-adm-tab', 'creds'); } catch(e) {} });
-    formToken.addEventListener('submit', function () { try { sessionStorage.setItem('aird-adm-tab', 'token'); } catch(e) {} });
-
-    /* restore tab + position indicator after layout is ready */
-    window.addEventListener('load', function () {
-      var saved = '';
-      try { saved = sessionStorage.getItem('aird-adm-tab') || ''; } catch(e) {}
-      if (saved === 'token') {
-        formCreds.style.display = 'none';
-        formToken.style.display = '';
-        tabCreds.style.opacity = '0.45';
-        tabToken.style.opacity = '1';
-      }
-      moveIndicator(saved === 'token');
-    });
-
-    /* paste button */
-    var pasteBtn   = document.getElementById('adm-paste-btn');
-    var pasteLabel = document.getElementById('adm-paste-label');
-    if (pasteBtn) {
-      pasteBtn.addEventListener('click', function () {
-        var ta = document.getElementById('adm-token');
-        if (!ta) return;
-        ta.focus(); ta.select();
-        if (pasteLabel) {
-          pasteLabel.textContent = 'Ctrl+V';
-          setTimeout(function () { pasteLabel.textContent = 'Paste'; }, 1800);
-        }
-      });
-    }
-
-    /* password show/hide */
-    var pwdInput = document.getElementById('adm-password');
-    var pwdEye   = document.getElementById('adm-pwd-eye');
-    var pwdIcon  = document.getElementById('adm-pwd-eye-icon');
-    var eyeOff = '<path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>';
-    var eyeOn  = '<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>';
-    if (pwdEye && pwdInput) {
-      pwdEye.addEventListener('click', function () {
-        var show = pwdInput.type === 'password';
-        pwdInput.type = show ? 'text' : 'password';
-        pwdIcon.innerHTML = show ? eyeOff : eyeOn;
-      });
-    }
-  })();
+  });
   </script>
 </body>
 </html>

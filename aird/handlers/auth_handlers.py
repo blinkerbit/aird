@@ -14,7 +14,7 @@ import aird.constants as constants_module
 from aird.handlers.constants import (
     TOO_MANY_LOGIN_ATTEMPTS_MSG,
     INVALID_INPUT_LENGTH_MSG,
-    INVALID_USERNAME_OR_PASSWORD_MSG,
+    INVALID_CREDENTIALS_MSG,
     ADMIN_URL,
     ADMIN_LOGIN_TEMPLATE,
     PROFILE_TEMPLATE,
@@ -151,7 +151,7 @@ def _try_username_password_login(handler, username, password, next_url):
         if not auth_ok:
             handler.render(
                 LOGIN_HTML,
-                error=INVALID_USERNAME_OR_PASSWORD_MSG,
+                error=INVALID_CREDENTIALS_MSG,
                 settings=handler.settings,
                 next_url=next_url,
             )
@@ -264,7 +264,7 @@ def _try_admin_username_password_login(handler, username, password):
                 error="Access denied. Admin privileges required.",
             )
             return True
-        handler.render(ADMIN_LOGIN_TEMPLATE, error=INVALID_USERNAME_OR_PASSWORD_MSG)
+        handler.render(ADMIN_LOGIN_TEMPLATE, error=INVALID_CREDENTIALS_MSG)
         return True
     except Exception:
         handler.render(
@@ -536,7 +536,7 @@ class LoginHandler(BaseHandler):
         if username or password:
             self.render(
                 LOGIN_HTML,
-                error=INVALID_USERNAME_OR_PASSWORD_MSG,
+                error=INVALID_CREDENTIALS_MSG,
                 settings=self.settings,
                 next_url=next_url,
             )
@@ -581,7 +581,7 @@ class AdminLoginHandler(BaseHandler):
         if not token:
             if username or password:
                 self.render(
-                    ADMIN_LOGIN_TEMPLATE, error=INVALID_USERNAME_OR_PASSWORD_MSG
+                    ADMIN_LOGIN_TEMPLATE, error=INVALID_CREDENTIALS_MSG
                 )
             else:
                 self.render(

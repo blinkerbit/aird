@@ -33,15 +33,15 @@
   </button>
 </div>
 
-<ul id="theme-menu" class="bg-base-100 rounded-2xl p-1.5 shadow-2xl border border-base-300" role="menu" style="list-style:none;margin:0;padding-top:6px;padding-bottom:6px;">
-  <li><button type="button" data-set-theme="light"     role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>☀️ Light</span>    <span class="theme-check hidden text-primary font-bold">✓</span></button></li>
-  <li><button type="button" data-set-theme="dark"      role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>🌙 Dark</span>     <span class="theme-check hidden text-primary font-bold">✓</span></button></li>
-  <li><button type="button" data-set-theme="nord"      role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>❄️ Nord</span>     <span class="theme-check hidden text-primary font-bold">✓</span></button></li>
-  <li><button type="button" data-set-theme="dracula"   role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>🧛 Dracula</span>  <span class="theme-check hidden text-primary font-bold">✓</span></button></li>
-  <li><button type="button" data-set-theme="cyberpunk" role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>🤖 Cyberpunk</span><span class="theme-check hidden text-primary font-bold">✓</span></button></li>
-  <li><button type="button" data-set-theme="retro"     role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>📺 Retro</span>   <span class="theme-check hidden text-primary font-bold">✓</span></button></li>
-  <li><button type="button" data-set-theme="autumn"    role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>🍂 Autumn</span>  <span class="theme-check hidden text-primary font-bold">✓</span></button></li>
-</ul>
+<div id="theme-menu" class="bg-base-100 rounded-2xl p-1.5 shadow-2xl border border-base-300" role="menu" style="list-style:none;margin:0;padding-top:6px;padding-bottom:6px;">
+  <button type="button" data-set-theme="light"     role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>☀️ Light</span>    <span class="theme-check hidden text-primary font-bold">✓</span></button>
+  <button type="button" data-set-theme="dark"      role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>🌙 Dark</span>     <span class="theme-check hidden text-primary font-bold">✓</span></button>
+  <button type="button" data-set-theme="nord"      role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>❄️ Nord</span>     <span class="theme-check hidden text-primary font-bold">✓</span></button>
+  <button type="button" data-set-theme="dracula"   role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>🧛 Dracula</span>  <span class="theme-check hidden text-primary font-bold">✓</span></button>
+  <button type="button" data-set-theme="cyberpunk" role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>🤖 Cyberpunk</span><span class="theme-check hidden text-primary font-bold">✓</span></button>
+  <button type="button" data-set-theme="retro"     role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>📺 Retro</span>   <span class="theme-check hidden text-primary font-bold">✓</span></button>
+  <button type="button" data-set-theme="autumn"    role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>🍂 Autumn</span>  <span class="theme-check hidden text-primary font-bold">✓</span></button>
+</div>
 
 <script nonce="{{ csp_nonce }}">
 (function () {
@@ -60,7 +60,7 @@
     var label = document.getElementById('theme-label');
     if (label) label.textContent = THEMES[theme] || 'Theme';
     menu.querySelectorAll('[data-set-theme]').forEach(function(b) {
-      b.querySelector('.theme-check').classList.toggle('hidden', b.getAttribute('data-set-theme') !== theme);
+      b.querySelector('.theme-check').classList.toggle('hidden', b.dataset.setTheme !== theme);
     });
   }
 
