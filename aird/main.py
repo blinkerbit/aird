@@ -280,7 +280,10 @@ def print_banner():
 ██║  ██║██║██║  ██║██████╔╝
 ╚═╝  ╚═╝╚═╝╚═╝  ╚═╝╚═════╝ 
 """
-    print(banner)
+    try:
+        print(banner)
+    except UnicodeEncodeError:
+        print("AIRD")
 
 
 def _validate_ldap_config() -> bool:
