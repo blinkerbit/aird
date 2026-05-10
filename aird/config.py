@@ -73,14 +73,7 @@ def _configure_google_drive(cloud_config: dict) -> None:
                 )
             )
         elif gd_credentials_file:
-            CLOUD_MANAGER.register(
-                GoogleDriveProvider(
-                    credentials_file=gd_credentials_file,
-                    token_file=gd_token_file,
-                    root_id=gdrive_root,
-                    include_shared_drives=bool(include_shared),
-                )
-            )
+            logging.error("GoogleDriveProvider currently only supports 'access_token'. 'credentials_file' is not supported.")
     except CloudProviderError as exc:
         logging.error("Failed to configure Google Drive provider: %s", exc)
     except Exception as exc:
@@ -110,15 +103,7 @@ def _configure_onedrive(config: dict) -> None:
         if onedrive_token:
             CLOUD_MANAGER.register(OneDriveProvider(onedrive_token, drive_id=drive_id))
         elif od_client_id and od_redirect_uri:
-            CLOUD_MANAGER.register(
-                OneDriveProvider(
-                    client_id=od_client_id,
-                    client_secret=od_client_secret,
-                    redirect_uri=od_redirect_uri,
-                    token_file=od_token_file,
-                    drive_id=drive_id,
-                )
-            )
+            logging.error("OneDriveProvider currently only supports 'access_token'. 'client_id' and 'redirect_uri' are not supported.")
     except CloudProviderError as exc:
         logging.error("Failed to configure OneDrive provider: %s", exc)
     except Exception as exc:

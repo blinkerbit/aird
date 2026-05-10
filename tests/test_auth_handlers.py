@@ -147,6 +147,7 @@ class TestProfileHandler:
         authenticate(handler, role="user", username="user")
         handler.get_argument = MagicMock(
             side_effect=lambda k, d=None: {
+                "current_password": "OldP@ssword1!",
                 "new_password": "Complex!1Password",
                 "confirm_password": "Complex!1Password",
             }.get(k, d)
@@ -155,6 +156,9 @@ class TestProfileHandler:
         with patch_db_conn(MagicMock(), modules=["aird.handlers.auth_handlers"]), patch(
             "aird.services.user_service.get_user_by_username",
             return_value={"id": 1, "username": "user"},
+        ), patch(
+            "aird.services.user_service.authenticate_user",
+            return_value={"id": 1, "username": "user", "role": "user"},
         ), patch(
             "aird.services.user_service.update_user"
         ) as mock_update, patch.object(
@@ -166,6 +170,33 @@ class TestProfileHandler:
             assert (
                 mock_render.call_args[1]["success"] == "Password updated successfully"
             )
+
+    def test_post_update_password_wrong_current(self):
+        handler = prepare_handler(ProfileHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role="user", username="user")
+        handler.get_argument = MagicMock(
+            side_effect=lambda k, d=None: {
+                "current_password": "WrongPassword!",
+                "new_password": "Complex!1Password",
+                "confirm_password": "Complex!1Password",
+            }.get(k, d)
+        )
+
+        with patch_db_conn(MagicMock(), modules=["aird.handlers.auth_handlers"]), patch(
+            "aird.services.user_service.get_user_by_username",
+            return_value={"id": 1, "username": "user"},
+        ), patch(
+            "aird.services.user_service.authenticate_user",
+            return_value=None,
+        ), patch(
+            "aird.services.user_service.update_user"
+        ) as mock_update, patch.object(
+            handler, "render"
+        ) as mock_render:
+
+            handler.post()
+            mock_update.assert_not_called()
+            assert mock_render.call_args[1]["error"] == "Current password is incorrect."
 
 
 class TestLDAPLoginHandler:

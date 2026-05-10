@@ -103,10 +103,24 @@ html {
   --ds-info: var(--color-info);
   --ds-gold: #f59e0b;
 
+  /* Status soft backgrounds */
+  --ds-warning: var(--color-warning);
+  --ds-warning-soft: oklch(from var(--color-warning) l c h / 0.12);
+  --ds-gold-soft: oklch(from #f59e0b l c h / 0.12);
+  --ds-danger-soft: oklch(from var(--color-error) l c h / 0.1);
+  --ds-success-soft: oklch(from var(--color-success) l c h / 0.1);
+
+  /* Interaction helpers */
+  --ds-border-strong: oklch(from var(--color-base-content) l c h / 0.25);
+  --ds-focus-ring: 0 0 0 3px oklch(from var(--color-primary) l c h / 0.35);
+  --ds-overlay: rgba(0, 0, 0, 0.5);
+  --ds-accent-hover: oklch(from var(--color-neutral) l c h / 0.85);
+
   /* Shadows */
   --ds-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
   --ds-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
   --ds-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --ds-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.15), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
 
   /* Layout Tokens */
   --ds-radius-sm: 0.375rem;
@@ -279,6 +293,19 @@ body {
   grid-template-columns: auto 1fr !important;
   align-items: center !important;
   gap: 1rem !important;
+}
+
+/* Fix: ensure dropdown menu text is always readable across all themes.
+   DaisyUI menu hover/active can produce unreadable text on themes like
+   Cyberpunk (pure black text) or Retro (low-contrast). */
+.dropdown-content.menu button,
+.dropdown-content.menu a {
+  color: var(--color-base-content) !important;
+}
+.dropdown-content.menu button:hover,
+.dropdown-content.menu a:hover {
+  color: var(--color-base-content) !important;
+  background-color: var(--color-base-300) !important;
 }
 
 /* Reduced motion: disable transitions */

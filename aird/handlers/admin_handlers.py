@@ -471,7 +471,7 @@ class UserEditHandler(BaseHandler):
 
             error = _validate_user_edit(username, password, role, self.settings)
             if error:
-                self.render(TEMPLATE_USER_EDIT, user=user, error=error)
+                self.render(TEMPLATE_USER_EDIT, user=user, error=error, settings=self.settings)
                 return
 
             update_data = {"username": username, "role": role, "active": active}
@@ -488,7 +488,7 @@ class UserEditHandler(BaseHandler):
             if updated:
                 self.redirect(URL_ADMIN_USERS)
             else:
-                self.render(TEMPLATE_USER_EDIT, user=user, error=FAILED_UPDATE_USER)
+                self.render(TEMPLATE_USER_EDIT, user=user, error=FAILED_UPDATE_USER, settings=self.settings)
 
         except ValueError:
             self.set_status(HTTP_BAD_REQUEST)
@@ -500,6 +500,7 @@ class UserEditHandler(BaseHandler):
                     TEMPLATE_USER_EDIT,
                     user=user,
                     error=ERROR_UPDATE_USER,
+                    settings=self.settings,
                 )
             else:
                 self.set_status(500)

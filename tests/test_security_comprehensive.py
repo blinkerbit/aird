@@ -736,14 +736,15 @@ class TestSecurityHeaders:
 
     def test_default_headers_set(self):
         handler = MagicMock(spec=BaseHandler)
+        handler.request = MagicMock()
         handler.set_header = MagicMock()
         # Call the real method
         BaseHandler.set_default_headers(handler)
         calls = {c[0][0]: c[0][1] for c in handler.set_header.call_args_list}
         assert calls["X-Content-Type-Options"] == "nosniff"
         assert calls["X-Frame-Options"] == "DENY"
-        assert calls["X-XSS-Protection"] == "1; mode=block"
         assert calls["Referrer-Policy"] == "strict-origin-when-cross-origin"
+        assert "Permissions-Policy" in calls
 
 
 # ===================================================================
