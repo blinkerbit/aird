@@ -29,7 +29,7 @@
           <div class="form-control">
             <label class="label" for="adm-username"><span class="label-text font-semibold">Username</span></label>
             <input class="input input-bordered w-full" type="text" id="adm-username" name="username"
-                   placeholder="username" autocomplete="username">
+                   placeholder="username" autocomplete="username" maxlength="256">
           </div>
           <div class="form-control">
             <label class="label" for="adm-password"><span class="label-text font-semibold">Password</span></label>
@@ -46,7 +46,7 @@
           <div class="form-control">
             <label class="label" for="adm-token"><span class="label-text font-semibold">Admin token</span></label>
             <input class="input input-bordered w-full" type="password" id="adm-token" name="token"
-                   placeholder="Paste admin token" autocomplete="off">
+                   placeholder="Paste admin token" autocomplete="off" maxlength="16384">
           </div>
           <button type="submit" class="btn btn-outline btn-block">Sign in with token</button>
         </form>

@@ -54,6 +54,8 @@ from aird.handlers.abac_handlers import (
     AdminPolicyAPIHandler,
     AdminTagAPIHandler,
     AdminTagsHandler,
+    AdminUserAttributeAPIHandler,
+    AdminUserAttributesHandler,
     PolicyDecisionsAPIHandler,
     PolicyDecisionsWebSocket,
 )
@@ -72,6 +74,7 @@ from aird.handlers.admin_handlers import (
     UserCreateHandler,
     UserDeleteHandler,
     UserEditHandler,
+    UserPasswordResetHandler,
     WebSocketStatsHandler,
 )
 from aird.handlers.api_handlers import (
@@ -92,6 +95,7 @@ from aird.handlers.auth_handlers import (
     LDAPLoginHandler,
     LoginHandler,
     LogoutHandler,
+    MandatoryPasswordHandler,
     ProfileHandler,
 )
 from aird.handlers.file_op_handlers import (
@@ -123,6 +127,7 @@ from aird.handlers.view_handlers import (
     NoCacheStaticFileHandler,
     RootHandler,
     EditViewHandler,
+    TaggedFilesHandler,
 )
 from aird.handlers.p2p_handlers import (
     P2PRoomManager,
@@ -200,13 +205,16 @@ def make_app(
         (r"/health", HealthHandler),
         (r"/login", login_handler),
         (r"/logout", LogoutHandler),
+        (r"/auth/mandatory-password", MandatoryPasswordHandler),
         (r"/profile", ProfileHandler),
+        (r"/tagged/([^/]+)", TaggedFilesHandler),
         (r"/admin/login", AdminLoginHandler),
         (r"/admin", AdminHandler),
         (r"/admin/users", AdminUsersHandler),
         (r"/admin/users/create", UserCreateHandler),
         (r"/admin/users/edit/([0-9]+)", UserEditHandler),
         (r"/admin/users/delete", UserDeleteHandler),
+        (r"/admin/users/reset-password", UserPasswordResetHandler),
         (r"/admin/websocket-stats", WebSocketStatsHandler),
         (r"/admin/audit", AdminAuditHandler),
         (r"/admin/network-shares", AdminNetworkSharesHandler),
@@ -218,6 +226,8 @@ def make_app(
         (r"/admin/api/abac/policies", AdminPolicyAPIHandler),
         (r"/admin/api/abac/policies/([0-9]+)", AdminPolicyAPIHandler),
         (r"/admin/api/abac/decisions", PolicyDecisionsAPIHandler),
+        (r"/admin/user-attributes", AdminUserAttributesHandler),
+        (r"/admin/api/abac/user-attributes", AdminUserAttributeAPIHandler),
         (r"/ws/policy-decisions", PolicyDecisionsWebSocket),
         (r"/stream/(.*)", FileStreamHandler),
         (r"/features", FeatureFlagSocketHandler),

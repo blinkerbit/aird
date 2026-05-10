@@ -1,486 +1,34 @@
 let isAnonymous = document.body.dataset.isAnonymous === 'true';
 
         // =====================================================================
-        // QR Code Generator (Lightweight inline implementation)
+        // P2P share QR — node-qrcode (MIT), bundled as AirdQRCode in vendor/qrcode-browser.js
         // =====================================================================
-        const QRCode = (function () {
-            // QR Code Generator based on qr.js
-            const EC_LEVEL = 1; // L=1, M=0, Q=3, H=2
-
-            function isAdjustPatternDark(r, c) {
-                return r === -2 || r === 2 || c === -2 || c === 2 || (r === 0 && c === 0);
-            }
-
-            function readCurrentBit(data, byteIndex, bitIndex) {
-                if (byteIndex >= data.length) return false;
-                return ((data[byteIndex] >> bitIndex) & 1) === 1;
-            }
-
-            function advanceBitCursor(byteIndex, bitIndex) {
-                bitIndex--;
-                if (bitIndex === -1) {
-                    byteIndex++;
-                    bitIndex = 7;
+        function renderP2pShareQrOnCanvas(canvas, text) {
+            return new Promise((resolve) => {
+                if (!text || !canvas || !globalThis.AirdQRCode?.toCanvas) {
+                    resolve(false);
+                    return;
                 }
-                return { byteIndex, bitIndex };
-            }
-
-            function generateQR(text, typeNumber = 4) {
-                const qr = createQRCode(typeNumber, EC_LEVEL);
-                qr.addData(text);
-                qr.make();
-                return qr;
-            }
-
-            function createQRCode(typeNumber, errorCorrectLevel) {
-                const modules = [];
-                let moduleCount = 0;
-                let dataCache = null;
-                const dataList = [];
-
-                const qr = {
-                    addData: function (data) {
-                        dataList.push({ mode: 4, data: data }); // Mode 4 = byte mode
-                    },
-                    make: function () {
-                        moduleCount = typeNumber * 4 + 17;
-                        for (let i = 0; i < moduleCount; i++) {
-                            modules[i] = [];
-                            for (let j = 0; j < moduleCount; j++) {
-                                modules[i][j] = null;
-                            }
-                        }
-                        setupPositionProbePattern(0, 0);
-                        setupPositionProbePattern(moduleCount - 7, 0);
-                        setupPositionProbePattern(0, moduleCount - 7);
-                        setupPositionAdjustPattern();
-                        setupTimingPattern();
-                        setupTypeInfo(true, 0);
-                        if (typeNumber >= 7) setupTypeNumber(true);
-                        dataCache = createData(typeNumber, errorCorrectLevel, dataList);
-                        mapData(dataCache, 0);
-                    },
-                    isDark: function (row, col) {
-                        return modules[row][col];
-                    },
-                    getModuleCount: function () {
-                        return moduleCount;
-                    }
-                };
-
-                function setupPositionProbePattern(row, col) {
-                    for (let r = -1; r <= 7; r++) {
-                        if (row + r <= -1 || moduleCount <= row + r) continue;
-                        for (let c = -1; c <= 7; c++) {
-                            if (col + c <= -1 || moduleCount <= col + c) continue;
-                            if ((0 <= r && r <= 6 && (c === 0 || c === 6)) ||
-                                (0 <= c && c <= 6 && (r === 0 || r === 6)) ||
-                                (2 <= r && r <= 4 && 2 <= c && c <= 4)) {
-                                modules[row + r][col + c] = true;
-                            } else {
-                                modules[row + r][col + c] = false;
-                            }
-                        }
-                    }
-                }
-
-                function fillAdjustPatternAt(row, col) {
-                    for (let r = -2; r <= 2; r++) {
-                        for (let c = -2; c <= 2; c++) {
-                            modules[row + r][col + c] = isAdjustPatternDark(r, c);
-                        }
-                    }
-                }
-
-                function setupPositionAdjustPattern() {
-                    const pos = getPatternPosition(typeNumber);
-                    for (const row of pos) {
-                        for (const col of pos) {
-                            if (modules[row][col] !== null) continue;
-                            fillAdjustPatternAt(row, col);
-                        }
-                    }
-                }
-
-                function setupTimingPattern() {
-                    for (let i = 8; i < moduleCount - 8; i++) {
-                        if (modules[i][6] !== null) continue;
-                        modules[i][6] = (i % 2 === 0);
-                        modules[6][i] = (i % 2 === 0);
-                    }
-                }
-
-                function setupTypeInfo(test, maskPattern) {
-                    const data = (errorCorrectLevel << 3) | maskPattern;
-                    const bits = getBCHTypeInfo(data);
-                    for (let i = 0; i < 15; i++) {
-                        const mod = (!test && ((bits >> i) & 1) === 1);
-                        if (i < 6) modules[i][8] = mod;
-                        else if (i < 8) modules[i + 1][8] = mod;
-                        else modules[moduleCount - 15 + i][8] = mod;
-                        if (i < 8) modules[8][moduleCount - i - 1] = mod;
-                        else if (i < 9) modules[8][15 - i - 1 + 1] = mod;
-                        else modules[8][15 - i - 1] = mod;
-                    }
-                    modules[moduleCount - 8][8] = !test;
-                }
-
-                function setupTypeNumber(test) {
-                    const bits = getBCHTypeNumber(typeNumber);
-                    for (let i = 0; i < 18; i++) {
-                        const mod = (!test && ((bits >> i) & 1) === 1);
-                        modules[Math.floor(i / 3)][i % 3 + moduleCount - 8 - 3] = mod;
-                        modules[i % 3 + moduleCount - 8 - 3][Math.floor(i / 3)] = mod;
-                    }
-                }
-
-                function mapModuleCell(data, maskPattern, row, col, byteIndex, bitIndex) {
-                    let dark = readCurrentBit(data, byteIndex, bitIndex);
-                    if (getMask(maskPattern, row, col)) dark = !dark;
-                    modules[row][col] = dark;
-                    return advanceBitCursor(byteIndex, bitIndex);
-                }
-
-                function mapColumnPair(data, maskPattern, col, row, inc, byteIndex, bitIndex) {
-                    while (true) {
-                        for (let c = 0; c < 2; c++) {
-                            const currentCol = col - c;
-                            if (modules[row][currentCol] !== null) continue;
-                            const next = mapModuleCell(
-                                data,
-                                maskPattern,
-                                row,
-                                currentCol,
-                                byteIndex,
-                                bitIndex
-                            );
-                            byteIndex = next.byteIndex;
-                            bitIndex = next.bitIndex;
-                        }
-                        row += inc;
-                        if (row < 0 || moduleCount <= row) {
-                            row -= inc;
-                            inc = -inc;
-                            break;
-                        }
-                    }
-                    return { row, inc, byteIndex, bitIndex };
-                }
-
-                function mapData(data, maskPattern) {
-                    let inc = -1;
-                    let row = moduleCount - 1;
-                    let bitIndex = 7;
-                    let byteIndex = 0;
-                    for (let col = moduleCount - 1; col > 0; col -= 2) {
-                        if (col === 6) col--;
-                        const next = mapColumnPair(
-                            data,
-                            maskPattern,
-                            col,
-                            row,
-                            inc,
-                            byteIndex,
-                            bitIndex
-                        );
-                        row = next.row;
-                        inc = next.inc;
-                        byteIndex = next.byteIndex;
-                        bitIndex = next.bitIndex;
-                    }
-                }
-
-                return qr;
-            }
-
-            function getPatternPosition(typeNumber) {
-                const PATTERN_POSITION = [
-                    [], [6, 18], [6, 22], [6, 26], [6, 30], [6, 34],
-                    [6, 22, 38], [6, 24, 42], [6, 26, 46], [6, 28, 50], [6, 30, 54],
-                    [6, 32, 58], [6, 34, 62], [6, 26, 46, 66], [6, 26, 48, 70],
-                    [6, 26, 50, 74], [6, 30, 54, 78], [6, 30, 56, 82], [6, 30, 58, 86],
-                    [6, 34, 62, 90], [6, 28, 50, 72, 94]
-                ];
-                return PATTERN_POSITION[typeNumber - 1] || [];
-            }
-
-            function getBCHTypeInfo(data) {
-                let d = data << 10;
-                while (getBCHDigit(d) - getBCHDigit(1335) >= 0) {
-                    d ^= (1335 << (getBCHDigit(d) - getBCHDigit(1335)));
-                }
-                return ((data << 10) | d) ^ 21522;
-            }
-
-            function getBCHTypeNumber(data) {
-                let d = data << 12;
-                while (getBCHDigit(d) - getBCHDigit(7973) >= 0) {
-                    d ^= (7973 << (getBCHDigit(d) - getBCHDigit(7973)));
-                }
-                return (data << 12) | d;
-            }
-
-            function getBCHDigit(data) {
-                let digit = 0;
-                while (data !== 0) { digit++; data >>>= 1; }
-                return digit;
-            }
-
-            function getMask(maskPattern, i, j) {
-                switch (maskPattern) {
-                    case 0: return (i + j) % 2 === 0;
-                    case 1: return i % 2 === 0;
-                    case 2: return j % 3 === 0;
-                    case 3: return (i + j) % 3 === 0;
-                    case 4: return (Math.floor(i / 2) + Math.floor(j / 3)) % 2 === 0;
-                    case 5: return (i * j) % 2 + (i * j) % 3 === 0;
-                    case 6: return ((i * j) % 2 + (i * j) % 3) % 2 === 0;
-                    case 7: return ((i * j) % 3 + (i + j) % 2) % 2 === 0;
-                    default: return false;
-                }
-            }
-
-            function createData(typeNumber, errorCorrectLevel, dataList) {
-                const rsBlocks = getRSBlocks(typeNumber, errorCorrectLevel);
-                const buffer = createBitBuffer();
-
-                for (const data of dataList) {
-                    buffer.put(data.mode, 4);
-                    buffer.put(data.data.length, getLengthInBits(data.mode, typeNumber));
-                    for (const ch of data.data) {
-                        buffer.put(ch.codePointAt(0), 8);
-                    }
-                }
-
-                let totalDataCount = 0;
-                for (const block of rsBlocks) {
-                    totalDataCount += block.dataCount;
-                }
-
-                if (buffer.getLengthInBits() > totalDataCount * 8) {
-                    throw new Error('Data too long');
-                }
-
-                if (buffer.getLengthInBits() + 4 <= totalDataCount * 8) {
-                    buffer.put(0, 4);
-                }
-
-                while (buffer.getLengthInBits() % 8 !== 0) {
-                    buffer.putBit(false);
-                }
-
-                while (true) {
-                    if (buffer.getLengthInBits() >= totalDataCount * 8) break;
-                    buffer.put(0xEC, 8);
-                    if (buffer.getLengthInBits() >= totalDataCount * 8) break;
-                    buffer.put(0x11, 8);
-                }
-
-                return createBytes(buffer, rsBlocks);
-            }
-
-            function createBitBuffer() {
-                const buffer = [];
-                let length = 0;
-                return {
-                    getBuffer: function () { return buffer; },
-                    getLengthInBits: function () { return length; },
-                    put: function (num, len) {
-                        for (let i = 0; i < len; i++) {
-                            this.putBit(((num >>> (len - i - 1)) & 1) === 1);
-                        }
-                    },
-                    putBit: function (bit) {
-                        const bufIndex = Math.floor(length / 8);
-                        if (buffer.length <= bufIndex) buffer.push(0);
-                        if (bit) buffer[bufIndex] |= (0x80 >>> (length % 8));
-                        length++;
-                    }
-                };
-            }
-
-            function getRSBlocks(typeNumber, errorCorrectLevel) {
-                const RS_BLOCK_TABLE = [
-                    [1, 26, 19], [1, 26, 16], [1, 26, 13], [1, 26, 9],
-                    [1, 44, 34], [1, 44, 28], [1, 44, 22], [1, 44, 16],
-                    [1, 70, 55], [1, 70, 44], [2, 35, 17], [2, 35, 13],
-                    [1, 100, 80], [2, 50, 32], [2, 50, 24], [4, 25, 9],
-                    [1, 134, 108], [2, 67, 43], [2, 33, 15, 2, 34, 16], [2, 33, 11, 2, 34, 12],
-                    [2, 86, 68], [4, 43, 27], [4, 43, 19], [4, 43, 15],
-                    [2, 98, 78], [4, 49, 31], [2, 32, 14, 4, 33, 15], [4, 39, 13, 1, 40, 14],
-                    [2, 121, 97], [2, 60, 38, 2, 61, 39], [4, 40, 18, 2, 41, 19], [4, 40, 14, 2, 41, 15]
-                ];
-                const idx = (typeNumber - 1) * 4 + errorCorrectLevel;
-                const rsBlock = RS_BLOCK_TABLE[idx];
-                const list = [];
-                for (let i = 0; i < rsBlock.length; i += 3) {
-                    const count = rsBlock[i], totalCount = rsBlock[i + 1], dataCount = rsBlock[i + 2];
-                    for (let j = 0; j < count; j++) {
-                        list.push({ totalCount, dataCount });
-                    }
-                }
-                return list;
-            }
-
-            function getLengthInBits(mode, type) {
-                if (type >= 1 && type < 10) return 8;
-                else if (type < 27) return 16;
-                else return 16;
-            }
-
-            function buildErrorCorrectionBlocks(buffer, rsBlocks) {
-                let offset = 0;
-                let maxDcCount = 0;
-                let maxEcCount = 0;
-                const dcdata = [];
-                const ecdata = [];
-
-                for (let r = 0; r < rsBlocks.length; r++) {
-                    const dcCount = rsBlocks[r].dataCount;
-                    const ecCount = rsBlocks[r].totalCount - dcCount;
-                    maxDcCount = Math.max(maxDcCount, dcCount);
-                    maxEcCount = Math.max(maxEcCount, ecCount);
-                    dcdata[r] = [];
-                    for (let i = 0; i < dcCount; i++) {
-                        dcdata[r][i] = 0xff & buffer.getBuffer()[i + offset];
-                    }
-                    offset += dcCount;
-                    const rsPoly = getErrorCorrectPolynomial(ecCount);
-                    const rawPoly = createPolynomial(dcdata[r], rsPoly.getLength() - 1);
-                    const modPoly = rawPoly.mod(rsPoly);
-                    ecdata[r] = [];
-                    for (let i = 0; i < rsPoly.getLength() - 1; i++) {
-                        const modIndex = i + modPoly.getLength() - (rsPoly.getLength() - 1);
-                        ecdata[r][i] = (modIndex >= 0) ? modPoly.get(modIndex) : 0;
-                    }
-                }
-
-                return { dcdata, ecdata, maxDcCount, maxEcCount };
-            }
-
-            function interleaveBlocks(dcdata, ecdata, maxDcCount, maxEcCount, rsBlocks) {
-                const data = [];
-                let index = 0;
-                for (let i = 0; i < maxDcCount; i++) {
-                    for (let r = 0; r < rsBlocks.length; r++) {
-                        if (i < dcdata[r].length) data[index++] = dcdata[r][i];
-                    }
-                }
-                for (let i = 0; i < maxEcCount; i++) {
-                    for (let r = 0; r < rsBlocks.length; r++) {
-                        if (i < ecdata[r].length) data[index++] = ecdata[r][i];
-                    }
-                }
-                return data;
-            }
-
-            function createBytes(buffer, rsBlocks) {
-                const { dcdata, ecdata, maxDcCount, maxEcCount } = buildErrorCorrectionBlocks(
-                    buffer,
-                    rsBlocks
-                );
-                return interleaveBlocks(dcdata, ecdata, maxDcCount, maxEcCount, rsBlocks);
-            }
-
-            function createPolynomial(num, shift) {
-                let offset = 0;
-                while (offset < num.length && num[offset] === 0) offset++;
-                const _num = [];
-                for (let i = 0; i < num.length - offset + shift; i++) {
-                    _num[i] = (i < num.length - offset) ? num[i + offset] : 0;
-                }
-                return {
-                    get: function (index) { return _num[index]; },
-                    getLength: function () { return _num.length; },
-                    mod: function (e) {
-                        if (_num.length - e.getLength() < 0) return this;
-                        const ratio = glog(_num[0]) - glog(e.get(0));
-                        const num = [];
-                        for (let i = 0; i < _num.length; i++) num[i] = _num[i];
-                        for (let i = 0; i < e.getLength(); i++) {
-                            num[i] ^= gexp(glog(e.get(i)) + ratio);
-                        }
-                        return createPolynomial(num, 0).mod(e);
-                    }
-                };
-            }
-
-            function getErrorCorrectPolynomial(errorCorrectLength) {
-                let a = createPolynomial([1], 0);
-                for (let i = 0; i < errorCorrectLength; i++) {
-                    a = multiplyPolynomial(a, createPolynomial([1, gexp(i)], 0));
-                }
-                return a;
-            }
-
-            function multiplyPolynomial(p1, p2) {
-                const num = [];
-                for (let i = 0; i < p1.getLength() + p2.getLength() - 1; i++) num[i] = 0;
-                for (let i = 0; i < p1.getLength(); i++) {
-                    for (let j = 0; j < p2.getLength(); j++) {
-                        num[i + j] ^= gexp(glog(p1.get(i)) + glog(p2.get(j)));
-                    }
-                }
-                return createPolynomial(num, 0);
-            }
-
-            const EXP_TABLE = [], LOG_TABLE = [];
-            for (let i = 0; i < 256; i++) {
-                EXP_TABLE[i] = (i < 8) ? (1 << i) : (EXP_TABLE[i - 4] ^ EXP_TABLE[i - 5] ^ EXP_TABLE[i - 6] ^ EXP_TABLE[i - 8]);
-                EXP_TABLE[i] &= 255;
-            }
-            for (let i = 0; i < 255; i++) LOG_TABLE[EXP_TABLE[i]] = i;
-
-            function glog(n) { return LOG_TABLE[n]; }
-            function gexp(n) { return EXP_TABLE[n % 255]; }
-
-            return {
-                generate: function (text, canvas, cellSize, margin) {
-                    cellSize = cellSize || 4;
-                    margin = margin || cellSize * 2;
-
-                    // Auto-detect type number based on content length
-                    let typeNumber = 4;
-                    if (text.length > 50) typeNumber = 6;
-                    if (text.length > 100) typeNumber = 8;
-
-                    try {
-                        const qr = generateQR(text, typeNumber);
-                        const moduleCount = qr.getModuleCount();
-                        const size = moduleCount * cellSize + margin * 2;
-
-                        canvas.width = size;
-                        canvas.height = size;
-
-                        const ctx = canvas.getContext('2d');
-                        ctx.fillStyle = '#ffffff';
-                        ctx.fillRect(0, 0, size, size);
-                        ctx.fillStyle = '#000000';
-
-                        for (let row = 0; row < moduleCount; row++) {
-                            for (let col = 0; col < moduleCount; col++) {
-                                if (qr.isDark(row, col)) {
-                                    ctx.fillRect(
-                                        col * cellSize + margin,
-                                        row * cellSize + margin,
-                                        cellSize,
-                                        cellSize
-                                    );
-                                }
-                            }
-                        }
-                        return true;
-                    } catch (e) {
-                        console.error('QR generation error:', e);
-                        return false;
-                    }
-                }
-            };
-        })();
+                globalThis.AirdQRCode.toCanvas(canvas, text, {
+                    errorCorrectionLevel: 'M',
+                    margin: 3,
+                    width: 288,
+                    color: { dark: '#000000', light: '#FFFFFF' },
+                }, (err) => {
+                    resolve(!err);
+                });
+            });
+        }
 
         // =====================================================================
         // P2P Transfer Application
         // =====================================================================
+
+        function buildP2pShareJoinUrl(roomId) {
+            const id = typeof roomId === 'string' ? roomId.trim() : '';
+            if (!id) return '';
+            return `${globalThis.location.origin}/p2p?room=${encodeURIComponent(id)}`;
+        }
 
         // Configuration
         const CHUNK_SIZE = 16384; // 16KB chunks for WebRTC
@@ -1497,25 +1045,36 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
                 log('No share code available yet', 'error');
                 return;
             }
-            const link = `${globalThis.location.origin}/p2p?room=${code}`;
+            const link = buildP2pShareJoinUrl(code);
             copyToClipboard(link, 'Share link copied to clipboard');
         }
 
         function generateShareQRCode(roomId) {
-            const link = `${globalThis.location.origin}/p2p?room=${roomId}`;
+            const link = buildP2pShareJoinUrl(roomId);
             const canvas = document.getElementById('qr-code-canvas');
             const container = document.getElementById('qr-code-container');
-
-            if (canvas && QRCode) {
-                const success = QRCode.generate(link, canvas, 5, 20);
+            if (!link || !canvas || !container) {
+                if (container) container.style.display = 'none';
+                return;
+            }
+            renderP2pShareQrOnCanvas(canvas, link).then((success) => {
+                if (!container.isConnected) return;
                 if (success) {
                     container.style.display = 'flex';
                     log('QR code generated for share link', 'info');
                 } else {
                     container.style.display = 'none';
-                    log('Failed to generate QR code', 'error');
+                    log(
+                        'Failed to generate QR (load error?) — use Copy link or room code.',
+                        'error'
+                    );
                 }
-            }
+            }).catch(() => {
+                if (container.isConnected) {
+                    container.style.display = 'none';
+                    log('Failed to generate QR — use Copy link or room code.', 'error');
+                }
+            });
         }
 
         let qrCodeVisible = true;
@@ -1657,3 +1216,4 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
                 }
             });
         });
+

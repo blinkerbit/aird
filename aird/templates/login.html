@@ -38,12 +38,12 @@
           <div class="form-control">
             <label class="label" for="username"><span class="label-text font-semibold">LDAP Username</span></label>
             <input class="input input-bordered w-full" type="text" id="username" name="username"
-              placeholder="username" autocomplete="username" required autofocus>
+              placeholder="username" autocomplete="username" maxlength="256" required autofocus>
           </div>
           <div class="form-control">
             <label class="label" for="password"><span class="label-text font-semibold">Password</span></label>
             <input class="input input-bordered w-full" type="password" id="password" name="password"
-              placeholder="" autocomplete="current-password" required>
+              placeholder="" autocomplete="current-password" maxlength="32768" required>
           </div>
           <button type="submit" class="btn btn-primary btn-block">Sign in with LDAP</button>
           {% else %}
@@ -51,12 +51,12 @@
           <div class="form-control">
             <label class="label" for="local-username"><span class="label-text font-semibold">Username</span></label>
             <input class="input input-bordered w-full" type="text" id="local-username" name="username"
-              placeholder="username" autocomplete="username" required autofocus>
+              placeholder="username" autocomplete="username" maxlength="256" autofocus>
           </div>
           <div class="form-control">
             <label class="label" for="local-password"><span class="label-text font-semibold">Password</span></label>
             <input class="input input-bordered w-full" type="password" id="local-password" name="password"
-              autocomplete="current-password" required>
+              autocomplete="current-password" maxlength="32768">
           </div>
 
           <div class="divider text-xs uppercase tracking-widest">or</div>
@@ -64,7 +64,7 @@
           <div class="form-control">
             <label class="label" for="token"><span class="label-text font-semibold">Access token</span></label>
             <input class="input input-bordered w-full" type="password" id="token" name="token"
-              placeholder="Paste your token" autocomplete="off">
+              placeholder="Paste your token" autocomplete="off" maxlength="16384">
           </div>
 
           <button type="submit" class="btn btn-primary btn-block">Log in</button>

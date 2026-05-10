@@ -33,13 +33,74 @@ def get_all_files_recursive(root_path: str, base_path: str = "") -> list:
     return all_files
 
 
+def _glob_pattern_to_regex(pattern: str) -> re.Pattern:
+    """Convert a glob pattern with ``**`` support into a compiled regex.
+
+    - ``*``    → any sequence of non-slash characters
+    - ``**``   → any sequence of characters including ``/`` (zero or more)
+    - ``**/``  → optionally preceded by any path prefix (handles root-level matches)
+    - ``/**``  → the entry itself OR anything under it
+    - ``?``    → any single non-slash character
+    """
+    # Replace **/ with a special token so we can emit (prefix/)? in the regex
+    # This allows **/*.py to match both root-level foo.py and nested a/b/foo.py
+    normalized = re.sub(r"\*\*/", "\x00", pattern)
+    parts = re.split(r"(\*\*)", normalized)
+    regex = ""
+    for part in parts:
+        if part == "**":
+            regex += ".*"
+        else:
+            # Replace the special token back as an optional path prefix
+            tokens = part.split("\x00")
+            for i, tok in enumerate(tokens):
+                if i > 0:
+                    regex += "(.+/)?"  # optional leading path prefix
+                escaped = re.escape(tok)
+                escaped = escaped.replace(r"\*", "[^/]*")
+                escaped = escaped.replace(r"\?", "[^/]")
+                regex += escaped
+    return re.compile(r"^" + regex + r"$")
+
+
+def _glob_match(path: str, pattern: str) -> bool:
+    """Match *path* against *pattern* with full ``**`` wildcard support.
+
+    Rules:
+    - ``**/*.py``  matches any ``.py`` file at any depth, including root level.
+    - ``docs/**``  matches everything *inside* docs AND the ``docs`` entry itself.
+    - ``docs/``    is normalised to ``docs`` (trailing slash stripped).
+    """
+    # Normalise trailing slash (e.g. "docs/" → "docs")
+    pattern = pattern.rstrip("/")
+    if not pattern:
+        return False
+
+    if "**" not in pattern:
+        return fnmatch.fnmatch(path, pattern)
+
+    # Use regex-based matching for ** patterns
+    compiled = _glob_pattern_to_regex(pattern)
+    if compiled.match(path):
+        return True
+
+    # A directory-scoped pattern like "docs/**" should also tag the "docs"
+    # directory entry itself — try the prefix before /**
+    if pattern.endswith("/**"):
+        prefix = pattern[:-3]  # e.g. "docs"
+        if fnmatch.fnmatch(path, prefix):
+            return True
+
+    return False
+
+
 def matches_glob_patterns(file_path: str, patterns: list[str]) -> bool:
     """Check if a file path matches any of the given glob patterns"""
     if not patterns:
         return False
 
     for pattern in patterns:
-        if fnmatch.fnmatch(file_path, pattern):
+        if _glob_match(file_path, pattern):
             return True
     return False
 
@@ -67,6 +128,67 @@ def filter_files_by_patterns(
             filtered_files.append(file_path)
 
     return filtered_files
+
+
+def get_tags_for_path(rules: list[dict], rel_path: str) -> list[str]:
+    """Return a deduplicated, ordered list of tag names that match *rel_path*.
+
+    *rules* is the list of dicts from ``list_resource_tags``.
+    Patterns with a leading ``/`` are normalised before matching.
+    """
+    if not rules or not rel_path:
+        return []
+    rel = rel_path.replace("\\", "/").lstrip("/")
+    seen: dict[str, None] = {}
+    for rule in rules:
+        pattern = (rule.get("glob_pattern") or "").lstrip("/")
+        tag = rule.get("tag") or ""
+        if tag and pattern and _glob_match(rel, pattern):
+            seen[tag] = None
+    return list(seen)
+
+
+def get_files_by_tag_patterns(
+    patterns: list[str],
+    root_dir: str | None = None,
+    *,
+    max_files: int = 5000,
+) -> list[str]:
+    """Walk *root_dir* and return relative paths of entries matching any of *patterns*.
+
+    Both files and directories are included when their paths match.
+    Paths are normalised to forward-slashes for consistent matching.
+    Patterns with a leading '/' are normalised (stripped) so that absolute-style
+    patterns like '/.coveragerc' match relative paths like '.coveragerc'.
+    Returns at most *max_files* results to guard against unbounded scans.
+    """
+    if not patterns:
+        return []
+    if root_dir is None:
+        root_dir = ROOT_DIR
+    # Normalise: strip leading '/' so patterns stored as '/foo' match rel 'foo'
+    normalised = [p.lstrip("/") for p in patterns]
+    result: list[str] = []
+    try:
+        for dirpath, dirnames, filenames in os.walk(root_dir):
+            # Check directories themselves
+            for dname in dirnames:
+                full = os.path.join(dirpath, dname)
+                rel = os.path.relpath(full, root_dir).replace("\\", "/")
+                if matches_glob_patterns(rel, normalised):
+                    result.append(rel + "/")
+                    if len(result) >= max_files:
+                        return result
+            for fname in filenames:
+                full = os.path.join(dirpath, fname)
+                rel = os.path.relpath(full, root_dir).replace("\\", "/")
+                if matches_glob_patterns(rel, normalised):
+                    result.append(rel)
+                    if len(result) >= max_files:
+                        return result
+    except OSError as exc:
+        logger.warning("get_files_by_tag_patterns scan error: %s", exc)
+    return result
 
 
 def cloud_root_dir() -> str:

@@ -26,6 +26,7 @@ _SHARE_OPTIONAL_COLS = [
     "allow_list",
     "avoid_list",
     "expiry_date",
+    "tag_name",
 ]
 _SHARE_SELECT_COLS_ALLOWED = frozenset(_SHARE_BASE_COLS + _SHARE_OPTIONAL_COLS)
 
@@ -42,11 +43,12 @@ def insert_share(
     avoid_list: list[str] = None,
     expiry_date: str = None,
     modify_users: list[str] = None,
+    tag_name: str = None,
 ) -> bool:
     try:
         with conn:
             conn.execute(
-                "REPLACE INTO shares (id, created, paths, allowed_users, secret_token, share_type, allow_list, avoid_list, expiry_date, modify_users) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "REPLACE INTO shares (id, created, paths, allowed_users, secret_token, share_type, allow_list, avoid_list, expiry_date, modify_users, tag_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     sid,
                     created,
@@ -58,6 +60,7 @@ def insert_share(
                     json.dumps(avoid_list) if avoid_list else None,
                     expiry_date,
                     json.dumps(modify_users) if modify_users else None,
+                    tag_name,
                 ),
             )
         return True
@@ -117,6 +120,7 @@ def update_share(
     avoid_list: list = None,
     secret_token: str = None,
     expiry_date: str = None,
+    tag_name: str = None,
     **kwargs,
 ) -> bool:
     """Update share information"""
@@ -144,6 +148,10 @@ def update_share(
         if expiry_date is not None:
             updates.append("expiry_date = ?")
             values.append(expiry_date)
+
+        if tag_name is not None:
+            updates.append("tag_name = ?")
+            values.append(tag_name)
 
         kwarg_updates, kwarg_values = _get_kwargs_field_updates(kwargs)
         updates.extend(kwarg_updates)
@@ -231,6 +239,7 @@ def _row_to_share_dict(row: tuple, col_names: list) -> dict:
         "allow_list": json.loads(d["allow_list"]) if d.get("allow_list") else [],
         "avoid_list": json.loads(d["avoid_list"]) if d.get("avoid_list") else [],
         "expiry_date": d.get("expiry_date"),
+        "tag_name": d.get("tag_name"),
     }
 
 
@@ -270,6 +279,28 @@ def get_all_shares(conn: sqlite3.Connection) -> dict:
     except Exception as e:
         print(f"Error getting all shares: {e}")
         return {}
+
+
+def list_shares_accessible_to_user(conn: sqlite3.Connection, username: str) -> list:
+    """Return shares where *username* is in allowed_users (or share has no user restriction)."""
+    if conn is None or not username:
+        return []
+    try:
+        cursor = conn.execute(PRAGMA_TABLE_INFO)
+        available = [row[1] for row in cursor.fetchall()]
+        col_names = _get_share_col_names(available)
+        cols = format_select_columns(col_names, _SHARE_SELECT_COLS_ALLOWED)
+        cursor = conn.execute(format_shares_select_sql(cols))
+        result = []
+        for row in cursor:
+            share = _row_to_share_dict(row, col_names)
+            allowed = share.get("allowed_users")
+            if allowed is None or username in allowed:
+                result.append(share)
+        return result
+    except Exception as e:
+        logger.debug("list_shares_accessible_to_user failed: %s", e)
+        return []
 
 
 def get_shares_for_path(conn: sqlite3.Connection, file_path: str) -> list:

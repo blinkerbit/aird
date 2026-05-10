@@ -85,6 +85,15 @@ def init_db(conn: sqlite3.Connection) -> None:
         cursor.execute("ALTER TABLE shares ADD COLUMN expiry_date TEXT")
     if "modify_users" not in columns:
         cursor.execute("ALTER TABLE shares ADD COLUMN modify_users TEXT")
+    if "tag_name" not in columns:
+        cursor.execute("ALTER TABLE shares ADD COLUMN tag_name TEXT")
+
+    cursor.execute("PRAGMA table_info(users)")
+    user_columns = [column[1] for column in cursor.fetchall()]
+    if user_columns and "must_change_password" not in user_columns:
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"
+        )
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS audit_log (

@@ -14,6 +14,7 @@ from aird.handlers.base_handler import (
     BaseHandler,
     get_username_string_for_db,
     get_user_root,
+    require_action,
 )
 from aird.utils.util import (
     get_files_in_directory,
@@ -41,6 +42,8 @@ from aird.handlers.constants import (
 from aird.constants import CHUNK_SIZE
 from aird.cloud import CloudManager
 from aird.constants.file_ops import PROVIDER_NOT_CONFIGURED
+from aird.core.file_operations import get_files_by_tag_patterns, get_tags_for_path
+from aird.db.resource_tags import list_resource_tags
 
 # ---------------------------------------------------------------------------
 # Helpers for MainHandler.serve_file (reduce cognitive complexity)
@@ -158,6 +161,12 @@ class MainHandler(BaseHandler):
             return
 
         if os.path.isdir(abspath):
+            decision = self.check_access("file.list", resource_path=path)
+            if decision is not None and decision.is_deny:
+                self.set_status(403)
+                self.write(decision.reason)
+                return
+
             files = get_files_in_directory(abspath)
 
             # Augment file data with shared status
@@ -180,6 +189,13 @@ class MainHandler(BaseHandler):
                             db_conn, username
                         )
                     )
+            # Build per-file tag map for the current directory listing
+            tag_rules = list_resource_tags(db_conn) if db_conn else []
+            file_tags_map: dict[str, list[str]] = {}
+            for f in files:
+                rel = join_path(path, f["name"]) if path else f["name"]
+                file_tags_map[f["name"]] = get_tags_for_path(tag_rules, rel)
+
             self.render(
                 "browse.html",
                 current_path=path,
@@ -190,6 +206,7 @@ class MainHandler(BaseHandler):
                 features=flags_for_template,
                 max_file_size=constants_module.MAX_FILE_SIZE,
                 user_favorites=user_favorites,
+                file_tags_map=file_tags_map,
             )
         elif os.path.isfile(abspath):
             await self.serve_file(self, abspath, user_root)
@@ -204,10 +221,29 @@ class MainHandler(BaseHandler):
         if user_root is None:
             user_root = get_user_root(handler)
         filename = os.path.basename(abspath)
+        rel_path = os.path.relpath(abspath, user_root).replace("\\", "/")
+        file_size = get_file_size_safe(abspath)
+
         if handler.get_argument("download", None):
+            decision = handler.check_access(
+                "file.download", resource_path=rel_path, resource_size=file_size
+            )
+            if decision is not None and decision.is_deny:
+                handler.set_status(403)
+                handler.write(decision.reason)
+                return
             await _serve_download(handler, abspath, filename)
             return
+
         mode = handler.get_argument("mode", "view")
+        decision = handler.check_access(
+            "file.read", resource_path=rel_path, resource_size=file_size
+        )
+        if decision is not None and decision.is_deny:
+            handler.set_status(403)
+            handler.write(decision.reason)
+            return
+
         if mode == "raw":
             await _serve_raw_mode(handler, abspath)
             return
@@ -219,6 +255,7 @@ class MainHandler(BaseHandler):
 
 class EditViewHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_action("file.write", resource_arg="path")
     async def get(self, path):
         if not self.require_feature(
             "file_edit",
@@ -411,6 +448,31 @@ class FourOhFourHandler(BaseHandler):
     def prepare(self):
         self.set_status(404)
         self.render("error.html", status_code=404, error_message="Page not found")
+
+
+class TaggedFilesHandler(BaseHandler):
+    """Browse all files that match a given ABAC resource tag."""
+
+    @tornado.web.authenticated
+    def get(self, tag_name: str):
+        db_conn = self.db_conn
+        rules = list_resource_tags(db_conn) if db_conn else []
+        patterns = [r["glob_pattern"] for r in rules if r.get("tag") == tag_name]
+        all_tags = sorted({r["tag"] for r in rules if r.get("tag")})
+
+        files: list[str] = []
+        if patterns:
+            root = constants_module.ROOT_DIR
+            files = get_files_by_tag_patterns(patterns, root)
+
+        self.render(
+            "tagged_files.html",
+            tag_name=tag_name,
+            patterns=patterns,
+            files=files,
+            all_tags=all_tags,
+            user=self.current_user,
+        )
 
 
 class NoCacheStaticFileHandler(tornado.web.StaticFileHandler):

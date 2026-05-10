@@ -57,6 +57,55 @@ def delete_resource_tag(conn: sqlite3.Connection, tag_id: int) -> bool:
         return False
 
 
+def delete_resource_tag_by_name(conn: sqlite3.Connection, tag: str) -> int:
+    """Delete ALL rules for a given tag name. Returns the number of rows deleted."""
+    if conn is None or not tag:
+        return 0
+    try:
+        with conn:
+            cur = conn.execute("DELETE FROM resource_tags WHERE tag = ?", (tag,))
+            return cur.rowcount
+    except sqlite3.Error as exc:
+        logger.warning("delete_resource_tag_by_name failed: %s", exc)
+        return 0
+
+
+def update_resource_tag(
+    conn: sqlite3.Connection,
+    tag_id: int,
+    *,
+    tag: str | None = None,
+    glob_pattern: str | None = None,
+    priority: int | None = None,
+) -> bool:
+    """Update one or more fields on an existing tag rule. Returns True on success."""
+    if conn is None or tag_id is None:
+        return False
+    updates, values = [], []
+    if tag is not None:
+        updates.append("tag = ?")
+        values.append(tag)
+    if glob_pattern is not None:
+        updates.append("glob_pattern = ?")
+        values.append(glob_pattern)
+    if priority is not None:
+        updates.append("priority = ?")
+        values.append(int(priority))
+    if not updates:
+        return False
+    values.append(int(tag_id))
+    try:
+        with conn:
+            cur = conn.execute(
+                f"UPDATE resource_tags SET {', '.join(updates)} WHERE id = ?",  # noqa: S608
+                values,
+            )
+            return cur.rowcount > 0
+    except sqlite3.Error as exc:
+        logger.warning("update_resource_tag failed: %s", exc)
+        return False
+
+
 def list_resource_tags(conn: sqlite3.Connection) -> list[dict]:
     if conn is None:
         return []

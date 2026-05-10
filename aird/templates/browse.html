@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 
 <head>
   <meta charset="UTF-8" />
@@ -38,11 +38,11 @@
     </div>
     {% end %}
 
-    <div class="flex items-center gap-2 bg-base-200/50 p-2 px-4 rounded-lg mb-4 text-sm" aria-label="Current path">
-      <a href="/files/" class="flex items-center gap-1 hover:text-primary transition-colors"><svg class="ico w-4 h-4" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>Home</a>
-      {% if current_user and current_path != "/" %} {% set path_parts = current_path.strip('/').split('/') %}
+    <div class="flex flex-wrap items-center gap-x-1 gap-y-1 bg-base-200/50 p-2 px-4 rounded-lg mb-4 text-sm" aria-label="Path from file root — Home is your workspace root, not your computer account home folder">
+      <a href="/files/" class="flex items-center gap-1 hover:text-primary transition-colors shrink-0" title="File root — your Aird workspace for this login (not your operating system user home folder)"><svg class="ico w-4 h-4" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>Home</a>
+      {% if current_user and current_path and current_path != "/" %} {% set path_parts = current_path.strip('/').split('/') %}
       {% for i, part in enumerate(path_parts) %}
-      {% set partial_path = '/files/' + '/'.join(path_parts[:i+1]) %} <span class="opacity-30">/</span>
+      {% set partial_path = '/files/' + '/'.join(path_parts[:i+1]) %} <span class="opacity-30 px-0.5" aria-hidden="true">/</span>
       <a href="{{ partial_path }}" class="hover:text-primary transition-colors">{{ part }}</a>
       {% end %} {% end %}
       {% if current_path %}

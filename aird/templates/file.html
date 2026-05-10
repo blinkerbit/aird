@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 
 <head>
   <meta charset="UTF-8" />
@@ -316,18 +316,7 @@
 
         encodingSelect.addEventListener('change', renderContent);
 
-        const featureSocket = new WebSocket(wsProto + '//' + globalThis.location.host + '/features');
-        featureSocket.onmessage = function (event) {
-            updateFeatureVisibility(JSON.parse(event.data));
-        };
-
-        function updateFeatureVisibility(features) {
-            document.querySelectorAll('[data-feature]').forEach(el => {
-                const feature = el.dataset.feature;
-                if (features[feature]) el.style.display = '';
-                else el.style.display = 'none';
-            });
-        }
+        /* Feature flag live updates: /static/js/feature-flags-live.js in app header */
 
         function updateLineNumbers() {
             const lineCount = editor.value.split('\n').length;

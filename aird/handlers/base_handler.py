@@ -1,5 +1,6 @@
 import base64
 import functools
+import ipaddress
 import json
 import logging
 import os
@@ -22,12 +23,27 @@ from aird.domain.models import (
     ResourceAttributes,
     SubjectAttributes,
 )
-from aird.handlers.constants import DB_NOT_AVAILABLE_MSG
+from aird.constants.input_limits import SAFE_NEXT_URL_MAX_LEN
+from aird.handlers.constants import DB_NOT_AVAILABLE_MSG, FILES_BASE_URL
 from aird.utils.util import is_feature_enabled
-
-logger = logging.getLogger(__name__)
 DISPLAY_ADMIN_TOKEN = "Admin (Token)"  # nosec B105
 DISPLAY_ACCESS_TOKEN = "Access (Token)"  # nosec B105
+
+_PARSE_JSON_MAX_UNSET = object()
+
+
+def _is_corporate_ip(ip: str | None) -> bool:
+    """Return True if *ip* falls within any configured CORPORATE_IP_CIDRS."""
+    if not ip:
+        return False
+    cidrs = getattr(constants_module, "CORPORATE_IP_CIDRS", [])
+    if not cidrs:
+        return False
+    try:
+        addr = ipaddress.ip_address(ip)
+        return any(addr in ipaddress.ip_network(cidr, strict=False) for cidr in cidrs)
+    except ValueError:
+        return False
 
 # Usernames that represent anonymous/token-based access (no personal folder)
 _TOKEN_ONLY_USERNAMES = {"token_user", "admin_token"}
@@ -303,6 +319,7 @@ class CookieAuthStrategy:
             if db_conn:
                 user = get_user_by_username(db_conn, username)
                 if user:
+                    user.pop("password_hash", None)
                     return user
             return self._token_user_from_username(handler, username)
         except Exception:
@@ -518,7 +535,10 @@ class BaseHandler(tornado.web.RequestHandler):
     # ------------------------------------------------------------------
 
     def _build_access_request(
-        self, action: str, resource_path: str | None = None
+        self,
+        action: str,
+        resource_path: str | None = None,
+        resource_size: int | None = None,
     ) -> AccessRequest:
         user = self.get_current_user()
         if isinstance(user, dict):
@@ -535,21 +555,24 @@ class BaseHandler(tornado.web.RequestHandler):
 
         clearance = "admin" if role == "admin" else "internal"
         extra_attrs: list[tuple[str, str]] = []
+        is_managed_device = False
         try:
             db_conn = self.db_conn
             if db_conn is not None and username and username != "anonymous":
                 attrs = get_user_attributes(db_conn, username)
                 if attrs.get("clearance"):
                     clearance = attrs["clearance"]
+                if attrs.get("managed_device", "").lower() in ("1", "true", "yes"):
+                    is_managed_device = True
                 for key, value in attrs.items():
-                    if key == "clearance":
+                    if key in ("clearance", "managed_device"):
                         continue
                     extra_attrs.append((key, value))
         except Exception:
             logger.debug("user_attributes lookup failed", exc_info=True)
 
         groups: tuple[str, ...] = ()
-        for key, value in list(extra_attrs):
+        for key, value in extra_attrs:
             if key == "groups" and value:
                 groups = tuple(g.strip() for g in value.split(",") if g.strip())
                 break
@@ -565,11 +588,16 @@ class BaseHandler(tornado.web.RequestHandler):
         ext = None
         if resource_path and "." in resource_path:
             ext = resource_path.rsplit(".", 1)[-1].lower()
-        resource = ResourceAttributes(path=resource_path, extension=ext)
+        resource = ResourceAttributes(path=resource_path, extension=ext, size=resource_size)
+
+        client_ip = getattr(self.request, "remote_ip", None)
+        is_corporate_ip = _is_corporate_ip(client_ip)
 
         environment = EnvironmentContext(
             timestamp=datetime.now(),
-            ip=getattr(self.request, "remote_ip", None),
+            ip=client_ip,
+            is_managed_device=is_managed_device,
+            is_corporate_ip=is_corporate_ip,
         )
         return AccessRequest(
             subject=subject,
@@ -583,6 +611,7 @@ class BaseHandler(tornado.web.RequestHandler):
         action: str,
         resource_path: str | None = None,
         *,
+        resource_size: int | None = None,
         raise_on_deny: bool = False,
     ) -> AccessDecision | None:
         """Evaluate *action* against the PDP.
@@ -597,7 +626,7 @@ class BaseHandler(tornado.web.RequestHandler):
         if policy_service is None:
             return None
         try:
-            request = self._build_access_request(action, resource_path)
+            request = self._build_access_request(action, resource_path, resource_size)
             audit = is_feature_enabled("abac_audit_decisions", True)
             decision = policy_service.evaluate(
                 self.db_conn, request, audit=audit
@@ -684,23 +713,101 @@ class BaseHandler(tornado.web.RequestHandler):
             "expires_days": expires_days,
         }
 
-    def parse_json_body(self, default=None):
-        """Parse request body as JSON. Returns default if the body is empty
-        or the JSON is malformed. Unexpected errors are allowed to propagate
-        so they surface in logs instead of being silently swallowed."""
+    def parse_json_body(self, default=None, *, max_bytes: int | None | object = _PARSE_JSON_MAX_UNSET):
+        """Parse request body as JSON.
+
+        By default enforces ``DEFAULT_JSON_BODY_MAX_BYTES``.
+
+        Pass ``max_bytes=None`` to disable the size check (caller must validate).
+        """
+        from aird.constants.input_limits import DEFAULT_JSON_BODY_MAX_BYTES
+
         if default is None:
             default = {}
+        if max_bytes is _PARSE_JSON_MAX_UNSET:
+            limit: int | None = DEFAULT_JSON_BODY_MAX_BYTES
+        else:
+            limit = max_bytes  # type: ignore[assignment]
         raw = self.request.body or b"{}"
+        if limit is not None and isinstance(raw, bytes) and len(raw) > limit:
+            raise tornado.web.HTTPError(413, reason="JSON request body too large")
         try:
             text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
             return json.loads(text)
         except json.JSONDecodeError:
             return default
 
+    def enforce_content_length_max(self, max_bytes: int) -> None:
+        """Reject POST/PUT/PATCH when Content-Length exceeds *max_bytes*."""
+        if self.request.method not in ("POST", "PUT", "PATCH"):
+            return
+        cl = self.request.headers.get("Content-Length")
+        if not cl:
+            return
+        try:
+            n = int(cl)
+        except ValueError:
+            return
+        if n > max_bytes:
+            raise tornado.web.HTTPError(413, reason="Request body too large")
+
+    def _maybe_redirect_mandatory_password(self):
+        if self.request.method == "OPTIONS":
+            return
+        path = self.request.path
+        if path.startswith("/auth/mandatory-password"):
+            return
+        if path in ("/logout", "/login", "/admin/login", "/health"):
+            return
+        if path.startswith("/static/"):
+            return
+        if path.startswith("/p2p"):
+            return
+        if path.startswith("/shared/"):
+            return
+
+        user = getattr(self, "current_user", None)
+        if not isinstance(user, dict) or not user.get("must_change_password"):
+            return
+        if user.get("username") in BaseHandler._TOKEN_ONLY_USERNAMES:
+            return
+
+        dest = path
+        if self.request.query:
+            dest += "?" + self.request.query
+        next_dest = FILES_BASE_URL
+        if (
+            len(dest) <= SAFE_NEXT_URL_MAX_LEN
+            and dest.startswith("/")
+            and not dest.startswith("//")
+            and ":" not in dest.split("/")[0]
+        ):
+            next_dest = dest
+        self.redirect(
+            "/auth/mandatory-password?next=" + tornado.escape.url_escape(next_dest)
+        )
+
     def prepare(self):
         """Generate a unique nonce for this request for CSP."""
         # Generate a cryptographically secure random nonce (16 bytes = 128 bits)
         self._csp_nonce = base64.b64encode(secrets.token_bytes(16)).decode("utf-8")
+
+        from aird.constants.input_limits import (
+            ADMIN_HTML_FORM_MAX_BYTES,
+            LOGIN_FORM_MAX_BYTES,
+            PROFILE_FORM_MAX_BYTES,
+        )
+
+        if self.request.method in ("POST", "PUT", "PATCH"):
+            p = self.request.path
+            if p in ("/login", "/admin/login"):
+                self.enforce_content_length_max(LOGIN_FORM_MAX_BYTES)
+            elif p in ("/profile", "/auth/mandatory-password"):
+                self.enforce_content_length_max(PROFILE_FORM_MAX_BYTES)
+            elif p.startswith("/admin/") and "/api/" not in p:
+                self.enforce_content_length_max(ADMIN_HTML_FORM_MAX_BYTES)
+
+        self._maybe_redirect_mandatory_password()
 
     def get_csp_nonce(self):
         """Return the CSP nonce for this request."""
@@ -753,6 +860,7 @@ class BaseHandler(tornado.web.RequestHandler):
         namespace.setdefault("nav_search_path", "")
         namespace.setdefault("nav_title", "")
         namespace.setdefault("show_admin_link", False)
+        namespace.setdefault("ldap_enabled", self.settings.get("ldap_server") is not None)
         return namespace
 
     def get_current_user(self):

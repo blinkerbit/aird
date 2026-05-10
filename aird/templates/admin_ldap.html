@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <title>LDAP management · Aird</title>
   <script nonce="{{ csp_nonce }}">
     function confirmDelete(configName, configId) {
@@ -57,10 +58,10 @@
     {% include '_app_nav_header.html' %}
   </div>
 
+  {% set admin_active_tab = "ldap" %}
+  {% include '_admin_tabs.html' %}
+
   <main class="max-w-6xl mx-auto p-4 space-y-4">
-    <div class="mb-2">
-      <a href="/admin" class="link link-hover text-sm text-base-content/70">← Back to Admin Settings</a>
-    </div>
     <div class="flex items-center justify-between flex-wrap gap-3">
       <h1 class="text-2xl font-bold">LDAP management</h1>
       <div class="flex gap-2">

@@ -319,7 +319,12 @@ class AdminUsersHandler(BaseHandler):
             else:
                 users = self.get_service("user_service").list_users(db_conn)
 
-        self.render("admin_users.html", users=users)
+        self.render(
+            "admin_users.html",
+            users=users,
+            reset_password_plain=None,
+            reset_for_username=None,
+        )
 
 
 class UserCreateHandler(BaseHandler):
@@ -472,6 +477,7 @@ class UserEditHandler(BaseHandler):
             update_data = {"username": username, "role": role, "active": active}
             if password:
                 update_data["password"] = password
+                update_data["must_change_password"] = False
 
             if user_service is not None:
                 updated = user_service.update_user(self.db_conn, user_id, **update_data)
@@ -531,6 +537,61 @@ class UserDeleteHandler(BaseHandler):
         except ValueError:
             self.set_status(HTTP_BAD_REQUEST)
             self.write(INVALID_USER_ID)
+
+
+class UserPasswordResetHandler(BaseHandler):
+    @tornado.web.authenticated
+    @require_admin(deny_status=HTTP_FORBIDDEN, deny_body=ACCESS_DENIED)
+    @require_db
+    def post(self):
+        """Set a temporary password; user must replace it after login."""
+
+        try:
+            user_id = int(self.get_argument("user_id", "0"))
+        except ValueError:
+            self.set_status(HTTP_BAD_REQUEST)
+            self.write(INVALID_USER_ID_SHORT)
+            return
+        if user_id <= 0:
+            self.set_status(HTTP_BAD_REQUEST)
+            self.write(INVALID_USER_ID_SHORT)
+            return
+
+        user_service = _get_user_service(self)
+        temp_password = _secrets.token_urlsafe(32)
+        if not user_service.update_user(
+            self.db_conn,
+            user_id,
+            password=temp_password,
+            must_change_password=True,
+        ):
+            self.set_status(500)
+            self.write("Password reset failed")
+            return
+
+        refreshed = user_service.list_users(self.db_conn)
+        target = next((u for u in refreshed if u["id"] == user_id), None)
+        if not target:
+            self.set_status(404)
+            self.write(USER_NOT_FOUND)
+            return
+
+        try:
+            self.get_service("audit_service").log(
+                self.db_conn,
+                "admin_password_reset",
+                username=target["username"],
+                ip=self.request.remote_ip,
+            )
+        except Exception:
+            logging.debug("audit admin_password_reset failed", exc_info=True)
+
+        self.render(
+            "admin_users.html",
+            users=refreshed,
+            reset_password_plain=temp_password,
+            reset_for_username=target["username"],
+        )
 
 
 class LDAPConfigHandler(BaseHandler):

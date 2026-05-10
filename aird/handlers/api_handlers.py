@@ -27,8 +27,17 @@ from aird.handlers.base_handler import (
     authenticate_handler,
     get_username_string_for_db,
     get_user_root,
+    require_action,
     require_db,
 )
+from aird.constants.input_limits import (
+    API_LAST_N_MAX,
+    InputTooLongError,
+    REL_PATH_MAX_LEN,
+    SHARE_ID_MAX_LEN,
+    USER_SEARCH_QUERY_MAX_LEN,
+)
+from aird.core.input_validation import validate_super_search_glob, validate_ws_search
 
 from aird.utils.util import (
     get_files_in_directory,
@@ -126,6 +135,7 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
                 n_lines = 1000
         except ValueError:
             n_lines = 1000
+        n_lines = min(n_lines, API_LAST_N_MAX)
 
         self.line_buffer = deque(maxlen=n_lines)
         self.filter_expression = self.get_argument("filter", None)
@@ -320,6 +330,7 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
 
 class FileListAPIHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_action("file.list", resource_arg="path")
     def get(self, path):
         user_root = get_user_root(self)
         abspath = os.path.abspath(os.path.join(user_root, path))
@@ -380,6 +391,8 @@ class SuperSearchWebSocketHandler(
     connection_manager = WebSocketConnectionManager(
         "search", default_max_connections=100, default_idle_timeout=180
     )
+    # Periodic walk progress while many files skip the user's glob — avoids a “hung” UI
+    _walk_scan_interval = 40
 
     def __init__(self, application, request, **kwargs):
         super().__init__(application, request, **kwargs)
@@ -459,6 +472,17 @@ class SuperSearchWebSocketHandler(
                 )
             )
             return
+        try:
+            pattern, search_text = validate_ws_search(pattern, search_text)
+        except InputTooLongError:
+            self.write_message(
+                json.dumps({"type": "error", "message": "Search parameters too long"})
+            )
+            return
+        glob_err = validate_super_search_glob(pattern)
+        if glob_err:
+            self.write_message(json.dumps({"type": "error", "message": glob_err}))
+            return
 
         # Validate authentication again before starting search
         user = self.get_current_user()
@@ -511,6 +535,25 @@ class SuperSearchWebSocketHandler(
             filename, normalized_pattern
         )
 
+    def _emit_scanning(self, rel_path_str: str, files_searched: int) -> None:
+        try:
+            self.write_message(
+                json.dumps(
+                    {
+                        "type": "scanning",
+                        "file_path": rel_path_str,
+                        "files_searched": files_searched,
+                    }
+                )
+            )
+        except (tornado.websocket.WebSocketClosedError, RuntimeError):
+            pass
+
+    async def _emit_walk_tick(self, rel_path_str: str, files_visited: int) -> None:
+        """Liveness ticker for files skipped by the glob (no duplicate with per-match scanning)."""
+        self._emit_scanning(rel_path_str, files_visited)
+        await asyncio.sleep(0)
+
     async def _search_file_content(
         self, file_path: pathlib.Path, rel_path_str: str, search_text: str
     ) -> int:
@@ -543,15 +586,20 @@ class SuperSearchWebSocketHandler(
         search_text: str,
         files_searched: int,
         search_mode: str = "content",
+        *,
+        rel_path_str: str | None = None,
     ) -> tuple[int, bool]:
-        """Search one file; sends 'scanning' then searches. Returns (match_count, True if searched)."""
-        try:
-            rel_path = file_path.relative_to(root_path)
-            rel_path_str = str(rel_path).replace("\\", "/")
-        except (ValueError, OSError):
-            return 0, False
+        """Search one file; sends 'scanning' after glob match; returns (match_count, True if searched)."""
+        if rel_path_str is None:
+            try:
+                rel_path = file_path.relative_to(root_path)
+                rel_path_str = str(rel_path).replace("\\", "/")
+            except (ValueError, OSError):
+                return 0, False
         if not self._file_matches_pattern(rel_path_str, filename, normalized_pattern):
             return 0, False
+
+        self._emit_scanning(rel_path_str, files_searched)
 
         if search_mode == "filename":
             if self.stop_event.is_set():
@@ -577,18 +625,6 @@ class SuperSearchWebSocketHandler(
             return 0, True
 
         try:
-            self.write_message(
-                json.dumps(
-                    {
-                        "type": "scanning",
-                        "file_path": rel_path_str,
-                        "files_searched": files_searched,
-                    }
-                )
-            )
-        except (tornado.websocket.WebSocketClosedError, RuntimeError):
-            pass
-        try:
             count = await self._search_file_content(
                 file_path, rel_path_str, search_text
             )
@@ -609,13 +645,35 @@ class SuperSearchWebSocketHandler(
         """Walk directory tree and search files. Returns (matches, files_searched) or None if auth expired."""
         matches = 0
         files_searched = 0
-        for dirpath, _dirnames, filenames in os.walk(root_path):
+        files_visited = 0
+        for dirpath, _dirnames, filenames in os.walk(root_path, followlinks=False):
             if self.stop_event.is_set():
                 raise asyncio.CancelledError
             for filename in filenames:
                 if self.stop_event.is_set():
                     raise asyncio.CancelledError
                 file_path = pathlib.Path(dirpath) / filename
+                files_visited += 1
+                try:
+                    rel_path_str = (
+                        str(file_path.relative_to(root_path)).replace("\\", "/")
+                    )
+                except ValueError:
+                    continue
+
+                glob_match = self._file_matches_pattern(
+                    rel_path_str, filename, normalized_pattern
+                )
+                if not glob_match:
+                    if (
+                        files_visited == 1
+                        or files_visited
+                        % SuperSearchWebSocketHandler._walk_scan_interval
+                        == 0
+                    ):
+                        await self._emit_walk_tick(rel_path_str, files_visited)
+                    continue
+
                 match_delta, counted = await self._search_one_file(
                     file_path,
                     root_path,
@@ -624,11 +682,16 @@ class SuperSearchWebSocketHandler(
                     search_text,
                     files_searched + 1,
                     search_mode,
+                    rel_path_str=rel_path_str,
                 )
                 matches += match_delta
                 if counted:
                     files_searched += 1
-            if files_searched % 20 == 0 and not await self._yield_and_check_auth():
+            if (
+                files_visited > 0
+                and files_visited % 20 == 0
+                and not await self._yield_and_check_auth()
+            ):
                 return None
         return matches, files_searched
 
@@ -756,6 +819,9 @@ class UserSearchAPIHandler(BaseHandler):
         if len(query) < 1:
             self.write({"users": []})
             return
+        if len(query) > USER_SEARCH_QUERY_MAX_LEN:
+            self.write({"users": []})
+            return
 
         def action():
             users = self.get_service("user_service").search_users(self.db_conn, query)
@@ -776,6 +842,9 @@ class ShareDetailsAPIHandler(BaseHandler):
         file_path = self.get_argument("path", "").strip()
         if not file_path:
             self.write_json_error(400, "File path is required")
+            return
+        if len(file_path) > REL_PATH_MAX_LEN:
+            self.write_json_error(400, "File path is too long")
             return
 
         def action():
@@ -825,6 +894,9 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
         share_id = self.get_argument("id", "").strip()
         if not share_id:
             self.write_json_error(400, "Share ID is required")
+            return
+        if len(share_id) > SHARE_ID_MAX_LEN:
+            self.write_json_error(400, "Invalid share id")
             return
 
         def action():
@@ -890,6 +962,7 @@ class ShareListAPIHandler(BaseHandler):
 
 class FavoriteToggleAPIHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_action("favorites.toggle")
     def post(self):
         if not self.require_feature(
             "favorites", True, body={"error": "Favorites disabled"}
@@ -900,14 +973,13 @@ class FavoriteToggleAPIHandler(BaseHandler):
             return
 
         def action():
-            try:
-                body = json.loads(self.request.body)
-            except Exception:
-                self.write_json_error(400, "Invalid JSON")
-                return None
+            body = self.parse_json_body() or {}
             path = body.get("path", "").strip()
             if not path:
                 self.write_json_error(400, "path is required")
+                return None
+            if len(path) > REL_PATH_MAX_LEN:
+                self.write_json_error(400, "path is too long")
                 return None
             username = get_username_string_for_db(self)
             if not username:

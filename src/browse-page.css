@@ -203,7 +203,8 @@
     .size-cell {
       text-align: left;
       font-family: var(--font-mono, "Fira Code", monospace);
-      font-size: 12px;
+      font-size: var(--ds-fs-xs);
+      color: var(--ds-text-muted);
     }
 
     .actions-cell {
@@ -216,12 +217,11 @@
       color: var(--ds-text-muted);
     }
 
-    .size-cell { font-family: var(--font-mono, "Fira Code", monospace); font-size: var(--ds-fs-xs); color: var(--ds-text-muted); }
-
     .file-link {
       color: var(--ds-text);
       text-decoration: none;
       display: block;
+      transition: color var(--ds-duration-fast) var(--ds-ease);
     }
 
     .file-link:hover { color: var(--ds-primary); text-decoration: none; }
@@ -262,10 +262,6 @@
     }
     .parent-folder-link:hover .parent-up-label { transform: translateX(-2px); }
 
-    .file-link {
-      transition: color var(--ds-duration-fast) var(--ds-ease);
-    }
-
     /* Checkbox + name share one cell so nothing can visually sit between columns */
     .name-cell-contents {
       display: flex;
@@ -299,6 +295,48 @@
 
     .name-cell-contents .fav-star {
       flex-shrink: 0;
+    }
+
+    /* ── File tag chips ─────────────────────────────────────────────────────── */
+    .file-tag-list {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      flex-shrink: 0;
+      max-width: 200px;
+      overflow: hidden;
+    }
+
+    .file-tag-chip {
+      display: inline-block;
+      font-size: 10px;
+      line-height: 1;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--p, #6d28d9) 12%, transparent);
+      color: var(--p, #6d28d9);
+      border: 1px solid color-mix(in srgb, var(--p, #6d28d9) 30%, transparent);
+      text-decoration: none;
+      font-weight: 500;
+      white-space: nowrap;
+      transition: background 120ms;
+    }
+
+    .file-tag-chip:hover {
+      background: color-mix(in srgb, var(--p, #6d28d9) 22%, transparent);
+      text-decoration: none;
+    }
+
+    .file-tag-more {
+      display: inline-block;
+      font-size: 10px;
+      line-height: 1;
+      padding: 2px 5px;
+      border-radius: 999px;
+      background: var(--b3, #e5e7eb);
+      color: var(--bc, #374151);
+      font-weight: 600;
+      white-space: nowrap;
     }
 
     .th-checkbox-wrap {
@@ -698,6 +736,8 @@
         min-width: 40px;
         height: 40px;
         touch-action: manipulation;
+        display: inline-block;
+        margin: 5px 5px 5px 0;
       }
 
       .action-link svg {
@@ -761,10 +801,6 @@
         display: none;
       }
 
-      .action-link {
-        display: inline-block;
-        margin: 5px 5px 5px 0;
-      }
     }
 
     /* Custom dialog modal styles (native <dialog>) */

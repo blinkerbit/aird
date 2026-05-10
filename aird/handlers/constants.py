@@ -21,6 +21,7 @@ INVALID_USERNAME_OR_PASSWORD_MSG = "Invalid username or password."  # nosec B105
 ADMIN_URL = "/admin"
 ADMIN_LOGIN_TEMPLATE = "admin_login.html"
 PROFILE_TEMPLATE = "profile.html"
+MANDATORY_PASSWORD_TEMPLATE = "mandatory_password.html"
 
 
 INVALID_JSON = "Invalid JSON format"

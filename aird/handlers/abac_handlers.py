@@ -19,8 +19,15 @@ from aird.db.policies import (
 from aird.db.policy_decisions import get_policy_decisions
 from aird.db.resource_tags import (
     delete_resource_tag,
+    delete_resource_tag_by_name,
     insert_resource_tag,
     list_resource_tags,
+    update_resource_tag,
+)
+from aird.db.user_attributes import (
+    delete_user_attribute,
+    list_all_user_attributes,
+    set_user_attribute,
 )
 from aird.handlers.base_handler import (
     BaseHandler,
@@ -30,6 +37,17 @@ from aird.handlers.base_handler import (
     require_db,
 )
 from aird.utils.util import WebSocketConnectionManager
+from aird.constants.input_limits import (
+    GLOB_PATTERN_MAX_LEN,
+    MAX_TAG_RULE_BULK_DELETE_IDS,
+    InputTooLongError,
+    RESOURCE_TAG_MAX_LEN,
+)
+from aird.core.input_validation import (
+    validate_abac_tag_rule,
+    validate_policy_payload as check_policy_payload_sizes,
+    validate_user_attribute,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +137,12 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
             self.set_status(400)
             self.write({"error": "tag and glob_pattern are required"})
             return
+        try:
+            validate_abac_tag_rule(tag, glob_pattern)
+        except InputTooLongError:
+            self.set_status(400)
+            self.write({"error": "tag or glob_pattern exceeds maximum length"})
+            return
         new_id = insert_resource_tag(
             self.db_conn,
             tag,
@@ -143,10 +167,43 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
     @require_db
     def delete(self) -> None:
         payload = self.parse_json_body() or {}
+        # Delete entire tag by name: tag="pii"
+        tag_name = payload.get("tag")
+        if tag_name is not None:
+            tn = str(tag_name).strip()
+            if len(tn) > RESOURCE_TAG_MAX_LEN:
+                self.set_status(400)
+                self.write({"error": "tag exceeds maximum length"})
+                return
+            count = delete_resource_tag_by_name(self.db_conn, tn)
+            self._invalidate_caches()
+            self._audit("abac_tag_delete_all", f"tag={tag_name} count={count}")
+            self.write({"deleted": True, "tag": tag_name, "count": count})
+            return
+        # Bulk delete: ids=[1,2,3]
+        ids = payload.get("ids")
+        if ids is not None:
+            if not isinstance(ids, list) or not ids:
+                self.set_status(400)
+                self.write({"error": "ids must be a non-empty list"})
+                return
+            if len(ids) > MAX_TAG_RULE_BULK_DELETE_IDS:
+                self.set_status(400)
+                self.write({"error": "too many ids"})
+                return
+            deleted = []
+            for tid in ids:
+                if delete_resource_tag(self.db_conn, int(tid)):
+                    deleted.append(int(tid))
+            self._invalidate_caches()
+            self._audit("abac_tag_bulk_delete", f"ids={deleted}")
+            self.write({"deleted": True, "ids": deleted})
+            return
+        # Single delete: id=1
         tag_id = payload.get("id")
         if tag_id is None:
             self.set_status(400)
-            self.write({"error": "id is required"})
+            self.write({"error": "id or ids is required"})
             return
         ok = delete_resource_tag(self.db_conn, int(tag_id))
         if not ok:
@@ -156,6 +213,42 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
         self._invalidate_caches()
         self._audit("abac_tag_delete", f"id={tag_id}")
         self.write({"deleted": True, "id": int(tag_id)})
+
+    @tornado.web.authenticated
+    @require_admin(deny_status=403, deny_body="Access denied")
+    @require_db
+    def put(self) -> None:
+        payload = self.parse_json_body() or {}
+        tag_id = payload.get("id")
+        if tag_id is None:
+            self.set_status(400)
+            self.write({"error": "id is required"})
+            return
+        tag = str(payload["tag"]).strip() if payload.get("tag") is not None else None
+        glob_pattern = str(payload["glob_pattern"]).strip() if payload.get("glob_pattern") is not None else None
+        if tag is not None and len(tag) > RESOURCE_TAG_MAX_LEN:
+            self.set_status(400)
+            self.write({"error": "tag exceeds maximum length"})
+            return
+        if glob_pattern is not None and len(glob_pattern) > GLOB_PATTERN_MAX_LEN:
+            self.set_status(400)
+            self.write({"error": "glob_pattern exceeds maximum length"})
+            return
+        priority = int(payload["priority"]) if payload.get("priority") is not None else None
+        ok = update_resource_tag(
+            self.db_conn,
+            int(tag_id),
+            tag=tag,
+            glob_pattern=glob_pattern,
+            priority=priority,
+        )
+        if not ok:
+            self.set_status(404)
+            self.write({"error": "Tag not found or no changes"})
+            return
+        self._invalidate_caches()
+        self._audit("abac_tag_update", f"id={tag_id} tag={tag} glob={glob_pattern} priority={priority}")
+        self.write({"updated": True, "id": int(tag_id)})
 
 
 # ---------------------------------------------------------------------------
@@ -204,10 +297,15 @@ def _validate_policy_payload(payload: dict) -> tuple[dict, str | None]:
         condition = {}
     if not isinstance(condition, dict):
         return {}, "condition must be a JSON object"
+    desc_stripped = str(payload.get("description", "") or "").strip()
+    try:
+        check_policy_payload_sizes(name, desc_stripped, target_actions, condition)
+    except InputTooLongError as exc:
+        return {}, str(exc)
     return (
         {
             "name": name,
-            "description": str(payload.get("description", "")).strip() or None,
+            "description": desc_stripped or None,
             "effect": effect,
             "target_actions": target_actions,
             "condition": condition,
@@ -392,3 +490,97 @@ class PolicyDecisionsWebSocket(ManagedWebSocketMixin, tornado.websocket.WebSocke
             )
         except Exception:
             logger.debug("policy decision broadcast failed", exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# User attributes (subject dimension)
+# ---------------------------------------------------------------------------
+
+
+class AdminUserAttributesHandler(BaseHandler):
+    """HTML page listing and editing per-user ABAC attributes."""
+
+    @tornado.web.authenticated
+    @require_admin(redirect_url=URL_ADMIN_LOGIN)
+    def get(self) -> None:
+        db_conn = self.db_conn
+        attrs = list_all_user_attributes(db_conn) if db_conn is not None else []
+        self.render(
+            "admin_user_attributes.html",
+            attrs=attrs,
+            error=self.get_argument("error", ""),
+        )
+
+
+class AdminUserAttributeAPIHandler(XSRFTokenMixin, BaseHandler):
+    """JSON CRUD for user attributes."""
+
+    def _audit(self, action: str, details: str) -> None:
+        try:
+            self.get_service("audit_service").log(
+                self.db_conn,
+                action,
+                username=self.get_display_username(),
+                details=details,
+                ip=self.request.remote_ip,
+            )
+        except Exception:
+            logger.debug("audit_service.log failed", exc_info=True)
+
+    @tornado.web.authenticated
+    @require_admin(deny_status=403, deny_body="Access denied")
+    @require_db
+    def get(self) -> None:
+        self.set_header("Content-Type", CONTENT_TYPE_JSON)
+        self.write({"attrs": list_all_user_attributes(self.db_conn)})
+
+    @tornado.web.authenticated
+    @require_admin(deny_status=403, deny_body="Access denied")
+    @require_db
+    def post(self) -> None:
+        payload = self.parse_json_body() or {}
+        username = str(payload.get("username", "")).strip()
+        key = str(payload.get("key", "")).strip()
+        value = str(payload.get("value", "")).strip()
+        if not username or not key:
+            self.set_status(400)
+            self.write({"error": "username and key are required"})
+            return
+        try:
+            validate_user_attribute(username, key, value)
+        except InputTooLongError as exc:
+            self.set_status(400)
+            self.write({"error": str(exc)})
+            return
+        ok = set_user_attribute(self.db_conn, username, key, value)
+        if not ok:
+            self.set_status(500)
+            self.write({"error": "Failed to set attribute"})
+            return
+        self._audit("abac_user_attr_set", f"user={username} key={key}")
+        self.write({"ok": True, "username": username, "key": key, "value": value})
+
+    @tornado.web.authenticated
+    @require_admin(deny_status=403, deny_body="Access denied")
+    @require_db
+    def delete(self) -> None:
+        payload = self.parse_json_body() or {}
+        username = str(payload.get("username", "")).strip()
+        key = str(payload.get("key", "")).strip()
+        if not username or not key:
+            self.set_status(400)
+            self.write({"error": "username and key are required"})
+            return
+        try:
+            validate_user_attribute(username, key, "")
+        except InputTooLongError as exc:
+            self.set_status(400)
+            self.write({"error": str(exc)})
+            return
+        ok = delete_user_attribute(self.db_conn, username, key)
+        if not ok:
+            self.set_status(404)
+            self.write({"error": "Attribute not found"})
+            return
+        self._audit("abac_user_attr_delete", f"user={username} key={key}")
+        self.write({"deleted": True, "username": username, "key": key})

@@ -107,3 +107,12 @@ NETWORK_SHARE_MANAGER = None
 # Rate limiting
 LOGIN_RATE_LIMIT_ATTEMPTS = 5
 LOGIN_RATE_LIMIT_WINDOW = 300  # 5 minutes
+
+# ABAC environment: comma-separated CIDR blocks treated as "corporate" IPs.
+# Admins can override this via the AIRD_CORPORATE_IP_CIDRS env var at startup.
+# Example: "10.0.0.0/8,192.168.0.0/16"
+CORPORATE_IP_CIDRS: list[str] = [
+    c.strip()
+    for c in os.environ.get("AIRD_CORPORATE_IP_CIDRS", "").split(",")
+    if c.strip()
+]

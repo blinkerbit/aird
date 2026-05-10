@@ -34,12 +34,18 @@ DEFAULT_POLICIES: list[dict] = [
     },
     {
         "name": "default-user-permit",
-        "description": "Permit signed-in users (role=user|admin) to perform standard read/list actions.",
+        "description": "Permit signed-in users (role=user|admin) to perform all standard file and collaboration actions.",
         "effect": "permit",
         "target_actions": [
             "file.read",
+            "file.download",
             "file.list",
+            "file.write",
+            "file.delete",
+            "file.rename",
             "share.view",
+            "share.create",
+            "p2p.transfer",
             "favorites.toggle",
         ],
         "condition": {

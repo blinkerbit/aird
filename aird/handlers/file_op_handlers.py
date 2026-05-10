@@ -11,8 +11,15 @@ import asyncio
 import aiofiles
 from typing import Protocol, Callable, Any
 
-from aird.handlers.base_handler import BaseHandler, require_modify_access, get_user_root
+from aird.handlers.base_handler import BaseHandler, require_action, require_modify_access, get_user_root
 from aird.utils.util import sanitize_cloud_filename, is_feature_enabled, get_file_size_safe
+from aird.constants.input_limits import (
+    EDIT_JSON_BODY_MAX_BYTES,
+    MAX_BULK_JSON_BYTES,
+    MAX_BULK_PATHS,
+    REL_PATH_MAX_LEN,
+    SHARE_ID_MAX_LEN,
+)
 from aird.core.security import (  # noqa: F401
     is_within_root,
     is_valid_websocket_origin,
@@ -165,6 +172,8 @@ def _bulk_add_to_share_one(
     share_id = data.get("share_id")
     if not share_id:
         return SHARE_ID_REQUIRED
+    if len(str(share_id).strip()) > SHARE_ID_MAX_LEN:
+        return "share_id too long"
     if not db_conn:
         return DATABASE_UNAVAILABLE
     share = get_service("share_service").get_share(db_conn, share_id)
@@ -348,6 +357,7 @@ class UploadHandler(BaseHandler):
         return False
 
     @tornado.web.authenticated
+    @require_action("file.write")
     @require_modify_access()
     async def post(self):
         if not self.require_feature(
@@ -424,6 +434,7 @@ class UploadHandler(BaseHandler):
 
 class CreateFolderHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_action("file.write")
     @require_modify_access()
     def post(self):
         if not self.require_feature("folder_create", True, body=FOLDER_CREATE_DISABLED):
@@ -532,6 +543,7 @@ class DeleteHandler(BaseHandler):
         return True
 
     @tornado.web.authenticated
+    @require_action("file.delete")
     @require_modify_access()
     def post(self):
         path = self.get_argument("path", "")
@@ -562,6 +574,7 @@ class DeleteHandler(BaseHandler):
 
 class RenameHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_action("file.rename")
     @require_modify_access()
     def post(self):
         if not self.require_feature("file_rename", True, body=FILE_RENAME_DISABLED):
@@ -626,6 +639,7 @@ class RenameHandler(BaseHandler):
 
 class CopyHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_action("file.write")
     @require_modify_access()
     def post(self):
         if not self.require_feature("file_rename", True, body=COPY_DISABLED):
@@ -683,6 +697,7 @@ class CopyHandler(BaseHandler):
 
 class MoveHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_action("file.write")
     @require_modify_access()
     def post(self):
         if not self.require_feature("file_rename", True, body=MOVE_DISABLED):
@@ -737,8 +752,13 @@ class MoveHandler(BaseHandler):
 
 class BulkHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_action("file.write")
     @require_modify_access()
     def post(self):
+        if len(self.request.body) > MAX_BULK_JSON_BYTES:
+            self.set_status(400)
+            self.write(BAD_REQUEST)
+            return
         try:
             data = json.loads(
                 self.request.body.decode("utf-8", errors="replace") or "{}"
@@ -752,6 +772,10 @@ class BulkHandler(BaseHandler):
         if not isinstance(paths, list) or not paths:
             self.set_status(400)
             self.write(PATHS_REQUIRED)
+            return
+        if len(paths) > MAX_BULK_PATHS:
+            self.set_status(400)
+            self.write(BAD_REQUEST)
             return
         root = get_user_root(self)
         results = {"ok": True, "results": []}
@@ -795,6 +819,7 @@ class BulkHandler(BaseHandler):
 
 class EditHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_action("file.write")
     @require_modify_access()
     def post(self):
         if not self.require_feature("file_edit", True, body=FILE_EDIT_DISABLED):
@@ -802,6 +827,10 @@ class EditHandler(BaseHandler):
 
         # Accept both JSON and form-encoded bodies
         content_type = self.request.headers.get("Content-Type", "")
+        if len(self.request.body) > EDIT_JSON_BODY_MAX_BYTES:
+            self.set_status(413)
+            self.write(INVALID_JSON_REQUEST if content_type.startswith(HEADER_APPLICATION_JSON) else BAD_REQUEST)
+            return
         path = ""
         content = ""
         if content_type.startswith(HEADER_APPLICATION_JSON):
@@ -818,6 +847,11 @@ class EditHandler(BaseHandler):
         else:
             path = self.get_argument("path", "")
             content = self.get_argument("content", "")
+
+        if len(str(path).strip()) > REL_PATH_MAX_LEN:
+            self.set_status(400)
+            self.write(INVALID_PATH)
+            return
 
         user_root = get_user_root(self)
         abspath = (pathlib.Path(user_root) / ("." + path)).absolute().resolve()

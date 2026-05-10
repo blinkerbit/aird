@@ -1,0 +1,16 @@
+{# Admin sub-page tab bar. Set `admin_active_tab` before including.
+   Values: overview, users, ldap, audit, network-shares, tags, policies, user-attributes #}
+<div class="max-w-6xl mx-auto px-4 mt-2 mb-2">
+  <div role="tablist" class="tabs tabs-bordered flex-wrap">
+    <a role="tab" href="/admin" class="tab {% if admin_active_tab == 'overview' %}tab-active font-bold{% else %}hover:text-base-content hover:bg-base-200/50{% end %}">Overview</a>
+    <a role="tab" href="/admin/users" class="tab {% if admin_active_tab == 'users' %}tab-active font-bold{% else %}hover:text-base-content hover:bg-base-200/50{% end %}">Users</a>
+    {% if ldap_enabled %}
+    <a role="tab" href="/admin/ldap" class="tab {% if admin_active_tab == 'ldap' %}tab-active font-bold{% else %}hover:text-base-content hover:bg-base-200/50{% end %}">LDAP</a>
+    {% end %}
+    <a role="tab" href="/admin/audit" class="tab {% if admin_active_tab == 'audit' %}tab-active font-bold{% else %}hover:text-base-content hover:bg-base-200/50{% end %}">Audit log</a>
+    <a role="tab" href="/admin/network-shares" class="tab {% if admin_active_tab == 'network-shares' %}tab-active font-bold{% else %}hover:text-base-content hover:bg-base-200/50{% end %}">Network shares</a>
+    <a role="tab" href="/admin/tags" class="tab {% if admin_active_tab == 'tags' %}tab-active font-bold{% else %}hover:text-base-content hover:bg-base-200/50{% end %}">Tags</a>
+    <a role="tab" href="/admin/policies" class="tab {% if admin_active_tab == 'policies' %}tab-active font-bold{% else %}hover:text-base-content hover:bg-base-200/50{% end %}">Policies</a>
+    <a role="tab" href="/admin/user-attributes" class="tab {% if admin_active_tab == 'user-attributes' %}tab-active font-bold{% else %}hover:text-base-content hover:bg-base-200/50{% end %}">User Attributes</a>
+  </div>
+</div>

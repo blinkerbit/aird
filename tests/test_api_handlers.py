@@ -22,7 +22,16 @@ from aird.handlers.api_handlers import (
 )
 from aird.handlers.constants import AUTH_REQUIRED
 from aird.config import MAX_READABLE_FILE_SIZE
+from aird.constants import FEATURE_FLAGS as _FEATURE_FLAGS_DEFAULTS
+from aird.services.favorites_service import FavoritesService
 from tests.handler_helpers import _default_services, authenticate, patch_db_conn, prepare_handler
+
+
+def _feature_flags_only_favorites_on(key: str, default: bool = False) -> bool:
+    """Enable favorites without forcing unrelated flags (e.g. abac_engine) on."""
+    if key == "favorites":
+        return True
+    return bool(_FEATURE_FLAGS_DEFAULTS.get(key, default))
 
 
 class _MockAioLinesCM:
@@ -473,7 +482,8 @@ class TestFavoriteToggleAPIHandler:
         handler = make_request_handler(FavoriteToggleAPIHandler)
         handler.request.body = b'{"path":"a"}'
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_feature_flags_only_favorites_on,
         ), patch_db_conn(None, modules=["aird.handlers.api_handlers"]):
             handler.post()
         handler.set_status.assert_called_with(500)
@@ -483,17 +493,19 @@ class TestFavoriteToggleAPIHandler:
         handler = make_request_handler(FavoriteToggleAPIHandler)
         handler.request.body = b"not-json"
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_feature_flags_only_favorites_on,
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]):
             handler.post()
         handler.set_status.assert_called_with(400)
-        handler.write.assert_called_with({"error": "Invalid JSON"})
+        handler.write.assert_called_with({"error": "path is required"})
 
     def test_missing_path(self):
         handler = make_request_handler(FavoriteToggleAPIHandler)
         handler.request.body = json.dumps({"path": "  "})
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_feature_flags_only_favorites_on,
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]):
             handler.post()
         handler.set_status.assert_called_with(400)
@@ -504,7 +516,8 @@ class TestFavoriteToggleAPIHandler:
         handler.request.body = json.dumps({"path": " /x "})
         handler.get_current_user = MagicMock(return_value={})
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_feature_flags_only_favorites_on,
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]):
             handler.post()
         handler.set_status.assert_called_with(401)
@@ -515,9 +528,12 @@ class TestFavoriteToggleAPIHandler:
         handler.request.body = json.dumps({"path": "docs/a.txt"})
         db = MagicMock()
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
-        ), patch_db_conn(db, modules=["aird.handlers.api_handlers"]), patch(
-            "aird.services.favorites_service.toggle_favorite", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_feature_flags_only_favorites_on,
+        ), patch_db_conn(db, modules=["aird.handlers.api_handlers"]), patch.object(
+            FavoritesService,
+            "toggle",
+            return_value=True,
         ) as mock_toggle:
             handler.post()
         mock_toggle.assert_called_once_with(db, "admin", "docs/a.txt")
@@ -539,7 +555,8 @@ class TestFavoritesListAPIHandler:
     def test_no_db(self):
         handler = make_request_handler(FavoritesListAPIHandler)
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_feature_flags_only_favorites_on,
         ), patch_db_conn(None, modules=["aird.handlers.api_handlers"]):
             handler.get()
         handler.set_status.assert_called_with(500)
@@ -549,7 +566,8 @@ class TestFavoritesListAPIHandler:
         handler = make_request_handler(FavoritesListAPIHandler)
         handler.get_current_user = MagicMock(return_value=None)
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_feature_flags_only_favorites_on,
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]):
             handler.get()
         handler.set_status.assert_called_with(401)
@@ -558,9 +576,11 @@ class TestFavoritesListAPIHandler:
         handler = make_request_handler(FavoritesListAPIHandler)
         db = MagicMock()
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
-        ), patch_db_conn(db, modules=["aird.handlers.api_handlers"]), patch(
-            "aird.services.favorites_service.get_user_favorites",
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_feature_flags_only_favorites_on,
+        ), patch_db_conn(db, modules=["aird.handlers.api_handlers"]), patch.object(
+            FavoritesService,
+            "get_favorites",
             return_value=["p1", "p2"],
         ) as mock_gf:
             handler.get()

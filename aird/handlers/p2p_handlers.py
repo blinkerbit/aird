@@ -9,7 +9,7 @@ from typing import Dict, Optional
 import tornado.web
 import tornado.websocket
 
-from aird.handlers.base_handler import BaseHandler, authenticate_handler
+from aird.handlers.base_handler import BaseHandler, authenticate_handler, require_action
 from aird.core.events import TransferStartedEvent, now_ts
 from aird.core.security import is_valid_websocket_origin
 from aird.utils.util import is_feature_enabled
@@ -131,6 +131,25 @@ class P2PTransferHandler(BaseHandler):
 
         room_id = self.get_argument("room", None)
         current_user = self.get_current_user()
+
+        # ABAC check — resolve file size from the room if available so
+        # size-based policies (e.g. large-p2p-managed-device) can evaluate.
+        if current_user:
+            resource_size = None
+            if room_id:
+                room_mgr = self.room_manager or room_manager
+                room = room_mgr.get_room(room_id)
+                if room and getattr(room, "file_size", None):
+                    resource_size = room.file_size
+            decision = self.check_access(
+                "p2p.transfer",
+                resource_path=room_id,
+                resource_size=resource_size,
+            )
+            if decision is not None and decision.is_deny:
+                self.set_status(403)
+                self.write(decision.reason)
+                return
 
         # If user is not logged in
         if not current_user:
