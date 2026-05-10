@@ -281,6 +281,19 @@ body {
   gap: 1rem !important;
 }
 
+/* Fix: ensure dropdown menu text is always readable across all themes.
+   DaisyUI menu hover/active can produce unreadable text on themes like
+   Cyberpunk (pure black text) or Retro (low-contrast). */
+.dropdown-content.menu button,
+.dropdown-content.menu a {
+  color: var(--color-base-content) !important;
+}
+.dropdown-content.menu button:hover,
+.dropdown-content.menu a:hover {
+  color: var(--color-base-content) !important;
+  background-color: var(--color-base-300) !important;
+}
+
 /* Reduced motion: disable transitions */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

@@ -410,7 +410,11 @@ class TestProfileHandlerExtended:
 
         self.mock_app.settings["db_conn"] = MagicMock()
         with patch(
-            "aird.services.user_service.get_user_by_username", return_value={"id": 1}
+            "aird.services.user_service.get_user_by_username",
+            return_value={"id": 1, "username": "user"},
+        ), patch(
+            "aird.services.user_service.authenticate_user",
+            return_value={"id": 1, "username": "user", "role": "user"},
         ), patch(
             "aird.services.user_service.update_user"
         ) as mock_update, patch.object(
@@ -437,13 +441,19 @@ class TestProfileHandlerExtended:
                 return "pass1"
             if k == "confirm_password":
                 return "pass2"
+            if k == "current_password":
+                return "OldP@ssword1!"
             return ""
 
         handler.get_argument = MagicMock(side_effect=get_arg)
 
         self.mock_app.settings["db_conn"] = MagicMock()
         with patch(
-            "aird.services.user_service.get_user_by_username", return_value={"id": 1}
+            "aird.services.user_service.get_user_by_username",
+            return_value={"id": 1, "username": "user"},
+        ), patch(
+            "aird.services.user_service.authenticate_user",
+            return_value={"id": 1, "username": "user", "role": "user"},
         ), patch.object(handler, "render") as mock_render:
 
             handler.post()

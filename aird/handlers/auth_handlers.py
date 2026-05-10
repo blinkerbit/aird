@@ -220,7 +220,7 @@ def _try_token_login(handler, token, next_url):
     logging.warning("Token authentication failed. Token mismatch.")
     handler.render(
         LOGIN_HTML,
-        error="Invalid credentials. Try again.",
+        error="Invalid access token.",
         settings=handler.settings,
         next_url=next_url,
     )
@@ -523,29 +523,30 @@ class LoginHandler(BaseHandler):
             )
             return
 
+        # Token takes priority: if a token is submitted, never fall through to
+        # username/password (prevents autofill from shadowing an explicit token).
+        if token and _try_token_login(self, token, next_url):
+            return
         if (
             username
             and password
             and _try_username_password_login(self, username, password, next_url)
         ):
             return
-        if token and _try_token_login(self, token, next_url):
-            return
-        if not token:
-            if username or password:
-                self.render(
-                    LOGIN_HTML,
-                    error=INVALID_USERNAME_OR_PASSWORD_MSG,
-                    settings=self.settings,
-                    next_url=next_url,
-                )
-            else:
-                self.render(
-                    LOGIN_HTML,
-                    error="Username/password or token is required.",
-                    settings=self.settings,
-                    next_url=next_url,
-                )
+        if username or password:
+            self.render(
+                LOGIN_HTML,
+                error=INVALID_USERNAME_OR_PASSWORD_MSG,
+                settings=self.settings,
+                next_url=next_url,
+            )
+        else:
+            self.render(
+                LOGIN_HTML,
+                error="Username/password or token is required.",
+                settings=self.settings,
+                next_url=next_url,
+            )
 
 
 class AdminLoginHandler(BaseHandler):
@@ -606,6 +607,13 @@ class ProfileHandler(BaseHandler):
         ldap_enabled = self.settings.get("ldap_server") is not None
         quota = {"quota_bytes": None, "used_bytes": 0}
         user = self.current_user
+        # Token-authenticated users don't have full profile data (created_at, active, etc.)
+        # so pass user=None to show the "not available" message instead of crashing.
+        if isinstance(user, dict) and user.get("username", "") in (
+            "token_user",
+            "admin_token",
+        ):
+            user = None
         if user and self.db_conn:
             username = user.get("username", "") if isinstance(user, dict) else str(user)
             quota = self.get_service("user_service").get_user_quota(
@@ -623,40 +631,66 @@ class ProfileHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self):
         ldap_enabled = self.settings.get("ldap_server") is not None
+        # Token-authenticated users cannot change their password via this form.
+        current_user = self.current_user
+        if isinstance(current_user, dict) and current_user.get("username", "") in (
+            "token_user",
+            "admin_token",
+        ):
+            _profile_render(
+                self,
+                None,
+                error="Profile management is not available for token-authenticated sessions.",
+                ldap_enabled=ldap_enabled,
+            )
+            return
+
         db_conn = self.db_conn
         if not db_conn:
             _profile_render(
                 self,
-                self.current_user,
+                current_user,
                 error=DB_NOT_AVAILABLE_MSG,
                 ldap_enabled=ldap_enabled,
             )
             return
 
-        user = self.get_service("user_service").get_user(
-            db_conn, self.current_user["username"]
-        )
+        user_service = self.get_service("user_service")
+        user = user_service.get_user(db_conn, current_user["username"])
         if not user:
             _profile_render(
                 self,
-                self.current_user,
+                current_user,
                 error="User not found",
                 ldap_enabled=ldap_enabled,
             )
             return
 
+        current_password = self.get_argument("current_password", "")
         new_password = self.get_argument("new_password", "")
         confirm_password = self.get_argument("confirm_password", "")
+
+        if new_password and not user_service.authenticate(
+            db_conn, user["username"], current_password
+        ):
+            _profile_render(
+                self,
+                current_user,
+                error="Current password is incorrect.",
+                ldap_enabled=ldap_enabled,
+            )
+            return
+
         success_msg, error_msg = _do_profile_password_update(
             db_conn,
             user,
             new_password,
             confirm_password,
-            user_service=self.get_service("user_service"),
+            user_service=user_service,
         )
         _profile_render(
             self,
-            self.current_user,
+            current_user,
             success=success_msg,
             error=error_msg,
             ldap_enabled=ldap_enabled,
