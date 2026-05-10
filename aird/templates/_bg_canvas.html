@@ -1,5 +1,5 @@
 {# Animated background — unique palette per DaisyUI theme #}
-<canvas id="bg-canvas" role="presentation" tabindex="-1"
+<canvas id="bg-canvas" aria-hidden="true"
   style="position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;"></canvas>
 <script nonce="{{ csp_nonce }}">
 (function () {
@@ -24,9 +24,9 @@
   var LAYOUT = [
     { bx:0.15, by:0.22, fx:0.41, fy:0.31, r:0.55 },
     { bx:0.82, by:0.16, fx:0.27, fy:0.43, r:0.48 },
-    { bx:0.52, by:0.80, fx:0.33, fy:0.22, r:0.52 },
-    { bx:0.08, by:0.68, fx:0.19, fy:0.38, r:0.40 },
-    { bx:0.90, by:0.60, fx:0.29, fy:0.25, r:0.43 },
+    { bx:0.52, by:0.8, fx:0.33, fy:0.22, r:0.52 },
+    { bx:0.08, by:0.68, fx:0.19, fy:0.38, r:0.4 },
+    { bx:0.9, by:0.6, fx:0.29, fy:0.25, r:0.43 },
     { bx:0.62, by:0.05, fx:0.22, fy:0.35, r:0.38 },
   ];
 
@@ -40,7 +40,7 @@
   });
 
   function getTheme() {
-    return document.documentElement.getAttribute('data-theme') || 'light';
+    return document.documentElement.dataset.theme || 'light';
   }
 
   function syncPalette() {
@@ -97,7 +97,7 @@
       var gr = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
       gr.addColorStop(0,    'rgba('+r+','+g+','+b+',0.42)');
       gr.addColorStop(0.35, 'rgba('+r+','+g+','+b+',0.18)');
-      gr.addColorStop(0.70, 'rgba('+r+','+g+','+b+',0.05)');
+      gr.addColorStop(0.7, 'rgba('+r+','+g+','+b+',0.05)');
       gr.addColorStop(1,    'rgba('+r+','+g+','+b+',0)');
 
       ctx.beginPath();

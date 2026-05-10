@@ -78,13 +78,13 @@
     if (e.key === 'Escape') close();
   });
 
-  var current = document.documentElement.getAttribute('data-theme') || 'light';
+  var current = document.documentElement.dataset.theme || 'light';
   updateUI(current);
 
   new MutationObserver(function(mutations) {
     mutations.forEach(function(m) {
       if (m.attributeName === 'data-theme')
-        updateUI(document.documentElement.getAttribute('data-theme') || 'light');
+        updateUI(document.documentElement.dataset.theme || 'light');
     });
   }).observe(document.documentElement, { attributes: true });
 })();

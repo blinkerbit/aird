@@ -153,12 +153,12 @@
             </div>
           </div>
           <div class="form-control f2">
-            <label class="label pb-1" for="local-password"><span class="label-text font-semibold text-xs uppercase tracking-wide">Password</span></label>
+            <label class="label pb-1" for="local-pwd"><span class="label-text font-semibold text-xs uppercase tracking-wide">Password</span></label>
             <div class="input-icon-wrap">
               <span class="i-left">
                 <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
               </span>
-              <input class="input input-bordered w-full has-right" type="password" id="local-password" name="password"
+              <input class="input input-bordered w-full has-right" type="password" id="local-pwd" name="password"
                 placeholder="••••••••" autocomplete="current-password" required>
               <button type="button" class="i-right" id="pwd-eye" tabindex="-1" title="Show/hide password">
                 <svg id="pwd-eye-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
@@ -226,9 +226,9 @@
   <script src="/static/js/theme.js" defer></script>
   <script src="/static/js/login-ui.js" defer></script>
   <script nonce="{{ csp_nonce }}">
-  window.addEventListener('load', function () {
-    if (window.AirdLoginUI) {
-      window.AirdLoginUI.init({
+  globalThis.addEventListener('load', function () {
+    if (globalThis.AirdLoginUI) {
+      globalThis.AirdLoginUI.init({
         tabCreds:     'tab-creds',
         tabToken:     'tab-token',
         formCreds:    'form-creds',
@@ -240,9 +240,9 @@
         usernameField:'local-username',
         pasteBtn:     'paste-token-btn',
         pasteLabel:   'paste-token-label',
-        pwdInput:     'local-password',
-        pwdEye:       'pwd-eye',
-        pwdIcon:      'pwd-eye-icon',
+        eyeInput:     'local-pwd',
+        eyeBtn:       'pwd-eye',
+        eyeIcon:      'pwd-eye-icon',
       });
     }
   });
