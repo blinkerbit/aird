@@ -180,6 +180,14 @@ class MainHandler(BaseHandler):
                             db_conn, username
                         )
                     )
+            file_tags_map = {}
+            tag_service = self.get_service("tag_service")
+            if db_conn and tag_service:
+                for f in files:
+                    file_path = join_path(path, f["name"]) if path else f["name"]
+                    tags = tag_service.resolve(db_conn, file_path)
+                    if tags:
+                        file_tags_map[f["name"]] = list(tags)
             self.render(
                 "browse.html",
                 current_path=path,
@@ -190,6 +198,7 @@ class MainHandler(BaseHandler):
                 features=flags_for_template,
                 max_file_size=constants_module.MAX_FILE_SIZE,
                 user_favorites=user_favorites,
+                file_tags_map=file_tags_map,
             )
         elif os.path.isfile(abspath):
             await self.serve_file(self, abspath, user_root)
