@@ -339,6 +339,7 @@ Representative **`target_actions`** used in decorators and handlers include **`f
 | Admin ABAC policies (UI / API) | `docs/admin-policies.md` |
 | Resource tags | `docs/admin-tags.md` |
 | User attributes (ABAC subject) | `docs/admin-user-attributes.md` |
+| Developer UI / accessibility & Sonar expectations | `docs/developer-ui-quality.md` |
 
 ---
 
