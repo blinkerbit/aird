@@ -179,6 +179,13 @@ def _bulk_add_to_share_one(
     share = get_service("share_service").get_share(db_conn, share_id)
     if not share:
         return SHARE_NOT_FOUND
+    stype = share.get("share_type", "static")
+    if stype == "tag":
+        return "Cannot add paths to a tag-based share"
+    if stype == "dynamic" and os.path.isfile(abspath):
+        return (
+            "Cannot add individual files to a dynamic share; add the folder root instead"
+        )
     paths_list = list(share.get("paths") or [])
     rel = path_to_rel(abspath)
     if rel in paths_list:

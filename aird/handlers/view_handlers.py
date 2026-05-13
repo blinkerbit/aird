@@ -148,6 +148,58 @@ class RootHandler(BaseHandler):
 
 
 class MainHandler(BaseHandler):
+    def _render_directory_browse(self, path: str, abspath: str) -> None:
+        decision = self.check_access("file.list", resource_path=path)
+        if decision is not None and decision.is_deny:
+            self.set_status(403)
+            self.write(decision.reason)
+            return
+
+        files = get_files_in_directory(abspath)
+
+        db_conn = self.db_conn
+        user_root = get_user_root(self)
+        if db_conn:
+            augment_with_shared_status(
+                files,
+                path,
+                self.get_service("share_service").list_shares(db_conn),
+                db_conn=db_conn,
+                root_dir=user_root,
+                viewer_username=get_username_string_for_db(self),
+                viewer_is_admin=self.is_admin_user(),
+            )
+
+        parent_path = os.path.dirname(path) if path else None
+        flags_for_template = get_current_feature_flags()
+        user_favorites: set[str] = set()
+        if db_conn and flags_for_template.get("favorites"):
+            username = get_username_string_for_db(self)
+            if username:
+                user_favorites = set(
+                    self.get_service("favorites_service").get_favorites(
+                        db_conn, username
+                    )
+                )
+        tag_rules = list_resource_tags(db_conn) if db_conn else []
+        file_tags_map: dict[str, list[str]] = {}
+        for f in files:
+            rel = join_path(path, f["name"]) if path else f["name"]
+            file_tags_map[f["name"]] = get_tags_for_path(tag_rules, rel)
+
+        self.render(
+            "browse.html",
+            current_path=path,
+            parent_path=parent_path,
+            files=files,
+            join_path=join_path,
+            get_file_icon=get_file_icon,
+            features=flags_for_template,
+            max_file_size=constants_module.MAX_FILE_SIZE,
+            user_favorites=user_favorites,
+            file_tags_map=file_tags_map,
+        )
+
     @tornado.web.authenticated
     async def get(self, path):
         user_root = get_user_root(self)
@@ -161,60 +213,17 @@ class MainHandler(BaseHandler):
             return
 
         if os.path.isdir(abspath):
-            decision = self.check_access("file.list", resource_path=path)
-            if decision is not None and decision.is_deny:
-                self.set_status(403)
-                self.write(decision.reason)
-                return
+            self._render_directory_browse(path, abspath)
+            return
 
-            files = get_files_in_directory(abspath)
-
-            # Augment file data with shared status
-            db_conn = self.db_conn
-            if db_conn:
-                augment_with_shared_status(
-                    files, path, self.get_service("share_service").list_shares(db_conn)
-                )
-
-            parent_path = os.path.dirname(path) if path else None
-            # Use SQLite-backed flags for template
-            flags_for_template = get_current_feature_flags()
-            # Fetch user favorites
-            user_favorites = set()
-            if db_conn and flags_for_template.get("favorites"):
-                username = get_username_string_for_db(self)
-                if username:
-                    user_favorites = set(
-                        self.get_service("favorites_service").get_favorites(
-                            db_conn, username
-                        )
-                    )
-            # Build per-file tag map for the current directory listing
-            tag_rules = list_resource_tags(db_conn) if db_conn else []
-            file_tags_map: dict[str, list[str]] = {}
-            for f in files:
-                rel = join_path(path, f["name"]) if path else f["name"]
-                file_tags_map[f["name"]] = get_tags_for_path(tag_rules, rel)
-
-            self.render(
-                "browse.html",
-                current_path=path,
-                parent_path=parent_path,
-                files=files,
-                join_path=join_path,
-                get_file_icon=get_file_icon,
-                features=flags_for_template,
-                max_file_size=constants_module.MAX_FILE_SIZE,
-                user_favorites=user_favorites,
-                file_tags_map=file_tags_map,
-            )
-        elif os.path.isfile(abspath):
+        if os.path.isfile(abspath):
             await self.serve_file(self, abspath, user_root)
-        else:
-            self.set_status(404)
-            self.write(
-                "File not found: The requested file may have been moved or deleted"
-            )
+            return
+
+        self.set_status(404)
+        self.write(
+            "File not found: The requested file may have been moved or deleted"
+        )
 
     @staticmethod
     async def serve_file(handler, abspath, user_root=None):

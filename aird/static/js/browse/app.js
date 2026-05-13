@@ -1073,7 +1073,7 @@
           ? 'Patterns: ' + patterns.join(', ')
           : '';
       }
-      selectEl.addEventListener('change', updatePatternPreview);
+      selectEl.onchange = updatePatternPreview;
       updatePatternPreview();
       modal.showModal();
       const chosenTag = await new Promise(function (resolve) {
@@ -1092,9 +1092,10 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
           body: JSON.stringify({
-            paths: [''],
-            share_type: 'dynamic',
-            allow_list: patterns,
+            share_type: 'tag',
+            tag_name: chosenTag,
+            paths: [],
+            allow_list: [],
             avoid_list: [],
           }),
         });
@@ -1237,7 +1238,7 @@
 
     function formatShareAccessLabel(share) {
       const users = share.allowed_users;
-      if (!users) return 'Public Access';
+      if (!users || !users.length) return 'Public Access';
       const n = users.length;
       const suffix = n === 1 ? '' : 's';
       return 'Restricted (' + n + ' user' + suffix + ')';
@@ -1252,16 +1253,26 @@
       urlWrap.appendChild(a);
       item.appendChild(urlWrap);
 
-      const accessClass = share.allowed_users ? 'restricted' : 'public';
+      const isRestricted = share.allowed_users && share.allowed_users.length > 0;
+      const accessClass = isRestricted ? 'restricted' : 'public';
       item.appendChild(_createEl('div', { className: 'share-access ' + accessClass }, formatShareAccessLabel(share)));
 
-      if (share.allowed_users) {
+      if (isRestricted) {
         const usersBox = _createEl('div', { className: 'share-users' });
         usersBox.appendChild(_createEl('div', { className: 'share-users-title' }, 'Allowed Users:'));
         for (const u of share.allowed_users) {
           usersBox.appendChild(_createEl('span', { className: 'user-tag' }, u));
         }
         item.appendChild(usersBox);
+      }
+
+      if (share.modify_users && share.modify_users.length) {
+        const modBox = _createEl('div', { className: 'share-users' });
+        modBox.appendChild(_createEl('div', { className: 'share-users-title' }, 'Modify Users:'));
+        for (const u of share.modify_users) {
+          modBox.appendChild(_createEl('span', { className: 'user-tag' }, '\u270f\ufe0f ' + u));
+        }
+        item.appendChild(modBox);
       }
 
       const actions = _createEl('div', { className: 'share-actions' });

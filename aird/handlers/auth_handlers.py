@@ -149,14 +149,6 @@ def _try_username_password_login(handler, username, password, next_url):
     db_conn = handler.db_conn
     if not db_conn or not username or not password:
         return False
-    if len(username) > 256 or len(password) > 256:
-        handler.render(
-            LOGIN_HTML,
-            error=INVALID_INPUT_LENGTH_MSG,
-            settings=handler.settings,
-            next_url=next_url,
-        )
-        return True
     try:
         user = handler.get_service("user_service").authenticate(
             db_conn, username, password
@@ -249,9 +241,6 @@ def _try_admin_username_password_login(handler, username, password):
     db_conn = handler.db_conn
     if not db_conn or not username or not password:
         return False
-    if len(username) > 256 or len(password) > 256:
-        handler.render(ADMIN_LOGIN_TEMPLATE, error=INVALID_INPUT_LENGTH_MSG)
-        return True
     try:
         user = handler.get_service("user_service").authenticate(
             db_conn, username, password
@@ -843,7 +832,6 @@ class ProfileHandler(BaseHandler):
             )
             return
 
-        current_password = self.get_argument("current_password", "")
         new_password = self.get_argument("new_password", "")
         confirm_password = self.get_argument("confirm_password", "")
         if (

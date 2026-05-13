@@ -11,6 +11,7 @@ from aird.core.input_validation import (
     bound_username_for_login,
 )
 
+
 @dataclass(frozen=True)
 class ShareCreateRequest:
     paths: list[Any] = field(default_factory=list)

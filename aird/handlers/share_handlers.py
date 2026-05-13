@@ -10,6 +10,8 @@ from aird.handlers.base_handler import (
     BaseHandler,
     XSRFTokenMixin,
     get_user_root,
+    get_username_string_for_db,
+    login_matches_share_creator_field,
     require_action,
     require_db,
     require_modify_access,
@@ -30,8 +32,6 @@ from aird.utils.util import (
     remove_share_cloud_dir,
     download_cloud_items,
 )
-from aird.core.file_operations import get_files_by_tag_patterns
-from aird.db.resource_tags import list_resource_tags
 from aird.core.security import (
     is_within_root,
 )
@@ -41,7 +41,9 @@ from aird.handlers.constants import (
     INVALID_SHARE_LINK,
     CLOUD_DOWNLOAD_FAILED,
 )
-from aird.config import ROOT_DIR
+from aird.core.share_root import filesystem_root_for_share
+from aird.db.shares import list_files_for_tag_share, share_covers_relative_path
+from aird import constants as constants_module
 from aird.cloud import CloudProviderError
 from aird.handlers.view_handlers import MainHandler
 
@@ -85,9 +87,7 @@ def _add_local_path(ap, path_str, share_type, valid_paths, dynamic_folders):
 def _collect_paths_from_request(paths, share_type, root_dir=None):
     """Parse paths from request; return (valid_paths, dynamic_folders, remote_items)."""
     if root_dir is None:
-        from aird.config import ROOT_DIR
-
-        root_dir = ROOT_DIR
+        root_dir = constants_module.ROOT_DIR
     valid_paths = []
     dynamic_folders = []
     remote_items = []
@@ -168,6 +168,7 @@ def _create_share_record(
     expiry_date,
     modify_users=None,
     tag_name=None,
+    created_by=None,
 ):
     secret_token = secrets.token_urlsafe(64) if not disable_token else None
     created = datetime.now(timezone.utc).isoformat()
@@ -184,6 +185,7 @@ def _create_share_record(
         expiry_date,
         modify_users=modify_users if modify_users else None,
         tag_name=tag_name,
+        created_by=created_by,
     )
     return success, secret_token
 
@@ -201,29 +203,36 @@ def _get_provided_token(share_id, request, get_cookie):
     return get_cookie(f"share_token_{share_id}")
 
 
-def _is_token_valid(share, share_id, request, get_cookie):
-    """Return True if share has no token or provided token matches."""
+def _check_share_access(share, share_id, request, get_cookie, get_secure_cookie):
+    """
+    Check if the current request has access to the share based on user requirements.
+    Returns (allowed: bool, redirect_to_verify: bool, error_tuple: tuple | None)
+    """
+    current_user = _get_cookie_username(get_secure_cookie)
+    
+    # 1. If user is logged in, check if they are the creator or explicitly allowed
+    if current_user:
+        creator = share.get("created_by") or share.get("creator") or ""
+        if login_matches_share_creator_field(creator, current_user):
+            return True, False, None
+        allowed_users = share.get("allowed_users") or []
+        if current_user in allowed_users:
+            return True, False, None
+        if current_user in (share.get("modify_users") or []):
+            return True, False, None
+
+    # 2. If NO token is enabled -> PUBLIC, anyone can access
     secret_token = share.get("secret_token")
     if not secret_token:
-        return True
+        return True, False, None
+        
+    # 3. Restricted (token enabled) -> check if they provided a valid token
     provided = _get_provided_token(share_id, request, get_cookie)
-    return bool(provided and secrets.compare_digest(provided, secret_token))
-
-
-def _is_user_allowed(share, get_secure_cookie):
-    """Return (True, None) if allowed, else (False, (status, body))."""
-    allowed_users = share.get("allowed_users")
-    if not allowed_users:
-        return (True, None)
-    current_user = _get_cookie_username(get_secure_cookie)
-    if not current_user:
-        return (
-            False,
-            (401, "Authentication required: Please provide a valid access token"),
-        )
-    if current_user not in allowed_users:
-        return (False, (403, ACCESS_TOKEN_INVALID_OR_EXPIRED))
-    return (True, None)
+    if provided and secrets.compare_digest(provided, secret_token):
+        return True, False, None
+        
+    # Token required but missing or invalid
+    return False, True, (403, ACCESS_TOKEN_INVALID_OR_EXPIRED)
 
 
 def _get_cookie_username(get_secure_cookie):
@@ -244,6 +253,11 @@ def _get_cookie_username(get_secure_cookie):
         return raw.strip() or None
 
 
+def _root_dir_for_share(share: dict) -> str:
+    """Filesystem root for paths on this share (creator home when multi-user)."""
+    return filesystem_root_for_share(share)
+
+
 def _is_user_allowed_for_modify(share, get_secure_cookie):
     """Return (True, None) if user can modify shared structure/files."""
     modify_users = share.get("modify_users") or []
@@ -257,36 +271,24 @@ def _is_user_allowed_for_modify(share, get_secure_cookie):
     return (True, None)
 
 
-def _get_tag_glob_patterns(db_conn, tag_name: str) -> list[str]:
-    """Return the glob patterns registered for *tag_name*."""
-    if db_conn is None or not tag_name:
-        return []
-    try:
-        rules = list_resource_tags(db_conn)
-        return [r["glob_pattern"] for r in rules if r.get("tag") == tag_name]
-    except Exception:
-        logging.debug("_get_tag_glob_patterns failed", exc_info=True)
-        return []
-
-
 def _get_share_file_list(share, db_conn=None):
     """Return list of file paths for the share (dynamic, static, or tag-based)."""
     share_type = share.get("share_type", "static")
     allow_list = share.get("allow_list", [])
     avoid_list = share.get("avoid_list", [])
+    root = _root_dir_for_share(share)
 
     if share_type == "tag":
-        tag_name = share.get("tag_name")
-        patterns = _get_tag_glob_patterns(db_conn, tag_name)
-        files = get_files_by_tag_patterns(patterns, ROOT_DIR)
-        return filter_files_by_patterns(files, allow_list, avoid_list)
+        return list_files_for_tag_share(
+            db_conn, share.get("tag_name"), root, allow_list, avoid_list
+        )
 
     if share_type == "dynamic":
         dynamic_files = []
-        for folder_path in share["paths"]:
+        for folder_path in share.get("paths") or []:
             try:
-                full_path = os.path.abspath(os.path.join(ROOT_DIR, folder_path))
-                if os.path.isdir(full_path) and is_within_root(full_path, ROOT_DIR):
+                full_path = os.path.abspath(os.path.join(root, folder_path))
+                if os.path.isdir(full_path) and is_within_root(full_path, root):
                     all_files = get_all_files_recursive(full_path, folder_path)
                     dynamic_files.extend(all_files)
             except Exception:
@@ -295,43 +297,13 @@ def _get_share_file_list(share, db_conn=None):
                 )
         return filter_files_by_patterns(dynamic_files, allow_list, avoid_list)
 
-    return filter_files_by_patterns(share["paths"], allow_list, avoid_list)
+    return filter_files_by_patterns(share.get("paths") or [], allow_list, avoid_list)
 
 
 def _is_path_in_share(share, path, db_conn=None):
     """Return True if path is allowed for this share (dynamic, static, or tag-based)."""
-    share_type = share.get("share_type", "static")
-    allow_list = share.get("allow_list", [])
-    avoid_list = share.get("avoid_list", [])
-
-    if share_type == "tag":
-        tag_name = share.get("tag_name")
-        patterns = _get_tag_glob_patterns(db_conn, tag_name)
-        matched = get_files_by_tag_patterns(patterns, ROOT_DIR)
-        filtered = filter_files_by_patterns(matched, allow_list, avoid_list)
-        return path in filtered
-
-    if share_type == "dynamic":
-        for folder_path in share["paths"]:
-            try:
-                full_folder_path = os.path.abspath(os.path.join(ROOT_DIR, folder_path))
-                full_file_path = os.path.abspath(os.path.join(ROOT_DIR, path))
-                if (
-                    os.path.isdir(full_folder_path)
-                    and is_within_root(full_file_path, full_folder_path)
-                    and filter_files_by_patterns([path], allow_list, avoid_list)
-                ):
-                    return True
-            except Exception:
-                logging.debug(
-                    "Path-in-share check skipped for folder %r",
-                    folder_path,
-                    exc_info=True,
-                )
-        return False
-
-    filtered_paths = filter_files_by_patterns(share["paths"], allow_list, avoid_list)
-    return path in filtered_paths
+    root = _root_dir_for_share(share)
+    return share_covers_relative_path(db_conn, share, path, root)
 
 
 # ---------------------------------------------------------------------------
@@ -391,10 +363,32 @@ def _parse_paths_for_update(paths, share_id, requested_share_type, current_paths
     return (deduped_paths, new_cloud_paths, removed_via_override, None)
 
 
-def _build_token_update_fields(disable_token, share_data):
+def _validate_update_local_paths(handler, share_id, path_strings, share_type: str):
+    """Ensure local path strings exist under the user's root. Return (status, body) or None."""
+    root_dir = get_user_root(handler)
+    for path_str in path_strings:
+        if is_cloud_relative_path(share_id, path_str):
+            continue
+        ap = os.path.abspath(os.path.join(root_dir, path_str))
+        if not is_within_root(ap, root_dir):
+            return (400, {"error": f"Invalid path: {path_str}"})
+        if share_type == "dynamic":
+            if not os.path.isdir(ap):
+                return (
+                    400,
+                    {"error": "Dynamic share paths must be existing directories"},
+                )
+        elif not (os.path.isfile(ap) or os.path.isdir(ap)):
+            return (400, {"error": f"Path not found: {path_str}"})
+    return None
+
+
+def _build_token_update_fields(disable_token, share_data, rotate_existing=False):
     """Return dict of secret_token and disable_token for update_share."""
     if disable_token is True:
         return {"secret_token": None, "disable_token": True}
+    if rotate_existing:
+        return {"secret_token": secrets.token_urlsafe(64), "disable_token": False}
     if disable_token is False:
         st = share_data.get("secret_token")
         return {
@@ -415,12 +409,12 @@ def _validate_share_update_request(handler, db_conn, data):
     return (share_id, share_data, None, None)
 
 
-def _build_share_update_response(updated_share, share_id, db_success, data):
+def _build_share_update_response(updated_share, share_id, db_success, data, original_share=None):
     """Build JSON response dict for share update."""
     out = {"success": True, "share_id": share_id, "db_persisted": db_success}
-    if data.get("allowed_users") is not None:
+    if "allowed_users" in data:
         out["allowed_users"] = updated_share.get("allowed_users")
-    if data.get("modify_users") is not None:
+    if "modify_users" in data:
         out["modify_users"] = updated_share.get("modify_users")
     if data.get("remove_files"):
         out["removed_files"] = data["remove_files"]
@@ -429,14 +423,16 @@ def _build_share_update_response(updated_share, share_id, db_success, data):
         out["updated_paths"] = updated_share.get("paths", [])
     if data.get("share_type") is not None:
         out["share_type"] = updated_share.get("share_type")
-    if data.get("expiry_date") is not None:
+    if "expiry_date" in data:
         out["expiry_date"] = updated_share.get("expiry_date")
     if (
-        data.get("disable_token") is False
+        (data.get("disable_token") is False or data.get("rotate_token"))
         and updated_share
         and updated_share.get("secret_token")
     ):
-        out["new_token"] = updated_share.get("secret_token")
+        # Only return new_token if it was actually changed/newly generated
+        if not original_share or original_share.get("secret_token") != updated_share.get("secret_token"):
+            out["new_token"] = updated_share.get("secret_token")
     return out
 
 
@@ -454,6 +450,7 @@ def _apply_remove_files(
 
 
 def _apply_paths_update(
+    handler,
     share_id,
     paths,
     requested_share_type,
@@ -470,6 +467,12 @@ def _apply_paths_update(
     )
     if err is not None:
         return err
+    if handler is not None:
+        verr = _validate_update_local_paths(
+            handler, share_id, deduped_paths, requested_share_type
+        )
+        if verr is not None:
+            return verr
     update_fields["paths"] = deduped_paths
     cloud_paths_to_remove.extend(removed_cloud)
     new_cloud_paths.extend(ncp)
@@ -485,6 +488,19 @@ def _execute_share_update(handler, db_conn, share_id, share_data, data):
         if data.get("share_type") is not None
         else share_data.get("share_type", "static")
     )
+    if requested_share_type == "tag" and (
+        data.get("paths") is not None or data.get("remove_files")
+    ):
+        return (
+            None,
+            (
+                400,
+                {
+                    "error": "Tag shares do not use stored paths; change tag or filters elsewhere."
+                },
+            ),
+            [],
+        )
     if requested_share_type == "dynamic" and any(
         is_cloud_relative_path(share_id, p) for p in current_paths
     ):
@@ -496,7 +512,12 @@ def _execute_share_update(handler, db_conn, share_id, share_data, data):
 
     update_fields, cloud_paths_to_remove, new_cloud_paths, err = (
         _compute_share_update_fields(
-            share_id, share_data, data, current_paths, requested_share_type
+            handler,
+            share_id,
+            share_data,
+            data,
+            current_paths,
+            requested_share_type,
         )
     )
     if err is not None:
@@ -517,7 +538,7 @@ def _execute_share_update(handler, db_conn, share_id, share_data, data):
     cleanup_share_cloud_dir_if_empty(share_id)
     updated_share = handler.get_service("share_service").get_share(db_conn, share_id)
     return (
-        _build_share_update_response(updated_share, share_id, db_success, data),
+        _build_share_update_response(updated_share, share_id, db_success, data, share_data),
         None,
         [],
     )
@@ -525,20 +546,25 @@ def _execute_share_update(handler, db_conn, share_id, share_data, data):
 
 def _apply_metadata_updates(data, share_data, update_fields):
     """Apply users/token/filters/expiry metadata to update_fields."""
-    if data.get("allowed_users") is not None:
+    if "allowed_users" in data:
         update_fields["allowed_users"] = data.get("allowed_users") or None
-    if data.get("modify_users") is not None:
+    if "modify_users" in data:
         update_fields["modify_users"] = data.get("modify_users") or None
-    update_fields.update(
-        _build_token_update_fields(data.get("disable_token"), share_data)
-    )
+    dt = data.get("disable_token")
+    rot = bool(data.get("rotate_token"))
+    update_fields.update(_build_token_update_fields(dt, share_data, rotate_existing=rot))
     for key in ("allow_list", "avoid_list", "expiry_date"):
-        if data.get(key) is not None:
+        if key in data:
             update_fields[key] = data.get(key)
 
 
 def _compute_share_update_fields(
-    share_id, share_data, data, current_paths, requested_share_type
+    handler,
+    share_id,
+    share_data,
+    data,
+    current_paths,
+    requested_share_type,
 ):
     """Compute update_fields, cloud_paths_to_remove, new_cloud_paths. Return (update_fields, cloud_to_remove, new_cloud, error)."""
     update_fields = {}
@@ -554,6 +580,7 @@ def _compute_share_update_fields(
         cloud_paths_to_remove,
     )
     path_err = _apply_paths_update(
+        handler,
         share_id,
         data.get("paths"),
         requested_share_type,
@@ -633,6 +660,7 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
                 req.expiry_date,
                 modify_users=req.modify_users,
                 tag_name=req.tag_name,
+                created_by=get_username_string_for_db(self),
             )
             if success:
                 label = req.tag_name if req.share_type == "tag" else f"paths={len(final_paths)}"
@@ -677,12 +705,25 @@ class ShareRevokeHandler(XSRFTokenMixin, BaseHandler):
             "file_share", True, body={"error": FS_DISABLED_MSG}
         ):
             return
-        sid = self.get_argument("id", "")
-        if sid and len(sid) > SHARE_ID_MAX_LEN:
+        sid = self.get_argument("id", "").strip()
+        if not sid:
+            self.set_status(400)
+            self.write({"error": "Share id is required"})
+            return
+        if len(sid) > SHARE_ID_MAX_LEN:
             self.set_status(400)
             self.write({"error": "Invalid share id"})
             return
         try:
+            share = self.get_service("share_service").get_share(self.db_conn, sid)
+            if not share:
+                self.set_status(404)
+                self.write({"error": "Share not found"})
+                return
+            if not self.can_manage_share_secrets(share):
+                self.set_status(403)
+                self.write({"error": "Access denied"})
+                return
             self.get_service("share_service").delete_share(self.db_conn, sid)
             self.get_service("audit_service").log(
                 self.db_conn,
@@ -696,9 +737,9 @@ class ShareRevokeHandler(XSRFTokenMixin, BaseHandler):
             logging.error(f"Failed to delete share {sid}: {e}")
             self.set_status(500)
             self.write({"error": "Failed to delete share"})
+            return
 
-        if sid:
-            remove_share_cloud_dir(sid)
+        remove_share_cloud_dir(sid)
 
         if self.request.headers.get("Accept") == "application/json":
             self.write({"ok": True})
@@ -736,6 +777,10 @@ class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
                 if err_status is not None:
                     self.set_status(err_status)
                     self.write(err_body)
+                    return None
+                if not self.can_manage_share_secrets(share_data):
+                    self.set_status(403)
+                    self.write({"error": "Access denied"})
                     return None
 
                 response_data, err, new_cloud_paths = _execute_share_update(
@@ -789,11 +834,18 @@ class TokenVerificationHandler(BaseHandler):
 
     @require_db
     def get(self, sid):
-        """Show token verification page"""
+        """Show token verification page — or redirect if no token is needed."""
         share = self.get_service("share_service").get_share(self.db_conn, sid)
         if not share:
             self.set_status(404)
             self.write(INVALID_SHARE_LINK)
+            return
+        if not share.get("secret_token"):
+            self.redirect(f"/shared/{sid}")
+            return
+        allowed_ok, _, _ = _check_share_access(share, sid, self.request, self.get_cookie, self.get_secure_cookie)
+        if allowed_ok:
+            self.redirect(f"/shared/{sid}")
             return
 
         self.render("token_verification.html", share_id=sid)
@@ -831,7 +883,13 @@ class TokenVerificationHandler(BaseHandler):
                 self.write_json_error(403, "Invalid token")
                 return None
 
-            # Token is valid
+            self.set_cookie(
+                f"share_token_{sid}",
+                provided_token,
+                path="/",
+                max_age=3600,
+                samesite="Lax",
+            )
             return {"success": True}
 
         self.run_json_action(action, on_error_message="Server error")
@@ -849,13 +907,13 @@ class SharedListHandler(BaseHandler):
             self.set_status(410)
             self.write("Share expired: This share is no longer available")
             return
-        if not _is_token_valid(share, sid, self.request, self.get_cookie):
-            self.redirect(f"/shared/{sid}/verify")
-            return
-        allowed_ok, user_err = _is_user_allowed(share, self.get_secure_cookie)
+        allowed_ok, redirect_to_verify, user_err = _check_share_access(share, sid, self.request, self.get_cookie, self.get_secure_cookie)
         if not allowed_ok:
-            self.set_status(user_err[0])
-            self.write(user_err[1])
+            if redirect_to_verify:
+                self.redirect(f"/shared/{sid}/verify")
+            else:
+                self.set_status(user_err[0])
+                self.write(user_err[1])
             return
         filtered_files = _get_share_file_list(share, self.db_conn)
         can_modify, _ = _is_user_allowed_for_modify(share, self.get_secure_cookie)
@@ -882,20 +940,21 @@ class SharedFileHandler(BaseHandler):
             self.set_status(410)
             self.write("Share expired: This share is no longer available")
             return
-        if not _is_token_valid(share, sid, self.request, self.get_cookie):
-            self.set_status(403)
-            self.write(ACCESS_TOKEN_INVALID_OR_EXPIRED)
-            return
-        allowed_ok, user_err = _is_user_allowed(share, self.get_secure_cookie)
+        allowed_ok, redirect_to_verify, user_err = _check_share_access(share, sid, self.request, self.get_cookie, self.get_secure_cookie)
         if not allowed_ok:
-            self.set_status(user_err[0])
-            self.write(user_err[1])
+            if redirect_to_verify:
+                self.set_status(403)
+                self.write(ACCESS_TOKEN_INVALID_OR_EXPIRED)
+            else:
+                self.set_status(user_err[0])
+                self.write(user_err[1])
             return
         if not _is_path_in_share(share, path, self.db_conn):
             self.set_status(403)
             self.write("Access denied: This file is not part of the share")
             return
-        abspath = os.path.abspath(os.path.join(ROOT_DIR, path))
+        root = _root_dir_for_share(share)
+        abspath = os.path.abspath(os.path.join(root, path))
         if not os.path.isfile(abspath):
             self.set_status(404)
             return

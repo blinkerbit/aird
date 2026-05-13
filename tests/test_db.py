@@ -221,11 +221,11 @@ class TestShares:
         assert share["secret_token"] is None
 
     def test_update_share_no_changes(self, db_conn):
-        """Test update with no changes returns False"""
+        """Test update with no SQL assignments is a successful no-op."""
         insert_share(db_conn, "share123", "2024-01-01", ["/path"])
         result = update_share(db_conn, "share123")
 
-        assert result is False
+        assert result is True
 
     def test_get_all_shares(self, db_conn):
         """Test getting all shares"""
@@ -847,6 +847,13 @@ class TestUpdateShareEdgeCases:
         assert share["allow_list"] == ["*.txt"]
         assert share["avoid_list"] == ["*.log"]
         assert share["expiry_date"] == "2025-12-31"
+
+    def test_update_clears_expiry_explicit_none(self, db_conn):
+        insert_share(db_conn, "s1", "2024-01-01", ["/a"])
+        update_share(db_conn, "s1", expiry_date="2025-12-31")
+        update_share(db_conn, "s1", expiry_date=None)
+        share = get_share_by_id(db_conn, "s1")
+        assert share.get("expiry_date") in (None, "")
 
 
 class TestAuthenticateEdgeCases:

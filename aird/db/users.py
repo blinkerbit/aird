@@ -194,35 +194,55 @@ def search_users(conn: sqlite3.Connection, query: str) -> list[dict]:
         return []
 
 
+def _maybe_user_update_clause(field: str, value) -> tuple[str, ...] | None:
+    """Return (sql_fragment, bind_value(s)) if *field* should update a column; else None."""
+    valid_fields = frozenset(
+        [
+            "username",
+            "password_hash",
+            "role",
+            "active",
+            "last_login",
+            "must_change_password",
+        ]
+    )
+    plain_field_sql = {
+        "username": "username = ?",
+        "password_hash": "password_hash = ?",
+        "role": "role = ?",
+        "last_login": "last_login = ?",
+        "must_change_password": "must_change_password = ?",
+    }
+
+    if field == "password":
+        return ("password_hash = ?", hash_password(value)) if value else None
+    if field not in valid_fields:
+        return None
+    if field == "active":
+        return ("active = ?", 1 if value else 0)
+    if field == "must_change_password":
+        return ("must_change_password = ?", 1 if value else 0)
+    if field in plain_field_sql:
+        return (plain_field_sql[field], value)
+    return None
+
+
+def _append_user_update_fragments(kwargs: dict, updates: list, values: list) -> None:
+    """Populate *updates* and *values* from user kw fields (same rules as legacy update loop)."""
+    for field, value in kwargs.items():
+        clause = _maybe_user_update_clause(field, value)
+        if clause is None:
+            continue
+        updates.append(clause[0])
+        values.append(clause[1])
+
+
 def update_user(conn: sqlite3.Connection, user_id: int, **kwargs) -> bool:
     """Update user information"""
     try:
-        valid_fields = ["username", "password_hash", "role", "active", "last_login", "must_change_password"]
-        updates = []
-        values = []
-
-        field_sql = {
-            "username": "username = ?",
-            "password_hash": "password_hash = ?",
-            "role": "role = ?",
-            "last_login": "last_login = ?",
-            "must_change_password": "must_change_password = ?",
-        }
-        for field, value in kwargs.items():
-            if field == "password" and value:
-                updates.append("password_hash = ?")
-                values.append(hash_password(value))
-            elif field not in valid_fields:
-                continue
-            elif field == "active":
-                updates.append("active = ?")
-                values.append(1 if value else 0)
-            elif field == "must_change_password":
-                updates.append("must_change_password = ?")
-                values.append(1 if value else 0)
-            elif field in field_sql:
-                updates.append(field_sql[field])
-                values.append(value)
+        updates: list[str] = []
+        values: list = []
+        _append_user_update_fragments(kwargs, updates, values)
 
         if not updates:
             return False

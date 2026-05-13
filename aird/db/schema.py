@@ -87,6 +87,8 @@ def init_db(conn: sqlite3.Connection) -> None:
         cursor.execute("ALTER TABLE shares ADD COLUMN modify_users TEXT")
     if "tag_name" not in columns:
         cursor.execute("ALTER TABLE shares ADD COLUMN tag_name TEXT")
+    if "created_by" not in columns:
+        cursor.execute("ALTER TABLE shares ADD COLUMN created_by TEXT")
 
     cursor.execute("PRAGMA table_info(users)")
     user_columns = [column[1] for column in cursor.fetchall()]

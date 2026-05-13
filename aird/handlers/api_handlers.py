@@ -27,6 +27,7 @@ from aird.handlers.base_handler import (
     authenticate_handler,
     get_username_string_for_db,
     get_user_root,
+    login_matches_share_creator_field,
     require_action,
     require_db,
 )
@@ -46,6 +47,7 @@ from aird.utils.util import (
     WebSocketConnectionManager,
     get_current_feature_flags,
     augment_with_shared_status,
+    share_relevant_for_viewers_file_tree,
 )
 from aird.core.security import (
     is_within_root,
@@ -349,7 +351,13 @@ class FileListAPIHandler(BaseHandler):
             db_conn = self.db_conn
             if db_conn:
                 augment_with_shared_status(
-                    files, path, self.get_service("share_service").list_shares(db_conn)
+                    files,
+                    path,
+                    self.get_service("share_service").list_shares(db_conn),
+                    db_conn=db_conn,
+                    root_dir=user_root,
+                    viewer_username=get_username_string_for_db(self),
+                    viewer_is_admin=self.is_admin_user(),
                 )
 
             result = {
@@ -830,6 +838,23 @@ class UserSearchAPIHandler(BaseHandler):
         self.run_json_action(action, on_error_message="Search failed")
 
 
+def _redact_share_secret_token(share: dict) -> dict:
+    """Copy share dict suitable for non-owner API consumers (no raw token)."""
+    out = dict(share)
+    out["secret_token"] = None
+    return out
+
+
+def _share_eligible_for_path_details(handler, share: dict) -> bool:
+    """Path-based share popup only for shares on the viewer's tree or explicit cross-home access."""
+    return share_relevant_for_viewers_file_tree(
+        share,
+        viewer_username=get_username_string_for_db(handler),
+        viewer_is_admin=handler.is_admin_user(),
+        viewer_root=get_user_root(handler),
+    )
+
+
 class ShareDetailsAPIHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
@@ -852,19 +877,25 @@ class ShareDetailsAPIHandler(BaseHandler):
             db_conn = self.require_db_connection(DB_NOT_AVAILABLE_MSG)
             if not db_conn:
                 return None
+            user_root = get_user_root(self)
             share_service = self.get_service("share_service")
             if share_service is not None:
-                matching_shares = share_service.get_shares_for_path(db_conn, file_path)
+                matching_shares = share_service.get_shares_for_path(
+                    db_conn, file_path, user_root
+                )
             else:
                 matching_shares = self.get_service("share_service").get_shares_for_path(
-                    db_conn, file_path
+                    db_conn, file_path, user_root
                 )
 
-            # Format response
             formatted_shares = []
             for share in matching_shares:
+                if not _share_eligible_for_path_details(self, share):
+                    continue
                 allowed_users = share.get("allowed_users")
                 modify_users = share.get("modify_users")
+                show_secret = self.can_manage_share_secrets(share)
+                token = share.get("secret_token")
                 share_info = {
                     "id": share["id"],
                     "created": share.get("created", ""),
@@ -872,6 +903,10 @@ class ShareDetailsAPIHandler(BaseHandler):
                     "modify_users": modify_users if modify_users is not None else [],
                     "url": f"/shared/{share['id']}",
                     "paths": share.get("paths", []),
+                    "share_type": share.get("share_type", "static"),
+                    "tag_name": share.get("tag_name"),
+                    "has_token": token is not None,
+                    "secret_token": token if show_secret else None,
                 }
                 formatted_shares.append(share_info)
 
@@ -914,6 +949,10 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
                 self.write_json_error(404, "Share not found")
                 return None
 
+            if not self.can_manage_share_secrets(share):
+                self.write_json_error(403, "Access denied")
+                return None
+
             allowed_users = share.get("allowed_users")
             modify_users = share.get("modify_users")
             share_info = {
@@ -924,8 +963,9 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
                 "url": f"/shared/{share['id']}",
                 "paths": share.get("paths", []),
                 "has_token": share.get("secret_token") is not None,
-                "secret_token": share.get("secret_token"), # Include token for management
+                "secret_token": share.get("secret_token"),
                 "share_type": share.get("share_type", "static"),
+                "tag_name": share.get("tag_name"),
                 "allow_list": share.get("allow_list", []),
                 "avoid_list": share.get("avoid_list", []),
                 "expiry_date": share.get("expiry_date"),
@@ -953,11 +993,42 @@ class ShareListAPIHandler(BaseHandler):
         if not db_conn:
             return
         share_service = self.get_service("share_service")
-        if share_service is not None:
-            shares = share_service.list_shares(db_conn)
-        else:
-            shares = self.get_service("share_service").list_shares(db_conn)
-        self.write({"shares": shares})
+        all_shares = (
+            share_service.list_shares(db_conn) if share_service is not None else {}
+        )
+
+        current_user = get_username_string_for_db(self) or ""
+        is_admin = self.is_admin_user()
+
+        my_shares = {}
+        shared_with_me = []
+        for sid, share in all_shares.items():
+            creator = (share.get("created_by") or "").strip()
+            allowed_raw = share.get("allowed_users")
+            allowed_list = allowed_raw if isinstance(allowed_raw, list) else []
+            mod_list = share.get("modify_users") or []
+
+            if current_user and current_user in mod_list:
+                my_shares[sid] = share
+            elif creator and login_matches_share_creator_field(creator, current_user):
+                my_shares[sid] = share
+            elif not creator:
+                if is_admin:
+                    my_shares[sid] = share
+                elif current_user:
+                    if (
+                        allowed_raw is None
+                        or (
+                            isinstance(allowed_raw, list)
+                            and current_user in allowed_list
+                        )
+                    ):
+                        shared_with_me.append(_redact_share_secret_token(share))
+            else:
+                if current_user and isinstance(allowed_raw, list) and current_user in allowed_list:
+                    shared_with_me.append(_redact_share_secret_token(share))
+
+        self.write({"shares": my_shares, "shared_with_me": shared_with_me})
 
 
 class FavoriteToggleAPIHandler(BaseHandler):

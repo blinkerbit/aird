@@ -50,6 +50,7 @@ from aird.core.input_validation import (
 )
 
 logger = logging.getLogger(__name__)
+AUDIT_LOG_FAILED_MSG = "audit_service.log failed"
 
 URL_ADMIN_LOGIN = "/admin/login"
 URL_ADMIN_TAGS = "/admin/tags"
@@ -107,7 +108,7 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
                 ip=self.request.remote_ip,
             )
         except Exception:
-            logger.debug("audit_service.log failed", exc_info=True)
+            logger.debug(AUDIT_LOG_FAILED_MSG, exc_info=True)
 
     def _invalidate_caches(self) -> None:
         for key in ("tag_service", "policy_service"):
@@ -165,42 +166,38 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
     @tornado.web.authenticated
     @require_admin(deny_status=403, deny_body="Access denied")
     @require_db
-    def delete(self) -> None:
-        payload = self.parse_json_body() or {}
-        # Delete entire tag by name: tag="pii"
-        tag_name = payload.get("tag")
-        if tag_name is not None:
-            tn = str(tag_name).strip()
-            if len(tn) > RESOURCE_TAG_MAX_LEN:
-                self.set_status(400)
-                self.write({"error": "tag exceeds maximum length"})
-                return
-            count = delete_resource_tag_by_name(self.db_conn, tn)
-            self._invalidate_caches()
-            self._audit("abac_tag_delete_all", f"tag={tag_name} count={count}")
-            self.write({"deleted": True, "tag": tag_name, "count": count})
+    def _delete_by_name(self, tag_name: str) -> None:
+        tn = str(tag_name).strip()
+        if len(tn) > RESOURCE_TAG_MAX_LEN:
+            self.set_status(400)
+            self.write({"error": "tag exceeds maximum length"})
             return
-        # Bulk delete: ids=[1,2,3]
-        ids = payload.get("ids")
-        if ids is not None:
-            if not isinstance(ids, list) or not ids:
-                self.set_status(400)
-                self.write({"error": "ids must be a non-empty list"})
-                return
-            if len(ids) > MAX_TAG_RULE_BULK_DELETE_IDS:
-                self.set_status(400)
-                self.write({"error": "too many ids"})
-                return
-            deleted = []
-            for tid in ids:
+        count = delete_resource_tag_by_name(self.db_conn, tn)
+        self._invalidate_caches()
+        self._audit("abac_tag_delete_all", f"tag={tag_name} count={count}")
+        self.write({"deleted": True, "tag": tag_name, "count": count})
+
+    def _delete_bulk(self, ids: list) -> None:
+        if not isinstance(ids, list) or not ids:
+            self.set_status(400)
+            self.write({"error": "ids must be a non-empty list"})
+            return
+        if len(ids) > MAX_TAG_RULE_BULK_DELETE_IDS:
+            self.set_status(400)
+            self.write({"error": "too many ids"})
+            return
+        deleted = []
+        for tid in ids:
+            try:
                 if delete_resource_tag(self.db_conn, int(tid)):
                     deleted.append(int(tid))
-            self._invalidate_caches()
-            self._audit("abac_tag_bulk_delete", f"ids={deleted}")
-            self.write({"deleted": True, "ids": deleted})
-            return
-        # Single delete: id=1
-        tag_id = payload.get("id")
+            except (ValueError, TypeError):
+                continue  # skip non-integer ids
+        self._invalidate_caches()
+        self._audit("abac_tag_bulk_delete", f"ids={deleted}")
+        self.write({"deleted": True, "ids": deleted})
+
+    def _delete_single(self, tag_id: int | str) -> None:
         if tag_id is None:
             self.set_status(400)
             self.write({"error": "id or ids is required"})
@@ -213,6 +210,18 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
         self._invalidate_caches()
         self._audit("abac_tag_delete", f"id={tag_id}")
         self.write({"deleted": True, "id": int(tag_id)})
+
+    @tornado.web.authenticated
+    @require_admin(deny_status=403, deny_body="Access denied")
+    @require_db
+    def delete(self) -> None:
+        payload = self.parse_json_body() or {}
+        if "tag" in payload:
+            self._delete_by_name(payload["tag"])
+        elif "ids" in payload:
+            self._delete_bulk(payload["ids"])
+        else:
+            self._delete_single(payload.get("id"))
 
     @tornado.web.authenticated
     @require_admin(deny_status=403, deny_body="Access denied")
@@ -273,6 +282,27 @@ class AdminPoliciesHandler(BaseHandler):
         )
 
 
+def _parse_target_actions(target_actions: Any) -> list[str]:
+    if isinstance(target_actions, str):
+        return _parse_actions(target_actions)
+    if isinstance(target_actions, list):
+        return target_actions
+    return []
+
+
+def _parse_condition(condition: Any) -> tuple[dict, str | None]:
+    if isinstance(condition, str):
+        try:
+            return (json.loads(condition) if condition.strip() else {}), None
+        except json.JSONDecodeError as exc:
+            return {}, f"invalid condition JSON: {exc.msg}"
+    if condition is None:
+        return {}, None
+    if not isinstance(condition, dict):
+        return {}, "condition must be a JSON object"
+    return condition, None
+
+
 def _validate_policy_payload(payload: dict) -> tuple[dict, str | None]:
     name = str(payload.get("name", "")).strip()
     if not name:
@@ -280,28 +310,24 @@ def _validate_policy_payload(payload: dict) -> tuple[dict, str | None]:
     effect = str(payload.get("effect", "")).strip().lower()
     if effect not in ("permit", "deny"):
         return {}, "effect must be 'permit' or 'deny'"
-    target_actions = payload.get("target_actions")
-    if isinstance(target_actions, str):
-        target_actions = _parse_actions(target_actions)
-    elif not isinstance(target_actions, list):
-        target_actions = []
+    
+    target_actions = _parse_target_actions(payload.get("target_actions"))
     if not target_actions:
         return {}, "at least one target_action is required"
-    condition = payload.get("condition")
-    if isinstance(condition, str):
-        try:
-            condition = json.loads(condition) if condition.strip() else {}
-        except json.JSONDecodeError as exc:
-            return {}, f"invalid condition JSON: {exc.msg}"
-    if condition is None:
-        condition = {}
-    if not isinstance(condition, dict):
-        return {}, "condition must be a JSON object"
+        
+    condition, cond_err = _parse_condition(payload.get("condition"))
+    if cond_err:
+        return {}, cond_err
+
     desc_stripped = str(payload.get("description", "") or "").strip()
     try:
         check_policy_payload_sizes(name, desc_stripped, target_actions, condition)
     except InputTooLongError as exc:
         return {}, str(exc)
+        
+    enabled_val = payload.get("enabled", True)
+    enabled = _bool_arg(enabled_val) if isinstance(enabled_val, str) else bool(enabled_val)
+    
     return (
         {
             "name": name,
@@ -310,9 +336,7 @@ def _validate_policy_payload(payload: dict) -> tuple[dict, str | None]:
             "target_actions": target_actions,
             "condition": condition,
             "priority": int(payload.get("priority") or 0),
-            "enabled": _bool_arg(payload.get("enabled", True))
-            if isinstance(payload.get("enabled"), str)
-            else bool(payload.get("enabled", True)),
+            "enabled": enabled,
         },
         None,
     )
@@ -331,7 +355,7 @@ class AdminPolicyAPIHandler(XSRFTokenMixin, BaseHandler):
                 ip=self.request.remote_ip,
             )
         except Exception:
-            logger.debug("audit_service.log failed", exc_info=True)
+            logger.debug(AUDIT_LOG_FAILED_MSG, exc_info=True)
 
     def _invalidate_policy_cache(self) -> None:
         svc = self.get_service("policy_service")
@@ -525,7 +549,7 @@ class AdminUserAttributeAPIHandler(XSRFTokenMixin, BaseHandler):
                 ip=self.request.remote_ip,
             )
         except Exception:
-            logger.debug("audit_service.log failed", exc_info=True)
+            logger.debug(AUDIT_LOG_FAILED_MSG, exc_info=True)
 
     @tornado.web.authenticated
     @require_admin(deny_status=403, deny_body="Access denied")

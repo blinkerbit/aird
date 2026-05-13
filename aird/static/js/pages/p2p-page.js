@@ -9,12 +9,17 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
                     resolve(false);
                     return;
                 }
+                // Integer scale (no squashed bitmap); margin 4 = minimum quiet-zone modules per spec.
                 globalThis.AirdQRCode.toCanvas(canvas, text, {
-                    errorCorrectionLevel: 'M',
-                    margin: 3,
-                    width: 288,
+                    errorCorrectionLevel: 'Q',
+                    margin: 4,
+                    scale: 6,
                     color: { dark: '#000000', light: '#FFFFFF' },
                 }, (err) => {
+                    if (!err && canvas.getContext) {
+                        const cx = canvas.getContext('2d');
+                        if (cx) cx.imageSmoothingEnabled = false;
+                    }
                     resolve(!err);
                 });
             });

@@ -116,10 +116,13 @@
       try {
         setAuthToken(token);
         const response = await fetchWithAuth(`/shared/${sid}`, { method: 'GET' });
-        if (response.ok) {
+        if (response.ok && !response.redirected) {
           globalThis.location.href = `/shared/${sid}`;
         } else {
-          showError('Failed to access share with token');
+          sessionStorage.removeItem(`share_token_${sid}`);
+          currentAuthToken = null;
+          document.cookie = `share_token_${sid}=; path=/; max-age=0`;
+          showError('Token is invalid or expired. Please enter the current token.');
         }
       } catch (err) {
         console.debug('accessShareWithToken failed', err);

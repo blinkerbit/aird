@@ -40,7 +40,10 @@
       </thead>
       <tbody id="fileTableBody">
         <tr>
-          <td colspan="5" class="loading">Loading files...</td>
+          <td colspan="5" class="p-6 text-center text-base-content/50">
+            <span class="loading loading-spinner loading-sm align-middle mr-2"></span>
+            <span class="align-middle">Loading files…</span>
+          </td>
         </tr>
       </tbody>
     </table>
@@ -49,9 +52,9 @@
     <!-- Success banner: no DaisyUI alert colors until JS fills content (avoids empty green strip after refresh) -->
     <output class="mb-6 hidden block w-full" id="shareResult" aria-live="polite"></output>
 
-    <!-- Active Shares -->
+    <!-- Active Shares (My Shares) -->
     <div class="mt-8">
-      <h2 class="text-xl font-bold mb-4">Active Shares (<span id="activeSharesCount">0</span>)</h2>
+      <h2 class="text-xl font-bold mb-4">My Shares (<span id="activeSharesCount">0</span>)</h2>
       
       <div class="overflow-x-auto bg-base-100 rounded-box border border-base-300 shadow-sm">
       <table class="table table-zebra w-full" id="sharesTable">
@@ -71,6 +74,28 @@
               <span class="ml-2 align-middle">Loading active shares…</span>
             </td>
           </tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    <!-- Shared with Me -->
+    <div class="mt-8" id="sharedWithMeSection" style="display:none;">
+      <h2 class="text-xl font-bold mb-4">Shares from Others (<span id="sharedWithMeCount">0</span>)</h2>
+      
+      <div class="overflow-x-auto bg-base-100 rounded-box border border-base-300 shadow-sm">
+      <table class="table table-zebra w-full" id="sharedWithMeTable">
+        <thead class="bg-base-200">
+        <tr>
+          <th class="px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Share ID</th>
+          <th class="px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Files</th>
+          <th class="px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Shared By</th>
+          <th class="px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Access</th>
+          <th class="px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Created</th>
+          <th class="px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70 text-right">Actions</th>
+        </tr>
+      </thead>
+        <tbody id="sharedWithMeTableBody">
         </tbody>
       </table>
       </div>
@@ -249,7 +274,10 @@
           </thead>
           <tbody id="cloudFilesTableBody">
             <tr>
-              <td colspan="4" class="loading">Loading...</td>
+              <td colspan="4" class="p-6 text-center text-base-content/50">
+                <span class="loading loading-spinner loading-sm align-middle mr-2"></span>
+                <span class="align-middle">Loading…</span>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -266,7 +294,7 @@
         <button class="btn btn-ghost btn-circle btn-sm" id="sharePopupClose">&times;</button>
       </div>
       <div id="sharePopupContent">
-        <div class="loading">Loading share details...</div>
+        <div class="p-6 text-center text-base-content/50"><span class="loading loading-spinner loading-sm align-middle mr-2"></span><span class="align-middle">Loading share details…</span></div>
       </div>
     </div>
     <form method="dialog" class="modal-backdrop"><button type="submit">Close</button></form>
@@ -280,7 +308,7 @@
         <button class="btn btn-ghost btn-circle btn-sm" id="shareManagementClose">&times;</button>
       </div>
       <div class="p-5 overflow-y-auto" id="shareManagementBody">
-        <div class="loading">Loading share details...</div>
+        <div class="p-6 text-center text-base-content/50"><span class="loading loading-spinner loading-sm align-middle mr-2"></span><span class="align-middle">Loading share details…</span></div>
       </div>
       <div class="p-5 border-t border-base-300 flex gap-3 justify-end flex-wrap bg-base-200">
         <button class="btn btn-primary" id="updateShareBtn">Update Share</button>
@@ -321,7 +349,7 @@
             <span id="currentBrowsePath">Root Directory</span>
           </div>
           <div class="max-h-[300px] overflow-y-auto p-3" id="fileBrowserContent">
-            <div class="loading">Loading files...</div>
+            <div class="p-4 text-center text-base-content/50"><span class="loading loading-spinner loading-sm align-middle mr-2"></span><span class="align-middle">Loading files…</span></div>
           </div>
         </div>
         <div class="flex-1 border border-base-300 rounded p-4 bg-base-200">

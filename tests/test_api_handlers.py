@@ -304,6 +304,26 @@ class TestShareDetailsAPIHandler:
             payload = handler.write.call_args[0][0]
             assert payload["shares"][0]["id"] == "s1"
 
+    def test_hides_restricted_share_from_non_recipient(self):
+        handler = make_request_handler(ShareDetailsAPIHandler)
+        authenticate(handler, role="user", username="alice")
+        handler.get_argument = MagicMock(return_value="secret.txt")
+        share = {
+            "id": "s2",
+            "allowed_users": ["bob"],
+            "paths": ["secret.txt"],
+            "created_by": "bob",
+        }
+        with patch(
+            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+        ), patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]), patch(
+            "aird.services.share_service.get_shares_for_path",
+            return_value=[share],
+        ):
+            handler.get()
+        payload = handler.write.call_args[0][0]
+        assert payload["shares"] == []
+
 
 class TestShareDetailsByIdAPIHandler:
     def _make_handler(self):
@@ -323,10 +343,11 @@ class TestShareDetailsByIdAPIHandler:
     def test_share_not_found(self):
         handler = self._make_handler()
         handler.set_status = MagicMock()
+        share_svc = handler.application.settings["services"]["share_service"]
         with patch(
             "aird.handlers.base_handler.is_feature_enabled", return_value=True
-        ), patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]), patch(
-            "aird.services.share_service.get_share_by_id", return_value=None
+        ), patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]), patch.object(
+            share_svc, "get_share", return_value=None
         ):
             handler.get()
             handler.set_status.assert_called_with(404)
@@ -334,12 +355,18 @@ class TestShareDetailsByIdAPIHandler:
 
     def test_success(self):
         handler = self._make_handler()
-        share_data = {"id": "share1", "paths": [], "secret_token": "token"}
+        share_svc = handler.application.settings["services"]["share_service"]
+        share_data = {
+            "id": "share1",
+            "paths": [],
+            "secret_token": "token",
+            "created_by": "admin",
+        }
         with patch(
             "aird.handlers.base_handler.is_feature_enabled", return_value=True
-        ), patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]), patch(
-            "aird.services.share_service.get_share_by_id", return_value=share_data
-        ):
+        ), patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]), patch.object(
+            share_svc, "get_share", return_value=share_data
+        ), patch.object(share_svc, "get_download_count", return_value=0):
             handler.get()
             payload = handler.write.call_args[0][0]
             assert payload["share"]["id"] == "share1"
@@ -375,7 +402,9 @@ class TestShareListAPIHandler:
             return_value={"s1": {"paths": []}},
         ):
             handler.get()
-            handler.write.assert_called_with({"shares": {"s1": {"paths": []}}})
+            handler.write.assert_called_with(
+                {"shares": {"s1": {"paths": []}}, "shared_with_me": []}
+            )
 
 
 class TestFeatureFlagSocketHandler:

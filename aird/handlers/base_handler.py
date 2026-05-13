@@ -26,6 +26,13 @@ from aird.domain.models import (
 from aird.constants.input_limits import SAFE_NEXT_URL_MAX_LEN
 from aird.handlers.constants import DB_NOT_AVAILABLE_MSG, FILES_BASE_URL
 from aird.utils.util import is_feature_enabled
+from aird.core.share_root import (
+    creator_folder_username_from_share_field,
+    login_matches_share_creator_field,
+)
+
+logger = logging.getLogger(__name__)
+
 DISPLAY_ADMIN_TOKEN = "Admin (Token)"  # nosec B105
 DISPLAY_ACCESS_TOKEN = "Access (Token)"  # nosec B105
 
@@ -157,28 +164,50 @@ def require_action(action: str, resource_arg: str | None = None):
 
     *resource_arg* names a path-like keyword argument on the wrapped
     handler method that should be treated as the resource identifier.
+    Supports both sync and async handler methods.
     """
+    import asyncio
 
     def decorator(method):
-        @functools.wraps(method)
-        def wrapper(self, *args, **kwargs):
-            if not is_feature_enabled("abac_engine", False):
-                return method(self, *args, **kwargs)
-            resource_path = None
+        def _resolve_resource_path(args, kwargs):
             if resource_arg and resource_arg in kwargs:
-                resource_path = kwargs.get(resource_arg)
-            elif resource_arg and args:
-                resource_path = args[0] if isinstance(args[0], str) else None
+                return kwargs.get(resource_arg)
+            if resource_arg and args:
+                return args[0] if isinstance(args[0], str) else None
+            return None
+
+        def _check_and_deny(self, resource_path):
+            """Return True (and write 403) if access is denied, else False."""
+            if not is_feature_enabled("abac_engine", False):
+                return False
             decision = self.check_access(action, resource_path=resource_path)
             if decision is not None and decision.is_deny:
                 self.set_status(403)
                 self.write({"error": "Access denied", "reason": decision.reason})
+                return True
+            return False
+
+        if asyncio.iscoroutinefunction(method):
+            @functools.wraps(method)
+            async def async_wrapper(self, *args, **kwargs):
+                resource_path = _resolve_resource_path(args, kwargs)
+                if _check_and_deny(self, resource_path):
+                    return None
+                return await method(self, *args, **kwargs)
+
+            return async_wrapper
+
+        @functools.wraps(method)
+        def sync_wrapper(self, *args, **kwargs):
+            resource_path = _resolve_resource_path(args, kwargs)
+            if _check_and_deny(self, resource_path):
                 return None
             return method(self, *args, **kwargs)
 
-        return wrapper
+        return sync_wrapper
 
     return decorator
+
 
 
 def require_modify_access(
@@ -919,3 +948,16 @@ class BaseHandler(tornado.web.RequestHandler):
         if isinstance(user, dict):
             return _display_username_from_dict(user)
         return _display_username_from_legacy(user, self)
+
+    def can_manage_share_secrets(self, share: dict) -> bool:
+        """True if current user may view raw secret tokens and full management details."""
+        if self.is_admin_user():
+            return True
+        u = get_username_string_for_db(self)
+        if not u:
+            return False
+        creator = (share.get("created_by") or "").strip()
+        if creator and login_matches_share_creator_field(creator, u):
+            return True
+        modify_users = share.get("modify_users") or []
+        return u in modify_users

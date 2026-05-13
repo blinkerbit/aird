@@ -182,13 +182,20 @@ def validate_share_update_struct(data: dict[str, Any]) -> str | None:
             if isinstance(p, str) and len(p.strip()) > MAX_SHARE_PATH_STRING_LEN:
                 return "remove_files path too long"
 
+    dt = data.get("disable_token")
+    if dt is not None and not isinstance(dt, bool):
+        return "disable_token must be a boolean"
+    rt = data.get("rotate_token")
+    if rt is not None and not isinstance(rt, bool):
+        return "rotate_token must be a boolean"
+
     return _validate_share_user_and_globs(data)
 
 
 def _validate_share_user_and_globs(data: dict[str, Any]) -> str | None:
     """Validate allowed_users / modify_users / allow_list / avoid_list fragments."""
     for key in ("allowed_users", "modify_users"):
-        items = data.get(key) or []
+        items = data.get(key)
         if items is None:
             continue
         if not isinstance(items, list):
@@ -202,14 +209,19 @@ def _validate_share_user_and_globs(data: dict[str, Any]) -> str | None:
                 return f"{key} entry too long"
 
     for key in ("allow_list", "avoid_list"):
-        items = data.get(key) or []
-        if isinstance(items, list):
-            if len(items) > MAX_SHARE_GLOB_LINES:
-                return f"too many {key} patterns"
-            for line in items:
-                if isinstance(line, str) and len(line) > MAX_SHARE_GLOB_LINE_LEN:
-                    return f"{key} pattern too long"
+        items = data.get(key)
+        if items is None:
+            continue
+        if not isinstance(items, list):
+            return f"{key} must be a list"
+        if len(items) > MAX_SHARE_GLOB_LINES:
+            return f"too many {key} patterns"
+        for line in items:
+            if isinstance(line, str) and len(line) > MAX_SHARE_GLOB_LINE_LEN:
+                return f"{key} pattern too long"
     return None
+
+
 def validate_user_attribute(username: str, key: str, value: str) -> None:
     from aird.constants.input_limits import LOGIN_USERNAME_MAX_LEN as UMAX
     from aird.constants.input_limits import USER_ATTR_KEY_MAX_LEN

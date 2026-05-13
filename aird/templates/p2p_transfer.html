@@ -57,6 +57,18 @@
 
       /* Progress pulse animation */
       .progress-fill { transition: width 0.4s cubic-bezier(0.4,0,0.2,1); }
+
+      /* Sharp pixels; CSS downscaling breaks scanners — narrow viewports horizontal scroll */
+      .qr-code-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      #qr-code-canvas {
+        display: block;
+        margin-inline: auto;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+      }
     </style>
 </head>
 
@@ -172,9 +184,9 @@
                 </div>
 
                 <!-- QR Code Display -->
-                <div class="qr-code-container flex flex-col items-center mt-6 p-6 bg-base-100 rounded-box border border-base-300 shadow-sm" id="qr-code-container">
-                    <canvas id="qr-code-canvas" class="border-4 border-base-100 shadow-sm rounded-lg"></canvas>
-                    <div class="qr-code-label mt-4 text-xs text-base-content/60">Scan to receive file</div>
+                <div class="qr-code-container flex flex-col items-center mt-6 p-8 sm:p-10 bg-base-100 border border-base-300 shadow-sm" id="qr-code-container">
+                    <canvas id="qr-code-canvas" width="1" height="1" aria-label="QR code to open this share link"></canvas>
+                    <div class="qr-code-label mt-6 mb-1 text-xs text-base-content/60 text-center px-2">Scan to receive file</div>
                 </div>
 
                 <div class="text-center mt-4 flex flex-wrap justify-center gap-2">
