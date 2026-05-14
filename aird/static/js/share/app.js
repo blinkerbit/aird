@@ -784,7 +784,7 @@ let currentPath = '';
     function _makeNameCell({ isDir, iconText, name, filePath, isShared, navPath }) {
       const td = document.createElement('td');
       const wrap = document.createElement('div');
-      wrap.className = 'sq-style-bd9db1';
+      wrap.className = 'name-cell-contents';
 
       const link = document.createElement(isDir ? 'a' : 'span');
       if (isDir) link.href = '#';
@@ -796,17 +796,18 @@ let currentPath = '';
       icon.textContent = iconText;
       link.appendChild(icon);
       link.appendChild(document.createTextNode(name));
-      wrap.appendChild(link);
 
       if (isShared) {
         const share = document.createElement('span');
-        share.className = 'shared-icon sq-style-e9dc52';
+        share.className = 'shared-icon';
         share.title = 'Click to view share details';
         share.dataset.action = 'showShareDetails';
         share.dataset.path = filePath;
         share.textContent = '🔗';
-        wrap.appendChild(share);
+        link.appendChild(share);
       }
+
+      wrap.appendChild(link);
 
       td.appendChild(wrap);
       return td;
@@ -879,7 +880,7 @@ let currentPath = '';
         const actionTd = document.createElement('td');
         actionTd.appendChild(file.is_dir
           ? _makeActionButton('Open', 'loadDirectory', filePath)
-          : _makeActionButton('Preview', 'previewFile', filePath));
+          : _makeActionButton('View', 'previewFile', filePath));
         row.appendChild(actionTd);
 
         if (isSelected) row.classList.add('selected');
@@ -2045,6 +2046,8 @@ let currentPath = '';
     }
 
     async function loadActiveShares() {
+      const refreshBtn = document.getElementById('refreshSharesBtn');
+      if (refreshBtn) refreshBtn.classList.add('loading');
       try {
         const response = await fetch('/share/list');
         if (!response.ok) {
@@ -2093,6 +2096,8 @@ let currentPath = '';
       } catch (error) {
         console.error('Error loading active shares:', error);
         elements.sharesTableBody.innerHTML = '<tr><td colspan="5" class="p-10 text-center"><div class="alert alert-error">Error loading shares</div></td></tr>';
+      } finally {
+        if (refreshBtn) refreshBtn.classList.remove('loading');
       }
     }
 
@@ -2346,8 +2351,7 @@ let currentPath = '';
       setupModifyUserSearch();
       consumeShareCreatePrefill();
 
-      // Refresh active shares every 30 seconds
-      setInterval(loadActiveShares, 30000);
+      document.getElementById('refreshSharesBtn')?.addEventListener('click', loadActiveShares);
 
       // Event listeners for CSP compliance - static elements
       document.getElementById('cloudBrowserClose')?.addEventListener('click', closeCloudBrowser);

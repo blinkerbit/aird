@@ -80,17 +80,20 @@ def _ldap_authorized(conn, ldap_attribute_map):
     return False
 
 
-def _ldap_sync_user(db_conn, username, password, admin_users, user_service):
+def _ldap_sync_user(db_conn, username, admin_users, user_service):
     """Create or update Aird user after LDAP auth. Return user_role for cookie."""
     is_admin = username in admin_users
     existing = user_service.get_user(db_conn, username)
     if not existing:
         try:
             role = "admin" if is_admin else "user"
+            # Use a random unusable placeholder — never store the LDAP bind password.
+            import secrets as _sec
+            ldap_placeholder = "ldap:unset:" + _sec.token_hex(32)
             user_service.create_user(
                 db_conn,
                 username,
-                password,
+                ldap_placeholder,
                 role=role,
             )
             logging.info(
@@ -372,6 +375,9 @@ def _do_profile_password_update(
 
 def check_login_rate_limit(remote_ip):
     now = time.time()
+    # Purge stale entries when dict grows large to prevent unbounded memory use
+    if len(_LOGIN_ATTEMPTS) > 500:
+        cleanup_stale_rate_limits()
     attempts, timestamp = _LOGIN_ATTEMPTS.get(remote_ip, (0, now))
 
     if now - timestamp > constants_module.LOGIN_RATE_LIMIT_WINDOW:
@@ -468,7 +474,6 @@ class LDAPLoginHandler(BaseHandler):
                 user_role = _ldap_sync_user(
                     db_conn,
                     username,
-                    password,
                     admin_users,
                     user_service=self.get_service("user_service"),
                 )

@@ -297,6 +297,10 @@
       flex-shrink: 0;
     }
 
+    .name-cell-contents .shared-icon {
+      flex-shrink: 0;
+    }
+
     /* ── File tag chips ─────────────────────────────────────────────────────── */
     .file-tag-list {
       display: inline-flex;

@@ -138,10 +138,6 @@ from aird.handlers.p2p_handlers import (
 # Set up module logger
 logger = logging.getLogger(__name__)
 
-RUST_AVAILABLE = False
-HybridFileHandler = None
-HybridCompressionHandler = None
-
 
 def make_app(
     settings,
@@ -493,7 +489,8 @@ def _build_app_context() -> AppContext:
 
 
 def _start_server(app, ssl_options, port: int, hostname: str) -> None:
-    while True:
+    _MAX_PORT_RETRIES = 3
+    for attempt in range(_MAX_PORT_RETRIES):
         try:
             if ssl_options:
                 proto = "https"
@@ -521,9 +518,18 @@ def _start_server(app, ssl_options, port: int, hostname: str) -> None:
                 3600, _run_cleanup_expired_shares
             )
             tornado.ioloop.IOLoop.current().start()
-            break
-        except OSError:
-            port += 1
+            return
+        except OSError as e:
+            logger.error("Failed to bind on port %d: %s", port, e)
+            if attempt < _MAX_PORT_RETRIES - 1:
+                port += 1
+                logger.warning("Retrying on port %d (%d/%d)", port, attempt + 2, _MAX_PORT_RETRIES)
+            else:
+                logger.error(
+                    "Could not bind after %d attempts. Set a different --port and retry.",
+                    _MAX_PORT_RETRIES,
+                )
+                raise
 
 
 def main():
@@ -566,7 +572,12 @@ def main():
     else:
         logger.info("Single-user mode — all users share root: %s", constants.ROOT_DIR)
 
-    cookie_secret = secrets.token_urlsafe(64)
+    cookie_secret = os.environ.get("AIRD_COOKIE_SECRET") or secrets.token_urlsafe(64)
+    if not os.environ.get("AIRD_COOKIE_SECRET"):
+        logger.warning(
+            "cookie_secret is randomly generated; sessions will be invalidated on restart. "
+            "Set the AIRD_COOKIE_SECRET environment variable for persistent sessions."
+        )
     settings = {
         "cookie_secret": cookie_secret,
         "xsrf_cookies": True,

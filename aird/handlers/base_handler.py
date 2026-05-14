@@ -352,6 +352,7 @@ class CookieAuthStrategy:
                     return user
             return self._token_user_from_username(handler, username)
         except Exception:
+            logger.debug("CookieAuthStrategy: unexpected error parsing cookie", exc_info=True)
             return self._token_user_from_cookie_bytes(handler, user_json)
 
 

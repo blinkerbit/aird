@@ -24,7 +24,7 @@ from aird.core.file_operations import (
     remove_share_cloud_dir,
 )
 from aird.core.security import is_within_root
-from aird.core.share_root import filesystem_root_for_share
+from aird.core.share_root import filesystem_root_for_share, login_matches_share_creator_field
 from aird.db.resource_tags import list_resource_tags
 
 logger = logging.getLogger(__name__)
@@ -321,7 +321,7 @@ def list_shares_accessible_to_user(conn: sqlite3.Connection, username: str) -> l
         for row in cursor:
             share = _row_to_share_dict(row, col_names)
             allowed = share.get("allowed_users")
-            is_creator = share.get("created_by") == username
+            is_creator = login_matches_share_creator_field(share.get("created_by"), username)
             if allowed is None or username in allowed or is_creator:
                 result.append(share)
         return result
@@ -416,12 +416,11 @@ def share_covers_relative_path(
                 continue
         return False
 
-    if share_paths_cover_target(share.get("paths") or [], rel_path):
-        return True
-    filtered_paths = filter_files_by_patterns(
+    # Apply allow/avoid filters FIRST so avoid_list cannot be bypassed via exact-path match
+    effective_paths = filter_files_by_patterns(
         share.get("paths") or [], allow_list, avoid_list
     )
-    return rel_path in filtered_paths
+    return share_paths_cover_target(effective_paths, rel_path) or rel_path in effective_paths
 
 
 def share_paths_cover_target(paths: list, target_path: str) -> bool:

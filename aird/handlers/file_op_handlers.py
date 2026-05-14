@@ -131,7 +131,7 @@ def _validate_upload_destination(upload_dir, filename, root_dir):
 
 
 def _bulk_delete_one(
-    abspath, _path, db_conn, get_display_username, remote_ip, get_service
+    abspath, _path, db_conn, get_display_username, remote_ip, get_service, root_dir=None
 ):
     """Perform delete for one path. Return None on success, error message string on failure."""
     if os.path.isdir(abspath):
@@ -143,7 +143,7 @@ def _bulk_delete_one(
                 db_conn,
                 "folder_delete",
                 username=get_display_username(),
-                details=path_to_rel(abspath),
+                details=path_to_rel(abspath, root_dir),
                 ip=remote_ip,
             )
         except OSError as e:
@@ -157,7 +157,7 @@ def _bulk_delete_one(
                 db_conn,
                 "file_delete",
                 username=get_display_username(),
-                details=path_to_rel(abspath),
+                details=path_to_rel(abspath, root_dir),
                 ip=remote_ip,
             )
         except OSError as e:
@@ -166,7 +166,7 @@ def _bulk_delete_one(
 
 
 def _bulk_add_to_share_one(
-    abspath, path, data, db_conn, get_display_username, remote_ip, get_service
+    abspath, path, data, db_conn, get_display_username, remote_ip, get_service, root_dir=None
 ):
     """Add one path to share. Return None on success, error message string on failure."""
     share_id = data.get("share_id")
@@ -187,7 +187,7 @@ def _bulk_add_to_share_one(
             "Cannot add individual files to a dynamic share; add the folder root instead"
         )
     paths_list = list(share.get("paths") or [])
-    rel = path_to_rel(abspath)
+    rel = path_to_rel(abspath, root_dir)
     if rel in paths_list:
         return None
     paths_list.append(rel)
@@ -217,6 +217,7 @@ class BulkActionCommand(Protocol):
         get_display_username: Callable[[], str],
         remote_ip: str,
         get_service: Callable[[str], Any],
+        root_dir: str | None,
     ) -> str | None: ...
 
 
@@ -230,9 +231,10 @@ class DeleteBulkActionCommand:
         get_display_username: Callable[[], str],
         remote_ip: str,
         get_service: Callable[[str], Any] = None,
+        root_dir: str | None = None,
     ) -> str | None:
         return _bulk_delete_one(
-            abspath, path, db_conn, get_display_username, remote_ip, get_service
+            abspath, path, db_conn, get_display_username, remote_ip, get_service, root_dir
         )
 
 
@@ -246,9 +248,10 @@ class AddToShareBulkActionCommand:
         get_display_username: Callable[[], str],
         remote_ip: str,
         get_service: Callable[[str], Any] = None,
+        root_dir: str | None = None,
     ) -> str | None:
         return _bulk_add_to_share_one(
-            abspath, path, data, db_conn, get_display_username, remote_ip, get_service
+            abspath, path, data, db_conn, get_display_username, remote_ip, get_service, root_dir
         )
 
 
@@ -259,13 +262,13 @@ _BULK_ACTION_COMMANDS: dict[str, BulkActionCommand] = {
 
 
 def _process_bulk_action(
-    action, abspath, path, data, db_conn, get_display_username, remote_ip, get_service
+    action, abspath, path, data, db_conn, get_display_username, remote_ip, get_service, root_dir=None
 ):
     """Dispatch one bulk action. Return None on success, error string on failure."""
     command = _BULK_ACTION_COMMANDS.get(action)
     if command:
         return command(
-            abspath, path, data, db_conn, get_display_username, remote_ip, get_service
+            abspath, path, data, db_conn, get_display_username, remote_ip, get_service, root_dir
         )
     return UNSUPPORTED_ACTION
 
@@ -420,7 +423,7 @@ class UploadHandler(BaseHandler):
             self.db_conn,
             "file_upload",
             username=self.get_display_username(),
-            details=path_to_rel(final_path_abs),
+            details=path_to_rel(final_path_abs, get_user_root(self)),
             ip=self.request.remote_ip,
         )
         self.set_status(200)
@@ -487,7 +490,7 @@ class CreateFolderHandler(BaseHandler):
             self.db_conn,
             "folder_create",
             username=username,
-            details=path_to_rel(new_dir_abs),
+            details=path_to_rel(new_dir_abs, get_user_root(self)),
             ip=self.request.remote_ip,
         )
         if self.request.headers.get("Accept") == HEADER_APPLICATION_JSON:
@@ -525,7 +528,7 @@ class DeleteHandler(BaseHandler):
             self.db_conn,
             "folder_delete",
             username=self.get_display_username(),
-            details=path_to_rel(abspath),
+            details=path_to_rel(abspath, get_user_root(self)),
             ip=self.request.remote_ip,
         )
         return True
@@ -544,7 +547,7 @@ class DeleteHandler(BaseHandler):
             self.db_conn,
             "file_delete",
             username=self.get_display_username(),
-            details=path_to_rel(abspath),
+            details=path_to_rel(abspath, get_user_root(self)),
             ip=self.request.remote_ip,
         )
         return True
@@ -814,6 +817,7 @@ class BulkHandler(BaseHandler):
                 self.get_display_username,
                 remote_ip,
                 self.get_service,
+                root,
             )
             if err:
                 results["ok"] = False
@@ -861,7 +865,8 @@ class EditHandler(BaseHandler):
             return
 
         user_root = get_user_root(self)
-        abspath = (pathlib.Path(user_root) / ("." + path)).absolute().resolve()
+        safe_path = str(path).lstrip("/\\")
+        abspath = (pathlib.Path(user_root) / safe_path).resolve()
 
         if not is_within_root(str(abspath), user_root):
             logging.warning(f"EditHandler: access denied for path {path}.")
@@ -899,7 +904,7 @@ class EditHandler(BaseHandler):
                 self.db_conn,
                 "file_edit",
                 username=self.get_display_username(),
-                details=path_to_rel(str(abspath)),
+                details=path_to_rel(str(abspath), user_root),
                 ip=self.request.remote_ip,
             )
             self.set_status(200)
@@ -916,6 +921,7 @@ class EditHandler(BaseHandler):
 
 class CloudUploadHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_action("file.write")
     @require_modify_access()
     async def post(self, provider_name: str):
         manager: CloudManager = self.application.settings.get(

@@ -332,18 +332,24 @@ class SuperSearch {
         const fileName = pathSegments[pathSegments.length - 1];
         const dirName = pathSegments.slice(0, -1).join('/') || '/';
         
+        const dirHref = '/files/' + encodeURIComponent(dirName.replace(/^\/+/, ''));
+        const fileHref = '/files/' + filePath.replace(/^\/+/, '');
         header.innerHTML = `
-            <a href="/files/${encodeURIComponent(dirName.replace(/^\/+/, ''))}" class="file-path flex items-center gap-2 text-base-content no-underline font-semibold text-sm flex-1 hover:text-primary truncate" title="Click to open folder">
+            <div class="file-path flex items-center gap-1 text-base-content font-semibold text-sm flex-1 min-w-0 overflow-hidden">
               <svg class="w-4 h-4 opacity-50 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
-              <span class="opacity-50 truncate hidden sm:inline">${this.escapeHtml(dirName)}/</span><span class="font-bold underline hover:text-primary">${this.escapeHtml(fileName)}</span>
-            </a>
+              <a href="${dirHref}" target="_blank" rel="noopener noreferrer"
+                 class="opacity-50 truncate hidden sm:inline hover:opacity-100 hover:text-primary transition-opacity no-underline hover:underline shrink min-w-0"
+                 title="Open folder in new tab">${this.escapeHtml(dirName)}/</a><a href="${fileHref}" target="_blank" rel="noopener noreferrer"
+                 class="font-bold text-primary hover:underline shrink-0 no-underline"
+                 title="Open file in new tab">${this.escapeHtml(fileName)}</a>
+            </div>
             <button type="button" class="file-toggle btn btn-xs btn-outline btn-circle border-base-content/20 shrink-0 ml-2 transition-transform duration-200 opacity-60" title="Hide/Show results in this file">
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
             </button>
           `;
           
         header.addEventListener('click', (e) => {
-          if (e.target.closest('.file-path')) { return; } // Allow opening link
+          if (e.target.closest('a')) { return; } // Let dir/file links open normally
           this.toggleFileSection(filePath);
         });
 

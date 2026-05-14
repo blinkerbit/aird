@@ -221,9 +221,12 @@ def _check_share_access(share, share_id, request, get_cookie, get_secure_cookie)
         if current_user in (share.get("modify_users") or []):
             return True, False, None
 
-    # 2. If NO token is enabled -> PUBLIC, anyone can access
+    # 2. If NO token is enabled but allowed_users/modify_users restricts access,
+    # require authenticated membership (already checked above — deny if we reach here).
     secret_token = share.get("secret_token")
     if not secret_token:
+        if share.get("allowed_users") or share.get("modify_users"):
+            return False, False, (403, ACCESS_TOKEN_INVALID_OR_EXPIRED)
         return True, False, None
         
     # 3. Restricted (token enabled) -> check if they provided a valid token
@@ -698,6 +701,7 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
 
 class ShareRevokeHandler(XSRFTokenMixin, BaseHandler):
     @tornado.web.authenticated
+    @require_action("share.revoke")
     @require_db
     @require_modify_access()
     def post(self):
@@ -820,6 +824,14 @@ class TokenVerificationHandler(BaseHandler):
         """Check if the request is within rate limits. Returns True if allowed."""
         remote_ip = self.request.remote_ip
         now = time.time()
+        # Purge expired entries to prevent unbounded dict growth
+        if len(self._TOKEN_VERIFY_ATTEMPTS) > 500:
+            stale = [
+                ip for ip, (_, ts) in self._TOKEN_VERIFY_ATTEMPTS.items()
+                if now - ts > self._RATE_LIMIT_WINDOW
+            ]
+            for ip in stale:
+                self._TOKEN_VERIFY_ATTEMPTS.pop(ip, None)
         attempts, timestamp = self._TOKEN_VERIFY_ATTEMPTS.get(remote_ip, (0, now))
 
         if now - timestamp > self._RATE_LIMIT_WINDOW:
@@ -886,8 +898,10 @@ class TokenVerificationHandler(BaseHandler):
             self.set_cookie(
                 f"share_token_{sid}",
                 provided_token,
-                path="/",
+                path=f"/shared/{sid}",
                 max_age=3600,
+                httponly=True,
+                secure=self.request.protocol == "https",
                 samesite="Lax",
             )
             return {"success": True}

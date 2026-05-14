@@ -139,8 +139,10 @@ class P2PTransferHandler(BaseHandler):
             if room_id:
                 room_mgr = self.room_manager or room_manager
                 room = room_mgr.get_room(room_id)
-                if room and getattr(room, "file_size", None):
-                    resource_size = room.file_size
+                if room and isinstance(getattr(room, "file_info", None), dict):
+                    size_val = room.file_info.get("size")
+                    if isinstance(size_val, int) and size_val > 0:
+                        resource_size = size_val
             decision = self.check_access(
                 "p2p.transfer",
                 resource_path=room_id,
@@ -295,11 +297,10 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
         )
 
     def on_message(self, message: str):
-        logger.info(f"P2P message received from {self.peer_id}: {message[:200]}")
         try:
             data = json.loads(message)
             msg_type = data.get("type")
-            logger.info(f"Message type: {msg_type}")
+            logger.info("P2P message received from %s: type=%s", self.peer_id, msg_type)
             handlers = {
                 "create_room": self._handle_create_room,
                 "join_room": self._handle_join_room,

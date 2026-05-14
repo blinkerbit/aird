@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/static/css/app.css" />
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Login · Aird</title>
   <style nonce="{{ csp_nonce }}">
     @keyframes brand-icon-pop {
@@ -65,13 +65,8 @@
 
         <!-- Brand -->
         <div class="text-center mb-4">
-          <div class="flex items-center justify-center gap-3 mb-3">
-            <div class="b-icon rounded-2xl p-3 flex items-center justify-center shadow-lg" style="background:linear-gradient(135deg,oklch(0.45 0.2 270) 0%,oklch(0.55 0.25 270) 55%,oklch(0.6 0.22 280) 100%);color:#fff;">
-              <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
-              </svg>
-            </div>
-            <h1 class="b-title text-4xl font-extrabold tracking-widest uppercase text-gradient-brand">Aird</h1>
+          <div class="b-icon flex items-center justify-center mb-3">
+            <img src="/static/img/logo.png" alt="Aird" class="h-14 w-auto object-contain" style="max-width:240px;">
           </div>
           <div class="flex items-center justify-center gap-2">
             <span class="b-badge1 badge badge-outline text-xs font-semibold gap-1">🔒 Secure</span>
