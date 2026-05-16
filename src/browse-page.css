@@ -301,6 +301,50 @@
       flex-shrink: 0;
     }
 
+    /* ── File tag chips ─────────────────────────────────────────────────────── */
+@layer components {
+    .file-tag-list {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      flex-shrink: 0;
+      max-width: 200px;
+      overflow: hidden;
+    }
+
+    .file-tag-chip {
+      display: inline-block;
+      font-size: 10px;
+      line-height: 1;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+      color: var(--color-primary);
+      border: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+      text-decoration: none;
+      font-weight: 500;
+      white-space: nowrap;
+      transition: background 120ms;
+    }
+
+    .file-tag-chip:hover {
+      background: color-mix(in srgb, var(--color-primary) 22%, transparent);
+      text-decoration: none;
+    }
+
+    .file-tag-more {
+      display: inline-block;
+      font-size: 10px;
+      line-height: 1;
+      padding: 2px 5px;
+      border-radius: 999px;
+      background: var(--b3, #e5e7eb);
+      color: var(--bc, #374151);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+}
+
     .th-checkbox-wrap {
       display: inline-flex;
       align-items: center;
