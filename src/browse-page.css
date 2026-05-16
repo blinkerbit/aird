@@ -736,24 +736,23 @@
         width: 100%;
       }
 
-      /* Mobile-friendly action buttons */
-      .action-link {
+      /* Mobile-friendly action buttons (scoped to avoid duplicate .action-link selector) */
+      .file-table .action-link {
         padding: 8px 10px;
-        margin-right: 6px;
         min-width: 40px;
         height: 40px;
         touch-action: manipulation;
         display: inline-block;
-        margin: 5px 5px 5px 0;
+        margin: 5px 6px 5px 0;
       }
 
-      .action-link svg {
+      .file-table .action-link svg {
         width: 20px;
         height: 20px;
       }
 
       /* Increase tooltip size on mobile */
-      .action-link[title]:hover::after {
+      .file-table .action-link[title]:hover::after {
         font-size: 12px;
         padding: 6px 10px;
       }

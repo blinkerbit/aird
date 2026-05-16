@@ -40,8 +40,12 @@ class SuperSearch {
       }
 
       setupPlatformDefaults() {
-        // Detect platform and set appropriate examples
-        const isWindows = /windows|win32/i.test(navigator.userAgent);
+        // Prefer Client Hints platform when available (navigator.userAgent is deprecated)
+        const plat = navigator.userAgentData?.platform;
+        const isWindows =
+          typeof plat === 'string' && plat.length > 0
+            ? /windows/i.test(plat)
+            : /windows|win32/i.test(navigator.userAgent);
         const separator = isWindows ? '\\' : '/';
 
         const currentPath = document.body?.dataset.searchBasePath ?? '';
