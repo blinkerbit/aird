@@ -119,8 +119,8 @@ async def _serve_raw_mode(handler, abspath):
                         break
                     handler.write(chunk)
                     await handler.flush()
-    except Exception as e:
-        logging.error("Error serving raw file: %s", e)
+    except Exception:
+        logging.exception("Error serving raw file")
         handler.set_status(500)
         handler.write("Error serving file")
 

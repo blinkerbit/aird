@@ -407,8 +407,8 @@ class UploadHandler(BaseHandler):
         try:
             shutil.move(self._temp_path, final_path_abs)
             self._moved = True
-        except Exception as e:
-            logging.error("Upload save failed: %s", e)
+        except Exception:
+            logging.exception("Upload save failed")
             self.set_status(500)
             self.write(UPLOAD_SAVE_FAILED)
             return
@@ -476,8 +476,8 @@ class CreateFolderHandler(BaseHandler):
             return
         try:
             os.makedirs(new_dir_abs, exist_ok=False)
-        except OSError as e:
-            logging.error("CreateFolder error: %s", e)
+        except OSError:
+            logging.exception("CreateFolder error")
             self.set_status(500)
             self.write(FOLDER_CREATE_FAILED)
             return
@@ -682,8 +682,8 @@ class CopyHandler(BaseHandler):
                 shutil.copytree(src_abs, dest_abs)
             else:
                 shutil.copy2(src_abs, dest_abs)
-        except OSError as e:
-            logging.error("Copy error: %s", e)
+        except OSError:
+            logging.exception("Copy error")
             self.set_status(500)
             self.write(COPY_FAILED)
             return
@@ -737,8 +737,8 @@ class MoveHandler(BaseHandler):
             return
         try:
             shutil.move(src_abs, dest_abs)
-        except OSError as e:
-            logging.error("Move error: %s", e)
+        except OSError:
+            logging.exception("Move error")
             self.set_status(500)
             self.write(MOVE_FAILED)
             return
@@ -758,6 +758,19 @@ class MoveHandler(BaseHandler):
             if os.path.dirname(dest)
             else FILES_URL_STRING
         )
+
+
+def _validate_bulk_path(path, root: str) -> tuple[str | None, str | None]:
+    """Return (abspath, error) — error is non-None if path is invalid."""
+    if not isinstance(path, str):
+        return None, INVALID_PATH
+    path = path.strip().strip("/")
+    abspath = os.path.abspath(os.path.join(root, path))
+    if not is_within_root(abspath, root):
+        return None, ACCESS_DENIED_LOWER
+    if not os.path.exists(abspath):
+        return None, NOT_FOUND_LOWER
+    return abspath, None
 
 
 class BulkHandler(BaseHandler):
@@ -791,44 +804,55 @@ class BulkHandler(BaseHandler):
         results = {"ok": True, "results": []}
         remote_ip = self.request.remote_ip
         for path in paths:
-            if not isinstance(path, str):
-                results["results"].append(
-                    {"path": path, "ok": False, "error": INVALID_PATH}
-                )
-                continue
-            path = path.strip().strip("/")
-            abspath = os.path.abspath(os.path.join(root, path))
-            if not is_within_root(abspath, root):
-                results["results"].append(
-                    {"path": path, "ok": False, "error": ACCESS_DENIED_LOWER}
-                )
-                continue
-            if not os.path.exists(abspath):
-                results["results"].append(
-                    {"path": path, "ok": False, "error": NOT_FOUND_LOWER}
-                )
+            abspath, path_err = _validate_bulk_path(path, root)
+            display_path = path.strip().strip("/") if isinstance(path, str) else path
+            if path_err:
+                results["results"].append({"path": display_path, "ok": False, "error": path_err})
                 continue
             err = _process_bulk_action(
-                action,
-                abspath,
-                path,
-                data,
-                self.db_conn,
-                self.get_display_username,
-                remote_ip,
-                self.get_service,
-                root,
+                action, abspath, display_path, data,
+                self.db_conn, self.get_display_username,
+                remote_ip, self.get_service, root,
             )
             if err:
                 results["ok"] = False
-                results["results"].append({"path": path, "ok": False, "error": err})
+                results["results"].append({"path": display_path, "ok": False, "error": err})
             else:
-                results["results"].append({"path": path, "ok": True})
+                results["results"].append({"path": display_path, "ok": True})
         self.set_header("Content-Type", HEADER_APPLICATION_JSON)
         self.write(results)
 
 
 class EditHandler(BaseHandler):
+    def _parse_edit_body(self) -> tuple[str, str] | None:
+        """Return (path, content) or None on parse error (writes 400 response)."""
+        content_type = self.request.headers.get("Content-Type", "")
+        if content_type.startswith(HEADER_APPLICATION_JSON):
+            try:
+                data = json.loads(self.request.body.decode("utf-8", errors="replace") or "{}")
+                return data.get("path", ""), data.get("content", "")
+            except Exception:
+                self.set_status(400)
+                self.write(INVALID_JSON_REQUEST)
+                return None
+        return self.get_argument("path", ""), self.get_argument("content", "")
+
+    def _atomic_write(self, abspath, content: str) -> None:
+        directory_name = os.path.dirname(abspath)
+        os.makedirs(directory_name, exist_ok=True)
+        temp_fd = tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=directory_name, delete=False)
+        temp_path = temp_fd.name
+        try:
+            temp_fd.write(content)
+            temp_fd.close()
+            os.replace(temp_path, abspath)
+        except Exception:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+            raise
+
     @tornado.web.authenticated
     @require_action("file.write")
     @require_modify_access()
@@ -836,28 +860,16 @@ class EditHandler(BaseHandler):
         if not self.require_feature("file_edit", True, body=FILE_EDIT_DISABLED):
             return
 
-        # Accept both JSON and form-encoded bodies
         content_type = self.request.headers.get("Content-Type", "")
         if len(self.request.body) > EDIT_JSON_BODY_MAX_BYTES:
             self.set_status(413)
             self.write(INVALID_JSON_REQUEST if content_type.startswith(HEADER_APPLICATION_JSON) else BAD_REQUEST)
             return
-        path = ""
-        content = ""
-        if content_type.startswith(HEADER_APPLICATION_JSON):
-            try:
-                data = json.loads(
-                    self.request.body.decode("utf-8", errors="replace") or "{}"
-                )
-                path = data.get("path", "")
-                content = data.get("content", "")
-            except Exception:
-                self.set_status(400)
-                self.write(INVALID_JSON_REQUEST)
-                return
-        else:
-            path = self.get_argument("path", "")
-            content = self.get_argument("content", "")
+
+        parsed = self._parse_edit_body()
+        if parsed is None:
+            return
+        path, content = parsed
 
         if len(str(path).strip()) > REL_PATH_MAX_LEN:
             self.set_status(400)
@@ -881,40 +893,20 @@ class EditHandler(BaseHandler):
             return
 
         try:
-            # Safe write: write to temp file in same directory then replace atomically
-            directory_name = os.path.dirname(abspath)
-            os.makedirs(directory_name, exist_ok=True)
-            # Use delete=False to prevent file deletion before os.replace can use it
-            temp_fd = tempfile.NamedTemporaryFile(
-                "w", encoding="utf-8", dir=directory_name, delete=False
-            )
-            temp_path = temp_fd.name
-            try:
-                temp_fd.write(content)
-                temp_fd.close()
-                os.replace(temp_path, abspath)
-            except Exception:
-                # Clean up temp file on failure
-                try:
-                    os.unlink(temp_path)
-                except OSError:
-                    pass
-                raise
+            self._atomic_write(abspath, content)
             self.get_service("audit_service").log(
-                self.db_conn,
-                "file_edit",
+                self.db_conn, "file_edit",
                 username=self.get_display_username(),
                 details=path_to_rel(str(abspath), user_root),
                 ip=self.request.remote_ip,
             )
             self.set_status(200)
-            # Respond JSON if requested
             if self.request.headers.get("Accept") == HEADER_APPLICATION_JSON:
                 self.write({"ok": True})
             else:
                 self.write(FILE_SAVED_SUCCESSFULLY)
-        except Exception as e:
-            logging.error(f"File save error: {e}")
+        except Exception:
+            logging.exception("File save error")
             self.set_status(500)
             self.write(FILE_SAVE_ERROR)
 

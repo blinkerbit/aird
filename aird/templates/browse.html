@@ -236,10 +236,10 @@
   </div>
 
   <!-- Right-side selection drawer -->
-  <aside id="browseSelectionDrawer" role="dialog" aria-modal="true"
+  <dialog id="browseSelectionDrawer" aria-modal="true"
     aria-labelledby="browseSelectionDrawerTitle"
-    style="position:fixed;top:0;right:0;bottom:0;z-index:9020;
-           width:min(22rem,94vw);
+    style="position:fixed;top:0;right:0;bottom:0;z-index:9020;margin:0;padding:0;border:none;
+           width:min(22rem,94vw);height:100%;max-height:100%;max-width:100%;
            background:var(--color-base-100);
            border-left:2px solid var(--color-base-300);
            box-shadow:-6px 0 32px rgba(0,0,0,0.18);
@@ -323,7 +323,7 @@
                  font-size:0.8rem;cursor:pointer;">Clear</button>
       </div>
     </div>
-  </aside>
+  </dialog>
 
   <!-- Folder picker modal for Copy / Move -->
   <div class="folder-picker-overlay" id="folderPickerOverlay">

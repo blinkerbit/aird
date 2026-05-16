@@ -80,8 +80,8 @@ def _add_local_path(ap, path_str, share_type, valid_paths, dynamic_folders):
                 logging.debug(
                     "Added %s files from directory: %s", len(all_files), path_str
                 )
-            except Exception as e:
-                logging.error("Error scanning directory %s: %s", path_str, e)
+            except Exception:
+                logging.exception("Error scanning directory %s", path_str)
 
 
 def _collect_paths_from_request(paths, share_type, root_dir=None):
@@ -203,6 +203,13 @@ def _get_provided_token(share_id, request, get_cookie):
     return get_cookie(f"share_token_{share_id}")
 
 
+def _share_access_without_secret_token(share: dict) -> tuple[bool, bool, tuple | None]:
+    """When share has no secret_token: deny if user-restricted; else allow."""
+    if share.get("allowed_users") or share.get("modify_users"):
+        return False, False, (403, ACCESS_TOKEN_INVALID_OR_EXPIRED)
+    return True, False, None
+
+
 def _check_share_access(share, share_id, request, get_cookie, get_secure_cookie):
     """
     Check if the current request has access to the share based on user requirements.
@@ -225,10 +232,7 @@ def _check_share_access(share, share_id, request, get_cookie, get_secure_cookie)
     # require authenticated membership (already checked above — deny if we reach here).
     secret_token = share.get("secret_token")
     if not secret_token:
-        if share.get("allowed_users") or share.get("modify_users"):
-            return False, False, (403, ACCESS_TOKEN_INVALID_OR_EXPIRED)
-        return True, False, None
-        
+        return _share_access_without_secret_token(share)
     # 3. Restricted (token enabled) -> check if they provided a valid token
     provided = _get_provided_token(share_id, request, get_cookie)
     if provided and secrets.compare_digest(provided, secret_token):
@@ -483,65 +487,55 @@ def _apply_paths_update(
     return None
 
 
+def _validate_share_type_change(requested_share_type: str, share_id: str, current_paths: list, data: dict) -> tuple | None:
+    """Return error tuple or None if the type change is valid."""
+    if requested_share_type == "tag" and (data.get("paths") is not None or data.get("remove_files")):
+        return (400, {"error": "Tag shares do not use stored paths; change tag or filters elsewhere."})
+    if requested_share_type == "dynamic" and any(is_cloud_relative_path(share_id, p) for p in current_paths):
+        return (400, {"error": "Remove cloud files before switching to a dynamic share"})
+    return None
+
+
+def _apply_db_update(handler, db_conn, share_id, update_fields, new_cloud_paths) -> tuple | None:
+    """Apply DB update; cleanup new cloud paths on failure. Returns error tuple or None."""
+    if not update_fields:
+        return None
+    db_success = handler.get_service("share_service").update_share(db_conn, share_id, **update_fields)
+    if not db_success:
+        for rel_path in new_cloud_paths:
+            remove_cloud_file_if_exists(share_id, rel_path)
+        cleanup_share_cloud_dir_if_empty(share_id)
+        return (500, {"error": "Failed to update share"})
+    return None
+
+
 def _execute_share_update(handler, db_conn, share_id, share_data, data):
     """Perform share update. Return (response_data, None, []) or (None, (status, body), new_cloud_paths)."""
     current_paths = share_data.get("paths", []) or []
     requested_share_type = (
-        data.get("share_type")
-        if data.get("share_type") is not None
+        data.get("share_type") if data.get("share_type") is not None
         else share_data.get("share_type", "static")
     )
-    if requested_share_type == "tag" and (
-        data.get("paths") is not None or data.get("remove_files")
-    ):
-        return (
-            None,
-            (
-                400,
-                {
-                    "error": "Tag shares do not use stored paths; change tag or filters elsewhere."
-                },
-            ),
-            [],
-        )
-    if requested_share_type == "dynamic" and any(
-        is_cloud_relative_path(share_id, p) for p in current_paths
-    ):
-        return (
-            None,
-            (400, {"error": "Remove cloud files before switching to a dynamic share"}),
-            [],
-        )
+    type_err = _validate_share_type_change(requested_share_type, share_id, current_paths, data)
+    if type_err is not None:
+        return None, type_err, []
 
-    update_fields, cloud_paths_to_remove, new_cloud_paths, err = (
-        _compute_share_update_fields(
-            handler,
-            share_id,
-            share_data,
-            data,
-            current_paths,
-            requested_share_type,
-        )
+    update_fields, cloud_paths_to_remove, new_cloud_paths, err = _compute_share_update_fields(
+        handler, share_id, share_data, data, current_paths, requested_share_type,
     )
     if err is not None:
         return (None, err, new_cloud_paths)
-    if update_fields:
-        db_success = handler.get_service("share_service").update_share(
-            db_conn, share_id, **update_fields
-        )
-        if not db_success:
-            for rel_path in new_cloud_paths:
-                remove_cloud_file_if_exists(share_id, rel_path)
-            cleanup_share_cloud_dir_if_empty(share_id)
-            return (None, (500, {"error": "Failed to update share"}), new_cloud_paths)
-    else:
-        db_success = True
+
+    db_err = _apply_db_update(handler, db_conn, share_id, update_fields, new_cloud_paths)
+    if db_err is not None:
+        return None, db_err, new_cloud_paths
+
     for rel_path in set(cloud_paths_to_remove):
         remove_cloud_file_if_exists(share_id, rel_path)
     cleanup_share_cloud_dir_if_empty(share_id)
     updated_share = handler.get_service("share_service").get_share(db_conn, share_id)
     return (
-        _build_share_update_response(updated_share, share_id, db_success, data, share_data),
+        _build_share_update_response(updated_share, share_id, bool(update_fields), data, share_data),
         None,
         [],
     )
@@ -613,6 +607,17 @@ class ShareFilesHandler(BaseHandler):
 
 class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
 
+    def _build_share_paths(self, req, sid: str) -> tuple[list | None, tuple | None]:
+        """Return (final_paths, error_tuple) for share path resolution."""
+        if req.share_type == "tag":
+            if not req.tag_name:
+                return None, (400, {"error": "tag_name is required for tag shares"})
+            return [], None
+        final_paths, err = _resolve_share_paths(
+            req.paths, req.share_type, sid, root_dir=get_user_root(self)
+        )
+        return final_paths, err
+
     @tornado.web.authenticated
     @require_action("share.create")
     @require_db
@@ -631,72 +636,45 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
                 self.write({"error": vserr})
                 return None
             req = ShareCreateRequest.from_payload(data)
-
             sid = secrets.token_urlsafe(64)
 
-            if req.share_type == "tag":
-                if not req.tag_name:
-                    self.set_status(400)
-                    self.write({"error": "tag_name is required for tag shares"})
-                    return None
-                final_paths = []
-            else:
-                final_paths, err = _resolve_share_paths(
-                    req.paths, req.share_type, sid, root_dir=get_user_root(self)
-                )
-                if err is not None:
-                    status, body = err
-                    self.set_status(status)
-                    self.write(body)
-                    return None
+            final_paths, err = self._build_share_paths(req, sid)
+            if err is not None:
+                self.set_status(err[0])
+                self.write(err[1])
+                return None
 
             success, secret_token = _create_share_record(
-                self,
-                self.db_conn,
-                sid,
-                final_paths,
-                req.allowed_users,
-                req.disable_token,
-                req.share_type,
-                req.allow_list,
-                req.avoid_list,
-                req.expiry_date,
-                modify_users=req.modify_users,
-                tag_name=req.tag_name,
+                self, self.db_conn, sid, final_paths,
+                req.allowed_users, req.disable_token, req.share_type,
+                req.allow_list, req.avoid_list, req.expiry_date,
+                modify_users=req.modify_users, tag_name=req.tag_name,
                 created_by=get_username_string_for_db(self),
             )
-            if success:
-                label = req.tag_name if req.share_type == "tag" else f"paths={len(final_paths)}"
-                logging.info("Share %s created successfully in database", sid)
-                self.get_service("audit_service").log(
-                    self.db_conn,
-                    "share_create",
-                    username=self.get_display_username(),
-                    details=f"share_id={sid} {label}",
-                    ip=self.request.remote_ip,
-                )
-                self.publish_event(
-                    ShareCreatedEvent(
-                        share_id=sid,
-                        creator=self.get_display_username(),
-                        path_count=len(final_paths),
-                        created_at=now_ts(),
-                    )
-                )
-                response_data = ShareCreateResponse(
-                    share_id=sid,
-                    url=f"/shared/{sid}",
-                    secret_token=secret_token if not req.disable_token else None,
-                )
-                return response_data.to_json()
-            logging.error("Failed to create share %s in database", sid)
-            self.write_json_error(500, "Failed to create share")
-            return None
+            if not success:
+                logging.error("Failed to create share %s in database", sid)
+                self.write_json_error(500, "Failed to create share")
+                return None
 
-        self.run_json_action(
-            action,
-            on_error_message="Failed to create share. Please try again.",
-        )
+            label = req.tag_name if req.share_type == "tag" else f"paths={len(final_paths)}"
+            logging.info("Share %s created successfully in database", sid)
+            self.get_service("audit_service").log(
+                self.db_conn, "share_create",
+                username=self.get_display_username(),
+                details=f"share_id={sid} {label}",
+                ip=self.request.remote_ip,
+            )
+            self.publish_event(ShareCreatedEvent(
+                share_id=sid, creator=self.get_display_username(),
+                path_count=len(final_paths), created_at=now_ts(),
+            ))
+            response_data = ShareCreateResponse(
+                share_id=sid, url=f"/shared/{sid}",
+                secret_token=secret_token if not req.disable_token else None,
+            )
+            return response_data.to_json()
+
+        self.run_json_action(action, on_error_message="Failed to create share. Please try again.")
 
 
 class ShareRevokeHandler(XSRFTokenMixin, BaseHandler):
@@ -737,8 +715,8 @@ class ShareRevokeHandler(XSRFTokenMixin, BaseHandler):
                 ip=self.request.remote_ip,
             )
             logging.info(f"Share {sid} deleted from database")
-        except Exception as e:
-            logging.error(f"Failed to delete share {sid}: {e}")
+        except Exception:
+            logging.exception("Failed to delete share %s", sid)
             self.set_status(500)
             self.write({"error": "Failed to delete share"})
             return
@@ -753,6 +731,29 @@ class ShareRevokeHandler(XSRFTokenMixin, BaseHandler):
 
 class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
 
+    def _perform_share_update(self, data: dict) -> tuple:
+        """Return (response_data, error_tuple, new_cloud_paths)."""
+        vserr = validate_share_update_struct(data)
+        if vserr:
+            self.set_status(400)
+            self.write({"error": vserr})
+            return None, None, []
+        share_id, share_data, err_status, err_body = _validate_share_update_request(self, self.db_conn, data)
+        if err_status is not None:
+            self.set_status(err_status)
+            self.write(err_body)
+            return None, None, []
+        if not self.can_manage_share_secrets(share_data):
+            self.set_status(403)
+            self.write({"error": "Access denied"})
+            return None, None, []
+        response_data, err, new_cloud_paths = _execute_share_update(self, self.db_conn, share_id, share_data, data)
+        if err is not None:
+            self.set_status(err[0])
+            self.write(err[1])
+            return None, None, new_cloud_paths
+        return response_data, share_id, new_cloud_paths
+
     @tornado.web.authenticated
     @require_db
     @require_modify_access()
@@ -763,43 +764,22 @@ class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
         ):
             return
 
-        share_id = None
-        new_cloud_paths: list[str] = []
+        saved_share_id = None
+        saved_new_cloud_paths: list[str] = []
 
         def action():
-            nonlocal share_id, new_cloud_paths
+            nonlocal saved_share_id, saved_new_cloud_paths
+            data = self.parse_json_body(max_bytes=SHARE_JSON_BODY_MAX_BYTES) or {}
             try:
-                data = self.parse_json_body(max_bytes=SHARE_JSON_BODY_MAX_BYTES) or {}
-                vserr = validate_share_update_struct(data)
-                if vserr:
-                    self.set_status(400)
-                    self.write({"error": vserr})
-                    return None
-                share_id, share_data, err_status, err_body = (
-                    _validate_share_update_request(self, self.db_conn, data)
-                )
-                if err_status is not None:
-                    self.set_status(err_status)
-                    self.write(err_body)
-                    return None
-                if not self.can_manage_share_secrets(share_data):
-                    self.set_status(403)
-                    self.write({"error": "Access denied"})
-                    return None
-
-                response_data, err, new_cloud_paths = _execute_share_update(
-                    self, self.db_conn, share_id, share_data, data
-                )
-                if err is not None:
-                    self.set_status(err[0])
-                    self.write(err[1])
-                    return None
+                response_data, share_id, new_cloud_paths = self._perform_share_update(data)
+                saved_share_id = share_id
+                saved_new_cloud_paths = new_cloud_paths or []
                 return response_data
             except Exception:
-                if share_id and new_cloud_paths:
-                    for rel_path in new_cloud_paths:
-                        remove_cloud_file_if_exists(share_id, rel_path)
-                    cleanup_share_cloud_dir_if_empty(share_id)
+                if saved_share_id and saved_new_cloud_paths:
+                    for rel_path in saved_new_cloud_paths:
+                        remove_cloud_file_if_exists(saved_share_id, rel_path)
+                    cleanup_share_cloud_dir_if_empty(saved_share_id)
                 raise
 
         self.run_json_action(

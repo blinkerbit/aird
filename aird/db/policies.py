@@ -96,6 +96,23 @@ def insert_policy(
         return None
 
 
+def _policy_field_to_sql(key: str, raw_value) -> tuple[str, object] | None:
+    """Return (SET_clause, sql_value) for a policy field, or None to skip."""
+    if key == "target_actions":
+        return "target_actions = ?", _serialise_actions(raw_value)
+    if key == "condition":
+        return "condition_json = ?", json.dumps(raw_value or {})
+    if key == "enabled":
+        return "enabled = ?", 1 if raw_value else 0
+    if key == "priority":
+        return "priority = ?", int(raw_value)
+    if key == "effect":
+        if raw_value not in ("permit", "deny"):
+            return None
+        return "effect = ?", raw_value
+    return f"{key} = ?", raw_value
+
+
 def update_policy(conn: sqlite3.Connection, policy_id: int, **fields) -> bool:
     if conn is None or policy_id is None:
         return False
@@ -113,26 +130,12 @@ def update_policy(conn: sqlite3.Connection, policy_id: int, **fields) -> bool:
     for key, raw_value in fields.items():
         if key not in allowed:
             continue
-        if key == "target_actions":
-            updates.append("target_actions = ?")
-            values.append(_serialise_actions(raw_value))
-        elif key == "condition":
-            updates.append("condition_json = ?")
-            values.append(json.dumps(raw_value or {}))
-        elif key == "enabled":
-            updates.append("enabled = ?")
-            values.append(1 if raw_value else 0)
-        elif key == "priority":
-            updates.append("priority = ?")
-            values.append(int(raw_value))
-        elif key == "effect":
-            if raw_value not in ("permit", "deny"):
-                return False
-            updates.append("effect = ?")
-            values.append(raw_value)
-        else:
-            updates.append(f"{key} = ?")
-            values.append(raw_value)
+        result = _policy_field_to_sql(key, raw_value)
+        if result is None:
+            return False
+        clause, val = result
+        updates.append(clause)
+        values.append(val)
     if not updates:
         return False
     updates.append("updated_at = ?")

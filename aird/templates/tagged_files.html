@@ -31,8 +31,8 @@
         <div class="flex gap-2">
           {% if all_tags %}
           <div class="dropdown dropdown-end">
-            <label tabindex="0" class="btn btn-ghost btn-sm">Switch tag ▾</label>
-            <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow-lg z-50 w-48 p-1 border border-base-300">
+            <button tabindex="0" class="btn btn-ghost btn-sm">Switch tag ▾</button>
+            <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow-lg z-50 w-48 p-1 border border-base-300" role="menu">
               {% for t in all_tags %}
               <li><a href="/tagged/{{ escape(t) }}" class="{% if t == tag_name %}font-bold text-primary{% end %}">{{ escape(t) }}</a></li>
               {% end %}

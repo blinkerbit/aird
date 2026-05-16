@@ -146,15 +146,15 @@
       <h3 class="font-bold text-lg mb-4">Edit tag rule</h3>
       <input type="hidden" id="edit-tag-id" />
       <div class="form-control mb-3">
-        <label class="label"><span class="label-text">Tag</span></label>
+        <label class="label" for="edit-tag-name"><span class="label-text">Tag</span></label>
         <input id="edit-tag-name" type="text" maxlength="64" class="input input-bordered input-sm" />
       </div>
       <div class="form-control mb-3">
-        <label class="label"><span class="label-text">Glob pattern</span></label>
+        <label class="label" for="edit-tag-glob"><span class="label-text">Glob pattern</span></label>
         <input id="edit-tag-glob" type="text" maxlength="255" class="input input-bordered input-sm" />
       </div>
       <div class="form-control mb-4">
-        <label class="label"><span class="label-text">Priority</span></label>
+        <label class="label" for="edit-tag-priority"><span class="label-text">Priority</span></label>
         <input id="edit-tag-priority" type="number" min="0" max="9999" class="input input-bordered input-sm" />
       </div>
       <p id="edit-modal-error" class="text-error text-sm mb-2 hidden"></p>
@@ -173,11 +173,11 @@
         All files matching tag <strong id="modal-tag-name-display" class="text-primary"></strong> will be included in the share.
       </p>
       <div class="form-control mb-3">
-        <label class="label"><span class="label-text">Allowed users <span class="text-base-content/50">(comma-separated, blank = anyone)</span></span></label>
+        <label class="label" for="share-allowed-users"><span class="label-text">Allowed users <span class="text-base-content/50">(comma-separated, blank = anyone)</span></span></label>
         <input id="share-allowed-users" type="text" class="input input-bordered input-sm" placeholder="alice, bob" />
       </div>
       <div class="form-control mb-4">
-        <label class="label"><span class="label-text">Expiry date <span class="text-base-content/50">(optional)</span></span></label>
+        <label class="label" for="share-expiry-date"><span class="label-text">Expiry date <span class="text-base-content/50">(optional)</span></span></label>
         <input id="share-expiry-date" type="date" class="input input-bordered input-sm" />
       </div>
       <p id="share-modal-error" class="text-error text-sm mb-2 hidden"></p>
@@ -221,7 +221,7 @@
       try {
         const res = await api('POST', data);
         if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || 'HTTP ' + res.status); }
-        window.location.reload();
+        globalThis.location.reload();
       } catch (err) { showCreateError(err.message || 'Failed to create tag'); }
     });
 
@@ -269,7 +269,7 @@
     document.getElementById('tags-tbody').addEventListener('click', async function (ev) {
       const delBtn = ev.target.closest('[data-delete-tag-id]');
       if (!delBtn) return;
-      const id = delBtn.getAttribute('data-delete-tag-id');
+      const id = delBtn.dataset.deleteTagId;
       if (!confirm('Delete tag rule #' + id + '?')) return;
       try {
         const res = await api('DELETE', { id: Number(id) });
@@ -312,7 +312,7 @@
         if (row) {
           const cells = row.querySelectorAll('td');
           // td[2] = tag badge
-          cells[2].innerHTML = '<a href="/tagged/' + encodeURIComponent(tag) + '" class="badge badge-primary badge-outline hover:badge-primary">' + tag.replace(/</g,'&lt;') + '</a>';
+          cells[2].innerHTML = '<a href="/tagged/' + encodeURIComponent(tag) + '" class="badge badge-primary badge-outline hover:badge-primary">' + tag.replaceAll('<','&lt;') + '</a>';
           cells[3].textContent = glob_pattern;
           cells[4].textContent = priority;
           // update edit button data attrs
@@ -326,8 +326,8 @@
     // ── Delete entire tag ─────────────────────────────────────────────────────
     document.querySelectorAll('.delete-tag-btn').forEach(function (btn) {
       btn.addEventListener('click', async function () {
-        const tag = btn.getAttribute('data-tag');
-        const count = btn.getAttribute('data-count');
+        const tag = btn.dataset.tag;
+        const count = btn.dataset.count;
         if (!confirm('Delete tag "' + tag + '" and all ' + count + ' of its glob pattern(s)?\n\nFiles will keep their other tags. This cannot be undone.')) return;
         try {
           const res = await api('DELETE', { tag });
@@ -351,7 +351,7 @@
 
     document.querySelectorAll('.create-tag-share-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
-        activeTag = btn.getAttribute('data-tag');
+        activeTag = btn.dataset.tag;
         document.getElementById('modal-tag-name-display').textContent = activeTag;
         document.getElementById('share-allowed-users').value = '';
         document.getElementById('share-expiry-date').value = '';
@@ -378,7 +378,7 @@
         if (!res.ok) throw new Error(body.error || 'HTTP ' + res.status);
         shareModal.close();
         const shareUrl = body.url || ('/shared/' + body.id);
-        alert('Share created!\n' + window.location.origin + shareUrl);
+        alert('Share created!\n' + globalThis.location.origin + shareUrl);
       } catch (err) {
         shareModalError.textContent = err.message || 'Failed to create share';
         shareModalError.classList.remove('hidden');

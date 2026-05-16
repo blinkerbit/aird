@@ -117,6 +117,21 @@ def validate_policy_payload(
         raise InputTooLongError("condition JSON too large")
 
 
+def _validate_paths_list(paths, max_count: int, max_path_len: int) -> str | None:
+    """Validate a list of share paths. Returns error message or None."""
+    if not isinstance(paths, list):
+        return "paths must be a list"
+    if len(paths) > max_count:
+        return "too many paths"
+    for p in paths:
+        if isinstance(p, str):
+            if len(p.strip().strip("/")) > max_path_len:
+                return "path too long"
+        elif not isinstance(p, dict):
+            return "paths entries must be strings or objects"
+    return None
+
+
 def validate_share_create_struct(data: dict[str, Any]) -> str | None:
     """Return error message or None if sizes are acceptable."""
     st = str(data.get("share_type", "static") or "static")
@@ -127,19 +142,9 @@ def validate_share_create_struct(data: dict[str, Any]) -> str | None:
         return None
 
     paths = data.get("paths") or []
-    if not isinstance(paths, list):
-        return "paths must be a list"
-    if len(paths) > MAX_SHARE_PATHS:
-        return "too many paths"
-    for p in paths:
-        if isinstance(p, str):
-            ps = p.strip().strip("/")
-            if len(ps) > MAX_SHARE_PATH_STRING_LEN:
-                return "path too long"
-        elif isinstance(p, dict):
-            continue
-        else:
-            return "paths entries must be strings or objects"
+    err = _validate_paths_list(paths, MAX_SHARE_PATHS, MAX_SHARE_PATH_STRING_LEN)
+    if err:
+        return err
 
     globs_users_err = _validate_share_user_and_globs(data)
     if globs_users_err:
@@ -147,6 +152,19 @@ def validate_share_create_struct(data: dict[str, Any]) -> str | None:
     tag_n = data.get("tag_name")
     if tag_n and len(str(tag_n).strip()) > SHARE_TAG_NAME_MAX_LEN:
         return "tag_name too long"
+    return None
+
+
+def _validate_remove_files(rf) -> str | None:
+    if rf is None:
+        return None
+    if not isinstance(rf, list):
+        return "remove_files must be a list"
+    if len(rf) > MAX_SHARE_PATHS:
+        return "too many remove_files entries"
+    for p in rf:
+        if isinstance(p, str) and len(p.strip()) > MAX_SHARE_PATH_STRING_LEN:
+            return "remove_files path too long"
     return None
 
 
@@ -158,29 +176,13 @@ def validate_share_update_struct(data: dict[str, Any]) -> str | None:
 
     paths = data.get("paths")
     if paths is not None:
-        if not isinstance(paths, list):
-            return "paths must be a list"
-        if len(paths) > MAX_SHARE_PATHS:
-            return "too many paths"
-        for p in paths:
-            if isinstance(p, str):
-                ps = p.strip().strip("/")
-                if len(ps) > MAX_SHARE_PATH_STRING_LEN:
-                    return "path too long"
-            elif isinstance(p, dict):
-                continue
-            else:
-                return "paths entries must be strings or objects"
+        err = _validate_paths_list(paths, MAX_SHARE_PATHS, MAX_SHARE_PATH_STRING_LEN)
+        if err:
+            return err
 
-    rf = data.get("remove_files")
-    if rf is not None:
-        if not isinstance(rf, list):
-            return "remove_files must be a list"
-        if len(rf) > MAX_SHARE_PATHS:
-            return "too many remove_files entries"
-        for p in rf:
-            if isinstance(p, str) and len(p.strip()) > MAX_SHARE_PATH_STRING_LEN:
-                return "remove_files path too long"
+    rf_err = _validate_remove_files(data.get("remove_files"))
+    if rf_err:
+        return rf_err
 
     dt = data.get("disable_token")
     if dt is not None and not isinstance(dt, bool):
@@ -192,33 +194,46 @@ def validate_share_update_struct(data: dict[str, Any]) -> str | None:
     return _validate_share_user_and_globs(data)
 
 
+def _validate_user_list(key: str, data: dict) -> str | None:
+    items = data.get(key)
+    if items is None:
+        return None
+    if not isinstance(items, list):
+        return f"{key} must be a list"
+    if len(items) > MAX_SHARE_USERNAMES:
+        return f"too many {key}"
+    for u in items:
+        if not isinstance(u, str):
+            return f"{key} entries must be strings"
+        if len(u.strip()) > SHARE_USERNAME_ENTRY_MAX_LEN:
+            return f"{key} entry too long"
+    return None
+
+
+def _validate_glob_list(key: str, data: dict) -> str | None:
+    items = data.get(key)
+    if items is None:
+        return None
+    if not isinstance(items, list):
+        return f"{key} must be a list"
+    if len(items) > MAX_SHARE_GLOB_LINES:
+        return f"too many {key} patterns"
+    for line in items:
+        if isinstance(line, str) and len(line) > MAX_SHARE_GLOB_LINE_LEN:
+            return f"{key} pattern too long"
+    return None
+
+
 def _validate_share_user_and_globs(data: dict[str, Any]) -> str | None:
     """Validate allowed_users / modify_users / allow_list / avoid_list fragments."""
     for key in ("allowed_users", "modify_users"):
-        items = data.get(key)
-        if items is None:
-            continue
-        if not isinstance(items, list):
-            return f"{key} must be a list"
-        if len(items) > MAX_SHARE_USERNAMES:
-            return f"too many {key}"
-        for u in items:
-            if not isinstance(u, str):
-                return f"{key} entries must be strings"
-            if len(u.strip()) > SHARE_USERNAME_ENTRY_MAX_LEN:
-                return f"{key} entry too long"
-
+        err = _validate_user_list(key, data)
+        if err:
+            return err
     for key in ("allow_list", "avoid_list"):
-        items = data.get(key)
-        if items is None:
-            continue
-        if not isinstance(items, list):
-            return f"{key} must be a list"
-        if len(items) > MAX_SHARE_GLOB_LINES:
-            return f"too many {key} patterns"
-        for line in items:
-            if isinstance(line, str) and len(line) > MAX_SHARE_GLOB_LINE_LEN:
-                return f"{key} pattern too long"
+        err = _validate_glob_list(key, data)
+        if err:
+            return err
     return None
 
 

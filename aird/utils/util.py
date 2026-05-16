@@ -466,6 +466,30 @@ def share_relevant_for_viewers_file_tree(
     return False
 
 
+def _is_path_in_fallback_shares(
+    full_path: str,
+    all_shares: dict,
+    viewer_username: str | None,
+    viewer_is_admin: bool,
+    base: str,
+) -> bool:
+    all_shared_paths = set()
+    for share in all_shares.values():
+        if not share_relevant_for_viewers_file_tree(
+            share,
+            viewer_username=viewer_username,
+            viewer_is_admin=viewer_is_admin,
+            viewer_root=base,
+        ):
+            continue
+        for p in share.get("paths", []):
+            all_shared_paths.add(str(p).replace("\\", "/"))
+    if full_path in all_shared_paths:
+        return True
+    dir_prefix = f"{full_path}/"
+    return any(shared.startswith(dir_prefix) for shared in all_shared_paths)
+
+
 def augment_with_shared_status(
     files: list[dict],
     current_path: str,
@@ -476,12 +500,7 @@ def augment_with_shared_status(
     viewer_username: str | None = None,
     viewer_is_admin: bool = False,
 ) -> None:
-    """Updates file metadata dicts in-place with an 'is_shared' boolean.
-
-    Uses the same coverage rules as share listing (static, dynamic, and tag shares)
-    when *db_conn* and *root_dir* are provided; otherwise falls back to path-prefix
-    heuristics from stored *paths* only.
-    """
+    """Updates file metadata dicts in-place with an 'is_shared' boolean."""
     from aird.constants import ROOT_DIR
     from aird.core.share_root import filesystem_root_for_share
     from aird.db.shares import share_covers_relative_path
@@ -504,21 +523,6 @@ def augment_with_shared_status(
                 for share in all_shares.values()
             )
         else:
-            all_shared_paths = set()
-            for share in all_shares.values():
-                if not share_relevant_for_viewers_file_tree(
-                    share,
-                    viewer_username=viewer_username,
-                    viewer_is_admin=viewer_is_admin,
-                    viewer_root=base,
-                ):
-                    continue
-                for p in share.get("paths", []):
-                    all_shared_paths.add(str(p).replace("\\", "/"))
-            if full_path in all_shared_paths:
-                file_info["is_shared"] = True
-                continue
-            dir_prefix = f"{full_path}/"
-            file_info["is_shared"] = any(
-                shared.startswith(dir_prefix) for shared in all_shared_paths
+            file_info["is_shared"] = _is_path_in_fallback_shares(
+                full_path, all_shares, viewer_username, viewer_is_admin, base
             )

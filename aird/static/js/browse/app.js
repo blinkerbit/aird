@@ -934,7 +934,7 @@
           + 'border:1px solid var(--color-base-300);border-radius:0.375rem;'
           + 'max-height:8rem;overflow-y:auto;font-size:0.8rem;width:100%;';
         inputEl.parentNode.style.position = 'relative';
-        inputEl.insertAdjacentElement('afterend', sug);
+        inputEl.after(sug);
       }
       sug.innerHTML = matches.map(function (n) {
         return '<div data-sug="' + escapeAttr(n) + '" style="padding:0.3rem 0.6rem;cursor:pointer;">'
@@ -1019,7 +1019,7 @@
         const res = await fetch('/admin/api/abac/tags', { headers: { 'X-XSRFToken': getXSRFToken() } });
         if (res.ok) {
           const data = await res.json();
-          existingTagNames = [...new Set((data.tags || []).map(function (t) { return t.tag; }))].sort();
+          existingTagNames = [...new Set((data.tags || []).map(function (t) { return t.tag; }))].sort((a, b) => a.localeCompare(b));
         }
       } catch { /* autocomplete is best-effort */ }
 
@@ -1058,13 +1058,13 @@
         selectEl.innerHTML = '<option value="">Failed to load tags</option>';
       }
       /* Build unique tag names */
-      const tagNames = [...new Set(allTagRules.map(function (r) { return r.tag; }))].sort();
-      if (!tagNames.length) {
-        selectEl.innerHTML = '<option value="">No tags defined — create one in Admin → Tags</option>';
-      } else {
+      const tagNames = [...new Set(allTagRules.map(function (r) { return r.tag; }))].sort((a, b) => a.localeCompare(b));
+      if (tagNames.length) {
         selectEl.innerHTML = tagNames.map(function (t) {
           return '<option value="' + escapeAttr(t) + '">' + escapeHtml(t) + '</option>';
         }).join('');
+      } else {
+        selectEl.innerHTML = '<option value="">No tags defined — create one in Admin → Tags</option>';
       }
       function updatePatternPreview() {
         const chosen = selectEl.value;
@@ -1238,7 +1238,7 @@
 
     function formatShareAccessLabel(share) {
       const users = share.allowed_users;
-      if (!users || !users.length) return 'Public Access';
+      if (!users?.length) return 'Public Access';
       const n = users.length;
       const suffix = n === 1 ? '' : 's';
       return 'Restricted (' + n + ' user' + suffix + ')';
@@ -1266,7 +1266,7 @@
         item.appendChild(usersBox);
       }
 
-      if (share.modify_users && share.modify_users.length) {
+      if (share.modify_users?.length) {
         const modBox = _createEl('div', { className: 'share-users' });
         modBox.appendChild(_createEl('div', { className: 'share-users-title' }, 'Modify Users:'));
         for (const u of share.modify_users) {

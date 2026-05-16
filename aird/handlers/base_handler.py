@@ -115,43 +115,57 @@ def require_db(method):
     return wrapper
 
 
+def _deny_request(handler, redirect_url, deny_status, deny_body):
+    if redirect_url:
+        handler.redirect(redirect_url)
+    else:
+        handler.set_status(deny_status)
+        handler.write(deny_body)
+
+
 def require_admin(
     deny_status=403,
     deny_body="Access denied",
     redirect_url=None,
 ):
-    """Decorator factory: ensures the current user is an admin.
-
-    When the ``abac_engine`` feature flag is **on**, this decorator
-    additionally consults the PDP for ``admin.access`` so admin routes
-    are governed by the same decision logs as the rest of the system.
-    With the flag off, the legacy RBAC path runs unchanged.
-    """
+    """Decorator factory: ensures the current user is an admin."""
 
     def decorator(method):
         @functools.wraps(method)
         def wrapper(self, *args, **kwargs):
             if not self.is_admin_user():
-                if redirect_url:
-                    self.redirect(redirect_url)
-                else:
-                    self.set_status(deny_status)
-                    self.write(deny_body)
+                _deny_request(self, redirect_url, deny_status, deny_body)
                 return
             if is_feature_enabled("abac_engine", False):
                 decision = self.check_access("admin.access")
                 if decision is not None and decision.is_deny:
-                    if redirect_url:
-                        self.redirect(redirect_url)
-                    else:
-                        self.set_status(deny_status)
-                        self.write(deny_body)
+                    _deny_request(self, redirect_url, deny_status, deny_body)
                     return
             return method(self, *args, **kwargs)
 
         return wrapper
 
     return decorator
+
+
+def _resolve_resource_path_from_args(resource_arg, args, kwargs):
+    if resource_arg and resource_arg in kwargs:
+        return kwargs.get(resource_arg)
+    if resource_arg and args:
+        return args[0] if isinstance(args[0], str) else None
+    return None
+
+
+def _check_and_deny_action(self, action, resource_path):
+    """Return True (and write 403) if access is denied, else False."""
+    if not is_feature_enabled("abac_engine", False):
+        return False
+    decision = self.check_access(action, resource_path=resource_path)
+    if decision is not None and decision.is_deny:
+        self.set_status(403)
+        self.write({"error": "Access denied", "reason": decision.reason})
+        return True
+    return False
 
 
 def require_action(action: str, resource_arg: str | None = None):
@@ -169,29 +183,11 @@ def require_action(action: str, resource_arg: str | None = None):
     import asyncio
 
     def decorator(method):
-        def _resolve_resource_path(args, kwargs):
-            if resource_arg and resource_arg in kwargs:
-                return kwargs.get(resource_arg)
-            if resource_arg and args:
-                return args[0] if isinstance(args[0], str) else None
-            return None
-
-        def _check_and_deny(self, resource_path):
-            """Return True (and write 403) if access is denied, else False."""
-            if not is_feature_enabled("abac_engine", False):
-                return False
-            decision = self.check_access(action, resource_path=resource_path)
-            if decision is not None and decision.is_deny:
-                self.set_status(403)
-                self.write({"error": "Access denied", "reason": decision.reason})
-                return True
-            return False
-
         if asyncio.iscoroutinefunction(method):
             @functools.wraps(method)
             async def async_wrapper(self, *args, **kwargs):
-                resource_path = _resolve_resource_path(args, kwargs)
-                if _check_and_deny(self, resource_path):
+                resource_path = _resolve_resource_path_from_args(resource_arg, args, kwargs)
+                if _check_and_deny_action(self, action, resource_path):
                     return None
                 return await method(self, *args, **kwargs)
 
@@ -199,8 +195,8 @@ def require_action(action: str, resource_arg: str | None = None):
 
         @functools.wraps(method)
         def sync_wrapper(self, *args, **kwargs):
-            resource_path = _resolve_resource_path(args, kwargs)
-            if _check_and_deny(self, resource_path):
+            resource_path = _resolve_resource_path_from_args(resource_arg, args, kwargs)
+            if _check_and_deny_action(self, action, resource_path):
                 return None
             return method(self, *args, **kwargs)
 
@@ -564,30 +560,22 @@ class BaseHandler(tornado.web.RequestHandler):
     # ABAC PEP helpers
     # ------------------------------------------------------------------
 
-    def _build_access_request(
-        self,
-        action: str,
-        resource_path: str | None = None,
-        resource_size: int | None = None,
-    ) -> AccessRequest:
-        user = self.get_current_user()
+    def _resolve_subject_identity(self, user) -> tuple[str, str]:
+        """Return (username, role) from the current user cookie/dict."""
         if isinstance(user, dict):
-            username = user.get("username", "anonymous")
-            role = user.get("role", "user")
-        elif isinstance(user, (bytes, str)):
-            username = (
-                user.decode("utf-8", "ignore") if isinstance(user, bytes) else user
-            )
+            return user.get("username", "anonymous"), user.get("role", "user")
+        if isinstance(user, (bytes, str)):
+            username = user.decode("utf-8", "ignore") if isinstance(user, bytes) else user
             role = "admin" if self.is_admin_user() else "user"
-        else:
-            username = "anonymous"
-            role = "anonymous"
+            return username, role
+        return "anonymous", "anonymous"
 
-        clearance = "admin" if role == "admin" else "internal"
-        extra_attrs: list[tuple[str, str]] = []
+    def _resolve_user_attributes(self, db_conn, username: str) -> tuple[str, bool, list]:
+        """Return (clearance, is_managed_device, extra_attrs) from DB."""
+        clearance = "internal"
         is_managed_device = False
+        extra_attrs: list[tuple[str, str]] = []
         try:
-            db_conn = self.db_conn
             if db_conn is not None and username and username != "anonymous":
                 attrs = get_user_attributes(db_conn, username)
                 if attrs.get("clearance"):
@@ -600,6 +588,22 @@ class BaseHandler(tornado.web.RequestHandler):
                     extra_attrs.append((key, value))
         except Exception:
             logger.debug("user_attributes lookup failed", exc_info=True)
+        return clearance, is_managed_device, extra_attrs
+
+    def _build_access_request(
+        self,
+        action: str,
+        resource_path: str | None = None,
+        resource_size: int | None = None,
+    ) -> AccessRequest:
+        user = self.get_current_user()
+        username, role = self._resolve_subject_identity(user)
+
+        clearance_default = "admin" if role == "admin" else "internal"
+        raw_clearance, is_managed_device, extra_attrs = self._resolve_user_attributes(
+            self.db_conn, username
+        )
+        clearance = raw_clearance if raw_clearance != "internal" else clearance_default
 
         groups: tuple[str, ...] = ()
         for key, value in extra_attrs:
@@ -709,7 +713,7 @@ class BaseHandler(tornado.web.RequestHandler):
             self.write_json_error(exc.status_code, reason)
             return None
         except Exception as exc:
-            logger.error("JSON action failed: %s", exc, exc_info=True)
+            logger.exception("JSON action failed: %s", exc)
             self.write_json_error(on_error_status, on_error_message)
             return None
 

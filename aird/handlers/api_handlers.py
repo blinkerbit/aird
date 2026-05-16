@@ -167,7 +167,7 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
                     json.dumps({"type": "line", "data": line.strip()})
                 )
         except Exception as e:
-            logging.error(f"Error reading file: {self.file_path}", exc_info=True)
+            logging.exception("Error reading file: %s", self.file_path)
             self.write_message(json.dumps({"type": "error", "message": str(e)}))
             return
 
@@ -367,8 +367,8 @@ class FileListAPIHandler(BaseHandler):
                 "is_audio": is_audio_file(path),
             }
             self.write(result)
-        except Exception as e:
-            logging.error("Error listing files: %s", e, exc_info=True)
+        except Exception:
+            logging.exception("Error listing files")
             self.set_status(500)
             self.write("Internal server error")
 
@@ -585,6 +585,18 @@ class SuperSearchWebSocketHandler(
                     match_count += 1
         return match_count
 
+    def _match_filename_search(self, rel_path_str: str, filename: str, search_text: str) -> bool:
+        """Return True if filename/path matches search_text."""
+        search_lower = search_text.lower()
+        filename_lower = filename.lower()
+        rel_path_lower = rel_path_str.lower()
+        if any(c in search_text for c in "*?[]"):
+            return (
+                fnmatch.fnmatchcase(filename_lower, search_lower)
+                or fnmatch.fnmatchcase(rel_path_lower, search_lower)
+            )
+        return search_lower in filename_lower or search_lower in rel_path_lower
+
     async def _search_one_file(
         self,
         file_path: pathlib.Path,
@@ -612,36 +624,39 @@ class SuperSearchWebSocketHandler(
         if search_mode == "filename":
             if self.stop_event.is_set():
                 raise asyncio.CancelledError
-            await asyncio.sleep(0)  # yield so on_close / stop_event can be processed
-
-            search_lower = search_text.lower()
-            filename_lower = filename.lower()
-            rel_path_lower = rel_path_str.lower()
-
-            if any(c in search_text for c in "*?[]"):
-                # Use fnmatchcase to ensure consistent case-insensitive behavior across platforms
-                # since we manually lowercased the strings.
-                match = fnmatch.fnmatchcase(
-                    filename_lower, search_lower
-                ) or fnmatch.fnmatchcase(rel_path_lower, search_lower)
-            else:
-                match = search_lower in filename_lower or search_lower in rel_path_lower
-
-            if match:
+            await asyncio.sleep(0)
+            if self._match_filename_search(rel_path_str, filename, search_text):
                 self.send_match(rel_path_str, 0, rel_path_str, search_text)
                 return 1, True
             return 0, True
 
         try:
-            count = await self._search_file_content(
-                file_path, rel_path_str, search_text
-            )
+            count = await self._search_file_content(file_path, rel_path_str, search_text)
             return count, True
         except (UnicodeDecodeError, OSError):
             return 0, True
         except Exception as other_err:
             logging.debug("Error searching file %s: %s", file_path, other_err)
             return 0, True
+
+    async def _process_walk_file(
+        self, file_path, root_path, filename, normalized_pattern,
+        search_text, files_searched, search_mode, files_visited,
+    ) -> tuple[int, bool]:
+        """Process one file during walk. Returns (match_delta, counted)."""
+        try:
+            rel_path_str = str(file_path.relative_to(root_path)).replace("\\", "/")
+        except ValueError:
+            return 0, False
+        glob_match = self._file_matches_pattern(rel_path_str, filename, normalized_pattern)
+        if not glob_match:
+            if files_visited == 1 or files_visited % SuperSearchWebSocketHandler._walk_scan_interval == 0:
+                await self._emit_walk_tick(rel_path_str, files_visited)
+            return 0, False
+        return await self._search_one_file(
+            file_path, root_path, filename, normalized_pattern,
+            search_text, files_searched + 1, search_mode, rel_path_str=rel_path_str,
+        )
 
     async def _run_search_walk(
         self,
@@ -662,44 +677,14 @@ class SuperSearchWebSocketHandler(
                     raise asyncio.CancelledError
                 file_path = pathlib.Path(dirpath) / filename
                 files_visited += 1
-                try:
-                    rel_path_str = (
-                        str(file_path.relative_to(root_path)).replace("\\", "/")
-                    )
-                except ValueError:
-                    continue
-
-                glob_match = self._file_matches_pattern(
-                    rel_path_str, filename, normalized_pattern
-                )
-                if not glob_match:
-                    if (
-                        files_visited == 1
-                        or files_visited
-                        % SuperSearchWebSocketHandler._walk_scan_interval
-                        == 0
-                    ):
-                        await self._emit_walk_tick(rel_path_str, files_visited)
-                    continue
-
-                match_delta, counted = await self._search_one_file(
-                    file_path,
-                    root_path,
-                    filename,
-                    normalized_pattern,
-                    search_text,
-                    files_searched + 1,
-                    search_mode,
-                    rel_path_str=rel_path_str,
+                match_delta, counted = await self._process_walk_file(
+                    file_path, root_path, filename, normalized_pattern,
+                    search_text, files_searched, search_mode, files_visited,
                 )
                 matches += match_delta
                 if counted:
                     files_searched += 1
-            if (
-                files_visited > 0
-                and files_visited % 20 == 0
-                and not await self._yield_and_check_auth()
-            ):
+            if files_visited > 0 and files_visited % 20 == 0 and not await self._yield_and_check_auth():
                 return None
         return matches, files_searched
 
@@ -785,7 +770,7 @@ class SuperSearchWebSocketHandler(
                 pass
             raise
         except Exception as e:
-            logging.error(f"Super search error: {e}", exc_info=True)
+            logging.exception("Super search error")
             try:
                 self.write_message(
                     json.dumps({"type": "error", "message": f"Search failed: {str(e)}"})
@@ -855,6 +840,28 @@ def _share_eligible_for_path_details(handler, share: dict) -> bool:
     )
 
 
+def _format_share_for_path_details(handler, share: dict) -> dict | None:
+    """Return formatted share info dict, or None if not eligible."""
+    if not _share_eligible_for_path_details(handler, share):
+        return None
+    allowed_users = share.get("allowed_users")
+    modify_users = share.get("modify_users")
+    show_secret = handler.can_manage_share_secrets(share)
+    token = share.get("secret_token")
+    return {
+        "id": share["id"],
+        "created": share.get("created", ""),
+        "allowed_users": allowed_users if allowed_users is not None else [],
+        "modify_users": modify_users if modify_users is not None else [],
+        "url": f"/shared/{share['id']}",
+        "paths": share.get("paths", []),
+        "share_type": share.get("share_type", "static"),
+        "tag_name": share.get("tag_name"),
+        "has_token": token is not None,
+        "secret_token": token if show_secret else None,
+    }
+
+
 class ShareDetailsAPIHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
@@ -873,48 +880,19 @@ class ShareDetailsAPIHandler(BaseHandler):
             return
 
         def action():
-            # Find shares that contain this file
             db_conn = self.require_db_connection(DB_NOT_AVAILABLE_MSG)
             if not db_conn:
                 return None
             user_root = get_user_root(self)
             share_service = self.get_service("share_service")
-            if share_service is not None:
-                matching_shares = share_service.get_shares_for_path(
-                    db_conn, file_path, user_root
-                )
-            else:
-                matching_shares = self.get_service("share_service").get_shares_for_path(
-                    db_conn, file_path, user_root
-                )
-
-            formatted_shares = []
-            for share in matching_shares:
-                if not _share_eligible_for_path_details(self, share):
-                    continue
-                allowed_users = share.get("allowed_users")
-                modify_users = share.get("modify_users")
-                show_secret = self.can_manage_share_secrets(share)
-                token = share.get("secret_token")
-                share_info = {
-                    "id": share["id"],
-                    "created": share.get("created", ""),
-                    "allowed_users": allowed_users if allowed_users is not None else [],
-                    "modify_users": modify_users if modify_users is not None else [],
-                    "url": f"/shared/{share['id']}",
-                    "paths": share.get("paths", []),
-                    "share_type": share.get("share_type", "static"),
-                    "tag_name": share.get("tag_name"),
-                    "has_token": token is not None,
-                    "secret_token": token if show_secret else None,
-                }
-                formatted_shares.append(share_info)
-
+            matching_shares = share_service.get_shares_for_path(db_conn, file_path, user_root)
+            formatted_shares = [
+                info for share in matching_shares
+                if (info := _format_share_for_path_details(self, share)) is not None
+            ]
             return {"shares": formatted_shares}
 
-        self.run_json_action(
-            action, on_error_message="Failed to retrieve share details"
-        )
+        self.run_json_action(action, on_error_message="Failed to retrieve share details")
 
 
 class ShareDetailsByIdAPIHandler(BaseHandler):
@@ -981,6 +959,33 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
         )
 
 
+def _classify_share_for_user(
+    share: dict,
+    current_user: str,
+    is_admin: bool,
+) -> tuple[bool, bool]:
+    """Return (is_my_share, is_shared_with_me) for a given user."""
+    creator = (share.get("created_by") or "").strip()
+    allowed_raw = share.get("allowed_users")
+    allowed_list = allowed_raw if isinstance(allowed_raw, list) else []
+    mod_list = share.get("modify_users") or []
+
+    if current_user and current_user in mod_list:
+        return True, False
+    if creator and login_matches_share_creator_field(creator, current_user):
+        return True, False
+    if not creator and is_admin:
+        return True, False
+    if not creator and current_user and (
+        allowed_raw is None
+        or (isinstance(allowed_raw, list) and current_user in allowed_list)
+    ):
+        return False, True
+    if current_user and isinstance(allowed_raw, list) and current_user in allowed_list:
+        return False, True
+    return False, False
+
+
 class ShareListAPIHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
@@ -1003,30 +1008,11 @@ class ShareListAPIHandler(BaseHandler):
         my_shares = {}
         shared_with_me = []
         for sid, share in all_shares.items():
-            creator = (share.get("created_by") or "").strip()
-            allowed_raw = share.get("allowed_users")
-            allowed_list = allowed_raw if isinstance(allowed_raw, list) else []
-            mod_list = share.get("modify_users") or []
-
-            if current_user and current_user in mod_list:
+            is_mine, is_shared = _classify_share_for_user(share, current_user, is_admin)
+            if is_mine:
                 my_shares[sid] = share
-            elif creator and login_matches_share_creator_field(creator, current_user):
-                my_shares[sid] = share
-            elif not creator:
-                if is_admin:
-                    my_shares[sid] = share
-                elif current_user:
-                    if (
-                        allowed_raw is None
-                        or (
-                            isinstance(allowed_raw, list)
-                            and current_user in allowed_list
-                        )
-                    ):
-                        shared_with_me.append(_redact_share_secret_token(share))
-            else:
-                if current_user and isinstance(allowed_raw, list) and current_user in allowed_list:
-                    shared_with_me.append(_redact_share_secret_token(share))
+            elif is_shared:
+                shared_with_me.append(_redact_share_secret_token(share))
 
         self.write({"shares": my_shares, "shared_with_me": shared_with_me})
 

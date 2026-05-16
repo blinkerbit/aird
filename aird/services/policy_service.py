@@ -80,11 +80,7 @@ class PolicyService:
         *,
         audit: bool = True,
     ) -> AccessDecision:
-        """Evaluate *request* against the active policies.
-
-        When *audit* is True (default) the resulting decision is logged
-        to the ``policy_decisions`` table and broadcast on the event bus.
-        """
+        """Evaluate *request* against the active policies."""
         request = self._enrich_resource(conn, request)
         attrs = request.to_attrs()
         policies = self._load_policies(conn)
@@ -93,46 +89,33 @@ class PolicyService:
             key=lambda p: (-int(p.get("priority", 0)), int(p.get("id", 0)))
         )
 
-        permit_match: dict | None = None
         for policy in relevant:
             if not policy.get("enabled", True):
                 continue
             try:
-                if _evaluate_condition(policy.get("condition") or {}, attrs):
-                    if policy.get("effect") == "deny":
-                        return self._finalise(
-                            conn,
-                            request,
-                            "deny",
-                            reason=policy.get("description")
-                            or f"Denied by policy '{policy.get('name')}'",
-                            policy_id=policy.get("id"),
-                            policy_name=policy.get("name"),
-                            audit=audit,
-                        )
-                    if permit_match is None and policy.get("effect") == "permit":
-                        permit_match = policy
+                if not _evaluate_condition(policy.get("condition") or {}, attrs):
+                    continue
+                if policy.get("effect") == "deny":
+                    return self._finalise(
+                        conn, request, "deny",
+                        reason=policy.get("description") or f"Denied by policy '{policy.get('name')}'",
+                        policy_id=policy.get("id"),
+                        policy_name=policy.get("name"),
+                        audit=audit,
+                    )
+                if policy.get("effect") == "permit":
+                    return self._finalise(
+                        conn, request, "permit",
+                        reason=policy.get("description") or f"Permitted by policy '{policy.get('name')}'",
+                        policy_id=policy.get("id"),
+                        policy_name=policy.get("name"),
+                        audit=audit,
+                    )
             except PolicyEvaluationError as exc:
-                logger.warning(
-                    "Skipping malformed policy %s: %s", policy.get("name"), exc
-                )
-
-        if permit_match is not None:
-            return self._finalise(
-                conn,
-                request,
-                "permit",
-                reason=permit_match.get("description")
-                or f"Permitted by policy '{permit_match.get('name')}'",
-                policy_id=permit_match.get("id"),
-                policy_name=permit_match.get("name"),
-                audit=audit,
-            )
+                logger.warning("Skipping malformed policy %s: %s", policy.get("name"), exc)
 
         return self._finalise(
-            conn,
-            request,
-            "deny",
+            conn, request, "deny",
             reason="No matching permit policy (default deny)",
             policy_id=None,
             policy_name=None,
@@ -163,7 +146,8 @@ class PolicyService:
         if resource.path and not resource.tags:
             tags = self._tags.resolve(conn, resource.path)
             if tags:
-                return replace(request, resource=replace(resource, tags=tags))
+                enriched: AccessRequest = replace(request, resource=replace(resource, tags=tags))
+                return enriched
         return request
 
     def _finalise(
@@ -282,6 +266,93 @@ def _matches_action(policy: dict, action: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _eval_in(payload: dict, attrs: dict) -> bool:
+    value = _resolve_value(payload.get("value"), attrs)
+    candidate = _resolve_value(payload.get("list"), attrs)
+    if isinstance(candidate, (list, tuple, set)):
+        return value in candidate
+    if isinstance(candidate, str):
+        return value == candidate
+    return False
+
+
+def _resolve_timestamp(payload: dict, attrs: dict) -> datetime | None:
+    """Return a datetime from payload/attrs, or None if unparseable."""
+    ts_value = payload.get("value")
+    if ts_value is None:
+        iso = attrs.get("environment", {}).get("timestamp")
+        if not iso:
+            return None
+        try:
+            return datetime.fromisoformat(iso)
+        except ValueError:
+            return None
+    stamp = _resolve_value(ts_value, attrs)
+    if isinstance(stamp, str):
+        try:
+            stamp = datetime.fromisoformat(stamp)
+        except ValueError:
+            return None
+    return stamp if isinstance(stamp, datetime) else None
+
+
+def _eval_time_between(payload: dict, attrs: dict) -> bool:
+    start = _parse_time(payload.get("start"))
+    end = _parse_time(payload.get("end"))
+    if start is None or end is None:
+        raise PolicyEvaluationError("time_between requires start/end")
+    stamp = _resolve_timestamp(payload, attrs)
+    if stamp is None:
+        return False
+    current = stamp.time()
+    if start <= end:
+        return start <= current <= end
+    return current >= start or current <= end
+
+
+def _eval_ip_in_cidr(payload: dict, attrs: dict) -> bool:
+    ip_expr = payload.get("ip")
+    cidr = _resolve_value(payload.get("cidr"), attrs)
+    ip_value = (
+        _resolve_value(ip_expr, attrs)
+        if ip_expr is not None
+        else attrs.get("environment", {}).get("ip")
+    )
+    if not ip_value or not cidr:
+        return False
+    try:
+        return ipaddress.ip_address(str(ip_value)) in ipaddress.ip_network(
+            str(cidr), strict=False
+        )
+    except ValueError:
+        return False
+
+
+def _eval_tag_present(payload, attrs: dict) -> bool:
+    tag = _resolve_value(payload, attrs)
+    tags = attrs.get("resource", {}).get("tags") or []
+    return tag in tags
+
+
+_OP_DISPATCH: dict = {}
+
+
+def _build_op_dispatch():
+    global _OP_DISPATCH
+    _OP_DISPATCH = {
+        "and": lambda payload, attrs: all(_evaluate_condition(c, attrs) for c in (payload or [])),
+        "or": lambda payload, attrs: any(_evaluate_condition(c, attrs) for c in (payload or [])),
+        "not": lambda payload, attrs: not _evaluate_condition(payload, attrs),
+        "equals": lambda payload, attrs: _resolve_value(payload.get("left"), attrs) == _resolve_value(payload.get("right"), attrs),
+        "not_equals": lambda payload, attrs: _resolve_value(payload.get("left"), attrs) != _resolve_value(payload.get("right"), attrs),
+        "in": _eval_in,
+        "tag_present": _eval_tag_present,
+        "time_between": _eval_time_between,
+        "ip_in_cidr": _eval_ip_in_cidr,
+        "attr": lambda payload, attrs: _resolve_attr(payload, attrs) is not None,
+    }
+
+
 def _evaluate_condition(node: Any, attrs: dict[str, Any]) -> bool:
     """Evaluate a condition AST node against a flattened attribute dict.
 
@@ -312,84 +383,14 @@ def _evaluate_condition(node: Any, attrs: dict[str, Any]) -> bool:
         return True
 
     if len(node) > 1:
-        # Treat a multi-key dict as an implicit AND of single-key clauses.
         return all(_evaluate_condition({k: v}, attrs) for k, v in node.items())
 
     op, payload = next(iter(node.items()))
     op = str(op).lower()
 
-    if op == "and":
-        return all(_evaluate_condition(c, attrs) for c in (payload or []))
-    if op == "or":
-        return any(_evaluate_condition(c, attrs) for c in (payload or []))
-    if op == "not":
-        return not _evaluate_condition(payload, attrs)
-    if op == "equals":
-        left = _resolve_value(payload.get("left"), attrs)
-        right = _resolve_value(payload.get("right"), attrs)
-        return left == right
-    if op == "not_equals":
-        left = _resolve_value(payload.get("left"), attrs)
-        right = _resolve_value(payload.get("right"), attrs)
-        return left != right
-    if op == "in":
-        value = _resolve_value(payload.get("value"), attrs)
-        candidate = _resolve_value(payload.get("list"), attrs)
-        if isinstance(candidate, (list, tuple, set)):
-            return value in candidate
-        if isinstance(candidate, str):
-            return value == candidate
-        return False
-    if op == "tag_present":
-        tag = _resolve_value(payload, attrs)
-        tags = attrs.get("resource", {}).get("tags") or []
-        return tag in tags
-    if op == "time_between":
-        start = _parse_time(payload.get("start"))
-        end = _parse_time(payload.get("end"))
-        if start is None or end is None:
-            raise PolicyEvaluationError("time_between requires start/end")
-        ts_value = payload.get("value")
-        if ts_value is None:
-            iso = attrs.get("environment", {}).get("timestamp")
-            if not iso:
-                return False
-            try:
-                stamp = datetime.fromisoformat(iso)
-            except ValueError:
-                return False
-        else:
-            stamp = _resolve_value(ts_value, attrs)
-            if isinstance(stamp, str):
-                try:
-                    stamp = datetime.fromisoformat(stamp)
-                except ValueError:
-                    return False
-            if not isinstance(stamp, datetime):
-                return False
-        current = stamp.time()
-        if start <= end:
-            return start <= current <= end
-        # window crosses midnight
-        return current >= start or current <= end
-    if op == "ip_in_cidr":
-        ip_expr = payload.get("ip")
-        cidr = _resolve_value(payload.get("cidr"), attrs)
-        ip_value = (
-            _resolve_value(ip_expr, attrs)
-            if ip_expr is not None
-            else attrs.get("environment", {}).get("ip")
-        )
-        if not ip_value or not cidr:
-            return False
-        try:
-            return ipaddress.ip_address(str(ip_value)) in ipaddress.ip_network(
-                str(cidr), strict=False
-            )
-        except ValueError:
-            return False
-    if op == "attr":
-        return _resolve_attr(payload, attrs) is not None
+    handler = _OP_DISPATCH.get(op)
+    if handler is not None:
+        return handler(payload, attrs)
 
     raise PolicyEvaluationError(f"Unknown operator '{op}'")
 
@@ -431,3 +432,6 @@ def _parse_time(value: Any) -> dtime | None:
         except (ValueError, IndexError):
             return None
     return None
+
+
+_build_op_dispatch()

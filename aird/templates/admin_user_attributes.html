@@ -144,7 +144,7 @@
             const body = await res.json().catch(() => ({}));
             throw new Error(body.error || ('HTTP ' + res.status));
           }
-          window.location.reload();
+          globalThis.location.reload();
         } catch (err) {
           showError(err.message || 'Failed to save attribute');
         }
@@ -152,8 +152,8 @@
 
       document.querySelectorAll('[data-delete-attr-username]').forEach(function (btn) {
         btn.addEventListener('click', async function () {
-          const username = btn.getAttribute('data-delete-attr-username');
-          const key = btn.getAttribute('data-delete-attr-key');
+          const username = btn.dataset.deleteAttrUsername;
+          const key = btn.dataset.deleteAttrKey;
           if (!confirm('Delete attribute "' + key + '" for ' + username + '?')) return;
           try {
             const res = await fetch('/admin/api/abac/user-attributes', {

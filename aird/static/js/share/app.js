@@ -962,7 +962,7 @@ let currentPath = '';
       if (!isoStr) return '';
       const normalized = isoStr.endsWith('Z') ? isoStr : isoStr + 'Z';
       const d = new Date(normalized);
-      if (isNaN(d)) return '';
+      if (Number.isNaN(d.getTime())) return '';
       const pad = n => String(n).padStart(2, '0');
       return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
     }
@@ -979,6 +979,31 @@ let currentPath = '';
       });
     }
 
+    function _buildPathsSection(share, isTag) {
+      if (isTag) {
+        return {
+          title: 'Tag-based listing',
+          inner: '<div class="text-xs p-3 bg-base-200 rounded-lg">Files are defined by the resource tag <code class="font-mono">'
+            + escapeHtml(share.tag_name || '') + '</code>. Path lists are not used; update tag rules in Admin instead.</div>',
+          addBtn: '',
+        };
+      }
+      const pathCount = (share.paths || []).length;
+      const inner = pathCount > 0
+        ? (share.paths || []).map(p =>
+            '<div class="flex items-center justify-between p-1.5 bg-base-200 rounded text-xs group">'
+            + '<span class="font-mono truncate flex-grow">' + escapeHtml(p) + '</span>'
+            + '<button class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100" data-action="removeFileFromShare" data-path="' + escapeHtml(p) + '">✕</button>'
+            + '</div>'
+          ).join('')
+        : '<div class="text-center py-4 opacity-40 text-xs italic">No files in this share</div>';
+      return {
+        title: 'Shared Files (' + pathCount + ')',
+        inner,
+        addBtn: '<button class="btn btn-sm btn-outline w-full mt-3" data-action="showAddFilesModalInManagement">+ Add More Files</button>',
+      };
+    }
+
     function renderShareManagementModal(share) {
       const body = document.getElementById('shareManagementBody');
       const isTag = (share.share_type || 'static') === 'tag';
@@ -988,50 +1013,47 @@ let currentPath = '';
       const disableTokenInitially = !hasSecret;
       const enableTokenInitially = hasSecret;
 
-      const tokenHtml = share.secret_token
-        ? '<div class="bg-base-200 p-3 rounded-lg flex items-center gap-2">'
+      let tokenHtml;
+      if (share.secret_token) {
+        tokenHtml = '<div class="bg-base-200 p-3 rounded-lg flex items-center gap-2">'
           + '<code class="text-xs font-mono flex-grow truncate">' + escapeHtml(share.secret_token) + '</code>'
           + '<button class="btn btn-xs btn-ghost" data-action="copyToClipboard" data-text="' + escapeHtml(share.secret_token) + '">Copy</button>'
-          + '</div>'
-        : (hasSecret ? '<p class="text-xs text-base-content/70">A secret token is enabled.</p>' : '');
+          + '</div>';
+      } else if (hasSecret) {
+        tokenHtml = '<p class="text-xs text-base-content/70">A secret token is enabled.</p>';
+      } else {
+        tokenHtml = '';
+      }
 
       let pathsSectionTitle;
       let pathsInnerHtml;
       let addFilesButtonHtml = '';
-      if (isTag) {
-        pathsSectionTitle = 'Tag-based listing';
-        pathsInnerHtml = '<div class="text-xs p-3 bg-base-200 rounded-lg">Files are defined by the resource tag <code class="font-mono">'
-          + escapeHtml(share.tag_name || '')
-          + '</code>. Path lists are not used; update tag rules in Admin instead.</div>';
-      } else {
-        pathsSectionTitle = 'Shared Files (' + (share.paths || []).length + ')';
-        pathsInnerHtml = (share.paths || []).length > 0
-          ? (share.paths || []).map(p =>
-              '<div class="flex items-center justify-between p-1.5 bg-base-200 rounded text-xs group">'
-              + '<span class="font-mono truncate flex-grow">' + escapeHtml(p) + '</span>'
-              + '<button class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100" data-action="removeFileFromShare" data-path="' + escapeHtml(p) + '">✕</button>'
-              + '</div>'
-            ).join('')
-          : '<div class="text-center py-4 opacity-40 text-xs italic">No files in this share</div>';
-        addFilesButtonHtml = '<button class="btn btn-sm btn-outline w-full mt-3" data-action="showAddFilesModalInManagement">+ Add More Files</button>';
-      }
+      const pathsSection = _buildPathsSection(share, isTag);
+      pathsSectionTitle = pathsSection.title;
+      pathsInnerHtml = pathsSection.inner;
+      addFilesButtonHtml = pathsSection.addBtn;
 
-      const shareTypeBlock = isTag
-        ? '<div class="form-control"><p class="text-sm">Type: <strong>tag</strong> — membership follows Admin tag / glob rules for <code class="text-xs font-mono">'
+      let shareTypeBlock;
+      if (isTag) {
+        shareTypeBlock = '<div class="form-control"><p class="text-sm">Type: <strong>tag</strong> — membership follows Admin tag / glob rules for <code class="text-xs font-mono">'
           + escapeHtml(share.tag_name || '')
-          + '</code>.</p></div>'
-        : '<div class="form-control">'
+          + '</code>.</p></div>';
+      } else {
+        const staticChecked = isStatic ? ' checked' : '';
+        const dynamicChecked = isStatic ? '' : ' checked';
+        shareTypeBlock = '<div class="form-control">'
           + '<label class="label pb-1"><span class="label-text font-bold text-sm">Share Type</span></label>'
           + '<div class="flex gap-3">'
           + '<label class="label cursor-pointer justify-start gap-2 bg-base-200 px-3 py-2 rounded-lg flex-1">'
-          + '<input type="radio" name="shareTypeEdit" value="static" class="radio radio-primary radio-sm"' + (isStatic ? ' checked' : '') + '>'
+          + '<input type="radio" name="shareTypeEdit" value="static" class="radio radio-primary radio-sm"' + staticChecked + '>'
           + '<span class="label-text font-semibold text-sm">Static</span>'
           + '</label>'
           + '<label class="label cursor-pointer justify-start gap-2 bg-base-200 px-3 py-2 rounded-lg flex-1">'
-          + '<input type="radio" name="shareTypeEdit" value="dynamic" class="radio radio-primary radio-sm"' + (isStatic ? '' : ' checked') + '>'
+          + '<input type="radio" name="shareTypeEdit" value="dynamic" class="radio radio-primary radio-sm"' + dynamicChecked + '>'
           + '<span class="label-text font-semibold text-sm">Dynamic</span>'
           + '</label>'
           + '</div></div>';
+      }
 
       body.innerHTML = `
         <div class="space-y-4 pb-4">
@@ -1162,7 +1184,14 @@ let currentPath = '';
       try {
         const isTagShare = (currentShareData.share_type || 'static') === 'tag';
         const typeRadio = document.querySelector('input[name="shareTypeEdit"]:checked');
-        const shareType = isTagShare ? 'tag' : (typeRadio ? typeRadio.value : (currentShareData.share_type || 'static'));
+        let shareType;
+        if (isTagShare) {
+          shareType = 'tag';
+        } else if (typeRadio) {
+          shareType = typeRadio.value;
+        } else {
+          shareType = currentShareData.share_type || 'static';
+        }
         const disableToken = document.getElementById('disableTokenEdit').checked;
         const enableToken = document.getElementById('enableTokenEdit').checked;
         const allowListText = document.getElementById('allowListEdit').value.trim();
@@ -1977,7 +2006,7 @@ let currentPath = '';
       }
     }
 
-    function _buildShareRow(share, { showOwner = false, readOnly = false } = {}) {
+    function _buildAccessInfo(share) {
       const au = share.allowed_users;
       let accessInfo;
       if (Array.isArray(au) && au.length > 0) {
@@ -1990,6 +2019,11 @@ let currentPath = '';
       if (modifyCount > 0) {
         accessInfo += ` <span class="permission-badge editor">${modifyCount} editor${modifyCount === 1 ? '' : 's'}</span>`;
       }
+      return accessInfo;
+    }
+
+    function _buildShareRow(share, { showOwner = false, readOnly = false } = {}) {
+      const accessInfo = _buildAccessInfo(share);
 
       const createdDate = share.created ? new Date(share.created).toLocaleString() : 'Just now';
       const rawShareId = String(share.id);
@@ -2130,7 +2164,7 @@ let currentPath = '';
           try {
             const j = JSON.parse(text);
             if (j.error) detail = j.error;
-          } catch (_) { /* use raw text */ }
+          } catch (_e) { /* use raw text */ }
           showDialog('Failed to revoke share: ' + detail, 'Error');
           return;
         }

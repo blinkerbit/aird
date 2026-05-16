@@ -172,9 +172,9 @@ def _try_username_password_login(handler, username, password, next_url):
             return True
         handler.redirect(next_url)
         return True
-    except Exception as e:
-        logging.error(
-            "Exception during username/password authentication: %s", e, exc_info=True
+    except Exception:
+        logging.exception(
+            "Exception during username/password authentication"
         )
         handler.render(
             LOGIN_HTML,
@@ -366,9 +366,9 @@ def _do_profile_password_update(
             must_change_password=False,
         )
         return ("Password updated successfully", None)
-    except Exception as e:
-        logging.error(
-            "Error updating password for user %s: %s", user.get("username"), e
+    except Exception:
+        logging.exception(
+            "Error updating password for user %s", user.get("username")
         )
         return (None, "Error updating password. Please try again.")
 
@@ -563,7 +563,7 @@ class LoginHandler(BaseHandler):
             )
             return
         except Exception:
-            logging.error("Error parsing login form data", exc_info=True)
+            logging.exception("Error parsing login form data")
             self.render(
                 LOGIN_HTML,
                 error="Error processing login request. Please try again.",

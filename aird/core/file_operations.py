@@ -44,7 +44,7 @@ def _glob_pattern_to_regex(pattern: str) -> re.Pattern:
     """
     # Replace **/ with a special token so we can emit (prefix/)? in the regex
     # This allows **/*.py to match both root-level foo.py and nested a/b/foo.py
-    normalized = re.sub(r"\*\*/", "\x00", pattern)
+    normalized = pattern.replace("**/", "\x00")
     parts = re.split(r"(\*\*)", normalized)
     regex = ""
     for part in parts:
@@ -148,6 +148,37 @@ def get_tags_for_path(rules: list[dict], rel_path: str) -> list[str]:
     return list(seen)
 
 
+def _process_walk_entry(root_dir: str, dirpath: str, name: str, is_dir: bool, normalised: list[str]) -> str | None:
+    """Return relative path (with trailing '/' for dirs) if it matches patterns, else None."""
+    full = os.path.join(dirpath, name)
+    rel = os.path.relpath(full, root_dir).replace("\\", "/")
+    if not matches_glob_patterns(rel, normalised):
+        return None
+    return rel + "/" if is_dir else rel
+
+
+def _walk_and_match(root_dir: str, normalised: list[str], max_files: int) -> list[str]:
+    """Walk root_dir and collect paths matching normalised glob patterns."""
+    result: list[str] = []
+    try:
+        for dirpath, dirnames, filenames in os.walk(root_dir):
+            for dname in dirnames:
+                entry = _process_walk_entry(root_dir, dirpath, dname, True, normalised)
+                if entry is not None:
+                    result.append(entry)
+                    if len(result) >= max_files:
+                        return result
+            for fname in filenames:
+                entry = _process_walk_entry(root_dir, dirpath, fname, False, normalised)
+                if entry is not None:
+                    result.append(entry)
+                    if len(result) >= max_files:
+                        return result
+    except OSError as exc:
+        logger.warning("get_files_by_tag_patterns scan error: %s", exc)
+    return result
+
+
 def get_files_by_tag_patterns(
     patterns: list[str],
     root_dir: str | None = None,
@@ -166,29 +197,8 @@ def get_files_by_tag_patterns(
         return []
     if root_dir is None:
         root_dir = ROOT_DIR
-    # Normalise: strip leading '/' so patterns stored as '/foo' match rel 'foo'
     normalised = [p.lstrip("/") for p in patterns]
-    result: list[str] = []
-    try:
-        for dirpath, dirnames, filenames in os.walk(root_dir):
-            # Check directories themselves
-            for dname in dirnames:
-                full = os.path.join(dirpath, dname)
-                rel = os.path.relpath(full, root_dir).replace("\\", "/")
-                if matches_glob_patterns(rel, normalised):
-                    result.append(rel + "/")
-                    if len(result) >= max_files:
-                        return result
-            for fname in filenames:
-                full = os.path.join(dirpath, fname)
-                rel = os.path.relpath(full, root_dir).replace("\\", "/")
-                if matches_glob_patterns(rel, normalised):
-                    result.append(rel)
-                    if len(result) >= max_files:
-                        return result
-    except OSError as exc:
-        logger.warning("get_files_by_tag_patterns scan error: %s", exc)
-    return result
+    return _walk_and_match(root_dir, normalised, max_files)
 
 
 def cloud_root_dir() -> str:

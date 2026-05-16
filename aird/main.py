@@ -1,4 +1,3 @@
-import traceback
 import logging
 import os
 import secrets
@@ -344,8 +343,8 @@ def _create_emergency_db_connection() -> None:
         constants.DB_CONN = sqlite3.connect(constants.DB_PATH, check_same_thread=False)
         init_db(constants.DB_CONN)
         logger.info(f"Created emergency database connection: {constants.DB_CONN}")
-    except Exception as db_error:
-        logger.error(f"Failed to create emergency database connection: {db_error}")
+    except Exception:
+        logger.exception("Failed to create emergency database connection")
 
 
 def _load_and_merge_configs(db_conn) -> None:
@@ -419,9 +418,8 @@ def _init_database() -> None:
         if constants.DB_CONN is None:
             _create_emergency_db_connection()
 
-    except Exception as e:
-        logger.error(f"Database initialization failed: {e}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
+    except Exception:
+        logger.exception("Database initialization failed")
         constants.DB_CONN = None
         logger.warning("DB_CONN set to None")
 
@@ -519,8 +517,8 @@ def _start_server(app, ssl_options, port: int, hostname: str) -> None:
             )
             tornado.ioloop.IOLoop.current().start()
             return
-        except OSError as e:
-            logger.error("Failed to bind on port %d: %s", port, e)
+        except OSError:
+            logger.exception("Failed to bind on port %d", port)
             if attempt < _MAX_PORT_RETRIES - 1:
                 port += 1
                 logger.warning("Retrying on port %d (%d/%d)", port, attempt + 2, _MAX_PORT_RETRIES)

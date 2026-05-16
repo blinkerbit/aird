@@ -108,9 +108,9 @@
         tab.addEventListener("click", function () {
           tabs.forEach(function (t) { t.classList.remove("tab-active", "font-bold"); });
           tab.classList.add("tab-active", "font-bold");
-          const target = tab.getAttribute("data-tab");
+          const target = tab.dataset.tab;
           panels.forEach(function (p) {
-            p.classList.toggle("hidden", p.getAttribute("data-tab-panel") !== target);
+            p.classList.toggle("hidden", p.dataset.tabPanel !== target);
           });
         });
       });
@@ -122,8 +122,8 @@
 
       function escapeHtml(s) {
         return String(s == null ? "" : s)
-          .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-          .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+          .replaceAll('&', "&amp;").replaceAll('<', "&lt;").replaceAll('>', "&gt;")
+          .replaceAll('"', "&quot;").replaceAll("'", "&#39;");
       }
 
       function renderRow(row) {
@@ -189,8 +189,8 @@
       document.getElementById("reload-decisions").addEventListener("click", reloadRecent);
 
       function connectWS() {
-        const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const url = proto + "//" + window.location.host + "/ws/policy-decisions";
+        const proto = globalThis.location.protocol === "https:" ? "wss:" : "ws:";
+        const url = proto + "//" + globalThis.location.host + "/ws/policy-decisions";
         let ws;
         try {
           ws = new WebSocket(url);

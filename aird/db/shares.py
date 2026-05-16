@@ -5,7 +5,6 @@ import json
 import logging
 import secrets
 import sqlite3
-import traceback
 from datetime import datetime, timezone
 
 import os
@@ -81,9 +80,8 @@ def insert_share(
                 ),
             )
         return True
-    except Exception as e:
-        logging.error(f"Failed to insert share {sid} into database: {e}")
-        logging.debug(f"Traceback: {traceback.format_exc()}")
+    except Exception:
+        logging.exception("Failed to insert share %s into database", sid)
         return False
 
 
@@ -185,9 +183,8 @@ def update_share(
             logging.debug(f"Update executed, rows affected: {cursor.rowcount}")
 
         return True
-    except Exception as e:
-        logging.error(f"Failed to update share {sid}: {e}")
-        logging.debug(f"Traceback: {traceback.format_exc()}")
+    except Exception:
+        logging.exception("Failed to update share %s", sid)
         return False
 
 
@@ -212,8 +209,8 @@ def is_share_expired(expiry_date: str) -> bool:
             is_expired,
         )
         return is_expired
-    except Exception as e:
-        logging.error(f"Error checking expiry date {expiry_date}: {e}")
+    except Exception:
+        logging.exception("Error checking expiry date %s", expiry_date)
         return False
 
 
@@ -234,8 +231,8 @@ def cleanup_expired_shares(conn: sqlite3.Connection) -> int:
                     logging.info(f"Deleted expired share: {share_id}")
 
         return deleted_count
-    except Exception as e:
-        logging.error(f"Error cleaning up expired shares: {e}")
+    except Exception:
+        logging.exception("Error cleaning up expired shares")
         return 0
 
 
@@ -287,9 +284,8 @@ def get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict | None:
             return result
         logging.debug(f"No share found for sid='{sid}'")
         return None
-    except Exception as e:
-        logging.error(f"Error getting share {sid}: {e}")
-        logging.debug(f"Traceback: {traceback.format_exc()}")
+    except Exception:
+        logging.exception("Error getting share %s", sid)
         return None
 
 
@@ -371,6 +367,25 @@ def list_files_for_tag_share(
     return filter_files_by_patterns(matched, allow_list, avoid_list)
 
 
+def _share_covers_dynamic_path(share: dict, rel_path: str, root_dir: str) -> bool:
+    """Check if rel_path is covered by a dynamic share."""
+    allow_list = share.get("allow_list", [])
+    avoid_list = share.get("avoid_list", [])
+    for folder_path in share.get("paths") or []:
+        try:
+            full_folder_path = os.path.abspath(os.path.join(root_dir, folder_path))
+            full_file_path = os.path.abspath(os.path.join(root_dir, rel_path))
+            if (
+                os.path.isdir(full_folder_path)
+                and is_within_root(full_file_path, full_folder_path)
+                and filter_files_by_patterns([rel_path], allow_list, avoid_list)
+            ):
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def share_covers_relative_path(
     conn: sqlite3.Connection | None,
     share: dict,
@@ -396,27 +411,8 @@ def share_covers_relative_path(
             return False
 
     if share_type == "dynamic":
-        for folder_path in share.get("paths") or []:
-            try:
-                full_folder_path = os.path.abspath(
-                    os.path.join(root_dir, folder_path)
-                )
-                full_file_path = os.path.abspath(
-                    os.path.join(root_dir, rel_path)
-                )
-                if (
-                    os.path.isdir(full_folder_path)
-                    and is_within_root(full_file_path, full_folder_path)
-                    and filter_files_by_patterns(
-                        [rel_path], allow_list, avoid_list
-                    )
-                ):
-                    return True
-            except Exception:
-                continue
-        return False
+        return _share_covers_dynamic_path(share, rel_path, root_dir)
 
-    # Apply allow/avoid filters FIRST so avoid_list cannot be bypassed via exact-path match
     effective_paths = filter_files_by_patterns(
         share.get("paths") or [], allow_list, avoid_list
     )

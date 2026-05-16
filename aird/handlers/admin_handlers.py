@@ -493,8 +493,8 @@ class UserEditHandler(BaseHandler):
         except ValueError:
             self.set_status(HTTP_BAD_REQUEST)
             self.write(INVALID_USER_ID)
-        except Exception as e:
-            logging.error(f"User update error: {e}")
+        except Exception:
+            logging.exception("User update error")
             if user is not None:
                 self.render(
                     TEMPLATE_USER_EDIT,
@@ -657,8 +657,8 @@ class LDAPConfigCreateHandler(BaseHandler):
             self.redirect(URL_ADMIN_LDAP)
         except ValueError as e:
             self.render(TEMPLATE_LDAP_CONFIG_CREATE, error=str(e))
-        except Exception as e:
-            logging.error(f"LDAP config creation error: {e}")
+        except Exception:
+            logging.exception("LDAP config creation error")
             self.render(
                 TEMPLATE_LDAP_CONFIG_CREATE,
                 error="Error creating configuration. Please try again.",
@@ -747,8 +747,8 @@ class LDAPConfigEditHandler(BaseHandler):
 
         except ValueError:
             self.write(INVALID_CONFIG_ID)
-        except Exception as e:
-            logging.error(f"LDAP config update error: {e}")
+        except Exception:
+            logging.exception("LDAP config update error")
             self.render(
                 TEMPLATE_LDAP_CONFIG_EDIT,
                 config=config,
