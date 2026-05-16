@@ -33,7 +33,9 @@ def db_conn():
             allow_list TEXT,
             avoid_list TEXT,
             expiry_date TEXT,
-            modify_users TEXT
+            modify_users TEXT,
+            tag_name TEXT,
+            created_by TEXT
         )
     """)
     conn.commit()

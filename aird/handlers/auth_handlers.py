@@ -227,7 +227,7 @@ def _try_token_login(handler, token, next_url):
     logging.warning("Token authentication failed. Token mismatch.")
     handler.render(
         LOGIN_HTML,
-        error="Invalid access token.",
+        error="Invalid credentials. Try again.",
         settings=handler.settings,
         next_url=next_url,
     )
@@ -329,13 +329,11 @@ def _profile_render(handler, user, error=None, success=None, ldap_enabled=None):
     if ldap_enabled is None:
         ldap_enabled = handler.settings.get("ldap_server") is not None
     quota = {"quota_bytes": None, "used_bytes": 0}
-    shared_with_me: list = []
     if user and handler.db_conn:
         username = user.get("username", "") if isinstance(user, dict) else str(user)
         quota = handler.get_service("user_service").get_user_quota(
             handler.db_conn, username
         )
-        shared_with_me = list_shares_accessible_to_user(handler.db_conn, username)
     handler.render(
         PROFILE_TEMPLATE,
         user=user,
@@ -343,7 +341,6 @@ def _profile_render(handler, user, error=None, success=None, ldap_enabled=None):
         success=success,
         ldap_enabled=ldap_enabled,
         quota=quota,
-        shared_with_me=shared_with_me,
     )
 
 
@@ -837,8 +834,21 @@ class ProfileHandler(BaseHandler):
             )
             return
 
+        current_password = self.get_argument("current_password", "")
         new_password = self.get_argument("new_password", "")
         confirm_password = self.get_argument("confirm_password", "")
+
+        if new_password:
+            authenticated = user_service.authenticate(db_conn, current_user["username"], current_password)
+            if not authenticated:
+                _profile_render(
+                    self,
+                    current_user,
+                    error="Current password is incorrect.",
+                    ldap_enabled=ldap_enabled,
+                )
+                return
+
         if (
             len(new_password) > LOGIN_PASSWORD_MAX_LEN
             or len(confirm_password) > LOGIN_PASSWORD_MAX_LEN
