@@ -302,6 +302,7 @@
     }
 
     /* ── File tag chips ─────────────────────────────────────────────────────── */
+@layer components {
     .file-tag-list {
       display: inline-flex;
       align-items: center;
@@ -342,6 +343,7 @@
       font-weight: 600;
       white-space: nowrap;
     }
+}
 
     .th-checkbox-wrap {
       display: inline-flex;
