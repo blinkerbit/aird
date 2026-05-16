@@ -302,6 +302,8 @@
     }
 
     /* ── File tag chips ─────────────────────────────────────────────────────── */
+
+@layer components {
     .file-tag-list {
       display: inline-flex;
       align-items: center;
@@ -337,11 +339,12 @@
       line-height: 1;
       padding: 2px 5px;
       border-radius: 999px;
-      background: var(--b3, #e5e7eb);
-      color: var(--bc, #374151);
+      background: var(--color-base-300);
+      color: var(--color-base-content);
       font-weight: 600;
       white-space: nowrap;
     }
+}
 
     .th-checkbox-wrap {
       display: inline-flex;
