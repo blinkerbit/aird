@@ -14,7 +14,10 @@ let currentPath = '';
       shareResult: document.getElementById('shareResult'),
       fileTableBody: document.getElementById('fileTableBody'),
       sharesTableBody: document.getElementById('sharesTableBody'),
-      activeSharesCount: document.getElementById('activeSharesCount')
+      activeSharesCount: document.getElementById('activeSharesCount'),
+      sharedWithMeSection: document.getElementById('sharedWithMeSection'),
+      sharedWithMeTableBody: document.getElementById('sharedWithMeTableBody'),
+      sharedWithMeCount: document.getElementById('sharedWithMeCount')
     };
 
     const selectedFileMetadata = new Map();
@@ -262,14 +265,14 @@ let currentPath = '';
           cloudState.currentFiles = [];
           cloudState.pathStack = [];
           if (cloudElements.tableBody) {
-            cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="loading">Connect a cloud provider to browse files.</td></tr>';
+            cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-base-content/50 italic text-sm">Connect a cloud provider to browse files.</td></tr>';
           }
         }
       } catch (error) {
         console.error('Failed to load cloud providers:', error);
         setCloudStatus('Unable to load cloud providers.', true);
         if (cloudElements.tableBody) {
-          cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="loading">Error loading providers</td></tr>';
+          cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-error/70 text-sm">Error loading providers</td></tr>';
         }
       }
     }
@@ -319,7 +322,7 @@ let currentPath = '';
       cloudElements.modal?.showModal();
 
       if (cloudElements.tableBody) {
-        cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="loading">Loading cloud files...</td></tr>';
+        cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-base-content/50"><span class="loading loading-spinner loading-sm align-middle mr-2"></span><span class="align-middle">Loading…</span></td></tr>';
       }
 
       loadCloudProviders();
@@ -338,7 +341,7 @@ let currentPath = '';
       const targetFolder = folderId || provider.root || 'root';
 
       if (cloudElements.tableBody) {
-        cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="loading">Loading...</td></tr>';
+        cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-base-content/50"><span class="loading loading-spinner loading-sm align-middle mr-2"></span><span class="align-middle">Loading…</span></td></tr>';
       }
       setCloudStatus('Loading files...');
       cloudState.loading = true;
@@ -380,7 +383,7 @@ let currentPath = '';
         cloudState.pathStack = previousStack;
         setCloudStatus('Failed to load cloud files.', true);
         if (cloudElements.tableBody) {
-          cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="loading">Error loading files</td></tr>';
+          cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-error/70 text-sm">Error loading files</td></tr>';
         }
       } finally {
         cloudState.loading = false;
@@ -411,7 +414,7 @@ let currentPath = '';
       cloudElements.tableBody.innerHTML = '';
 
       if (!files || files.length === 0) {
-        cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="loading">No items found in this folder.</td></tr>';
+        cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-base-content/50 italic text-sm">No items found in this folder.</td></tr>';
         return;
       }
 
@@ -612,7 +615,7 @@ let currentPath = '';
     }
 
     document.addEventListener('keydown', function (event) {
-      if (event.key === 'Escape' && cloudElements.modal?.classList.contains('show')) {
+      if (event.key === 'Escape' && cloudElements.modal?.open) {
         closeCloudBrowser();
       }
     });
@@ -736,7 +739,7 @@ let currentPath = '';
       try {
         currentPath = path;
         updateBreadcrumb(path);
-        elements.fileTableBody.innerHTML = '<tr><td colspan="5" class="loading">Loading...</td></tr>';
+        elements.fileTableBody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-base-content/50"><span class="loading loading-spinner loading-sm align-middle mr-2"></span><span class="align-middle">Loading…</span></td></tr>';
 
         const response = await fetch(`/api/files/${path}`);
 
@@ -753,7 +756,7 @@ let currentPath = '';
 
       } catch (error) {
         console.error('Error loading directory:', error);
-        elements.fileTableBody.innerHTML = '<tr><td class="sq-style-4dd6e6" colspan="5">Error loading files</td></tr>';
+        elements.fileTableBody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-error/70 text-sm">Error loading files</td></tr>';
       }
     }
 
@@ -781,7 +784,7 @@ let currentPath = '';
     function _makeNameCell({ isDir, iconText, name, filePath, isShared, navPath }) {
       const td = document.createElement('td');
       const wrap = document.createElement('div');
-      wrap.className = 'sq-style-bd9db1';
+      wrap.className = 'name-cell-contents';
 
       const link = document.createElement(isDir ? 'a' : 'span');
       if (isDir) link.href = '#';
@@ -793,17 +796,18 @@ let currentPath = '';
       icon.textContent = iconText;
       link.appendChild(icon);
       link.appendChild(document.createTextNode(name));
-      wrap.appendChild(link);
 
       if (isShared) {
         const share = document.createElement('span');
-        share.className = 'shared-icon sq-style-e9dc52';
+        share.className = 'shared-icon';
         share.title = 'Click to view share details';
         share.dataset.action = 'showShareDetails';
         share.dataset.path = filePath;
         share.textContent = '🔗';
-        wrap.appendChild(share);
+        link.appendChild(share);
       }
+
+      wrap.appendChild(link);
 
       td.appendChild(wrap);
       return td;
@@ -824,7 +828,7 @@ let currentPath = '';
         const row = document.createElement('tr');
         const td = document.createElement('td');
         td.colSpan = 5;
-        td.className = 'loading';
+        td.className = 'p-6 text-center text-base-content/50 italic text-sm';
         td.textContent = 'No files in this directory';
         row.appendChild(td);
         elements.fileTableBody.appendChild(row);
@@ -876,7 +880,7 @@ let currentPath = '';
         const actionTd = document.createElement('td');
         actionTd.appendChild(file.is_dir
           ? _makeActionButton('Open', 'loadDirectory', filePath)
-          : _makeActionButton('Preview', 'previewFile', filePath));
+          : _makeActionButton('View', 'previewFile', filePath));
         row.appendChild(actionTd);
 
         if (isSelected) row.classList.add('selected');
@@ -954,6 +958,15 @@ let currentPath = '';
                   </span>`).join('');
     }
 
+    function toLocalDatetimeInput(isoStr) {
+      if (!isoStr) return '';
+      const normalized = isoStr.endsWith('Z') ? isoStr : isoStr + 'Z';
+      const d = new Date(normalized);
+      if (Number.isNaN(d.getTime())) return '';
+      const pad = n => String(n).padStart(2, '0');
+      return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    }
+
     function setupTokenEditCheckboxes() {
       const disableTokenCheckbox = document.getElementById('disableTokenEdit');
       const enableTokenCheckbox = document.getElementById('enableTokenEdit');
@@ -966,19 +979,17 @@ let currentPath = '';
       });
     }
 
-    function renderShareManagementModal(share) {
-      const body = document.getElementById('shareManagementBody');
-      const isStatic = (share.share_type || 'static') === 'static';
-      const expiryValue = share.expiry_date ? new Date(share.expiry_date).toISOString().slice(0, 16) : '';
-
-      const tokenHtml = share.secret_token
-        ? '<div class="bg-base-200 p-3 rounded-lg flex items-center gap-2">'
-          + '<code class="text-xs font-mono flex-grow truncate">' + escapeHtml(share.secret_token) + '</code>'
-          + '<button class="btn btn-xs btn-ghost" data-action="copyToClipboard" data-text="' + escapeHtml(share.secret_token) + '">Copy</button>'
-          + '</div>'
-        : '';
-
-      const pathsHtml = (share.paths || []).length > 0
+    function _buildPathsSection(share, isTag) {
+      if (isTag) {
+        return {
+          title: 'Tag-based listing',
+          inner: '<div class="text-xs p-3 bg-base-200 rounded-lg">Files are defined by the resource tag <code class="font-mono">'
+            + escapeHtml(share.tag_name || '') + '</code>. Path lists are not used; update tag rules in Admin instead.</div>',
+          addBtn: '',
+        };
+      }
+      const pathCount = (share.paths || []).length;
+      const inner = pathCount > 0
         ? (share.paths || []).map(p =>
             '<div class="flex items-center justify-between p-1.5 bg-base-200 rounded text-xs group">'
             + '<span class="font-mono truncate flex-grow">' + escapeHtml(p) + '</span>'
@@ -986,6 +997,63 @@ let currentPath = '';
             + '</div>'
           ).join('')
         : '<div class="text-center py-4 opacity-40 text-xs italic">No files in this share</div>';
+      return {
+        title: 'Shared Files (' + pathCount + ')',
+        inner,
+        addBtn: '<button class="btn btn-sm btn-outline w-full mt-3" data-action="showAddFilesModalInManagement">+ Add More Files</button>',
+      };
+    }
+
+    function renderShareManagementModal(share) {
+      const body = document.getElementById('shareManagementBody');
+      const isTag = (share.share_type || 'static') === 'tag';
+      const isStatic = !isTag && (share.share_type || 'static') === 'static';
+      const expiryValue = toLocalDatetimeInput(share.expiry_date);
+      const hasSecret = Boolean(share.secret_token || share.has_token);
+      const disableTokenInitially = !hasSecret;
+      const enableTokenInitially = hasSecret;
+
+      let tokenHtml;
+      if (share.secret_token) {
+        tokenHtml = '<div class="bg-base-200 p-3 rounded-lg flex items-center gap-2">'
+          + '<code class="text-xs font-mono flex-grow truncate">' + escapeHtml(share.secret_token) + '</code>'
+          + '<button class="btn btn-xs btn-ghost" data-action="copyToClipboard" data-text="' + escapeHtml(share.secret_token) + '">Copy</button>'
+          + '</div>';
+      } else if (hasSecret) {
+        tokenHtml = '<p class="text-xs text-base-content/70">A secret token is enabled.</p>';
+      } else {
+        tokenHtml = '';
+      }
+
+      let pathsSectionTitle;
+      let pathsInnerHtml;
+      let addFilesButtonHtml = '';
+      const pathsSection = _buildPathsSection(share, isTag);
+      pathsSectionTitle = pathsSection.title;
+      pathsInnerHtml = pathsSection.inner;
+      addFilesButtonHtml = pathsSection.addBtn;
+
+      let shareTypeBlock;
+      if (isTag) {
+        shareTypeBlock = '<div class="form-control"><p class="text-sm">Type: <strong>tag</strong> — membership follows Admin tag / glob rules for <code class="text-xs font-mono">'
+          + escapeHtml(share.tag_name || '')
+          + '</code>.</p></div>';
+      } else {
+        const staticChecked = isStatic ? ' checked' : '';
+        const dynamicChecked = isStatic ? '' : ' checked';
+        shareTypeBlock = '<div class="form-control">'
+          + '<label class="label pb-1"><span class="label-text font-bold text-sm">Share Type</span></label>'
+          + '<div class="flex gap-3">'
+          + '<label class="label cursor-pointer justify-start gap-2 bg-base-200 px-3 py-2 rounded-lg flex-1">'
+          + '<input type="radio" name="shareTypeEdit" value="static" class="radio radio-primary radio-sm"' + staticChecked + '>'
+          + '<span class="label-text font-semibold text-sm">Static</span>'
+          + '</label>'
+          + '<label class="label cursor-pointer justify-start gap-2 bg-base-200 px-3 py-2 rounded-lg flex-1">'
+          + '<input type="radio" name="shareTypeEdit" value="dynamic" class="radio radio-primary radio-sm"' + dynamicChecked + '>'
+          + '<span class="label-text font-semibold text-sm">Dynamic</span>'
+          + '</label>'
+          + '</div></div>';
+      }
 
       body.innerHTML = `
         <div class="space-y-4 pb-4">
@@ -1019,19 +1087,7 @@ let currentPath = '';
             <input type="radio" name="mgmt-accordion" checked="checked" />
             <div class="collapse-title font-semibold text-sm">General Settings</div>
             <div class="collapse-content space-y-4">
-              <div class="form-control">
-                <label class="label pb-1"><span class="label-text font-bold text-sm">Share Type</span></label>
-                <div class="flex gap-3">
-                  <label class="label cursor-pointer justify-start gap-2 bg-base-200 px-3 py-2 rounded-lg flex-1">
-                    <input type="radio" name="shareTypeEdit" value="static" class="radio radio-primary radio-sm" ${isStatic ? 'checked' : ''}>
-                    <span class="label-text font-semibold text-sm">Static</span>
-                  </label>
-                  <label class="label cursor-pointer justify-start gap-2 bg-base-200 px-3 py-2 rounded-lg flex-1">
-                    <input type="radio" name="shareTypeEdit" value="dynamic" class="radio radio-primary radio-sm" ${isStatic ? '' : 'checked'}>
-                    <span class="label-text font-semibold text-sm">Dynamic</span>
-                  </label>
-                </div>
-              </div>
+              ${shareTypeBlock}
               <div class="form-control">
                 <label class="label pb-1" for="expiryDateEdit"><span class="label-text font-bold text-sm">Expiration Date</span></label>
                 <input type="datetime-local" id="expiryDateEdit" class="input input-bordered input-sm w-full" value="${escapeHtml(expiryValue)}">
@@ -1057,25 +1113,30 @@ let currentPath = '';
             <div class="collapse-title font-semibold text-sm">Security & Token</div>
             <div class="collapse-content space-y-3">
               <label class="label cursor-pointer justify-start gap-3">
-                <input type="checkbox" id="disableTokenEdit" class="checkbox checkbox-error checkbox-sm" ${share.secret_token ? '' : 'checked'}>
+                <input type="checkbox" id="disableTokenEdit" class="checkbox checkbox-error checkbox-sm" ${disableTokenInitially ? 'checked' : ''}>
                 <span class="label-text text-sm">Disable Secret Token (Public Access)</span>
               </label>
               <label class="label cursor-pointer justify-start gap-3">
-                <input type="checkbox" id="enableTokenEdit" class="checkbox checkbox-primary checkbox-sm" ${share.secret_token ? 'checked' : ''}>
+                <input type="checkbox" id="enableTokenEdit" class="checkbox checkbox-primary checkbox-sm" ${enableTokenInitially ? 'checked' : ''}>
                 <span class="label-text text-sm">Enable / Rotate Secret Token</span>
               </label>
+              ${(share.secret_token || share.has_token) ? `
+              <label class="label cursor-pointer justify-start gap-3">
+                <input type="checkbox" id="rotateTokenEdit" class="checkbox checkbox-secondary checkbox-sm">
+                <span class="label-text text-sm">Regenerate secret token on save (invalidates old links)</span>
+              </label>` : ''}
               ${tokenHtml}
             </div>
           </div>
 
           <div class="collapse collapse-arrow bg-base-100 border border-base-300 rounded-box">
             <input type="radio" name="mgmt-accordion" />
-            <div class="collapse-title font-semibold text-sm">Shared Files (${(share.paths || []).length})</div>
+            <div class="collapse-title font-semibold text-sm">${pathsSectionTitle}</div>
             <div class="collapse-content">
               <div class="max-h-48 overflow-y-auto space-y-1 mt-1" id="manageSharePathsList">
-                ${pathsHtml}
+                ${pathsInnerHtml}
               </div>
-              <button class="btn btn-sm btn-outline w-full mt-3" data-action="showAddFilesModalInManagement">+ Add More Files</button>
+              ${addFilesButtonHtml}
             </div>
           </div>
 
@@ -1121,24 +1182,31 @@ let currentPath = '';
       }
 
       try {
-        // Get form values
-        const shareType = document.querySelector('input[name="shareTypeEdit"]:checked').value;
+        const isTagShare = (currentShareData.share_type || 'static') === 'tag';
+        const typeRadio = document.querySelector('input[name="shareTypeEdit"]:checked');
+        let shareType;
+        if (isTagShare) {
+          shareType = 'tag';
+        } else if (typeRadio) {
+          shareType = typeRadio.value;
+        } else {
+          shareType = currentShareData.share_type || 'static';
+        }
         const disableToken = document.getElementById('disableTokenEdit').checked;
         const enableToken = document.getElementById('enableTokenEdit').checked;
         const allowListText = document.getElementById('allowListEdit').value.trim();
         const avoidListText = document.getElementById('avoidListEdit').value.trim();
 
-        // Determine token setting
-        // If disableToken is checked, we want to disable the token (set to null)
-        // If enableToken is checked, we want to enable the token (generate new token)
-        // If neither is checked, we don't change the token setting
-        let tokenDisabled = null;
+        const hasSecret = Boolean(currentShareData.secret_token || currentShareData.has_token);
+
+        let tokenDisabled;
         if (disableToken) {
-          tokenDisabled = true;  // Disable token (set to null)
+          tokenDisabled = true;
         } else if (enableToken) {
-          tokenDisabled = false; // Enable token (generate new token)
+          tokenDisabled = false;
+        } else {
+          tokenDisabled = !hasSecret;
         }
-        // If neither is checked, tokenDisabled remains null (no change)
 
         const allowList = allowListText ? allowListText.split(',').map(s => s.trim()).filter(Boolean) : [];
         const avoidList = avoidListText ? avoidListText.split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -1155,7 +1223,9 @@ let currentPath = '';
           enableToken_checked: enableToken,
           allow_list: allowList,
           avoid_list: avoidList,
-          expiry_date: expiryDate
+          expiry_date: expiryDate,
+          allowed_users: currentShareData.allowed_users,
+          modify_users: currentShareData.modify_users
         });
 
         const response = await fetch('/share/update', {
@@ -1170,7 +1240,10 @@ let currentPath = '';
             disable_token: tokenDisabled,
             allow_list: allowList,
             avoid_list: avoidList,
-            expiry_date: expiryDate
+            expiry_date: expiryDate,
+            allowed_users: currentShareData.allowed_users || [],
+            modify_users: currentShareData.modify_users || [],
+            rotate_token: Boolean(document.getElementById('rotateTokenEdit')?.checked)
           })
         });
 
@@ -1225,7 +1298,7 @@ let currentPath = '';
       const content = document.getElementById('fileBrowserContent');
       const pathDisplay = document.getElementById('currentBrowsePath');
 
-      content.innerHTML = '<div class="loading">Loading files...</div>';
+      content.innerHTML = '<div class="p-6 text-center text-base-content/50"><span class="loading loading-spinner loading-sm align-middle mr-2"></span><span class="align-middle">Loading…</span></div>';
       pathDisplay.textContent = addFilesModalData.currentPath || 'Root Directory';
 
       try {
@@ -1258,7 +1331,7 @@ let currentPath = '';
         }
       } catch (error) {
         console.error('Error loading files:', error);
-        content.innerHTML = '<div class="sq-style-fd1d87">Error loading files</div>';
+        content.innerHTML = '<div class="p-4 text-center text-error/70 text-sm">Error loading files</div>';
       }
     }
 
@@ -1358,10 +1431,10 @@ let currentPath = '';
       loadFilesForAddModal();
     }
 
-        async function addSelectedFilesToShare() {
+    async function addSelectedFilesToShare() {
       const modal = document.getElementById('addFilesModal');
       const isManagement = modal.dataset.mode === 'management';
-      
+
       const newPaths = Array.from(addFilesModalData.selectedFiles);
       if (newPaths.length === 0) {
         closeAddFilesModal();
@@ -1369,13 +1442,38 @@ let currentPath = '';
       }
 
       if (isManagement) {
-        if (!currentShareData.paths) currentShareData.paths = [];
+        const base = currentShareData.paths ? [...currentShareData.paths] : [];
+        const merged = [...base];
         newPaths.forEach(p => {
-          if (!currentShareData.paths.includes(p)) currentShareData.paths.push(p);
+          if (!merged.includes(p)) merged.push(p);
         });
-        renderShareManagementModal(currentShareData);
-        closeAddFilesModal();
-        modal.dataset.mode = ''; // Reset mode
+        try {
+          const response = await fetch('/share/update', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-XSRFToken': getXSRFToken()
+            },
+            body: JSON.stringify({
+              share_id: currentShareData.id,
+              paths: merged
+            })
+          });
+          const data = await response.json();
+          if (data.error) {
+            showDialog('Error: ' + data.error, 'Error');
+            return;
+          }
+          currentShareData.paths = data.updated_paths || merged;
+          showDialog('Files added to share.', 'Success');
+          renderShareManagementModal(currentShareData);
+          closeAddFilesModal();
+          modal.dataset.mode = '';
+          loadActiveShares();
+        } catch (error) {
+          console.error('Error adding files to share:', error);
+          showDialog('Failed to add files to share', 'Error');
+        }
       } else {
         // Normal creation mode - prefill the share creation form
         newPaths.forEach(p => addToSelection(p));
@@ -1424,12 +1522,26 @@ let currentPath = '';
       const user = input.value.trim();
       if (!user) return;
 
-      if (!currentShareData.allowed_users) currentShareData.allowed_users = [];
-      if (!currentShareData.allowed_users.includes(user)) {
-        currentShareData.allowed_users.push(user);
-        renderShareManagementModal(currentShareData);
+      const currentUsers = currentShareData.allowed_users || [];
+      if (currentUsers.includes(user)) { input.value = ''; return; }
+      const updatedUsers = [...currentUsers, user];
+      try {
+        const response = await fetch('/share/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
+          body: JSON.stringify({ share_id: currentShareData.id, allowed_users: updatedUsers })
+        });
+        const data = await response.json();
+        if (data.error) {
+          showDialog('Error adding user: ' + data.error, 'Error');
+        } else {
+          input.value = '';
+          manageShare(currentShareData.id);
+        }
+      } catch (error) {
+        console.error('Error adding user:', error);
+        showDialog('Failed to add user', 'Error');
       }
-      input.value = '';
     }
 
 
@@ -1474,12 +1586,26 @@ let currentPath = '';
       const user = input.value.trim();
       if (!user) return;
 
-      if (!currentShareData.modify_users) currentShareData.modify_users = [];
-      if (!currentShareData.modify_users.includes(user)) {
-        currentShareData.modify_users.push(user);
-        renderShareManagementModal(currentShareData);
+      const currentUsers = currentShareData.modify_users || [];
+      if (currentUsers.includes(user)) { input.value = ''; return; }
+      const updatedUsers = [...currentUsers, user];
+      try {
+        const response = await fetch('/share/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
+          body: JSON.stringify({ share_id: currentShareData.id, modify_users: updatedUsers })
+        });
+        const data = await response.json();
+        if (data.error) {
+          showDialog('Error adding modifier: ' + data.error, 'Error');
+        } else {
+          input.value = '';
+          manageShare(currentShareData.id);
+        }
+      } catch (error) {
+        console.error('Error adding modify user:', error);
+        showDialog('Failed to add modifier', 'Error');
       }
-      input.value = '';
     }
 
     async function removeModifyUserFromShare(username) {
@@ -1880,7 +2006,82 @@ let currentPath = '';
       }
     }
 
+    function _buildAccessInfo(share) {
+      const au = share.allowed_users;
+      let accessInfo;
+      if (Array.isArray(au) && au.length > 0) {
+        const suffix = au.length === 1 ? '' : 's';
+        accessInfo = `Restricted (${au.length} user${suffix})`;
+      } else {
+        accessInfo = 'Public';
+      }
+      const modifyCount = share.modify_users?.length ?? 0;
+      if (modifyCount > 0) {
+        accessInfo += ` <span class="permission-badge editor">${modifyCount} editor${modifyCount === 1 ? '' : 's'}</span>`;
+      }
+      return accessInfo;
+    }
+
+    function _buildShareRow(share, { showOwner = false, readOnly = false } = {}) {
+      const accessInfo = _buildAccessInfo(share);
+
+      const createdDate = share.created ? new Date(share.created).toLocaleString() : 'Just now';
+      const rawShareId = String(share.id);
+      const sid = escapeHtml(rawShareId);
+      const shareLink = escapeHtml(`${globalThis.location.origin}/shared/${rawShareId}`);
+      const sharePath = escapeHtml(`/shared/${rawShareId}`);
+      const idPreviewEsc = escapeHtml(rawShareId.length > 8 ? `${rawShareId.substring(0, 8)}...` : rawShareId);
+      const pathFileCount = share.paths ? share.paths.length : 0;
+      const shareFileCount = share.count || pathFileCount;
+      const filePlural = shareFileCount === 1 ? '' : 's';
+      const secretToken = share.secret_token;
+      const copyTokenBtn = secretToken
+        ? `<button type="button" class="btn btn-sm btn-ghost gap-1" data-action="copyToClipboard" data-text="${escapeHtml(String(secretToken))}" title="Copy secret token">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
+            <span class="hidden sm:inline text-xs">Token</span>
+          </button>`
+        : '';
+
+      const ownerCell = showOwner
+        ? `<td class="align-middle text-sm opacity-70">${escapeHtml(share.created_by || '—')}</td>`
+        : '';
+      const manageBtn = readOnly ? '' : `<button class="btn btn-sm btn-primary btn-outline" data-action="manageShare" data-id="${sid}">Manage</button>`;
+      const revokeBtn = readOnly ? '' : `<button class="btn btn-sm btn-error btn-ghost btn-square" data-action="revokeShare" data-id="${sid}" title="Revoke">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+        </button>`;
+
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td class="align-middle"><code class="text-xs font-mono opacity-70">${idPreviewEsc}</code></td>
+        <td class="align-middle">
+          <div class="flex items-center gap-2">
+            <span class="badge badge-sm badge-ghost font-bold">${shareFileCount}</span>
+            <span class="text-sm">file${filePlural}</span>
+          </div>
+        </td>
+        ${ownerCell}
+        <td class="align-middle">${accessInfo}</td>
+        <td class="align-middle text-sm opacity-60">${escapeHtml(createdDate)}</td>
+        <td class="align-middle">
+          <div class="flex flex-nowrap gap-2 items-center justify-end">
+            <button class="btn btn-sm btn-ghost" data-action="copyToClipboard" data-text="${shareLink}" title="Copy link">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+            </button>
+            ${copyTokenBtn}
+            <button class="btn btn-sm btn-ghost" data-action="openShare" data-url="${sharePath}" title="Open Share">
+               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+            </button>
+            ${manageBtn}
+            ${revokeBtn}
+          </div>
+        </td>
+      `;
+      return row;
+    }
+
     async function loadActiveShares() {
+      const refreshBtn = document.getElementById('refreshSharesBtn');
+      if (refreshBtn) refreshBtn.classList.add('loading');
       try {
         const response = await fetch('/share/list');
         if (!response.ok) {
@@ -1888,92 +2089,49 @@ let currentPath = '';
         }
         const data = await response.json();
 
-        // Convert shares object to array
+        // --- My Shares ---
         const sharesArray = data.shares ? Object.keys(data.shares).map(id => ({
           id: id,
           ...data.shares[id],
           count: data.shares[id].paths?.length ?? 0
         })) : [];
 
-        sharesArray.sort((a, b) => {
-          const ta = new Date(a.created || 0).getTime();
-          const tb = new Date(b.created || 0).getTime();
-          return tb - ta;
-        });
+        sharesArray.sort((a, b) => new Date(b.created || 0) - new Date(a.created || 0));
 
         elements.activeSharesCount.textContent = sharesArray.length;
 
         if (sharesArray.length === 0) {
-          // Do not use DaisyUI "loading" class here — it renders as an infinite spinner.
           elements.sharesTableBody.innerHTML =
             '<tr><td colspan="5" class="p-8 text-center text-base-content/50">No active shares</td></tr>';
-          return;
+        } else {
+          elements.sharesTableBody.innerHTML = '';
+          sharesArray.forEach(share => {
+            elements.sharesTableBody.appendChild(_buildShareRow(share, { showOwner: false, readOnly: false }));
+          });
         }
 
-        elements.sharesTableBody.innerHTML = '';
-        sharesArray.forEach(share => {
-          const row = document.createElement('tr');
-          let accessInfo;
-          const au = share.allowed_users;
-          if (Array.isArray(au) && au.length > 0) {
-            const suffix = au.length === 1 ? '' : 's';
-            accessInfo = `Restricted (${au.length} user${suffix})`;
-          } else {
-            accessInfo = 'Public';
-          }
-          const modifyCount = share.modify_users?.length ?? 0;
-          if (modifyCount > 0) {
-            accessInfo += ` <span class="permission-badge editor">${modifyCount} editor${modifyCount === 1 ? '' : 's'}</span>`;
-          }
+        // --- Shared with Me ---
+        const sharedWithMe = Array.isArray(data.shared_with_me) ? data.shared_with_me : [];
+        sharedWithMe.sort((a, b) => new Date(b.created || 0) - new Date(a.created || 0));
 
-          const createdDate = share.created ? new Date(share.created).toLocaleString() : 'Just now';
-          
-          const rawShareId = String(share.id);
-          const sid = escapeHtml(rawShareId);
-          const shareLink = escapeHtml(`${globalThis.location.origin}/shared/${rawShareId}`);
-          const sharePath = escapeHtml(`/shared/${rawShareId}`);
-          const idPreviewEsc = escapeHtml(rawShareId.length > 8 ? `${rawShareId.substring(0, 8)}...` : rawShareId);
-          const pathFileCount = share.paths ? share.paths.length : 0;
-          const shareFileCount = share.count || pathFileCount;
-          const filePlural = shareFileCount === 1 ? '' : 's';
-          const secretToken = share.secret_token;
-          const copyTokenBtn = secretToken
-            ? `<button type="button" class="btn btn-sm btn-ghost gap-1" data-action="copyToClipboard" data-text="${escapeHtml(String(secretToken))}" title="Copy secret token">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
-                <span class="hidden sm:inline text-xs">Token</span>
-              </button>`
-            : '';
-          row.innerHTML = `
-            <td class="align-middle"><code class="text-xs font-mono opacity-70">${idPreviewEsc}</code></td>
-            <td class="align-middle">
-              <div class="flex items-center gap-2">
-                <span class="badge badge-sm badge-ghost font-bold">${shareFileCount}</span>
-                <span class="text-sm">file${filePlural}</span>
-              </div>
-            </td>
-            <td class="align-middle">${accessInfo}</td>
-            <td class="align-middle text-sm opacity-60">${escapeHtml(createdDate)}</td>
-            <td class="align-middle">
-              <div class="flex flex-nowrap gap-2 items-center justify-end">
-                <button class="btn btn-sm btn-ghost" data-action="copyToClipboard" data-text="${shareLink}" title="Copy link">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
-                </button>
-                ${copyTokenBtn}
-                <button class="btn btn-sm btn-ghost" data-action="openShare" data-url="${sharePath}" title="Open Share">
-                   <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                </button>
-                <button class="btn btn-sm btn-primary btn-outline" data-action="manageShare" data-id="${sid}">Manage</button>
-                <button class="btn btn-sm btn-error btn-ghost btn-square" data-action="revokeShare" data-id="${sid}" title="Revoke">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                </button>
-              </div>
-            </td>
-          `;
-          elements.sharesTableBody.appendChild(row);
-        });
+        if (elements.sharedWithMeSection) {
+          elements.sharedWithMeSection.style.display = sharedWithMe.length > 0 ? '' : 'none';
+        }
+        if (elements.sharedWithMeCount) {
+          elements.sharedWithMeCount.textContent = sharedWithMe.length;
+        }
+        if (elements.sharedWithMeTableBody) {
+          elements.sharedWithMeTableBody.innerHTML = '';
+          sharedWithMe.forEach(share => {
+            elements.sharedWithMeTableBody.appendChild(_buildShareRow(share, { showOwner: true, readOnly: true }));
+          });
+        }
+
       } catch (error) {
         console.error('Error loading active shares:', error);
         elements.sharesTableBody.innerHTML = '<tr><td colspan="5" class="p-10 text-center"><div class="alert alert-error">Error loading shares</div></td></tr>';
+      } finally {
+        if (refreshBtn) refreshBtn.classList.remove('loading');
       }
     }
 
@@ -1992,13 +2150,24 @@ let currentPath = '';
       try {
         const formData = new URLSearchParams();
         formData.append('id', shareId);
-        await fetch('/share/revoke', {
+        const res = await fetch('/share/revoke', {
           method: 'POST',
           headers: {
+            'Accept': 'application/json',
             'X-XSRFToken': getXSRFToken()
           },
           body: formData
         });
+        const text = await res.text();
+        if (!res.ok) {
+          let detail = text || `HTTP ${res.status}`;
+          try {
+            const j = JSON.parse(text);
+            if (j.error) detail = j.error;
+          } catch (_e) { /* use raw text */ }
+          showDialog('Failed to revoke share: ' + detail, 'Error');
+          return;
+        }
 
         loadActiveShares();
       } catch (error) {
@@ -2018,7 +2187,7 @@ let currentPath = '';
 
       // Show popup with loading state
       popup.showModal();
-      content.innerHTML = '<div class="loading">Loading share details...</div>';
+      content.innerHTML = '<div class="p-6 text-center text-base-content/50"><span class="loading loading-spinner loading-sm align-middle mr-2"></span><span class="align-middle">Loading share details…</span></div>';
 
       try {
         const response = await fetch(`/api/share/details?path=${encodeURIComponent(filePath)}`);
@@ -2039,10 +2208,12 @@ let currentPath = '';
 
         // Render share details
         content.innerHTML = data.shares.map((share) => {
+          const allowed = share.allowed_users;
+          const isRestricted = allowed && allowed.length > 0;
           let shareAccessInfo;
-          if (share.allowed_users) {
-            const suffix = share.allowed_users.length === 1 ? '' : 's';
-            shareAccessInfo = `Restricted (${share.allowed_users.length} user${suffix})`;
+          if (isRestricted) {
+            const suffix = allowed.length === 1 ? '' : 's';
+            shareAccessInfo = `Restricted (${allowed.length} user${suffix})`;
           } else {
             shareAccessInfo = 'Public Access';
           }
@@ -2060,8 +2231,7 @@ let currentPath = '';
           }
 
           let allowedBlock = '';
-          const allowed = share.allowed_users;
-          if (allowed) {
+          if (isRestricted) {
             allowedBlock = `
               <div class="share-users">
                 <div class="share-users-title">Allowed Users:</div>
@@ -2085,7 +2255,7 @@ let currentPath = '';
             <div class="share-url">
               <a href="${escapeHtml(share.url)}">${escapeHtml(fullShareUrl)}</a>
             </div>
-            <div class="share-access ${allowed ? 'restricted' : 'public'}">
+            <div class="share-access ${isRestricted ? 'restricted' : 'public'}">
               ${shareAccessInfo}
             </div>
             ${secretBlock}
@@ -2215,8 +2385,7 @@ let currentPath = '';
       setupModifyUserSearch();
       consumeShareCreatePrefill();
 
-      // Refresh active shares every 30 seconds
-      setInterval(loadActiveShares, 30000);
+      document.getElementById('refreshSharesBtn')?.addEventListener('click', loadActiveShares);
 
       // Event listeners for CSP compliance - static elements
       document.getElementById('cloudBrowserClose')?.addEventListener('click', closeCloudBrowser);

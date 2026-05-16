@@ -32,7 +32,8 @@ def db_conn():
             role TEXT NOT NULL DEFAULT 'user',
             created_at TEXT NOT NULL,
             active INTEGER NOT NULL DEFAULT 1,
-            last_login TEXT
+            last_login TEXT,
+            must_change_password INTEGER NOT NULL DEFAULT 0
         )
     """)
     conn.commit()

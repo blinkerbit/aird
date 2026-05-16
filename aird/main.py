@@ -1,4 +1,3 @@
-import traceback
 import logging
 import os
 import secrets
@@ -16,6 +15,7 @@ import aird.config as config
 from aird.app_context import AppContext
 from aird.core.events import (
     EventBus,
+    PolicyDecisionEvent,
     ShareCreatedEvent,
     TransferStartedEvent,
     UserAuthenticatedEvent,
@@ -38,13 +38,26 @@ from aird.services import (
     FavoritesService,
     NetworkShareService,
     P2PSignalingService,
+    PolicyDecisionMetricsSubscriber,
+    PolicyService,
     QuotaService,
     ShareService,
+    TagService,
     UserService,
 )
 
 from aird.database.db import get_data_dir
 from aird.network_share_manager import NetworkShareManager
+from aird.handlers.abac_handlers import (
+    AdminPoliciesHandler,
+    AdminPolicyAPIHandler,
+    AdminTagAPIHandler,
+    AdminTagsHandler,
+    AdminUserAttributeAPIHandler,
+    AdminUserAttributesHandler,
+    PolicyDecisionsAPIHandler,
+    PolicyDecisionsWebSocket,
+)
 from aird.handlers.admin_handlers import (
     AdminAuditHandler,
     AdminHandler,
@@ -60,6 +73,7 @@ from aird.handlers.admin_handlers import (
     UserCreateHandler,
     UserDeleteHandler,
     UserEditHandler,
+    UserPasswordResetHandler,
     WebSocketStatsHandler,
 )
 from aird.handlers.api_handlers import (
@@ -80,6 +94,7 @@ from aird.handlers.auth_handlers import (
     LDAPLoginHandler,
     LoginHandler,
     LogoutHandler,
+    MandatoryPasswordHandler,
     ProfileHandler,
 )
 from aird.handlers.file_op_handlers import (
@@ -111,6 +126,7 @@ from aird.handlers.view_handlers import (
     NoCacheStaticFileHandler,
     RootHandler,
     EditViewHandler,
+    TaggedFilesHandler,
 )
 from aird.handlers.p2p_handlers import (
     P2PRoomManager,
@@ -120,10 +136,6 @@ from aird.handlers.p2p_handlers import (
 
 # Set up module logger
 logger = logging.getLogger(__name__)
-
-RUST_AVAILABLE = False
-HybridFileHandler = None
-HybridCompressionHandler = None
 
 
 def make_app(
@@ -188,18 +200,30 @@ def make_app(
         (r"/health", HealthHandler),
         (r"/login", login_handler),
         (r"/logout", LogoutHandler),
+        (r"/auth/mandatory-password", MandatoryPasswordHandler),
         (r"/profile", ProfileHandler),
+        (r"/tagged/([^/]+)", TaggedFilesHandler),
         (r"/admin/login", AdminLoginHandler),
         (r"/admin", AdminHandler),
         (r"/admin/users", AdminUsersHandler),
         (r"/admin/users/create", UserCreateHandler),
         (r"/admin/users/edit/([0-9]+)", UserEditHandler),
         (r"/admin/users/delete", UserDeleteHandler),
+        (r"/admin/users/reset-password", UserPasswordResetHandler),
         (r"/admin/websocket-stats", WebSocketStatsHandler),
         (r"/admin/audit", AdminAuditHandler),
         (r"/admin/network-shares", AdminNetworkSharesHandler),
         (r"/admin/network-shares/delete", AdminNetworkShareDeleteHandler),
         (r"/admin/network-shares/toggle", AdminNetworkShareToggleHandler),
+        (r"/admin/tags", AdminTagsHandler),
+        (r"/admin/api/abac/tags", AdminTagAPIHandler),
+        (r"/admin/policies", AdminPoliciesHandler),
+        (r"/admin/api/abac/policies", AdminPolicyAPIHandler),
+        (r"/admin/api/abac/policies/([0-9]+)", AdminPolicyAPIHandler),
+        (r"/admin/api/abac/decisions", PolicyDecisionsAPIHandler),
+        (r"/admin/user-attributes", AdminUserAttributesHandler),
+        (r"/admin/api/abac/user-attributes", AdminUserAttributeAPIHandler),
+        (r"/ws/policy-decisions", PolicyDecisionsWebSocket),
         (r"/stream/(.*)", FileStreamHandler),
         (r"/features", FeatureFlagSocketHandler),
         (r"/upload", UploadHandler),
@@ -261,7 +285,10 @@ def print_banner():
 ██║  ██║██║██║  ██║██████╔╝
 ╚═╝  ╚═╝╚═╝╚═╝  ╚═╝╚═════╝ 
 """
-    print(banner)
+    try:
+        print(banner)
+    except UnicodeEncodeError:
+        print("AIRD")
 
 
 def _validate_ldap_config() -> bool:
@@ -316,8 +343,8 @@ def _create_emergency_db_connection() -> None:
         constants.DB_CONN = sqlite3.connect(constants.DB_PATH, check_same_thread=False)
         init_db(constants.DB_CONN)
         logger.info(f"Created emergency database connection: {constants.DB_CONN}")
-    except Exception as db_error:
-        logger.error(f"Failed to create emergency database connection: {db_error}")
+    except Exception:
+        logger.exception("Failed to create emergency database connection")
 
 
 def _load_and_merge_configs(db_conn) -> None:
@@ -391,9 +418,8 @@ def _init_database() -> None:
         if constants.DB_CONN is None:
             _create_emergency_db_connection()
 
-    except Exception as e:
-        logger.error(f"Database initialization failed: {e}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
+    except Exception:
+        logger.exception("Database initialization failed")
         constants.DB_CONN = None
         logger.warning("DB_CONN set to None")
 
@@ -422,20 +448,30 @@ def _build_app_context() -> AppContext:
     event_bus = EventBus()
     event_metrics = EventMetricsSubscriber()
     event_logging = EventLoggingSubscriber()
+    policy_metrics = PolicyDecisionMetricsSubscriber()
     event_bus.subscribe(UserAuthenticatedEvent, event_metrics.on_user_authenticated)
     event_bus.subscribe(UserAuthenticatedEvent, event_logging.on_user_authenticated)
     event_bus.subscribe(ShareCreatedEvent, event_metrics.on_share_created)
     event_bus.subscribe(ShareCreatedEvent, event_logging.on_share_created)
     event_bus.subscribe(TransferStartedEvent, event_metrics.on_transfer_started)
     event_bus.subscribe(TransferStartedEvent, event_logging.on_transfer_started)
+    event_bus.subscribe(PolicyDecisionEvent, event_logging.on_policy_decision)
+    event_bus.subscribe(PolicyDecisionEvent, policy_metrics.on_policy_decision)
+
+    tag_service = TagService()
+    policy_service = PolicyService(tag_service, event_bus=event_bus)
+
     services = {
         "audit_service": AuditService(),
         "config_service": ConfigService(),
         "favorites_service": FavoritesService(),
         "network_share_service": NetworkShareService(),
         "p2p_signaling_service": P2PSignalingService(room_manager),
+        "policy_service": policy_service,
+        "policy_decision_metrics": policy_metrics,
         "quota_service": QuotaService(),
         "share_service": ShareService(),
+        "tag_service": tag_service,
         "user_service": UserService(),
     }
     return AppContext(
@@ -451,7 +487,8 @@ def _build_app_context() -> AppContext:
 
 
 def _start_server(app, ssl_options, port: int, hostname: str) -> None:
-    while True:
+    _MAX_PORT_RETRIES = 3
+    for attempt in range(_MAX_PORT_RETRIES):
         try:
             if ssl_options:
                 proto = "https"
@@ -479,9 +516,18 @@ def _start_server(app, ssl_options, port: int, hostname: str) -> None:
                 3600, _run_cleanup_expired_shares
             )
             tornado.ioloop.IOLoop.current().start()
-            break
+            return
         except OSError:
-            port += 1
+            logger.exception("Failed to bind on port %d", port)
+            if attempt < _MAX_PORT_RETRIES - 1:
+                port += 1
+                logger.warning("Retrying on port %d (%d/%d)", port, attempt + 2, _MAX_PORT_RETRIES)
+            else:
+                logger.error(
+                    "Could not bind after %d attempts. Set a different --port and retry.",
+                    _MAX_PORT_RETRIES,
+                )
+                raise
 
 
 def main():
@@ -524,7 +570,12 @@ def main():
     else:
         logger.info("Single-user mode — all users share root: %s", constants.ROOT_DIR)
 
-    cookie_secret = secrets.token_urlsafe(64)
+    cookie_secret = os.environ.get("AIRD_COOKIE_SECRET") or secrets.token_urlsafe(64)
+    if not os.environ.get("AIRD_COOKIE_SECRET"):
+        logger.warning(
+            "cookie_secret is randomly generated; sessions will be invalidated on restart. "
+            "Set the AIRD_COOKIE_SECRET environment variable for persistent sessions."
+        )
     settings = {
         "cookie_secret": cookie_secret,
         "xsrf_cookies": True,

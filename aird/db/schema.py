@@ -3,6 +3,8 @@
 import sqlite3
 import logging
 
+from aird.db.policy_seeds import seed_default_policies
+
 logger = logging.getLogger(__name__)
 
 PRAGMA_TABLE_INFO = "PRAGMA table_info(shares)"
@@ -83,6 +85,17 @@ def init_db(conn: sqlite3.Connection) -> None:
         cursor.execute("ALTER TABLE shares ADD COLUMN expiry_date TEXT")
     if "modify_users" not in columns:
         cursor.execute("ALTER TABLE shares ADD COLUMN modify_users TEXT")
+    if "tag_name" not in columns:
+        cursor.execute("ALTER TABLE shares ADD COLUMN tag_name TEXT")
+    if "created_by" not in columns:
+        cursor.execute("ALTER TABLE shares ADD COLUMN created_by TEXT")
+
+    cursor.execute("PRAGMA table_info(users)")
+    user_columns = [column[1] for column in cursor.fetchall()]
+    if user_columns and "must_change_password" not in user_columns:
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"
+        )
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS audit_log (
@@ -127,4 +140,79 @@ def init_db(conn: sqlite3.Connection) -> None:
             "ALTER TABLE users ADD COLUMN used_bytes INTEGER NOT NULL DEFAULT 0"
         )
 
+    # ABAC tables (additive only; safe to leave in place even when the engine is off).
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_attributes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            key TEXT NOT NULL,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(username, key)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS resource_tags (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tag TEXT NOT NULL,
+            glob_pattern TEXT NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            created_by TEXT,
+            UNIQUE(tag, glob_pattern)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS policies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            description TEXT,
+            effect TEXT NOT NULL,
+            target_actions TEXT NOT NULL,
+            condition_json TEXT NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 0,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS policy_decisions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            username TEXT,
+            action TEXT NOT NULL,
+            resource TEXT,
+            decision TEXT NOT NULL,
+            reason TEXT,
+            policy_id INTEGER,
+            attributes_json TEXT,
+            ip TEXT
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_policy_decisions_created_at "
+        "ON policy_decisions(created_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_policy_decisions_username "
+        "ON policy_decisions(username)"
+    )
+
     conn.commit()
+
+    # Seed default policies after the schema is committed so the inserts
+    # happen in their own transaction and can fail without rolling back
+    # the schema migration above.
+    try:
+        seed_default_policies(conn)
+    except Exception:  # pragma: no cover - defensive
+        logger.debug("seed_default_policies failed", exc_info=True)

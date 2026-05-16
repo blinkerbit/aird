@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Audit log · Aird</title>
 </head>
 <body class="bg-base-200 min-h-screen">
@@ -13,51 +14,215 @@
     {% include '_app_nav_header.html' %}
   </div>
 
+  {% set admin_active_tab = "audit" %}
+  {% include '_admin_tabs.html' %}
+
   <main class="max-w-6xl mx-auto p-4 space-y-4">
-    <div class="mb-2">
-      <a href="/admin" class="link link-hover text-sm text-base-content/70">← Back to Admin Settings</a>
-    </div>
-    
+
     <div class="flex items-center justify-between flex-wrap gap-3">
       <h1 class="text-2xl font-bold">Audit log</h1>
       <a href="/admin/audit?format=csv" class="btn btn-ghost btn-sm gap-1 border border-base-300">⬇ Export CSV</a>
     </div>
 
-    <div class="card bg-base-100 shadow-sm border border-base-300">
-      <div class="card-body p-0">
-        <div class="overflow-x-auto">
-          <table class="table table-zebra">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Time (UTC)</th>
-                <th>User</th>
-                <th>Action</th>
-                <th>Details</th>
-                <th>IP</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for r in logs %}
-              <tr class="hover">
-                <td class="text-xs text-base-content/50">#{{ r.get('id') }}</td>
-                <td class="text-xs font-mono">{{ r.get('created_at', '') }}</td>
-                <td>{{ r.get('username') or '' }}</td>
-                <td><span class="badge badge-ghost badge-sm">{{ r.get('action') or '' }}</span></td>
-                <td class="text-sm">{{ r.get('details') or '' }}</td>
-                <td class="text-xs font-mono text-base-content/50">{{ r.get('ip') or '' }}</td>
-              </tr>
-              {% end %}
-              {% if not logs %}
-              <tr><td colspan="6" class="text-center text-base-content/50 py-8">No audit entries.</td></tr>
-              {% end %}
-            </tbody>
-          </table>
+    <div role="tablist" class="tabs tabs-bordered" aria-label="Audit views">
+      <button type="button" role="tab" class="tab tab-active font-bold" data-tab="user">User actions</button>
+      <button type="button" role="tab" class="tab hover:text-base-content hover:bg-base-200/50" data-tab="policy">Policy decisions</button>
+    </div>
+
+    <section data-tab-panel="user">
+      <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body p-0">
+          <div class="overflow-x-auto">
+            <table class="table table-zebra">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Time (UTC)</th>
+                  <th>User</th>
+                  <th>Action</th>
+                  <th>Details</th>
+                  <th>IP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for r in logs %}
+                <tr class="hover">
+                  <td class="text-xs text-base-content/50">#{{ r.get('id') }}</td>
+                  <td class="text-xs font-mono">{{ r.get('created_at', '') }}</td>
+                  <td>{{ r.get('username') or '' }}</td>
+                  <td><span class="badge badge-ghost badge-sm">{{ r.get('action') or '' }}</span></td>
+                  <td class="text-sm">{{ r.get('details') or '' }}</td>
+                  <td class="text-xs font-mono text-base-content/50">{{ r.get('ip') or '' }}</td>
+                </tr>
+                {% end %}
+                {% if not logs %}
+                <tr><td colspan="6" class="text-center text-base-content/50 py-8">No audit entries.</td></tr>
+                {% end %}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
-    </div>
-    <p class="text-sm text-base-content/50">Showing {{ logs_count }} entries · limit={{ limit }} · offset={{ offset }}</p>
+      <p class="text-sm text-base-content/50 mt-2">Showing {{ logs_count }} entries · limit={{ limit }} · offset={{ offset }}</p>
+    </section>
+
+    <section data-tab-panel="policy" class="hidden">
+      <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body p-0">
+          <div class="px-5 py-3 border-b border-base-300 bg-base-200/50 flex items-center justify-between gap-3 flex-wrap">
+            <div class="flex items-center gap-2">
+              <span id="ws-status" class="badge badge-ghost badge-sm">Connecting…</span>
+              <span class="text-sm text-base-content/60">Live PDP decisions stream over <code>/ws/policy-decisions</code>.</span>
+            </div>
+            <button type="button" id="reload-decisions" class="btn btn-ghost btn-xs border border-base-300">Refresh recent</button>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="table table-zebra" id="decisions-table">
+              <thead>
+                <tr>
+                  <th>Time (UTC)</th>
+                  <th>User</th>
+                  <th>Action</th>
+                  <th>Resource</th>
+                  <th>Decision</th>
+                  <th>Policy</th>
+                  <th>Reason</th>
+                  <th>IP</th>
+                </tr>
+              </thead>
+              <tbody id="decisions-body">
+                <tr><td colspan="8" class="text-center text-base-content/50 py-8">Waiting for events…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
   <script src="/static/js/theme.js"></script>
+  <script nonce="{{ csp_nonce }}">
+    (function () {
+      const tabs = document.querySelectorAll("[data-tab]");
+      const panels = document.querySelectorAll("[data-tab-panel]");
+      tabs.forEach(function (tab) {
+        tab.addEventListener("click", function () {
+          tabs.forEach(function (t) { t.classList.remove("tab-active", "font-bold"); });
+          tab.classList.add("tab-active", "font-bold");
+          const target = tab.dataset.tab;
+          panels.forEach(function (p) {
+            p.classList.toggle("hidden", p.dataset.tabPanel !== target);
+          });
+        });
+      });
+
+      const tbody = document.getElementById("decisions-body");
+      const statusEl = document.getElementById("ws-status");
+      const MAX_ROWS = 200;
+      let placeholderCleared = false;
+
+      function escapeHtml(s) {
+        return String(s == null ? "" : s)
+          .replaceAll('&', "&amp;").replaceAll('<', "&lt;").replaceAll('>', "&gt;")
+          .replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+      }
+
+      function renderRow(row) {
+        const tr = document.createElement("tr");
+        const decisionBadge =
+          row.decision === "permit"
+            ? '<span class="badge badge-success badge-sm">Permit</span>'
+            : '<span class="badge badge-error badge-sm">Deny</span>';
+        tr.innerHTML =
+          '<td class="text-xs font-mono">' + escapeHtml(row.created_at || row.decided_at || "") + "</td>" +
+          "<td>" + escapeHtml(row.username || "") + "</td>" +
+          '<td><span class="badge badge-ghost badge-sm">' + escapeHtml(row.action || "") + "</span></td>" +
+          '<td class="text-xs font-mono">' + escapeHtml(row.resource || "") + "</td>" +
+          "<td>" + decisionBadge + "</td>" +
+          "<td>" + escapeHtml(row.policy_name || row.matched_policy_name || "") + "</td>" +
+          '<td class="text-sm">' + escapeHtml(row.reason || "") + "</td>" +
+          '<td class="text-xs font-mono text-base-content/50">' + escapeHtml(row.ip || "") + "</td>";
+        return tr;
+      }
+
+      function pushRow(row, prepend) {
+        if (!placeholderCleared) {
+          tbody.innerHTML = "";
+          placeholderCleared = true;
+        }
+        const tr = renderRow(row);
+        if (prepend) {
+          tbody.insertBefore(tr, tbody.firstChild);
+        } else {
+          tbody.appendChild(tr);
+        }
+        while (tbody.rows.length > MAX_ROWS) {
+          tbody.deleteRow(tbody.rows.length - 1);
+        }
+      }
+
+      function setStatus(text, cls) {
+        statusEl.textContent = text;
+        statusEl.className = "badge badge-sm " + (cls || "badge-ghost");
+      }
+
+      async function reloadRecent() {
+        try {
+          const res = await fetch("/admin/api/abac/decisions?limit=100", {
+            credentials: "same-origin",
+          });
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          const data = await res.json();
+          tbody.innerHTML = "";
+          placeholderCleared = true;
+          (data.decisions || []).forEach(function (row) {
+            pushRow(row, false);
+          });
+          if (!tbody.rows.length) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-base-content/50 py-8">No policy decisions yet.</td></tr>';
+            placeholderCleared = false;
+          }
+        } catch (err) {
+          console.warn("decision reload failed", err);
+        }
+      }
+
+      document.getElementById("reload-decisions").addEventListener("click", reloadRecent);
+
+      function connectWS() {
+        const proto = globalThis.location.protocol === "https:" ? "wss:" : "ws:";
+        const url = proto + "//" + globalThis.location.host + "/ws/policy-decisions";
+        let ws;
+        try {
+          ws = new WebSocket(url);
+        } catch (err) {
+          setStatus("Live feed unavailable", "badge-error");
+          return;
+        }
+        ws.addEventListener("open", function () {
+          setStatus("Live", "badge-success");
+        });
+        ws.addEventListener("close", function () {
+          setStatus("Disconnected", "badge-warning");
+          setTimeout(connectWS, 5000);
+        });
+        ws.addEventListener("error", function () {
+          setStatus("Error", "badge-error");
+        });
+        ws.addEventListener("message", function (ev) {
+          try {
+            const data = JSON.parse(ev.data);
+            if (data && data.type === "policy_decision") {
+              pushRow(data, true);
+            }
+          } catch (err) {
+            console.warn("bad ws payload", err);
+          }
+        });
+      }
+
+      reloadRecent();
+      connectWS();
+    })();
+  </script>
 </body>
 </html>

@@ -56,5 +56,20 @@ class TransferStartedEvent:
     started_at: float
 
 
+@dataclass(frozen=True)
+class PolicyDecisionEvent:
+    """Emitted by the PDP for every access decision."""
+
+    username: str | None
+    action: str
+    resource: str | None
+    decision: str  # "permit" | "deny"
+    reason: str
+    matched_policy_id: int | None
+    matched_policy_name: str | None
+    ip: str | None
+    decided_at: float
+
+
 def now_ts() -> float:
     return time.time()

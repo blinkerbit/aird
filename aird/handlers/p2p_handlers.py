@@ -9,7 +9,7 @@ from typing import Dict, Optional
 import tornado.web
 import tornado.websocket
 
-from aird.handlers.base_handler import BaseHandler, authenticate_handler
+from aird.handlers.base_handler import BaseHandler, authenticate_handler, require_action
 from aird.core.events import TransferStartedEvent, now_ts
 from aird.core.security import is_valid_websocket_origin
 from aird.utils.util import is_feature_enabled
@@ -56,8 +56,8 @@ class P2PRoom:
             if peer_id != exclude_peer:
                 try:
                     handler.write_message(json.dumps(message))
-                except Exception as e:
-                    logger.error(f"Error broadcasting to peer {peer_id}: {e}")
+                except Exception:
+                    logger.exception("Error broadcasting to peer %s", peer_id)
 
 
 class P2PRoomManager:
@@ -121,6 +121,38 @@ room_manager = P2PRoomManager()
 class P2PTransferHandler(BaseHandler):
     """Handler for the P2P transfer page."""
 
+    def _get_p2p_resource_size(self, room_id: str | None) -> int | None:
+        if not room_id:
+            return None
+        room_mgr = self.room_manager or room_manager
+        room = room_mgr.get_room(room_id)
+        if room and isinstance(getattr(room, "file_info", None), dict):
+            size_val = room.file_info.get("size")
+            if isinstance(size_val, int) and size_val > 0:
+                return size_val
+        return None
+
+    def _check_p2p_access(self, room_id: str | None, current_user) -> bool:
+        """Return False and write 403 if ABAC denies access."""
+        if not current_user:
+            return True
+        resource_size = self._get_p2p_resource_size(room_id)
+        decision = self.check_access("p2p.transfer", resource_path=room_id, resource_size=resource_size)
+        if decision is not None and decision.is_deny:
+            self.set_status(403)
+            self.write(decision.reason)
+            return False
+        return True
+
+    def _handle_anonymous_p2p(self, room_id: str | None) -> None:
+        if room_id:
+            room_mgr = self.room_manager or room_manager
+            room = room_mgr.get_room(room_id)
+            if not room or not room.allow_anonymous:
+                self.redirect(self.get_login_url())
+                return
+        self.render("p2p_transfer.html", room_id=room_id, current_user=None, is_anonymous=True)
+
     def get(self):
         if not self.require_feature(
             "p2p_transfer",
@@ -132,21 +164,11 @@ class P2PTransferHandler(BaseHandler):
         room_id = self.get_argument("room", None)
         current_user = self.get_current_user()
 
-        # If user is not logged in
-        if not current_user:
-            if room_id:
-                room_mgr = self.room_manager or room_manager
-                room = room_mgr.get_room(room_id)
-                if not room or not room.allow_anonymous:
-                    self.redirect(self.get_login_url())
-                    return
+        if not self._check_p2p_access(room_id, current_user):
+            return
 
-            self.render(
-                "p2p_transfer.html",
-                room_id=room_id,
-                current_user=None,
-                is_anonymous=True,
-            )
+        if not current_user:
+            self._handle_anonymous_p2p(room_id)
             return
 
         self.render(
@@ -198,8 +220,8 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
                 else:
                     return None
                 return {"username": username, "role": "user"}
-            except Exception as e:
-                logger.error(f"Error parsing user cookie: {e}")
+            except Exception:
+                logger.exception("Error parsing user cookie")
                 return None
 
     def open(self):
@@ -276,11 +298,10 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
         )
 
     def on_message(self, message: str):
-        logger.info(f"P2P message received from {self.peer_id}: {message[:200]}")
         try:
             data = json.loads(message)
             msg_type = data.get("type")
-            logger.info(f"Message type: {msg_type}")
+            logger.info("P2P message received from %s: type=%s", self.peer_id, msg_type)
             handlers = {
                 "create_room": self._handle_create_room,
                 "join_room": self._handle_join_room,
@@ -297,11 +318,11 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
                 return
             handler(data)
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON received: {e}")
+        except json.JSONDecodeError:
+            logger.exception("Invalid JSON received")
             self.write_message(json.dumps({"type": "error", "message": "Invalid JSON"}))
         except Exception as e:
-            logger.error(f"Error handling message: {e}", exc_info=True)
+            logger.exception("Error handling message")
             self.write_message(json.dumps({"type": "error", "message": str(e)}))
 
     def _handle_create_room(self, data: dict):

@@ -13,19 +13,24 @@ from aird.handlers.share_handlers import (
     _build_token_update_fields,
     _collect_paths_from_request,
     _get_provided_token,
-    _is_token_valid,
-    _is_user_allowed,
+    _check_share_access,
     _normalize_path_entry,
     _parse_path_entries_for_update,
     _parse_paths_for_update,
     _resolve_final_paths_dynamic,
     _resolve_final_paths_static,
+    _apply_metadata_updates,
 )
 from aird.cloud import CloudProviderError
 
 from tests.handler_helpers import _default_services, authenticate, patch_db_conn, prepare_handler
+from aird.constants import FEATURE_FLAGS as _FEATURE_FLAGS_DEFAULTS
 
 
+def _flags_file_share_only(key: str, default: bool = False) -> bool:
+    if key == "file_share":
+        return True
+    return bool(_FEATURE_FLAGS_DEFAULTS.get(key, default))
 class TestShareFilesHandler:
     def setup_method(self):
         self.mock_app = MagicMock()
@@ -37,7 +42,8 @@ class TestShareFilesHandler:
         authenticate(handler, role="user")
 
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_flags_file_share_only,
         ), patch.object(handler, "render") as mock_render:
 
             handler.get()
@@ -83,7 +89,8 @@ class TestShareCreateHandler:
         handler = self._build_handler({"paths": ["test.txt"]})
 
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_flags_file_share_only,
         ), patch("os.path.abspath", return_value="/root/test.txt"), patch(
             "aird.handlers.share_handlers.is_within_root", return_value=True
         ), patch(
@@ -114,7 +121,8 @@ class TestShareCreateHandler:
         handler = self._build_handler({"paths": ["missing.txt"]})
 
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_flags_file_share_only,
         ), patch("os.path.abspath", return_value="/root/missing.txt"), patch(
             "aird.handlers.share_handlers.is_within_root", return_value=True
         ), patch(
@@ -138,7 +146,8 @@ class TestShareCreateHandler:
         handler = self._build_handler({"paths": [], "share_type": "dynamic"})
 
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_flags_file_share_only,
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch(
             "aird.handlers.share_handlers.remove_share_cloud_dir"
         ) as mock_remove, patch.object(
@@ -158,7 +167,8 @@ class TestShareCreateHandler:
         )
 
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_flags_file_share_only,
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch(
             "aird.handlers.share_handlers.download_cloud_items",
             side_effect=CloudProviderError("boom"),
@@ -178,7 +188,8 @@ class TestShareCreateHandler:
         self.mock_app.settings["db_conn"] = None
 
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_flags_file_share_only,
         ), patch("os.path.abspath", return_value="/root/file.txt"), patch(
             "aird.handlers.share_handlers.is_within_root", return_value=True
         ), patch(
@@ -208,11 +219,17 @@ class TestShareRevokeHandler:
         handler = prepare_handler(ShareRevokeHandler(self.mock_app, self.mock_request))
         authenticate(handler, role="user")
         handler.get_argument = MagicMock(return_value="share1")
+        share_svc = self.mock_app.settings["services"]["share_service"]
 
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
-        ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch(
-            "aird.services.share_service.delete_share"
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_flags_file_share_only,
+        ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch.object(
+            share_svc,
+            "get_share",
+            return_value={"id": "share1", "created_by": "user"},
+        ), patch.object(
+            share_svc, "delete_share"
         ) as mock_delete, patch(
             "aird.handlers.share_handlers.remove_share_cloud_dir"
         ), patch.object(
@@ -228,11 +245,17 @@ class TestShareRevokeHandler:
         authenticate(handler, role="user")
         handler.get_argument = MagicMock(return_value="share1")
         handler.request.headers = {"Accept": "application/json"}
+        share_svc = self.mock_app.settings["services"]["share_service"]
 
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
-        ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch(
-            "aird.services.share_service.delete_share"
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_flags_file_share_only,
+        ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch.object(
+            share_svc,
+            "get_share",
+            return_value={"id": "share1", "created_by": "user"},
+        ), patch.object(
+            share_svc, "delete_share"
         ), patch(
             "aird.handlers.share_handlers.remove_share_cloud_dir"
         ), patch.object(
@@ -242,8 +265,29 @@ class TestShareRevokeHandler:
             handler.post()
             mock_write.assert_called_with({"ok": True})
 
+    def test_revoke_forbidden_non_manager(self):
+        handler = prepare_handler(ShareRevokeHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role="user")
+        handler.get_argument = MagicMock(return_value="share1")
+        share_svc = self.mock_app.settings["services"]["share_service"]
 
-class TestShareUpdateHandler:
+        with patch(
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_flags_file_share_only,
+        ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch.object(
+            share_svc,
+            "get_share",
+            return_value={"id": "share1", "created_by": "other"},
+        ), patch.object(
+            share_svc, "delete_share"
+        ) as mock_delete, patch.object(
+            handler, "write"
+        ) as mock_write:
+
+            handler.post()
+            handler.set_status.assert_called_with(403)
+            mock_write.assert_called_with({"error": "Access denied"})
+            mock_delete.assert_not_called()
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
@@ -265,7 +309,8 @@ class TestShareUpdateHandler:
         handler = self._build_handler({})
 
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_flags_file_share_only,
         ), patch.object(handler, "write") as mock_write:
 
             handler.post()
@@ -274,11 +319,13 @@ class TestShareUpdateHandler:
 
     def test_update_share_not_found(self):
         handler = self._build_handler({"share_id": "missing"})
+        share_svc = self.mock_app.settings["services"]["share_service"]
 
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
-        ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch(
-            "aird.services.share_service.get_share_by_id", return_value=None
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_flags_file_share_only,
+        ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch.object(
+            share_svc, "get_share", return_value=None
         ), patch.object(
             handler, "write"
         ) as mock_write:
@@ -287,11 +334,35 @@ class TestShareUpdateHandler:
             handler.set_status.assert_called_with(404)
             mock_write.assert_called_with({"error": "Share not found"})
 
+    def test_update_share_forbidden_non_manager(self):
+        handler = self._build_handler({"share_id": "share1", "paths": []})
+        share_svc = self.mock_app.settings["services"]["share_service"]
+
+        with patch(
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_flags_file_share_only,
+        ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch.object(
+            share_svc,
+            "get_share",
+            return_value={
+                "paths": [],
+                "share_type": "static",
+                "created_by": "other",
+            },
+        ), patch.object(
+            handler, "write"
+        ) as mock_write:
+
+            handler.post()
+            handler.set_status.assert_called_with(403)
+            mock_write.assert_called_with({"error": "Access denied"})
+
     def test_update_share_db_missing(self):
         handler = self._build_handler({"share_id": "share1"})
 
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_flags_file_share_only,
         ), patch_db_conn(None, modules=["aird.handlers.share_handlers"]), patch.object(
             handler, "write"
         ) as mock_write:
@@ -309,12 +380,19 @@ class TestShareUpdateHandler:
             "share_type": "static",
         }
         handler = self._build_handler(body)
+        share_svc = self.mock_app.settings["services"]["share_service"]
 
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
-        ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch(
-            "aird.services.share_service.get_share_by_id",
-            return_value={"paths": [], "share_type": "static"},
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_flags_file_share_only,
+        ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch.object(
+            share_svc,
+            "get_share",
+            return_value={
+                "paths": [],
+                "share_type": "static",
+                "created_by": "user",
+            },
         ), patch(
             "aird.handlers.share_handlers.download_cloud_items",
             side_effect=CloudProviderError("boom"),
@@ -334,14 +412,22 @@ class TestShareUpdateHandler:
         }
         handler = self._build_handler(body)
 
-        share_data = {"paths": [], "share_type": "static", "secret_token": None}
+        share_data = {
+            "paths": [],
+            "share_type": "static",
+            "secret_token": None,
+            "created_by": "user",
+        }
+        share_svc = self.mock_app.settings["services"]["share_service"]
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
-        ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch(
-            "aird.services.share_service.get_share_by_id",
-            side_effect=[share_data, {"secret_token": "newtoken"}],
-        ), patch(
-            "aird.services.share_service.update_share", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_flags_file_share_only,
+        ), patch_db_conn(MagicMock(), modules=["aird.handlers.share_handlers"]), patch.object(
+            share_svc,
+            "get_share",
+            side_effect=[share_data, {"secret_token": "newtoken", "created_by": "user"}],
+        ), patch.object(
+            share_svc, "update_share", return_value=True
         ), patch.object(
             handler, "write"
         ) as mock_write:
@@ -535,6 +621,8 @@ class TestSharedFileHandler:
         ), patch(
             "os.path.abspath", return_value="/root/test.txt"
         ), patch(
+            "aird.handlers.share_handlers.share_covers_relative_path", return_value=True
+        ), patch(
             "aird.handlers.share_handlers.is_within_root", return_value=True
         ), patch(
             "os.path.isfile", return_value=True
@@ -578,6 +666,36 @@ class TestSharedFileHandler:
             )
 
 
+class TestApplyMetadataUpdates:
+    def test_clearing_allowed_users_does_not_implicitly_clear_token(self):
+        uf = {}
+        _apply_metadata_updates(
+            {"allowed_users": [], "disable_token": None},
+            {"secret_token": "keep"},
+            uf,
+        )
+        assert uf["allowed_users"] is None
+        assert "secret_token" not in uf
+        assert "disable_token" not in uf
+
+    def test_explicit_disable_token_false_keeps_when_clearing_allow_list(self):
+        uf = {}
+        _apply_metadata_updates(
+            {"allowed_users": [], "disable_token": False},
+            {"secret_token": "preserve"},
+            uf,
+        )
+        assert uf["allowed_users"] is None
+        assert uf["secret_token"] == "preserve"
+        assert uf["disable_token"] is False
+
+    def test_expiry_date_none_clears_in_update_fields(self):
+        uf = {}
+        _apply_metadata_updates({"expiry_date": None}, {}, uf)
+        assert "expiry_date" in uf
+        assert uf["expiry_date"] is None
+
+
 class TestShareHandlerPathHelpers:
     def test_normalize_path_entry_cloud_dict(self):
         assert _normalize_path_entry({"type": "cloud", "id": "1"}) == (None, True)
@@ -605,28 +723,42 @@ class TestShareHandlerPathHelpers:
         assert _get_provided_token("sid1", req, get_cookie) == "from-cookie"
         get_cookie.assert_called_with("share_token_sid1")
 
-    def test_is_token_valid_no_secret(self):
+    def test_check_share_access_no_secret_no_users(self):
+        # Public
         share = {"secret_token": None}
-        assert _is_token_valid(share, "s", MagicMock(), MagicMock()) is True
+        allowed, redirect, err = _check_share_access(share, "s", MagicMock(), MagicMock(), MagicMock(return_value=None))
+        assert allowed is True
 
-    def test_is_token_valid_matches(self):
+    def test_check_share_access_token_matches(self):
         share = {"secret_token": "abc"}
         req = MagicMock()
         req.headers.get = MagicMock(return_value="Bearer abc")
-        assert _is_token_valid(share, "s", req, MagicMock()) is True
+        allowed, redirect, err = _check_share_access(share, "s", req, MagicMock(), MagicMock(return_value=None))
+        assert allowed is True
 
-    def test_is_user_allowed_no_restriction(self):
-        assert _is_user_allowed({}, MagicMock()) == (True, None)
-
-    def test_is_user_allowed_missing_cookie(self):
+    def test_check_share_access_missing_cookie_restricted(self):
+        share = {"secret_token": "abc"}
+        req = MagicMock()
+        req.headers.get = MagicMock(return_value="")
+        get_cookie = MagicMock(return_value=None)
         get_sc = MagicMock(return_value=None)
-        assert _is_user_allowed({"allowed_users": ["a"]}, get_sc) == (
-            False,
-            (
-                401,
-                "Authentication required: Please provide a valid access token",
-            ),
-        )
+        allowed, redirect, err = _check_share_access(share, "s", req, get_cookie, get_sc)
+        assert allowed is False
+        assert redirect is True
+        assert err[0] == 403
+
+    def test_check_share_access_user_explicitly_allowed(self):
+        share = {"secret_token": "abc", "allowed_users": ["user1"]}
+        get_sc = MagicMock(return_value=b'{"username": "user1"}')
+        allowed, redirect, err = _check_share_access(share, "s", MagicMock(), MagicMock(), get_sc)
+        assert allowed is True
+
+    def test_check_share_access_modify_user_allowed(self):
+        share = {"secret_token": "abc", "allowed_users": ["bob"], "modify_users": ["alice"]}
+        get_sc = MagicMock(return_value=b'{"username": "alice"}')
+        allowed, redirect, err = _check_share_access(share, "s", MagicMock(), MagicMock(), get_sc)
+        assert allowed is True
+        assert redirect is False
 
     def test_build_token_update_fields(self):
         assert _build_token_update_fields(
@@ -636,6 +768,11 @@ class TestShareHandlerPathHelpers:
         assert out["disable_token"] is False
         assert out["secret_token"] == "keep"
         assert _build_token_update_fields(None, {}) == {}
+        rot = _build_token_update_fields(
+            None, {"secret_token": "old"}, rotate_existing=True
+        )
+        assert rot["disable_token"] is False
+        assert rot["secret_token"] != "old"
 
     def test_parse_path_entries_for_update(self):
         paths, remote = _parse_path_entries_for_update(

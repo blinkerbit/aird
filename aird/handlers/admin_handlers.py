@@ -154,6 +154,12 @@ class AdminHandler(BaseHandler):
         FEATURE_FLAGS["allow_simple_passwords"] = (
             self.get_argument("allow_simple_passwords", "off") == "on"
         )
+        FEATURE_FLAGS["abac_engine"] = (
+            self.get_argument("abac_engine", "off") == "on"
+        )
+        FEATURE_FLAGS["abac_audit_decisions"] = (
+            self.get_argument("abac_audit_decisions", "off") == "on"
+        )
 
         # Update WebSocket configuration
         websocket_config = {}
@@ -313,7 +319,12 @@ class AdminUsersHandler(BaseHandler):
             else:
                 users = self.get_service("user_service").list_users(db_conn)
 
-        self.render("admin_users.html", users=users)
+        self.render(
+            "admin_users.html",
+            users=users,
+            reset_password_plain=None,
+            reset_for_username=None,
+        )
 
 
 class UserCreateHandler(BaseHandler):
@@ -460,12 +471,13 @@ class UserEditHandler(BaseHandler):
 
             error = _validate_user_edit(username, password, role, self.settings)
             if error:
-                self.render(TEMPLATE_USER_EDIT, user=user, error=error)
+                self.render(TEMPLATE_USER_EDIT, user=user, error=error, settings=self.settings)
                 return
 
             update_data = {"username": username, "role": role, "active": active}
             if password:
                 update_data["password"] = password
+                update_data["must_change_password"] = False
 
             if user_service is not None:
                 updated = user_service.update_user(self.db_conn, user_id, **update_data)
@@ -476,18 +488,19 @@ class UserEditHandler(BaseHandler):
             if updated:
                 self.redirect(URL_ADMIN_USERS)
             else:
-                self.render(TEMPLATE_USER_EDIT, user=user, error=FAILED_UPDATE_USER)
+                self.render(TEMPLATE_USER_EDIT, user=user, error=FAILED_UPDATE_USER, settings=self.settings)
 
         except ValueError:
             self.set_status(HTTP_BAD_REQUEST)
             self.write(INVALID_USER_ID)
-        except Exception as e:
-            logging.error(f"User update error: {e}")
+        except Exception:
+            logging.exception("User update error")
             if user is not None:
                 self.render(
                     TEMPLATE_USER_EDIT,
                     user=user,
                     error=ERROR_UPDATE_USER,
+                    settings=self.settings,
                 )
             else:
                 self.set_status(500)
@@ -525,6 +538,61 @@ class UserDeleteHandler(BaseHandler):
         except ValueError:
             self.set_status(HTTP_BAD_REQUEST)
             self.write(INVALID_USER_ID)
+
+
+class UserPasswordResetHandler(BaseHandler):
+    @tornado.web.authenticated
+    @require_admin(deny_status=HTTP_FORBIDDEN, deny_body=ACCESS_DENIED)
+    @require_db
+    def post(self):
+        """Set a temporary password; user must replace it after login."""
+
+        try:
+            user_id = int(self.get_argument("user_id", "0"))
+        except ValueError:
+            self.set_status(HTTP_BAD_REQUEST)
+            self.write(INVALID_USER_ID_SHORT)
+            return
+        if user_id <= 0:
+            self.set_status(HTTP_BAD_REQUEST)
+            self.write(INVALID_USER_ID_SHORT)
+            return
+
+        user_service = _get_user_service(self)
+        temp_password = _secrets.token_urlsafe(32)
+        if not user_service.update_user(
+            self.db_conn,
+            user_id,
+            password=temp_password,
+            must_change_password=True,
+        ):
+            self.set_status(500)
+            self.write("Password reset failed")
+            return
+
+        refreshed = user_service.list_users(self.db_conn)
+        target = next((u for u in refreshed if u["id"] == user_id), None)
+        if not target:
+            self.set_status(404)
+            self.write(USER_NOT_FOUND)
+            return
+
+        try:
+            self.get_service("audit_service").log(
+                self.db_conn,
+                "admin_password_reset",
+                username=target["username"],
+                ip=self.request.remote_ip,
+            )
+        except Exception:
+            logging.debug("audit admin_password_reset failed", exc_info=True)
+
+        self.render(
+            "admin_users.html",
+            users=refreshed,
+            reset_password_plain=temp_password,
+            reset_for_username=target["username"],
+        )
 
 
 class LDAPConfigHandler(BaseHandler):
@@ -589,8 +657,8 @@ class LDAPConfigCreateHandler(BaseHandler):
             self.redirect(URL_ADMIN_LDAP)
         except ValueError as e:
             self.render(TEMPLATE_LDAP_CONFIG_CREATE, error=str(e))
-        except Exception as e:
-            logging.error(f"LDAP config creation error: {e}")
+        except Exception:
+            logging.exception("LDAP config creation error")
             self.render(
                 TEMPLATE_LDAP_CONFIG_CREATE,
                 error="Error creating configuration. Please try again.",
@@ -679,8 +747,8 @@ class LDAPConfigEditHandler(BaseHandler):
 
         except ValueError:
             self.write(INVALID_CONFIG_ID)
-        except Exception as e:
-            logging.error(f"LDAP config update error: {e}")
+        except Exception:
+            logging.exception("LDAP config update error")
             self.render(
                 TEMPLATE_LDAP_CONFIG_EDIT,
                 config=config,

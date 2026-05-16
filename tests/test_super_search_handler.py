@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 from tests.handler_helpers import _default_services
 from aird.handlers.api_handlers import SuperSearchWebSocketHandler
+from aird.core.input_validation import validate_super_search_glob
 
 
 class TestSuperSearchWebSocketHandler:
@@ -100,6 +101,22 @@ class TestSuperSearchWebSocketHandler:
             data = json.loads(match_call[0][0])
             assert data["type"] == "match"
             assert data["line_content"] == "line with search_text"
+
+    @pytest.mark.asyncio
+    async def test_on_message_rejects_parent_dir_pattern(self):
+        handler = SuperSearchWebSocketHandler(self.mock_app, self.mock_request)
+        handler.get_current_user = MagicMock(return_value={"username": "user"})
+        handler.perform_search = AsyncMock()
+        handler.write_message = MagicMock()
+
+        msg = json.dumps(
+            {"pattern": "foo/../../etc/passwd", "search_text": "x"}
+        )
+        await handler.on_message(msg)
+        handler.perform_search.assert_not_called()
+        handler.write_message.assert_called()
+        payload = json.loads(handler.write_message.call_args[0][0])
+        assert payload["type"] == "error"
 
     @pytest.mark.asyncio
     async def test_on_message_start_search(self):
@@ -248,8 +265,8 @@ class TestSuperSearchWebSocketHandler:
         assert counters == [1, 2]
 
     @pytest.mark.asyncio
-    async def test_scanning_not_sent_for_non_matching_files(self):
-        """Files that don't match the glob should not produce scanning messages."""
+    async def test_walk_progress_tick_for_skipped_files(self):
+        """Files that skip the glob still emit periodic 'scanning' (first visited + throttle)."""
         handler, walk_return, path_cls, mock_open = self._setup_handler_with_fs(
             walk_return=[("/root", [], ["readme.md", "notes.md"])],
             file_lines=[],
@@ -261,7 +278,9 @@ class TestSuperSearchWebSocketHandler:
             await handler.perform_search("*.txt", "needle")
 
         scanning_msgs = self._get_messages(handler, "scanning")
-        assert len(scanning_msgs) == 0
+        assert len(scanning_msgs) >= 1
+        assert scanning_msgs[0]["type"] == "scanning"
+        assert scanning_msgs[0]["file_path"] == "readme.md"
 
     @pytest.mark.asyncio
     async def test_search_complete_message_on_matches(self):
@@ -332,3 +351,21 @@ class TestSuperSearchWebSocketHandler:
         assert all_msgs[0]["type"] == "search_start"
         assert all_msgs[0]["pattern"] == "*.txt"
         assert all_msgs[0]["search_text"] == "needle"
+
+
+class TestValidateSuperSearchGlob:
+    """Server-side rejects patterns that mimic absolute paths or traversal."""
+
+    def test_allows_plain_globs(self):
+        assert validate_super_search_glob("**/*.py") is None
+        assert validate_super_search_glob("subdir/**/*.txt") is None
+
+    def test_rejects_parent_segment(self):
+        assert validate_super_search_glob("../outside") is not None
+        assert validate_super_search_glob(r"a\..\b\c") is not None
+
+    def test_rejects_unc(self):
+        assert validate_super_search_glob("//srv/share/**/*.log") is not None
+
+    def test_rejects_windows_drive(self):
+        assert validate_super_search_glob("C:/Windows/*.ini") is not None

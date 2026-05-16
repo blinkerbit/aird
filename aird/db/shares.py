@@ -1,11 +1,13 @@
 """Share database operations."""
 
+import functools
 import json
 import logging
 import secrets
 import sqlite3
-import traceback
-from datetime import datetime
+from datetime import datetime, timezone
+
+import os
 
 from aird.db.schema import PRAGMA_TABLE_INFO
 from aird.sql_identifiers import (
@@ -14,9 +16,20 @@ from aird.sql_identifiers import (
     format_shares_select_sql,
     format_update_by_id_sql,
 )
-from aird.core.file_operations import remove_share_cloud_dir
+from aird.constants import ROOT_DIR
+from aird.core.file_operations import (
+    filter_files_by_patterns,
+    get_files_by_tag_patterns,
+    remove_share_cloud_dir,
+)
+from aird.core.security import is_within_root
+from aird.core.share_root import filesystem_root_for_share, login_matches_share_creator_field
+from aird.db.resource_tags import list_resource_tags
 
 logger = logging.getLogger(__name__)
+
+# Sentinel: omit allow_list / avoid_list / expiry_date from UPDATE (vs explicit None → SQL NULL).
+_NO_LIST_OR_EXPIRY_UPDATE = object()
 
 _SHARE_BASE_COLS = ["id", "created", "paths", "allowed_users"]
 _SHARE_OPTIONAL_COLS = [
@@ -26,6 +39,8 @@ _SHARE_OPTIONAL_COLS = [
     "allow_list",
     "avoid_list",
     "expiry_date",
+    "tag_name",
+    "created_by",
 ]
 _SHARE_SELECT_COLS_ALLOWED = frozenset(_SHARE_BASE_COLS + _SHARE_OPTIONAL_COLS)
 
@@ -42,11 +57,13 @@ def insert_share(
     avoid_list: list[str] = None,
     expiry_date: str = None,
     modify_users: list[str] = None,
+    tag_name: str = None,
+    created_by: str = None,
 ) -> bool:
     try:
         with conn:
             conn.execute(
-                "REPLACE INTO shares (id, created, paths, allowed_users, secret_token, share_type, allow_list, avoid_list, expiry_date, modify_users) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "REPLACE INTO shares (id, created, paths, allowed_users, secret_token, share_type, allow_list, avoid_list, expiry_date, modify_users, tag_name, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     sid,
                     created,
@@ -58,12 +75,13 @@ def insert_share(
                     json.dumps(avoid_list) if avoid_list else None,
                     expiry_date,
                     json.dumps(modify_users) if modify_users else None,
+                    tag_name,
+                    created_by,
                 ),
             )
         return True
-    except Exception as e:
-        logging.error(f"Failed to insert share {sid} into database: {e}")
-        logging.debug(f"Traceback: {traceback.format_exc()}")
+    except Exception:
+        logging.exception("Failed to insert share %s into database", sid)
         return False
 
 
@@ -113,10 +131,11 @@ def update_share(
     sid: str,
     share_type: str = None,
     disable_token: bool = None,
-    allow_list: list = None,
-    avoid_list: list = None,
+    allow_list: list | object = _NO_LIST_OR_EXPIRY_UPDATE,
+    avoid_list: list | object = _NO_LIST_OR_EXPIRY_UPDATE,
     secret_token: str = None,
-    expiry_date: str = None,
+    expiry_date: str | object = _NO_LIST_OR_EXPIRY_UPDATE,
+    tag_name: str = None,
     **kwargs,
 ) -> bool:
     """Update share information"""
@@ -133,24 +152,28 @@ def update_share(
         updates.extend(token_updates)
         values.extend(token_values)
 
-        if allow_list is not None:
+        if allow_list is not _NO_LIST_OR_EXPIRY_UPDATE:
             updates.append("allow_list = ?")
             values.append(json.dumps(allow_list) if allow_list else None)
 
-        if avoid_list is not None:
+        if avoid_list is not _NO_LIST_OR_EXPIRY_UPDATE:
             updates.append("avoid_list = ?")
             values.append(json.dumps(avoid_list) if avoid_list else None)
 
-        if expiry_date is not None:
+        if expiry_date is not _NO_LIST_OR_EXPIRY_UPDATE:
             updates.append("expiry_date = ?")
             values.append(expiry_date)
+
+        if tag_name is not None:
+            updates.append("tag_name = ?")
+            values.append(tag_name)
 
         kwarg_updates, kwarg_values = _get_kwargs_field_updates(kwargs)
         updates.extend(kwarg_updates)
         values.extend(kwarg_values)
 
         if not updates:
-            return False
+            return True
 
         values.append(sid)
         query = format_update_by_id_sql("shares", ", ".join(updates))
@@ -160,27 +183,34 @@ def update_share(
             logging.debug(f"Update executed, rows affected: {cursor.rowcount}")
 
         return True
-    except Exception as e:
-        logging.error(f"Failed to update share {sid}: {e}")
-        logging.debug(f"Traceback: {traceback.format_exc()}")
+    except Exception:
+        logging.exception("Failed to update share %s", sid)
         return False
 
 
 def is_share_expired(expiry_date: str) -> bool:
-    """Check if a share has expired based on expiry_date using system time"""
+    """Check if a share has expired based on expiry_date (UTC-aware compare)."""
     if not expiry_date:
         return False
 
     try:
-        expiry_datetime = datetime.fromisoformat(expiry_date.replace("Z", ""))
-        current_datetime = datetime.now()
-        is_expired = current_datetime > expiry_datetime
+        raw = expiry_date.strip()
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        expiry_datetime = datetime.fromisoformat(raw)
+        if expiry_datetime.tzinfo is None:
+            expiry_datetime = expiry_datetime.replace(tzinfo=timezone.utc)
+        current_utc = datetime.now(timezone.utc)
+        is_expired = current_utc > expiry_datetime.astimezone(timezone.utc)
         logging.debug(
-            f"Checking expiry: current={current_datetime}, expiry={expiry_datetime}, expired={is_expired}"
+            "Checking expiry: current=%s, expiry=%s, expired=%s",
+            current_utc,
+            expiry_datetime,
+            is_expired,
         )
         return is_expired
-    except Exception as e:
-        logging.error(f"Error checking expiry date {expiry_date}: {e}")
+    except Exception:
+        logging.exception("Error checking expiry date %s", expiry_date)
         return False
 
 
@@ -201,8 +231,8 @@ def cleanup_expired_shares(conn: sqlite3.Connection) -> int:
                     logging.info(f"Deleted expired share: {share_id}")
 
         return deleted_count
-    except Exception as e:
-        logging.error(f"Error cleaning up expired shares: {e}")
+    except Exception:
+        logging.exception("Error cleaning up expired shares")
         return 0
 
 
@@ -231,6 +261,8 @@ def _row_to_share_dict(row: tuple, col_names: list) -> dict:
         "allow_list": json.loads(d["allow_list"]) if d.get("allow_list") else [],
         "avoid_list": json.loads(d["avoid_list"]) if d.get("avoid_list") else [],
         "expiry_date": d.get("expiry_date"),
+        "tag_name": d.get("tag_name"),
+        "created_by": d.get("created_by"),
     }
 
 
@@ -252,9 +284,8 @@ def get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict | None:
             return result
         logging.debug(f"No share found for sid='{sid}'")
         return None
-    except Exception as e:
-        logging.error(f"Error getting share {sid}: {e}")
-        logging.debug(f"Traceback: {traceback.format_exc()}")
+    except Exception:
+        logging.exception("Error getting share %s", sid)
         return None
 
 
@@ -272,8 +303,146 @@ def get_all_shares(conn: sqlite3.Connection) -> dict:
         return {}
 
 
-def get_shares_for_path(conn: sqlite3.Connection, file_path: str) -> list:
-    """Get all shares that contain a specific file path"""
+def list_shares_accessible_to_user(conn: sqlite3.Connection, username: str) -> list:
+    """Return shares where *username* is in allowed_users (or share has no user restriction)."""
+    if conn is None or not username:
+        return []
+    try:
+        cursor = conn.execute(PRAGMA_TABLE_INFO)
+        available = [row[1] for row in cursor.fetchall()]
+        col_names = _get_share_col_names(available)
+        cols = format_select_columns(col_names, _SHARE_SELECT_COLS_ALLOWED)
+        cursor = conn.execute(format_shares_select_sql(cols))
+        result = []
+        for row in cursor:
+            share = _row_to_share_dict(row, col_names)
+            allowed = share.get("allowed_users")
+            is_creator = login_matches_share_creator_field(share.get("created_by"), username)
+            if allowed is None or username in allowed or is_creator:
+                result.append(share)
+        return result
+    except Exception as e:
+        logger.debug("list_shares_accessible_to_user failed: %s", e)
+        return []
+
+
+def _normalized_share_path(p: str) -> str:
+    return str(p).replace("\\", "/")
+
+
+@functools.lru_cache(maxsize=256)
+def _cached_tag_raw_files(root_dir: str, patterns_key: str) -> tuple[str, ...]:
+    """Memoize tag glob expansion per (filesystem root, sorted patterns json)."""
+    patterns = json.loads(patterns_key)
+    return tuple(get_files_by_tag_patterns(patterns, root_dir))
+
+
+def _tag_patterns_key_from_conn(conn: sqlite3.Connection | None, tag_name: str) -> str | None:
+    """JSON key of sorted glob patterns for *tag_name*, or None if unavailable."""
+    if conn is None or not tag_name:
+        return None
+    try:
+        rules = list_resource_tags(conn)
+        patterns = sorted(
+            [r["glob_pattern"] for r in rules if r.get("tag") == tag_name]
+        )
+        return json.dumps(patterns)
+    except Exception:
+        logger.debug("tag patterns key failed for %r", tag_name, exc_info=True)
+        return None
+
+
+def list_files_for_tag_share(
+    conn: sqlite3.Connection | None,
+    tag_name: str,
+    root_dir: str,
+    allow_list,
+    avoid_list,
+) -> list[str]:
+    """All relative paths covered by a tag-type share (with allow/avoid filters)."""
+    key = _tag_patterns_key_from_conn(conn, tag_name)
+    if not key:
+        return []
+    matched = list(_cached_tag_raw_files(root_dir, key))
+    return filter_files_by_patterns(matched, allow_list, avoid_list)
+
+
+def _share_covers_dynamic_path(share: dict, rel_path: str, root_dir: str) -> bool:
+    """Check if rel_path is covered by a dynamic share."""
+    allow_list = share.get("allow_list", [])
+    avoid_list = share.get("avoid_list", [])
+    for folder_path in share.get("paths") or []:
+        try:
+            full_folder_path = os.path.abspath(os.path.join(root_dir, folder_path))
+            full_file_path = os.path.abspath(os.path.join(root_dir, rel_path))
+            if (
+                os.path.isdir(full_folder_path)
+                and is_within_root(full_file_path, full_folder_path)
+                and filter_files_by_patterns([rel_path], allow_list, avoid_list)
+            ):
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def share_covers_relative_path(
+    conn: sqlite3.Connection | None,
+    share: dict,
+    rel_path: str,
+    root_dir: str,
+) -> bool:
+    """True if *rel_path* (relative to *root_dir*) is covered by *share* (static, dynamic, or tag)."""
+    share_type = share.get("share_type", "static")
+    allow_list = share.get("allow_list", [])
+    avoid_list = share.get("avoid_list", [])
+
+    if share_type == "tag":
+        tag_name = share.get("tag_name")
+        key = _tag_patterns_key_from_conn(conn, tag_name)
+        if not key:
+            return False
+        try:
+            matched = list(_cached_tag_raw_files(root_dir, key))
+            filtered = filter_files_by_patterns(matched, allow_list, avoid_list)
+            return rel_path in filtered
+        except Exception:
+            logger.debug("share_covers_relative_path tag failed", exc_info=True)
+            return False
+
+    if share_type == "dynamic":
+        return _share_covers_dynamic_path(share, rel_path, root_dir)
+
+    effective_paths = filter_files_by_patterns(
+        share.get("paths") or [], allow_list, avoid_list
+    )
+    return share_paths_cover_target(effective_paths, rel_path) or rel_path in effective_paths
+
+
+def share_paths_cover_target(paths: list, target_path: str) -> bool:
+    """True if *target_path* is a share root or is a directory prefix of some path in *paths*."""
+    if not paths or not target_path:
+        return False
+    t = _normalized_share_path(target_path)
+    prefix = f"{t}/"
+    for p in paths:
+        pn = _normalized_share_path(p)
+        if pn == t or pn.startswith(prefix):
+            return True
+    return False
+
+
+def get_shares_for_path(
+    conn: sqlite3.Connection,
+    file_path: str,
+    root_dir: str | None = None,
+) -> list:
+    """Shares whose effective file set includes *file_path* (relative to each share's root).
+
+    *root_dir* is kept for API compatibility; matching uses the per-share root
+    from :func:`aird.core.share_root.filesystem_root_for_share`.
+    """
+    _ = root_dir  # legacy keyword; not used for matching
     try:
         cursor = conn.execute(PRAGMA_TABLE_INFO)
         available = [row[1] for row in cursor.fetchall()]
@@ -283,7 +452,9 @@ def get_shares_for_path(conn: sqlite3.Connection, file_path: str) -> list:
         matching = []
         for row in cursor:
             share = _row_to_share_dict(row, col_names)
-            if file_path in share["paths"]:
+            if share_covers_relative_path(
+                conn, share, file_path, filesystem_root_for_share(share)
+            ):
                 matching.append(share)
         return matching
     except Exception as e:

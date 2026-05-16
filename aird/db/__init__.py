@@ -67,5 +67,32 @@ from aird.db.quota import (  # noqa: F401
     set_user_quota,
 )
 
+from aird.db.user_attributes import (  # noqa: F401
+    set_user_attribute,
+    delete_user_attribute,
+    get_user_attributes,
+    list_all_user_attributes,
+)
+
+from aird.db.resource_tags import (  # noqa: F401
+    insert_resource_tag,
+    delete_resource_tag,
+    list_resource_tags,
+)
+
+from aird.db.policies import (  # noqa: F401
+    insert_policy,
+    update_policy,
+    delete_policy,
+    get_policy,
+    get_policy_by_name,
+    list_policies,
+)
+
+from aird.db.policy_decisions import (  # noqa: F401
+    log_policy_decision,
+    get_policy_decisions,
+)
+
 DB_CONN = None
 DB_PATH = "aird.db"

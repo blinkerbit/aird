@@ -14,6 +14,7 @@ from aird.handlers.base_handler import (
     BaseHandler,
     get_username_string_for_db,
     get_user_root,
+    require_action,
 )
 from aird.utils.util import (
     get_files_in_directory,
@@ -41,6 +42,8 @@ from aird.handlers.constants import (
 from aird.constants import CHUNK_SIZE
 from aird.cloud import CloudManager
 from aird.constants.file_ops import PROVIDER_NOT_CONFIGURED
+from aird.core.file_operations import get_files_by_tag_patterns, get_tags_for_path
+from aird.db.resource_tags import list_resource_tags
 
 # ---------------------------------------------------------------------------
 # Helpers for MainHandler.serve_file (reduce cognitive complexity)
@@ -116,22 +119,11 @@ async def _serve_raw_mode(handler, abspath):
                         break
                     handler.write(chunk)
                     await handler.flush()
-    except Exception as e:
-        logging.error("Error serving raw file: %s", e)
+    except Exception:
+        logging.exception("Error serving raw file")
         handler.set_status(500)
         handler.write("Error serving file")
 
-
-def _serve_pdf_preview(handler, abspath, filename, user_root):
-    """Render PDF preview page."""
-    rel_path = os.path.relpath(abspath, user_root).replace("\\", "/")
-    handler.render(
-        "pdf_preview.html",
-        filename=filename,
-        path=rel_path,
-        pdf_url=handler.request.path + "?mode=raw",
-        pdf_download_url=handler.request.path + "?download=1",
-    )
 
 
 def _serve_file_view(handler, abspath, filename, user_root):
@@ -143,9 +135,7 @@ def _serve_file_view(handler, abspath, filename, user_root):
         filename=filename,
         path=rel_path,
         lines=[],
-        start_line=1,
-        end_line=0,
-        reached_EOF=False,
+        default_file_view_line_limit=constants_module.DEFAULT_FILE_VIEW_LINE_LIMIT,
         open_editor=handler.get_argument("open_editor", "False"),
         full_file_content="",
         file_size=file_size,
@@ -158,6 +148,58 @@ class RootHandler(BaseHandler):
 
 
 class MainHandler(BaseHandler):
+    def _render_directory_browse(self, path: str, abspath: str) -> None:
+        decision = self.check_access("file.list", resource_path=path)
+        if decision is not None and decision.is_deny:
+            self.set_status(403)
+            self.write(decision.reason)
+            return
+
+        files = get_files_in_directory(abspath)
+
+        db_conn = self.db_conn
+        user_root = get_user_root(self)
+        if db_conn:
+            augment_with_shared_status(
+                files,
+                path,
+                self.get_service("share_service").list_shares(db_conn),
+                db_conn=db_conn,
+                root_dir=user_root,
+                viewer_username=get_username_string_for_db(self),
+                viewer_is_admin=self.is_admin_user(),
+            )
+
+        parent_path = os.path.dirname(path) if path else None
+        flags_for_template = get_current_feature_flags()
+        user_favorites: set[str] = set()
+        if db_conn and flags_for_template.get("favorites"):
+            username = get_username_string_for_db(self)
+            if username:
+                user_favorites = set(
+                    self.get_service("favorites_service").get_favorites(
+                        db_conn, username
+                    )
+                )
+        tag_rules = list_resource_tags(db_conn) if db_conn else []
+        file_tags_map: dict[str, list[str]] = {}
+        for f in files:
+            rel = join_path(path, f["name"]) if path else f["name"]
+            file_tags_map[f["name"]] = get_tags_for_path(tag_rules, rel)
+
+        self.render(
+            "browse.html",
+            current_path=path,
+            parent_path=parent_path,
+            files=files,
+            join_path=join_path,
+            get_file_icon=get_file_icon,
+            features=flags_for_template,
+            max_file_size=constants_module.MAX_FILE_SIZE,
+            user_favorites=user_favorites,
+            file_tags_map=file_tags_map,
+        )
+
     @tornado.web.authenticated
     async def get(self, path):
         user_root = get_user_root(self)
@@ -171,67 +213,58 @@ class MainHandler(BaseHandler):
             return
 
         if os.path.isdir(abspath):
-            files = get_files_in_directory(abspath)
+            self._render_directory_browse(path, abspath)
+            return
 
-            # Augment file data with shared status
-            db_conn = self.db_conn
-            if db_conn:
-                augment_with_shared_status(
-                    files, path, self.get_service("share_service").list_shares(db_conn)
-                )
-
-            parent_path = os.path.dirname(path) if path else None
-            # Use SQLite-backed flags for template
-            flags_for_template = get_current_feature_flags()
-            # Fetch user favorites
-            user_favorites = set()
-            if db_conn and flags_for_template.get("favorites"):
-                username = get_username_string_for_db(self)
-                if username:
-                    user_favorites = set(
-                        self.get_service("favorites_service").get_favorites(
-                            db_conn, username
-                        )
-                    )
-            self.render(
-                "browse.html",
-                current_path=path,
-                parent_path=parent_path,
-                files=files,
-                join_path=join_path,
-                get_file_icon=get_file_icon,
-                features=flags_for_template,
-                max_file_size=constants_module.MAX_FILE_SIZE,
-                user_favorites=user_favorites,
-            )
-        elif os.path.isfile(abspath):
+        if os.path.isfile(abspath):
             await self.serve_file(self, abspath, user_root)
-        else:
-            self.set_status(404)
-            self.write(
-                "File not found: The requested file may have been moved or deleted"
-            )
+            return
+
+        self.set_status(404)
+        self.write(
+            "File not found: The requested file may have been moved or deleted"
+        )
 
     @staticmethod
     async def serve_file(handler, abspath, user_root=None):
         if user_root is None:
             user_root = get_user_root(handler)
         filename = os.path.basename(abspath)
+        rel_path = os.path.relpath(abspath, user_root).replace("\\", "/")
+        file_size = get_file_size_safe(abspath)
+
         if handler.get_argument("download", None):
+            decision = handler.check_access(
+                "file.download", resource_path=rel_path, resource_size=file_size
+            )
+            if decision is not None and decision.is_deny:
+                handler.set_status(403)
+                handler.write(decision.reason)
+                return
             await _serve_download(handler, abspath, filename)
             return
+
         mode = handler.get_argument("mode", "view")
+        decision = handler.check_access(
+            "file.read", resource_path=rel_path, resource_size=file_size
+        )
+        if decision is not None and decision.is_deny:
+            handler.set_status(403)
+            handler.write(decision.reason)
+            return
+
         if mode == "raw":
             await _serve_raw_mode(handler, abspath)
             return
         if filename.lower().endswith(".pdf"):
-            _serve_pdf_preview(handler, abspath, filename, user_root)
+            await _serve_download(handler, abspath, filename)
             return
         _serve_file_view(handler, abspath, filename, user_root)
 
 
 class EditViewHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_action("file.write", resource_arg="path")
     async def get(self, path):
         if not self.require_feature(
             "file_edit",
@@ -297,7 +330,6 @@ class EditViewHandler(BaseHandler):
                 full_file_content = await f.read()
 
         total_lines = full_file_content.count("\n") + 1 if full_file_content else 0
-        is_markdown = filename.lower().endswith(".md")
 
         self.render(
             "edit.html",
@@ -306,7 +338,6 @@ class EditViewHandler(BaseHandler):
             full_file_content=full_file_content,
             total_lines=total_lines,
             features=get_current_feature_flags(),
-            is_markdown=is_markdown,
         )
 
 
@@ -426,6 +457,31 @@ class FourOhFourHandler(BaseHandler):
     def prepare(self):
         self.set_status(404)
         self.render("error.html", status_code=404, error_message="Page not found")
+
+
+class TaggedFilesHandler(BaseHandler):
+    """Browse all files that match a given ABAC resource tag."""
+
+    @tornado.web.authenticated
+    def get(self, tag_name: str):
+        db_conn = self.db_conn
+        rules = list_resource_tags(db_conn) if db_conn else []
+        patterns = [r["glob_pattern"] for r in rules if r.get("tag") == tag_name]
+        all_tags = sorted({r["tag"] for r in rules if r.get("tag")})
+
+        files: list[str] = []
+        if patterns:
+            root = constants_module.ROOT_DIR
+            files = get_files_by_tag_patterns(patterns, root)
+
+        self.render(
+            "tagged_files.html",
+            tag_name=tag_name,
+            patterns=patterns,
+            files=files,
+            all_tags=all_tags,
+            user=self.current_user,
+        )
 
 
 class NoCacheStaticFileHandler(tornado.web.StaticFileHandler):

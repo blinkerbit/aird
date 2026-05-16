@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v=4" />
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/static/css/app.css?v=3" />
+  <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Browse · Aird</title>
 </head>
 
@@ -38,11 +38,11 @@
     </div>
     {% end %}
 
-    <div class="flex items-center gap-2 bg-base-200/50 p-2 px-4 rounded-lg mb-4 text-sm" aria-label="Current path">
-      <a href="/files/" class="flex items-center gap-1 hover:text-primary transition-colors"><svg class="ico w-4 h-4" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>Home</a>
-      {% if current_user and current_path != "/" %} {% set path_parts = current_path.strip('/').split('/') %}
+    <div class="flex flex-wrap items-center gap-x-1 gap-y-1 bg-base-200/50 p-2 px-4 rounded-lg mb-4 text-sm" aria-label="Path from file root — Home is your workspace root, not your computer account home folder">
+      <a href="/files/" class="flex items-center gap-1 hover:text-primary transition-colors shrink-0" title="File root — your Aird workspace for this login (not your operating system user home folder)"><svg class="ico w-4 h-4" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>Home</a>
+      {% if current_user and current_path and current_path != "/" %} {% set path_parts = current_path.strip('/').split('/') %}
       {% for i, part in enumerate(path_parts) %}
-      {% set partial_path = '/files/' + '/'.join(path_parts[:i+1]) %} <span class="opacity-30">/</span>
+      {% set partial_path = '/files/' + '/'.join(path_parts[:i+1]) %} <span class="opacity-30 px-0.5" aria-hidden="true">/</span>
       <a href="{{ partial_path }}" class="hover:text-primary transition-colors">{{ part }}</a>
       {% end %} {% end %}
       {% if current_path %}
@@ -110,7 +110,7 @@
         <tr class="file-row" data-path="{{ escape(join_path(current_path, file['name'])) }}">
           <td class="name-cell" data-label="Name">
             <div class="name-cell-contents">
-            <input type="checkbox" class="row-checkbox" data-path="{{ escape(join_path(current_path, file['name'])) }}" />
+            <input type="checkbox" class="row-checkbox" data-path="{{ escape(join_path(current_path, file['name'])) }}" data-is-dir="{{ '1' if file['is_dir'] else '0' }}" />
             {% if file['is_dir'] %}
             <a href="/files/{{ escape(join_path(current_path, file['name'])) }}" class="file-link">
               <span class="file-icon">📁</span>{{ escape(file['name']) }}
@@ -120,7 +120,7 @@
               {% end %}
             </a>
             {% else %}
-            <a href="/files/{{ escape(join_path(current_path, file['name'])) }}?start_line=1&end_line=100"
+            <a href="/files/{{ escape(join_path(current_path, file['name'])) }}?start_line=1&end_line=1000"
               class="file-link">
               {% set _ext = file['name'].rsplit('.', 1)[-1].lower() if '.' in file['name'] else '' %}
               {% if _ext in ('jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico') %}
@@ -220,29 +220,110 @@
 
   </div>
 
-  <!-- Sticky selection bar at bottom of screen -->
-  <div class="selection-bar" id="selectionBar">
-    <div class="selection-bar-inner">
-      <div class="selection-bar-info">
-        <span class="selection-bar-count" id="bulkCount">0 selected</span>
-        <div class="selected-files" id="selectedFilesList"></div>
+  <!-- Bottom pill: shows count, click opens the right-side drawer -->
+  <button type="button" id="selectionCountBtn" hidden
+    style="position:fixed;bottom:1.25rem;left:50%;transform:translateX(-50%);z-index:9000;
+           background:var(--color-primary);color:var(--color-primary-content);
+           border:none;border-radius:9999px;padding:0.5rem 1.25rem;font-weight:600;font-size:0.9rem;
+           cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.25);white-space:nowrap;"
+    aria-controls="browseSelectionDrawer" aria-expanded="false">
+    <span id="bulkCount">0</span> selected &mdash; click to manage &rsaquo;
+  </button>
+
+  <!-- Backdrop -->
+  <div id="browseSelectionBackdrop"
+    style="display:none;position:fixed;inset:0;z-index:9010;background:rgba(0,0,0,0.4);">
+  </div>
+
+  <!-- Right-side selection drawer -->
+  <dialog id="browseSelectionDrawer" aria-modal="true"
+    aria-labelledby="browseSelectionDrawerTitle"
+    style="position:fixed;top:0;right:0;bottom:0;left:auto;z-index:9020;margin:0;padding:0;border:none;
+           width:min(22rem,94vw);height:100%;max-height:100%;max-width:100%;
+           background:var(--color-base-100);
+           border-left:2px solid var(--color-base-300);
+           box-shadow:-6px 0 32px rgba(0,0,0,0.18);
+           display:flex;flex-direction:column;
+           transform:translateX(100%);
+           transition:transform 0.28s cubic-bezier(0.4,0,0.2,1);
+           will-change:transform;">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;
+                padding:1rem 1rem 0.75rem;border-bottom:1px solid var(--color-base-300);flex-shrink:0;">
+      <div>
+        <h2 id="browseSelectionDrawerTitle"
+          style="font-weight:700;font-size:1rem;margin:0;">Selected files</h2>
+        <p id="selectionDrawerMeta"
+          style="font-size:0.75rem;opacity:0.6;margin:0.2rem 0 0;"></p>
       </div>
-      <div class="selection-bar-actions">
+      <button type="button" id="selectionDrawerClose"
+        style="background:none;border:none;cursor:pointer;font-size:1.25rem;padding:0.25rem 0.5rem;
+               border-radius:0.375rem;line-height:1;opacity:0.6;"
+        aria-label="Close panel">✕</button>
+    </div>
+
+    <!-- File list -->
+    <div style="flex:1;min-height:0;overflow-y:auto;padding:0.75rem 1rem;">
+      <ul id="selectionDrawerList"
+        style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:0.5rem;">
+      </ul>
+    </div>
+
+    <!-- Actions -->
+    <div style="flex-shrink:0;padding:1rem;border-top:1px solid var(--color-base-300);
+                display:flex;flex-direction:column;gap:0.5rem;">
+      {% if features.get('file_share') %}
+      <button type="button" id="bulkCreateShareBtn"
+        style="width:100%;padding:0.6rem 1rem;background:var(--color-primary);
+               color:var(--color-primary-content);border:none;border-radius:0.5rem;
+               font-weight:600;cursor:pointer;font-size:0.875rem;">
+        Create share
+      </button>
+      <button type="button" id="bulkAddToShareBtn"
+        style="width:100%;padding:0.6rem 1rem;background:var(--color-base-200);
+               color:var(--color-base-content);border:1px solid var(--color-base-300);
+               border-radius:0.5rem;font-weight:600;cursor:pointer;font-size:0.875rem;">
+        Add to existing share
+      </button>
+      {% end %}
+      {% if current_user and current_user.get('role') == 'admin' %}
+      <button type="button" id="bulkAddTagsBtn"
+        style="width:100%;padding:0.6rem 1rem;background:var(--color-base-200);
+               color:var(--color-base-content);border:1px solid var(--color-base-300);
+               border-radius:0.5rem;font-weight:600;cursor:pointer;font-size:0.875rem;">
+        🏷 Tag selected files
+      </button>
+      <button type="button" id="shareByTagBtn"
+        style="width:100%;padding:0.6rem 1rem;background:var(--color-base-200);
+               color:var(--color-base-content);border:1px solid var(--color-base-300);
+               border-radius:0.5rem;font-weight:600;cursor:pointer;font-size:0.875rem;">
+        📤 Share files by tag…
+      </button>
+      {% end %}
+      <div style="display:flex;gap:0.5rem;margin-top:0.25rem;">
         {% if features.get('file_delete') %}
-        <button type="button" id="bulkDeleteBtn" class="danger-btn">Delete</button>
+        <button type="button" id="bulkDeleteBtn"
+          style="flex:1;padding:0.5rem;background:none;color:var(--color-error);
+                 border:1px solid var(--color-error);border-radius:0.5rem;
+                 font-size:0.8rem;cursor:pointer;">Delete</button>
         {% end %}
         {% if features.get('file_rename') %}
-        <button type="button" id="bulkCopyBtn">Copy</button>
-        <button type="button" id="bulkMoveBtn">Move</button>
+        <button type="button" id="bulkCopyBtn"
+          style="flex:1;padding:0.5rem;background:none;
+                 border:1px solid var(--color-base-300);border-radius:0.5rem;
+                 font-size:0.8rem;cursor:pointer;">Copy</button>
+        <button type="button" id="bulkMoveBtn"
+          style="flex:1;padding:0.5rem;background:none;
+                 border:1px solid var(--color-base-300);border-radius:0.5rem;
+                 font-size:0.8rem;cursor:pointer;">Move</button>
         {% end %}
-        {% if features.get('file_share') %}
-        <button type="button" id="bulkAddToShareBtn">Add to share</button>
-        <button type="button" id="bulkCreateShareBtn" class="primary-btn" title="Create a new share from the selected items">Create share</button>
-        {% end %}
-        <button type="button" id="clearSelectionBtn" class="clear-btn" title="Clear all selections">✕ Clear</button>
+        <button type="button" id="clearSelectionBtn"
+          style="flex:1;padding:0.5rem;background:none;opacity:0.6;
+                 border:1px solid var(--color-base-300);border-radius:0.5rem;
+                 font-size:0.8rem;cursor:pointer;">Clear</button>
       </div>
     </div>
-  </div>
+  </dialog>
 
   <!-- Folder picker modal for Copy / Move -->
   <div class="folder-picker-overlay" id="folderPickerOverlay">
@@ -304,7 +385,49 @@
   <script nonce="{{ csp_nonce }}">
     globalThis.__BROWSE_CONFIG = { maxFileSize: {{ max_file_size }} };
   </script>
-  <script src="/static/js/browse/app.js"></script>
+  <script src="/static/js/browse/app.js?v=6"></script>
+
+  <!-- Tag picker dialog: assign a tag to selected files -->
+  <dialog id="tagPickerModal" class="custom-dialog-modal" aria-labelledby="tagPickerTitle">
+    <div class="custom-dialog-modal-content">
+      <h2 id="tagPickerTitle">Tag selected files</h2>
+      <p id="tagPickerDesc" style="font-size:0.85rem;opacity:0.7;margin:0 0 0.75rem;"></p>
+      <label style="display:block;font-size:0.85rem;font-weight:600;margin-bottom:0.3rem;" for="tagPickerInput">Tag names</label>
+      <input type="text" id="tagPickerInput"
+        class="custom-dialog-input" placeholder="finance, pii, reports"
+        autocomplete="off" style="width:100%;" />
+      <div id="tagPickerChips" style="display:flex;flex-wrap:wrap;gap:0.3rem;margin-top:0.4rem;min-height:1.5rem;"></div>
+      <p style="font-size:0.75rem;opacity:0.55;margin:0.4rem 0 0;">
+        Type a tag and press <kbd>Enter</kbd> or <kbd>,</kbd> to add it. Multiple tags allowed.
+        Manage all rules in <a href="/admin/tags" target="_blank" style="text-decoration:underline;">Admin → Tags</a>.
+      </p>
+      <p id="tagPickerError" style="color:var(--color-error);font-size:0.8rem;margin:0.5rem 0 0;display:none;"></p>
+      <div class="custom-dialog-buttons">
+        <button id="tagPickerConfirm">Apply tag</button>
+        <button id="tagPickerCancel">Cancel</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Share-by-tag dialog: create a dynamic share from a tag's glob patterns -->
+  <dialog id="shareByTagModal" class="custom-dialog-modal" aria-labelledby="shareByTagTitle">
+    <div class="custom-dialog-modal-content">
+      <h2 id="shareByTagTitle">Share files by tag</h2>
+      <p style="font-size:0.85rem;opacity:0.7;margin:0 0 0.75rem;">
+        Creates a <strong>dynamic share</strong> — anyone with the link can access
+        all current &amp; future files matching the selected tag's patterns.
+      </p>
+      <label style="display:block;font-size:0.85rem;font-weight:600;margin-bottom:0.3rem;" for="shareByTagSelect">Select tag</label>
+      <select id="shareByTagSelect" class="custom-dialog-input w-full" style="width:100%;"></select>
+      <div id="shareByTagPatterns"
+        style="margin-top:0.5rem;font-size:0.75rem;opacity:0.6;font-family:monospace;"></div>
+      <p id="shareByTagError" style="color:var(--color-error);font-size:0.8rem;margin:0.5rem 0 0;display:none;"></p>
+      <div class="custom-dialog-buttons">
+        <button id="shareByTagConfirm">Create share</button>
+        <button id="shareByTagCancel">Cancel</button>
+      </div>
+    </div>
+  </dialog>
 
   <!-- Share Details Popup -->
   <div id="sharePopup" class="popup-overlay">
@@ -314,7 +437,7 @@
         <button class="popup-close">&times;</button>
       </div>
       <div id="sharePopupContent">
-        <div class="loading">Loading share details...</div>
+        <div class="p-6 text-center text-base-content/50"><span class="loading loading-spinner loading-sm align-middle mr-2"></span><span class="align-middle">Loading share details…</span></div>
       </div>
     </div>
   </div>

@@ -13,18 +13,23 @@ def _default_services():
         ConfigService,
         FavoritesService,
         NetworkShareService,
+        PolicyService,
         QuotaService,
         ShareService,
+        TagService,
         UserService,
     )
 
+    tag_service = TagService()
     return {
         "audit_service": AuditService(),
         "config_service": ConfigService(),
         "favorites_service": FavoritesService(),
         "network_share_service": NetworkShareService(),
+        "policy_service": PolicyService(tag_service),
         "quota_service": QuotaService(),
         "share_service": ShareService(),
+        "tag_service": tag_service,
         "user_service": UserService(),
     }
 
