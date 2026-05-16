@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/static/css/app.css" />
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Share · Aird</title>
 </head>
 
@@ -40,7 +40,10 @@
       </thead>
       <tbody id="fileTableBody">
         <tr>
-          <td colspan="5" class="loading">Loading files...</td>
+          <td colspan="5" class="p-6 text-center text-base-content/50">
+            <span class="loading loading-spinner loading-sm align-middle mr-2"></span>
+            <span class="align-middle">Loading files…</span>
+          </td>
         </tr>
       </tbody>
     </table>
@@ -49,9 +52,15 @@
     <!-- Success banner: no DaisyUI alert colors until JS fills content (avoids empty green strip after refresh) -->
     <output class="mb-6 hidden block w-full" id="shareResult" aria-live="polite"></output>
 
-    <!-- Active Shares -->
+    <!-- Active Shares (My Shares) -->
     <div class="mt-8">
-      <h2 class="text-xl font-bold mb-4">Active Shares (<span id="activeSharesCount">0</span>)</h2>
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-bold">My Shares (<span id="activeSharesCount">0</span>)</h2>
+        <button id="refreshSharesBtn" class="btn btn-sm btn-ghost gap-1" title="Refresh shares list">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+          Refresh
+        </button>
+      </div>
       
       <div class="overflow-x-auto bg-base-100 rounded-box border border-base-300 shadow-sm">
       <table class="table table-zebra w-full" id="sharesTable">
@@ -71,6 +80,28 @@
               <span class="ml-2 align-middle">Loading active shares…</span>
             </td>
           </tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    <!-- Shared with Me -->
+    <div class="mt-8" id="sharedWithMeSection" style="display:none;">
+      <h2 class="text-xl font-bold mb-4">Shares from Others (<span id="sharedWithMeCount">0</span>)</h2>
+      
+      <div class="overflow-x-auto bg-base-100 rounded-box border border-base-300 shadow-sm">
+      <table class="table table-zebra w-full" id="sharedWithMeTable">
+        <thead class="bg-base-200">
+        <tr>
+          <th class="px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Share ID</th>
+          <th class="px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Files</th>
+          <th class="px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Shared By</th>
+          <th class="px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Access</th>
+          <th class="px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Created</th>
+          <th class="px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70 text-right">Actions</th>
+        </tr>
+      </thead>
+        <tbody id="sharedWithMeTableBody">
         </tbody>
       </table>
       </div>
@@ -131,8 +162,8 @@
                 </div>
               </div>
             </div>
-            <div style="border-top: 1px solid var(--ds-border-muted); margin-top: 14px; padding-top: 14px;">
-              <div style="font-size: 12px; font-weight: bold; color: var(--ds-text-subtle); margin-bottom: 8px;">Modify Permissions</div>
+            <div style="border-top: 1px solid var(--color-base-300); margin-top: 14px; padding-top: 14px;">
+              <div style="font-size: 12px; font-weight: bold; color: var(--color-base-content); opacity: 0.6; margin-bottom: 8px;">Modify Permissions</div>
               <div class="text-xs text-base-content/60 mt-1" style="margin-bottom: 8px;">
                 Users with modify access can add, edit, rename, move, and delete files. Leave empty for read-only.
               </div>
@@ -169,7 +200,7 @@
             <div class="text-xs text-base-content/60 mt-1" id="shareTypeInfo">
               Static share creates a snapshot. New files added later won't appear.
             </div>
-            <div style="border-top: 1px solid var(--ds-border-muted); margin-top: 14px; padding-top: 14px;">
+            <div style="border-top: 1px solid var(--color-base-300); margin-top: 14px; padding-top: 14px;">
               <div class="mb-4 last:mb-0 form-control">
                 <label>
                   <input type="checkbox" id="disableToken">
@@ -180,7 +211,7 @@
                 </div>
               </div>
             </div>
-            <div style="border-top: 1px solid var(--ds-border-muted); margin-top: 14px; padding-top: 14px;">
+            <div style="border-top: 1px solid var(--color-base-300); margin-top: 14px; padding-top: 14px;">
               <div class="mb-4 last:mb-0 form-control">
                 <label for="expiryDate" style="display: block; margin-bottom: 6px;">Expiry Date</label>
                 <input type="datetime-local" id="expiryDate">
@@ -249,7 +280,10 @@
           </thead>
           <tbody id="cloudFilesTableBody">
             <tr>
-              <td colspan="4" class="loading">Loading...</td>
+              <td colspan="4" class="p-6 text-center text-base-content/50">
+                <span class="loading loading-spinner loading-sm align-middle mr-2"></span>
+                <span class="align-middle">Loading…</span>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -266,7 +300,7 @@
         <button class="btn btn-ghost btn-circle btn-sm" id="sharePopupClose">&times;</button>
       </div>
       <div id="sharePopupContent">
-        <div class="loading">Loading share details...</div>
+        <div class="p-6 text-center text-base-content/50"><span class="loading loading-spinner loading-sm align-middle mr-2"></span><span class="align-middle">Loading share details…</span></div>
       </div>
     </div>
     <form method="dialog" class="modal-backdrop"><button type="submit">Close</button></form>
@@ -280,7 +314,7 @@
         <button class="btn btn-ghost btn-circle btn-sm" id="shareManagementClose">&times;</button>
       </div>
       <div class="p-5 overflow-y-auto" id="shareManagementBody">
-        <div class="loading">Loading share details...</div>
+        <div class="p-6 text-center text-base-content/50"><span class="loading loading-spinner loading-sm align-middle mr-2"></span><span class="align-middle">Loading share details…</span></div>
       </div>
       <div class="p-5 border-t border-base-300 flex gap-3 justify-end flex-wrap bg-base-200">
         <button class="btn btn-primary" id="updateShareBtn">Update Share</button>
@@ -321,7 +355,7 @@
             <span id="currentBrowsePath">Root Directory</span>
           </div>
           <div class="max-h-[300px] overflow-y-auto p-3" id="fileBrowserContent">
-            <div class="loading">Loading files...</div>
+            <div class="p-4 text-center text-base-content/50"><span class="loading loading-spinner loading-sm align-middle mr-2"></span><span class="align-middle">Loading files…</span></div>
           </div>
         </div>
         <div class="flex-1 border border-base-300 rounded p-4 bg-base-200">

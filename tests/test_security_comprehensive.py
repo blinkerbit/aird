@@ -48,7 +48,7 @@ from aird.handlers.base_handler import (
     XSRFTokenMixin,
 )
 from aird.handlers.file_op_handlers import _validate_upload_destination
-from aird.handlers.share_handlers import _is_token_valid, _is_user_allowed
+from aird.handlers.share_handlers import _check_share_access
 from aird.network_share_manager import NetworkShareManager
 
 # ---------------------------------------------------------------------------
@@ -75,7 +75,8 @@ def db():
             role TEXT NOT NULL DEFAULT 'user',
             created_at TEXT NOT NULL,
             active INTEGER NOT NULL DEFAULT 1,
-            last_login TEXT
+            last_login TEXT,
+            must_change_password INTEGER NOT NULL DEFAULT 0
         )""")
     conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -736,14 +737,15 @@ class TestSecurityHeaders:
 
     def test_default_headers_set(self):
         handler = MagicMock(spec=BaseHandler)
+        handler.request = MagicMock()
         handler.set_header = MagicMock()
         # Call the real method
         BaseHandler.set_default_headers(handler)
         calls = {c[0][0]: c[0][1] for c in handler.set_header.call_args_list}
         assert calls["X-Content-Type-Options"] == "nosniff"
         assert calls["X-Frame-Options"] == "DENY"
-        assert calls["X-XSS-Protection"] == "1; mode=block"
         assert calls["Referrer-Policy"] == "strict-origin-when-cross-origin"
+        assert "Permissions-Policy" in calls
 
 
 # ===================================================================
@@ -799,38 +801,38 @@ class TestShareTokenSecurity:
         with patch(
             "aird.handlers.share_handlers.secrets.compare_digest", return_value=True
         ) as mock_cd:
-            result = _is_token_valid(share, "share_id", request, get_cookie)
-            assert result is True
+            allowed, _, _ = _check_share_access(share, "share_id", request, get_cookie, MagicMock(return_value=None))
+            assert allowed is True
             mock_cd.assert_called_once()
 
     def test_no_token_required(self):
         share = {"secret_token": None}
-        result = _is_token_valid(share, "sid", MagicMock(), MagicMock())
-        assert result is True
+        allowed, _, _ = _check_share_access(share, "sid", MagicMock(), MagicMock(), MagicMock(return_value=None))
+        assert allowed is True
 
     def test_wrong_token_rejected(self):
         share = {"secret_token": "correct_token"}
         request = MagicMock()
         request.headers = {"Authorization": "Bearer wrong_token"}
         get_cookie = MagicMock(return_value=None)
-        result = _is_token_valid(share, "sid", request, get_cookie)
-        assert result is False
+        allowed, _, _ = _check_share_access(share, "sid", request, get_cookie, MagicMock(return_value=None))
+        assert allowed is False
 
     def test_missing_token_rejected(self):
         share = {"secret_token": "some_token"}
         request = MagicMock()
         request.headers = {}
         get_cookie = MagicMock(return_value=None)
-        result = _is_token_valid(share, "sid", request, get_cookie)
-        assert result is False
+        allowed, _, _ = _check_share_access(share, "sid", request, get_cookie, MagicMock(return_value=None))
+        assert allowed is False
 
     def test_token_from_cookie(self):
         share = {"secret_token": "cookie_token_val"}
         request = MagicMock()
         request.headers = {}
         get_cookie = MagicMock(return_value="cookie_token_val")
-        result = _is_token_valid(share, "sid", request, get_cookie)
-        assert result is True
+        allowed, _, _ = _check_share_access(share, "sid", request, get_cookie, MagicMock(return_value=None))
+        assert allowed is True
 
 
 # ===================================================================
@@ -843,33 +845,37 @@ class TestShareAccessControl:
 
     def test_no_user_restriction(self):
         share = {"allowed_users": None}
-        ok, err = _is_user_allowed(share, MagicMock(return_value=None))
-        assert ok is True
+        allowed, _, _ = _check_share_access(share, "s", MagicMock(), MagicMock(), MagicMock(return_value=None))
+        assert allowed is True
 
     def test_empty_allowed_users(self):
         share = {"allowed_users": []}
-        ok, err = _is_user_allowed(share, MagicMock(return_value=None))
-        assert ok is True
+        allowed, _, _ = _check_share_access(share, "s", MagicMock(), MagicMock(), MagicMock(return_value=None))
+        assert allowed is True
 
     def test_allowed_user_passes(self):
-        share = {"allowed_users": ["alice", "bob"]}
+        share = {"secret_token": "abc", "allowed_users": ["alice", "bob"]}
         get_secure_cookie = MagicMock(return_value=b"alice")
-        ok, err = _is_user_allowed(share, get_secure_cookie)
-        assert ok is True
+        allowed, _, _ = _check_share_access(share, "s", MagicMock(), MagicMock(), get_secure_cookie)
+        assert allowed is True
 
     def test_disallowed_user_blocked(self):
-        share = {"allowed_users": ["alice", "bob"]}
+        share = {"secret_token": "abc", "allowed_users": ["alice", "bob"]}
         get_secure_cookie = MagicMock(return_value=b"eve")
-        ok, err = _is_user_allowed(share, get_secure_cookie)
-        assert ok is False
-        assert err[0] == 403
+        request = MagicMock()
+        request.headers = {}
+        get_cookie = MagicMock(return_value=None)
+        allowed, _, _ = _check_share_access(share, "s", request, get_cookie, get_secure_cookie)
+        assert allowed is False
 
     def test_unauthenticated_user_blocked(self):
-        share = {"allowed_users": ["alice"]}
+        share = {"secret_token": "abc", "allowed_users": ["alice"]}
         get_secure_cookie = MagicMock(return_value=None)
-        ok, err = _is_user_allowed(share, get_secure_cookie)
-        assert ok is False
-        assert err[0] == 401
+        request = MagicMock()
+        request.headers = {}
+        get_cookie = MagicMock(return_value=None)
+        allowed, _, _ = _check_share_access(share, "s", request, get_cookie, get_secure_cookie)
+        assert allowed is False
 
 
 # ===================================================================

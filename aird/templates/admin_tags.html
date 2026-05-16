@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="icon" href="/static/favicon.png" type="image/png" />
+  <title>Resource tags · Aird</title>
+</head>
+<body class="bg-base-200 min-h-screen">
+  <div class="container mx-auto p-4">
+    {% set nav_title = "⚙ Admin Panel" %}
+    {% set show_admin_link = False %}
+    {% include '_app_nav_header.html' %}
+  </div>
+
+  {% set admin_active_tab = "tags" %}
+  {% include '_admin_tabs.html' %}
+
+  <main class="max-w-5xl mx-auto p-4 space-y-6">
+
+    <div class="flex items-center justify-between flex-wrap gap-3">
+      <h1 class="text-2xl font-bold m-0">Resource tags</h1>
+      <span class="text-sm text-base-content/60">Glob patterns map files to ABAC tags consumed by policies.</span>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-error" role="alert"><span>{{ error }}</span></div>
+    {% end %}
+
+    <!-- Add tag rule -->
+    <section class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="card-body">
+        <h2 class="card-title text-base">Add a tag rule</h2>
+        <form id="tag-create-form" class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end mt-2">
+          {% raw xsrf_form_html() %}
+          <label class="form-control">
+            <div class="label"><span class="label-text">Tag</span></div>
+            <input name="tag" required minlength="1" maxlength="64"
+                   class="input input-bordered input-sm" placeholder="pii" />
+          </label>
+          <label class="form-control md:col-span-2">
+            <div class="label"><span class="label-text">Glob pattern</span></div>
+            <input name="glob_pattern" required minlength="1" maxlength="255"
+                   class="input input-bordered input-sm" placeholder="finance/*.pdf" />
+          </label>
+          <label class="form-control">
+            <div class="label"><span class="label-text">Priority</span></div>
+            <input name="priority" type="number" value="0" min="0" max="9999"
+                   class="input input-bordered input-sm" />
+          </label>
+          <div class="md:col-span-4 flex justify-end">
+            <button type="submit" class="btn btn-primary btn-sm">+ Create tag</button>
+          </div>
+        </form>
+        <p id="tag-create-error" class="text-error text-sm mt-1 hidden"></p>
+      </div>
+    </section>
+
+    <!-- Tag action cards -->
+    {% set unique_tags = list(dict.fromkeys([t['tag'] for t in tags])) %}
+    {% if unique_tags %}
+    <section class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="card-body">
+        <h2 class="font-semibold text-base mb-3">Tag actions</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {% for utag in unique_tags %}
+          <div class="rounded-lg border border-base-300 bg-base-200/50 p-3 flex flex-col gap-2">
+            <div class="flex items-center gap-2">
+              <span class="badge badge-primary badge-outline font-mono">{{ escape(utag) }}</span>
+              <span class="text-xs text-base-content/50">{{ len([t for t in tags if t['tag'] == utag]) }} pattern(s)</span>
+            </div>
+            <div class="flex gap-2 flex-wrap">
+              <a href="/tagged/{{ escape(utag) }}" class="btn btn-xs btn-ghost border border-base-300">Browse files</a>
+              <button type="button" class="btn btn-xs btn-outline btn-primary create-tag-share-btn"
+                      data-tag="{{ escape(utag) }}">Create share</button>
+              <button type="button" class="btn btn-xs btn-error btn-outline delete-tag-btn"
+                      data-tag="{{ escape(utag) }}"
+                      data-count="{{ len([t for t in tags if t['tag'] == utag]) }}">Delete tag</button>
+            </div>
+          </div>
+          {% end %}
+        </div>
+      </div>
+    </section>
+    {% end %}
+
+    <!-- Tag rules table -->
+    <section class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="card-body p-0">
+        <div class="px-5 py-3 border-b border-base-300 bg-base-200/50 flex items-center justify-between gap-3">
+          <h2 class="font-semibold m-0 text-base">Tag rules <span class="text-base-content/50 text-sm" id="rule-count">({{ len(tags) }})</span></h2>
+          <button id="bulk-delete-btn" type="button"
+                  class="btn btn-error btn-sm hidden">Delete selected (<span id="selected-count">0</span>)</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="table table-zebra table-sm" id="tags-table">
+            <thead>
+              <tr>
+                <th class="w-8"><input type="checkbox" id="select-all" class="checkbox checkbox-sm" /></th>
+                <th>ID</th>
+                <th>Tag</th>
+                <th>Glob pattern</th>
+                <th>Priority</th>
+                <th>Created</th>
+                <th>By</th>
+                <th class="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tags-tbody">
+              {% for t in tags %}
+              <tr data-tag-id="{{ t['id'] }}">
+                <td><input type="checkbox" class="checkbox checkbox-sm row-checkbox" value="{{ t['id'] }}" /></td>
+                <td class="text-xs text-base-content/50 font-mono">#{{ t['id'] }}</td>
+                <td><a href="/tagged/{{ escape(t['tag']) }}" class="badge badge-primary badge-outline hover:badge-primary">{{ escape(t['tag']) }}</a></td>
+                <td class="font-mono text-sm">{{ escape(t['glob_pattern']) }}</td>
+                <td class="text-sm">{{ t['priority'] }}</td>
+                <td class="text-xs text-base-content/60 font-mono">{{ escape(t['created_at'][:19] if t['created_at'] else '') }}</td>
+                <td class="text-sm">{{ escape(t['created_by'] or '') }}</td>
+                <td class="text-right">
+                  <div class="flex gap-1 justify-end">
+                    <button type="button" class="btn btn-ghost btn-xs edit-tag-btn"
+                            data-id="{{ t['id'] }}"
+                            data-tag="{{ escape(t['tag']) }}"
+                            data-glob="{{ escape(t['glob_pattern']) }}"
+                            data-priority="{{ t['priority'] }}">Edit</button>
+                    <button type="button" class="btn btn-error btn-outline btn-xs"
+                            data-delete-tag-id="{{ t['id'] }}">Delete</button>
+                  </div>
+                </td>
+              </tr>
+              {% end %}
+              {% if not tags %}
+              <tr id="empty-row"><td colspan="8" class="text-center text-base-content/50 py-8">No tag rules defined yet.</td></tr>
+              {% end %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Edit modal -->
+  <dialog id="edit-tag-modal" class="modal">
+    <div class="modal-box">
+      <h3 class="font-bold text-lg mb-4">Edit tag rule</h3>
+      <input type="hidden" id="edit-tag-id" />
+      <div class="form-control mb-3">
+        <label class="label" for="edit-tag-name"><span class="label-text">Tag</span></label>
+        <input id="edit-tag-name" type="text" maxlength="64" class="input input-bordered input-sm" />
+      </div>
+      <div class="form-control mb-3">
+        <label class="label" for="edit-tag-glob"><span class="label-text">Glob pattern</span></label>
+        <input id="edit-tag-glob" type="text" maxlength="255" class="input input-bordered input-sm" />
+      </div>
+      <div class="form-control mb-4">
+        <label class="label" for="edit-tag-priority"><span class="label-text">Priority</span></label>
+        <input id="edit-tag-priority" type="number" min="0" max="9999" class="input input-bordered input-sm" />
+      </div>
+      <p id="edit-modal-error" class="text-error text-sm mb-2 hidden"></p>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" id="edit-modal-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" id="edit-modal-confirm">Save changes</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Create tag share modal -->
+  <dialog id="create-tag-share-modal" class="modal">
+    <div class="modal-box">
+      <h3 class="font-bold text-lg mb-4">Create tag share</h3>
+      <p class="text-sm text-base-content/60 mb-4">
+        All files matching tag <strong id="modal-tag-name-display" class="text-primary"></strong> will be included in the share.
+      </p>
+      <div class="form-control mb-3">
+        <label class="label" for="share-allowed-users"><span class="label-text">Allowed users <span class="text-base-content/50">(comma-separated, blank = anyone)</span></span></label>
+        <input id="share-allowed-users" type="text" class="input input-bordered input-sm" placeholder="alice, bob" />
+      </div>
+      <div class="form-control mb-4">
+        <label class="label" for="share-expiry-date"><span class="label-text">Expiry date <span class="text-base-content/50">(optional)</span></span></label>
+        <input id="share-expiry-date" type="date" class="input input-bordered input-sm" />
+      </div>
+      <p id="share-modal-error" class="text-error text-sm mb-2 hidden"></p>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" id="share-modal-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" id="share-modal-confirm">Create share</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="/static/js/theme.js"></script>
+  <script nonce="{{ csp_nonce }}">
+  (function () {
+    const m = /(?:^|; )_xsrf=([^;]*)/.exec(document.cookie);
+    const xsrfToken = m ? decodeURIComponent(m[1]) : '';
+
+    function api(method, body) {
+      return fetch('/admin/api/abac/tags', {
+        method,
+        headers: { 'Content-Type': 'application/json', 'X-XSRFToken': xsrfToken },
+        body: JSON.stringify(body),
+      });
+    }
+
+    // ── Create ────────────────────────────────────────────────────────────────
+    const createErrorEl = document.getElementById('tag-create-error');
+    function showCreateError(msg) {
+      createErrorEl.textContent = msg || '';
+      createErrorEl.classList.toggle('hidden', !msg);
+    }
+
+    document.getElementById('tag-create-form').addEventListener('submit', async function (ev) {
+      ev.preventDefault();
+      showCreateError('');
+      const f = ev.currentTarget;
+      const data = {
+        tag: f.tag.value.trim(),
+        glob_pattern: f.glob_pattern.value.trim(),
+        priority: Number(f.priority.value || 0),
+      };
+      try {
+        const res = await api('POST', data);
+        if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || 'HTTP ' + res.status); }
+        globalThis.location.reload();
+      } catch (err) { showCreateError(err.message || 'Failed to create tag'); }
+    });
+
+    // ── Selection / bulk delete ───────────────────────────────────────────────
+    const bulkBtn = document.getElementById('bulk-delete-btn');
+    const selectedCountEl = document.getElementById('selected-count');
+    const selectAll = document.getElementById('select-all');
+
+    function getChecked() {
+      return [...document.querySelectorAll('.row-checkbox:checked')].map(c => Number(c.value));
+    }
+    function updateBulkBtn() {
+      const n = getChecked().length;
+      selectedCountEl.textContent = n;
+      bulkBtn.classList.toggle('hidden', n === 0);
+    }
+
+    document.getElementById('tags-tbody').addEventListener('change', function (ev) {
+      if (ev.target.matches('.row-checkbox')) updateBulkBtn();
+    });
+
+    selectAll.addEventListener('change', function () {
+      document.querySelectorAll('.row-checkbox').forEach(c => { c.checked = selectAll.checked; });
+      updateBulkBtn();
+    });
+
+    bulkBtn.addEventListener('click', async function () {
+      const ids = getChecked();
+      if (!ids.length) return;
+      if (!confirm('Delete ' + ids.length + ' tag rule(s)?')) return;
+      try {
+        const res = await api('DELETE', { ids });
+        if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || 'HTTP ' + res.status); }
+        const body = await res.json();
+        (body.ids || []).forEach(id => {
+          const row = document.querySelector('tr[data-tag-id="' + id + '"]');
+          if (row) row.remove();
+        });
+        selectAll.checked = false;
+        updateBulkBtn();
+      } catch (err) { alert('Bulk delete failed: ' + err.message); }
+    });
+
+    // ── Single delete ─────────────────────────────────────────────────────────
+    document.getElementById('tags-tbody').addEventListener('click', async function (ev) {
+      const delBtn = ev.target.closest('[data-delete-tag-id]');
+      if (!delBtn) return;
+      const id = delBtn.dataset.deleteTagId;
+      if (!confirm('Delete tag rule #' + id + '?')) return;
+      try {
+        const res = await api('DELETE', { id: Number(id) });
+        if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || 'HTTP ' + res.status); }
+        const row = delBtn.closest('tr');
+        if (row) row.remove();
+        updateBulkBtn();
+      } catch (err) { alert('Failed to delete: ' + err.message); }
+    });
+
+    // ── Edit ──────────────────────────────────────────────────────────────────
+    const editModal = document.getElementById('edit-tag-modal');
+    const editErrorEl = document.getElementById('edit-modal-error');
+
+    document.getElementById('tags-tbody').addEventListener('click', function (ev) {
+      const editBtn = ev.target.closest('.edit-tag-btn');
+      if (!editBtn) return;
+      document.getElementById('edit-tag-id').value = editBtn.dataset.id;
+      document.getElementById('edit-tag-name').value = editBtn.dataset.tag;
+      document.getElementById('edit-tag-glob').value = editBtn.dataset.glob;
+      document.getElementById('edit-tag-priority').value = editBtn.dataset.priority;
+      editErrorEl.classList.add('hidden');
+      editModal.showModal();
+    });
+
+    document.getElementById('edit-modal-cancel').addEventListener('click', () => editModal.close());
+
+    document.getElementById('edit-modal-confirm').addEventListener('click', async function () {
+      editErrorEl.classList.add('hidden');
+      const id = Number(document.getElementById('edit-tag-id').value);
+      const tag = document.getElementById('edit-tag-name').value.trim();
+      const glob_pattern = document.getElementById('edit-tag-glob').value.trim();
+      const priority = Number(document.getElementById('edit-tag-priority').value || 0);
+      if (!tag || !glob_pattern) { editErrorEl.textContent = 'Tag and glob pattern are required'; editErrorEl.classList.remove('hidden'); return; }
+      try {
+        const res = await api('PUT', { id, tag, glob_pattern, priority });
+        if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || 'HTTP ' + res.status); }
+        // Update row in-place
+        const row = document.querySelector('tr[data-tag-id="' + id + '"]');
+        if (row) {
+          const cells = row.querySelectorAll('td');
+          // td[2] = tag badge
+          cells[2].innerHTML = '<a href="/tagged/' + encodeURIComponent(tag) + '" class="badge badge-primary badge-outline hover:badge-primary">' + tag.replaceAll('<','&lt;') + '</a>';
+          cells[3].textContent = glob_pattern;
+          cells[4].textContent = priority;
+          // update edit button data attrs
+          const editBtn = row.querySelector('.edit-tag-btn');
+          if (editBtn) { editBtn.dataset.tag = tag; editBtn.dataset.glob = glob_pattern; editBtn.dataset.priority = priority; }
+        }
+        editModal.close();
+      } catch (err) { editErrorEl.textContent = err.message || 'Failed to save'; editErrorEl.classList.remove('hidden'); }
+    });
+
+    // ── Delete entire tag ─────────────────────────────────────────────────────
+    document.querySelectorAll('.delete-tag-btn').forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        const tag = btn.dataset.tag;
+        const count = btn.dataset.count;
+        if (!confirm('Delete tag "' + tag + '" and all ' + count + ' of its glob pattern(s)?\n\nFiles will keep their other tags. This cannot be undone.')) return;
+        try {
+          const res = await api('DELETE', { tag });
+          if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || 'HTTP ' + res.status); }
+          // Remove all rows in the table for this tag
+          document.querySelectorAll('#tags-tbody tr[data-tag-id]').forEach(function (row) {
+            const tagCell = row.querySelector('td:nth-child(3) a');
+            if (tagCell && tagCell.textContent.trim() === tag) row.remove();
+          });
+          // Remove the action card
+          btn.closest('.rounded-lg').remove();
+          updateBulkBtn();
+        } catch (err) { alert('Failed to delete tag: ' + err.message); }
+      });
+    });
+
+    // ── Create share modal ────────────────────────────────────────────────────
+    const shareModal = document.getElementById('create-tag-share-modal');
+    const shareModalError = document.getElementById('share-modal-error');
+    let activeTag = '';
+
+    document.querySelectorAll('.create-tag-share-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        activeTag = btn.dataset.tag;
+        document.getElementById('modal-tag-name-display').textContent = activeTag;
+        document.getElementById('share-allowed-users').value = '';
+        document.getElementById('share-expiry-date').value = '';
+        shareModalError.classList.add('hidden');
+        shareModal.showModal();
+      });
+    });
+
+    document.getElementById('share-modal-cancel').addEventListener('click', () => shareModal.close());
+
+    document.getElementById('share-modal-confirm').addEventListener('click', async function () {
+      shareModalError.classList.add('hidden');
+      const usersRaw = document.getElementById('share-allowed-users').value.trim();
+      const expiry = document.getElementById('share-expiry-date').value.trim();
+      const allowed_users = usersRaw ? usersRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+      const payload = { share_type: 'tag', tag_name: activeTag, paths: [], allowed_users, expiry_date: expiry || null, disable_token: false };
+      try {
+        const res = await fetch('/share/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-XSRFToken': xsrfToken },
+          body: JSON.stringify(payload),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || 'HTTP ' + res.status);
+        shareModal.close();
+        const shareUrl = body.url || ('/shared/' + body.id);
+        alert('Share created!\n' + globalThis.location.origin + shareUrl);
+      } catch (err) {
+        shareModalError.textContent = err.message || 'Failed to create share';
+        shareModalError.classList.remove('hidden');
+      }
+    });
+  })();
+  </script>
+</body>
+</html>

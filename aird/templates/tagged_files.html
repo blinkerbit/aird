@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="icon" href="/static/favicon.png" type="image/png" />
+  <title>Tag: {{ escape(tag_name) }} · Aird</title>
+</head>
+<body class="bg-base-200 min-h-screen">
+  <div class="container mx-auto p-4">
+    {% set nav_title = "Aird" %}
+    {% set nav_search_path = "" %}
+    {% set show_admin_link = True %}
+    {% include '_app_nav_header.html' %}
+
+    <div class="max-w-5xl mx-auto mt-4 space-y-4">
+
+      <header class="flex flex-wrap items-center justify-between gap-3 pb-3 mb-4 border-b border-base-300">
+        <div>
+          <h1 class="text-2xl font-bold">Tag: <span class="text-primary">{{ escape(tag_name) }}</span></h1>
+          <p class="text-sm text-base-content/60 mt-1">
+            {% if patterns %}
+              {{ len(files) }} file(s) matching {{ len(patterns) }} pattern(s):
+              {% for p in patterns %}<code class="ml-1 bg-base-300 rounded px-1 text-xs">{{ escape(p) }}</code>{% end %}
+            {% else %}
+              No glob patterns registered for this tag.
+            {% end %}
+          </p>
+        </div>
+        <div class="flex gap-2">
+          {% if all_tags %}
+          <div class="dropdown dropdown-end">
+            <button tabindex="0" class="btn btn-ghost btn-sm">Switch tag ▾</button>
+            <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow-lg z-50 w-48 p-1 border border-base-300" role="menu">
+              {% for t in all_tags %}
+              <li><a href="/tagged/{{ escape(t) }}" class="{% if t == tag_name %}font-bold text-primary{% end %}">{{ escape(t) }}</a></li>
+              {% end %}
+            </ul>
+          </div>
+          {% end %}
+          <a href="/files/" class="btn btn-ghost btn-sm">← Files</a>
+        </div>
+      </header>
+
+      {% if not patterns %}
+      <div class="alert alert-warning shadow-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+        </svg>
+        <span>Tag <strong>{{ escape(tag_name) }}</strong> has no glob patterns configured.
+          {% if current_user and current_user.get('role') == 'admin' %}
+          <a href="/admin/tags" class="link link-primary ml-1">Configure patterns →</a>
+          {% end %}
+        </span>
+      </div>
+      {% elif not files %}
+      <div class="alert shadow-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+        </svg>
+        <span>No files currently match this tag's patterns.</span>
+      </div>
+      {% else %}
+      <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body p-0">
+          <table class="table table-zebra table-sm w-full">
+            <thead>
+              <tr>
+                <th class="pl-4">File</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for f in files %}
+              <tr>
+                <td class="pl-4">
+                  <a href="/files/{{ escape(f) }}" class="link link-hover font-mono text-sm">{{ escape(f) }}</a>
+                </td>
+                <td class="flex gap-2 items-center">
+                  <a href="/files/{{ escape(f) }}" class="btn btn-xs btn-ghost">View</a>
+                  <a href="/files/{{ escape(f) }}?download=1" class="btn btn-xs btn-ghost">Download</a>
+                </td>
+              </tr>
+              {% end %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% end %}
+
+    </div>
+  </div>
+  <script src="/static/js/theme.js" defer></script>
+</body>
+</html>

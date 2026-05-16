@@ -27,8 +27,18 @@ from aird.handlers.base_handler import (
     authenticate_handler,
     get_username_string_for_db,
     get_user_root,
+    login_matches_share_creator_field,
+    require_action,
     require_db,
 )
+from aird.constants.input_limits import (
+    API_LAST_N_MAX,
+    InputTooLongError,
+    REL_PATH_MAX_LEN,
+    SHARE_ID_MAX_LEN,
+    USER_SEARCH_QUERY_MAX_LEN,
+)
+from aird.core.input_validation import validate_super_search_glob, validate_ws_search
 
 from aird.utils.util import (
     get_files_in_directory,
@@ -37,6 +47,7 @@ from aird.utils.util import (
     WebSocketConnectionManager,
     get_current_feature_flags,
     augment_with_shared_status,
+    share_relevant_for_viewers_file_tree,
 )
 from aird.core.security import (
     is_within_root,
@@ -126,6 +137,7 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
                 n_lines = 1000
         except ValueError:
             n_lines = 1000
+        n_lines = min(n_lines, API_LAST_N_MAX)
 
         self.line_buffer = deque(maxlen=n_lines)
         self.filter_expression = self.get_argument("filter", None)
@@ -155,7 +167,7 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
                     json.dumps({"type": "line", "data": line.strip()})
                 )
         except Exception as e:
-            logging.error(f"Error reading file: {self.file_path}", exc_info=True)
+            logging.exception("Error reading file: %s", self.file_path)
             self.write_message(json.dumps({"type": "error", "message": str(e)}))
             return
 
@@ -320,6 +332,7 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
 
 class FileListAPIHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_action("file.list", resource_arg="path")
     def get(self, path):
         user_root = get_user_root(self)
         abspath = os.path.abspath(os.path.join(user_root, path))
@@ -338,7 +351,13 @@ class FileListAPIHandler(BaseHandler):
             db_conn = self.db_conn
             if db_conn:
                 augment_with_shared_status(
-                    files, path, self.get_service("share_service").list_shares(db_conn)
+                    files,
+                    path,
+                    self.get_service("share_service").list_shares(db_conn),
+                    db_conn=db_conn,
+                    root_dir=user_root,
+                    viewer_username=get_username_string_for_db(self),
+                    viewer_is_admin=self.is_admin_user(),
                 )
 
             result = {
@@ -348,8 +367,8 @@ class FileListAPIHandler(BaseHandler):
                 "is_audio": is_audio_file(path),
             }
             self.write(result)
-        except Exception as e:
-            logging.error("Error listing files: %s", e, exc_info=True)
+        except Exception:
+            logging.exception("Error listing files")
             self.set_status(500)
             self.write("Internal server error")
 
@@ -380,6 +399,8 @@ class SuperSearchWebSocketHandler(
     connection_manager = WebSocketConnectionManager(
         "search", default_max_connections=100, default_idle_timeout=180
     )
+    # Periodic walk progress while many files skip the user's glob — avoids a “hung” UI
+    _walk_scan_interval = 40
 
     def __init__(self, application, request, **kwargs):
         super().__init__(application, request, **kwargs)
@@ -459,6 +480,17 @@ class SuperSearchWebSocketHandler(
                 )
             )
             return
+        try:
+            pattern, search_text = validate_ws_search(pattern, search_text)
+        except InputTooLongError:
+            self.write_message(
+                json.dumps({"type": "error", "message": "Search parameters too long"})
+            )
+            return
+        glob_err = validate_super_search_glob(pattern)
+        if glob_err:
+            self.write_message(json.dumps({"type": "error", "message": glob_err}))
+            return
 
         # Validate authentication again before starting search
         user = self.get_current_user()
@@ -511,6 +543,25 @@ class SuperSearchWebSocketHandler(
             filename, normalized_pattern
         )
 
+    def _emit_scanning(self, rel_path_str: str, files_searched: int) -> None:
+        try:
+            self.write_message(
+                json.dumps(
+                    {
+                        "type": "scanning",
+                        "file_path": rel_path_str,
+                        "files_searched": files_searched,
+                    }
+                )
+            )
+        except (tornado.websocket.WebSocketClosedError, RuntimeError):
+            pass
+
+    async def _emit_walk_tick(self, rel_path_str: str, files_visited: int) -> None:
+        """Liveness ticker for files skipped by the glob (no duplicate with per-match scanning)."""
+        self._emit_scanning(rel_path_str, files_visited)
+        await asyncio.sleep(0)
+
     async def _search_file_content(
         self, file_path: pathlib.Path, rel_path_str: str, search_text: str
     ) -> int:
@@ -534,6 +585,18 @@ class SuperSearchWebSocketHandler(
                     match_count += 1
         return match_count
 
+    def _match_filename_search(self, rel_path_str: str, filename: str, search_text: str) -> bool:
+        """Return True if filename/path matches search_text."""
+        search_lower = search_text.lower()
+        filename_lower = filename.lower()
+        rel_path_lower = rel_path_str.lower()
+        if any(c in search_text for c in "*?[]"):
+            return (
+                fnmatch.fnmatchcase(filename_lower, search_lower)
+                or fnmatch.fnmatchcase(rel_path_lower, search_lower)
+            )
+        return search_lower in filename_lower or search_lower in rel_path_lower
+
     async def _search_one_file(
         self,
         file_path: pathlib.Path,
@@ -543,61 +606,57 @@ class SuperSearchWebSocketHandler(
         search_text: str,
         files_searched: int,
         search_mode: str = "content",
+        *,
+        rel_path_str: str | None = None,
     ) -> tuple[int, bool]:
-        """Search one file; sends 'scanning' then searches. Returns (match_count, True if searched)."""
-        try:
-            rel_path = file_path.relative_to(root_path)
-            rel_path_str = str(rel_path).replace("\\", "/")
-        except (ValueError, OSError):
-            return 0, False
+        """Search one file; sends 'scanning' after glob match; returns (match_count, True if searched)."""
+        if rel_path_str is None:
+            try:
+                rel_path = file_path.relative_to(root_path)
+                rel_path_str = str(rel_path).replace("\\", "/")
+            except (ValueError, OSError):
+                return 0, False
         if not self._file_matches_pattern(rel_path_str, filename, normalized_pattern):
             return 0, False
+
+        self._emit_scanning(rel_path_str, files_searched)
 
         if search_mode == "filename":
             if self.stop_event.is_set():
                 raise asyncio.CancelledError
-            await asyncio.sleep(0)  # yield so on_close / stop_event can be processed
-
-            search_lower = search_text.lower()
-            filename_lower = filename.lower()
-            rel_path_lower = rel_path_str.lower()
-
-            if any(c in search_text for c in "*?[]"):
-                # Use fnmatchcase to ensure consistent case-insensitive behavior across platforms
-                # since we manually lowercased the strings.
-                match = fnmatch.fnmatchcase(
-                    filename_lower, search_lower
-                ) or fnmatch.fnmatchcase(rel_path_lower, search_lower)
-            else:
-                match = search_lower in filename_lower or search_lower in rel_path_lower
-
-            if match:
+            await asyncio.sleep(0)
+            if self._match_filename_search(rel_path_str, filename, search_text):
                 self.send_match(rel_path_str, 0, rel_path_str, search_text)
                 return 1, True
             return 0, True
 
         try:
-            self.write_message(
-                json.dumps(
-                    {
-                        "type": "scanning",
-                        "file_path": rel_path_str,
-                        "files_searched": files_searched,
-                    }
-                )
-            )
-        except (tornado.websocket.WebSocketClosedError, RuntimeError):
-            pass
-        try:
-            count = await self._search_file_content(
-                file_path, rel_path_str, search_text
-            )
+            count = await self._search_file_content(file_path, rel_path_str, search_text)
             return count, True
         except (UnicodeDecodeError, OSError):
             return 0, True
         except Exception as other_err:
             logging.debug("Error searching file %s: %s", file_path, other_err)
             return 0, True
+
+    async def _process_walk_file(
+        self, file_path, root_path, filename, normalized_pattern,
+        search_text, files_searched, search_mode, files_visited,
+    ) -> tuple[int, bool]:
+        """Process one file during walk. Returns (match_delta, counted)."""
+        try:
+            rel_path_str = str(file_path.relative_to(root_path)).replace("\\", "/")
+        except ValueError:
+            return 0, False
+        glob_match = self._file_matches_pattern(rel_path_str, filename, normalized_pattern)
+        if not glob_match:
+            if files_visited == 1 or files_visited % SuperSearchWebSocketHandler._walk_scan_interval == 0:
+                await self._emit_walk_tick(rel_path_str, files_visited)
+            return 0, False
+        return await self._search_one_file(
+            file_path, root_path, filename, normalized_pattern,
+            search_text, files_searched + 1, search_mode, rel_path_str=rel_path_str,
+        )
 
     async def _run_search_walk(
         self,
@@ -609,26 +668,23 @@ class SuperSearchWebSocketHandler(
         """Walk directory tree and search files. Returns (matches, files_searched) or None if auth expired."""
         matches = 0
         files_searched = 0
-        for dirpath, _dirnames, filenames in os.walk(root_path):
+        files_visited = 0
+        for dirpath, _dirnames, filenames in os.walk(root_path, followlinks=False):
             if self.stop_event.is_set():
                 raise asyncio.CancelledError
             for filename in filenames:
                 if self.stop_event.is_set():
                     raise asyncio.CancelledError
                 file_path = pathlib.Path(dirpath) / filename
-                match_delta, counted = await self._search_one_file(
-                    file_path,
-                    root_path,
-                    filename,
-                    normalized_pattern,
-                    search_text,
-                    files_searched + 1,
-                    search_mode,
+                files_visited += 1
+                match_delta, counted = await self._process_walk_file(
+                    file_path, root_path, filename, normalized_pattern,
+                    search_text, files_searched, search_mode, files_visited,
                 )
                 matches += match_delta
                 if counted:
                     files_searched += 1
-            if files_searched % 20 == 0 and not await self._yield_and_check_auth():
+            if files_visited > 0 and files_visited % 20 == 0 and not await self._yield_and_check_auth():
                 return None
         return matches, files_searched
 
@@ -714,7 +770,7 @@ class SuperSearchWebSocketHandler(
                 pass
             raise
         except Exception as e:
-            logging.error(f"Super search error: {e}", exc_info=True)
+            logging.exception("Super search error")
             try:
                 self.write_message(
                     json.dumps({"type": "error", "message": f"Search failed: {str(e)}"})
@@ -756,12 +812,54 @@ class UserSearchAPIHandler(BaseHandler):
         if len(query) < 1:
             self.write({"users": []})
             return
+        if len(query) > USER_SEARCH_QUERY_MAX_LEN:
+            self.write({"users": []})
+            return
 
         def action():
             users = self.get_service("user_service").search_users(self.db_conn, query)
             return {"users": users}
 
         self.run_json_action(action, on_error_message="Search failed")
+
+
+def _redact_share_secret_token(share: dict) -> dict:
+    """Copy share dict suitable for non-owner API consumers (no raw token)."""
+    out = dict(share)
+    out["secret_token"] = None
+    return out
+
+
+def _share_eligible_for_path_details(handler, share: dict) -> bool:
+    """Path-based share popup only for shares on the viewer's tree or explicit cross-home access."""
+    return share_relevant_for_viewers_file_tree(
+        share,
+        viewer_username=get_username_string_for_db(handler),
+        viewer_is_admin=handler.is_admin_user(),
+        viewer_root=get_user_root(handler),
+    )
+
+
+def _format_share_for_path_details(handler, share: dict) -> dict | None:
+    """Return formatted share info dict, or None if not eligible."""
+    if not _share_eligible_for_path_details(handler, share):
+        return None
+    allowed_users = share.get("allowed_users")
+    modify_users = share.get("modify_users")
+    show_secret = handler.can_manage_share_secrets(share)
+    token = share.get("secret_token")
+    return {
+        "id": share["id"],
+        "created": share.get("created", ""),
+        "allowed_users": allowed_users if allowed_users is not None else [],
+        "modify_users": modify_users if modify_users is not None else [],
+        "url": f"/shared/{share['id']}",
+        "paths": share.get("paths", []),
+        "share_type": share.get("share_type", "static"),
+        "tag_name": share.get("tag_name"),
+        "has_token": token is not None,
+        "secret_token": token if show_secret else None,
+    }
 
 
 class ShareDetailsAPIHandler(BaseHandler):
@@ -777,40 +875,24 @@ class ShareDetailsAPIHandler(BaseHandler):
         if not file_path:
             self.write_json_error(400, "File path is required")
             return
+        if len(file_path) > REL_PATH_MAX_LEN:
+            self.write_json_error(400, "File path is too long")
+            return
 
         def action():
-            # Find shares that contain this file
             db_conn = self.require_db_connection(DB_NOT_AVAILABLE_MSG)
             if not db_conn:
                 return None
+            user_root = get_user_root(self)
             share_service = self.get_service("share_service")
-            if share_service is not None:
-                matching_shares = share_service.get_shares_for_path(db_conn, file_path)
-            else:
-                matching_shares = self.get_service("share_service").get_shares_for_path(
-                    db_conn, file_path
-                )
-
-            # Format response
-            formatted_shares = []
-            for share in matching_shares:
-                allowed_users = share.get("allowed_users")
-                modify_users = share.get("modify_users")
-                share_info = {
-                    "id": share["id"],
-                    "created": share.get("created", ""),
-                    "allowed_users": allowed_users if allowed_users is not None else [],
-                    "modify_users": modify_users if modify_users is not None else [],
-                    "url": f"/shared/{share['id']}",
-                    "paths": share.get("paths", []),
-                }
-                formatted_shares.append(share_info)
-
+            matching_shares = share_service.get_shares_for_path(db_conn, file_path, user_root)
+            formatted_shares = [
+                info for share in matching_shares
+                if (info := _format_share_for_path_details(self, share)) is not None
+            ]
             return {"shares": formatted_shares}
 
-        self.run_json_action(
-            action, on_error_message="Failed to retrieve share details"
-        )
+        self.run_json_action(action, on_error_message="Failed to retrieve share details")
 
 
 class ShareDetailsByIdAPIHandler(BaseHandler):
@@ -825,6 +907,9 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
         share_id = self.get_argument("id", "").strip()
         if not share_id:
             self.write_json_error(400, "Share ID is required")
+            return
+        if len(share_id) > SHARE_ID_MAX_LEN:
+            self.write_json_error(400, "Invalid share id")
             return
 
         def action():
@@ -842,6 +927,10 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
                 self.write_json_error(404, "Share not found")
                 return None
 
+            if not self.can_manage_share_secrets(share):
+                self.write_json_error(403, "Access denied")
+                return None
+
             allowed_users = share.get("allowed_users")
             modify_users = share.get("modify_users")
             share_info = {
@@ -852,8 +941,9 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
                 "url": f"/shared/{share['id']}",
                 "paths": share.get("paths", []),
                 "has_token": share.get("secret_token") is not None,
-                "secret_token": share.get("secret_token"), # Include token for management
+                "secret_token": share.get("secret_token"),
                 "share_type": share.get("share_type", "static"),
+                "tag_name": share.get("tag_name"),
                 "allow_list": share.get("allow_list", []),
                 "avoid_list": share.get("avoid_list", []),
                 "expiry_date": share.get("expiry_date"),
@@ -869,6 +959,33 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
         )
 
 
+def _classify_share_for_user(
+    share: dict,
+    current_user: str,
+    is_admin: bool,
+) -> tuple[bool, bool]:
+    """Return (is_my_share, is_shared_with_me) for a given user."""
+    creator = (share.get("created_by") or "").strip()
+    allowed_raw = share.get("allowed_users")
+    allowed_list = allowed_raw if isinstance(allowed_raw, list) else []
+    mod_list = share.get("modify_users") or []
+
+    if current_user and current_user in mod_list:
+        return True, False
+    if creator and login_matches_share_creator_field(creator, current_user):
+        return True, False
+    if not creator and is_admin:
+        return True, False
+    if not creator and current_user and (
+        allowed_raw is None
+        or (isinstance(allowed_raw, list) and current_user in allowed_list)
+    ):
+        return False, True
+    if current_user and isinstance(allowed_raw, list) and current_user in allowed_list:
+        return False, True
+    return False, False
+
+
 class ShareListAPIHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
@@ -881,15 +998,28 @@ class ShareListAPIHandler(BaseHandler):
         if not db_conn:
             return
         share_service = self.get_service("share_service")
-        if share_service is not None:
-            shares = share_service.list_shares(db_conn)
-        else:
-            shares = self.get_service("share_service").list_shares(db_conn)
-        self.write({"shares": shares})
+        all_shares = (
+            share_service.list_shares(db_conn) if share_service is not None else {}
+        )
+
+        current_user = get_username_string_for_db(self) or ""
+        is_admin = self.is_admin_user()
+
+        my_shares = {}
+        shared_with_me = []
+        for sid, share in all_shares.items():
+            is_mine, is_shared = _classify_share_for_user(share, current_user, is_admin)
+            if is_mine:
+                my_shares[sid] = share
+            elif is_shared:
+                shared_with_me.append(_redact_share_secret_token(share))
+
+        self.write({"shares": my_shares, "shared_with_me": shared_with_me})
 
 
 class FavoriteToggleAPIHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_action("favorites.toggle")
     def post(self):
         if not self.require_feature(
             "favorites", True, body={"error": "Favorites disabled"}
@@ -900,14 +1030,13 @@ class FavoriteToggleAPIHandler(BaseHandler):
             return
 
         def action():
-            try:
-                body = json.loads(self.request.body)
-            except Exception:
-                self.write_json_error(400, "Invalid JSON")
-                return None
+            body = self.parse_json_body() or {}
             path = body.get("path", "").strip()
             if not path:
                 self.write_json_error(400, "path is required")
+                return None
+            if len(path) > REL_PATH_MAX_LEN:
+                self.write_json_error(400, "path is too long")
                 return None
             username = get_username_string_for_db(self)
             if not username:

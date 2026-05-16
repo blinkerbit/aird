@@ -39,6 +39,8 @@ FEATURE_FLAGS = {
     "allow_simple_passwords": False,
     "favorites": True,
     "storage_quotas": False,
+    "abac_engine": False,
+    "abac_audit_decisions": True,
 }
 
 # WebSocket connection configuration
@@ -63,6 +65,9 @@ MAX_UPLOAD_FILE_SIZE_HARD_LIMIT = 10 * 1024 * 1024 * 1024  # 10 GB
 # File operation constants (derived from UPLOAD_CONFIG at startup)
 MAX_FILE_SIZE = UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
 MAX_READABLE_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+
+# Default line window for /files/... viewer when no ?end_line= is supplied (protects DOM from huge renders)
+DEFAULT_FILE_VIEW_LINE_LIMIT = 1000
 # Default whitelist for uploads; also used as the list of options in admin when "allow all" is off
 ALLOWED_UPLOAD_EXTENSIONS = {
     ".txt",
@@ -102,3 +107,12 @@ NETWORK_SHARE_MANAGER = None
 # Rate limiting
 LOGIN_RATE_LIMIT_ATTEMPTS = 5
 LOGIN_RATE_LIMIT_WINDOW = 300  # 5 minutes
+
+# ABAC environment: comma-separated CIDR blocks treated as "corporate" IPs.
+# Admins can override this via the AIRD_CORPORATE_IP_CIDRS env var at startup.
+# Example: "10.0.0.0/8,192.168.0.0/16"
+CORPORATE_IP_CIDRS: list[str] = [
+    c.strip()
+    for c in os.environ.get("AIRD_CORPORATE_IP_CIDRS", "").split(",")
+    if c.strip()
+]

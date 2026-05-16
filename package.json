@@ -6,7 +6,8 @@
   "scripts": {
     "css:build": "npx @tailwindcss/cli -i ./src/input.css -o ./aird/static/css/app.css --minify",
     "css:watch": "npx @tailwindcss/cli -i ./src/input.css -o ./aird/static/css/app.css --watch",
-    "lint:js": "eslint aird/static/js"
+    "lint:js": "eslint aird/static/js",
+    "vendor:qrcode": "esbuild node_modules/qrcode/lib/browser.js --bundle --platform=browser --format=iife --global-name=AirdQRCode --outfile=aird/static/js/vendor/qrcode-browser.js"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4",
@@ -14,6 +15,8 @@
     "eslint": "^9",
     "eslint-plugin-sonarjs": "^4.0.3",
     "globals": "^15",
-    "tailwindcss": "^4"
+    "qrcode": "^1.5.4",
+    "tailwindcss": "^4",
+    "esbuild": "^0.25.12"
   }
 }

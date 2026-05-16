@@ -1,12 +1,12 @@
 {# Main app header: Aird + profile + Browse + feature nav + theme selector.
-   Optional overrides: nav_title, nav_search_path, show_admin_link (defaults come from BaseHandler.get_template_namespace). #}
+   Optional overrides: nav_title, nav_search_path, show_admin_link (BaseHandler defaults).
+   Layout: place this include inside the same outer wrapper as page content, e.g.
+   <div class="container mx-auto p-4"> …header… …content… </div> (same as browse/share/search). #}
 <div class="navbar bg-base-200 shadow-sm rounded-box mb-4 flex-wrap gap-2">
   <div class="flex-1">
-    <a href="/files/" class="btn btn-ghost text-xl font-extrabold tracking-wide gap-2" aria-label="Aird Home">
-      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M4 12l4-4 4 4 4-4 4 4v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6z" />
-      </svg>
-      <span class="text-gradient-brand">{{ nav_title or "Aird" }}</span>
+    <a href="/files/" class="btn btn-ghost text-xl font-extrabold tracking-wide gap-1 px-2" aria-label="Aird Home">
+      <img src="/static/img/logo-icon.png" alt="" aria-hidden="true" class="h-8 w-auto shrink-0">
+      <img src="/static/img/logo-text.png" alt="Aird" class="h-5 w-auto shrink-0">
     </a>
   </div>
   <div class="flex items-center gap-1 flex-wrap">
@@ -61,12 +61,19 @@
     </a>
     {% end %}
     {% if show_admin_link %}
-    {% if user and user["role"] == "admin" %}
+    {% if current_user and current_user.get("role") == "admin" %}
     <a href="/admin" class="btn btn-primary btn-sm gap-1" title="Administration">
       <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       <span class="hidden sm:inline">Admin</span>
     </a>
     {% end %}
+    {% end %}
+    {% if current_user %}
+    <button type="button" class="btn btn-ghost btn-sm gap-1" title="Command palette (Cmd+K / Ctrl+K)"
+            data-aird-cmdk>
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span class="hidden sm:inline">⌘K</span>
+    </button>
     {% end %}
     {% if current_user %}
     <a href="/logout" class="btn btn-ghost btn-sm gap-1 text-error" title="Log out">
@@ -81,3 +88,7 @@
     {% end %}
   </div>
 </div>
+<script src="/static/js/common/command-palette.js" defer></script>
+{% if current_user %}
+<script nonce="{{ csp_nonce }}" src="/static/js/feature-flags-live.js" defer></script>
+{% end %}

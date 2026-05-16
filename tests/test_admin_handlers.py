@@ -983,7 +983,10 @@ class TestAdminUsersHandler:
             None
         ), patch.object(handler, "render") as mock_render:
             handler.get()
-            mock_render.assert_called_once_with("admin_users.html", users=[])
+            mock_render.assert_called_once()
+            args, kwargs = mock_render.call_args
+            assert args[0] == "admin_users.html"
+            assert kwargs["users"] == []
 
 
 @pytest.mark.skipif(

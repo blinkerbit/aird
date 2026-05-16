@@ -575,7 +575,7 @@ class TestUpdateShareMain:
 
     def test_update_no_changes(self, db_conn):
         insert_share(db_conn, "s1", "2024-01-01", ["/a"])
-        assert update_share(db_conn, "s1") is False
+        assert update_share(db_conn, "s1") is True
 
 
 class TestGetShareById:

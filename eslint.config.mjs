@@ -4,7 +4,11 @@ import sonarjs from "eslint-plugin-sonarjs";
 /** Browser classic scripts under static/js (no ES modules). */
 export default [
   {
-    ignores: ["node_modules/**", "aird/static/css/**"],
+    ignores: [
+      "node_modules/**",
+      "aird/static/css/**",
+      "aird/static/js/vendor/**",
+    ],
   },
   {
     ...sonarjs.configs.recommended,
@@ -15,6 +19,7 @@ export default [
       globals: {
         ...globals.browser,
         ...globals.es2021,
+        AirdQRCode: "readonly",
       },
     },
     rules: {

@@ -1,17 +1,91 @@
-{# Floating theme selector for login/admin-login pages — matches header theme list order. #}
-<div class="absolute top-4 right-4">
-  <div class="dropdown dropdown-end">
-    <button type="button" tabindex="0" class="btn btn-ghost btn-sm" aria-haspopup="menu">
-      🎨 Theme
-    </button>
-    <ul class="dropdown-content menu bg-base-100 rounded-box z-50 w-44 p-2 shadow-lg border border-base-300">
-      <li><button type="button" data-set-theme="light">☀️ Light</button></li>
-      <li><button type="button" data-set-theme="dark">🌙 Dark</button></li>
-      <li><button type="button" data-set-theme="nord">❄️ Nord</button></li>
-      <li><button type="button" data-set-theme="dracula">🧛 Dracula</button></li>
-      <li><button type="button" data-set-theme="cyberpunk">🤖 Cyberpunk</button></li>
-      <li><button type="button" data-set-theme="retro">📺 Retro</button></li>
-      <li><button type="button" data-set-theme="autumn">🍂 Autumn</button></li>
-    </ul>
-  </div>
+{# Floating theme selector for login/admin-login pages #}
+<style nonce="{{ csp_nonce }}">
+#theme-btn { transition: box-shadow 0.15s, transform 0.12s; }
+#theme-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.13); }
+#theme-btn:active { transform: translateY(0) scale(0.97); }
+#theme-menu {
+  display: none;
+  position: fixed;
+  top: 3.2rem;
+  right: 1rem;
+  z-index: 9999;
+  min-width: 13rem;
+  transform-origin: top right;
+}
+#theme-menu.open {
+  display: block;
+  animation: tmenu-in 0.18s cubic-bezier(0.34,1.3,0.64,1) both;
+}
+@keyframes tmenu-in {
+  from { opacity:0; transform:scale(0.88) translateY(-6px); }
+  to   { opacity:1; transform:scale(1)    translateY(0); }
+}
+</style>
+
+<div class="fixed top-4 right-4 z-50">
+  <button type="button" id="theme-btn"
+    title="Switch theme"
+    class="btn btn-sm bg-base-100 border border-base-300 shadow-md gap-1.5 normal-case rounded-full"
+    aria-haspopup="menu" aria-expanded="false">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/><circle cx="8.5" cy="7.5" r="1.5" fill="#ef4444" stroke="none"/><circle cx="13.5" cy="6.5" r="1.5" fill="#f59e0b" stroke="none"/><circle cx="17.5" cy="10.5" r="1.5" fill="#22c55e" stroke="none"/><circle cx="6.5" cy="12.5" r="1.5" fill="#3b82f6" stroke="none"/></svg>
+    <span id="theme-label" class="text-xs font-semibold">Theme</span>
+    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+  </button>
 </div>
+
+<div id="theme-menu" class="bg-base-100 rounded-2xl p-1.5 shadow-2xl border border-base-300" role="menu" style="list-style:none;margin:0;padding-top:6px;padding-bottom:6px;">
+  <button type="button" data-set-theme="light"     role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>☀️ Light</span>    <span class="theme-check hidden text-primary font-bold">✓</span></button>
+  <button type="button" data-set-theme="dark"      role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>🌙 Dark</span>     <span class="theme-check hidden text-primary font-bold">✓</span></button>
+  <button type="button" data-set-theme="nord"      role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>❄️ Nord</span>     <span class="theme-check hidden text-primary font-bold">✓</span></button>
+  <button type="button" data-set-theme="dracula"   role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>🧛 Dracula</span>  <span class="theme-check hidden text-primary font-bold">✓</span></button>
+  <button type="button" data-set-theme="cyberpunk" role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>🤖 Cyberpunk</span><span class="theme-check hidden text-primary font-bold">✓</span></button>
+  <button type="button" data-set-theme="retro"     role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>📺 Retro</span>   <span class="theme-check hidden text-primary font-bold">✓</span></button>
+  <button type="button" data-set-theme="autumn"    role="menuitem" class="flex justify-between rounded-xl px-3 py-2 text-sm w-full text-left hover:bg-base-200 transition-colors"><span>🍂 Autumn</span>  <span class="theme-check hidden text-primary font-bold">✓</span></button>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var btn  = document.getElementById('theme-btn');
+  var menu = document.getElementById('theme-menu');
+  var THEMES = {
+    light: '☀️ Light', dark: '🌙 Dark', nord: '❄️ Nord',
+    dracula: '🧛 Dracula', cyberpunk: '🤖 Cyberpunk', retro: '📺 Retro', autumn: '🍂 Autumn'
+  };
+
+  function open()  { menu.classList.add('open');    btn.setAttribute('aria-expanded','true'); }
+  function close() { menu.classList.remove('open'); btn.setAttribute('aria-expanded','false'); }
+  function toggle() { menu.classList.contains('open') ? close() : open(); }
+
+  function updateUI(theme) {
+    var label = document.getElementById('theme-label');
+    if (label) label.textContent = THEMES[theme] || 'Theme';
+    menu.querySelectorAll('[data-set-theme]').forEach(function(b) {
+      b.querySelector('.theme-check').classList.toggle('hidden', b.dataset.setTheme !== theme);
+    });
+  }
+
+  btn.addEventListener('click', function(e) { e.stopPropagation(); toggle(); });
+
+  menu.querySelectorAll('[data-set-theme]').forEach(function(b) {
+    b.addEventListener('click', function() { close(); });
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!menu.contains(e.target) && e.target !== btn) close();
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') close();
+  });
+
+  var current = document.documentElement.dataset.theme || 'light';
+  updateUI(current);
+
+  new MutationObserver(function(mutations) {
+    mutations.forEach(function(m) {
+      if (m.attributeName === 'data-theme')
+        updateUI(document.documentElement.dataset.theme || 'light');
+    });
+  }).observe(document.documentElement, { attributes: true });
+})();
+</script>

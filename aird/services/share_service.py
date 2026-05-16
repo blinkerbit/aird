@@ -24,8 +24,10 @@ class ShareService:
     def get_share(self, conn: Any, share_id: str) -> dict[str, Any] | None:
         return get_share_by_id(conn, share_id)
 
-    def get_shares_for_path(self, conn: Any, path: str) -> list[dict[str, Any]]:
-        return get_shares_for_path(conn, path)
+    def get_shares_for_path(
+        self, conn: Any, path: str, root_dir: Any = None
+    ) -> list[dict[str, Any]]:
+        return get_shares_for_path(conn, path, root_dir)
 
     def get_download_count(self, conn: Any, share_id: str) -> int:
         return get_share_download_count(conn, share_id)

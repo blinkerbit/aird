@@ -11,8 +11,15 @@ import asyncio
 import aiofiles
 from typing import Protocol, Callable, Any
 
-from aird.handlers.base_handler import BaseHandler, require_modify_access, get_user_root
+from aird.handlers.base_handler import BaseHandler, require_action, require_modify_access, get_user_root
 from aird.utils.util import sanitize_cloud_filename, is_feature_enabled, get_file_size_safe
+from aird.constants.input_limits import (
+    EDIT_JSON_BODY_MAX_BYTES,
+    MAX_BULK_JSON_BYTES,
+    MAX_BULK_PATHS,
+    REL_PATH_MAX_LEN,
+    SHARE_ID_MAX_LEN,
+)
 from aird.core.security import (  # noqa: F401
     is_within_root,
     is_valid_websocket_origin,
@@ -124,7 +131,7 @@ def _validate_upload_destination(upload_dir, filename, root_dir):
 
 
 def _bulk_delete_one(
-    abspath, _path, db_conn, get_display_username, remote_ip, get_service
+    abspath, _path, db_conn, get_display_username, remote_ip, get_service, root_dir=None
 ):
     """Perform delete for one path. Return None on success, error message string on failure."""
     if os.path.isdir(abspath):
@@ -136,7 +143,7 @@ def _bulk_delete_one(
                 db_conn,
                 "folder_delete",
                 username=get_display_username(),
-                details=path_to_rel(abspath),
+                details=path_to_rel(abspath, root_dir),
                 ip=remote_ip,
             )
         except OSError as e:
@@ -150,7 +157,7 @@ def _bulk_delete_one(
                 db_conn,
                 "file_delete",
                 username=get_display_username(),
-                details=path_to_rel(abspath),
+                details=path_to_rel(abspath, root_dir),
                 ip=remote_ip,
             )
         except OSError as e:
@@ -159,19 +166,28 @@ def _bulk_delete_one(
 
 
 def _bulk_add_to_share_one(
-    abspath, path, data, db_conn, get_display_username, remote_ip, get_service
+    abspath, path, data, db_conn, get_display_username, remote_ip, get_service, root_dir=None
 ):
     """Add one path to share. Return None on success, error message string on failure."""
     share_id = data.get("share_id")
     if not share_id:
         return SHARE_ID_REQUIRED
+    if len(str(share_id).strip()) > SHARE_ID_MAX_LEN:
+        return "share_id too long"
     if not db_conn:
         return DATABASE_UNAVAILABLE
     share = get_service("share_service").get_share(db_conn, share_id)
     if not share:
         return SHARE_NOT_FOUND
+    stype = share.get("share_type", "static")
+    if stype == "tag":
+        return "Cannot add paths to a tag-based share"
+    if stype == "dynamic" and os.path.isfile(abspath):
+        return (
+            "Cannot add individual files to a dynamic share; add the folder root instead"
+        )
     paths_list = list(share.get("paths") or [])
-    rel = path_to_rel(abspath)
+    rel = path_to_rel(abspath, root_dir)
     if rel in paths_list:
         return None
     paths_list.append(rel)
@@ -201,6 +217,7 @@ class BulkActionCommand(Protocol):
         get_display_username: Callable[[], str],
         remote_ip: str,
         get_service: Callable[[str], Any],
+        root_dir: str | None,
     ) -> str | None: ...
 
 
@@ -214,9 +231,10 @@ class DeleteBulkActionCommand:
         get_display_username: Callable[[], str],
         remote_ip: str,
         get_service: Callable[[str], Any] = None,
+        root_dir: str | None = None,
     ) -> str | None:
         return _bulk_delete_one(
-            abspath, path, db_conn, get_display_username, remote_ip, get_service
+            abspath, path, db_conn, get_display_username, remote_ip, get_service, root_dir
         )
 
 
@@ -230,9 +248,10 @@ class AddToShareBulkActionCommand:
         get_display_username: Callable[[], str],
         remote_ip: str,
         get_service: Callable[[str], Any] = None,
+        root_dir: str | None = None,
     ) -> str | None:
         return _bulk_add_to_share_one(
-            abspath, path, data, db_conn, get_display_username, remote_ip, get_service
+            abspath, path, data, db_conn, get_display_username, remote_ip, get_service, root_dir
         )
 
 
@@ -243,13 +262,13 @@ _BULK_ACTION_COMMANDS: dict[str, BulkActionCommand] = {
 
 
 def _process_bulk_action(
-    action, abspath, path, data, db_conn, get_display_username, remote_ip, get_service
+    action, abspath, path, data, db_conn, get_display_username, remote_ip, get_service, root_dir=None
 ):
     """Dispatch one bulk action. Return None on success, error string on failure."""
     command = _BULK_ACTION_COMMANDS.get(action)
     if command:
         return command(
-            abspath, path, data, db_conn, get_display_username, remote_ip, get_service
+            abspath, path, data, db_conn, get_display_username, remote_ip, get_service, root_dir
         )
     return UNSUPPORTED_ACTION
 
@@ -348,6 +367,7 @@ class UploadHandler(BaseHandler):
         return False
 
     @tornado.web.authenticated
+    @require_action("file.write")
     @require_modify_access()
     async def post(self):
         if not self.require_feature(
@@ -387,8 +407,8 @@ class UploadHandler(BaseHandler):
         try:
             shutil.move(self._temp_path, final_path_abs)
             self._moved = True
-        except Exception as e:
-            logging.error("Upload save failed: %s", e)
+        except Exception:
+            logging.exception("Upload save failed")
             self.set_status(500)
             self.write(UPLOAD_SAVE_FAILED)
             return
@@ -403,7 +423,7 @@ class UploadHandler(BaseHandler):
             self.db_conn,
             "file_upload",
             username=self.get_display_username(),
-            details=path_to_rel(final_path_abs),
+            details=path_to_rel(final_path_abs, get_user_root(self)),
             ip=self.request.remote_ip,
         )
         self.set_status(200)
@@ -424,6 +444,7 @@ class UploadHandler(BaseHandler):
 
 class CreateFolderHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_action("file.write")
     @require_modify_access()
     def post(self):
         if not self.require_feature("folder_create", True, body=FOLDER_CREATE_DISABLED):
@@ -455,8 +476,8 @@ class CreateFolderHandler(BaseHandler):
             return
         try:
             os.makedirs(new_dir_abs, exist_ok=False)
-        except OSError as e:
-            logging.error("CreateFolder error: %s", e)
+        except OSError:
+            logging.exception("CreateFolder error")
             self.set_status(500)
             self.write(FOLDER_CREATE_FAILED)
             return
@@ -469,7 +490,7 @@ class CreateFolderHandler(BaseHandler):
             self.db_conn,
             "folder_create",
             username=username,
-            details=path_to_rel(new_dir_abs),
+            details=path_to_rel(new_dir_abs, get_user_root(self)),
             ip=self.request.remote_ip,
         )
         if self.request.headers.get("Accept") == HEADER_APPLICATION_JSON:
@@ -507,7 +528,7 @@ class DeleteHandler(BaseHandler):
             self.db_conn,
             "folder_delete",
             username=self.get_display_username(),
-            details=path_to_rel(abspath),
+            details=path_to_rel(abspath, get_user_root(self)),
             ip=self.request.remote_ip,
         )
         return True
@@ -526,12 +547,13 @@ class DeleteHandler(BaseHandler):
             self.db_conn,
             "file_delete",
             username=self.get_display_username(),
-            details=path_to_rel(abspath),
+            details=path_to_rel(abspath, get_user_root(self)),
             ip=self.request.remote_ip,
         )
         return True
 
     @tornado.web.authenticated
+    @require_action("file.delete")
     @require_modify_access()
     def post(self):
         path = self.get_argument("path", "")
@@ -562,6 +584,7 @@ class DeleteHandler(BaseHandler):
 
 class RenameHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_action("file.rename")
     @require_modify_access()
     def post(self):
         if not self.require_feature("file_rename", True, body=FILE_RENAME_DISABLED):
@@ -626,6 +649,7 @@ class RenameHandler(BaseHandler):
 
 class CopyHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_action("file.write")
     @require_modify_access()
     def post(self):
         if not self.require_feature("file_rename", True, body=COPY_DISABLED):
@@ -658,8 +682,8 @@ class CopyHandler(BaseHandler):
                 shutil.copytree(src_abs, dest_abs)
             else:
                 shutil.copy2(src_abs, dest_abs)
-        except OSError as e:
-            logging.error("Copy error: %s", e)
+        except OSError:
+            logging.exception("Copy error")
             self.set_status(500)
             self.write(COPY_FAILED)
             return
@@ -683,6 +707,7 @@ class CopyHandler(BaseHandler):
 
 class MoveHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_action("file.write")
     @require_modify_access()
     def post(self):
         if not self.require_feature("file_rename", True, body=MOVE_DISABLED):
@@ -712,8 +737,8 @@ class MoveHandler(BaseHandler):
             return
         try:
             shutil.move(src_abs, dest_abs)
-        except OSError as e:
-            logging.error("Move error: %s", e)
+        except OSError:
+            logging.exception("Move error")
             self.set_status(500)
             self.write(MOVE_FAILED)
             return
@@ -735,10 +760,28 @@ class MoveHandler(BaseHandler):
         )
 
 
+def _validate_bulk_path(path, root: str) -> tuple[str | None, str | None]:
+    """Return (abspath, error) — error is non-None if path is invalid."""
+    if not isinstance(path, str):
+        return None, INVALID_PATH
+    path = path.strip().strip("/")
+    abspath = os.path.abspath(os.path.join(root, path))
+    if not is_within_root(abspath, root):
+        return None, ACCESS_DENIED_LOWER
+    if not os.path.exists(abspath):
+        return None, NOT_FOUND_LOWER
+    return abspath, None
+
+
 class BulkHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_action("file.write")
     @require_modify_access()
     def post(self):
+        if len(self.request.body) > MAX_BULK_JSON_BYTES:
+            self.set_status(400)
+            self.write(BAD_REQUEST)
+            return
         try:
             data = json.loads(
                 self.request.body.decode("utf-8", errors="replace") or "{}"
@@ -753,74 +796,89 @@ class BulkHandler(BaseHandler):
             self.set_status(400)
             self.write(PATHS_REQUIRED)
             return
+        if len(paths) > MAX_BULK_PATHS:
+            self.set_status(400)
+            self.write(BAD_REQUEST)
+            return
         root = get_user_root(self)
         results = {"ok": True, "results": []}
         remote_ip = self.request.remote_ip
         for path in paths:
-            if not isinstance(path, str):
-                results["results"].append(
-                    {"path": path, "ok": False, "error": INVALID_PATH}
-                )
-                continue
-            path = path.strip().strip("/")
-            abspath = os.path.abspath(os.path.join(root, path))
-            if not is_within_root(abspath, root):
-                results["results"].append(
-                    {"path": path, "ok": False, "error": ACCESS_DENIED_LOWER}
-                )
-                continue
-            if not os.path.exists(abspath):
-                results["results"].append(
-                    {"path": path, "ok": False, "error": NOT_FOUND_LOWER}
-                )
+            abspath, path_err = _validate_bulk_path(path, root)
+            display_path = path.strip().strip("/") if isinstance(path, str) else path
+            if path_err:
+                results["results"].append({"path": display_path, "ok": False, "error": path_err})
                 continue
             err = _process_bulk_action(
-                action,
-                abspath,
-                path,
-                data,
-                self.db_conn,
-                self.get_display_username,
-                remote_ip,
-                self.get_service,
+                action, abspath, display_path, data,
+                self.db_conn, self.get_display_username,
+                remote_ip, self.get_service, root,
             )
             if err:
                 results["ok"] = False
-                results["results"].append({"path": path, "ok": False, "error": err})
+                results["results"].append({"path": display_path, "ok": False, "error": err})
             else:
-                results["results"].append({"path": path, "ok": True})
+                results["results"].append({"path": display_path, "ok": True})
         self.set_header("Content-Type", HEADER_APPLICATION_JSON)
         self.write(results)
 
 
 class EditHandler(BaseHandler):
+    def _parse_edit_body(self) -> tuple[str, str] | None:
+        """Return (path, content) or None on parse error (writes 400 response)."""
+        content_type = self.request.headers.get("Content-Type", "")
+        if content_type.startswith(HEADER_APPLICATION_JSON):
+            try:
+                data = json.loads(self.request.body.decode("utf-8", errors="replace") or "{}")
+                return data.get("path", ""), data.get("content", "")
+            except Exception:
+                self.set_status(400)
+                self.write(INVALID_JSON_REQUEST)
+                return None
+        return self.get_argument("path", ""), self.get_argument("content", "")
+
+    def _atomic_write(self, abspath, content: str) -> None:
+        directory_name = os.path.dirname(abspath)
+        os.makedirs(directory_name, exist_ok=True)
+        temp_fd = tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=directory_name, delete=False)
+        temp_path = temp_fd.name
+        try:
+            temp_fd.write(content)
+            temp_fd.close()
+            os.replace(temp_path, abspath)
+        except Exception:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+            raise
+
     @tornado.web.authenticated
+    @require_action("file.write")
     @require_modify_access()
     def post(self):
         if not self.require_feature("file_edit", True, body=FILE_EDIT_DISABLED):
             return
 
-        # Accept both JSON and form-encoded bodies
         content_type = self.request.headers.get("Content-Type", "")
-        path = ""
-        content = ""
-        if content_type.startswith(HEADER_APPLICATION_JSON):
-            try:
-                data = json.loads(
-                    self.request.body.decode("utf-8", errors="replace") or "{}"
-                )
-                path = data.get("path", "")
-                content = data.get("content", "")
-            except Exception:
-                self.set_status(400)
-                self.write(INVALID_JSON_REQUEST)
-                return
-        else:
-            path = self.get_argument("path", "")
-            content = self.get_argument("content", "")
+        if len(self.request.body) > EDIT_JSON_BODY_MAX_BYTES:
+            self.set_status(413)
+            self.write(INVALID_JSON_REQUEST if content_type.startswith(HEADER_APPLICATION_JSON) else BAD_REQUEST)
+            return
+
+        parsed = self._parse_edit_body()
+        if parsed is None:
+            return
+        path, content = parsed
+
+        if len(str(path).strip()) > REL_PATH_MAX_LEN:
+            self.set_status(400)
+            self.write(INVALID_PATH)
+            return
 
         user_root = get_user_root(self)
-        abspath = (pathlib.Path(user_root) / ("." + path)).absolute().resolve()
+        safe_path = str(path).lstrip("/\\")
+        abspath = (pathlib.Path(user_root) / safe_path).resolve()
 
         if not is_within_root(str(abspath), user_root):
             logging.warning(f"EditHandler: access denied for path {path}.")
@@ -835,46 +893,27 @@ class EditHandler(BaseHandler):
             return
 
         try:
-            # Safe write: write to temp file in same directory then replace atomically
-            directory_name = os.path.dirname(abspath)
-            os.makedirs(directory_name, exist_ok=True)
-            # Use delete=False to prevent file deletion before os.replace can use it
-            temp_fd = tempfile.NamedTemporaryFile(
-                "w", encoding="utf-8", dir=directory_name, delete=False
-            )
-            temp_path = temp_fd.name
-            try:
-                temp_fd.write(content)
-                temp_fd.close()
-                os.replace(temp_path, abspath)
-            except Exception:
-                # Clean up temp file on failure
-                try:
-                    os.unlink(temp_path)
-                except OSError:
-                    pass
-                raise
+            self._atomic_write(abspath, content)
             self.get_service("audit_service").log(
-                self.db_conn,
-                "file_edit",
+                self.db_conn, "file_edit",
                 username=self.get_display_username(),
-                details=path_to_rel(str(abspath)),
+                details=path_to_rel(str(abspath), user_root),
                 ip=self.request.remote_ip,
             )
             self.set_status(200)
-            # Respond JSON if requested
             if self.request.headers.get("Accept") == HEADER_APPLICATION_JSON:
                 self.write({"ok": True})
             else:
                 self.write(FILE_SAVED_SUCCESSFULLY)
-        except Exception as e:
-            logging.error(f"File save error: {e}")
+        except Exception:
+            logging.exception("File save error")
             self.set_status(500)
             self.write(FILE_SAVE_ERROR)
 
 
 class CloudUploadHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_action("file.write")
     @require_modify_access()
     async def post(self, provider_name: str):
         manager: CloudManager = self.application.settings.get(

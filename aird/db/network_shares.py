@@ -40,8 +40,8 @@ def create_network_share(
                 ),
             )
         return True
-    except Exception as e:
-        logging.error("Failed to create network share %s: %s", share_id, e)
+    except Exception:
+        logging.exception("Failed to create network share %s", share_id)
         return False
 
 
@@ -66,8 +66,8 @@ def get_all_network_shares(conn: sqlite3.Connection) -> list[dict]:
             }
             for r in rows
         ]
-    except Exception as e:
-        logging.error("Failed to load network shares: %s", e)
+    except Exception:
+        logging.exception("Failed to load network shares")
         return []
 
 
@@ -92,8 +92,8 @@ def get_network_share(conn: sqlite3.Connection, share_id: str) -> dict | None:
                 "created_at": row[9],
             }
         return None
-    except Exception as e:
-        logging.error("Failed to get network share %s: %s", share_id, e)
+    except Exception:
+        logging.exception("Failed to get network share %s", share_id)
         return None
 
 
@@ -140,8 +140,8 @@ def update_network_share(conn: sqlite3.Connection, share_id: str, **kwargs) -> b
                 values,
             )
         return True
-    except Exception as e:
-        logging.error("Failed to update network share %s: %s", share_id, e)
+    except Exception:
+        logging.exception("Failed to update network share %s", share_id)
         return False
 
 
@@ -152,6 +152,6 @@ def delete_network_share(conn: sqlite3.Connection, share_id: str) -> bool:
                 "DELETE FROM network_shares WHERE id = ?", (share_id,)
             )
             return cursor.rowcount > 0
-    except Exception as e:
-        logging.error("Failed to delete network share %s: %s", share_id, e)
+    except Exception:
+        logging.exception("Failed to delete network share %s", share_id)
         return False

@@ -1,22 +1,34 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>{{ filename }} · Aird</title>
   <script src="/static/js/aird-core.js"></script>
   <meta id="page-flags" data-open-editor="{{ open_editor }}">
+  <style nonce="{{ csp_nonce }}">
+    #file-content.line-nums-hidden col:first-child {
+      width: 0 !important;
+      min-width: 0 !important;
+      max-width: 0 !important;
+      visibility: collapse;
+      padding: 0;
+      border: none;
+    }
+  </style>
 </head>
 
-<body>
+<body class="min-h-screen bg-base-200">
+  <div class="container mx-auto p-4">
     {% set nav_title = "Aird" %}
-{% set nav_search_path = "" %}
-{% set show_admin_link = False %}
-{% include '_app_nav_header.html' %}
+    {% set nav_search_path = "" %}
+    {% set show_admin_link = False %}
+    {% include '_app_nav_header.html' %}
 
+    <main class="pb-10">
     <output id="file-page-toast"
          class="fixed bottom-8 left-1/2 z-[100] flex max-w-[min(92vw,28rem)] -translate-x-1/2 translate-y-24 opacity-0 transition-all duration-300 pointer-events-none"
          aria-live="polite" aria-atomic="true">
@@ -25,12 +37,12 @@
       </div>
     </output>
 
-    <div class="text-sm text-base-content/60 flex items-center gap-2 mb-4">
+    <div class="text-sm text-base-content/60 flex items-center gap-2 mb-2">
         <a href="/files/">🏠 Home</a>
     </div>
-    <h2>{{ filename }}</h2>
-    <div class="flex items-center justify-between gap-2 flex-wrap my-4 py-2">
-        <div class="flex items-center gap-2 flex-wrap">
+    <h2 class="text-xl font-semibold mb-4">{{ filename }}</h2>
+    <div class="flex flex-col gap-3 my-4 py-2">
+        <div class="flex flex-wrap items-center gap-2">
             <a href="/files/{{ path }}?download=1" class="btn btn-sm btn-outline" data-feature="file_download">⬇️ Download</a>
             <label for="encoding-select" class="sr-only">File encoding</label>
             <select id="encoding-select" title="File Encoding" aria-label="File encoding"
@@ -49,18 +61,15 @@
             <button class="btn btn-sm btn-outline" id="toggle-lines-btn">🔢 Hide Line Numbers</button>
             <button class="btn btn-sm btn-outline" id="edit-btn" data-feature="file_edit">📝 Edit</button>
             <button type="button" class="btn btn-sm btn-outline hidden" id="save-btn">💾 Save</button>
-            {% if filename.lower().endswith('.md') %}
-            <button class="btn btn-sm btn-outline" id="md-toggle-btn" type="button">📖 Rendered</button>
-            {% end %}
         </div>
-        <div class="flex items-center gap-2 flex-wrap">
+        <div class="flex flex-wrap items-center gap-2">
             <label for="stream-filter" class="sr-only">Stream line filter expression</label>
-            <input type="text" id="stream-filter" class="input input-sm input-bordered w-full max-w-xs" placeholder="Filter: error OR warning AND user123"
+            <input type="text" id="stream-filter" class="input input-sm input-bordered flex-1 min-w-[12rem] max-w-xl" placeholder="Filter: error OR warning AND user123"
                 title="Complex filters: 'term1 AND term2', 'term1 OR term2', 'quoted phrases', (grouping)" aria-describedby="filter-help">
             <label for="last-n" class="sr-only">Last N lines to stream</label>
-            <input type="text" id="last-n" class="input input-sm input-bordered w-24" inputmode="numeric" pattern="[0-9]*" placeholder="Last N (100)" aria-label="Last N lines">
-            <button class="btn btn-sm btn-outline" id="stream-btn">▶️ Stream</button>
-            <button type="button" class="btn btn-sm btn-outline hidden" id="stop-stream-btn">⏹ Stop</button>
+            <input type="text" id="last-n" class="input input-sm input-bordered w-24 shrink-0" inputmode="numeric" pattern="[0-9]*" placeholder="Last N (100)" aria-label="Last N lines">
+            <button class="btn btn-sm btn-outline shrink-0" id="stream-btn">▶️ Stream</button>
+            <button type="button" class="btn btn-sm btn-outline hidden shrink-0" id="stop-stream-btn">⏹ Stop</button>
         </div>
     </div>
 
@@ -79,36 +88,37 @@
         <code>\ANDROID</code> - Use backslash to escape logical operators
     </div>
 
-    <div class="my-4 p-4 border border-base-300 bg-base-200 rounded-lg flex items-center gap-3 flex-wrap">
-        <label for="start">Start:</label>
-        <input type="text" id="start" value="{{ start_line or 1 }}" class="input input-sm input-bordered w-24"
-            title="Press Enter to submit">
-        <label for="end">End:</label>
-        <input type="text" id="end" value="{{ end_line or '' }}" placeholder="End line"
-            class="input input-sm input-bordered w-24" title="Press Enter to submit">
-        <button class="btn btn-sm btn-outline" id="submit-btn">Submit</button>
-        <button class="btn btn-sm btn-outline" id="show-all-btn">Fetch All Lines</button>
-        {% if start_line and end_line %}
-        <span class="ml-3 text-primary text-sm font-medium">Showing lines {{ start_line }} to {{ end_line }} ; reached EOF:
-            {{ reached_EOF }}</span>
-        {% elif start_line %}
-        <span class="ml-3 text-primary text-sm font-medium">Showing entire file from line {{ start_line }} ; reached EOF:
-            {{ reached_EOF }}</span>
-        {% end %}
+    <div class="my-4 p-4 border border-base-300 bg-base-100 rounded-lg flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <div class="flex flex-wrap items-center gap-3">
+            <label for="start" class="text-sm shrink-0">Start:</label>
+            <input type="text" id="start" value="1" class="input input-sm input-bordered w-24"
+                title="Press Enter to submit">
+            <label for="end" class="text-sm shrink-0">End:</label>
+            <input type="text" id="end" value="" placeholder="End line"
+                class="input input-sm input-bordered w-24" title="Press Enter to submit">
+            <button class="btn btn-sm btn-outline" id="submit-btn">Submit</button>
+            <button class="btn btn-sm btn-outline" id="show-all-btn">Fetch All Lines</button>
+        </div>
+        <span id="file-range-status" class="text-primary text-sm font-medium sm:ml-auto w-full sm:w-auto" aria-live="polite"></span>
     </div>
+    <p class="my-3 text-xs text-base-content/60 max-w-[65ch]" id="file-view-range-disclaimer">
+        By default only the first {{ default_file_view_line_limit }} lines are shown for performance. Raise the End line above that to view more—very large ranges can slow or overwhelm your browser or tab.
+    </p>
     <hr>
     <div id="editor-container" class="flex h-[60vh] hidden">
         <textarea id="line-numbers-editor" class="w-10 p-1 text-right bg-base-200 text-base-content/50 border border-base-300 border-r-0 overflow-y-hidden resize-none font-mono text-base leading-snug" readonly></textarea>
         <textarea id="editor" class="flex-1 h-full border border-base-300 resize-none font-mono text-base leading-snug p-2 bg-base-100 text-base-content focus:outline-none focus:border-primary">{% if open_editor %}{{ full_file_content }}{% end %}</textarea>
     </div>
-    <div id="markdown-preview" class="hidden p-4 max-w-4xl leading-relaxed font-sans prose prose-sm">
-    </div>
-    <div class="w-full overflow-x-auto border border-base-300 rounded-lg">
-        <table id="file-content" class="w-full table-fixed border-collapse">
-            <thead>
+    <div class="w-full overflow-x-auto border border-base-300 rounded-lg bg-base-100">
+        <table id="file-content" class="w-full table-fixed border-collapse text-left">
+            <colgroup>
+                <col class="w-14" style="width: 3.5rem; min-width: 3.5rem;" />
+                <col />
+            </colgroup>
+            <thead class="sr-only">
                 <tr>
-                    <th class="line-numbers" scope="col" aria-label="Line number"></th>
-                    <th scope="col" aria-label="Content"></th>
+                    <th class="line-numbers" scope="col">Line number</th>
+                    <th scope="col">Content</th>
                 </tr>
             </thead>
             <tbody id="file-content-body">
@@ -118,7 +128,7 @@
             </tbody>
             <tfoot id="streaming-indicator" class="hidden">
                 <tr>
-                    <td class="w-12 text-right px-2 border-r border-base-300 bg-base-200 text-base-content/50 select-none font-mono text-xs animate-pulse">
+                    <td class="file-line-gutter w-12 text-right px-2 border-r border-base-300 bg-base-200 text-base-content/50 select-none font-mono text-xs animate-pulse">
                         <span>.</span><span>.</span><span>.</span>
                     </td>
                     <td></td>
@@ -143,12 +153,18 @@
         const editor = document.getElementById('editor');
         const lineNumbersEditor = document.getElementById('line-numbers-editor');
         const tableBody = document.getElementById('file-content-body');
+        const fileContentTable = document.getElementById('file-content');
         const streamingIndicator = document.getElementById('streaming-indicator');
         const encodingSelect = document.getElementById('encoding-select');
         let ws = null;
         let lineNumbersVisible = true;
         let rawFileContent = null;
         const wsProto = globalThis.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const DEFAULT_FILE_VIEW_LINES = {{ default_file_view_line_limit }};
+
+        function syncFileLineNumLayout() {
+            if (fileContentTable) fileContentTable.classList.toggle('line-nums-hidden', !lineNumbersVisible);
+        }
 
         let toastTimerId = null;
         function showFileToast(message, variant = 'info') {
@@ -196,18 +212,27 @@
             }
         }
 
+        function decodeRawFileContent() {
+            if (!rawFileContent) return { text: '', error: null };
+            try {
+                return { text: new TextDecoder(encodingSelect.value).decode(rawFileContent), error: null };
+            } catch (e) {
+                console.error('Decoding error:', e);
+                return { text: 'Error decoding text with ' + encodingSelect.value, error: e };
+            }
+        }
+
+        function parseUrlInt(params, key) {
+            const raw = params.get(key);
+            if (raw === null || String(raw).trim() === '') return null;
+            const n = Number.parseInt(raw, 10);
+            return Number.isNaN(n) ? null : n;
+        }
+
         function renderContent() {
             if (!rawFileContent) return;
 
-            const encoding = encodingSelect.value;
-            let text = "";
-            try {
-                const decoder = new TextDecoder(encoding);
-                text = decoder.decode(rawFileContent);
-            } catch (e) {
-                console.error("Decoding error:", e);
-                text = "Error decoding text with " + encoding;
-            }
+            const { text } = decodeRawFileContent();
 
             // Populate Editor if enabled
             if (openEditor) {
@@ -215,24 +240,51 @@
                 updateLineNumbers();
             }
 
+            if (ws) return;
+
             const lines = text.split(/\r?\n/);
             const totalLines = lines.length;
 
-            // Get range
             const urlParams = new URLSearchParams(globalThis.location.search);
-            let start = Number.parseInt(urlParams.get('start_line'));
-            let end = Number.parseInt(urlParams.get('end_line'));
+            let startParsed = parseUrlInt(urlParams, 'start_line');
+            const endParsed = parseUrlInt(urlParams, 'end_line');
+            const endExplicit = endParsed !== null;
 
-            if (Number.isNaN(start)) start = 1;
-            if (Number.isNaN(end)) end = totalLines;
+            let start = startParsed != null ? startParsed : 1;
+            let end;
+
+            if (endExplicit) {
+                end = endParsed;
+            } else {
+                const span = DEFAULT_FILE_VIEW_LINES;
+                end = Math.min(start + span - 1, totalLines);
+            }
+
+            if (start < 1) start = 1;
+            if (totalLines >= 1 && start > totalLines) start = totalLines;
+            if (end > totalLines) end = totalLines;
+            if (totalLines >= 1 && end < start) end = Math.min(totalLines, start);
 
             // Update inputs
             if (startLineInput) startLineInput.value = start;
             if (endLineInput) endLineInput.value = end;
 
-            // Clamp
-            if (start < 1) start = 1;
-            if (end > totalLines) end = totalLines;
+            const rangeStatus = document.getElementById('file-range-status');
+            if (rangeStatus) {
+                if (totalLines === 0) {
+                    rangeStatus.textContent = '';
+                } else {
+                    const reachedEOF = end >= totalLines;
+                    rangeStatus.textContent = `Showing lines ${start}–${end} of ${totalLines}; reached EOF: ${reachedEOF}`;
+                }
+            }
+
+            if (!endExplicit && totalLines >= 1) {
+                const u = new URL(globalThis.location.href);
+                u.searchParams.set('start_line', String(start));
+                u.searchParams.set('end_line', String(end));
+                globalThis.history.replaceState({}, '', u);
+            }
 
             // Render Table
             tableBody.innerHTML = '';
@@ -241,13 +293,14 @@
             for (let i = start - 1; i < end; i++) {
                 const tr = document.createElement('tr');
                 const tdNum = document.createElement('td');
-                tdNum.className = 'w-12 text-right px-2 border-r border-base-300 bg-base-200 text-base-content/50 select-none font-mono text-xs';
+                tdNum.className = 'file-line-gutter w-12 text-right px-2 border-r border-base-300 bg-base-200 text-base-content/50 select-none font-mono text-xs';
                 if (!lineNumbersVisible) tdNum.classList.add('hidden');
                 tdNum.textContent = i + 1;
 
                 const tdContent = document.createElement('td');
+                tdContent.className = 'align-top text-left w-full';
                 const pre = document.createElement('pre');
-                pre.className = 'whitespace-pre-wrap break-words font-mono text-sm leading-relaxed bg-transparent border-none p-0 m-0 overflow-visible';
+                pre.className = 'whitespace-pre-wrap break-words font-mono text-sm leading-relaxed bg-transparent border-none p-0 m-0 overflow-visible text-left';
                 pre.textContent = lines[i] || '\u00A0';
                 tdContent.appendChild(pre);
 
@@ -258,22 +311,12 @@
                 fragment.appendChild(tr);
             }
             tableBody.appendChild(fragment);
+            syncFileLineNumLayout();
         }
 
         encodingSelect.addEventListener('change', renderContent);
 
-        const featureSocket = new WebSocket(wsProto + '//' + globalThis.location.host + '/features');
-        featureSocket.onmessage = function (event) {
-            updateFeatureVisibility(JSON.parse(event.data));
-        };
-
-        function updateFeatureVisibility(features) {
-            document.querySelectorAll('[data-feature]').forEach(el => {
-                const feature = el.dataset.feature;
-                if (features[feature]) el.style.display = '';
-                else el.style.display = 'none';
-            });
-        }
+        /* Feature flag live updates: /static/js/feature-flags-live.js in app header */
 
         function updateLineNumbers() {
             const lineCount = editor.value.split('\n').length;
@@ -310,9 +353,12 @@
         endLineInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') applyLineRange(); });
 
         showAllBtn.onclick = function () {
+            if (!rawFileContent || ws) return;
+            const { text } = decodeRawFileContent();
+            const totalLines = text.split(/\r?\n/).length;
             const currentUrl = new URL(globalThis.location.href);
-            currentUrl.searchParams.delete('start_line');
-            currentUrl.searchParams.delete('end_line');
+            currentUrl.searchParams.set('start_line', '1');
+            currentUrl.searchParams.set('end_line', String(totalLines >= 1 ? totalLines : 1));
             globalThis.history.pushState({}, '', currentUrl);
             renderContent();
         };
@@ -363,9 +409,9 @@
             ws = new WebSocket(url);
             tableBody.innerHTML = '';
             let lineCount = 0;
-            streamBtn.style.display = 'none';
-            stopStreamBtn.style.display = '';
-            streamingIndicator.style.display = '';
+            streamBtn.classList.add('hidden');
+            stopStreamBtn.classList.remove('hidden');
+            streamingIndicator.classList.remove('hidden');
             ws.onmessage = function (event) {
                 try {
                     const msg = JSON.parse(event.data);
@@ -379,8 +425,9 @@
                     const row = tableBody.insertRow();
                     const lineNumCell = row.insertCell(0);
                     const lineContentCell = row.insertCell(1);
-                    lineNumCell.className = 'w-12 text-right px-2 border-r border-base-300 bg-base-200 text-base-content/50 select-none font-mono text-xs';
+                    lineNumCell.className = 'file-line-gutter w-12 text-right px-2 border-r border-base-300 bg-base-200 text-base-content/50 select-none font-mono text-xs';
                     lineNumCell.textContent = lineCount;
+                    lineContentCell.className = 'align-top text-left w-full';
                     appendStreamLineCell(lineContentCell, line);
                     if (!lineNumbersVisible) lineNumCell.classList.add('hidden');
                     if (lineCount % 2 === 0) row.style.backgroundColor = 'var(--ds-bg-muted)';
@@ -393,8 +440,9 @@
                     const row = tableBody.insertRow();
                     const lineNumCell = row.insertCell(0);
                     const lineContentCell = row.insertCell(1);
-                    lineNumCell.className = 'w-12 text-right px-2 border-r border-base-300 bg-base-200 text-base-content/50 select-none font-mono text-xs';
+                    lineNumCell.className = 'file-line-gutter w-12 text-right px-2 border-r border-base-300 bg-base-200 text-base-content/50 select-none font-mono text-xs';
                     lineNumCell.textContent = lineCount;
+                    lineContentCell.className = 'align-top text-left w-full';
                     appendStreamLineCell(lineContentCell, line);
                     if (!lineNumbersVisible) lineNumCell.classList.add('hidden');
                     if (lineCount % 2 === 0) row.style.backgroundColor = 'var(--ds-bg-muted)';
@@ -402,10 +450,11 @@
                 }
             };
             ws.onclose = () => {
-                stopStreamBtn.style.display = 'none';
-                streamBtn.style.display = '';
-                streamingIndicator.style.display = 'none';
+                stopStreamBtn.classList.add('hidden');
+                streamBtn.classList.remove('hidden');
+                streamingIndicator.classList.add('hidden');
                 ws = null;
+                if (rawFileContent) renderContent();
             };
         };
 
@@ -413,7 +462,8 @@
 
         toggleLinesBtn.onclick = function () {
             lineNumbersVisible = !lineNumbersVisible;
-            document.querySelectorAll('.w-12.text-right').forEach(cell => {
+            syncFileLineNumLayout();
+            document.querySelectorAll('#file-content .file-line-gutter').forEach(cell => {
                 cell.classList.toggle('hidden', !lineNumbersVisible);
             });
             toggleLinesBtn.textContent = lineNumbersVisible ? 'Hide Line Numbers' : 'Show Line Numbers';
@@ -425,7 +475,9 @@
         };
 
         document.addEventListener('DOMContentLoaded', function () {
-            fetchFileContent();
+            const urlParams = new URLSearchParams(globalThis.location.search);
+            const autoStream = urlParams.has('stream');
+
             if (openEditor) {
                 editorContainer.style.display = 'flex';
                 document.getElementById('file-content').style.display = 'none';
@@ -443,55 +495,14 @@
                 });
             }
 
-            const urlParams = new URLSearchParams(globalThis.location.search);
-            if (urlParams.has('stream')) {
-                streamBtn.click();
-            }
+            fetchFileContent().finally(() => {
+                if (autoStream) streamBtn.click();
+            });
         });
     </script>
-    {% if filename.lower().endswith('.md') %}
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js" integrity="sha512-Y1p/STLW/B+l+MPJ5K5OdILMwJa2gMFXXmC/qsyDuGH9uc1MZMUo6/8YQUg9Ut4ns8KGCrCtt+58UwmNFFiVvA==" crossorigin="anonymous" referrerpolicy="no-referrer" nonce="{{ csp_nonce }}"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/16.3.0/marked.min.js" integrity="sha512-gxBP/mcwo9A5lJDFbVfXNb1hSLpOkHLLXAjld8HfCWjVIZnA3nlNnIqSTLvtwF4t55Dt4Rzh7phL3tJuKZ+teQ==" crossorigin="anonymous" referrerpolicy="no-referrer" nonce="{{ csp_nonce }}"></script>
-    <script nonce="{{ csp_nonce }}">
-    (function() {
-        const mdBtn = document.getElementById('md-toggle-btn');
-        const mdPreview = document.getElementById('markdown-preview');
-        const fileTable = document.getElementById('file-content');
-        let showing = false;
-        if (!mdBtn || !mdPreview || !fileTable) return;
-        mdBtn.addEventListener('click', function() {
-            showing = !showing;
-            if (showing) {
-                const rows = fileTable.querySelectorAll('#file-content-body tr');
-                const text = [];
-                rows.forEach(function(r) {
-                    const cells = r.querySelectorAll('td');
-                    if (cells.length >= 2) text.push(cells[1].textContent);
-                });
-                const raw = text.join('\n');
-                if (typeof marked === 'undefined') {
-                    mdPreview.textContent = raw;
-                } else {
-                    const html = marked.parse(raw);
-                    if (typeof DOMPurify !== 'undefined' && DOMPurify.sanitize) {
-                        mdPreview.innerHTML = DOMPurify.sanitize(html);
-                    } else {
-                        mdPreview.textContent = raw;
-                    }
-                }
-                mdPreview.style.display = 'block';
-                fileTable.style.display = 'none';
-                mdBtn.textContent = '📄 Raw';
-            } else {
-                mdPreview.style.display = 'none';
-                fileTable.style.display = '';
-                mdBtn.textContent = '📖 Rendered';
-            }
-        });
-    })();
-    </script>
-    {% end %}
     <script src="/static/js/theme.js" defer></script>
+    </main>
+  </div>
 </body>
 
 </html>

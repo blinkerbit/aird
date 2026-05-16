@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>User management · Aird</title>
   <script nonce="{{ csp_nonce }}">
     function confirmDelete(username, userId) {
@@ -32,6 +33,29 @@
           confirmDelete(this.dataset.deleteUsername, this.dataset.deleteUserid);
         });
       });
+      document.querySelectorAll('[data-reset-userid]').forEach(function (el) {
+        el.addEventListener('click', function (e) {
+          e.preventDefault();
+          var uid = this.dataset.resetUserid;
+          var uname = this.dataset.resetUsername || '';
+          if (!confirm('Generate a one-time password for "' + uname + '"? You must copy it from the next screen; the user will be required to set a new password after signing in.')) return;
+          var form = document.createElement('form');
+          form.method = 'POST';
+          form.action = '/admin/users/reset-password';
+          var csrf = document.createElement('input');
+          csrf.type = 'hidden';
+          csrf.name = '_xsrf';
+          csrf.value = document.querySelector('input[name="_xsrf"]').value;
+          var uidIn = document.createElement('input');
+          uidIn.type = 'hidden';
+          uidIn.name = 'user_id';
+          uidIn.value = uid;
+          form.appendChild(csrf);
+          form.appendChild(uidIn);
+          document.body.appendChild(form);
+          form.submit();
+        });
+      });
     });
   </script>
 </head>
@@ -42,14 +66,24 @@
     {% include '_app_nav_header.html' %}
   </div>
 
+  {% set admin_active_tab = "users" %}
+  {% include '_admin_tabs.html' %}
+
   <main class="max-w-5xl mx-auto p-4 space-y-4">
-    <div class="mb-2">
-      <a href="/admin" class="link link-hover text-sm text-base-content/70">← Back to Admin Settings</a>
-    </div>
     <div class="flex items-center justify-between flex-wrap gap-3">
       <h1 class="text-2xl font-bold">User management</h1>
       <a href="/admin/users/create" class="btn btn-primary btn-sm">+ Create user</a>
     </div>
+
+    {% if reset_password_plain %}
+    <div class="alert alert-warning shadow-sm border border-warning/30">
+      <div class="w-full">
+        <p class="font-semibold">Password reset for {{ escape(reset_for_username or '') }}</p>
+        <p class="text-sm mt-1">Copy this temporary password now. It will not be shown again. The user must choose a new password immediately after logging in.</p>
+        <pre class="bg-base-300/80 rounded-lg p-3 mt-3 text-sm font-mono whitespace-pre-wrap break-all select-all">{{ escape(reset_password_plain) }}</pre>
+      </div>
+    </div>
+    {% end %}
 
     <div class="card bg-base-100 shadow-sm border border-base-300">
       <div class="card-body p-0">
@@ -89,12 +123,18 @@
                   {% else %}
                   <span class="badge badge-warning badge-sm">Inactive</span>
                   {% end %}
+                  {% if user.get('must_change_password') %}
+                  <span class="badge badge-outline badge-warning badge-sm ml-1" title="Must set new password on next login">New password</span>
+                  {% end %}
                 </td>
                 <td class="text-xs text-base-content/50">{{ user['created_at'][:19] if user['created_at'] else '' }}</td>
                 <td class="text-xs text-base-content/50">{{ user['last_login'][:19] if user['last_login'] else 'Never' }}</td>
                 <td class="text-right">
                   <div class="flex gap-1 justify-end">
                     <a href="/admin/users/edit/{{ user['id'] }}" class="btn btn-ghost btn-xs">Edit</a>
+                    <button type="button" class="btn btn-warning btn-xs btn-outline"
+                            data-reset-userid="{{ user['id'] }}"
+                            data-reset-username="{{ escape(user['username']) }}">Reset password</button>
                     <a href="javascript:void(0)" data-delete-username="{{ escape(user['username']) }}"
                        data-delete-userid="{{ user['id'] }}" class="btn btn-error btn-xs btn-outline">Delete</a>
                   </div>

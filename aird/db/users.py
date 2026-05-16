@@ -100,7 +100,7 @@ def create_user(
 
         with conn:
             cursor = conn.execute(
-                "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
+                "INSERT INTO users (username, password_hash, role, created_at, must_change_password) VALUES (?, ?, ?, ?, 0)",
                 (username, password_hash, role, created_at),
             )
             user_id = cursor.lastrowid
@@ -112,6 +112,7 @@ def create_user(
             "created_at": created_at,
             "active": True,
             "last_login": None,
+            "must_change_password": False,
         }
     except sqlite3.IntegrityError:
         raise ValueError(f"Username '{username}' already exists")
@@ -123,7 +124,7 @@ def get_user_by_username(conn: sqlite3.Connection, username: str) -> dict | None
     """Get user by username"""
     try:
         row = conn.execute(
-            "SELECT id, username, password_hash, role, created_at, active, last_login FROM users WHERE username = ?",
+            "SELECT id, username, password_hash, role, created_at, active, last_login, must_change_password FROM users WHERE username = ?",
             (username,),
         ).fetchone()
 
@@ -136,6 +137,7 @@ def get_user_by_username(conn: sqlite3.Connection, username: str) -> dict | None
                 "created_at": row[4],
                 "active": bool(row[5]),
                 "last_login": row[6],
+                "must_change_password": bool(row[7]),
             }
         return None
     except Exception:
@@ -146,7 +148,7 @@ def get_all_users(conn: sqlite3.Connection) -> list[dict]:
     """Get all users from the database"""
     try:
         rows = conn.execute(
-            "SELECT id, username, role, created_at, active, last_login FROM users ORDER BY created_at DESC"
+            "SELECT id, username, role, created_at, active, last_login, must_change_password FROM users ORDER BY created_at DESC"
         ).fetchall()
 
         return [
@@ -157,6 +159,7 @@ def get_all_users(conn: sqlite3.Connection) -> list[dict]:
                 "created_at": row[3],
                 "active": bool(row[4]),
                 "last_login": row[5],
+                "must_change_password": bool(row[6]),
             }
             for row in rows
         ]
@@ -171,7 +174,7 @@ def search_users(conn: sqlite3.Connection, query: str) -> list[dict]:
             query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         )
         rows = conn.execute(
-            "SELECT id, username, role, created_at, active, last_login FROM users WHERE username LIKE ? ESCAPE '\\' AND active = 1 ORDER BY username LIMIT 20",
+            "SELECT id, username, role, created_at, active, last_login, must_change_password FROM users WHERE username LIKE ? ESCAPE '\\' AND active = 1 ORDER BY username LIMIT 20",
             (f"%{escaped_query}%",),
         ).fetchall()
 
@@ -183,6 +186,7 @@ def search_users(conn: sqlite3.Connection, query: str) -> list[dict]:
                 "created_at": row[3],
                 "active": bool(row[4]),
                 "last_login": row[5],
+                "must_change_password": bool(row[6]),
             }
             for row in rows
         ]
@@ -190,31 +194,55 @@ def search_users(conn: sqlite3.Connection, query: str) -> list[dict]:
         return []
 
 
+def _maybe_user_update_clause(field: str, value) -> tuple[str, ...] | None:
+    """Return (sql_fragment, bind_value(s)) if *field* should update a column; else None."""
+    valid_fields = frozenset(
+        [
+            "username",
+            "password_hash",
+            "role",
+            "active",
+            "last_login",
+            "must_change_password",
+        ]
+    )
+    plain_field_sql = {
+        "username": "username = ?",
+        "password_hash": "password_hash = ?",
+        "role": "role = ?",
+        "last_login": "last_login = ?",
+        "must_change_password": "must_change_password = ?",
+    }
+
+    if field == "password":
+        return ("password_hash = ?", hash_password(value)) if value else None
+    if field not in valid_fields:
+        return None
+    if field == "active":
+        return ("active = ?", 1 if value else 0)
+    if field == "must_change_password":
+        return ("must_change_password = ?", 1 if value else 0)
+    if field in plain_field_sql:
+        return (plain_field_sql[field], value)
+    return None
+
+
+def _append_user_update_fragments(kwargs: dict, updates: list, values: list) -> None:
+    """Populate *updates* and *values* from user kw fields (same rules as legacy update loop)."""
+    for field, value in kwargs.items():
+        clause = _maybe_user_update_clause(field, value)
+        if clause is None:
+            continue
+        updates.append(clause[0])
+        values.append(clause[1])
+
+
 def update_user(conn: sqlite3.Connection, user_id: int, **kwargs) -> bool:
     """Update user information"""
     try:
-        valid_fields = ["username", "password_hash", "role", "active", "last_login"]
-        updates = []
-        values = []
-
-        field_sql = {
-            "username": "username = ?",
-            "password_hash": "password_hash = ?",
-            "role": "role = ?",
-            "last_login": "last_login = ?",
-        }
-        for field, value in kwargs.items():
-            if field == "password" and value:
-                updates.append("password_hash = ?")
-                values.append(hash_password(value))
-            elif field not in valid_fields:
-                continue
-            elif field == "active":
-                updates.append("active = ?")
-                values.append(1 if value else 0)
-            elif field in field_sql:
-                updates.append(field_sql[field])
-                values.append(value)
+        updates: list[str] = []
+        values: list = []
+        _append_user_update_fragments(kwargs, updates, values)
 
         if not updates:
             return False
@@ -271,6 +299,8 @@ def authenticate_user(
     user = get_user_by_username(conn, username)
     if user and user["active"] and verify_password(password, user["password_hash"]):
         update_user(conn, user["id"], last_login=datetime.now().isoformat())
+        must_change = bool(user.get("must_change_password"))
         del user["password_hash"]
+        user["must_change_password"] = must_change
         return user
     return None

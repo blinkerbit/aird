@@ -33,7 +33,9 @@ def db_conn():
             allow_list TEXT,
             avoid_list TEXT,
             expiry_date TEXT,
-            modify_users TEXT
+            modify_users TEXT,
+            tag_name TEXT,
+            created_by TEXT
         )
     """)
     conn.commit()
@@ -211,13 +213,13 @@ class TestUpdateShare:
         share = get_share_by_id(db_conn, "share123")
         assert share["expiry_date"] == "2025-01-01T00:00:00"
 
-    def test_update_no_changes_returns_false(self, db_conn):
-        """Test that update with no valid fields returns False"""
+    def test_update_no_changes_is_successful_noop(self, db_conn):
+        """update_share with no assignments is a successful no-op."""
         insert_share(db_conn, "share123", "2024-01-01T00:00:00", ["/path"])
 
         result = update_share(db_conn, "share123")
 
-        assert result is False
+        assert result is True
 
     def test_update_legacy_allowed_users(self, db_conn):
         """Test updating legacy allowed_users field"""
@@ -340,6 +342,19 @@ class TestGetSharesForPath:
         """Test getting shares when database is empty"""
         result = get_shares_for_path(db_conn, "/path/file.txt")
         assert result == []
+
+    def test_get_shares_for_directory_prefix(self, db_conn):
+        """Folders are not stored in paths for static shares; match by descendant paths."""
+        insert_share(
+            db_conn,
+            "share1",
+            "2024-01-01T00:00:00",
+            ["/projects/docs/readme.txt", "/projects/other.txt"],
+        )
+        docs = get_shares_for_path(db_conn, "/projects/docs")
+        assert len(docs) == 1 and docs[0]["id"] == "share1"
+        projects = get_shares_for_path(db_conn, "/projects")
+        assert len(projects) == 1 and projects[0]["id"] == "share1"
 
 
 class TestIsShareExpired:

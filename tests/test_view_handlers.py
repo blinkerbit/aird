@@ -12,6 +12,7 @@ from aird.handlers.view_handlers import (
     NoCacheStaticFileHandler,
 )
 from aird.cloud import CloudProviderError
+import aird.constants as aird_constants
 
 
 class TestRootHandler:
@@ -104,7 +105,8 @@ class TestMainHandler:
         ), patch("os.path.isdir", return_value=False), patch(
             "os.path.isfile", return_value=True
         ), patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=lambda k, default=True: False if k == "abac_engine" else True,
         ), patch(
             "mimetypes.guess_type", return_value=("text/plain", None)
         ), patch(
@@ -145,7 +147,8 @@ class TestMainHandler:
         ), patch("os.path.isdir", return_value=False), patch(
             "os.path.isfile", return_value=True
         ), patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=lambda k, default=True: False if k == "abac_engine" else True,
         ), patch(
             "mimetypes.guess_type", return_value=("image/png", None)
         ), patch(
@@ -222,6 +225,37 @@ class TestMainHandler:
             assert not files[1]["is_shared"]
 
     @pytest.mark.asyncio
+    async def test_browse_shared_subdirectory_row_when_share_has_nested_files(self):
+        """Static shares list files only; folder rows should still show the link icon."""
+        handler = MainHandler(self.mock_app, self.mock_request)
+        handler._current_user = {"username": "user"}
+
+        with patch("os.path.abspath", return_value="/root"), patch(
+            "aird.handlers.view_handlers.is_within_root", return_value=True
+        ), patch("os.path.isdir", return_value=True), patch(
+            "aird.services.share_service.get_all_shares",
+            return_value={"share1": {"paths": ["mydocs/readme.txt"]}},
+        ), patch(
+            "aird.handlers.view_handlers.get_files_in_directory",
+            return_value=[
+                {"name": "mydocs", "is_dir": True},
+                {"name": "other", "is_dir": True},
+            ],
+        ), patch(
+            "aird.handlers.view_handlers.join_path",
+            side_effect=lambda p, n: f"{p}/{n}" if p else n,
+        ), patch(
+            "aird.handlers.view_handlers.get_current_feature_flags", return_value={}
+        ), patch.object(handler, "render") as mock_render:
+            self.mock_app.settings["db_conn"] = MagicMock()
+            await handler.get("")
+            mock_render.assert_called()
+            files = mock_render.call_args[1]["files"]
+            assert files[0]["name"] == "mydocs"
+            assert files[0]["is_shared"]
+            assert not files[1]["is_shared"]
+
+    @pytest.mark.asyncio
     async def test_serve_file_view(self):
         handler = MainHandler(self.mock_app, self.mock_request)
         handler._current_user = {"username": "user"}
@@ -258,6 +292,10 @@ class TestMainHandler:
             kwargs = args[1]
             assert kwargs["lines"] == []  # Should be empty for client-side rendering
             assert kwargs["file_size"] == 100
+            assert (
+                kwargs["default_file_view_line_limit"]
+                == aird_constants.DEFAULT_FILE_VIEW_LINE_LIMIT
+            )
 
     @pytest.mark.asyncio
     async def test_serve_file_raw(self):
@@ -320,7 +358,8 @@ class TestEditViewHandler:
         handler._current_user = {"username": "user"}
 
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=lambda k, default=True: False if k == "abac_engine" else True,
         ), patch("os.path.abspath", return_value="/root/test.txt"), patch(
             "aird.handlers.view_handlers.is_within_root", return_value=True
         ), patch(
@@ -366,7 +405,8 @@ class TestEditViewHandler:
         handler._current_user = {"username": "user"}
 
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=lambda k, default=True: False if k == "abac_engine" else True,
         ), patch("os.path.abspath", return_value="/root/large.txt"), patch(
             "aird.handlers.view_handlers.is_within_root", return_value=True
         ), patch(
@@ -391,7 +431,8 @@ class TestEditViewHandler:
         handler._current_user = {"username": "user"}
 
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=lambda k, default=True: False if k == "abac_engine" else True,
         ), patch("os.path.abspath", return_value="/outside/file.txt"), patch(
             "aird.handlers.view_handlers.is_within_root", return_value=False
         ), patch.object(
@@ -412,7 +453,8 @@ class TestEditViewHandler:
         handler._current_user = {"username": "user"}
 
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=lambda k, default=True: False if k == "abac_engine" else True,
         ), patch("os.path.abspath", return_value="/root/missing.txt"), patch(
             "aird.handlers.view_handlers.is_within_root", return_value=True
         ), patch(
@@ -435,7 +477,8 @@ class TestEditViewHandler:
         handler._current_user = {"username": "user"}
 
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=lambda k, default=True: False if k == "abac_engine" else True,
         ), patch("os.path.abspath", return_value="/root/file.txt"), patch(
             "aird.handlers.view_handlers.is_within_root", return_value=True
         ), patch(
@@ -461,7 +504,8 @@ class TestEditViewHandler:
         handler._current_user = {"username": "user"}
 
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=lambda k, default=True: False if k == "abac_engine" else True,
         ), patch("os.path.abspath", return_value="/root/large.txt"), patch(
             "aird.handlers.view_handlers.is_within_root", return_value=True
         ), patch(
@@ -494,7 +538,8 @@ class TestEditViewHandler:
         handler._current_user = {"username": "user"}
 
         with patch(
-            "aird.handlers.base_handler.is_feature_enabled", return_value=True
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=lambda k, default=True: False if k == "abac_engine" else True,
         ), patch("os.path.abspath", return_value="/root/file.txt"), patch(
             "aird.handlers.view_handlers.is_within_root", return_value=True
         ), patch(

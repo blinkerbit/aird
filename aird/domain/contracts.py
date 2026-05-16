@@ -5,6 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from aird.core.input_validation import (
+    bound_access_token,
+    bound_login_password,
+    bound_username_for_login,
+)
+
 
 @dataclass(frozen=True)
 class ShareCreateRequest:
@@ -16,6 +22,7 @@ class ShareCreateRequest:
     avoid_list: list[str] = field(default_factory=list)
     disable_token: bool = False
     expiry_date: str | None = None
+    tag_name: str | None = None  # set when share_type=="tag"
 
     @classmethod
     def from_payload(cls, data: dict[str, Any]) -> "ShareCreateRequest":
@@ -28,6 +35,7 @@ class ShareCreateRequest:
             avoid_list=list(data.get("avoid_list", []) or []),
             disable_token=bool(data.get("disable_token", False)),
             expiry_date=data.get("expiry_date"),
+            tag_name=data.get("tag_name") or None,
         )
 
 
@@ -54,8 +62,8 @@ class AuthRequest:
     @classmethod
     def from_handler(cls, handler: Any) -> "AuthRequest":
         return cls(
-            username=handler.get_argument("username", "").strip(),
-            password=handler.get_argument("password", ""),
-            token=handler.get_argument("token", "").strip(),
+            username=bound_username_for_login(handler),
+            password=bound_login_password(handler),
+            token=bound_access_token(handler),
             ip=getattr(handler.request, "remote_ip", "") or "",
         )

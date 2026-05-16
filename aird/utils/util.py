@@ -411,15 +411,118 @@ def is_feature_enabled(key: str, default: bool = False) -> bool:
     return bool(flags.get(key, default))
 
 
-def augment_with_shared_status(
-    files: list[dict], current_path: str, all_shares: dict
-) -> None:
-    """Updates file metadata dicts in-place with an 'is_shared' boolean."""
+def share_visible_to_viewer_for_listing(
+    share: dict, viewer_username: str | None, viewer_is_admin: bool
+) -> bool:
+    """Whether *share* may affect shared-folder markers for this viewer."""
+    from aird.handlers.base_handler import login_matches_share_creator_field
+
+    if viewer_is_admin:
+        return True
+    allowed_raw = share.get("allowed_users")
+    if allowed_raw is None:
+        return True
+    if not viewer_username:
+        return False
+    creator = (share.get("created_by") or "").strip()
+    if creator and login_matches_share_creator_field(creator, viewer_username):
+        return True
+    if isinstance(allowed_raw, list) and viewer_username in allowed_raw:
+        return True
+    mod_list = share.get("modify_users") or []
+    if viewer_username in mod_list:
+        return True
+    return False
+
+
+def share_relevant_for_viewers_file_tree(
+    share: dict,
+    *,
+    viewer_username: str | None,
+    viewer_is_admin: bool,
+    viewer_root: str,
+) -> bool:
+    """Whether *share* should affect browse markers / path-details for this viewer's tree."""
+    from aird.core.share_root import filesystem_root_for_share
+    from aird.handlers.base_handler import login_matches_share_creator_field
+
+    if not share_visible_to_viewer_for_listing(
+        share, viewer_username, viewer_is_admin
+    ):
+        return False
+    if filesystem_root_for_share(share) == viewer_root:
+        return True
+    if viewer_is_admin:
+        return True
+    if not viewer_username:
+        return False
+    if login_matches_share_creator_field(share.get("created_by"), viewer_username):
+        return True
+    if viewer_username in (share.get("modify_users") or []):
+        return True
+    au = share.get("allowed_users")
+    if isinstance(au, list) and viewer_username in au:
+        return True
+    return False
+
+
+def _is_path_in_fallback_shares(
+    full_path: str,
+    all_shares: dict,
+    viewer_username: str | None,
+    viewer_is_admin: bool,
+    base: str,
+) -> bool:
     all_shared_paths = set()
     for share in all_shares.values():
+        if not share_relevant_for_viewers_file_tree(
+            share,
+            viewer_username=viewer_username,
+            viewer_is_admin=viewer_is_admin,
+            viewer_root=base,
+        ):
+            continue
         for p in share.get("paths", []):
-            all_shared_paths.add(p)
+            all_shared_paths.add(str(p).replace("\\", "/"))
+    if full_path in all_shared_paths:
+        return True
+    dir_prefix = f"{full_path}/"
+    return any(shared.startswith(dir_prefix) for shared in all_shared_paths)
+
+
+def augment_with_shared_status(
+    files: list[dict],
+    current_path: str,
+    all_shares: dict,
+    *,
+    db_conn=None,
+    root_dir=None,
+    viewer_username: str | None = None,
+    viewer_is_admin: bool = False,
+) -> None:
+    """Updates file metadata dicts in-place with an 'is_shared' boolean."""
+    from aird.constants import ROOT_DIR
+    from aird.core.share_root import filesystem_root_for_share
+    from aird.db.shares import share_covers_relative_path
+
+    base = root_dir if root_dir is not None else ROOT_DIR
 
     for file_info in files:
         full_path = os.path.join(current_path, file_info["name"]).replace("\\", "/")
-        file_info["is_shared"] = full_path in all_shared_paths
+        if db_conn is not None:
+            file_info["is_shared"] = any(
+                share_relevant_for_viewers_file_tree(
+                    share,
+                    viewer_username=viewer_username,
+                    viewer_is_admin=viewer_is_admin,
+                    viewer_root=base,
+                )
+                and share_covers_relative_path(
+                    db_conn, share, full_path, filesystem_root_for_share(share)
+                )
+                for share in all_shares.values()
+            )
+        else:
+            file_info["is_shared"] = _is_path_in_fallback_shares(
+                full_path, all_shares, viewer_username, viewer_is_admin, base
+            )
