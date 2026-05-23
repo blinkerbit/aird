@@ -35,16 +35,18 @@
       indicator.style.left  = (tok ? half + 4 : 4) + 'px';
     }
 
+    function applyFadeIn(el) {
+      el.style.opacity   = '1';
+      el.style.transform = 'translateY(0)';
+    }
+
     function fadeIn(el) {
       el.style.display    = '';
       el.style.opacity    = '0';
       el.style.transform  = 'translateY(6px)';
       el.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
       requestAnimationFrame(function () {
-        requestAnimationFrame(function () {
-          el.style.opacity   = '1';
-          el.style.transform = 'translateY(0)';
-        });
+        requestAnimationFrame(applyFadeIn.bind(null, el));
       });
     }
 

@@ -43,19 +43,19 @@
       <span class="hidden sm:inline">Browse</span>
     </a>
     {% if is_feature_enabled('super_search', True) %}
-    <a href="/search?path={{ escape(nav_search_path or '') }}" class="btn btn-ghost btn-sm gap-1" title="Super Search">
+    <a href="/search?path={{ escape(nav_search_path or '') }}" data-aird-feature="super_search" class="btn btn-ghost btn-sm gap-1" title="Super Search">
       <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <span class="hidden sm:inline">Search</span>
     </a>
     {% end %}
     {% if is_feature_enabled('file_share', True) %}
-    <a href="/share" class="btn btn-ghost btn-sm gap-1" title="Share files">
+    <a href="/share" data-aird-feature="file_share" class="btn btn-ghost btn-sm gap-1" title="Share files">
       <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
       <span class="hidden sm:inline">Share</span>
     </a>
     {% end %}
     {% if is_feature_enabled('p2p_transfer', True) %}
-    <a href="/p2p" class="btn btn-ghost btn-sm gap-1" title="Peer-to-peer transfer">
+    <a href="/p2p" data-aird-feature="p2p_transfer" class="btn btn-ghost btn-sm gap-1" title="Peer-to-peer transfer">
       <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
       <span class="hidden sm:inline">P2P</span>
     </a>
@@ -88,6 +88,7 @@
     {% end %}
   </div>
 </div>
+<script src="/static/js/aird-core.js"></script>
 <script src="/static/js/common/command-palette.js" defer></script>
 {% if current_user %}
 <script nonce="{{ csp_nonce }}" src="/static/js/feature-flags-live.js" defer></script>

@@ -15,7 +15,7 @@ install_requires = [
 
 setup(
     name="aird",
-    version="0.4.21",
+    version="0.4.22",
     packages=find_packages(),
     package_data={"aird": [
         "templates/*.html",

@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./browse-page.css";
+@import "./share-page.css";
 @plugin "daisyui" {
   themes: light --default, dark --prefersdark, nord, dracula, cyberpunk, retro, autumn;
 }
@@ -35,15 +36,49 @@
   -webkit-text-fill-color: transparent;
 }
 
-/* Theme transition: smooth colour shifts when switching themes */
+/* Page background matches theme (early script sets inline color before CSS loads) */
 html {
+  background-color: var(--color-base-100);
+  color-scheme: light dark;
+}
+
+html.theme-ready {
   transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+body {
+  background-color: var(--color-base-100);
+}
+
+/* Super Search — common pattern chips (WCAG AA: base-content on base-200/300) */
+@layer components {
+  .pattern-btn {
+    border: 1px solid var(--color-base-300);
+    color: var(--color-base-content);
+    background-color: var(--color-base-200);
+    font-weight: 600;
+  }
+
+  .pattern-btn:hover {
+    border-color: var(--color-base-content);
+    color: var(--color-base-content);
+    background-color: var(--color-base-300);
+  }
+
+  .pattern-btn:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
 }
 
 /* File table specific overrides */
 .file-table th {
   cursor: pointer;
   user-select: none;
+}
+
+.file-table th.tags-col-header {
+  cursor: default;
 }
 
 /* Inline SVG icon base (used in nav header) */

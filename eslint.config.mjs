@@ -20,12 +20,15 @@ export default [
         ...globals.browser,
         ...globals.es2021,
         AirdQRCode: "readonly",
+        AirdCore: "readonly",
+        AirdFolderPicker: "readonly",
       },
     },
     rules: {
       ...sonarjs.configs.recommended.rules,
       "no-console": "off",
       "no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+      "no-undef": "error",
     },
   },
 ];

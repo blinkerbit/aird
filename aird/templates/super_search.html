@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 
 <head>
+  {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v=9" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Super Search · Aird</title>
   </head>
@@ -56,11 +57,11 @@
       <div class="flex flex-col gap-3">
           <span class="text-xs font-semibold opacity-70 uppercase tracking-widest">Common Patterns</span>
           <div class="flex flex-wrap gap-2">
-            <button type="button" class="btn btn-xs btn-outline btn-neutral pattern-btn" data-pattern="*.py">*.py</button>
-            <button type="button" class="btn btn-xs btn-outline btn-neutral pattern-btn" data-pattern="*.js,*.ts">*.js/ts</button>
-            <button type="button" class="btn btn-xs btn-outline btn-neutral pattern-btn" data-pattern="**/*.java">**/*.java</button>
-            <button type="button" class="btn btn-xs btn-outline btn-neutral pattern-btn" data-pattern="!node_modules">!node_modules</button>
-            <button type="button" class="btn btn-xs btn-outline btn-neutral pattern-btn" data-pattern="*.{md,txt,log}">*.{md,txt,log}</button>
+            <button type="button" class="btn btn-xs pattern-btn" data-pattern="*.py">*.py</button>
+            <button type="button" class="btn btn-xs pattern-btn" data-pattern="*.js,*.ts">*.js/ts</button>
+            <button type="button" class="btn btn-xs pattern-btn" data-pattern="**/*.java">**/*.java</button>
+            <button type="button" class="btn btn-xs pattern-btn" data-pattern="!node_modules">!node_modules</button>
+            <button type="button" class="btn btn-xs pattern-btn" data-pattern="*.{md,txt,log}">*.{md,txt,log}</button>
           </div>
       </div>
 

@@ -76,13 +76,20 @@
     return commands;
   }
 
+  function notify(title, message) {
+    if (globalThis.AirdCore?.showDialog) {
+      return globalThis.AirdCore.showDialog(message, title);
+    }
+    globalThis.alert(message);
+  }
+
   function tagSelection() {
     const tag = window.prompt("Tag name (e.g. pii, finance):");
     if (!tag) return;
     const selFn = window.AirdCommandPalette.getSelection;
     const paths = typeof selFn === "function" ? selFn() : [];
     if (!Array.isArray(paths) || paths.length === 0) {
-      alert("Select at least one file first.");
+      notify("Tag selection", "Select at least one file first.");
       return;
     }
     const xsrfInput = document.querySelector('input[name="_xsrf"]');
@@ -104,7 +111,8 @@
     ).then(function (results) {
       const failed = results.filter(function (r) { return !r.ok; }).length;
       if (failed > 0) {
-        alert(
+        notify(
+          "Tag selection",
           "Tagged " +
             (paths.length - failed) +
             "/" +
@@ -114,7 +122,7 @@
             " failed (likely admin-only)."
         );
       } else {
-        alert("Tagged " + paths.length + " item(s) as '" + tag + "'.");
+        notify("Tag selection", "Tagged " + paths.length + " item(s) as '" + tag + "'.");
       }
     });
   }

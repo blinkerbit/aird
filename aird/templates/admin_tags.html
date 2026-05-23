@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
+  {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v=6" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Resource tags · Aird</title>
 </head>
@@ -67,7 +68,7 @@
           {% for utag in unique_tags %}
           <div class="rounded-lg border border-base-300 bg-base-200/50 p-3 flex flex-col gap-2">
             <div class="flex items-center gap-2">
-              <span class="badge badge-primary badge-outline font-mono">{{ escape(utag) }}</span>
+              <a href="/tagged/{{ escape(utag) }}" class="file-tag-chip">{{ escape(utag) }}</a>
               <span class="text-xs text-base-content/50">{{ len([t for t in tags if t['tag'] == utag]) }} pattern(s)</span>
             </div>
             <div class="flex gap-2 flex-wrap">
@@ -112,7 +113,7 @@
               <tr data-tag-id="{{ t['id'] }}">
                 <td><input type="checkbox" class="checkbox checkbox-sm row-checkbox" value="{{ t['id'] }}" /></td>
                 <td class="text-xs text-base-content/50 font-mono">#{{ t['id'] }}</td>
-                <td><a href="/tagged/{{ escape(t['tag']) }}" class="badge badge-primary badge-outline hover:badge-primary">{{ escape(t['tag']) }}</a></td>
+                <td><a href="/tagged/{{ escape(t['tag']) }}" class="file-tag-chip">{{ escape(t['tag']) }}</a></td>
                 <td class="font-mono text-sm">{{ escape(t['glob_pattern']) }}</td>
                 <td class="text-sm">{{ t['priority'] }}</td>
                 <td class="text-xs text-base-content/60 font-mono">{{ escape(t['created_at'][:19] if t['created_at'] else '') }}</td>
@@ -189,6 +190,7 @@
   </dialog>
 
   <script src="/static/js/theme.js"></script>
+  <script src="/static/js/aird-core.js"></script>
   <script nonce="{{ csp_nonce }}">
   (function () {
     const m = /(?:^|; )_xsrf=([^;]*)/.exec(document.cookie);
@@ -312,7 +314,8 @@
         if (row) {
           const cells = row.querySelectorAll('td');
           // td[2] = tag badge
-          cells[2].innerHTML = '<a href="/tagged/' + encodeURIComponent(tag) + '" class="badge badge-primary badge-outline hover:badge-primary">' + tag.replaceAll('<','&lt;') + '</a>';
+          const esc = globalThis.AirdCore ? globalThis.AirdCore.escapeHtml(tag) : tag.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
+          cells[2].innerHTML = '<a href="/tagged/' + encodeURIComponent(tag) + '" class="file-tag-chip">' + esc + '</a>';
           cells[3].textContent = glob_pattern;
           cells[4].textContent = priority;
           // update edit button data attrs

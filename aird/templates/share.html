@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 
 <head>
+  {% include '_theme_early.html' %}
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v=6" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Share · Aird</title>
 </head>
@@ -18,9 +19,8 @@
 
     <!-- File Browser -->
     <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
-      <div class="flex items-center gap-2 bg-base-200/50 p-2 px-4 rounded-lg text-sm" aria-label="Current directory">
-        <a href="#" data-action="loadDirectory" data-path="">🏠 Home</a> /
-        <span id="currentPath">Browse & Select Files</span>
+      <div class="flex flex-wrap items-center gap-x-1 gap-y-1 bg-base-200/50 p-2 px-4 rounded-lg text-sm" aria-label="Current directory">
+        <span id="currentPath" class="inline-flex flex-wrap items-center gap-x-1 gap-y-1">Browse &amp; select files</span>
       </div>
       <div class="flex gap-2">
         <button class="btn btn-sm" id="selectAllVisible">Select All</button>
@@ -155,10 +155,10 @@
                 <label class="label" for="userSearchInput"><span class="label-text text-sm font-semibold">Search users (grant access)</span></label>
                 <input type="text" id="userSearchInput" class="input input-bordered w-full" placeholder="Type a username…" autocomplete="off">
                 <div class="config-user-search-results" id="userList">
-                  <em class="sq-style-169f06">Type to search...</em>
+                  <em class="share-hint">Type to search...</em>
                 </div>
                 <div class="config-selected-tags" id="selectedUsersList">
-                  <em class="sq-style-e1b789">No users selected</em>
+                  <em class="share-hint">No users selected</em>
                 </div>
               </div>
             </div>
@@ -171,10 +171,10 @@
                 <label class="label" for="modifyUserSearchInput"><span class="label-text text-sm font-semibold">Search users (modify access)</span></label>
                 <input type="text" id="modifyUserSearchInput" class="input input-bordered w-full" placeholder="Type a username…" autocomplete="off">
                 <div class="config-user-search-results" id="modifyUserList">
-                  <em class="sq-style-169f06">Type to search...</em>
+                  <em class="share-hint">Type to search...</em>
                 </div>
                 <div class="config-selected-tags" id="selectedModifyUsersList">
-                  <em class="sq-style-e1b789">No modify users (read-only)</em>
+                  <em class="share-hint">No modify users (read-only)</em>
                 </div>
               </div>
             </div>

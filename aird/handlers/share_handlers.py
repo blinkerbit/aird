@@ -76,10 +76,15 @@ def _add_local_path(ap, path_str, share_type, valid_paths, dynamic_folders):
         else:
             try:
                 all_files = get_all_files_recursive(ap, path_str)
-                valid_paths.extend(all_files)
-                logging.debug(
-                    "Added %s files from directory: %s", len(all_files), path_str
-                )
+                if all_files:
+                    valid_paths.extend(all_files)
+                    logging.debug(
+                        "Added %s files from directory: %s", len(all_files), path_str
+                    )
+                else:
+                    # Keep empty directories so static shares can be created for them.
+                    valid_paths.append(path_str)
+                    logging.debug("Added empty directory: %s", path_str)
             except Exception:
                 logging.exception("Error scanning directory %s", path_str)
 
@@ -304,7 +309,18 @@ def _get_share_file_list(share, db_conn=None):
                 )
         return filter_files_by_patterns(dynamic_files, allow_list, avoid_list)
 
-    return filter_files_by_patterns(share.get("paths") or [], allow_list, avoid_list)
+    static_paths = []
+    for rel_path in share.get("paths") or []:
+        try:
+            full_path = os.path.abspath(os.path.join(root, rel_path))
+            if os.path.isdir(full_path):
+                continue
+        except Exception:
+            logging.debug(
+                "Skipping static share path check for %r", rel_path, exc_info=True
+            )
+        static_paths.append(rel_path)
+    return filter_files_by_patterns(static_paths, allow_list, avoid_list)
 
 
 def _is_path_in_share(share, path, db_conn=None):

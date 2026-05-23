@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
+  {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v=6" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Tag: {{ escape(tag_name) }} · Aird</title>
 </head>
@@ -18,7 +19,7 @@
 
       <header class="flex flex-wrap items-center justify-between gap-3 pb-3 mb-4 border-b border-base-300">
         <div>
-          <h1 class="text-2xl font-bold">Tag: <span class="text-primary">{{ escape(tag_name) }}</span></h1>
+          <h1 class="text-2xl font-bold">Tag: <a href="/tagged/{{ escape(tag_name) }}" class="file-tag-chip">{{ escape(tag_name) }}</a></h1>
           <p class="text-sm text-base-content/60 mt-1">
             {% if patterns %}
               {{ len(files) }} file(s) matching {{ len(patterns) }} pattern(s):

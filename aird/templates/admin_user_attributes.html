@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
+  {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v=6" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>User attributes · Aird</title>
 </head>
@@ -113,6 +114,7 @@
   </main>
 
   <script src="/static/js/theme.js"></script>
+  <script src="/static/js/aird-core.js"></script>
   <script nonce="{{ csp_nonce }}">
     (function () {
       const m = /(?:^|; )_xsrf=([^;]*)/.exec(document.cookie);
@@ -168,7 +170,7 @@
             const row = btn.closest('tr');
             if (row) row.remove();
           } catch (err) {
-            alert('Failed to delete: ' + (err.message || err));
+            AirdCore.showDialog('Failed to delete: ' + (err.message || err), 'Error');
           }
         });
       });

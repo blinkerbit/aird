@@ -1,4 +1,5 @@
 /* Animated background — unique palette per DaisyUI theme */
+/* eslint-disable sonarjs/pseudo-random -- decorative animation only */
 (function () {
   var canvas = document.getElementById('bg-canvas');
   if (!canvas) return;

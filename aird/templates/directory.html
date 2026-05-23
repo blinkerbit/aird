@@ -1,33 +1,46 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
+  {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v=6" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Directory listing · Aird</title>
 </head>
 <body class="bg-base-200 min-h-screen">
-  <div class="max-w-4xl mx-auto p-4">
-    <header class="mb-4 pb-3 border-b border-base-300">
-      <h1 class="text-2xl font-bold">All directories</h1>
-      <nav class="text-sm text-base-content/50 mt-1" aria-label="Breadcrumb"><a href="/" class="text-base-content hover:text-primary">🏠 Home</a></nav>
-    </header>
+  <div class="container mx-auto p-4">
+    {% set nav_title = "Aird" %}
+    {% set nav_search_path = "" %}
+    {% set show_admin_link = True %}
+    {% include '_app_nav_header.html' %}
 
-    <div class="card bg-base-100 shadow-sm border border-base-300">
-      <div class="card-body p-0">
-        {% for dir in dirs %}
-        <a href="{{ escape(dir.path) }}" class="flex items-center gap-3 px-4 py-3 border-b border-base-200 hover:bg-base-200 transition-colors text-base-content no-underline">
-          <span aria-hidden="true">📁</span>
-          <span>{{ escape(dir.name) }}</span>
-        </a>
-        {% end %}
-        {% if not dirs %}
-        <div class="text-center py-8 text-base-content/50">📭 No directories found.</div>
-        {% end %}
+    <main class="max-w-4xl mx-auto mt-4">
+      <header class="mb-4 pb-3 border-b border-base-300">
+        <h1 class="text-2xl font-bold">All directories</h1>
+        <nav class="flex items-center gap-2 text-sm mt-2" aria-label="Breadcrumb">
+          <a href="/files/" class="flex items-center gap-1 hover:text-primary transition-colors">
+            <svg class="ico w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>
+            Home
+          </a>
+        </nav>
+      </header>
+
+      <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body p-0">
+          {% for dir in dirs %}
+          <a href="{{ escape(dir.path) }}" class="flex items-center gap-3 px-4 py-3 border-b border-base-200 hover:bg-base-200 transition-colors text-base-content no-underline">
+            <span aria-hidden="true">📁</span>
+            <span>{{ escape(dir.name) }}</span>
+          </a>
+          {% end %}
+          {% if not dirs %}
+          <div class="text-center py-8 text-base-content/50">No directories found.</div>
+          {% end %}
+        </div>
       </div>
-    </div>
+    </main>
   </div>
-  <script src="/static/js/theme.js"></script>
+  <script src="/static/js/theme.js" defer></script>
 </body>
 </html>
