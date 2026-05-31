@@ -1,6 +1,29 @@
 // Theme Manager - handles multi-theme switching with cookie persistence
 // DaisyUI themes are activated via data-theme on <html>
 
+(function applySavedThemeBeforePaint() {
+    const THEMES = ['light', 'dark', 'nord', 'dracula', 'cyberpunk', 'retro', 'autumn'];
+    const DARK = { dark: true, dracula: true };
+    const BG = {
+        light: '#ffffff', dark: '#1d232a', nord: '#eceff4', dracula: '#282a36',
+        cyberpunk: '#ffee00', retro: '#e4d8b4', autumn: '#faf1e9',
+    };
+    const key = 'aird_theme';
+    const keyEsc = key.replaceAll(/[\\^$*+?.()|[\]{}]/g, (ch) => String.fromCodePoint(92) + ch);
+    const re = new RegExp('(?:^|; )' + keyEsc + '=([^;]*)');
+    const m = re.exec(document.cookie);
+    let theme = m ? decodeURIComponent(m[1]) : null;
+    if (!theme || !THEMES.includes(theme)) {
+        theme = globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    const root = document.documentElement;
+    if (!root.classList.contains('theme-early')) {
+        root.dataset.theme = theme;
+        root.style.colorScheme = DARK[theme] ? 'dark' : 'light';
+        root.style.backgroundColor = BG[theme] || BG.light;
+    }
+})();
+
 class ThemeManager {
     get storageKey() {
         return 'aird_theme';
@@ -64,7 +87,15 @@ class ThemeManager {
     }
 
     setTheme(theme, save) {
-        document.documentElement.dataset.theme = theme;
+        const DARK = { dark: true, dracula: true };
+        const BG = {
+            light: '#ffffff', dark: '#1d232a', nord: '#eceff4', dracula: '#282a36',
+            cyberpunk: '#ffee00', retro: '#e4d8b4', autumn: '#faf1e9',
+        };
+        const root = document.documentElement;
+        root.dataset.theme = theme;
+        root.style.colorScheme = DARK[theme] ? 'dark' : 'light';
+        root.style.backgroundColor = BG[theme] || BG.light;
         if (save !== false) {
             this.saveTheme(theme);
         }
@@ -113,6 +144,8 @@ class ThemeManager {
 }
 
 function initThemeManager() {
+    document.documentElement.classList.add('theme-ready');
+    document.documentElement.classList.remove('theme-early');
     globalThis.themeManager = new ThemeManager();
 }
 

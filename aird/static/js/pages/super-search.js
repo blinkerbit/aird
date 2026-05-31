@@ -71,7 +71,8 @@ class SuperSearch {
 
         // Update help text
         const helpText = this.patternInput.parentElement.querySelector('.help-text');
-        helpText.innerHTML = `Use * for wildcards, ** for recursive matching, ? for single character. Use "${separator}" as path separator. Searches from root directory only.`;
+        const sep = this.escapeHtml(separator);
+        helpText.innerHTML = `Use * for wildcards, ** for recursive matching, ? for single character. Use "<code>${sep}</code>" as path separator. Searches from root directory only.`;
       }
 
       bindEvents() {

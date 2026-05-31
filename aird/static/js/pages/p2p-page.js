@@ -219,8 +219,8 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
             document.getElementById('share-code-container').classList.remove('hidden');
             const anonHint = document.getElementById('share-code-hint');
             anonHint.innerHTML = data.allow_anonymous
-                ? 'Share this code with the recipient<br><span class="sq-style-a5e3c2">✓ Anonymous access enabled - no login required</span>'
-                : 'Share this code with the recipient<br><span class="sq-style-28e6a7">Recipients must be logged in</span>';
+                ? 'Share this code with the recipient<br><span class="p2p-hint-ok">✓ Anonymous access enabled - no login required</span>'
+                : 'Share this code with the recipient<br><span class="p2p-hint-warn">Recipients must be logged in</span>';
             generateShareQRCode(data.room_id);
             updateSendStatus('waiting', 'Waiting for recipient to connect...');
             log(`Room created: ${data.room_id}${data.allow_anonymous ? ' (anonymous access enabled)' : ''}`, 'success');
@@ -394,7 +394,7 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
                         <div class="text-xs text-base-content/60 mt-0.5">${formatBytes(file.size)}</div>
                     </div>
                     <div class="flex-shrink-0">
-                        <button class="btn btn-ghost btn-xs text-error sender-remove-btn" data-action="remove-send" data-send-id="${file.fileId}" title="Remove">
+                        <button class="btn btn-ghost btn-xs text-error sender-remove-btn" data-action="remove-send" data-send-id="${escapeAttr(file.fileId)}" title="Remove">
                             <svg class="w-3 h-3 file-icon-svg" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                             Remove
                         </button>
@@ -849,14 +849,14 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
 
                 return `
                 <div class="flex flex-col sm:flex-row sm:items-center gap-2 p-3 border-b border-base-200 hover:bg-base-200/40 transition-colors">
-                    <input type="checkbox" class="available-file-checkbox checkbox checkbox-primary checkbox-sm flex-shrink-0" ${isBusy ? 'disabled' : 'checked'} data-file-id="${escapeHtml(file.id)}">
+                    <input type="checkbox" class="available-file-checkbox checkbox checkbox-primary checkbox-sm flex-shrink-0" ${isBusy ? 'disabled' : 'checked'} data-file-id="${escapeAttr(file.id)}">
                     <div class="text-primary flex-shrink-0 w-8 h-8 flex items-center justify-center">${getFileIcon(file.type)}</div>
                     <div class="flex-1 min-w-0">
                         <div class="font-bold text-sm truncate" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
                         <div class="text-xs text-base-content/60 mt-0.5">${formatBytes(file.size)}</div>
                     </div>
                     <div class="flex-shrink-0">
-                        <button class="btn btn-sm available-file-btn ${isBusy ? 'btn-disabled' : 'btn-primary'} w-full sm:w-auto" data-file-id="${escapeHtml(file.id)}" ${isBusy ? 'disabled' : ''}>
+                        <button class="btn btn-sm available-file-btn ${isBusy ? 'btn-disabled' : 'btn-primary'} w-full sm:w-auto" data-file-id="${escapeAttr(file.id)}" ${isBusy ? 'disabled' : ''}>
                             ${btnText}
                         </button>
                     </div>
@@ -878,8 +878,8 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
             section.classList.remove('hidden');
 
             container.innerHTML = receivedFiles.map(file => `
-                <div class="flex flex-col sm:flex-row sm:items-center gap-2 p-3 border-b border-base-200 hover:bg-base-200/40 transition-colors" data-file-id="${escapeHtml(file.id)}">
-                    <input type="checkbox" class="received-file-checkbox checkbox checkbox-primary checkbox-sm flex-shrink-0" checked data-file-id="${escapeHtml(file.id)}">
+                <div class="flex flex-col sm:flex-row sm:items-center gap-2 p-3 border-b border-base-200 hover:bg-base-200/40 transition-colors" data-file-id="${escapeAttr(file.id)}">
+                    <input type="checkbox" class="received-file-checkbox checkbox checkbox-primary checkbox-sm flex-shrink-0" checked data-file-id="${escapeAttr(file.id)}">
                     <div class="text-primary flex-shrink-0 w-8 h-8 flex items-center justify-center">${getFileIcon(file.mime)}</div>
                     <div class="flex-1 min-w-0">
                         <div class="font-bold text-sm truncate" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
@@ -888,11 +888,11 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
                         </div>
                     </div>
                     <div class="flex gap-2 flex-shrink-0">
-                        <button class="btn btn-primary btn-xs received-file-btn" data-action="download" data-file-id="${escapeHtml(file.id)}" title="Download">
+                        <button class="btn btn-primary btn-xs received-file-btn" data-action="download" data-file-id="${escapeAttr(file.id)}" title="Download">
                             <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                             Download
                         </button>
-                        <button class="btn btn-ghost btn-xs text-error received-file-btn" data-action="remove" data-file-id="${escapeHtml(file.id)}" title="Remove">
+                        <button class="btn btn-ghost btn-xs text-error received-file-btn" data-action="remove" data-file-id="${escapeAttr(file.id)}" title="Remove">
                             <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                         </button>
                     </div>
@@ -902,15 +902,15 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
 
         // SVG icons for different file types
         const FILE_ICONS = {
-            image: '<svg class="sq-style-bccdd9" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
-            video: '<svg class="sq-style-e33b5b" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>',
-            audio: '<svg class="sq-style-f79f7b" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
-            pdf: '<svg class="sq-style-610bd2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>',
-            archive: '<svg class="sq-style-51f0e3" viewBox="0 0 24 24"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>',
-            document: '<svg class="sq-style-369042" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
-            spreadsheet: '<svg class="sq-style-f89798" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><line x1="12" y1="9" x2="12" y2="21"/></svg>',
-            code: '<svg class="sq-style-e60fe6" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
-            default: '<svg class="sq-style-166c56" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
+            image: '<svg class="p2p-file-icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
+            video: '<svg class="p2p-file-icon" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>',
+            audio: '<svg class="p2p-file-icon" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+            pdf: '<svg class="p2p-file-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>',
+            archive: '<svg class="p2p-file-icon" viewBox="0 0 24 24"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>',
+            document: '<svg class="p2p-file-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+            spreadsheet: '<svg class="p2p-file-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><line x1="12" y1="9" x2="12" y2="21"/></svg>',
+            code: '<svg class="p2p-file-icon" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+            default: '<svg class="p2p-file-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
         };
 
         function getFileIcon(mime) {
@@ -928,6 +928,10 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
 
         function escapeHtml(text) {
             return globalThis.AirdCore.escapeHtml(text);
+        }
+
+        function escapeAttr(text) {
+            return globalThis.AirdCore.escapeAttr(text);
         }
 
         function downloadFile(fileId) {

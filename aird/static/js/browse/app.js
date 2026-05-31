@@ -5,6 +5,7 @@
     const RELOAD_DELAY_MS = 500;
     const MIN_COLUMN_WIDTH = 50;
     const MAX_FILE_SIZE = globalThis.__BROWSE_CONFIG ? globalThis.__BROWSE_CONFIG.maxFileSize : 10737418240;
+    const CAN_TAG = !!(globalThis.__BROWSE_CONFIG && globalThis.__BROWSE_CONFIG.canTag);
 
     const SelectionStore = {
       KEY: 'aird_browse_selections',
@@ -53,71 +54,16 @@
 
     // Fallback for image thumbnails that fail to load
     document.addEventListener('error', function(e) {
-      if (e.target.tagName === 'IMG' && e.target.dataset.fallback) {
-        e.target.outerHTML = e.target.dataset.fallback;
+      if (e.target.tagName === 'IMG' && e.target.dataset.fallbackIcon) {
+        const icon = e.target.dataset.fallbackIcon;
+        const span = document.createElement('span');
+        span.className = 'file-icon';
+        span.textContent = icon;
+        e.target.replaceWith(span);
       }
     }, true);
 
-    // Custom dialog function
-    let _dialogState = null;
-
-    function showDialog(message, title = 'Confirm', options = {}) {
-      return new Promise((resolve) => {
-        const modal = document.getElementById('customDialogModal');
-        document.getElementById('dialogTitle').textContent = title;
-        document.getElementById('dialogMessage').textContent = message;
-
-        const confirmBtn = document.getElementById('dialogConfirmBtn');
-        const cancelBtn = document.getElementById('dialogCancelBtn');
-        const inputContainer = document.getElementById('dialogInputContainer');
-        const input = document.getElementById('dialogInput');
-
-        confirmBtn.textContent = options.confirmText || 'OK';
-        cancelBtn.style.display = options.showCancel ? 'inline-block' : 'none';
-        inputContainer.style.display = options.prompt ? 'block' : 'none';
-        input.value = options.prompt ? (options.defaultValue || '') : '';
-
-        const opener = document.activeElement;
-        modal.showModal();
-
-        if (options.prompt) {
-          input.focus();
-          input.select();
-        } else {
-          confirmBtn.focus();
-        }
-
-        const close = (value) => {
-          modal.close();
-          _dialogState = null;
-          if (opener && typeof opener.focus === 'function') {
-            try { opener.focus(); } catch { /* ignore */ }
-          }
-          resolve(value);
-        };
-
-        _dialogState = {
-          hasCancel: !!options.showCancel,
-          isPrompt: !!options.prompt,
-          cancel: () => close(options.prompt ? null : false),
-        };
-
-        confirmBtn.onclick = () => close(options.prompt ? input.value : true);
-        cancelBtn.onclick = () => close(options.prompt ? null : false);
-
-        if (options.prompt) {
-          input.onkeydown = (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); confirmBtn.click(); }
-            else if (e.key === 'Escape') { e.preventDefault(); cancelBtn.click(); }
-          };
-        }
-      });
-    }
-
-    document.getElementById('customDialogModal').addEventListener('cancel', (e) => {
-      e.preventDefault();
-      if (_dialogState) _dialogState.cancel();
-    });
+    const showDialog = (...args) => globalThis.AirdCore.showDialog(...args);
 
     /** True if keyboard events should be ignored (typing in a field). */
     function isInputKeyTarget(target) {
@@ -506,22 +452,29 @@
       const drawer = document.getElementById('browseSelectionDrawer');
       const backdrop = document.getElementById('browseSelectionBackdrop');
       if (!drawer) return;
-      drawer.style.transform = 'translateX(100%)';
+      drawer.classList.remove('browse-selection-drawer--open');
       drawer.setAttribute('aria-hidden', 'true');
-      if (backdrop) backdrop.style.display = 'none';
-      document.body.style.overflow = '';
+      if (backdrop) {
+        backdrop.hidden = true;
+        backdrop.classList.remove('browse-selection-backdrop--visible');
+      }
+      document.body.classList.remove('browse-selection-drawer-open');
       _selectionDrawerIsOpen = false;
       _setDrawerExpandedAttrs(false);
     }
 
     function openSelectionDrawer() {
+      if (SelectionStore.count() === 0) return;
       const drawer = document.getElementById('browseSelectionDrawer');
       const backdrop = document.getElementById('browseSelectionBackdrop');
       if (!drawer) return;
-      drawer.style.transform = 'translateX(0)';
+      drawer.classList.add('browse-selection-drawer--open');
       drawer.setAttribute('aria-hidden', 'false');
-      if (backdrop) backdrop.style.display = 'block';
-      document.body.style.overflow = 'hidden';
+      if (backdrop) {
+        backdrop.hidden = false;
+        backdrop.classList.add('browse-selection-backdrop--visible');
+      }
+      document.body.classList.add('browse-selection-drawer-open');
       _selectionDrawerIsOpen = true;
       _setDrawerExpandedAttrs(true);
     }
@@ -558,15 +511,11 @@
           const parts = disp.split('/');
           const name = parts.at(-1) || disp;
           const dir = parts.slice(0, -1).join('/') || '/';
-          return '<li style="display:flex;gap:0.5rem;align-items:flex-start;padding:0.4rem 0.5rem;'
-            + 'border-radius:0.375rem;background:var(--color-base-200);'
-            + 'border:1px solid var(--color-base-300);">'
-            + '<span style="font-size:0.85rem;flex-shrink:0;margin-top:1px;" aria-hidden="true">' + icon + '</span>'
-            + '<span style="min-width:0;">'
-            + '<span style="display:block;font-size:0.8rem;font-weight:600;word-break:break-all;">'
-            + escapeHtml(name) + '</span>'
-            + '<span style="display:block;font-size:0.7rem;opacity:0.55;word-break:break-all;margin-top:1px;">'
-            + escapeHtml(dir) + '</span>'
+          return '<li class="browse-drawer-list-item">'
+            + '<span class="browse-drawer-list-icon" aria-hidden="true">' + icon + '</span>'
+            + '<span class="browse-drawer-list-body">'
+            + '<span class="browse-drawer-list-name">' + escapeHtml(name) + '</span>'
+            + '<span class="browse-drawer-list-dir">' + escapeHtml(dir) + '</span>'
             + '</span></li>';
         })
         .join('');
@@ -589,7 +538,6 @@
       if (countBtn) countBtn.hidden = false;
       renderBulkDrawerList(listEl, allPaths);
       if (metaEl) metaEl.textContent = bulkDrawerMetaText(otherCount);
-      if (_lastBulkCount === 0 && _selectionInitDone) openSelectionDrawer();
       _lastBulkCount = totalCount;
     }
 
@@ -658,145 +606,7 @@
     }
 
     // --- Folder Picker ---
-    const FolderPicker = {
-      _overlay: null,
-      _body: null,
-      _breadcrumb: null,
-      _destDisplay: null,
-      _confirmBtn: null,
-      _titleEl: null,
-      _currentPath: '',
-      _mode: 'copy',
-      _resolve: null,
-
-      init() {
-        this._overlay = document.getElementById('folderPickerOverlay');
-        this._body = document.getElementById('fpBody');
-        this._breadcrumb = document.getElementById('fpBreadcrumb');
-        this._destDisplay = document.getElementById('fpDestDisplay');
-        this._confirmBtn = document.getElementById('fpConfirmBtn');
-        this._titleEl = document.getElementById('fpTitle');
-
-        document.getElementById('fpCloseBtn').addEventListener('click', () => this.close(null));
-        document.getElementById('fpCancelBtn').addEventListener('click', () => this.close(null));
-        this._confirmBtn.addEventListener('click', () => this.close(this._currentPath));
-        this._overlay.addEventListener('click', (e) => {
-          if (e.target === this._overlay) this.close(null);
-        });
-        document.getElementById('fpNewFolderBtn').addEventListener('click', () => this._createFolder());
-      },
-
-      open(mode) {
-        this._mode = mode;
-        this._titleEl.textContent = mode === 'copy' ? 'Copy to...' : 'Move to...';
-        this._confirmBtn.textContent = mode === 'copy' ? 'Paste here' : 'Move here';
-        this._overlay.classList.add('show');
-        const startPath = document.getElementById('currentPath')?.value ?? '';
-        this._navigate(startPath);
-
-        return new Promise((resolve) => { this._resolve = resolve; });
-      },
-
-      close(result) {
-        this._overlay.classList.remove('show');
-        if (this._resolve) {
-          this._resolve(result);
-          this._resolve = null;
-        }
-      },
-
-      async _navigate(path) {
-        this._currentPath = path;
-        this._renderBreadcrumb(path);
-        this._destDisplay.textContent = '/' + (path || '');
-        this._body.innerHTML = '<div class="fp-loading">Loading...</div>';
-
-        if (this._abort) this._abort.abort();
-        const controller = new AbortController();
-        this._abort = controller;
-
-        try {
-          const res = await fetch('/api/files/' + encodeURI(path), { signal: controller.signal });
-          if (controller.signal.aborted) return;
-          if (!res.ok) throw new Error('Failed to load');
-          const data = await res.json();
-          if (controller.signal.aborted) return;
-          const folders = (data.files || []).filter(f => f.is_dir);
-          this._renderFolders(folders);
-        } catch (e) {
-          if (e?.name === 'AbortError') return;
-          console.warn('Directory load failed:', e);
-          this._body.innerHTML = '<div class="fp-empty">Failed to load directory</div>';
-        }
-      },
-
-      _renderBreadcrumb(path) {
-        const parts = path.split('/').filter(Boolean);
-        let html = '<a data-fp-nav="">🏠 Root</a>';
-        parts.forEach((part, i) => {
-          const partPath = parts.slice(0, i + 1).join('/');
-          html += ' <span class="fp-sep">/</span> ';
-          if (i === parts.length - 1) {
-            html += '<span class="fp-current">' + this._esc(part) + '</span>';
-          } else {
-            html += '<a data-fp-nav="' + escapeAttr(partPath) + '">' + this._esc(part) + '</a>';
-          }
-        });
-        this._breadcrumb.innerHTML = html;
-        this._breadcrumb.querySelectorAll('a[data-fp-nav]').forEach(a => {
-          a.addEventListener('click', (e) => {
-            e.preventDefault();
-            this._navigate(a.dataset.fpNav);
-          });
-        });
-      },
-
-      _renderFolders(folders) {
-        if (folders.length === 0) {
-          this._body.innerHTML = '<div class="fp-empty">No subfolders here</div>';
-          return;
-        }
-        const ul = document.createElement('ul');
-        ul.className = 'fp-folder-list';
-        folders.forEach(f => {
-          const li = document.createElement('li');
-          li.className = 'fp-folder-item';
-          li.innerHTML = '<span class="fp-icon">📁</span>' +
-            '<span class="fp-name">' + this._esc(f.name) + '</span>' +
-            '<span class="fp-arrow">›</span>';
-          li.addEventListener('click', () => {
-            const child = this._currentPath ? this._currentPath + '/' + f.name : f.name;
-            this._navigate(child);
-          });
-          ul.appendChild(li);
-        });
-        this._body.innerHTML = '';
-        this._body.appendChild(ul);
-      },
-
-      async _createFolder() {
-        const name = await showDialog('Enter folder name:', 'New folder', { prompt: true, showCancel: true });
-        if (!name?.trim()) return;
-        const formData = new URLSearchParams();
-        formData.append('parent', this._currentPath);
-        formData.append('name', name.trim());
-        try {
-          const res = await fetch('/mkdir', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRFToken': getXSRFToken() },
-            body: formData.toString(),
-          });
-          if (res.ok) this._navigate(this._currentPath);
-          else showDialog('Create folder failed: ' + (await res.text()), 'Error');
-        } catch (e) {
-          showDialog('Create folder failed: ' + e.message, 'Error');
-        }
-      },
-
-      _esc(str) {
-        return escapeHtml(str);
-      }
-    };
+    const FolderPicker = globalThis.AirdFolderPicker;
 
     async function bulkCopy() {
       const paths = getSelectedPaths();
@@ -867,7 +677,10 @@
         const data = await res.json();
         if (data.error) { showDialog(data.error, 'Error'); modal.close(); return; }
         const shares = data.shares || {};
-        selectEl.innerHTML = Object.keys(shares).length ? Object.entries(shares).map(([id, s]) => '<option value="' + id + '">' + id + (s.paths?.length ? ' (' + s.paths.length + ' path(s))' : '') + '</option>').join('') : '<option value="">No shares</option>';
+        selectEl.innerHTML = Object.keys(shares).length ? Object.entries(shares).map(([id, s]) => {
+          const label = id + (s.paths?.length ? ' (' + s.paths.length + ' path(s))' : '');
+          return '<option value="' + escapeAttr(id) + '">' + escapeHtml(label) + '</option>';
+        }).join('') : '<option value="">No shares</option>';
       } catch (e) {
         console.warn('Failed to load shares:', e);
         selectEl.innerHTML = '<option value="">Error loading shares</option>';
@@ -898,13 +711,10 @@
     /* --- Tag-picker chip helpers (module-level to avoid nesting violations) --- */
 
     function _tagChipHtml(t) {
-      return '<span style="display:inline-flex;align-items:center;gap:0.2rem;'
-        + 'background:var(--color-primary);color:var(--color-primary-content);'
-        + 'font-size:0.75rem;padding:0.15rem 0.5rem;border-radius:9999px;">'
+      return '<span class="tag-picker-chip">'
         + escapeHtml(t)
-        + '<button type="button" data-tag="' + escapeAttr(t) + '" '
-        + 'style="background:none;border:none;cursor:pointer;font-size:0.8rem;'
-        + 'color:inherit;padding:0 0 0 0.2rem;line-height:1;" aria-label="Remove ' + escapeAttr(t) + '">×</button>'
+        + '<button type="button" class="tag-picker-chip-remove" data-tag="' + escapeAttr(t) + '" '
+        + 'aria-label="Remove ' + escapeAttr(t) + '">×</button>'
         + '</span>';
     }
 
@@ -923,21 +733,22 @@
       inputEl.value = '';
     }
 
-    function _renderTagSuggestions(inputEl, existingTagNames, pendingTags, onPick) {
+    function _renderTagSuggestions(inputEl, existingTagNames, pendingTags, onPick, suggestionsId) {
+      const sugId = suggestionsId || 'tagPickerSuggestions';
       const q = inputEl.value.trim().toLowerCase();
-      const matches = q ? existingTagNames.filter(function (n) { return n.includes(q) && !pendingTags.has(n); }) : [];
-      let sug = document.getElementById('tagPickerSuggestions');
+      const matches = q
+        ? existingTagNames.filter(function (n) { return n.includes(q) && !pendingTags.has(n); })
+        : existingTagNames.filter(function (n) { return !pendingTags.has(n); }).slice(0, 8);
+      let sug = document.getElementById(sugId);
       if (!sug) {
         sug = document.createElement('div');
-        sug.id = 'tagPickerSuggestions';
-        sug.style.cssText = 'position:absolute;z-index:100;background:var(--color-base-100);'
-          + 'border:1px solid var(--color-base-300);border-radius:0.375rem;'
-          + 'max-height:8rem;overflow-y:auto;font-size:0.8rem;width:100%;';
-        inputEl.parentNode.style.position = 'relative';
+        sug.id = sugId;
+        sug.className = 'tag-picker-suggestions';
+        inputEl.parentNode.classList.add('tag-picker-input-wrap');
         inputEl.after(sug);
       }
       sug.innerHTML = matches.map(function (n) {
-        return '<div data-sug="' + escapeAttr(n) + '" style="padding:0.3rem 0.6rem;cursor:pointer;">'
+        return '<div class="tag-picker-suggestion-item" data-sug="' + escapeAttr(n) + '">'
           + escapeHtml(n) + '</div>';
       }).join('');
       sug.querySelectorAll('[data-sug]').forEach(function (el) {
@@ -947,6 +758,7 @@
           sug.innerHTML = '';
         });
       });
+      if (sugId === 'rowTagPopoverSuggestions') _scheduleRowTagPopoverPosition();
     }
 
     async function _postTagRule(tag, globPattern) {
@@ -958,18 +770,107 @@
       return res.ok || res.status === 409;
     }
 
-    function _setupTagPickerListeners(inputEl, chipsEl, pendingTags, existingTagNames) {
+    async function _deleteTagRuleIds(ids) {
+      if (!ids.length) return { ok: true, deleted: [] };
+      const res = await fetch('/admin/api/abac/tags', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
+        body: JSON.stringify({ ids: ids }),
+      });
+      if (!res.ok) return { ok: false, deleted: [] };
+      const data = await res.json().catch(function () { return {}; });
+      return { ok: true, deleted: data.ids || [] };
+    }
+
+    function _normalizeRelPath(p) {
+      return String(p).replace(/\\/g, '/').replace(/^\/+/, '');
+    }
+
+    function _globPatternToRegex(pattern) {
+      let p = String(pattern).replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/$/, '');
+      if (!p) return null;
+      let out = '';
+      for (let i = 0; i < p.length; i += 1) {
+        const ch = p[i];
+        if (ch === '*' && p[i + 1] === '*') {
+          if (p[i + 2] === '/') { out += '(?:.*/)?'; i += 2; }
+          else { out += '.*'; i += 1; }
+        } else if (ch === '*') {
+          out += '[^/]*';
+        } else if (ch === '?') {
+          out += '[^/]';
+        } else {
+          out += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+        }
+      }
+      return new RegExp('^' + out + '$');
+    }
+
+    function _ruleMatchesPath(rule, relPath) {
+      const rel = _normalizeRelPath(relPath);
+      const pat = String(rule.glob_pattern || '');
+      if (!pat) return false;
+      const normPat = _normalizeRelPath(pat);
+      if (!pat.includes('*') && !pat.includes('?') && !pat.includes('**')) {
+        return normPat === rel;
+      }
+      try {
+        const re = _globPatternToRegex(pat);
+        return re ? re.test(rel) : false;
+      } catch {
+        return false;
+      }
+    }
+
+    function _tagsOnPath(rules, path) {
+      const byTag = new Map();
+      for (const rule of rules) {
+        const tag = rule.tag || '';
+        if (!tag || !_ruleMatchesPath(rule, path)) continue;
+        if (!byTag.has(tag)) byTag.set(tag, []);
+        byTag.get(tag).push(rule.id);
+      }
+      return byTag;
+    }
+
+    function _existingTagChipHtml(tag) {
+      return '<span class="tag-picker-chip tag-picker-chip--existing">'
+        + escapeHtml(tag)
+        + '<button type="button" class="tag-picker-chip-remove" data-existing-tag="' + escapeAttr(tag) + '" '
+        + 'aria-label="Remove tag ' + escapeAttr(tag) + '">×</button>'
+        + '</span>';
+    }
+
+    function _renderExistingTagChips(existingEl, tagsOnPath, onRemove) {
+      if (!existingEl) return;
+      const names = [...tagsOnPath.keys()].sort(function (a, b) { return a.localeCompare(b); });
+      existingEl.innerHTML = names.map(_existingTagChipHtml).join('');
+      existingEl.querySelectorAll('[data-existing-tag]').forEach(function (btn) {
+        btn.addEventListener('click', function () { onRemove(btn.dataset.existingTag); });
+      });
+    }
+
+    function _setupTagPickerListeners(inputEl, chipsEl, pendingTags, existingTagNames, suggestionsId, signal) {
       function refresh() {
         _renderTagChips(chipsEl, pendingTags, function (t) { pendingTags.delete(t); refresh(); });
       }
-      inputEl.addEventListener('keydown', function (e) {
+      function onKeydown(e) {
         if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); _commitTagInput(inputEl, pendingTags); refresh(); return; }
         if (e.key === 'Backspace' && !inputEl.value && pendingTags.size) { pendingTags.delete([...pendingTags].at(-1)); refresh(); }
-      });
-      inputEl.addEventListener('blur', function () { _commitTagInput(inputEl, pendingTags); refresh(); });
-      inputEl.addEventListener('input', function () {
-        _renderTagSuggestions(inputEl, existingTagNames, pendingTags, function (picked) { pendingTags.add(picked); inputEl.value = ''; refresh(); });
-      });
+        if (e.key === 'Escape') { e.stopPropagation(); }
+      }
+      function onBlur() { _commitTagInput(inputEl, pendingTags); refresh(); }
+      function onInput() {
+        _renderTagSuggestions(inputEl, existingTagNames, pendingTags, function (picked) {
+          pendingTags.add(picked);
+          inputEl.value = '';
+          refresh();
+        }, suggestionsId);
+      }
+      const opts = signal ? { signal: signal } : undefined;
+      inputEl.addEventListener('keydown', onKeydown, opts);
+      inputEl.addEventListener('blur', onBlur, opts);
+      inputEl.addEventListener('input', onInput, opts);
       return refresh;
     }
 
@@ -977,7 +878,7 @@
       return new Promise(function (resolve) {
         document.getElementById('tagPickerConfirm').onclick = function () {
           _commitTagInput(inputEl, pendingTags); refresh();
-          if (!pendingTags.size) { errEl.textContent = 'Add at least one tag.'; errEl.style.display = ''; return; }
+          if (!pendingTags.size) { errEl.textContent = 'Add at least one tag.'; errEl.classList.remove('hidden'); return; }
           modal.close(); resolve([...pendingTags]);
         };
         document.getElementById('tagPickerCancel').onclick = function () { modal.close(); resolve(null); };
@@ -1011,7 +912,7 @@
 
       descEl.textContent = 'Will tag ' + paths.length + ' selected item(s).';
       inputEl.value = '';
-      errEl.style.display = 'none';
+      errEl.classList.add('hidden');
 
       const pendingTags = new Set();
       let existingTagNames = [];
@@ -1037,6 +938,270 @@
     }
 
     /* -----------------------------------------------------------------------
+     * Per-row tag popover (+ button in Tags column)
+     * ----------------------------------------------------------------------- */
+    let _rowTagPopoverAbort = null;
+    let _rowTagPopoverPath = null;
+    let _rowTagPopoverAnchor = null;
+    const ROW_TAG_POPOVER_MIN_W = 288;
+    const ROW_TAG_POPOVER_MIN_H = 140;
+
+    function _ensureRowTagPopoverPortal(pop, backdrop) {
+      if (pop && pop.parentNode !== document.body) document.body.appendChild(pop);
+      if (backdrop && backdrop.parentNode !== document.body) document.body.appendChild(backdrop);
+    }
+
+    function _scheduleRowTagPopoverPosition() {
+      const pop = document.getElementById('rowTagPopover');
+      if (!pop || !_rowTagPopoverAnchor?.isConnected) return;
+      requestAnimationFrame(function () {
+        if (!_rowTagPopoverAnchor?.isConnected) return;
+        _positionRowTagPopover(_rowTagPopoverAnchor, pop);
+      });
+    }
+
+    function _isRowTagPopoverOpen() {
+      return !!_rowTagPopoverAnchor;
+    }
+
+    function _parseTagsAttr(raw) {
+      if (!raw) return [];
+      return raw.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    }
+
+    function _tagsCellTags(tagsCell) {
+      return _parseTagsAttr(tagsCell?.dataset.tags || '');
+    }
+
+    function _renderTagsCellInner(tags, path) {
+      const maxShow = 3;
+      let html = '';
+      if (tags.length) {
+        html += '<span class="file-tag-list" title="' + escapeAttr(tags.join(', ')) + '">';
+        tags.slice(0, maxShow).forEach(function (t) {
+          html += '<a href="/tagged/' + encodeURIComponent(t) + '" class="file-tag-chip" onclick="event.stopPropagation()">'
+            + escapeHtml(t) + '</a>';
+        });
+        if (tags.length > maxShow) {
+          html += '<span class="file-tag-more">+' + (tags.length - maxShow) + '</span>';
+        }
+        html += '</span>';
+      }
+      if (CAN_TAG) {
+        html += '<button type="button" class="row-tag-add-btn" data-path="' + escapeAttr(path) + '"'
+          + ' title="Add tag" aria-label="Add tag to ' + escapeAttr(pathBasename(path)) + '">'
+          + '<span aria-hidden="true">+</span></button>';
+      } else if (!tags.length) {
+        html = '<span class="tags-cell-empty">—</span>';
+      }
+      return html;
+    }
+
+    function _updateTagsCell(path, tags) {
+      const row = document.querySelector('tr.file-row[data-path="' + CSS.escape(path) + '"]');
+      const tagsCell = row?.querySelector('.tags-cell');
+      if (!tagsCell) return;
+      const sorted = [...new Set(tags)].sort(function (a, b) { return a.localeCompare(b); });
+      tagsCell.dataset.tags = sorted.join(',');
+      const inner = tagsCell.querySelector('.tags-cell-inner');
+      if (inner) inner.innerHTML = _renderTagsCellInner(sorted, path);
+    }
+
+    function _positionRowTagPopover(anchorEl, pop) {
+      if (!anchorEl || !pop) return;
+
+      pop.removeAttribute('hidden');
+      pop.style.display = 'block';
+      pop.style.position = 'fixed';
+      pop.style.right = 'auto';
+      pop.style.bottom = 'auto';
+      pop.style.margin = '0';
+      pop.style.visibility = 'hidden';
+      pop.style.left = '0';
+      pop.style.top = '0';
+
+      const rect = anchorEl.getBoundingClientRect();
+      const margin = 8;
+      const gap = 6;
+      const popW = Math.max(pop.offsetWidth || 0, ROW_TAG_POPOVER_MIN_W);
+      const popH = Math.max(pop.offsetHeight || 0, ROW_TAG_POPOVER_MIN_H);
+
+      let left = rect.left;
+      let top = rect.bottom + gap;
+
+      if (left + popW > window.innerWidth - margin) {
+        left = Math.max(margin, window.innerWidth - margin - popW);
+      }
+      if (left < margin) left = margin;
+
+      if (top + popH > window.innerHeight - margin) {
+        const above = rect.top - gap - popH;
+        top = above >= margin ? above : Math.max(margin, window.innerHeight - margin - popH);
+      }
+
+      pop.style.left = Math.round(left) + 'px';
+      pop.style.top = Math.round(top) + 'px';
+      pop.style.visibility = 'visible';
+    }
+
+    function closeRowTagPopover() {
+      const pop = document.getElementById('rowTagPopover');
+      const backdrop = document.getElementById('rowTagPopoverBackdrop');
+      if (_rowTagPopoverAbort) {
+        _rowTagPopoverAbort.abort();
+        _rowTagPopoverAbort = null;
+      }
+      _rowTagPopoverPath = null;
+      _rowTagPopoverAnchor = null;
+      if (pop) {
+        pop.hidden = true;
+        pop.style.display = '';
+        pop.style.visibility = '';
+        pop.style.left = '';
+        pop.style.top = '';
+        const sug = document.getElementById('rowTagPopoverSuggestions');
+        if (sug) sug.remove();
+        const wrap = document.getElementById('rowTagPopoverInput')?.parentNode;
+        wrap?.classList.remove('tag-picker-input-wrap');
+      }
+      if (backdrop) backdrop.hidden = true;
+    }
+
+    async function _fetchAllTagRules() {
+      try {
+        const res = await fetch('/admin/api/abac/tags', { headers: { 'X-XSRFToken': getXSRFToken() } });
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data.tags || [];
+      } catch {
+        return [];
+      }
+    }
+
+    async function _fetchExistingTagNames() {
+      const rules = await _fetchAllTagRules();
+      return [...new Set(rules.map(function (t) { return t.tag; }))].sort(function (a, b) {
+        return a.localeCompare(b);
+      });
+    }
+
+    async function openRowTagPopover(path, anchorEl) {
+      if (!CAN_TAG) return;
+      closeRowTagPopover();
+
+      const pop = document.getElementById('rowTagPopover');
+      const backdrop = document.getElementById('rowTagPopoverBackdrop');
+      const inputEl = document.getElementById('rowTagPopoverInput');
+      const chipsEl = document.getElementById('rowTagPopoverChips');
+      const existingEl = document.getElementById('rowTagPopoverExisting');
+      const fileEl = document.getElementById('rowTagPopoverFile');
+      const errEl = document.getElementById('rowTagPopoverError');
+      const applyBtn = document.getElementById('rowTagPopoverApply');
+      const cancelBtn = document.getElementById('rowTagPopoverCancel');
+      if (!pop || !inputEl || !chipsEl || !existingEl || !applyBtn || !cancelBtn) return;
+
+      _rowTagPopoverPath = path;
+      _rowTagPopoverAnchor = anchorEl;
+      _rowTagPopoverAbort = new AbortController();
+      const signal = _rowTagPopoverAbort.signal;
+      _ensureRowTagPopoverPortal(pop, backdrop);
+
+      inputEl.value = '';
+      chipsEl.innerHTML = '';
+      existingEl.innerHTML = '';
+      errEl.classList.add('hidden');
+      errEl.textContent = '';
+      fileEl.textContent = pathBasename(path);
+
+      const pendingTags = new Set();
+      const allRules = await _fetchAllTagRules();
+      const tagsOnPath = _tagsOnPath(allRules, path);
+      const existingTagNames = [...new Set(allRules.map(function (t) { return t.tag; }))].sort(function (a, b) {
+        return a.localeCompare(b);
+      });
+
+      function syncTagsCellFromMap() {
+        _updateTagsCell(path, [...tagsOnPath.keys()]);
+      }
+
+      function renderExisting() {
+        _renderExistingTagChips(existingEl, tagsOnPath, async function (tagName) {
+          const ids = tagsOnPath.get(tagName) || [];
+          if (!ids.length) return;
+          applyBtn.disabled = true;
+          const result = await _deleteTagRuleIds(ids);
+          applyBtn.disabled = false;
+          if (!result.ok) {
+            errEl.textContent = 'Could not remove tag "' + tagName + '".';
+            errEl.classList.remove('hidden');
+            return;
+          }
+          errEl.classList.add('hidden');
+          tagsOnPath.delete(tagName);
+          renderExisting();
+          syncTagsCellFromMap();
+          _scheduleRowTagPopoverPosition();
+        });
+      }
+      renderExisting();
+
+      const refresh = _setupTagPickerListeners(
+        inputEl, chipsEl, pendingTags, existingTagNames, 'rowTagPopoverSuggestions', signal
+      );
+      refresh();
+      _renderTagSuggestions(inputEl, existingTagNames, pendingTags, function (picked) {
+        pendingTags.add(picked);
+        inputEl.value = '';
+        refresh();
+      }, 'rowTagPopoverSuggestions');
+
+      backdrop.hidden = false;
+      _positionRowTagPopover(anchorEl, pop);
+      _scheduleRowTagPopoverPosition();
+      inputEl.focus();
+
+      const onApply = async function () {
+        _commitTagInput(inputEl, pendingTags);
+        refresh();
+        if (!pendingTags.size) {
+          closeRowTagPopover();
+          return;
+        }
+        applyBtn.disabled = true;
+        const tags = [...pendingTags];
+        const { created, failed } = await _applyTagRules(tags, [path]);
+        applyBtn.disabled = false;
+        if (created === 0 && failed > 0) {
+          errEl.textContent = 'Could not add tag(s). They may already exist.';
+          errEl.classList.remove('hidden');
+          return;
+        }
+        for (const tag of tags) {
+          if (!tagsOnPath.has(tag)) tagsOnPath.set(tag, []);
+        }
+        syncTagsCellFromMap();
+        closeRowTagPopover();
+        if (failed > 0) {
+          showDialog(created + ' tag rule(s) added. ' + failed + ' already existed or failed.', 'Tags');
+        }
+      };
+
+      applyBtn.addEventListener('click', onApply, { signal: signal });
+      cancelBtn.addEventListener('click', closeRowTagPopover, { signal: signal });
+      backdrop.addEventListener('click', closeRowTagPopover, { signal: signal });
+      document.addEventListener('keydown', function rowPopEsc(e) {
+        if (e.key === 'Escape' && _isRowTagPopoverOpen()) {
+          e.preventDefault();
+          e.stopPropagation();
+          closeRowTagPopover();
+        }
+      }, { signal: signal });
+      window.addEventListener('resize', _scheduleRowTagPopoverPosition, { signal: signal });
+      document.addEventListener('scroll', _scheduleRowTagPopoverPosition, { signal: signal, capture: true });
+      inputEl.addEventListener('input', _scheduleRowTagPopoverPosition, { signal: signal });
+    }
+
+    /* -----------------------------------------------------------------------
      * Share by tag: create a dynamic share from a tag's glob patterns
      * ----------------------------------------------------------------------- */
     async function openShareByTag() {
@@ -1047,7 +1212,7 @@
       if (!modal || !selectEl) return;
       selectEl.innerHTML = '<option value="">Loading tags…</option>';
       patternsEl.textContent = '';
-      errEl.style.display = 'none';
+      errEl.classList.add('hidden');
       let allTagRules = [];
       try {
         const res = await fetch('/admin/api/abac/tags', { headers: { 'X-XSRFToken': getXSRFToken() } });
@@ -1078,7 +1243,7 @@
       modal.showModal();
       const chosenTag = await new Promise(function (resolve) {
         document.getElementById('shareByTagConfirm').onclick = function () {
-          if (!selectEl.value) { errEl.textContent = 'Please select a tag.'; errEl.style.display = ''; return; }
+          if (!selectEl.value) { errEl.textContent = 'Please select a tag.'; errEl.classList.remove('hidden'); return; }
           modal.close(); resolve(selectEl.value);
         };
         document.getElementById('shareByTagCancel').onclick = function () { modal.close(); resolve(null); };
@@ -1151,21 +1316,21 @@
       if (_sortState.column === columnIndex) {
         direction = _sortState.direction === 'asc' ? 'desc' : 'asc';
       } else {
-        direction = (columnIndex === 1 || columnIndex === 2) ? 'desc' : 'asc';
+        direction = (columnIndex === 2 || columnIndex === 3) ? 'desc' : 'asc';
       }
       _sortState.column = columnIndex;
       _sortState.direction = direction;
       const mult = direction === 'asc' ? 1 : -1;
 
       rows.sort((a, b) => {
-        if (columnIndex === 1) {
-          const av = Number.parseInt(a.children[1].dataset.bytes, 10) || -1;
-          const bv = Number.parseInt(b.children[1].dataset.bytes, 10) || -1;
+        if (columnIndex === 2) {
+          const av = Number.parseInt(a.children[2].dataset.bytes, 10) || -1;
+          const bv = Number.parseInt(b.children[2].dataset.bytes, 10) || -1;
           return (av - bv) * mult;
         }
-        if (columnIndex === 2) {
-          const av = Number.parseInt(a.children[2].dataset.timestamp, 10) || 0;
-          const bv = Number.parseInt(b.children[2].dataset.timestamp, 10) || 0;
+        if (columnIndex === 3) {
+          const av = Number.parseInt(a.children[3].dataset.timestamp, 10) || 0;
+          const bv = Number.parseInt(b.children[3].dataset.timestamp, 10) || 0;
           return (av - bv) * mult;
         }
         // Name column (0): keep directory grouping regardless of direction
@@ -1275,6 +1440,20 @@
         item.appendChild(modBox);
       }
 
+      if (share.secret_token) {
+        const tokenBlock = _createEl('div', { className: 'share-token-block' });
+        tokenBlock.appendChild(_createEl('strong', null, '\uD83D\uDD10 Secret Token:'));
+        tokenBlock.appendChild(document.createElement('br'));
+        const code = _createEl('code', { className: 'share-token-code' }, share.secret_token);
+        tokenBlock.appendChild(code);
+        const copyTok = _createEl('button', {
+          className: 'btn btn-sm',
+          dataset: { action: 'copyToClipboard', text: share.secret_token },
+        }, 'Copy');
+        tokenBlock.appendChild(copyTok);
+        item.appendChild(tokenBlock);
+      }
+
       const actions = _createEl('div', { className: 'share-actions' });
       const copyBtn = _createEl('button', { className: 'btn', dataset: { action: 'copyToClipboard', text: origin + share.url } }, 'Copy Link');
       const openBtn = _createEl('button', { className: 'btn', dataset: { action: 'openShare', url: share.url } }, 'Open Share');
@@ -1288,9 +1467,9 @@
       const popup = document.getElementById('sharePopup');
       const content = document.getElementById('sharePopupContent');
 
-      popup.classList.add('show');
+      popup.showModal();
       content.textContent = '';
-      content.appendChild(_createEl('div', { className: 'loading' }, 'Loading share details...'));
+      content.appendChild(_createEl('div', { className: 'p-6 text-center text-base-content/50' }, 'Loading share details…'));
 
       try {
         const response = await fetch('/api/share/details?path=' + encodeURIComponent(filePath));
@@ -1298,15 +1477,11 @@
 
         content.textContent = '';
         if (data.error) {
-          const err = _createEl('div', null, 'Error: ' + data.error);
-          err.style.cssText = 'color: red; text-align: center; padding: 20px;';
-          content.appendChild(err);
+          content.appendChild(_createEl('div', { className: 'share-error-msg' }, 'Error: ' + data.error));
           return;
         }
         if (!data.shares || data.shares.length === 0) {
-          const none = _createEl('div', null, 'This file is not currently shared.');
-          none.style.cssText = 'text-align: center; padding: 20px; color: #666;';
-          content.appendChild(none);
+          content.appendChild(_createEl('div', { className: 'share-empty-msg' }, 'This file is not currently shared.'));
           return;
         }
 
@@ -1318,21 +1493,14 @@
       } catch (error) {
         console.error('Error loading share details:', error);
         content.textContent = '';
-        const err = _createEl('div', null, 'Failed to load share details');
-        err.style.cssText = 'color: red; text-align: center; padding: 20px;';
-        content.appendChild(err);
+        content.appendChild(_createEl('div', { className: 'share-error-msg' }, 'Failed to load share details'));
       }
     }
 
     function closeSharePopup() {
       const popup = document.getElementById('sharePopup');
-      popup.classList.remove('show');
+      if (popup?.open) popup.close();
     }
-
-    document.addEventListener('click', function (event) {
-      const popup = document.getElementById('sharePopup');
-      if (event.target === popup) closeSharePopup();
-    });
 
     function copyToClipboard(text, btn) {
       globalThis.AirdCore.copyToClipboard(text, btn);
@@ -1410,7 +1578,9 @@
         });
       });
 
-      // Restore selections from sessionStorage
+      closeSelectionDrawer();
+
+      // Restore selections from sessionStorage (drawer stays closed until user opens it)
       document.querySelectorAll('.row-checkbox').forEach(function (cb) {
         if (SelectionStore.has(cb.dataset.path)) {
           cb.checked = true;
@@ -1516,6 +1686,15 @@
         });
       }
 
+      // Per-row tag add (+) buttons (re-bound after cell refresh)
+      document.getElementById('fileTable')?.addEventListener('click', function (e) {
+        const btn = e.target.closest('.row-tag-add-btn');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openRowTagPopover(btn.dataset.path, btn);
+      });
+
       // Event delegation for dynamically generated share popup buttons
       document.addEventListener('click', function (e) {
         const el = e.target.closest('[data-action]');
@@ -1590,8 +1769,8 @@
 
       function _handleEscapeKey() {
         if (shortcutsOverlay) { hideShortcutsHelp(); return; }
-        // Active custom dialog takes priority (except prompts, which handle Escape themselves)
-        if (_dialogState && !_dialogState.isPrompt) { _dialogState.cancel(); return; }
+        if (_isRowTagPopoverOpen()) { closeRowTagPopover(); return; }
+        if (globalThis.AirdCore.cancelActiveDialog()) return;
         const fpOverlay = document.getElementById('folderPickerOverlay');
         if (fpOverlay?.classList.contains('show')) { FolderPicker.close(null); return; }
         const sharePicker = document.getElementById('sharePickerModal');
@@ -1599,8 +1778,8 @@
           document.getElementById('sharePickerCancel')?.click();
           return;
         }
-        const popup = document.querySelector('.popup-overlay.show');
-        if (popup) { popup.classList.remove('show'); return; }
+        const sharePopup = document.getElementById('sharePopup');
+        if (sharePopup?.open) { closeSharePopup(); return; }
         SelectionStore.clear();
         document.querySelectorAll('.row-checkbox:checked').forEach(function(cb) { cb.checked = false; });
         const selectAll = document.getElementById('selectAllCheckbox');

@@ -1,22 +1,32 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 
 <head>
+  {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v=6" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>{{ filename }} · Aird</title>
   <script src="/static/js/aird-core.js"></script>
   <meta id="page-flags" data-open-editor="{{ open_editor }}">
   <style nonce="{{ csp_nonce }}">
+    /* Keep gutter cells in column 1 (no display:none) so content stays in column 2 under table-fixed */
     #file-content.line-nums-hidden col:first-child {
       width: 0 !important;
       min-width: 0 !important;
       max-width: 0 !important;
-      visibility: collapse;
+    }
+    #file-content.line-nums-hidden .file-line-gutter {
+      width: 0;
+      min-width: 0;
+      max-width: 0;
       padding: 0;
       border: none;
+      overflow: hidden;
+      visibility: hidden;
+      font-size: 0;
+      line-height: 0;
     }
   </style>
 </head>
@@ -294,7 +304,6 @@
                 const tr = document.createElement('tr');
                 const tdNum = document.createElement('td');
                 tdNum.className = 'file-line-gutter w-12 text-right px-2 border-r border-base-300 bg-base-200 text-base-content/50 select-none font-mono text-xs';
-                if (!lineNumbersVisible) tdNum.classList.add('hidden');
                 tdNum.textContent = i + 1;
 
                 const tdContent = document.createElement('td');
@@ -429,7 +438,6 @@
                     lineNumCell.textContent = lineCount;
                     lineContentCell.className = 'align-top text-left w-full';
                     appendStreamLineCell(lineContentCell, line);
-                    if (!lineNumbersVisible) lineNumCell.classList.add('hidden');
                     if (lineCount % 2 === 0) row.style.backgroundColor = 'var(--ds-bg-muted)';
                     globalThis.scrollTo(0, document.body.scrollHeight);
                 } catch {
@@ -444,7 +452,6 @@
                     lineNumCell.textContent = lineCount;
                     lineContentCell.className = 'align-top text-left w-full';
                     appendStreamLineCell(lineContentCell, line);
-                    if (!lineNumbersVisible) lineNumCell.classList.add('hidden');
                     if (lineCount % 2 === 0) row.style.backgroundColor = 'var(--ds-bg-muted)';
                     globalThis.scrollTo(0, document.body.scrollHeight);
                 }
@@ -463,10 +470,7 @@
         toggleLinesBtn.onclick = function () {
             lineNumbersVisible = !lineNumbersVisible;
             syncFileLineNumLayout();
-            document.querySelectorAll('#file-content .file-line-gutter').forEach(cell => {
-                cell.classList.toggle('hidden', !lineNumbersVisible);
-            });
-            toggleLinesBtn.textContent = lineNumbersVisible ? 'Hide Line Numbers' : 'Show Line Numbers';
+            toggleLinesBtn.textContent = lineNumbersVisible ? '🔢 Hide Line Numbers' : '🔢 Show Line Numbers';
         };
 
         copyBtn.onclick = function () {

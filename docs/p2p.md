@@ -4,7 +4,7 @@
 **Signaling:** `POST /p2p/signal` (see handler for payloads).
 
 **Template:** `p2p_transfer.html`  
-**Scripts:** `aird-core.js`, `ui-utils.js`, `p2p/*.js`, `vendor/qrcode-browser.js` (node-qrcode bundle, `npm run vendor:qrcode`), `pages/p2p-page.js`, `theme.js`.
+**Scripts:** `aird-core.js`, `p2p/*.js`, `vendor/qrcode-browser.js` (node-qrcode bundle, `npm run vendor:qrcode`), `pages/p2p-page.js`, `theme.js`.
 
 **Behavior:** Optional auth (`is_anonymous` / `room_id` query); WebRTC room flow; STUN selection in UI. Server does not store file bytes—signaling only.
 

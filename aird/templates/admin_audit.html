@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
+  {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v=6" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Audit log · Aird</title>
 </head>
@@ -100,6 +101,7 @@
     </section>
   </main>
   <script src="/static/js/theme.js"></script>
+  <script src="/static/js/aird-core.js"></script>
   <script nonce="{{ csp_nonce }}">
     (function () {
       const tabs = document.querySelectorAll("[data-tab]");
@@ -120,12 +122,6 @@
       const MAX_ROWS = 200;
       let placeholderCleared = false;
 
-      function escapeHtml(s) {
-        return String(s == null ? "" : s)
-          .replaceAll('&', "&amp;").replaceAll('<', "&lt;").replaceAll('>', "&gt;")
-          .replaceAll('"', "&quot;").replaceAll("'", "&#39;");
-      }
-
       function renderRow(row) {
         const tr = document.createElement("tr");
         const decisionBadge =
@@ -133,14 +129,14 @@
             ? '<span class="badge badge-success badge-sm">Permit</span>'
             : '<span class="badge badge-error badge-sm">Deny</span>';
         tr.innerHTML =
-          '<td class="text-xs font-mono">' + escapeHtml(row.created_at || row.decided_at || "") + "</td>" +
-          "<td>" + escapeHtml(row.username || "") + "</td>" +
-          '<td><span class="badge badge-ghost badge-sm">' + escapeHtml(row.action || "") + "</span></td>" +
-          '<td class="text-xs font-mono">' + escapeHtml(row.resource || "") + "</td>" +
+          '<td class="text-xs font-mono">' + AirdCore.escapeHtml(row.created_at || row.decided_at || "") + "</td>" +
+          "<td>" + AirdCore.escapeHtml(row.username || "") + "</td>" +
+          '<td><span class="badge badge-ghost badge-sm">' + AirdCore.escapeHtml(row.action || "") + "</span></td>" +
+          '<td class="text-xs font-mono">' + AirdCore.escapeHtml(row.resource || "") + "</td>" +
           "<td>" + decisionBadge + "</td>" +
-          "<td>" + escapeHtml(row.policy_name || row.matched_policy_name || "") + "</td>" +
-          '<td class="text-sm">' + escapeHtml(row.reason || "") + "</td>" +
-          '<td class="text-xs font-mono text-base-content/50">' + escapeHtml(row.ip || "") + "</td>";
+          "<td>" + AirdCore.escapeHtml(row.policy_name || row.matched_policy_name || "") + "</td>" +
+          '<td class="text-sm">' + AirdCore.escapeHtml(row.reason || "") + "</td>" +
+          '<td class="text-xs font-mono text-base-content/50">' + AirdCore.escapeHtml(row.ip || "") + "</td>";
         return tr;
       }
 

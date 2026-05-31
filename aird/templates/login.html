@@ -1,12 +1,18 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
+  {% include '_theme_early.html' %}
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v=6" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Login · Aird</title>
   <style nonce="{{ csp_nonce }}">
+    @media (prefers-reduced-motion: reduce) {
+      .b-icon, .b-title, .b-badge1, .b-badge2, .b-badge3, .f1, .f2, .f3 {
+        animation: none !important;
+      }
+    }
     @keyframes brand-icon-pop {
       0%   { opacity:0; transform:scale(0.35) rotate(-20deg); }
       65%  { transform:scale(1.1) rotate(4deg); }

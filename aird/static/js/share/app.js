@@ -48,6 +48,8 @@ let currentPath = '';
       return globalThis.AirdCore.getXSRFToken();
     }
 
+    const showDialog = (...args) => globalThis.AirdCore.showDialog(...args);
+
     function getFileIcon(filename) {
       const ext = filename.toLowerCase().split('.').pop();
       const lowerFilename = filename.toLowerCase();
@@ -137,6 +139,10 @@ let currentPath = '';
 
     function escapeHtml(text) {
       return globalThis.AirdCore.escapeHtml(text);
+    }
+
+    function escapeAttr(text) {
+      return globalThis.AirdCore.escapeAttr(text);
     }
 
     function findCheckboxByValue(scopeRoot, value) {
@@ -720,19 +726,22 @@ let currentPath = '';
     }
 
     function updateBreadcrumb(path) {
+      const homeIcon = '<svg class="ico w-4 h-4 inline-block align-middle" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>';
       if (!path) {
-        elements.currentPath.innerHTML = 'Root Directory';
+        elements.currentPath.innerHTML = `<span class="inline-flex items-center gap-1">${homeIcon}<span>Home</span></span>`;
         return;
       }
       const parts = path.split('/').filter(Boolean);
-      const crumbs = parts.map((part, i) => {
+      const crumbs = [`<a href="#" data-action="loadDirectory" data-path="" class="inline-flex items-center gap-1 hover:text-primary">${homeIcon}<span>Home</span></a>`];
+      parts.forEach((part, i) => {
         const partPath = parts.slice(0, i + 1).join('/');
         if (i === parts.length - 1) {
-          return `<strong>${escapeHtml(part)}</strong>`;
+          crumbs.push(`<span class="opacity-30" aria-hidden="true">/</span><strong>${escapeHtml(part)}</strong>`);
+        } else {
+          crumbs.push(`<span class="opacity-30" aria-hidden="true">/</span><a href="#" data-action="loadDirectory" data-path="${escapeAttr(partPath)}" class="hover:text-primary">${escapeHtml(part)}</a>`);
         }
-        return `<a href="#" data-action="loadDirectory" data-path="${partPath}">${escapeHtml(part)}</a>`;
       });
-      elements.currentPath.innerHTML = crumbs.join(' / ');
+      elements.currentPath.innerHTML = crumbs.join(' ');
     }
 
     async function loadDirectory(path = '') {
@@ -770,7 +779,7 @@ let currentPath = '';
 
     function _makeCheckboxCell(filePath, isSelected) {
       const td = document.createElement('td');
-      td.className = 'sq-style-cdd8ca';
+      td.className = 'select-col px-4 py-3';
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.value = filePath;
@@ -788,7 +797,7 @@ let currentPath = '';
 
       const link = document.createElement(isDir ? 'a' : 'span');
       if (isDir) link.href = '#';
-      link.className = isDir ? 'file-link' : 'file-link sq-style-24b531';
+      link.className = isDir ? 'file-link' : 'file-link file-link--preview';
       link.dataset.action = isDir ? 'loadDirectory' : 'previewFile';
       link.dataset.path = isDir ? navPath : filePath;
       const icon = document.createElement('span');
@@ -822,9 +831,9 @@ let currentPath = '';
       return btn;
     }
 
-    function renderFiles() {
-      if (allFiles.length === 0) {
-        elements.fileTableBody.innerHTML = '';
+    function renderEmptyDirectoryRow() {
+      elements.fileTableBody.innerHTML = '';
+      if (!currentPath) {
         const row = document.createElement('tr');
         const td = document.createElement('td');
         td.colSpan = 5;
@@ -832,6 +841,31 @@ let currentPath = '';
         td.textContent = 'No files in this directory';
         row.appendChild(td);
         elements.fileTableBody.appendChild(row);
+        return;
+      }
+      const row = document.createElement('tr');
+      row.appendChild(_makeCheckboxCell(currentPath, selectedFiles.has(currentPath)));
+      row.appendChild(_makeNameCell({
+        isDir: true,
+        iconText: '📁',
+        name: '(this folder)',
+        filePath: currentPath,
+        isShared: false,
+        navPath: currentPath,
+      }));
+      row.appendChild(_makeCell('-'));
+      row.appendChild(_makeCell('-'));
+      const hintTd = document.createElement('td');
+      hintTd.className = 'text-base-content/50 text-xs';
+      hintTd.textContent = 'Empty — select to share this folder';
+      row.appendChild(hintTd);
+      if (selectedFiles.has(currentPath)) row.classList.add('selected');
+      elements.fileTableBody.appendChild(row);
+    }
+
+    function renderFiles() {
+      if (allFiles.length === 0) {
+        renderEmptyDirectoryRow();
         return;
       }
 
@@ -899,7 +933,6 @@ let currentPath = '';
       body.innerHTML = '<div class="flex flex-col items-center py-10"><span class="loading loading-spinner loading-lg text-primary"></span><div class="mt-4 text-base-content/60">Loading share details...</div></div>';
 
       try {
-        console.log(`Fetching details for share: ${shareId}`);
         const detailsResponse = await fetch(`/api/share/details_by_id?id=${encodeURIComponent(shareId)}`, {
           method: 'GET',
           headers: {
@@ -938,23 +971,23 @@ let currentPath = '';
 
     function buildShareUsersHtml(allowedUsers) {
       if (!allowedUsers || allowedUsers.length === 0) {
-        return '<div class="sq-style-be1381">No users specified (public access)</div>';
+        return '<div class="share-empty-msg">No users specified (public access)</div>';
       }
       return allowedUsers.map(user => `
                   <span class="access-user-tag">
                     ${escapeHtml(user)}
-                    <button class="access-user-remove" data-action="removeUserFromShare" data-user="${escapeHtml(user)}">&times;</button>
+                    <button class="access-user-remove" data-action="removeUserFromShare" data-user="${escapeAttr(user)}">&times;</button>
                   </span>`).join('');
     }
 
     function buildModifyUsersHtml(modifyUsers) {
       if (!modifyUsers || modifyUsers.length === 0) {
-        return '<div class="sq-style-be1381">No modify users (read-only share)</div>';
+        return '<div class="share-empty-msg">No modify users (read-only share)</div>';
       }
       return modifyUsers.map(user => `
                   <span class="modify-user-tag">
                     ✏️ ${escapeHtml(user)}
-                    <button class="modify-user-remove" data-action="removeModifyUserFromShare" data-user="${escapeHtml(user)}">&times;</button>
+                    <button class="modify-user-remove" data-action="removeModifyUserFromShare" data-user="${escapeAttr(user)}">&times;</button>
                   </span>`).join('');
     }
 
@@ -993,7 +1026,7 @@ let currentPath = '';
         ? (share.paths || []).map(p =>
             '<div class="flex items-center justify-between p-1.5 bg-base-200 rounded text-xs group">'
             + '<span class="font-mono truncate flex-grow">' + escapeHtml(p) + '</span>'
-            + '<button class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100" data-action="removeFileFromShare" data-path="' + escapeHtml(p) + '">✕</button>'
+            + '<button class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100" data-action="removeFileFromShare" data-path="' + escapeAttr(p) + '">✕</button>'
             + '</div>'
           ).join('')
         : '<div class="text-center py-4 opacity-40 text-xs italic">No files in this share</div>';
@@ -1004,6 +1037,41 @@ let currentPath = '';
       };
     }
 
+    function _buildTokenDisplayHtml(share, hasSecret) {
+      if (share.secret_token) {
+        return '<div class="bg-base-200 p-3 rounded-lg flex items-center gap-2">'
+          + '<code class="text-xs font-mono flex-grow truncate">' + escapeHtml(share.secret_token) + '</code>'
+          + '<button class="btn btn-xs btn-ghost" data-action="copyToClipboard" data-text="' + escapeAttr(share.secret_token) + '">Copy</button>'
+          + '</div>';
+      }
+      if (hasSecret) {
+        return '<p class="text-xs text-base-content/70">A secret token is enabled.</p>';
+      }
+      return '';
+    }
+
+    function _buildShareTypeEditBlock(share, isTag, isStatic) {
+      if (isTag) {
+        return '<div class="form-control"><p class="text-sm">Type: <strong>tag</strong> — membership follows Admin tag / glob rules for <code class="text-xs font-mono">'
+          + escapeHtml(share.tag_name || '')
+          + '</code>.</p></div>';
+      }
+      const staticChecked = isStatic ? ' checked' : '';
+      const dynamicChecked = isStatic ? '' : ' checked';
+      return '<div class="form-control">'
+        + '<label class="label pb-1"><span class="label-text font-bold text-sm">Share Type</span></label>'
+        + '<div class="flex gap-3">'
+        + '<label class="label cursor-pointer justify-start gap-2 bg-base-200 px-3 py-2 rounded-lg flex-1">'
+        + '<input type="radio" name="shareTypeEdit" value="static" class="radio radio-primary radio-sm"' + staticChecked + '>'
+        + '<span class="label-text font-semibold text-sm">Static</span>'
+        + '</label>'
+        + '<label class="label cursor-pointer justify-start gap-2 bg-base-200 px-3 py-2 rounded-lg flex-1">'
+        + '<input type="radio" name="shareTypeEdit" value="dynamic" class="radio radio-primary radio-sm"' + dynamicChecked + '>'
+        + '<span class="label-text font-semibold text-sm">Dynamic</span>'
+        + '</label>'
+        + '</div></div>';
+    }
+
     function renderShareManagementModal(share) {
       const body = document.getElementById('shareManagementBody');
       const isTag = (share.share_type || 'static') === 'tag';
@@ -1012,48 +1080,9 @@ let currentPath = '';
       const hasSecret = Boolean(share.secret_token || share.has_token);
       const disableTokenInitially = !hasSecret;
       const enableTokenInitially = hasSecret;
-
-      let tokenHtml;
-      if (share.secret_token) {
-        tokenHtml = '<div class="bg-base-200 p-3 rounded-lg flex items-center gap-2">'
-          + '<code class="text-xs font-mono flex-grow truncate">' + escapeHtml(share.secret_token) + '</code>'
-          + '<button class="btn btn-xs btn-ghost" data-action="copyToClipboard" data-text="' + escapeHtml(share.secret_token) + '">Copy</button>'
-          + '</div>';
-      } else if (hasSecret) {
-        tokenHtml = '<p class="text-xs text-base-content/70">A secret token is enabled.</p>';
-      } else {
-        tokenHtml = '';
-      }
-
-      let pathsSectionTitle;
-      let pathsInnerHtml;
-      let addFilesButtonHtml = '';
+      const tokenHtml = _buildTokenDisplayHtml(share, hasSecret);
       const pathsSection = _buildPathsSection(share, isTag);
-      pathsSectionTitle = pathsSection.title;
-      pathsInnerHtml = pathsSection.inner;
-      addFilesButtonHtml = pathsSection.addBtn;
-
-      let shareTypeBlock;
-      if (isTag) {
-        shareTypeBlock = '<div class="form-control"><p class="text-sm">Type: <strong>tag</strong> — membership follows Admin tag / glob rules for <code class="text-xs font-mono">'
-          + escapeHtml(share.tag_name || '')
-          + '</code>.</p></div>';
-      } else {
-        const staticChecked = isStatic ? ' checked' : '';
-        const dynamicChecked = isStatic ? '' : ' checked';
-        shareTypeBlock = '<div class="form-control">'
-          + '<label class="label pb-1"><span class="label-text font-bold text-sm">Share Type</span></label>'
-          + '<div class="flex gap-3">'
-          + '<label class="label cursor-pointer justify-start gap-2 bg-base-200 px-3 py-2 rounded-lg flex-1">'
-          + '<input type="radio" name="shareTypeEdit" value="static" class="radio radio-primary radio-sm"' + staticChecked + '>'
-          + '<span class="label-text font-semibold text-sm">Static</span>'
-          + '</label>'
-          + '<label class="label cursor-pointer justify-start gap-2 bg-base-200 px-3 py-2 rounded-lg flex-1">'
-          + '<input type="radio" name="shareTypeEdit" value="dynamic" class="radio radio-primary radio-sm"' + dynamicChecked + '>'
-          + '<span class="label-text font-semibold text-sm">Dynamic</span>'
-          + '</label>'
-          + '</div></div>';
-      }
+      const shareTypeBlock = _buildShareTypeEditBlock(share, isTag, isStatic);
 
       body.innerHTML = `
         <div class="space-y-4 pb-4">
@@ -1064,14 +1093,14 @@ let currentPath = '';
                   <label class="label pt-0"><span class="label-text font-bold text-xs uppercase opacity-60">Share ID</span></label>
                   <div class="flex items-center gap-2">
                     <code class="bg-base-300 px-2 py-1 rounded text-primary font-mono text-xs flex-grow overflow-hidden text-ellipsis">${escapeHtml(share.id)}</code>
-                    <button class="btn btn-ghost btn-xs btn-square" data-action="copyToClipboard" data-text="${escapeHtml(share.id)}" title="Copy ID">⎘</button>
+                    <button class="btn btn-ghost btn-xs btn-square" data-action="copyToClipboard" data-text="${escapeAttr(share.id)}" title="Copy ID">⎘</button>
                   </div>
                 </div>
                 <div class="form-control">
                   <label class="label pt-0"><span class="label-text font-bold text-xs uppercase opacity-60">Link</span></label>
                   <div class="flex items-center gap-2">
-                    <a href="${escapeHtml(share.url)}" target="_blank" class="link link-primary text-xs truncate flex-grow">${escapeHtml(globalThis.location.origin + share.url)}</a>
-                    <button class="btn btn-ghost btn-xs btn-square" data-action="copyToClipboard" data-text="${escapeHtml(globalThis.location.origin + share.url)}" title="Copy">⎘</button>
+                    <a href="${escapeAttr(share.url)}" target="_blank" class="link link-primary text-xs truncate flex-grow">${escapeHtml(globalThis.location.origin + share.url)}</a>
+                    <button class="btn btn-ghost btn-xs btn-square" data-action="copyToClipboard" data-text="${escapeAttr(globalThis.location.origin + share.url)}" title="Copy">⎘</button>
                   </div>
                 </div>
               </div>
@@ -1090,7 +1119,7 @@ let currentPath = '';
               ${shareTypeBlock}
               <div class="form-control">
                 <label class="label pb-1" for="expiryDateEdit"><span class="label-text font-bold text-sm">Expiration Date</span></label>
-                <input type="datetime-local" id="expiryDateEdit" class="input input-bordered input-sm w-full" value="${escapeHtml(expiryValue)}">
+                <input type="datetime-local" id="expiryDateEdit" class="input input-bordered input-sm w-full" value="${escapeAttr(expiryValue)}">
               </div>
               <div class="form-control">
                 <label class="label pb-1"><span class="label-text font-bold text-sm">Filter Rules</span></label>
@@ -1131,12 +1160,12 @@ let currentPath = '';
 
           <div class="collapse collapse-arrow bg-base-100 border border-base-300 rounded-box">
             <input type="radio" name="mgmt-accordion" />
-            <div class="collapse-title font-semibold text-sm">${pathsSectionTitle}</div>
+            <div class="collapse-title font-semibold text-sm">${pathsSection.title}</div>
             <div class="collapse-content">
               <div class="max-h-48 overflow-y-auto space-y-1 mt-1" id="manageSharePathsList">
-                ${pathsInnerHtml}
+                ${pathsSection.inner}
               </div>
-              ${addFilesButtonHtml}
+              ${pathsSection.addBtn}
             </div>
           </div>
 
@@ -1215,19 +1244,6 @@ let currentPath = '';
         const expiryDateInput = document.getElementById('expiryDateEdit').value;
         const expiryDate = expiryDateInput ? new Date(expiryDateInput).toISOString().replace('Z', '') : null;
 
-        console.log('Updating share with values:', {
-          share_id: currentShareData.id,
-          share_type: shareType,
-          disable_token: tokenDisabled,
-          disableToken_checked: disableToken,
-          enableToken_checked: enableToken,
-          allow_list: allowList,
-          avoid_list: avoidList,
-          expiry_date: expiryDate,
-          allowed_users: currentShareData.allowed_users,
-          modify_users: currentShareData.modify_users
-        });
-
         const response = await fetch('/share/update', {
           method: 'POST',
           headers: {
@@ -1303,20 +1319,16 @@ let currentPath = '';
 
       try {
         const apiPath = addFilesModalData.currentPath || '';
-        console.log('Loading files for path:', apiPath);
         const response = await fetch(`/api/files/${apiPath}`);
 
         if (response.ok) {
           const data = await response.json();
-          console.log('API response:', data);
-
           // Transform the API response to include full paths
           addFilesModalData.allFiles = data.files.map(file => ({
             ...file,
             path: addFilesModalData.currentPath ? `${addFilesModalData.currentPath}/${file.name}` : file.name
           }));
 
-          console.log('Transformed files:', addFilesModalData.allFiles);
           renderFilesForAddModal();
         } else {
           const errorText = await response.text();
@@ -1339,33 +1351,48 @@ let currentPath = '';
       const content = document.getElementById('fileBrowserContent');
       const files = addFilesModalData.allFiles;
 
-      console.log('Rendering files:', files);
-
-      if (!files || files.length === 0) {
-        content.innerHTML = '<div class="sq-style-41e54b">No files in this directory</div>';
-        return;
-      }
-
       content.innerHTML = '';
-      files.forEach(file => {
-        const isSelected = addFilesModalData.selectedFiles.has(file.path);
-        const icon = file.is_dir ? '📁' : getFileIcon(file.name);
-
-        console.log('Rendering file:', file.name, 'is_dir:', file.is_dir, 'path:', file.path);
-
-        const itemDiv = document.createElement('div');
-        itemDiv.className = `file-browser-item ${isSelected && !file.is_dir ? 'selected' : ''}`;
-        itemDiv.dataset.action = file.is_dir ? 'navigateToDirectory' : 'toggleFileSelection';
-        itemDiv.dataset.path = file.path;
-
-        if (!file.is_dir) {
+      if (!files || files.length === 0) {
+        if (addFilesModalData.currentPath) {
+          const folderPath = addFilesModalData.currentPath;
+          const isSelected = addFilesModalData.selectedFiles.has(folderPath);
+          const itemDiv = document.createElement('div');
+          itemDiv.className = `file-browser-item ${isSelected ? 'selected' : ''}`;
+          itemDiv.dataset.action = 'toggleFileSelection';
+          itemDiv.dataset.path = folderPath;
           const checkbox = document.createElement('input');
           checkbox.type = 'checkbox';
           checkbox.checked = isSelected;
           checkbox.dataset.action = 'toggleFileSelection';
-          checkbox.dataset.path = file.path;
+          checkbox.dataset.path = folderPath;
+          checkbox.addEventListener('click', (e) => e.stopPropagation());
           itemDiv.appendChild(checkbox);
+          const span = document.createElement('span');
+          span.textContent = ' 📁 (this folder) — empty';
+          itemDiv.appendChild(span);
+          content.appendChild(itemDiv);
+        } else {
+          content.innerHTML = '<div class="share-empty-msg">No files in this directory</div>';
         }
+        return;
+      }
+
+      files.forEach(file => {
+        const isSelected = addFilesModalData.selectedFiles.has(file.path);
+        const icon = file.is_dir ? '📁' : getFileIcon(file.name);
+
+        const itemDiv = document.createElement('div');
+        itemDiv.className = `file-browser-item ${isSelected ? 'selected' : ''}`;
+        itemDiv.dataset.action = file.is_dir ? 'navigateToDirectory' : 'toggleFileSelection';
+        itemDiv.dataset.path = file.path;
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = isSelected;
+        checkbox.dataset.action = 'toggleFileSelection';
+        checkbox.dataset.path = file.path;
+        checkbox.addEventListener('click', (e) => e.stopPropagation());
+        itemDiv.appendChild(checkbox);
 
         const span = document.createElement('span');
         span.textContent = ` ${icon} ${file.name}`;
@@ -1376,15 +1403,11 @@ let currentPath = '';
     }
 
     function toggleFileSelection(filePath) {
-      console.log('Toggling file selection:', filePath);
       if (addFilesModalData.selectedFiles.has(filePath)) {
         addFilesModalData.selectedFiles.delete(filePath);
-        console.log('Removed from selection');
       } else {
         addFilesModalData.selectedFiles.add(filePath);
-        console.log('Added to selection');
       }
-      console.log('Current selection:', Array.from(addFilesModalData.selectedFiles));
       renderFilesForAddModal();
       updateSelectedFilesPreview();
     }
@@ -1394,7 +1417,7 @@ let currentPath = '';
       const selectedFiles = Array.from(addFilesModalData.selectedFiles);
 
       if (selectedFiles.length === 0) {
-        preview.innerHTML = '<div class="sq-style-be1381">No files selected</div>';
+        preview.innerHTML = '<div class="share-empty-msg">No files selected</div>';
         return;
       }
 
@@ -1402,8 +1425,8 @@ let currentPath = '';
         const fileName = filePath.split('/').pop();
         return `
             <div class="selected-file-item">
-              <span>${fileName}</span>
-              <button class="remove-btn" data-action="removeFromAddModalSelection" data-path="${filePath}">&times;</button>
+              <span>${escapeHtml(fileName)}</span>
+              <button type="button" class="remove-btn" data-action="removeFromAddModalSelection" data-path="${escapeAttr(filePath)}">&times;</button>
             </div>
           `;
       }).join('');
@@ -1420,13 +1443,11 @@ let currentPath = '';
         const pathParts = addFilesModalData.currentPath.split('/').filter(part => part.length > 0);
         pathParts.pop();
         addFilesModalData.currentPath = pathParts.join('/');
-        console.log('Navigating up to:', addFilesModalData.currentPath);
         loadFilesForAddModal();
       }
     }
 
     function navigateToDirectory(dirPath) {
-      console.log('Navigating to directory:', dirPath);
       addFilesModalData.currentPath = dirPath;
       loadFilesForAddModal();
     }
@@ -1666,7 +1687,7 @@ let currentPath = '';
         userSelection.style.display = 'block';
         // Clear previous search and selections
         document.getElementById('userSearchInput').value = '';
-        document.getElementById('userList').innerHTML = '<em class="sq-style-169f06">Type to search for users...</em>';
+        document.getElementById('userList').innerHTML = '<em class="share-hint">Type to search for users...</em>';
         updateSelectedUsersDisplay();
       } else {
         userSelection.style.display = 'none';
@@ -1708,7 +1729,7 @@ let currentPath = '';
         }
 
         if (query.length < 1) {
-          document.getElementById('userList').innerHTML = '<em class="sq-style-169f06">Type to search for users...</em>';
+          document.getElementById('userList').innerHTML = '<em class="share-hint">Type to search for users...</em>';
           return;
         }
 
@@ -1726,11 +1747,11 @@ let currentPath = '';
           const data = await response.json();
           renderUserList(data.users || []);
         } else {
-          document.getElementById('userList').innerHTML = '<em class="sq-style-f479d1">Error searching users</em>';
+          document.getElementById('userList').innerHTML = '<em class="share-error-text">Error searching users</em>';
         }
       } catch (error) {
         console.error('Error searching users:', error);
-        document.getElementById('userList').innerHTML = '<em class="sq-style-f479d1">Error searching users</em>';
+        document.getElementById('userList').innerHTML = '<em class="share-error-text">Error searching users</em>';
       }
     }
 
@@ -1738,7 +1759,7 @@ let currentPath = '';
       const userList = document.getElementById('userList');
 
       if (users.length === 0) {
-        userList.innerHTML = '<em class="sq-style-169f06">No users found</em>';
+        userList.innerHTML = '<em class="share-hint">No users found</em>';
         return;
       }
 
@@ -1783,12 +1804,12 @@ let currentPath = '';
       const selectedUsersList = document.getElementById('selectedUsersList');
 
       if (selectedUsers.size === 0) {
-        selectedUsersList.innerHTML = '<em class="sq-style-e1b789">No users selected</em>';
+        selectedUsersList.innerHTML = '<em class="share-hint">No users selected</em>';
         return;
       }
 
       selectedUsersList.innerHTML = Array.from(selectedUsers)
-        .map(username => `<span class="config-tag access" data-action="removeSelectedUser" data-user="${escapeHtml(username)}">${escapeHtml(username)} ×</span>`)
+        .map(username => `<span class="config-tag access" data-action="removeSelectedUser" data-user="${escapeAttr(username)}">${escapeHtml(username)} ×</span>`)
         .join('');
     }
 
@@ -1812,7 +1833,7 @@ let currentPath = '';
         const query = this.value.trim();
         if (modifySearchTimeout) clearTimeout(modifySearchTimeout);
         if (query.length < 1) {
-          document.getElementById('modifyUserList').innerHTML = '<em class="sq-style-169f06">Type to search for users...</em>';
+          document.getElementById('modifyUserList').innerHTML = '<em class="share-hint">Type to search for users...</em>';
           return;
         }
         modifySearchTimeout = setTimeout(() => searchModifyUsers(query), 300);
@@ -1826,18 +1847,18 @@ let currentPath = '';
           const data = await response.json();
           renderModifyUserList(data.users || []);
         } else {
-          document.getElementById('modifyUserList').innerHTML = '<em class="sq-style-f479d1">Error searching users</em>';
+          document.getElementById('modifyUserList').innerHTML = '<em class="share-error-text">Error searching users</em>';
         }
       } catch (error) {
         console.error('Error searching modify users:', error);
-        document.getElementById('modifyUserList').innerHTML = '<em class="sq-style-f479d1">Error searching users</em>';
+        document.getElementById('modifyUserList').innerHTML = '<em class="share-error-text">Error searching users</em>';
       }
     }
 
     function renderModifyUserList(users) {
       const userList = document.getElementById('modifyUserList');
       if (users.length === 0) {
-        userList.innerHTML = '<em class="sq-style-169f06">No users found</em>';
+        userList.innerHTML = '<em class="share-hint">No users found</em>';
         return;
       }
       userList.innerHTML = '';
@@ -1877,11 +1898,11 @@ let currentPath = '';
     function updateSelectedModifyUsersDisplay() {
       const list = document.getElementById('selectedModifyUsersList');
       if (selectedModifyUsers.size === 0) {
-        list.innerHTML = '<em class="sq-style-e1b789">No modify users (read-only)</em>';
+        list.innerHTML = '<em class="share-hint">No modify users (read-only)</em>';
         return;
       }
       list.innerHTML = Array.from(selectedModifyUsers)
-        .map(u => `<span class="config-tag editor" data-action="removeSelectedModifyUser" data-user="${u}">✏️ ${u} ×</span>`)
+        .map(u => `<span class="config-tag editor" data-action="removeSelectedModifyUser" data-user="${escapeAttr(u)}">✏️ ${escapeHtml(u)} ×</span>`)
         .join('');
     }
 
@@ -1921,7 +1942,7 @@ let currentPath = '';
               <span class="font-semibold">🔐 Secret Token</span>
               <div class="flex flex-wrap items-center gap-2">
                 <code class="break-all text-xs font-mono bg-base-200 px-2 py-1 rounded flex-1 min-w-0">${escapeHtml(data.secret_token)}</code>
-                <button type="button" class="btn btn-sm shrink-0" data-action="copyToClipboard" data-text="${escapeHtml(data.secret_token)}">Copy Token</button>
+                <button type="button" class="btn btn-sm shrink-0" data-action="copyToClipboard" data-text="${escapeAttr(data.secret_token)}">Copy Token</button>
               </div>
               <div class="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm mt-1">
                 <strong>⚠️ Important:</strong> Share this secret token with users who need access. They will need to enter this token to view the shared files.
@@ -1931,8 +1952,8 @@ let currentPath = '';
           <div class="flex flex-col gap-3 w-full min-w-0">
             <p class="font-bold text-base">Share link created</p>
             <div class="flex flex-wrap items-center gap-2 gap-y-2">
-              <a class="link link-hover break-all text-sm flex-1 min-w-0" href="${escapeHtml(data.url)}">${escapeHtml(data.url)}</a>
-              <button type="button" class="btn btn-sm shrink-0" data-action="copyToClipboard" data-text="${escapeHtml(fullUrl)}">Copy Link</button>
+              <a class="link link-hover break-all text-sm flex-1 min-w-0" href="${escapeAttr(data.url)}">${escapeHtml(data.url)}</a>
+              <button type="button" class="btn btn-sm shrink-0" data-action="copyToClipboard" data-text="${escapeAttr(fullUrl)}">Copy Link</button>
             </div>
             ${accessInfo}${modifyInfo}${shareTypeInfo}${tokenInfo}
             ${tokenSection}
@@ -2027,16 +2048,16 @@ let currentPath = '';
 
       const createdDate = share.created ? new Date(share.created).toLocaleString() : 'Just now';
       const rawShareId = String(share.id);
-      const sid = escapeHtml(rawShareId);
-      const shareLink = escapeHtml(`${globalThis.location.origin}/shared/${rawShareId}`);
-      const sharePath = escapeHtml(`/shared/${rawShareId}`);
+      const sidAttr = escapeAttr(rawShareId);
+      const shareLink = escapeAttr(`${globalThis.location.origin}/shared/${rawShareId}`);
+      const sharePath = escapeAttr(`/shared/${rawShareId}`);
       const idPreviewEsc = escapeHtml(rawShareId.length > 8 ? `${rawShareId.substring(0, 8)}...` : rawShareId);
       const pathFileCount = share.paths ? share.paths.length : 0;
       const shareFileCount = share.count || pathFileCount;
       const filePlural = shareFileCount === 1 ? '' : 's';
       const secretToken = share.secret_token;
       const copyTokenBtn = secretToken
-        ? `<button type="button" class="btn btn-sm btn-ghost gap-1" data-action="copyToClipboard" data-text="${escapeHtml(String(secretToken))}" title="Copy secret token">
+        ? `<button type="button" class="btn btn-sm btn-ghost gap-1" data-action="copyToClipboard" data-text="${escapeAttr(String(secretToken))}" title="Copy secret token">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
             <span class="hidden sm:inline text-xs">Token</span>
           </button>`
@@ -2045,8 +2066,8 @@ let currentPath = '';
       const ownerCell = showOwner
         ? `<td class="align-middle text-sm opacity-70">${escapeHtml(share.created_by || '—')}</td>`
         : '';
-      const manageBtn = readOnly ? '' : `<button class="btn btn-sm btn-primary btn-outline" data-action="manageShare" data-id="${sid}">Manage</button>`;
-      const revokeBtn = readOnly ? '' : `<button class="btn btn-sm btn-error btn-ghost btn-square" data-action="revokeShare" data-id="${sid}" title="Revoke">
+      const manageBtn = readOnly ? '' : `<button class="btn btn-sm btn-primary btn-outline" data-action="manageShare" data-id="${sidAttr}">Manage</button>`;
+      const revokeBtn = readOnly ? '' : `<button class="btn btn-sm btn-error btn-ghost btn-square" data-action="revokeShare" data-id="${sidAttr}" title="Revoke">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
         </button>`;
 
@@ -2164,7 +2185,7 @@ let currentPath = '';
           try {
             const j = JSON.parse(text);
             if (j.error) detail = j.error;
-          } catch (_e) { /* use raw text */ }
+          } catch { /* use raw text */ }
           showDialog('Failed to revoke share: ' + detail, 'Error');
           return;
         }
@@ -2194,17 +2215,18 @@ let currentPath = '';
         const data = await response.json();
 
         if (data.error) {
-          content.innerHTML = `<div class="sq-style-fd1d87">Error: ${escapeHtml(data.error)}</div>`;
+          content.innerHTML = `<div class="share-error-msg">Error: ${escapeHtml(data.error)}</div>`;
           return;
         }
 
         if (data.shares.length === 0) {
-          content.innerHTML = '<div class="sq-style-41e54b">This file is not currently shared.</div>';
+          content.innerHTML = '<div class="share-empty-msg">This file is not currently shared.</div>';
           return;
         }
 
         // Update popup title with filename
-        document.querySelector('.popup-title').textContent = `Share Details - ${filePath.split('/').pop()}`;
+        const titleEl = document.querySelector('.popup-title');
+        if (titleEl) titleEl.textContent = 'Share Details - ' + (filePath.split('/').pop() || filePath);
 
         // Render share details
         content.innerHTML = data.shares.map((share) => {
@@ -2223,10 +2245,10 @@ let currentPath = '';
           const token = share.secret_token;
           if (token) {
             secretBlock = `
-              <div class="sq-style-fef9ee">
+              <div class="share-token-block">
                 <strong>🔐 Secret Token:</strong><br>
-                <code class="sq-style-8c1855">${escapeHtml(token)}</code>
-                <button class="btn sq-style-bfef8f" data-action="copyToClipboard" data-text="${escapeHtml(token)}">Copy</button>
+                <code class="share-token-code">${escapeHtml(token)}</code>
+                <button class="btn btn-sm" data-action="copyToClipboard" data-text="${escapeAttr(token)}">Copy</button>
               </div>`;
           }
 
@@ -2245,7 +2267,7 @@ let currentPath = '';
             modifyBlock = `
               <div class="share-users" style="margin-top:6px;">
                 <div class="share-users-title">Modify Users:</div>
-                ${modifyUsers.map((username) => `<span class="user-tag" style="background:var(--ds-warning-soft);color:var(--ds-warning);">✏️ ${escapeHtml(username)}</span>`).join('')}
+                ${modifyUsers.map((username) => `<span class="user-tag modify-user-tag">✏️ ${escapeHtml(username)}</span>`).join('')}
               </div>`;
           }
 
@@ -2253,7 +2275,7 @@ let currentPath = '';
           <div class="share-item">
             <div class="share-id">${escapeHtml(share.id)}</div>
             <div class="share-url">
-              <a href="${escapeHtml(share.url)}">${escapeHtml(fullShareUrl)}</a>
+              <a href="${escapeAttr(share.url)}">${escapeHtml(fullShareUrl)}</a>
             </div>
             <div class="share-access ${isRestricted ? 'restricted' : 'public'}">
               ${shareAccessInfo}
@@ -2262,9 +2284,9 @@ let currentPath = '';
             ${allowedBlock}
             ${modifyBlock}
             <div class="share-actions">
-              <button class="btn" data-action="copyToClipboard" data-text="${escapeHtml(fullShareUrl)}">Copy Link</button>
-              <button class="btn" data-action="openShare" data-url="${escapeHtml(share.url)}">Open Share</button>
-              <button class="btn" data-action="revokeShare" data-id="${escapeHtml(share.id)}">Revoke</button>
+              <button class="btn" data-action="copyToClipboard" data-text="${escapeAttr(fullShareUrl)}">Copy Link</button>
+              <button class="btn" data-action="openShare" data-url="${escapeAttr(share.url)}">Open Share</button>
+              <button class="btn" data-action="revokeShare" data-id="${escapeAttr(share.id)}">Revoke</button>
             </div>
           </div>
         `;
@@ -2272,7 +2294,7 @@ let currentPath = '';
 
       } catch (error) {
         console.error('Error loading share details:', error);
-        content.innerHTML = '<div class="sq-style-fd1d87">Failed to load share details</div>';
+        content.innerHTML = '<div class="share-error-msg">Failed to load share details</div>';
       }
     }
 
@@ -2295,35 +2317,6 @@ let currentPath = '';
         closeSharePopup();
       }
     });
-
-    function showDialog(message, title = 'Confirm', options = {}) {
-      return new Promise((resolve) => {
-        document.getElementById('dialogTitle').textContent = title;
-        document.getElementById('dialogMessage').textContent = message;
-
-        const confirmBtn = document.getElementById('dialogConfirmBtn');
-        const cancelBtn = document.getElementById('dialogCancelBtn');
-        const inputContainer = document.getElementById('dialogInputContainer');
-        const input = document.getElementById('dialogInput');
-
-        confirmBtn.textContent = options.confirmText || 'OK';
-        cancelBtn.style.display = options.showCancel ? 'inline-block' : 'none';
-        inputContainer.style.display = options.prompt ? 'block' : 'none';
-        input.value = options.prompt ? (options.defaultValue || '') : '';
-
-        document.getElementById('customDialogModal').showModal();
-
-        confirmBtn.onclick = () => {
-          document.getElementById('customDialogModal').close();
-          resolve(options.prompt ? input.value : true);
-        };
-
-        cancelBtn.onclick = () => {
-          document.getElementById('customDialogModal').close();
-          resolve(options.prompt ? null : false);
-        };
-      });
-    }
 
     function openShareConfigModal() {
       if (selectedFiles.size === 0) return;

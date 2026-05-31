@@ -1,0 +1,29 @@
+{# Blocking theme init — must be first in <head> to prevent light flash #}
+<script>
+(function () {
+  var THEMES = ['light', 'dark', 'nord', 'dracula', 'cyberpunk', 'retro', 'autumn'];
+  var DARK = { dark: 1, dracula: 1 };
+  /* DaisyUI default base-100 (hex) — must match theme.js BG map */
+  var BG = {
+    light: '#ffffff',
+    dark: '#1d232a',
+    nord: '#eceff4',
+    dracula: '#282a36',
+    cyberpunk: '#ffee00',
+    retro: '#e4d8b4',
+    autumn: '#faf1e9'
+  };
+  var key = 'aird_theme';
+  var keyEsc = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  var m = document.cookie.match(new RegExp('(?:^|; )' + keyEsc + '=([^;]*)'));
+  var t = m ? decodeURIComponent(m[1]) : null;
+  if (!t || THEMES.indexOf(t) < 0) {
+    t = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  }
+  var root = document.documentElement;
+  root.setAttribute('data-theme', t);
+  root.style.colorScheme = DARK[t] ? 'dark' : 'light';
+  root.style.backgroundColor = BG[t] || BG.light;
+  root.classList.add('theme-early');
+})();
+</script>

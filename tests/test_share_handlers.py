@@ -19,6 +19,7 @@ from aird.handlers.share_handlers import (
     _parse_paths_for_update,
     _resolve_final_paths_dynamic,
     _resolve_final_paths_static,
+    _get_share_file_list,
     _apply_metadata_updates,
 )
 from aird.cloud import CloudProviderError
@@ -203,6 +204,32 @@ class TestShareCreateHandler:
             mock_write.assert_called_with(
                 {"error": "Database connection not available"}
             )
+
+    def test_create_share_static_empty_folder(self):
+        handler = self._build_handler({"paths": ["emptydir"], "share_type": "static"})
+
+        with patch(
+            "aird.handlers.base_handler.is_feature_enabled",
+            side_effect=_flags_file_share_only,
+        ), patch("os.path.abspath", side_effect=lambda p: p), patch(
+            "aird.handlers.share_handlers.is_within_root", return_value=True
+        ), patch("os.path.isfile", return_value=False), patch(
+            "os.path.isdir", return_value=True
+        ), patch(
+            "aird.handlers.share_handlers.get_all_files_recursive", return_value=[]
+        ), patch_db_conn(
+            MagicMock(), modules=["aird.handlers.share_handlers"]
+        ), patch(
+            "aird.services.share_service.insert_share", return_value=True
+        ) as mock_insert, patch.object(
+            handler, "write"
+        ) as mock_write:
+
+            handler.post()
+            mock_write.assert_called()
+            assert "id" in mock_write.call_args[0][0]
+            inserted_paths = mock_insert.call_args[0][3]
+            assert inserted_paths == ["emptydir"]
 
 
 class TestShareRevokeHandler:
@@ -843,3 +870,35 @@ class TestShareHandlerPathHelpers:
         assert valid == []
         assert dyn == []
         assert remote == []
+
+    def test_collect_paths_static_empty_directory(self):
+        with patch("os.path.abspath", side_effect=lambda p: p), patch(
+            "aird.handlers.share_handlers.is_within_root", return_value=True
+        ), patch("os.path.isfile", return_value=False), patch(
+            "os.path.isdir", return_value=True
+        ), patch(
+            "aird.handlers.share_handlers.get_all_files_recursive", return_value=[]
+        ):
+            valid, dyn, remote = _collect_paths_from_request(
+                ["emptydir"], "static", root_dir="/root"
+            )
+        assert valid == ["emptydir"]
+        assert dyn == []
+        assert remote == []
+
+    def test_resolve_final_paths_static_empty_directory(self):
+        with patch("aird.handlers.share_handlers.remove_share_cloud_dir"):
+            final, err = _resolve_final_paths_static(["emptydir"], [], "sid")
+        assert err is None
+        assert final == ["emptydir"]
+
+    def test_get_share_file_list_static_omits_directory_paths(self, tmp_path):
+        empty = tmp_path / "emptydir"
+        empty.mkdir()
+        share = {"share_type": "static", "paths": ["emptydir"], "allow_list": [], "avoid_list": []}
+        with patch(
+            "aird.handlers.share_handlers._root_dir_for_share",
+            return_value=str(tmp_path),
+        ):
+            files = _get_share_file_list(share)
+        assert files == []
