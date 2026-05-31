@@ -548,10 +548,10 @@ class TestAdminHandlerUploadConfig:
             assert upload_config["max_file_size_mb"] == 1024
             mock_save_upload.assert_called_once()
 
-    def test_post_clamps_max_file_size_upper_bound(
+    def test_post_accepts_large_max_file_size(
         self, mock_tornado_app, mock_tornado_request, mock_db_conn
     ):
-        """Test AdminHandler POST clamps max_file_size_mb to 10240"""
+        """Test AdminHandler POST accepts large max_file_size_mb without a hard cap"""
         handler = AdminHandler(mock_tornado_app, mock_tornado_request)
 
         handler.get_argument = MagicMock(
@@ -603,7 +603,7 @@ class TestAdminHandlerUploadConfig:
 
             handler.post()
 
-            assert upload_config["max_file_size_mb"] == 10240
+            assert upload_config["max_file_size_mb"] == 99999
 
     def test_post_clamps_max_file_size_lower_bound(
         self, mock_tornado_app, mock_tornado_request, mock_db_conn

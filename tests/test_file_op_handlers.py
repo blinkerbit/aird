@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 from aird.handlers.file_op_handlers import (
     UploadHandler,
+    _parse_chunk_headers,
     DeleteHandler,
     RenameHandler,
     EditHandler,
@@ -45,6 +46,9 @@ class TestUploadHandler:
         handler._bytes_received = 100
         handler.upload_dir = upload_dir
         handler.filename = filename
+        handler._chunk_mode = False
+        handler._chunk_info = None
+        handler._keep_part_file = False
 
     @pytest.mark.asyncio
     async def test_upload_success(self):
@@ -395,6 +399,32 @@ class TestUploadHandler:
         handler.on_finish()
 
 
+class TestChunkedUploadHelpers:
+    def test_parse_chunk_headers_absent(self):
+        info, err = _parse_chunk_headers({})
+        assert info is None
+        assert err is None
+
+    def test_parse_chunk_headers_complete(self):
+        headers = {
+            "X-Upload-Id": "550e8400-e29b-41d4-a716-446655440000",
+            "X-Chunk-Offset": "0",
+            "X-Upload-Total-Size": "1000",
+            "X-Chunk-Last": "0",
+        }
+        info, err = _parse_chunk_headers(headers)
+        assert err is None
+        assert info["offset"] == 0
+        assert info["total_size"] == 1000
+        assert info["is_last"] is False
+
+    def test_parse_chunk_headers_partial_rejected(self):
+        headers = {"X-Upload-Id": "abc"}
+        info, err = _parse_chunk_headers(headers)
+        assert info is None
+        assert err is not None
+
+
 class TestUploadHandlerDynamicMaxSize:
     """Tests for dynamic max file size enforcement in UploadHandler"""
 
@@ -546,6 +576,59 @@ class TestUploadHandlerDynamicMaxSize:
             mock_set_status.assert_called_with(413)
             msg = mock_write.call_args[0][0]
             assert "2048" in msg
+
+    @pytest.mark.asyncio
+    async def test_chunked_upload_intermediate_response(self):
+        handler = prepare_handler(UploadHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role="user")
+        self._setup_handler_for_post(handler)
+        handler._chunk_mode = True
+        handler._chunk_info = {
+            "upload_id": "550e8400-e29b-41d4-a716-446655440000",
+            "offset": 0,
+            "total_size": 200,
+            "is_last": False,
+        }
+        handler._bytes_received = 100
+
+        with patch(
+            "aird.handlers.base_handler.is_feature_enabled", side_effect=lambda k, default=True: False if k == "abac_engine" else True
+        ), patch("os.path.getsize", return_value=100), patch.object(
+            handler, "write"
+        ) as mock_write, patch.object(
+            handler, "set_status"
+        ):
+            await handler.post()
+            assert "chunk_received" in mock_write.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_chunked_upload_final_chunk_moves_file(self):
+        handler = prepare_handler(UploadHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role="user")
+        self._setup_handler_for_post(handler)
+        handler._chunk_mode = True
+        handler._chunk_info = {
+            "upload_id": "550e8400-e29b-41d4-a716-446655440000",
+            "offset": 100,
+            "total_size": 200,
+            "is_last": True,
+        }
+        handler._bytes_received = 100
+
+        with patch(
+            "aird.handlers.base_handler.is_feature_enabled", side_effect=lambda k, default=True: False if k == "abac_engine" else True
+        ), patch("os.path.getsize", return_value=200), patch(
+            "os.path.realpath", side_effect=lambda p: p
+        ), patch(
+            "aird.handlers.file_op_handlers.is_within_root", return_value=True
+        ), patch(
+            "aird.handlers.file_op_handlers.ALLOWED_UPLOAD_EXTENSIONS", {".txt"}
+        ), patch("shutil.move") as mock_move, patch("os.makedirs"), patch.object(
+            handler, "write"
+        ) as mock_write:
+            await handler.post()
+            mock_move.assert_called_once()
+            assert mock_write.call_args[0][0] == "Upload successful"
 
 
 class TestDeleteHandler:

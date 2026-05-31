@@ -107,8 +107,8 @@
           <div class="flex flex-wrap items-center gap-3">
             <label for="max_file_size_mb" class="text-sm font-semibold w-48">Max file size (MB)</label>
             <input type="number" id="max_file_size_mb" name="max_file_size_mb" class="input input-bordered input-sm w-28"
-                   value="{{ upload_config.get('max_file_size_mb', 512) }}" min="1" max="10240" step="1">
-            <span class="text-xs text-base-content/50">1 – 10240 MB · default 512</span>
+                   value="{{ upload_config.get('max_file_size_mb', 512) }}" min="1" step="1">
+            <span class="text-xs text-base-content/50">Min 1 MB · default 512 · files upload in 90 MB parts (Cloudflare-safe)</span>
           </div>
           <div class="flex flex-wrap items-center gap-3">
             <label class="label cursor-pointer justify-start gap-2">

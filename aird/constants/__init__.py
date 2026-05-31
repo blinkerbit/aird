@@ -59,8 +59,9 @@ UPLOAD_CONFIG = {
     "allow_all_file_types": 0,  # 0 = use whitelist below, 1 = allow any extension
 }
 
-# Hard ceiling for Tornado server — admin cannot exceed this
-MAX_UPLOAD_FILE_SIZE_HARD_LIMIT = 10 * 1024 * 1024 * 1024  # 10 GB
+# Per-request body limit (Cloudflare-compatible chunked uploads; admin sets total file cap separately)
+UPLOAD_CHUNK_SIZE_BYTES = 90 * 1024 * 1024  # 90 MiB per HTTP request
+UPLOAD_REQUEST_MAX_BODY_SIZE = UPLOAD_CHUNK_SIZE_BYTES + (1024 * 1024)  # chunk + slack
 
 # File operation constants (derived from UPLOAD_CONFIG at startup)
 MAX_FILE_SIZE = UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024

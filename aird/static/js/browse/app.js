@@ -5,6 +5,9 @@
     const RELOAD_DELAY_MS = 500;
     const MIN_COLUMN_WIDTH = 50;
     const MAX_FILE_SIZE = globalThis.__BROWSE_CONFIG ? globalThis.__BROWSE_CONFIG.maxFileSize : 10737418240;
+    const UPLOAD_CHUNK_SIZE = globalThis.__BROWSE_CONFIG && globalThis.__BROWSE_CONFIG.uploadChunkSize
+      ? globalThis.__BROWSE_CONFIG.uploadChunkSize
+      : (90 * 1024 * 1024);
     const CAN_TAG = !!(globalThis.__BROWSE_CONFIG && globalThis.__BROWSE_CONFIG.canTag);
 
     const SelectionStore = {
@@ -298,66 +301,78 @@
       return globalThis.AirdCore.formatBytes(bytes);
     }
 
-    function uploadFile(item) {
+    function uploadChunk(item, blob, uploadId, offset, totalSize, isLast) {
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         item.xhr = xhr;
-        item.start = Date.now();
         xhr.open("POST", "/upload");
 
         xhr.upload.addEventListener("progress", (e) => {
-          if (e.lengthComputable) {
-            const percent = (e.loaded / e.total) * 100;
-            const elapsed = (Date.now() - item.start) / 1000;
-            const speed = e.loaded / (elapsed || 1);
-            const remaining = e.total - e.loaded;
-            item.bar.value = percent;
-            item.info.textContent = `${Math.round(percent)}% - ${formatBytes(e.loaded)} of ${formatBytes(e.total)} (${formatBytes(remaining)} left) @ ${formatBytes(speed)}/s`;
-          }
+          if (!e.lengthComputable) return;
+          const loaded = offset + e.loaded;
+          const percent = (loaded / totalSize) * 100;
+          const elapsed = (Date.now() - item.start) / 1000;
+          const speed = loaded / (elapsed || 1);
+          const remaining = totalSize - loaded;
+          item.bar.value = percent;
+          item.info.textContent = `${Math.round(percent)}% - ${formatBytes(loaded)} of ${formatBytes(totalSize)} (${formatBytes(remaining)} left) @ ${formatBytes(speed)}/s`;
         });
 
         xhr.addEventListener("load", () => {
           if (xhr.status >= 200 && xhr.status < 300) {
-            item.bar.value = 100;
-            item.info.textContent = "Completed";
-            item.cancelBtn.remove();
             resolve();
           } else {
-            item.info.textContent = "Failed";
-            item.cancelBtn.remove();
             const detail = (xhr.responseText || "").trim() || ("HTTP " + xhr.status);
-            showDialog("Upload failed (" + item.file.name + "): " + detail, "Upload failed");
-            reject(new Error(xhr.responseText || `Upload of ${item.file.name} failed`));
+            reject(new Error(detail));
           }
         });
+        xhr.addEventListener("error", () => reject(new Error("network error")));
+        xhr.addEventListener("abort", () => reject(new Error("cancelled")));
 
-        xhr.addEventListener("error", () => {
-          item.info.textContent = "Error";
-          item.cancelBtn.remove();
-          showDialog("Network error while uploading " + item.file.name + ".", "Upload failed");
-          reject(new Error(`Upload of ${item.file.name} failed`));
-        });
-
-        xhr.addEventListener("abort", () => {
-          item.info.textContent = "Cancelled";
-          item.cancelBtn.remove();
-          reject(new Error(`Upload of ${item.file.name} cancelled`));
-        });
-
-        // Stream raw file bytes with headers the backend expects
         const dir = item.uploadDir ?? document.getElementById('currentPath')?.value ?? '';
         const fname = item.uploadName ?? item.file.name;
         xhr.setRequestHeader("X-Upload-Dir", encodeURIComponent(dir));
         xhr.setRequestHeader("X-Upload-Filename", encodeURIComponent(fname));
+        xhr.setRequestHeader("X-Upload-Id", uploadId);
+        xhr.setRequestHeader("X-Chunk-Offset", String(offset));
+        xhr.setRequestHeader("X-Upload-Total-Size", String(totalSize));
+        xhr.setRequestHeader("X-Chunk-Last", isLast ? "1" : "0");
         xhr.setRequestHeader("Content-Type", "application/octet-stream");
-        // CSRF Protection
         const xsrfToken = getXSRFToken();
         if (xsrfToken) {
           xhr.setRequestHeader("X-XSRFToken", xsrfToken);
         }
-
-        xhr.send(item.file);
+        xhr.send(blob);
       });
+    }
+
+    async function uploadFile(item) {
+      const totalSize = item.file.size;
+      const uploadId = globalThis.crypto && globalThis.crypto.randomUUID
+        ? globalThis.crypto.randomUUID()
+        : `upload-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      item.start = Date.now();
+      let offset = 0;
+      try {
+        while (offset < totalSize) {
+          const end = Math.min(offset + UPLOAD_CHUNK_SIZE, totalSize);
+          const blob = item.file.slice(offset, end);
+          const isLast = end >= totalSize;
+          await uploadChunk(item, blob, uploadId, offset, totalSize, isLast);
+          offset = end;
+        }
+        item.bar.value = 100;
+        item.info.textContent = "Completed";
+        item.cancelBtn.remove();
+      } catch (err) {
+        item.info.textContent = err.message === "cancelled" ? "Cancelled" : "Failed";
+        item.cancelBtn.remove();
+        if (err.message !== "cancelled") {
+          const detail = err.message || "unknown error";
+          showDialog("Upload failed (" + item.file.name + "): " + detail, "Upload failed");
+        }
+        throw err;
+      }
     }
 
     } // end upload UI (uploadZone && fileInput && progressContainer)

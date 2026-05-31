@@ -5,6 +5,8 @@ import tempfile
 import json
 import logging
 import pathlib
+import hashlib
+import re
 from collections import deque
 from urllib.parse import unquote
 import asyncio
@@ -81,6 +83,11 @@ from aird.constants.file_ops import (
     UPLOAD_SAVE_FAILED,
     UPLOAD_SUCCESSFUL,
     MISSING_UPLOAD_FILENAME_HEADER,
+    MISSING_UPLOAD_CHUNK_HEADERS,
+    INVALID_UPLOAD_CHUNK_HEADERS,
+    UPLOAD_CHUNK_OUT_OF_ORDER,
+    UPLOAD_SESSION_NOT_FOUND,
+    UPLOAD_CHUNK_RECEIVED,
 )
 from aird.config import (
     ALLOWED_UPLOAD_EXTENSIONS,
@@ -123,6 +130,73 @@ def _validate_upload_destination(upload_dir, filename, root_dir):
     if not is_within_root(final_path_abs, safe_dir_abs):
         return (None, (403, ACCESS_DENIED_PATH))
     return (final_path_abs, None)
+
+
+_UPLOAD_ID_RE = re.compile(r"^[0-9a-fA-F\-]{1,64}$")
+
+
+def _upload_parts_dir() -> str:
+    path = os.path.join(tempfile.gettempdir(), "aird_upload_parts")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _part_file_path(username: str, upload_id: str) -> str:
+    user_hash = hashlib.sha256(username.encode("utf-8")).hexdigest()[:16]
+    return os.path.join(_upload_parts_dir(), f"{user_hash}_{upload_id}.part")
+
+
+def _sanitize_upload_id(upload_id: str | None) -> str | None:
+    if not upload_id or not _UPLOAD_ID_RE.fullmatch(upload_id):
+        return None
+    return upload_id
+
+
+def _parse_positive_int(value: str | None) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        parsed = int(value)
+    except ValueError:
+        return None
+    if parsed < 0:
+        return None
+    return parsed
+
+
+def _parse_chunk_headers(headers) -> tuple[dict | None, str | None]:
+    """Return (chunk_info, error_message). chunk_info keys: upload_id, offset, total_size, is_last."""
+    upload_id = _sanitize_upload_id(headers.get("X-Upload-Id"))
+    offset = _parse_positive_int(headers.get("X-Chunk-Offset"))
+    total_size = _parse_positive_int(headers.get("X-Upload-Total-Size"))
+    last_raw = (headers.get("X-Chunk-Last") or "").strip().lower()
+    has_chunk_headers = any(
+        headers.get(name)
+        for name in (
+            "X-Upload-Id",
+            "X-Chunk-Offset",
+            "X-Upload-Total-Size",
+            "X-Chunk-Last",
+        )
+    )
+    if not has_chunk_headers:
+        return (None, None)
+    if not upload_id or offset is None or total_size is None or not last_raw:
+        return (None, MISSING_UPLOAD_CHUNK_HEADERS)
+    if total_size == 0:
+        return (None, INVALID_UPLOAD_CHUNK_HEADERS)
+    is_last = last_raw in ("1", "true", "yes")
+    if offset >= total_size and not is_last:
+        return (None, INVALID_UPLOAD_CHUNK_HEADERS)
+    return (
+        {
+            "upload_id": upload_id,
+            "offset": offset,
+            "total_size": total_size,
+            "is_last": is_last,
+        },
+        None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -275,6 +349,11 @@ def _process_bulk_action(
 
 @tornado.web.stream_request_body
 class UploadHandler(BaseHandler):
+    def _request_body_limit(self) -> int:
+        if getattr(self, "_chunk_mode", False):
+            return constants_module.UPLOAD_CHUNK_SIZE_BYTES
+        return constants_module.MAX_FILE_SIZE
+
     async def prepare(self):
         # Defaults for safety
         self._reject: bool = False
@@ -287,6 +366,9 @@ class UploadHandler(BaseHandler):
         self._moved: bool = False
         self._bytes_received: int = 0
         self._too_large: bool = False
+        self._chunk_mode: bool = False
+        self._keep_part_file: bool = False
+        self._chunk_info: dict | None = None
 
         # Feature flag check (using SQLite-backed flags)
         # Deferred to post() for clear response, but avoid heavy work if disabled
@@ -307,23 +389,62 @@ class UploadHandler(BaseHandler):
             self._reject_reason = MISSING_UPLOAD_FILENAME_HEADER
             return
 
-        # Create temporary file for streamed writes
+        chunk_info, chunk_err = _parse_chunk_headers(self.request.headers)
+        if chunk_err:
+            self._reject = True
+            self._reject_reason = chunk_err
+            return
+        if chunk_info:
+            if not self.get_current_user():
+                self._reject = True
+                self._reject_reason = ACCESS_DENIED
+                return
+            if chunk_info["total_size"] > constants_module.MAX_FILE_SIZE:
+                self._reject = True
+                self._reject_reason = FILE_TOO_LARGE
+                return
+            self._chunk_mode = True
+            self._chunk_info = chunk_info
+            username = self.get_display_username()
+            self._temp_path = _part_file_path(username, chunk_info["upload_id"])
+            offset = chunk_info["offset"]
+            if offset == 0:
+                if os.path.exists(self._temp_path):
+                    try:
+                        os.remove(self._temp_path)
+                    except OSError:
+                        logging.debug("remove stale upload part failed", exc_info=True)
+                self._aiofile = await aiofiles.open(self._temp_path, "wb")
+            else:
+                if not os.path.isfile(self._temp_path):
+                    self._reject = True
+                    self._reject_reason = UPLOAD_SESSION_NOT_FOUND
+                    return
+                if os.path.getsize(self._temp_path) != offset:
+                    self._reject = True
+                    self._reject_reason = UPLOAD_CHUNK_OUT_OF_ORDER
+                    return
+                self._aiofile = await aiofiles.open(self._temp_path, "ab")
+            return
+
+        # Single-request upload (legacy / small files)
         fd, self._temp_path = tempfile.mkstemp(prefix="aird_upload_")
-        # Close the low-level fd; we'll use aiofiles on the path
         os.close(fd)
         self._aiofile = await aiofiles.open(self._temp_path, "wb")
 
     def data_received(self, chunk: bytes) -> None:
         if self._reject:
             return
-        # Track size to enforce limit at the end
         self._bytes_received += len(chunk)
-        if self._bytes_received > constants_module.MAX_FILE_SIZE:
+        if self._bytes_received > self._request_body_limit():
             self._too_large = True
-            # We still accept the stream but won't persist it
             return
+        if self._chunk_mode and self._chunk_info:
+            end_offset = self._chunk_info["offset"] + self._bytes_received
+            if end_offset > self._chunk_info["total_size"]:
+                self._too_large = True
+                return
 
-        # Queue the chunk and ensure a writer task is draining
         self._buffer.append(chunk)
         if not self._writing:
             self._writing = True
@@ -351,7 +472,7 @@ class UploadHandler(BaseHandler):
             except Exception:
                 logging.debug("upload aiofile close failed", exc_info=True)
 
-    def _check_quota_exceeded(self) -> bool:
+    def _check_quota_exceeded(self, upload_bytes: int) -> bool:
         """Return True and set error response if storage quota would be exceeded."""
         if not is_feature_enabled("storage_quotas", False):
             return False
@@ -359,12 +480,23 @@ class UploadHandler(BaseHandler):
         quota = self.get_service("quota_service").get_quota(self.db_conn, username)
         if (
             quota["quota_bytes"] is not None
-            and quota["used_bytes"] + self._bytes_received > quota["quota_bytes"]
+            and quota["used_bytes"] + upload_bytes > quota["quota_bytes"]
         ):
             self.set_status(413)
             self.write("Storage quota exceeded")
             return True
         return False
+
+    def _remove_part_file(self) -> None:
+        if not getattr(self, "_temp_path", None):
+            return
+        if not getattr(self, "_chunk_mode", False):
+            return
+        try:
+            if os.path.exists(self._temp_path):
+                os.remove(self._temp_path)
+        except OSError:
+            logging.debug("upload part file remove failed", exc_info=True)
 
     @tornado.web.authenticated
     @require_action("file.write")
@@ -383,15 +515,47 @@ class UploadHandler(BaseHandler):
 
         await self._finalize_stream()
 
-        # Enforce size limit
         if self._too_large:
             limit_mb = constants_module.UPLOAD_CONFIG.get("max_file_size_mb", 512)
             self.set_status(413)
             self.write(FILE_TOO_LARGE_TEMPLATE.format(limit_mb=limit_mb))
+            if self._chunk_mode:
+                self._remove_part_file()
             return
 
-        # Check storage quota if enabled
-        if self._check_quota_exceeded():
+        if self._chunk_mode and self._chunk_info:
+            expected_end = self._chunk_info["offset"] + self._bytes_received
+            try:
+                part_size = os.path.getsize(self._temp_path)
+            except OSError:
+                part_size = -1
+            if part_size != expected_end:
+                self.set_status(400)
+                self.write(UPLOAD_CHUNK_OUT_OF_ORDER)
+                self._remove_part_file()
+                return
+            if not self._chunk_info["is_last"]:
+                self._keep_part_file = True
+                self.set_status(200)
+                self.write(UPLOAD_CHUNK_RECEIVED)
+                return
+            if part_size != self._chunk_info["total_size"]:
+                self.set_status(400)
+                self.write(INVALID_UPLOAD_CHUNK_HEADERS)
+                self._remove_part_file()
+                return
+            upload_bytes = part_size
+        else:
+            if self._bytes_received > constants_module.MAX_FILE_SIZE:
+                limit_mb = constants_module.UPLOAD_CONFIG.get("max_file_size_mb", 512)
+                self.set_status(413)
+                self.write(FILE_TOO_LARGE_TEMPLATE.format(limit_mb=limit_mb))
+                return
+            upload_bytes = self._bytes_received
+
+        if self._check_quota_exceeded(upload_bytes):
+            if self._chunk_mode:
+                self._remove_part_file()
             return
 
         final_path_abs, upload_err = _validate_upload_destination(
@@ -400,6 +564,8 @@ class UploadHandler(BaseHandler):
         if upload_err is not None:
             self.set_status(upload_err[0])
             self.write(upload_err[1])
+            if self._chunk_mode:
+                self._remove_part_file()
             return
 
         os.makedirs(os.path.dirname(final_path_abs), exist_ok=True)
@@ -411,12 +577,13 @@ class UploadHandler(BaseHandler):
             logging.exception("Upload save failed")
             self.set_status(500)
             self.write(UPLOAD_SAVE_FAILED)
+            if self._chunk_mode:
+                self._remove_part_file()
             return
 
-        # Update used bytes
         if is_feature_enabled("storage_quotas", False):
             self.get_service("quota_service").update_used_bytes(
-                self.db_conn, self.get_display_username(), self._bytes_received
+                self.db_conn, self.get_display_username(), upload_bytes
             )
 
         self.get_service("audit_service").log(
@@ -430,8 +597,9 @@ class UploadHandler(BaseHandler):
         self.write(UPLOAD_SUCCESSFUL)
 
     def on_finish(self) -> None:
-        # Clean up temp file on failures
         try:
+            if getattr(self, "_keep_part_file", False):
+                return
             if getattr(self, "_temp_path", None) and not getattr(self, "_moved", False):
                 if os.path.exists(self._temp_path):
                     try:

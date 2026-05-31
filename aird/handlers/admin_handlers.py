@@ -202,9 +202,7 @@ class AdminHandler(BaseHandler):
 
         # Update upload configuration
         try:
-            max_file_size_mb = max(
-                1, min(10240, int(self.get_argument("max_file_size_mb", "512")))
-            )
+            max_file_size_mb = max(1, int(self.get_argument("max_file_size_mb", "512")))
             UPLOAD_CONFIG["max_file_size_mb"] = max_file_size_mb
             constants_module.MAX_FILE_SIZE = max_file_size_mb * 1024 * 1024
             UPLOAD_CONFIG["allow_all_file_types"] = (

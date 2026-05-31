@@ -933,11 +933,11 @@ class TestMakeApp:
         make_app(settings)
         assert (
             settings["max_body_size"]
-            == constants_module.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT
+            == constants_module.UPLOAD_REQUEST_MAX_BODY_SIZE
         )
         assert (
             settings["max_buffer_size"]
-            == constants_module.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT
+            == constants_module.UPLOAD_REQUEST_MAX_BODY_SIZE
         )
 
     def test_registers_favorites_and_ldap_routes(self):

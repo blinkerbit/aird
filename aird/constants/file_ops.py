@@ -35,6 +35,11 @@ UNSUPPORTED_FILE_TYPE = (
 )
 UPLOAD_SAVE_FAILED = "Failed to save upload. Please try again."
 UPLOAD_SUCCESSFUL = "Upload successful"
+MISSING_UPLOAD_CHUNK_HEADERS = "Missing chunked upload headers"
+INVALID_UPLOAD_CHUNK_HEADERS = "Invalid chunked upload headers"
+UPLOAD_CHUNK_OUT_OF_ORDER = "Upload chunk out of order"
+UPLOAD_SESSION_NOT_FOUND = "Upload session not found or expired"
+UPLOAD_CHUNK_RECEIVED = '{"status":"chunk_received"}'
 
 # CreateFolderHandler
 FOLDER_CREATE_DISABLED = (

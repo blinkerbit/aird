@@ -196,6 +196,7 @@ class MainHandler(BaseHandler):
             get_file_icon=get_file_icon,
             features=flags_for_template,
             max_file_size=constants_module.MAX_FILE_SIZE,
+            upload_chunk_size=constants_module.UPLOAD_CHUNK_SIZE_BYTES,
             user_favorites=user_favorites,
             file_tags_map=file_tags_map,
         )

@@ -154,8 +154,8 @@ def make_app(
     settings.setdefault("static_url_prefix", "/static/")
     # Limit request size to avoid Tornado rejecting large uploads with
     # "Content-Length too long" before our handler can respond.
-    settings.setdefault("max_body_size", constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT)
-    settings.setdefault("max_buffer_size", constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT)
+    settings.setdefault("max_body_size", constants.UPLOAD_REQUEST_MAX_BODY_SIZE)
+    settings.setdefault("max_buffer_size", constants.UPLOAD_REQUEST_MAX_BODY_SIZE)
 
     if ldap_enabled:
         settings["ldap_server"] = ldap_server
@@ -495,8 +495,8 @@ def _start_server(app, ssl_options, port: int, hostname: str) -> None:
                 app.listen(
                     port,
                     ssl_options=ssl_options,
-                    max_body_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
-                    max_buffer_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
+                    max_body_size=constants.UPLOAD_REQUEST_MAX_BODY_SIZE,
+                    max_buffer_size=constants.UPLOAD_REQUEST_MAX_BODY_SIZE,
                 )
                 logger.info(
                     f"Serving HTTPS on 0.0.0.0 port {port} ({proto}://0.0.0.0:{port}/) ..."
@@ -505,8 +505,8 @@ def _start_server(app, ssl_options, port: int, hostname: str) -> None:
                 proto = "http"
                 app.listen(
                     port,
-                    max_body_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
-                    max_buffer_size=constants.MAX_UPLOAD_FILE_SIZE_HARD_LIMIT,
+                    max_body_size=constants.UPLOAD_REQUEST_MAX_BODY_SIZE,
+                    max_buffer_size=constants.UPLOAD_REQUEST_MAX_BODY_SIZE,
                 )
                 logger.info(
                     f"Serving HTTP on 0.0.0.0 port {port} ({proto}://0.0.0.0:{port}/) ..."
