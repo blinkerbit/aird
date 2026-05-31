@@ -62,6 +62,7 @@ UPLOAD_CONFIG = {
 # Per-request body limit (Cloudflare-compatible chunked uploads; admin sets total file cap separately)
 UPLOAD_CHUNK_SIZE_BYTES = 90 * 1024 * 1024  # 90 MiB per HTTP request
 UPLOAD_REQUEST_MAX_BODY_SIZE = UPLOAD_CHUNK_SIZE_BYTES + (1024 * 1024)  # chunk + slack
+UPLOAD_MAX_PARALLEL_CHUNKS = 5  # max concurrent chunk requests from the browser
 
 # File operation constants (derived from UPLOAD_CONFIG at startup)
 MAX_FILE_SIZE = UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024

@@ -375,10 +375,11 @@
     globalThis.__BROWSE_CONFIG = {
       maxFileSize: {{ max_file_size }},
       uploadChunkSize: {{ upload_chunk_size }},
+      uploadMaxParallel: {{ upload_max_parallel }},
       canTag: {{ 'true' if current_user and current_user.get('role') == 'admin' else 'false' }}
     };
   </script>
-  <script src="/static/js/browse/app.js?v=11"></script>
+  <script src="/static/js/browse/app.js?v=17"></script>
 
   <!-- Inline tag popover (per-row + button) -->
   <div id="rowTagPopoverBackdrop" class="row-tag-popover-backdrop" hidden></div>

@@ -8,6 +8,9 @@
     const UPLOAD_CHUNK_SIZE = globalThis.__BROWSE_CONFIG && globalThis.__BROWSE_CONFIG.uploadChunkSize
       ? globalThis.__BROWSE_CONFIG.uploadChunkSize
       : (90 * 1024 * 1024);
+    const UPLOAD_MAX_PARALLEL = globalThis.__BROWSE_CONFIG && globalThis.__BROWSE_CONFIG.uploadMaxParallel
+      ? globalThis.__BROWSE_CONFIG.uploadMaxParallel
+      : 5;
     const CAN_TAG = !!(globalThis.__BROWSE_CONFIG && globalThis.__BROWSE_CONFIG.canTag);
 
     const SelectionStore = {
@@ -80,6 +83,7 @@
     const progressContainer = document.getElementById("progressContainer");
     let uploadQueue = [];
     let isUploading = false;
+    let uploadBatchHadError = false;
     let reloadTimer = null;
 
     if (uploadZone && fileInput && progressContainer) {
@@ -177,8 +181,9 @@
 
         const queueItem = { file: fw.file, bar, info, cancelBtn, item, xhr: null, start: null, uploadDir, uploadName: fileName };
         queueItem.cancelBtn.addEventListener("click", function() {
-          if (queueItem.xhr) { queueItem.xhr.abort(); }
-          else {
+          if (queueItem.xhr || queueItem.activeXhrs) {
+            abortActiveUploads(queueItem);
+          } else {
             const idx = uploadQueue.indexOf(queueItem);
             if (idx !== -1) uploadQueue.splice(idx, 1);
             queueItem.item.remove();
@@ -194,6 +199,7 @@
       fileInput.value = "";
       clearTimeout(reloadTimer);
       if (!isUploading && uploadQueue.length > 0) {
+        uploadBatchHadError = false;
         isUploading = true;
         progressContainer.style.display = "block";
         processQueue();
@@ -237,8 +243,8 @@
         const queueItem = { file, bar, info, cancelBtn, item, xhr: null, start: null };
 
         cancelBtn.addEventListener("click", () => {
-          if (queueItem.xhr) {
-            queueItem.xhr.abort();
+          if (queueItem.xhr || queueItem.activeXhrs) {
+            abortActiveUploads(queueItem);
           } else {
             const idx = uploadQueue.indexOf(queueItem);
             if (idx !== -1) {
@@ -262,6 +268,7 @@
       fileInput.value = "";
       clearTimeout(reloadTimer);
       if (!isUploading && uploadQueue.length > 0) {
+        uploadBatchHadError = false;
         isUploading = true;
         progressContainer.style.display = "block";
         processQueue();
@@ -274,7 +281,10 @@
         if (progressContainer.children.length === 0) {
           progressContainer.style.display = "none";
         }
-        scheduleReload();
+        if (!uploadBatchHadError) {
+          scheduleReload();
+        }
+        uploadBatchHadError = false;
         return;
       }
 
@@ -282,6 +292,7 @@
       try {
         await uploadFile(current);
       } catch (err) {
+        uploadBatchHadError = true;
         console.warn('Upload error (message already shown to user):', err);
       }
 
@@ -301,36 +312,117 @@
       return globalThis.AirdCore.formatBytes(bytes);
     }
 
+    /** UUID for chunked uploads; works on plain HTTP where crypto.randomUUID is unavailable. */
+    function newUploadId() {
+      if (typeof globalThis.crypto?.randomUUID === "function") {
+        return globalThis.crypto.randomUUID();
+      }
+      const bytes = new Uint8Array(16);
+      if (typeof globalThis.crypto?.getRandomValues === "function") {
+        globalThis.crypto.getRandomValues(bytes);
+      } else {
+        for (let i = 0; i < bytes.length; i++) {
+          bytes[i] = Math.floor(Math.random() * 256);
+        }
+      }
+      bytes[6] = (bytes[6] & 0x0f) | 0x40;
+      bytes[8] = (bytes[8] & 0x3f) | 0x80;
+      const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    }
+
+    function abortActiveUploads(item) {
+      if (item.activeXhrs) {
+        for (const xhr of item.activeXhrs) {
+          try { xhr.abort(); } catch { /* ignore */ }
+        }
+      } else if (item.xhr) {
+        item.xhr.abort();
+      }
+    }
+
+    function updateUploadProgress(item, totalSize) {
+      const loaded = Math.min(item.bytesUploaded || 0, totalSize);
+      const percent = totalSize > 0 ? Math.min(100, (loaded / totalSize) * 100) : 0;
+      const elapsed = (Date.now() - item.start) / 1000;
+      const speed = loaded / (elapsed || 1);
+      const remaining = Math.max(0, totalSize - loaded);
+      item.bar.value = percent;
+      item.info.textContent = `${Math.round(percent)}% - ${formatBytes(loaded)} of ${formatBytes(totalSize)} (${formatBytes(remaining)} left) @ ${formatBytes(speed)}/s`;
+    }
+
+    function syncUploadProgress(item, totalSize) {
+      let loaded = 0;
+      if (item.chunkProgress) {
+        for (const part of item.chunkProgress.values()) {
+          loaded += Math.min(part.loaded, part.size);
+        }
+      }
+      item.bytesUploaded = loaded;
+      updateUploadProgress(item, totalSize);
+    }
+
+    function formatUploadError(responseText, status) {
+      const text = (responseText || "").trim();
+      if (!text) return `HTTP ${status}`;
+      if (text.startsWith("<!") || text.startsWith("<html") || text.includes("<!DOCTYPE")) {
+        if (status === 403) {
+          return "Access denied (403). Refresh the page and try again.";
+        }
+        const titleMatch = /<title[^>]*>([^<]+)<\/title>/i.exec(text);
+        if (titleMatch) {
+          return titleMatch[1].replace(/\s*·\s*Aird\s*$/i, "").trim();
+        }
+        return `Request failed (HTTP ${status})`;
+      }
+      return text.length > 400 ? text.slice(0, 400) + "…" : text;
+    }
+
     function uploadChunk(item, blob, uploadId, offset, totalSize, isLast) {
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
+        if (!item.activeXhrs) item.activeXhrs = [];
+        item.activeXhrs.push(xhr);
         item.xhr = xhr;
-        xhr.open("POST", "/upload");
+        const dir = item.uploadDir ?? document.getElementById('currentPath')?.value ?? '';
+        const fname = item.uploadName ?? item.file.name;
+        const qs = new URLSearchParams({
+          upload_id: uploadId,
+          chunk_offset: String(offset),
+          total_size: String(totalSize),
+          chunk_last: isLast ? "1" : "0",
+          upload_dir: dir,
+          upload_filename: fname,
+        });
+        const xsrfToken = getXSRFToken();
+        if (xsrfToken) {
+          qs.set("_xsrf", xsrfToken);
+        }
+        xhr.open("POST", "/upload?" + qs.toString());
 
         xhr.upload.addEventListener("progress", (e) => {
-          if (!e.lengthComputable) return;
-          const loaded = offset + e.loaded;
-          const percent = (loaded / totalSize) * 100;
-          const elapsed = (Date.now() - item.start) / 1000;
-          const speed = loaded / (elapsed || 1);
-          const remaining = totalSize - loaded;
-          item.bar.value = percent;
-          item.info.textContent = `${Math.round(percent)}% - ${formatBytes(loaded)} of ${formatBytes(totalSize)} (${formatBytes(remaining)} left) @ ${formatBytes(speed)}/s`;
+          if (!e.lengthComputable || !item.chunkProgress) return;
+          const part = item.chunkProgress.get(offset);
+          if (!part) return;
+          part.loaded = Math.min(e.loaded, part.size);
+          syncUploadProgress(item, totalSize);
         });
 
         xhr.addEventListener("load", () => {
+          const part = item.chunkProgress?.get(offset);
+          if (part) {
+            part.loaded = part.size;
+            syncUploadProgress(item, totalSize);
+          }
           if (xhr.status >= 200 && xhr.status < 300) {
             resolve();
           } else {
-            const detail = (xhr.responseText || "").trim() || ("HTTP " + xhr.status);
-            reject(new Error(detail));
+            reject(new Error(formatUploadError(xhr.responseText, xhr.status)));
           }
         });
         xhr.addEventListener("error", () => reject(new Error("network error")));
         xhr.addEventListener("abort", () => reject(new Error("cancelled")));
 
-        const dir = item.uploadDir ?? document.getElementById('currentPath')?.value ?? '';
-        const fname = item.uploadName ?? item.file.name;
         xhr.setRequestHeader("X-Upload-Dir", encodeURIComponent(dir));
         xhr.setRequestHeader("X-Upload-Filename", encodeURIComponent(fname));
         xhr.setRequestHeader("X-Upload-Id", uploadId);
@@ -338,7 +430,6 @@
         xhr.setRequestHeader("X-Upload-Total-Size", String(totalSize));
         xhr.setRequestHeader("X-Chunk-Last", isLast ? "1" : "0");
         xhr.setRequestHeader("Content-Type", "application/octet-stream");
-        const xsrfToken = getXSRFToken();
         if (xsrfToken) {
           xhr.setRequestHeader("X-XSRFToken", xsrfToken);
         }
@@ -348,19 +439,47 @@
 
     async function uploadFile(item) {
       const totalSize = item.file.size;
-      const uploadId = globalThis.crypto && globalThis.crypto.randomUUID
-        ? globalThis.crypto.randomUUID()
-        : `upload-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const uploadId = newUploadId();
       item.start = Date.now();
-      let offset = 0;
-      try {
-        while (offset < totalSize) {
-          const end = Math.min(offset + UPLOAD_CHUNK_SIZE, totalSize);
-          const blob = item.file.slice(offset, end);
-          const isLast = end >= totalSize;
-          await uploadChunk(item, blob, uploadId, offset, totalSize, isLast);
-          offset = end;
+      item.bytesUploaded = 0;
+      item.activeXhrs = [];
+
+      const chunks = [];
+      for (let offset = 0; offset < totalSize; offset += UPLOAD_CHUNK_SIZE) {
+        const end = Math.min(offset + UPLOAD_CHUNK_SIZE, totalSize);
+        chunks.push({
+          offset,
+          blob: item.file.slice(offset, end),
+          isLast: end >= totalSize,
+        });
+      }
+      item.chunkProgress = new Map();
+      for (const chunk of chunks) {
+        item.chunkProgress.set(chunk.offset, { loaded: 0, size: chunk.blob.size });
+      }
+
+      let nextIndex = 0;
+      const workerCount = Math.min(UPLOAD_MAX_PARALLEL, chunks.length);
+
+      async function worker() {
+        while (true) {
+          const index = nextIndex;
+          nextIndex += 1;
+          if (index >= chunks.length) return;
+          const chunk = chunks[index];
+          await uploadChunk(
+            item,
+            chunk.blob,
+            uploadId,
+            chunk.offset,
+            totalSize,
+            chunk.isLast
+          );
         }
+      }
+
+      try {
+        await Promise.all(Array.from({ length: workerCount }, () => worker()));
         item.bar.value = 100;
         item.info.textContent = "Completed";
         item.cancelBtn.remove();
@@ -369,7 +488,7 @@
         item.cancelBtn.remove();
         if (err.message !== "cancelled") {
           const detail = err.message || "unknown error";
-          showDialog("Upload failed (" + item.file.name + "): " + detail, "Upload failed");
+          await showDialog("Upload failed (" + item.file.name + "): " + detail, "Upload failed");
         }
         throw err;
       }

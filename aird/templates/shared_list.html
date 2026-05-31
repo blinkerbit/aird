@@ -33,13 +33,25 @@
       </span>
     </header>
 
+    <div class="flex flex-wrap items-center gap-3 mb-3" id="bulkDownloadBar">
+      <label class="label cursor-pointer justify-start gap-2 py-0">
+        <input type="checkbox" id="selectAllFiles" class="checkbox checkbox-sm checkbox-primary" title="Select all files">
+        <span class="label-text font-medium">Select all</span>
+      </label>
+      <button type="button" id="downloadSelectedBtn" class="btn btn-primary btn-sm" disabled>
+        Download selected
+      </button>
+      <span id="selectionCount" class="text-sm text-base-content/60"></span>
+    </div>
+
     <section class="bg-base-100 border border-base-300 rounded-xl overflow-hidden shadow-sm" id="fileBrowser">
-      <div class="grid grid-cols-[1fr_110px] items-center bg-base-200 px-3.5 py-2.5 text-[0.7rem] uppercase tracking-wider font-bold border-b border-base-300 text-base-content/50 max-sm:grid-cols-[1fr_80px] max-sm:text-[0.8rem]">
-        <span >Name</span>
+      <div class="grid grid-cols-[auto_1fr_110px] items-center bg-base-200 px-3.5 py-2.5 text-[0.7rem] uppercase tracking-wider font-bold border-b border-base-300 text-base-content/50 max-sm:grid-cols-[auto_1fr_80px] max-sm:text-[0.8rem]">
+        <span class="w-6" aria-hidden="true"></span>
+        <span>Name</span>
         <span class="text-right">Download</span>
       </div>
       <div id="fileTreeBody" >
-        <div class="grid grid-cols-[1fr_110px] items-center gap-2 px-3.5 py-2 border-b border-base-200 transition-colors hover:bg-base-200 max-sm:grid-cols-[1fr_80px] max-sm:text-[0.8rem] border-none">
+        <div class="grid grid-cols-[auto_1fr_110px] items-center gap-2 px-3.5 py-2 border-b border-base-200 transition-colors hover:bg-base-200 max-sm:grid-cols-[auto_1fr_80px] max-sm:text-[0.8rem] border-none">
           <span class="name-part text-base-content/50">Loading…</span>
           <span class="actions-part"></span>
         </div>
@@ -52,6 +64,8 @@
   <script nonce="{{ csp_nonce }}">
     let currentAuthToken = null;
     const shareId = '{{ share_id }}';
+    let allFilePaths = [];
+    const FILE_ROW_GRID = 'grid grid-cols-[auto_1fr_110px] items-center gap-2 px-3.5 py-2 border-b border-base-200 transition-colors hover:bg-base-200 max-sm:grid-cols-[auto_1fr_80px] max-sm:text-[0.8rem]';
 
     function getAuthToken() {
       if (!currentAuthToken) currentAuthToken = sessionStorage.getItem(`share_token_${shareId}`);
@@ -128,11 +142,95 @@
       });
     }
 
+    function downloadFileViaLink(filePath) {
+      const a = document.createElement('a');
+      a.href = `/shared/${shareId}/file/${encodeURIComponent(filePath)}?download=1`;
+      a.className = 'hidden';
+      a.setAttribute('download', '');
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    function getSelectedPaths() {
+      return [...document.querySelectorAll('.share-file-cb:checked')].map((cb) => cb.dataset.path);
+    }
+
+    function updateSelectionUI() {
+      const boxes = document.querySelectorAll('.share-file-cb');
+      const selected = getSelectedPaths();
+      const total = boxes.length;
+      const btn = document.getElementById('downloadSelectedBtn');
+      const selectAll = document.getElementById('selectAllFiles');
+      const countEl = document.getElementById('selectionCount');
+      const bar = document.getElementById('bulkDownloadBar');
+      if (bar) bar.style.display = total > 0 ? '' : 'none';
+      if (btn) {
+        btn.disabled = selected.length === 0;
+        btn.textContent = selected.length === total && total > 0
+          ? `Download all (${total})`
+          : `Download selected (${selected.length})`;
+      }
+      if (selectAll) {
+        selectAll.checked = total > 0 && selected.length === total;
+        selectAll.indeterminate = selected.length > 0 && selected.length < total;
+      }
+      if (countEl) {
+        countEl.textContent = selected.length ? `${selected.length} of ${total} selected` : '';
+      }
+    }
+
+    async function downloadPaths(paths) {
+      const btn = document.getElementById('downloadSelectedBtn');
+      const selectAll = document.getElementById('selectAllFiles');
+      if (btn) btn.disabled = true;
+      if (selectAll) selectAll.disabled = true;
+      for (let i = 0; i < paths.length; i++) {
+        downloadFileViaLink(paths[i]);
+        if (i < paths.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 450));
+        }
+      }
+      if (selectAll) selectAll.disabled = false;
+      updateSelectionUI();
+    }
+
+    function wireBulkDownloadControls() {
+      const selectAll = document.getElementById('selectAllFiles');
+      const btn = document.getElementById('downloadSelectedBtn');
+      if (selectAll) {
+        selectAll.addEventListener('change', () => {
+          const checked = selectAll.checked;
+          document.querySelectorAll('.share-file-cb').forEach((cb) => { cb.checked = checked; });
+          updateSelectionUI();
+        });
+      }
+      if (btn) {
+        btn.addEventListener('click', () => {
+          const paths = getSelectedPaths();
+          if (paths.length) void downloadPaths(paths);
+        });
+      }
+      document.getElementById('fileTreeBody')?.addEventListener('change', (e) => {
+        if (e.target.classList?.contains('share-file-cb')) updateSelectionUI();
+      });
+    }
+
     function renderTreeNode(node, depth) {
       if (node.isFile) {
         const row = document.createElement('div');
-        row.className = 'grid grid-cols-[1fr_110px] items-center gap-2 px-3.5 py-2 border-b border-base-200 transition-colors hover:bg-base-200 max-sm:grid-cols-[1fr_80px] max-sm:text-[0.8rem]';
+        row.className = FILE_ROW_GRID;
         row.style.paddingLeft = `${14 + depth * 16}px`;
+
+        const checkWrap = document.createElement('div');
+        checkWrap.className = 'flex items-center shrink-0 w-6';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'share-file-cb checkbox checkbox-sm checkbox-primary';
+        checkbox.dataset.path = node.fullPath;
+        checkbox.title = 'Select for download';
+        checkWrap.appendChild(checkbox);
+
         const nameEl = document.createElement('div');
         nameEl.className = 'min-w-0 overflow-hidden text-ellipsis whitespace-nowrap';
         const icon = document.createElement('span');
@@ -152,6 +250,7 @@
         a.textContent = '⬇ Download';
         action.appendChild(a);
 
+        row.appendChild(checkWrap);
         row.appendChild(nameEl);
         row.appendChild(action);
         if (node.fullPath) row.title = node.fullPath;
@@ -181,6 +280,7 @@
     function renderFiles(files) {
       const container = document.getElementById('fileTreeBody');
       container.innerHTML = '';
+      allFilePaths = Array.isArray(files) ? [...files] : [];
 
       if (!files || files.length === 0) {
         const empty = document.createElement('div');
@@ -193,6 +293,7 @@
         empty.style.color = 'oklch(var(--bc) / 0.5)';
         empty.textContent = 'No files available';
         container.appendChild(empty);
+        updateSelectionUI();
         return;
       }
 
@@ -200,9 +301,11 @@
       sortTreeEntries(tree.children).forEach(([, child]) => {
         container.appendChild(renderTreeNode(child, 0));
       });
+      updateSelectionUI();
     }
 
     document.addEventListener('DOMContentLoaded', function () {
+      wireBulkDownloadControls();
       const token = getAuthToken();
       if (!token) { globalThis.location.href = `/shared/${shareId}/verify`; return; }
       try {
