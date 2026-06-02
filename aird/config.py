@@ -42,6 +42,7 @@ FEATURE_FLAGS = {}
 CLOUD_MANAGER = CloudManager()
 WEBSOCKET_CONFIG = {}
 MULTI_USER = False
+WORKERS = None  # None = auto (1.25 * threads_per_core * physical_cores)
 DB_CONN = None
 MAX_FILE_SIZE = _MAX_FILE_SIZE
 MAX_READABLE_FILE_SIZE = _MAX_READABLE_FILE_SIZE
@@ -170,7 +171,7 @@ def init_config():
     global CONFIG_FILE, ROOT_DIR, PORT, ACCESS_TOKEN, ADMIN_TOKEN, LDAP_ENABLED, LDAP_SERVER
     global LDAP_BASE_DN, LDAP_USER_TEMPLATE, LDAP_FILTER_TEMPLATE, LDAP_ATTRIBUTES
     global LDAP_ATTRIBUTE_MAP, HOSTNAME, SSL_CERT, SSL_KEY, ADMIN_USERS, FEATURE_FLAGS, CLOUD_MANAGER
-    global MULTI_USER
+    global MULTI_USER, WORKERS
 
     parser = argparse.ArgumentParser(description="Run Aird")
     parser.add_argument("--config", help="Path to JSON config file")
@@ -201,6 +202,12 @@ def init_config():
         "--multi-user",
         action="store_true",
         help="Enable multi-user mode (each user gets a private home directory)",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="HTTP worker processes (default: ceil(1.25 * threads_per_core * physical_cores); 1 on Windows)",
     )
     args = parser.parse_args()
 
@@ -246,6 +253,9 @@ def init_config():
     _apply_feature_flags_from_config(config)
 
     MULTI_USER = args.multi_user or config.get("multi_user", False)
+
+    workers_arg = args.workers if args.workers is not None else config.get("workers")
+    WORKERS = int(workers_arg) if workers_arg is not None else None
 
     SSL_CERT = args.ssl_cert or config.get("ssl_cert")
     SSL_KEY = args.ssl_key or config.get("ssl_key")

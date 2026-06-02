@@ -316,9 +316,14 @@ def list_shares_accessible_to_user(conn: sqlite3.Connection, username: str) -> l
         result = []
         for row in cursor:
             share = _row_to_share_dict(row, col_names)
+            if login_matches_share_creator_field(share.get("created_by"), username):
+                continue
             allowed = share.get("allowed_users")
-            is_creator = login_matches_share_creator_field(share.get("created_by"), username)
-            if allowed is None or username in allowed or is_creator:
+            modify_users = share.get("modify_users") or []
+            if username in modify_users:
+                result.append(share)
+                continue
+            if allowed is None or username in allowed:
                 result.append(share)
         return result
     except Exception as e:
@@ -375,9 +380,16 @@ def _share_covers_dynamic_path(share: dict, rel_path: str, root_dir: str) -> boo
         try:
             full_folder_path = os.path.abspath(os.path.join(root_dir, folder_path))
             full_file_path = os.path.abspath(os.path.join(root_dir, rel_path))
-            if (
-                os.path.isdir(full_folder_path)
-                and is_within_root(full_file_path, full_folder_path)
+            if not is_within_root(full_file_path, root_dir):
+                continue
+            if os.path.isdir(full_folder_path) and is_within_root(
+                full_file_path, full_folder_path
+            ):
+                if filter_files_by_patterns([rel_path], allow_list, avoid_list):
+                    return True
+            elif (
+                os.path.isfile(full_folder_path)
+                and folder_path.replace("\\", "/") == rel_path.replace("\\", "/")
                 and filter_files_by_patterns([rel_path], allow_list, avoid_list)
             ):
                 return True

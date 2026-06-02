@@ -7,10 +7,11 @@
     const MAX_FILE_SIZE = globalThis.__BROWSE_CONFIG ? globalThis.__BROWSE_CONFIG.maxFileSize : 10737418240;
     const UPLOAD_CHUNK_SIZE = globalThis.__BROWSE_CONFIG && globalThis.__BROWSE_CONFIG.uploadChunkSize
       ? globalThis.__BROWSE_CONFIG.uploadChunkSize
-      : (90 * 1024 * 1024);
-    const UPLOAD_MAX_PARALLEL = globalThis.__BROWSE_CONFIG && globalThis.__BROWSE_CONFIG.uploadMaxParallel
-      ? globalThis.__BROWSE_CONFIG.uploadMaxParallel
-      : 5;
+      : (50 * 1024 * 1024);
+    const UPLOAD_MAX_PARALLEL = Math.max(
+      1,
+      Number(globalThis.__BROWSE_CONFIG?.uploadMaxParallel) || 5
+    );
     const CAN_TAG = !!(globalThis.__BROWSE_CONFIG && globalThis.__BROWSE_CONFIG.canTag);
 
     const SelectionStore = {
@@ -69,7 +70,18 @@
       }
     }, true);
 
-    const showDialog = (...args) => globalThis.AirdCore.showDialog(...args);
+    const showDialog = (...args) => {
+      if (globalThis.AirdCore?.showDialog) {
+        return globalThis.AirdCore.showDialog(...args);
+      }
+      const msg = args[0] ?? "";
+      const opts = args[2];
+      if (opts?.showCancel) {
+        return Promise.resolve(globalThis.confirm(msg));
+      }
+      globalThis.alert(msg);
+      return Promise.resolve(true);
+    };
 
     /** True if keyboard events should be ignored (typing in a field). */
     function isInputKeyTarget(target) {
@@ -168,7 +180,9 @@
         const info = document.createElement("span");
         info.style.display = "block"; info.style.fontSize = "12px";
         const cancelBtn = document.createElement("button");
-        cancelBtn.textContent = "Cancel"; cancelBtn.style.marginTop = "2px";
+        cancelBtn.type = "button";
+        cancelBtn.className = "btn btn-ghost btn-xs mt-1";
+        cancelBtn.textContent = "Cancel";
         item.appendChild(nameEl); item.appendChild(bar); item.appendChild(info); item.appendChild(cancelBtn);
         progressContainer.appendChild(item);
 
@@ -231,8 +245,9 @@
         info.style.display = "block";
         info.style.fontSize = "12px";
         const cancelBtn = document.createElement("button");
+        cancelBtn.type = "button";
+        cancelBtn.className = "btn btn-ghost btn-xs mt-1";
         cancelBtn.textContent = "Cancel";
-        cancelBtn.style.marginTop = "2px";
 
         item.appendChild(nameEl);
         item.appendChild(bar);
@@ -293,7 +308,14 @@
         await uploadFile(current);
       } catch (err) {
         uploadBatchHadError = true;
-        console.warn('Upload error (message already shown to user):', err);
+        markUploadFailed(current, err);
+        if (err?.message !== "cancelled") {
+          console.warn("Upload failed:", err);
+          void showDialog(
+            friendlyUploadErrorMessage(err),
+            "Upload failed"
+          );
+        }
       }
 
       processQueue();
@@ -347,18 +369,31 @@
       const elapsed = (Date.now() - item.start) / 1000;
       const speed = loaded / (elapsed || 1);
       const remaining = Math.max(0, totalSize - loaded);
+      let chunkNote = "";
+      if (item.chunkProgress) {
+        const totalChunks = item.chunkProgress.size;
+        const inFlight = item.chunksInFlight || 0;
+        const maxP = item.parallelMax || 1;
+        chunkNote = ` · ${item.chunksDone || 0}/${totalChunks} done`;
+        if (maxP > 1 && totalChunks > 1) {
+          chunkNote += ` · ${inFlight}/${maxP} uploading`;
+        }
+      }
       item.bar.value = percent;
-      item.info.textContent = `${Math.round(percent)}% - ${formatBytes(loaded)} of ${formatBytes(totalSize)} (${formatBytes(remaining)} left) @ ${formatBytes(speed)}/s`;
+      item.info.textContent = `${Math.round(percent)}% - ${formatBytes(loaded)} of ${formatBytes(totalSize)} (${formatBytes(remaining)} left) @ ${formatBytes(speed)}/s${chunkNote}`;
     }
 
     function syncUploadProgress(item, totalSize) {
       let loaded = 0;
+      let chunksDone = 0;
       if (item.chunkProgress) {
         for (const part of item.chunkProgress.values()) {
           loaded += Math.min(part.loaded, part.size);
+          if (part.loaded >= part.size) chunksDone += 1;
         }
       }
       item.bytesUploaded = loaded;
+      item.chunksDone = chunksDone;
       updateUploadProgress(item, totalSize);
     }
 
@@ -378,12 +413,109 @@
       return text.length > 400 ? text.slice(0, 400) + "…" : text;
     }
 
+    /** Plain-language message for the upload row (not console-only). */
+    function friendlyUploadErrorMessage(err) {
+      const raw = (err && err.message) ? String(err.message).trim() : "";
+      if (!raw || raw === "cancelled") return raw;
+      const lower = raw.toLowerCase();
+      if (lower.includes("network")) {
+        return "Upload interrupted. Check your connection and try again.";
+      }
+      if (lower.includes("403") || lower.includes("access denied")) {
+        return "Upload not allowed. Refresh the page and try again.";
+      }
+      if (lower.includes("413") || lower.includes("too large")) {
+        return "This file is too large for the server limit.";
+      }
+      if (lower.includes("chunk") || lower.includes("out of order")) {
+        return "Upload was interrupted. Please try again.";
+      }
+      return "Upload could not be completed. Please try again.";
+    }
+
+    function setUploadRowOutcome(item, outcome, message) {
+      if (!item?.item) return;
+      const row = item.item;
+      row.classList.remove(
+        "border", "border-error", "bg-error/10", "rounded-lg", "p-2", "px-3", "py-2"
+      );
+      item.info.classList.remove("text-error", "font-semibold", "text-success");
+      if (outcome === "error") {
+        row.classList.add(
+          "border", "border-error", "bg-error/10", "rounded-lg", "p-2", "px-3", "py-2"
+        );
+        item.info.classList.add("text-error", "font-semibold");
+      } else if (outcome === "ok") {
+        item.info.classList.add("text-success");
+      } else if (outcome === "cancelled") {
+        item.info.classList.add("opacity-70");
+      }
+      item.info.textContent = message;
+      if (item.cancelBtn?.parentNode) {
+        item.cancelBtn.remove();
+        item.cancelBtn = null;
+      }
+      if (outcome === "error" && !item.dismissBtn) {
+        const dismissBtn = document.createElement("button");
+        dismissBtn.type = "button";
+        dismissBtn.className = "btn btn-ghost btn-xs mt-1";
+        dismissBtn.textContent = "Dismiss";
+        dismissBtn.addEventListener("click", () => {
+          row.remove();
+          if (progressContainer.children.length === 0) {
+            progressContainer.style.display = "none";
+          }
+        });
+        row.appendChild(dismissBtn);
+        item.dismissBtn = dismissBtn;
+      }
+    }
+
+    function markUploadFailed(item, err) {
+      if (!item) return;
+      if (err?.message === "cancelled") {
+        setUploadRowOutcome(item, "cancelled", "Cancelled");
+        return;
+      }
+      setUploadRowOutcome(item, "error", friendlyUploadErrorMessage(err));
+    }
+
+    async function uploadChunkWithRetry(item, blob, uploadId, offset, totalSize, isLast) {
+      const maxAttempts = 4;
+      let lastErr = null;
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        try {
+          await uploadChunk(item, blob, uploadId, offset, totalSize, isLast);
+          return;
+        } catch (err) {
+          lastErr = err;
+          if (err?.message === "cancelled") {
+            throw err;
+          }
+          if (attempt < maxAttempts - 1) {
+            await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+          }
+        }
+      }
+      throw lastErr || new Error("upload failed");
+    }
+
     function uploadChunk(item, blob, uploadId, offset, totalSize, isLast) {
       return new Promise((resolve, reject) => {
+        item.chunksInFlight = (item.chunksInFlight || 0) + 1;
+        syncUploadProgress(item, totalSize);
+
         const xhr = new XMLHttpRequest();
         if (!item.activeXhrs) item.activeXhrs = [];
         item.activeXhrs.push(xhr);
         item.xhr = xhr;
+
+        const releaseSlot = () => {
+          item.chunksInFlight = Math.max(0, (item.chunksInFlight || 0) - 1);
+          const idx = item.activeXhrs ? item.activeXhrs.indexOf(xhr) : -1;
+          if (idx >= 0) item.activeXhrs.splice(idx, 1);
+          syncUploadProgress(item, totalSize);
+        };
         const dir = item.uploadDir ?? document.getElementById('currentPath')?.value ?? '';
         const fname = item.uploadName ?? item.file.name;
         const qs = new URLSearchParams({
@@ -412,16 +544,22 @@
           const part = item.chunkProgress?.get(offset);
           if (part) {
             part.loaded = part.size;
-            syncUploadProgress(item, totalSize);
           }
+          releaseSlot();
           if (xhr.status >= 200 && xhr.status < 300) {
             resolve();
           } else {
             reject(new Error(formatUploadError(xhr.responseText, xhr.status)));
           }
         });
-        xhr.addEventListener("error", () => reject(new Error("network error")));
-        xhr.addEventListener("abort", () => reject(new Error("cancelled")));
+        xhr.addEventListener("error", () => {
+          releaseSlot();
+          reject(new Error("network error"));
+        });
+        xhr.addEventListener("abort", () => {
+          releaseSlot();
+          reject(new Error("cancelled"));
+        });
 
         xhr.setRequestHeader("X-Upload-Dir", encodeURIComponent(dir));
         xhr.setRequestHeader("X-Upload-Filename", encodeURIComponent(fname));
@@ -458,16 +596,16 @@
         item.chunkProgress.set(chunk.offset, { loaded: 0, size: chunk.blob.size });
       }
 
-      let nextIndex = 0;
       const workerCount = Math.min(UPLOAD_MAX_PARALLEL, chunks.length);
+      item.parallelMax = workerCount;
+      item.chunksInFlight = 0;
 
-      async function worker() {
+      async function runChunkWorker() {
         while (true) {
-          const index = nextIndex;
-          nextIndex += 1;
+          const index = runChunkWorker.nextIndex++;
           if (index >= chunks.length) return;
           const chunk = chunks[index];
-          await uploadChunk(
+          await uploadChunkWithRetry(
             item,
             chunk.blob,
             uploadId,
@@ -477,18 +615,23 @@
           );
         }
       }
+      runChunkWorker.nextIndex = 0;
 
       try {
-        await Promise.all(Array.from({ length: workerCount }, () => worker()));
+        await Promise.all(
+          Array.from({ length: workerCount }, () => runChunkWorker())
+        );
+        setUploadRowOutcome(item, "ok", "Upload completed");
         item.bar.value = 100;
-        item.info.textContent = "Completed";
-        item.cancelBtn.remove();
       } catch (err) {
-        item.info.textContent = err.message === "cancelled" ? "Cancelled" : "Failed";
-        item.cancelBtn.remove();
+        markUploadFailed(item, err);
         if (err.message !== "cancelled") {
-          const detail = err.message || "unknown error";
-          await showDialog("Upload failed (" + item.file.name + "): " + detail, "Upload failed");
+          console.warn("Upload failed:", item.file.name, err);
+          try {
+            await showDialog(friendlyUploadErrorMessage(err), "Upload failed");
+          } catch {
+            /* inline row message is enough */
+          }
         }
         throw err;
       }

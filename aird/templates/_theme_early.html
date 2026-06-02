@@ -1,5 +1,5 @@
 {# Blocking theme init — must be first in <head> to prevent light flash #}
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   var THEMES = ['light', 'dark', 'nord', 'dracula', 'cyberpunk', 'retro', 'autumn'];
   var DARK = { dark: 1, dracula: 1 };

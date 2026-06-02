@@ -101,46 +101,89 @@ def lint():
     else:
         print("Error: run_tests.py not found.")
 
-def bump_version(part='patch'):
-    """Increment the version in setup.py."""
-    with open(SETUP_FILE, 'r', encoding='utf-8') as f:
-        content = f.read()
+_VERSION_RE = re.compile(
+    r'version="(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)(?P<suffix>(?:\.dev\d+|rc\d+)?)"'
+)
 
-    match = re.search(r'version="(\d+)\.(\d+)\.(\d+)"', content)
+
+def _read_version():
+    with open(SETUP_FILE, "r", encoding="utf-8") as f:
+        content = f.read()
+    match = _VERSION_RE.search(content)
     if not match:
         print("Error: Could not find version string in setup.py")
         sys.exit(1)
+    return content, match
 
-    major, minor, patch = map(int, match.groups())
-    if part == 'major':
+
+def _write_version(content, new_version):
+    new_content = _VERSION_RE.sub(f'version="{new_version}"', content, count=1)
+    with open(SETUP_FILE, "w", encoding="utf-8") as f:
+        f.write(new_content)
+    print(f"Version set to: {new_version}")
+    return new_version
+
+
+def bump_version(part="patch"):
+    """Increment the version in setup.py (stable release)."""
+    content, match = _read_version()
+    major = int(match.group("major"))
+    minor = int(match.group("minor"))
+    patch = int(match.group("patch"))
+    if part == "major":
         major += 1
         minor = 0
         patch = 0
-    elif part == 'minor':
+    elif part == "minor":
         minor += 1
         patch = 0
     else:
         patch += 1
+    return _write_version(content, f"{major}.{minor}.{patch}")
 
-    new_version = f"{major}.{minor}.{patch}"
-    new_content = re.sub(r'version="\d+\.\d+\.\d+"', f'version="{new_version}"', content)
-    
-    with open(SETUP_FILE, 'w', encoding='utf-8') as f:
-        f.write(new_content)
-    
-    print(f"Bumped version to: {new_version}")
-    return new_version
 
-def release(part='patch'):
-    """Handle full release process."""
-    version = bump_version(part)
-    build()
+def bump_dev_version():
+    """Bump to next dev release (e.g. 0.4.22 -> 0.4.23.dev0, 0.4.23.dev0 -> 0.4.23.dev1)."""
+    content, match = _read_version()
+    major = int(match.group("major"))
+    minor = int(match.group("minor"))
+    patch = int(match.group("patch"))
+    suffix = match.group("suffix") or ""
+    dev_match = re.fullmatch(r"\.dev(\d+)", suffix)
+    if dev_match:
+        dev_num = int(dev_match.group(1)) + 1
+    else:
+        patch += 1
+        dev_num = 0
+    return _write_version(content, f"{major}.{minor}.{patch}.dev{dev_num}")
+
+def _upload_dist(version, prerelease=False):
     print(f"\nReady to upload version {version} to PyPI?")
+    if prerelease:
+        print("Install with (pip):")
+        print(f"  pip install --pre aird=={version}")
+        print("Install with (uv):")
+        print(f'  uv pip install --prerelease=allow "aird=={version}"')
+        print("  # or: uv pip install " + f'"aird>={version}"')
     confirm = input("Type 'yes' to proceed with twine upload: ")
-    if confirm.lower() == 'yes':
+    if confirm.lower() == "yes":
         run_command("twine upload dist/*")
     else:
         print("Upload cancelled.")
+
+
+def release(part="patch"):
+    """Handle full stable release process."""
+    version = bump_version(part)
+    build()
+    _upload_dist(version)
+
+
+def release_dev():
+    """Build and publish a PEP 440 dev release (requires pip install --pre)."""
+    version = bump_dev_version()
+    build()
+    _upload_dist(version, prerelease=True)
 
 def main():
     parser = argparse.ArgumentParser(description="Aird Management Script")
@@ -155,10 +198,15 @@ def main():
     test_parser.add_argument("--verbose", action="store_true", help="Verbose output")
     test_parser.add_argument("--quick", action="store_true", help="Quick run")
 
-    release_parser = subparsers.add_parser("release", help="Bump version and publish")
+    release_parser = subparsers.add_parser("release", help="Bump version and publish stable")
     release_parser.add_argument("--patch", action="store_const", const="patch", dest="part", default="patch")
     release_parser.add_argument("--minor", action="store_const", const="minor", dest="part")
     release_parser.add_argument("--major", action="store_const", const="major", dest="part")
+
+    subparsers.add_parser(
+        "release-dev",
+        help="Bump .devN version, build, and upload to PyPI (pip install --pre aird)",
+    )
 
     args = parser.parse_args()
 
@@ -174,6 +222,8 @@ def main():
         test(verbose=args.verbose, quick=args.quick)
     elif args.command == "release":
         release(args.part)
+    elif args.command == "release-dev":
+        release_dev()
     else:
         parser.print_help()
 

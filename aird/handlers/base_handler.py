@@ -895,6 +895,7 @@ class BaseHandler(tornado.web.RequestHandler):
         namespace.setdefault("nav_title", "")
         namespace.setdefault("show_admin_link", False)
         namespace.setdefault("ldap_enabled", self.settings.get("ldap_server") is not None)
+        namespace.setdefault("static_version", constants_module.APP_VERSION)
         return namespace
 
     def get_current_user(self):
@@ -954,15 +955,27 @@ class BaseHandler(tornado.web.RequestHandler):
             return _display_username_from_dict(user)
         return _display_username_from_legacy(user, self)
 
-    def can_manage_share_secrets(self, share: dict) -> bool:
-        """True if current user may view raw secret tokens and full management details."""
+    def is_share_owner(self, share: dict) -> bool:
+        """True if the current user created the share (or is admin for legacy rows)."""
         if self.is_admin_user():
             return True
         u = get_username_string_for_db(self)
         if not u:
             return False
         creator = (share.get("created_by") or "").strip()
-        if creator and login_matches_share_creator_field(creator, u):
+        if not creator:
+            return False
+        return login_matches_share_creator_field(creator, u)
+
+    def can_edit_share_paths(self, share: dict) -> bool:
+        """True if the user may add/remove files on an existing share."""
+        if self.is_share_owner(share):
             return True
-        modify_users = share.get("modify_users") or []
-        return u in modify_users
+        u = get_username_string_for_db(self)
+        if not u:
+            return False
+        return u in (share.get("modify_users") or [])
+
+    def can_manage_share_secrets(self, share: dict) -> bool:
+        """True for share owners: tokens, ACL, revoke, and full settings."""
+        return self.is_share_owner(share)

@@ -313,8 +313,11 @@ class TestShareRevokeHandler:
 
             handler.post()
             handler.set_status.assert_called_with(403)
-            mock_write.assert_called_with({"error": "Access denied"})
+            mock_write.assert_called_with(
+                {"error": "Only the share owner can revoke this share"}
+            )
             mock_delete.assert_not_called()
+
     def setup_method(self):
         self.mock_app = MagicMock()
         self.mock_request = MagicMock()
@@ -902,3 +905,32 @@ class TestShareHandlerPathHelpers:
         ):
             files = _get_share_file_list(share)
         assert files == []
+
+    def test_get_share_file_list_static_expands_directory(self, tmp_path):
+        folder = tmp_path / "docs"
+        folder.mkdir()
+        (folder / "a.txt").write_text("a", encoding="utf-8")
+        (folder / "b.txt").write_text("b", encoding="utf-8")
+        share = {"share_type": "static", "paths": ["docs"], "allow_list": [], "avoid_list": []}
+        with patch(
+            "aird.handlers.share_handlers._root_dir_for_share",
+            return_value=str(tmp_path),
+        ):
+            files = _get_share_file_list(share)
+        assert sorted(files) == ["docs/a.txt", "docs/b.txt"]
+
+    def test_get_share_file_list_dynamic_includes_files(self, tmp_path):
+        (tmp_path / "one.txt").write_text("1", encoding="utf-8")
+        (tmp_path / "two.txt").write_text("2", encoding="utf-8")
+        share = {
+            "share_type": "dynamic",
+            "paths": ["one.txt", "two.txt"],
+            "allow_list": [],
+            "avoid_list": [],
+        }
+        with patch(
+            "aird.handlers.share_handlers._root_dir_for_share",
+            return_value=str(tmp_path),
+        ):
+            files = _get_share_file_list(share)
+        assert sorted(files) == ["one.txt", "two.txt"]

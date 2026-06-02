@@ -1074,6 +1074,7 @@ let currentPath = '';
 
     function renderShareManagementModal(share) {
       const body = document.getElementById('shareManagementBody');
+      const editorOnly = Boolean(share.can_edit_paths && !share.is_owner);
       const isTag = (share.share_type || 'static') === 'tag';
       const isStatic = !isTag && (share.share_type || 'static') === 'static';
       const expiryValue = toLocalDatetimeInput(share.expiry_date);
@@ -1112,7 +1113,7 @@ let currentPath = '';
             </div>
           </div>
 
-          <div class="collapse collapse-arrow bg-base-100 border border-base-300 rounded-box">
+          <div class="collapse collapse-arrow bg-base-100 border border-base-300 rounded-box" data-owner-only>
             <input type="radio" name="mgmt-accordion" checked="checked" />
             <div class="collapse-title font-semibold text-sm">General Settings</div>
             <div class="collapse-content space-y-4">
@@ -1137,7 +1138,7 @@ let currentPath = '';
             </div>
           </div>
 
-          <div class="collapse collapse-arrow bg-base-100 border border-base-300 rounded-box">
+          <div class="collapse collapse-arrow bg-base-100 border border-base-300 rounded-box" data-owner-only>
             <input type="radio" name="mgmt-accordion" />
             <div class="collapse-title font-semibold text-sm">Security & Token</div>
             <div class="collapse-content space-y-3">
@@ -1169,7 +1170,7 @@ let currentPath = '';
             </div>
           </div>
 
-          <div class="collapse collapse-arrow bg-base-100 border border-base-300 rounded-box">
+          <div class="collapse collapse-arrow bg-base-100 border border-base-300 rounded-box" data-owner-only>
             <input type="radio" name="mgmt-accordion" />
             <div class="collapse-title font-semibold text-sm">Access Control</div>
             <div class="collapse-content space-y-4">
@@ -1200,7 +1201,20 @@ let currentPath = '';
       `;
 
       currentShareData = share;
-      document.querySelector('.share-management-title').textContent = 'Manage Share';
+      document.querySelector('.share-management-title').textContent = editorOnly
+        ? 'Edit shared files'
+        : 'Manage Share';
+      const updateBtn = document.getElementById('updateShareBtn');
+      if (updateBtn) updateBtn.classList.toggle('hidden', editorOnly);
+      if (editorOnly) {
+        body.querySelectorAll('[data-owner-only]').forEach((el) => el.classList.add('hidden'));
+        const pathsCollapse = body.querySelector('#manageSharePathsList')?.closest('.collapse');
+        if (pathsCollapse) {
+          pathsCollapse.classList.remove('hidden');
+          const radio = pathsCollapse.querySelector('input[type="radio"]');
+          if (radio) radio.checked = true;
+        }
+      }
       setupTokenEditCheckboxes();
     }
 
@@ -2043,7 +2057,7 @@ let currentPath = '';
       return accessInfo;
     }
 
-    function _buildShareRow(share, { showOwner = false, readOnly = false } = {}) {
+    function _buildShareRow(share, { showOwner = false, allowManage = true, allowRevoke = true } = {}) {
       const accessInfo = _buildAccessInfo(share);
 
       const createdDate = share.created ? new Date(share.created).toLocaleString() : 'Just now';
@@ -2066,10 +2080,13 @@ let currentPath = '';
       const ownerCell = showOwner
         ? `<td class="align-middle text-sm opacity-70">${escapeHtml(share.created_by || '—')}</td>`
         : '';
-      const manageBtn = readOnly ? '' : `<button class="btn btn-sm btn-primary btn-outline" data-action="manageShare" data-id="${sidAttr}">Manage</button>`;
-      const revokeBtn = readOnly ? '' : `<button class="btn btn-sm btn-error btn-ghost btn-square" data-action="revokeShare" data-id="${sidAttr}" title="Revoke">
+      const manageLabel = share.can_edit_paths && !share.is_owner ? 'Edit files' : 'Manage';
+      const manageBtn = allowManage ? `<button class="btn btn-sm btn-primary btn-outline" data-action="manageShare" data-id="${sidAttr}">${manageLabel}</button>` : '';
+      const revokeBtn = allowRevoke
+        ? `<button class="btn btn-sm btn-error btn-ghost btn-square" data-action="revokeShare" data-id="${sidAttr}" title="Revoke">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-        </button>`;
+        </button>`
+        : '';
 
       const row = document.createElement('tr');
       row.innerHTML = `
@@ -2127,7 +2144,11 @@ let currentPath = '';
         } else {
           elements.sharesTableBody.innerHTML = '';
           sharesArray.forEach(share => {
-            elements.sharesTableBody.appendChild(_buildShareRow(share, { showOwner: false, readOnly: false }));
+            elements.sharesTableBody.appendChild(_buildShareRow(share, {
+              showOwner: false,
+              allowManage: Boolean(share.can_manage || share.can_edit_paths),
+              allowRevoke: Boolean(share.can_revoke),
+            }));
           });
         }
 
@@ -2144,7 +2165,11 @@ let currentPath = '';
         if (elements.sharedWithMeTableBody) {
           elements.sharedWithMeTableBody.innerHTML = '';
           sharedWithMe.forEach(share => {
-            elements.sharedWithMeTableBody.appendChild(_buildShareRow(share, { showOwner: true, readOnly: true }));
+            elements.sharedWithMeTableBody.appendChild(_buildShareRow(share, {
+              showOwner: true,
+              allowManage: Boolean(share.can_edit_paths),
+              allowRevoke: Boolean(share.can_revoke),
+            }));
           });
         }
 

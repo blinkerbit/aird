@@ -283,6 +283,32 @@ def _is_user_allowed_for_modify(share, get_secure_cookie):
     return (True, None)
 
 
+def _collect_files_for_share_paths(root: str, paths: list, *, include_missing_files: bool) -> list[str]:
+    """Resolve share path entries to relative file paths under *root*."""
+    collected: list[str] = []
+    for rel_path in paths or []:
+        try:
+            full_path = os.path.abspath(os.path.join(root, rel_path))
+            if not is_within_root(full_path, root):
+                continue
+            if os.path.isdir(full_path):
+                for sub in get_all_files_recursive(full_path, rel_path):
+                    collected.append(str(sub).replace("\\", "/"))
+            elif os.path.isfile(full_path):
+                collected.append(str(rel_path).replace("\\", "/"))
+            elif include_missing_files:
+                collected.append(str(rel_path).replace("\\", "/"))
+        except Exception:
+            logging.debug("Skipping share path %r", rel_path, exc_info=True)
+    seen: set[str] = set()
+    unique: list[str] = []
+    for path in collected:
+        if path not in seen:
+            seen.add(path)
+            unique.append(path)
+    return unique
+
+
 def _get_share_file_list(share, db_conn=None):
     """Return list of file paths for the share (dynamic, static, or tag-based)."""
     share_type = share.get("share_type", "static")
@@ -295,32 +321,13 @@ def _get_share_file_list(share, db_conn=None):
             db_conn, share.get("tag_name"), root, allow_list, avoid_list
         )
 
+    paths = share.get("paths") or []
     if share_type == "dynamic":
-        dynamic_files = []
-        for folder_path in share.get("paths") or []:
-            try:
-                full_path = os.path.abspath(os.path.join(root, folder_path))
-                if os.path.isdir(full_path) and is_within_root(full_path, root):
-                    all_files = get_all_files_recursive(full_path, folder_path)
-                    dynamic_files.extend(all_files)
-            except Exception:
-                logging.debug(
-                    "Skipping dynamic share folder %r", folder_path, exc_info=True
-                )
-        return filter_files_by_patterns(dynamic_files, allow_list, avoid_list)
+        resolved = _collect_files_for_share_paths(root, paths, include_missing_files=False)
+        return filter_files_by_patterns(resolved, allow_list, avoid_list)
 
-    static_paths = []
-    for rel_path in share.get("paths") or []:
-        try:
-            full_path = os.path.abspath(os.path.join(root, rel_path))
-            if os.path.isdir(full_path):
-                continue
-        except Exception:
-            logging.debug(
-                "Skipping static share path check for %r", rel_path, exc_info=True
-            )
-        static_paths.append(rel_path)
-    return filter_files_by_patterns(static_paths, allow_list, avoid_list)
+    resolved = _collect_files_for_share_paths(root, paths, include_missing_files=True)
+    return filter_files_by_patterns(resolved, allow_list, avoid_list)
 
 
 def _is_path_in_share(share, path, db_conn=None):
@@ -557,6 +564,21 @@ def _execute_share_update(handler, db_conn, share_id, share_data, data):
     )
 
 
+_EDITOR_SHARE_UPDATE_KEYS = frozenset({"share_id", "paths", "remove_files"})
+
+
+def _share_update_payload_for_user(handler, share_data: dict, data: dict) -> dict | None:
+    """Return update body allowed for this user, or None if forbidden."""
+    if handler.can_manage_share_secrets(share_data):
+        return data
+    if not handler.can_edit_share_paths(share_data):
+        return None
+    filtered = {k: v for k, v in data.items() if k in _EDITOR_SHARE_UPDATE_KEYS}
+    if not any(k in filtered for k in ("paths", "remove_files")):
+        return None
+    return filtered
+
+
 def _apply_metadata_updates(data, share_data, update_fields):
     """Apply users/token/filters/expiry metadata to update_fields."""
     if "allowed_users" in data:
@@ -718,9 +740,9 @@ class ShareRevokeHandler(XSRFTokenMixin, BaseHandler):
                 self.set_status(404)
                 self.write({"error": "Share not found"})
                 return
-            if not self.can_manage_share_secrets(share):
+            if not self.is_share_owner(share):
                 self.set_status(403)
-                self.write({"error": "Access denied"})
+                self.write({"error": "Only the share owner can revoke this share"})
                 return
             self.get_service("share_service").delete_share(self.db_conn, sid)
             self.get_service("audit_service").log(
@@ -759,7 +781,8 @@ class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
             self.set_status(err_status)
             self.write(err_body)
             return None, None, []
-        if not self.can_manage_share_secrets(share_data):
+        data = _share_update_payload_for_user(self, share_data, data)
+        if data is None:
             self.set_status(403)
             self.write({"error": "Access denied"})
             return None, None, []

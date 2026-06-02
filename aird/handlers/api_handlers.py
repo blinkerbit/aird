@@ -927,12 +927,14 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
                 self.write_json_error(404, "Share not found")
                 return None
 
-            if not self.can_manage_share_secrets(share):
+            if not self.can_edit_share_paths(share):
                 self.write_json_error(403, "Access denied")
                 return None
 
             allowed_users = share.get("allowed_users")
             modify_users = share.get("modify_users")
+            show_secret = self.can_manage_share_secrets(share)
+            token = share.get("secret_token")
             share_info = {
                 "id": share["id"],
                 "created": share.get("created", ""),
@@ -940,8 +942,8 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
                 "modify_users": modify_users if modify_users is not None else [],
                 "url": f"/shared/{share['id']}",
                 "paths": share.get("paths", []),
-                "has_token": share.get("secret_token") is not None,
-                "secret_token": share.get("secret_token"),
+                "has_token": token is not None,
+                "secret_token": token if show_secret else None,
                 "share_type": share.get("share_type", "static"),
                 "tag_name": share.get("tag_name"),
                 "allow_list": share.get("allow_list", []),
@@ -950,6 +952,10 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
                 "download_count": share_service.get_download_count(
                     db_conn, share_id
                 ),
+                "is_owner": self.is_share_owner(share),
+                "can_revoke": self.is_share_owner(share),
+                "can_manage": self.is_share_owner(share),
+                "can_edit_paths": self.can_edit_share_paths(share),
             }
 
             return {"share": share_info}
@@ -970,12 +976,14 @@ def _classify_share_for_user(
     allowed_list = allowed_raw if isinstance(allowed_raw, list) else []
     mod_list = share.get("modify_users") or []
 
-    if current_user and current_user in mod_list:
-        return True, False
-    if creator and login_matches_share_creator_field(creator, current_user):
+    if creator and current_user and login_matches_share_creator_field(
+        creator, current_user
+    ):
         return True, False
     if not creator and is_admin:
         return True, False
+    if current_user and current_user in mod_list:
+        return False, True
     if not creator and current_user and (
         allowed_raw is None
         or (isinstance(allowed_raw, list) and current_user in allowed_list)
@@ -984,6 +992,16 @@ def _classify_share_for_user(
     if current_user and isinstance(allowed_raw, list) and current_user in allowed_list:
         return False, True
     return False, False
+
+
+def _attach_share_capabilities(handler: BaseHandler, share: dict) -> dict:
+    """Add ownership / editor flags for the share management UI."""
+    out = dict(share)
+    out["is_owner"] = handler.is_share_owner(share)
+    out["can_revoke"] = handler.is_share_owner(share)
+    out["can_manage"] = handler.is_share_owner(share)
+    out["can_edit_paths"] = handler.can_edit_share_paths(share)
+    return out
 
 
 class ShareListAPIHandler(BaseHandler):
@@ -1010,9 +1028,10 @@ class ShareListAPIHandler(BaseHandler):
         for sid, share in all_shares.items():
             is_mine, is_shared = _classify_share_for_user(share, current_user, is_admin)
             if is_mine:
-                my_shares[sid] = share
+                my_shares[sid] = _attach_share_capabilities(self, share)
             elif is_shared:
-                shared_with_me.append(_redact_share_secret_token(share))
+                redacted = _redact_share_secret_token(share)
+                shared_with_me.append(_attach_share_capabilities(self, redacted))
 
         self.write({"shares": my_shares, "shared_with_me": shared_with_me})
 

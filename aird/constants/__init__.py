@@ -59,10 +59,10 @@ UPLOAD_CONFIG = {
     "allow_all_file_types": 0,  # 0 = use whitelist below, 1 = allow any extension
 }
 
-# Per-request body limit (Cloudflare-compatible chunked uploads; admin sets total file cap separately)
-UPLOAD_CHUNK_SIZE_BYTES = 90 * 1024 * 1024  # 90 MiB per HTTP request
+# Per-request body limit (Cloudflare: keep each POST under ~100 MB and ~100s proxy timeout)
+UPLOAD_CHUNK_SIZE_BYTES = 50 * 1024 * 1024  # 50 MiB per HTTP request
 UPLOAD_REQUEST_MAX_BODY_SIZE = UPLOAD_CHUNK_SIZE_BYTES + (1024 * 1024)  # chunk + slack
-UPLOAD_MAX_PARALLEL_CHUNKS = 5  # max concurrent chunk requests from the browser
+UPLOAD_MAX_PARALLEL_CHUNKS = 3  # fewer concurrent POSTs through reverse proxies
 
 # File operation constants (derived from UPLOAD_CONFIG at startup)
 MAX_FILE_SIZE = UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
@@ -118,3 +118,28 @@ CORPORATE_IP_CIDRS: list[str] = [
     for c in os.environ.get("AIRD_CORPORATE_IP_CIDRS", "").split(",")
     if c.strip()
 ]
+
+
+def _read_app_version() -> str:
+    """Package version for cache-busting static assets in templates (?v=…)."""
+    try:
+        from importlib.metadata import version
+
+        return version("aird")
+    except Exception:
+        pass
+    try:
+        import re
+        from pathlib import Path
+
+        setup_py = Path(__file__).resolve().parents[2] / "setup.py"
+        text = setup_py.read_text(encoding="utf-8")
+        match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', text)
+        if match:
+            return match.group(1)
+    except Exception:
+        pass
+    return "dev"
+
+
+APP_VERSION = _read_app_version()

@@ -4,7 +4,7 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="/static/css/app.css?v=6" />
+  <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Shared files · Aird</title>
     <style>
@@ -59,7 +59,7 @@
     </section>
   </div>
 
-  <script id="files-json" type="application/json">{% raw files_json %}</script>
+  <script id="files-json" type="application/json" nonce="{{ csp_nonce }}">{% raw files_json %}</script>
 
   <script nonce="{{ csp_nonce }}">
     let currentAuthToken = null;
@@ -97,10 +97,7 @@
     }
 
     function openFileWithAuth(filePath) {
-      const token = getAuthToken();
-      if (!token) { globalThis.location.href = `/shared/${shareId}/verify`; return; }
-      const fileUrl = `/shared/${shareId}/file/${encodeURIComponent(filePath)}`;
-      globalThis.location.href = fileUrl;
+      globalThis.location.href = `/shared/${shareId}/file/${encodeURIComponent(filePath)}`;
     }
 
     function pathParts(p) { return String(p).replaceAll('\\', '/').split('/').filter(Boolean); }
@@ -306,8 +303,6 @@
 
     document.addEventListener('DOMContentLoaded', function () {
       wireBulkDownloadControls();
-      const token = getAuthToken();
-      if (!token) { globalThis.location.href = `/shared/${shareId}/verify`; return; }
       try {
         const filesRaw = document.getElementById('files-json')?.textContent || '[]';
         const files = JSON.parse(filesRaw);

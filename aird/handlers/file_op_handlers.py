@@ -1,6 +1,7 @@
 import tornado.web
 import os
 import shutil
+import sys
 import tempfile
 import json
 import logging
@@ -9,6 +10,7 @@ import hashlib
 import re
 import secrets
 from collections import deque
+from contextlib import contextmanager
 from urllib.parse import unquote
 import asyncio
 import aiofiles
@@ -161,6 +163,35 @@ def _iter_expected_chunks(total_size: int) -> list[tuple[int, int]]:
         parts.append((offset, length))
         offset += length
     return parts
+
+
+def _expected_part_length(total_size: int, offset: int) -> int:
+    chunk_size = constants_module.UPLOAD_CHUNK_SIZE_BYTES
+    return min(chunk_size, total_size - offset)
+
+
+def _part_lock_path(session_dir: str, offset: int) -> str:
+    return os.path.join(session_dir, f".lock_{offset}")
+
+
+@contextmanager
+def _part_upload_lock(session_dir: str, offset: int):
+    """Exclusive lock per chunk offset (proxy retries / parallel POST to same offset)."""
+    lock_path = _part_lock_path(session_dir, offset)
+    os.makedirs(session_dir, exist_ok=True)
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR)
+    try:
+        if sys.platform != "win32":
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        if sys.platform != "win32":
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
 
 
 def _upload_chunks_complete(session_dir: str, total_size: int) -> bool:
@@ -472,8 +503,29 @@ class UploadHandler(BaseHandler):
 
     def _request_body_limit(self) -> int:
         if getattr(self, "_chunk_mode", False):
-            return constants_module.UPLOAD_CHUNK_SIZE_BYTES
+            part_len = getattr(self, "_chunk_part_len", 0) or constants_module.UPLOAD_CHUNK_SIZE_BYTES
+            return part_len + (1024 * 1024)
         return constants_module.MAX_FILE_SIZE
+
+    def _release_part_lock(self) -> None:
+        lock_cm = getattr(self, "_part_lock_cm", None)
+        if lock_cm is not None:
+            try:
+                lock_cm.__exit__(None, None, None)
+            except Exception:
+                logging.debug("part upload lock release failed", exc_info=True)
+            self._part_lock_cm = None
+
+    def _remove_failed_part(self) -> None:
+        for path in (
+            getattr(self, "_temp_path", None),
+            getattr(self, "_part_path", None),
+        ):
+            if path and os.path.isfile(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    logging.debug("failed part remove failed", exc_info=True)
 
     async def prepare(self):
         # Defaults for safety
@@ -491,6 +543,10 @@ class UploadHandler(BaseHandler):
         self._keep_session: bool = False
         self._chunk_info: dict | None = None
         self._session_dir: str | None = None
+        self._chunk_already_complete: bool = False
+        self._chunk_part_len: int = 0
+        self._part_path: str | None = None
+        self._part_lock_cm = None
 
         # Feature flag check (using SQLite-backed flags)
         # Deferred to post() for clear response, but avoid heavy work if disabled
@@ -540,10 +596,50 @@ class UploadHandler(BaseHandler):
             username = self.get_display_username()
             self._session_dir = _upload_session_dir(username, chunk_info["upload_id"])
             offset = chunk_info["offset"]
+            expected_len = _expected_part_length(chunk_info["total_size"], offset)
+            self._chunk_part_len = expected_len
+            # Only reset session on first chunk when no other parts exist (avoid wiping
+            # in-flight parallel chunks if chunk 0 is retried by the browser or proxy).
             if offset == 0 and os.path.isdir(self._session_dir):
-                _remove_upload_session(self._session_dir)
+                try:
+                    other_parts = [
+                        n
+                        for n in os.listdir(self._session_dir)
+                        if n.endswith(".part") and n != "0.part"
+                    ]
+                except OSError:
+                    other_parts = []
+                if not other_parts:
+                    _remove_upload_session(self._session_dir)
             os.makedirs(self._session_dir, exist_ok=True)
-            self._temp_path = _chunk_file_path(self._session_dir, offset)
+
+            def _prepare_part() -> None:
+                lock_cm = _part_upload_lock(self._session_dir, offset)
+                lock_cm.__enter__()
+                self._part_lock_cm = lock_cm
+                part_path = _chunk_file_path(self._session_dir, offset)
+                self._part_path = part_path
+                try:
+                    if (
+                        os.path.isfile(part_path)
+                        and os.path.getsize(part_path) == expected_len
+                    ):
+                        self._chunk_already_complete = True
+                        return
+                except OSError:
+                    pass
+                writing_path = part_path + ".writing"
+                for stale in (part_path, writing_path):
+                    if os.path.isfile(stale):
+                        try:
+                            os.remove(stale)
+                        except OSError:
+                            logging.debug("stale part remove failed", exc_info=True)
+                self._temp_path = writing_path
+
+            await asyncio.to_thread(_prepare_part)
+            if self._chunk_already_complete:
+                return
             self._aiofile = await aiofiles.open(self._temp_path, "wb")
             return
 
@@ -667,22 +763,43 @@ class UploadHandler(BaseHandler):
             return
 
         if self._chunk_mode and self._chunk_info:
-            chunk_end = self._chunk_info["offset"] + self._bytes_received
-            if chunk_end > self._chunk_info["total_size"]:
-                self.set_status(400)
-                self.write(INVALID_UPLOAD_CHUNK_HEADERS)
-                self._remove_upload_session_dir()
-                return
+            finished = False
             try:
-                chunk_size = os.path.getsize(self._temp_path)
-            except OSError:
-                chunk_size = -1
-            if chunk_size != self._bytes_received:
-                self.set_status(400)
-                self.write(UPLOAD_CHUNK_OUT_OF_ORDER)
-                self._remove_upload_session_dir()
-                return
-            finished = await self._finalize_chunked_upload()
+                if not getattr(self, "_chunk_already_complete", False):
+                    chunk_end = self._chunk_info["offset"] + self._bytes_received
+                    if chunk_end > self._chunk_info["total_size"]:
+                        self.set_status(400)
+                        self.write(INVALID_UPLOAD_CHUNK_HEADERS)
+                        self._remove_failed_part()
+                        return
+                    if self._bytes_received != self._chunk_part_len:
+                        self.set_status(400)
+                        self.write(UPLOAD_CHUNK_OUT_OF_ORDER)
+                        self._remove_failed_part()
+                        return
+                    try:
+                        await asyncio.to_thread(
+                            os.replace, self._temp_path, self._part_path
+                        )
+                        self._temp_path = self._part_path
+                    except OSError:
+                        logging.exception("Upload part replace failed")
+                        self.set_status(500)
+                        self.write(UPLOAD_SAVE_FAILED)
+                        self._remove_failed_part()
+                        return
+                    try:
+                        chunk_size = os.path.getsize(self._part_path)
+                    except OSError:
+                        chunk_size = -1
+                    if chunk_size != self._chunk_part_len:
+                        self.set_status(400)
+                        self.write(UPLOAD_CHUNK_OUT_OF_ORDER)
+                        self._remove_failed_part()
+                        return
+                finished = await self._finalize_chunked_upload()
+            finally:
+                self._release_part_lock()
             if not finished:
                 return
             upload_bytes = self._chunk_info["total_size"]
@@ -741,6 +858,7 @@ class UploadHandler(BaseHandler):
 
     def on_finish(self) -> None:
         try:
+            self._release_part_lock()
             if getattr(self, "_keep_session", False) or getattr(self, "_chunk_mode", False):
                 return
             if getattr(self, "_temp_path", None) and not getattr(self, "_moved", False):

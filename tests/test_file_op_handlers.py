@@ -6,6 +6,7 @@ from aird.handlers.file_op_handlers import (
     _upload_chunks_complete,
     _stitch_upload_session,
     _iter_expected_chunks,
+    _expected_part_length,
     DeleteHandler,
     RenameHandler,
     EditHandler,
@@ -403,6 +404,14 @@ class TestUploadHandler:
 
 
 class TestChunkedUploadHelpers:
+    def test_expected_part_length(self):
+        with patch(
+            "aird.handlers.file_op_handlers.constants_module.UPLOAD_CHUNK_SIZE_BYTES",
+            100,
+        ):
+            assert _expected_part_length(250, 0) == 100
+            assert _expected_part_length(250, 200) == 50
+
     def test_iter_expected_chunks(self):
         with patch(
             "aird.handlers.file_op_handlers.constants_module.UPLOAD_CHUNK_SIZE_BYTES",

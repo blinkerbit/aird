@@ -1,5 +1,9 @@
 # Aird - Modern Web-Based File Management Platform
 
+<p align="center">
+  <img src="aird/static/img/logo.png" alt="Aird" width="280">
+</p>
+
 ![Aird Demo Video](./demo.webp)
 
 🚀 **A lightweight, fast, and secure web-based file browser, editor, and sharing platform built with Python and Tornado.**

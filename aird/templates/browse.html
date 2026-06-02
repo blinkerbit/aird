@@ -5,7 +5,7 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v=8" />
+  <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Browse · Aird</title>
 </head>
@@ -379,7 +379,7 @@
       canTag: {{ 'true' if current_user and current_user.get('role') == 'admin' else 'false' }}
     };
   </script>
-  <script src="/static/js/browse/app.js?v=17"></script>
+  <script src="/static/js/browse/app.js?v={{ static_version }}"></script>
 
   <!-- Inline tag popover (per-row + button) -->
   <div id="rowTagPopoverBackdrop" class="row-tag-popover-backdrop" hidden></div>

@@ -15,13 +15,18 @@ install_requires = [
 
 setup(
     name="aird",
-    version="0.4.22",
+    version="0.4.23.dev7",
     packages=find_packages(),
+    include_package_data=True,
     package_data={"aird": [
         "templates/*.html",
         "static/css/*.css",
+        "static/css/**/*.css",
         "static/js/*.js",
         "static/js/**/*.js",
+        "static/img/*",
+        "static/img/**/*",
+        "static/favicon.*",
     ]},
     entry_points={
         "console_scripts": [

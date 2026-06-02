@@ -5,9 +5,14 @@ import socket
 import sqlite3
 import ssl
 
+import tornado.httpserver
 import tornado.ioloop
+import tornado.netutil
+import tornado.process
 import tornado.web
 import logging.handlers
+
+from aird.server_runtime import describe_worker_layout, resolve_worker_count
 
 
 import aird.constants as constants
@@ -486,42 +491,87 @@ def _build_app_context() -> AppContext:
     )
 
 
-def _start_server(app, ssl_options, port: int, hostname: str) -> None:
+def _build_application():
+    """Create the Tornado app (call after _init_database in each process)."""
+    cookie_secret = os.environ.get("AIRD_COOKIE_SECRET") or secrets.token_urlsafe(64)
+    settings = {
+        "cookie_secret": cookie_secret,
+        "xsrf_cookies": True,
+        "login_url": "/login",
+        "admin_login_url": "/admin/login",
+        "cloud_manager": constants.CLOUD_MANAGER,
+    }
+    settings["app_context"] = _build_app_context()
+    return make_app(
+        settings,
+        config.LDAP_ENABLED,
+        config.LDAP_SERVER,
+        config.LDAP_BASE_DN,
+        config.LDAP_USER_TEMPLATE,
+        config.LDAP_FILTER_TEMPLATE,
+        config.LDAP_ATTRIBUTES,
+        config.LDAP_ATTRIBUTE_MAP,
+        config.ADMIN_USERS,
+    )
+
+
+def _run_http_server(app, ssl_options, sockets) -> None:
+    server = tornado.httpserver.HTTPServer(
+        app,
+        ssl_options=ssl_options,
+        max_body_size=constants.UPLOAD_REQUEST_MAX_BODY_SIZE,
+        max_buffer_size=constants.UPLOAD_REQUEST_MAX_BODY_SIZE,
+    )
+    server.add_sockets(sockets)
+    if tornado.process.task_id() in (0, None):
+        tornado.ioloop.IOLoop.current().call_later(
+            3600, _run_cleanup_expired_shares
+        )
+    tornado.ioloop.IOLoop.current().start()
+
+
+def _start_server(ssl_options, port: int, hostname: str, worker_count: int) -> None:
     _MAX_PORT_RETRIES = 3
+    proto = "https" if ssl_options else "http"
     for attempt in range(_MAX_PORT_RETRIES):
         try:
-            if ssl_options:
-                proto = "https"
-                app.listen(
-                    port,
-                    ssl_options=ssl_options,
-                    max_body_size=constants.UPLOAD_REQUEST_MAX_BODY_SIZE,
-                    max_buffer_size=constants.UPLOAD_REQUEST_MAX_BODY_SIZE,
-                )
+            sockets = tornado.netutil.bind_sockets(port, address="")
+            if worker_count <= 1:
                 logger.info(
-                    f"Serving HTTPS on 0.0.0.0 port {port} ({proto}://0.0.0.0:{port}/) ..."
-                )
-            else:
-                proto = "http"
-                app.listen(
+                    "Serving %s on 0.0.0.0 port %d (single process) ...",
+                    proto.upper(),
                     port,
-                    max_body_size=constants.UPLOAD_REQUEST_MAX_BODY_SIZE,
-                    max_buffer_size=constants.UPLOAD_REQUEST_MAX_BODY_SIZE,
                 )
-                logger.info(
-                    f"Serving HTTP on 0.0.0.0 port {port} ({proto}://0.0.0.0:{port}/) ..."
-                )
-            _print_server_urls(port, hostname, proto)
-            tornado.ioloop.IOLoop.current().call_later(
-                3600, _run_cleanup_expired_shares
+                _init_database()
+                app = _build_application()
+                _print_server_urls(port, hostname, proto)
+                _run_http_server(app, ssl_options, sockets)
+                return
+
+            logger.info(
+                "Serving %s on 0.0.0.0 port %d (%s) ...",
+                proto.upper(),
+                port,
+                describe_worker_layout(worker_count),
             )
-            tornado.ioloop.IOLoop.current().start()
+            logger.warning(
+                "Multiple workers: in-memory WebSocket/P2P state is per process; "
+                "use sticky sessions at the load balancer if needed."
+            )
+            tornado.process.fork_processes(worker_count)
+            _init_database()
+            app = _build_application()
+            if tornado.process.task_id() == 0:
+                _print_server_urls(port, hostname, proto)
+            _run_http_server(app, ssl_options, sockets)
             return
         except OSError:
             logger.exception("Failed to bind on port %d", port)
             if attempt < _MAX_PORT_RETRIES - 1:
                 port += 1
-                logger.warning("Retrying on port %d (%d/%d)", port, attempt + 2, _MAX_PORT_RETRIES)
+                logger.warning(
+                    "Retrying on port %d (%d/%d)", port, attempt + 2, _MAX_PORT_RETRIES
+                )
             else:
                 logger.error(
                     "Could not bind after %d attempts. Set a different --port and retry.",
@@ -570,34 +620,12 @@ def main():
     else:
         logger.info("Single-user mode — all users share root: %s", constants.ROOT_DIR)
 
-    cookie_secret = os.environ.get("AIRD_COOKIE_SECRET") or secrets.token_urlsafe(64)
     if not os.environ.get("AIRD_COOKIE_SECRET"):
+        os.environ["AIRD_COOKIE_SECRET"] = secrets.token_urlsafe(64)
         logger.warning(
             "cookie_secret is randomly generated; sessions will be invalidated on restart. "
             "Set the AIRD_COOKIE_SECRET environment variable for persistent sessions."
         )
-    settings = {
-        "cookie_secret": cookie_secret,
-        "xsrf_cookies": True,
-        "login_url": "/login",
-        "admin_login_url": "/admin/login",
-        "cloud_manager": constants.CLOUD_MANAGER,
-    }
-
-    _init_database()
-    settings["app_context"] = _build_app_context()
-
-    app = make_app(
-        settings,
-        config.LDAP_ENABLED,
-        config.LDAP_SERVER,
-        config.LDAP_BASE_DN,
-        config.LDAP_USER_TEMPLATE,
-        config.LDAP_FILTER_TEMPLATE,
-        config.LDAP_ATTRIBUTES,
-        config.LDAP_ATTRIBUTE_MAP,
-        config.ADMIN_USERS,
-    )
 
     ssl_options = None
     if config.SSL_CERT and config.SSL_KEY:
@@ -606,7 +634,8 @@ def main():
         ssl_context.load_cert_chain(config.SSL_CERT, config.SSL_KEY)
         ssl_options = ssl_context
 
-    _start_server(app, ssl_options, config.PORT, config.HOSTNAME)
+    worker_count = resolve_worker_count(config.WORKERS)
+    _start_server(ssl_options, config.PORT, config.HOSTNAME, worker_count)
 
 
 if __name__ == "__main__":
