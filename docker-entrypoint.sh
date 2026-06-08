@@ -1,11 +1,16 @@
 #!/bin/sh
 set -e
-# Detect number of processors
-CORES=$(nproc 2>/dev/null || echo 1)
+# P2P rooms live in process memory — multiple aird instances behind round-robin break
+# anonymous share links (sender on worker A, recipient hits worker B). Default to one
+# instance; set AIRD_DOCKER_INSTANCES>1 only if you accept broken P2P or add shared state.
+CORES="${AIRD_DOCKER_INSTANCES:-1}"
 if [ "$CORES" -lt 1 ]; then
     CORES=1
 fi
-echo "Detected $CORES CPU core(s). Starting $CORES aird instance(s)..."
+if [ "$CORES" -gt 1 ]; then
+    echo "WARNING: $CORES aird instances — in-memory P2P rooms are not shared across workers."
+fi
+echo "Starting $CORES aird instance(s)..."
 
 UPSTREAMS=""
 

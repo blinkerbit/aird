@@ -1,0 +1,51 @@
+"""Incremental folder size calculation (sum of file sizes)."""
+
+from __future__ import annotations
+
+import os
+
+
+# Files processed per batch before yielding back to the event loop.
+FOLDER_SIZE_BATCH_FILES = 250
+
+
+class FolderSizeWalker:
+    """Walk a directory tree in batches without loading all paths at once."""
+
+    def __init__(self, root_abspath: str) -> None:
+        self._walk_gen = os.walk(root_abspath)
+        self._current_dir: str | None = None
+        self._pending_files: list[str] = []
+        self.total_bytes = 0
+        self.file_count = 0
+        self.done = False
+
+    def step(self, batch_size: int = FOLDER_SIZE_BATCH_FILES) -> tuple[int, int, bool]:
+        """Process up to *batch_size* files. Returns (total_bytes, file_count, done)."""
+        if self.done:
+            return self.total_bytes, self.file_count, True
+
+        processed = 0
+        while processed < batch_size and not self.done:
+            if not self._pending_files:
+                try:
+                    self._current_dir, _dirnames, filenames = next(self._walk_gen)
+                    self._pending_files = list(filenames)
+                except StopIteration:
+                    self.done = True
+                    break
+
+            while self._pending_files and processed < batch_size:
+                fname = self._pending_files.pop()
+                if not self._current_dir:
+                    continue
+                fpath = os.path.join(self._current_dir, fname)
+                try:
+                    if os.path.isfile(fpath):
+                        self.total_bytes += os.path.getsize(fpath)
+                except OSError:
+                    pass
+                self.file_count += 1
+                processed += 1
+
+        return self.total_bytes, self.file_count, self.done

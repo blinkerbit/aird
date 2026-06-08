@@ -7,10 +7,23 @@
   display: none;
   position: fixed;
   top: 3.2rem;
-  right: 1rem;
+  right: max(0.75rem, env(safe-area-inset-right));
+  left: auto;
   z-index: 9999;
   min-width: 13rem;
+  max-width: calc(100vw - 1.5rem - env(safe-area-inset-left) - env(safe-area-inset-right));
+  max-height: min(70dvh, 20rem);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   transform-origin: top right;
+}
+@media (max-width: 639px) {
+  #theme-menu {
+    top: auto;
+    bottom: max(0.75rem, env(safe-area-inset-bottom));
+    transform-origin: bottom right;
+  }
 }
 #theme-menu.open {
   display: block;

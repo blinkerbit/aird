@@ -459,6 +459,29 @@ class TestMMapFileHandlerServeFileChunk:
             os.unlink(temp_path)
 
     @pytest.mark.asyncio
+    async def test_serve_large_file_one_chunk_in_memory(self):
+        """Mmap path must stream chunks without loading the whole file."""
+        chunk_size = 64 * 1024
+        content = b"x" * (chunk_size * 3 + 100)
+
+        with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".bin") as f:
+            f.write(content)
+            temp_path = f.name
+
+        try:
+            chunks = []
+            async for chunk in MMapFileHandler.serve_file_chunk(
+                temp_path, chunk_size=chunk_size
+            ):
+                chunks.append(chunk)
+                assert len(chunk) <= chunk_size
+
+            assert b"".join(chunks) == content
+            assert len(chunks) > 1
+        finally:
+            os.unlink(temp_path)
+
+    @pytest.mark.asyncio
     async def test_serve_empty_file(self):
         """Test serving an empty file"""
         with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".bin") as f:

@@ -25,20 +25,50 @@ def _read_chunks_sync(
     return chunks
 
 
-def _read_chunks_mmap(
-    file_path: str, start: int, end: int | None, file_size: int, chunk_size: int
-) -> list[bytes]:
-    """Read file chunks using mmap."""
-    chunks = []
-    with open(file_path, "rb") as f:
-        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-            actual_end = min(end or file_size - 1, file_size - 1)
-            current = start
-            while current <= actual_end:
-                chunk_end = min(current + chunk_size, actual_end + 1)
-                chunks.append(mm[current:chunk_end])
-                current = chunk_end
-    return chunks
+class _SyncChunkReader:
+    """Read one chunk at a time from disk (mmap or plain file)."""
+
+    def __init__(
+        self,
+        file_path: str,
+        start: int,
+        end: int | None,
+        file_size: int,
+        chunk_size: int,
+        use_mmap: bool,
+    ) -> None:
+        self._file_path = file_path
+        self._pos = start
+        self._end = min(end if end is not None else file_size - 1, file_size - 1)
+        self._chunk_size = chunk_size
+        self._use_mmap = use_mmap
+        self._file = None
+        self._mm = None
+
+    def open(self) -> None:
+        self._file = open(self._file_path, "rb")
+        if self._use_mmap:
+            self._mm = mmap.mmap(self._file.fileno(), 0, access=mmap.ACCESS_READ)
+
+    def read_next(self) -> bytes | None:
+        if self._pos > self._end:
+            return None
+        chunk_end = min(self._pos + self._chunk_size, self._end + 1)
+        if self._mm is not None:
+            chunk = self._mm[self._pos : chunk_end]
+        else:
+            self._file.seek(self._pos)
+            chunk = self._file.read(chunk_end - self._pos)
+        self._pos = chunk_end
+        return chunk if chunk else None
+
+    def close(self) -> None:
+        if self._mm is not None:
+            self._mm.close()
+            self._mm = None
+        if self._file is not None:
+            self._file.close()
+            self._file = None
 
 
 class MMapFileHandler:
@@ -53,12 +83,11 @@ class MMapFileHandler:
     async def serve_file_chunk(
         file_path: str, start: int = 0, end: int = None, chunk_size: int = CHUNK_SIZE
     ):
-        """Serve file chunks using mmap for efficient memory usage"""
+        """Serve file chunks; only one chunk is held in memory at a time."""
         try:
             file_size = await asyncio.to_thread(os.path.getsize, file_path)
 
             if not MMapFileHandler.should_use_mmap(file_size):
-                # Use async file API for small files
                 remaining = (end - start + 1) if end is not None else file_size - start
                 async with aiofiles.open(file_path, "rb") as f:
                     await f.seek(start)
@@ -70,21 +99,33 @@ class MMapFileHandler:
                         remaining -= len(chunk)
                 return
 
-            # Use mmap for large files (run in thread pool - mmap requires sync fd)
-            chunks = await asyncio.to_thread(
-                _read_chunks_mmap, file_path, start, end, file_size, chunk_size
+            reader = _SyncChunkReader(
+                file_path, start, end, file_size, chunk_size, use_mmap=True
             )
-            for chunk in chunks:
-                yield chunk
+            try:
+                await asyncio.to_thread(reader.open)
+                while True:
+                    chunk = await asyncio.to_thread(reader.read_next)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                await asyncio.to_thread(reader.close)
 
         except (OSError, ValueError):
-            # Fallback to traditional method on mmap errors (run in thread pool)
             file_size = await asyncio.to_thread(os.path.getsize, file_path)
-            chunks = await asyncio.to_thread(
-                _read_chunks_sync, file_path, start, end, file_size, chunk_size
+            reader = _SyncChunkReader(
+                file_path, start, end, file_size, chunk_size, use_mmap=False
             )
-            for chunk in chunks:
-                yield chunk
+            try:
+                await asyncio.to_thread(reader.open)
+                while True:
+                    chunk = await asyncio.to_thread(reader.read_next)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                await asyncio.to_thread(reader.close)
 
     @staticmethod
     def find_line_offsets(file_path: str, max_lines: int = None) -> list[int]:

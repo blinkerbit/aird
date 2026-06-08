@@ -298,6 +298,66 @@ class TestMainHandler:
             )
 
     @pytest.mark.asyncio
+    async def test_serve_file_media_image(self):
+        handler = MainHandler(self.mock_app, self.mock_request)
+        handler._current_user = {"username": "user"}
+        handler.request.path = "/files/photos/cat.png"
+
+        def get_arg(name, default=None):
+            if name == "download":
+                return None
+            if name == "mode":
+                return None
+            return default
+
+        handler.get_argument = get_arg
+
+        with patch("os.path.abspath", return_value="/root/photos/cat.png"), patch(
+            "aird.handlers.view_handlers.is_within_root", return_value=True
+        ), patch("os.path.isdir", return_value=False), patch(
+            "os.path.isfile", return_value=True
+        ), patch(
+            "os.path.getsize", return_value=100
+        ), patch(
+            "aird.handlers.view_handlers.get_user_root", return_value="/root"
+        ), patch.object(handler, "render") as mock_render:
+            await handler.get("photos/cat.png")
+            mock_render.assert_called()
+            assert mock_render.call_args[0][0] == "media_view.html"
+            kwargs = mock_render.call_args[1]
+            assert kwargs["media_kind"] == "image"
+            assert kwargs["media_src"] == "/files/photos/cat.png?mode=raw"
+
+    @pytest.mark.asyncio
+    async def test_serve_file_media_pdf(self):
+        handler = MainHandler(self.mock_app, self.mock_request)
+        handler._current_user = {"username": "user"}
+        handler.request.path = "/files/docs/report.pdf"
+
+        def get_arg(name, default=None):
+            if name == "download":
+                return None
+            if name == "mode":
+                return None
+            return default
+
+        handler.get_argument = get_arg
+
+        with patch("os.path.abspath", return_value="/root/docs/report.pdf"), patch(
+            "aird.handlers.view_handlers.is_within_root", return_value=True
+        ), patch("os.path.isdir", return_value=False), patch(
+            "os.path.isfile", return_value=True
+        ), patch(
+            "os.path.getsize", return_value=2048
+        ), patch(
+            "aird.handlers.view_handlers.get_user_root", return_value="/root"
+        ), patch.object(handler, "render") as mock_render:
+            await handler.get("docs/report.pdf")
+            mock_render.assert_called()
+            assert mock_render.call_args[0][0] == "media_view.html"
+            assert mock_render.call_args[1]["media_kind"] == "pdf"
+
+    @pytest.mark.asyncio
     async def test_serve_file_raw(self):
         handler = MainHandler(self.mock_app, self.mock_request)
         handler._current_user = {"username": "user"}

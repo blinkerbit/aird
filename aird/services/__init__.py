@@ -2,6 +2,8 @@
 
 from aird.services.audit_service import AuditService
 from aird.services.config_service import ConfigService
+from aird.services.email_service import EmailService
+from aird.services.email_subscriber import EmailNotificationSubscriber
 from aird.services.event_subscribers import (
     EventLoggingSubscriber,
     EventMetricsSubscriber,
@@ -19,6 +21,8 @@ from aird.services.user_service import UserService
 __all__ = [
     "AuditService",
     "ConfigService",
+    "EmailNotificationSubscriber",
+    "EmailService",
     "EventLoggingSubscriber",
     "EventMetricsSubscriber",
     "PolicyDecisionMetricsSubscriber",

@@ -360,29 +360,32 @@ class TestP2PTransferHandler:
         assert call_args[1]["room_id"] == room.room_id
 
     def test_get_unauthenticated_with_non_anonymous_room(self):
-        """Test GET with non-anonymous room redirects to login."""
-        # Create a non-anonymous room
+        """Test GET with non-anonymous room shows login-required message (no redirect)."""
         room = room_manager.create_room("creator", allow_anonymous=False)
 
         handler = self._create_handler()
         handler.get_current_user = MagicMock(return_value=None)
         handler.get_argument = MagicMock(return_value=room.room_id)
-        handler.get_login_url = MagicMock(return_value="/login")
 
         handler.get()
 
-        handler.redirect.assert_called_once_with("/login")
+        handler.render.assert_called_once()
+        call_args = handler.render.call_args
+        assert call_args[1]["room_join_error"] == "requires_login"
+        handler.redirect.assert_not_called()
 
     def test_get_unauthenticated_with_nonexistent_room(self):
-        """Test GET with non-existent room redirects to login."""
+        """Test GET with non-existent room shows not-found message (no redirect)."""
         handler = self._create_handler()
         handler.get_current_user = MagicMock(return_value=None)
         handler.get_argument = MagicMock(return_value="nonexistent_room")
-        handler.get_login_url = MagicMock(return_value="/login")
 
         handler.get()
 
-        handler.redirect.assert_called_once_with("/login")
+        handler.render.assert_called_once()
+        call_args = handler.render.call_args
+        assert call_args[1]["room_join_error"] == "not_found"
+        handler.redirect.assert_not_called()
 
 
 # =============================================================================
@@ -570,6 +573,7 @@ class TestP2PSignalingHandler:
         # Should reject
         message = json.loads(handler.write_message.call_args[0][0])
         assert message["type"] == "error"
+        assert message["code"] == "room_not_found"
         handler.close.assert_called_once()
 
     # -------------------------------------------------------------------------
@@ -875,8 +879,8 @@ class TestP2PSignalingHandler:
         assert notification["peer_id"] == "leaving_peer"
 
     def test_handle_leave_room_removes_empty_room(self):
-        """Test leave_room removes empty room from manager."""
-        room = room_manager.create_room("creator")
+        """Test leave_room removes empty non-anonymous room from manager."""
+        room = room_manager.create_room("creator", allow_anonymous=False)
         room_id = room.room_id
 
         handler = self._create_handler()
@@ -888,6 +892,22 @@ class TestP2PSignalingHandler:
         handler._handle_leave_room()
 
         assert room_id not in room_manager.rooms
+
+    def test_handle_leave_room_keeps_empty_anonymous_room(self):
+        """Anonymous rooms stay joinable briefly after the sender disconnects."""
+        room = room_manager.create_room("creator", allow_anonymous=True)
+        room_id = room.room_id
+
+        handler = self._create_handler()
+        handler.peer_id = "only_peer"
+        handler.username = "user"
+        handler.room = room
+        room.add_peer("only_peer", handler)
+
+        handler._handle_leave_room()
+
+        assert room_id in room_manager.rooms
+        assert room_manager.rooms[room_id].empty_since is not None
 
     # -------------------------------------------------------------------------
     # _handle_offer() tests

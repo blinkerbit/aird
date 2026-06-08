@@ -24,6 +24,7 @@ from aird.utils.util import (
     sanitize_cloud_filename,
     augment_with_shared_status,
     get_file_size_safe,
+    browser_media_kind,
 )
 from aird.core.security import (  # noqa: F401
     is_within_root,
@@ -94,6 +95,15 @@ async def _serve_download(handler, abspath, filename):
         await handler.flush()
 
 
+def _raw_mode_allows_same_origin_frame(mime_type: str, abspath: str) -> bool:
+    """Inline PDF/image raw responses may be embedded in our own media viewer."""
+    if mime_type.startswith("image/"):
+        return True
+    if mime_type == "application/pdf":
+        return True
+    return browser_media_kind(os.path.basename(abspath)) is not None
+
+
 async def _serve_raw_mode(handler, abspath):
     """Serve raw file content (inline) for client-side consumption."""
     try:
@@ -106,6 +116,9 @@ async def _serve_raw_mode(handler, abspath):
             logging.debug("mimetypes.guess_type failed for raw serve", exc_info=True)
         handler.set_header("Content-Type", mime_type)
         handler.set_header("Content-Disposition", "inline")
+        if _raw_mode_allows_same_origin_frame(mime_type, abspath):
+            # Default DENY blocks <iframe>/<embed> in media_view.html on same host.
+            handler.set_header("X-Frame-Options", "SAMEORIGIN")
         file_size = os.path.getsize(abspath)
         if MMapFileHandler.should_use_mmap(file_size):
             async for chunk in MMapFileHandler.serve_file_chunk(abspath):
@@ -126,6 +139,11 @@ async def _serve_raw_mode(handler, abspath):
 
 
 
+def _request_file_base(handler) -> str:
+    """Path portion of the current file request (no query string)."""
+    return handler.request.path.split("?", 1)[0]
+
+
 def _serve_file_view(handler, abspath, filename, user_root):
     """Render file view template (client-side fetch)."""
     file_size = get_file_size_safe(abspath)
@@ -138,6 +156,24 @@ def _serve_file_view(handler, abspath, filename, user_root):
         default_file_view_line_limit=constants_module.DEFAULT_FILE_VIEW_LINE_LIMIT,
         open_editor=handler.get_argument("open_editor", "False"),
         full_file_content="",
+        file_size=file_size,
+    )
+
+
+def _serve_media_view(handler, abspath, filename, user_root, media_kind: str):
+    """Render inline image/PDF viewer (browser-native display via ?mode=raw)."""
+    file_size = get_file_size_safe(abspath)
+    rel_path = os.path.relpath(abspath, user_root).replace("\\", "/")
+    base = _request_file_base(handler)
+    media_src = f"{base}?mode=raw"
+    download_href = f"{base}?download=1"
+    handler.render(
+        "media_view.html",
+        filename=filename,
+        path=rel_path,
+        media_kind=media_kind,
+        media_src=media_src,
+        download_href=download_href,
         file_size=file_size,
     )
 
@@ -196,8 +232,6 @@ class MainHandler(BaseHandler):
             get_file_icon=get_file_icon,
             features=flags_for_template,
             max_file_size=constants_module.MAX_FILE_SIZE,
-            upload_chunk_size=constants_module.UPLOAD_CHUNK_SIZE_BYTES,
-            upload_max_parallel=constants_module.UPLOAD_MAX_PARALLEL_CHUNKS,
             user_favorites=user_favorites,
             file_tags_map=file_tags_map,
         )
@@ -258,8 +292,9 @@ class MainHandler(BaseHandler):
         if mode == "raw":
             await _serve_raw_mode(handler, abspath)
             return
-        if filename.lower().endswith(".pdf"):
-            await _serve_download(handler, abspath, filename)
+        media_kind = browser_media_kind(filename)
+        if media_kind:
+            _serve_media_view(handler, abspath, filename, user_root, media_kind)
             return
         _serve_file_view(handler, abspath, filename, user_root)
 

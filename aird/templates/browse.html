@@ -29,6 +29,9 @@
     </div>
     <div id="progressContainer" class="hidden w-full"></div>
     {% end %}
+    {% if features['file_download'] %}
+    <div id="downloadProgressContainer" class="w-full"></div>
+    {% end %}
 
     {% if features.get('folder_create') %}
     <div class="browse-toolbar mb-4">
@@ -72,42 +75,27 @@
               <span>Name</span>
               <span class="sort-indicator opacity-50"></span>
             </div>
+            <div class="col-resizer" data-col="0"></div>
           </th>
-          <th class="tags-col-header">Tags</th>
+          <th class="tags-col-header">Tags<div class="col-resizer" data-col="1"></div></th>
           <th class="sort-header hover:bg-base-300 transition-colors" data-sort-column="2" aria-sort="none">
             <div class="flex items-center gap-2">
               <span>Size</span>
               <span class="sort-indicator opacity-50"></span>
             </div>
+            <div class="col-resizer" data-col="2"></div>
           </th>
           <th class="sort-header hover:bg-base-300 transition-colors" data-sort-column="3" aria-sort="none">
             <div class="flex items-center gap-2">
               <span>Modified</span>
               <span class="sort-indicator opacity-50"></span>
             </div>
+            <div class="col-resizer" data-col="3"></div>
           </th>
           <th class="text-right">Actions</th>
         </tr>
       </thead>
       <tbody>
-        <!-- Parent Directory Link -->
-        {% if current_path and current_path != "/" %}
-        <tr class="file-row parent-row">
-          <td class="name-cell" data-label="Name">
-            <div class="name-cell-contents">
-              <span class="row-checkbox-spacer" aria-hidden="true"></span>
-              <a href="/files/{{ parent_path or '' }}" class="file-link parent-folder-link" title="Parent folder">
-                <span class="file-icon">📁</span><span class="parent-up-label">Up</span>
-              </a>
-            </div>
-          </td>
-          <td class="tags-cell" data-label="Tags"><span class="tags-cell-empty">—</span></td>
-          <td class="size-cell" data-label="Size">-</td>
-          <td class="modified-cell" data-label="Modified">-</td>
-          <td class="actions-cell" data-label="Actions">-</td>
-        </tr>
-        {% end %}
-
         <!-- File and Directory Listings -->
         {% for file in files %}
         <tr class="file-row" data-path="{{ escape(join_path(current_path, file['name'])) }}">
@@ -123,25 +111,17 @@
               {% end %}
             </a>
             {% else %}
-            <a href="/files/{{ escape(join_path(current_path, file['name'])) }}?start_line=1&end_line=1000"
+            {% set _ext = file['name'].rsplit('.', 1)[-1].lower() if '.' in file['name'] else '' %}
+            {% set _is_media = _ext in ('jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tif', 'tiff', 'pdf') %}
+            <a href="/files/{{ escape(join_path(current_path, file['name'])) }}{% if not _is_media %}?start_line=1&end_line=1000{% end %}"
               class="file-link">
-              {% set _ext = file['name'].rsplit('.', 1)[-1].lower() if '.' in file['name'] else '' %}
-              {% if _ext in ('jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico') %}
-              <img src="/files/{{ escape(join_path(current_path, file['name'])) }}?mode=raw" alt="" loading="lazy" class="w-6 h-6 object-cover align-middle mr-2 rounded-sm border border-base-300" data-fallback-icon="{{ escape(get_file_icon(file['name'])) }}">
-              {% else %}
-              <span class="file-icon">{{ get_file_icon(file["name"]) }}</span>
-              {% end %}{{
+              <span class="file-icon">{{ get_file_icon(file["name"]) }}</span>{{
               escape(file['name']) }}
               {% if file.get('is_shared') %}
               <span class="shared-icon" title="Click to view share details"
                 data-share-path="{{ escape(join_path(current_path, file['name'])) }}">🔗</span>
               {% end %}
             </a>
-            {% end %}
-            {% if features.get('favorites') %}
-            {% set _fav_path = join_path(current_path, file['name']) %}
-            <span class="fav-star{% if _fav_path in user_favorites %} fav-active{% end %}"
-              data-fav-path="{{ escape(_fav_path) }}" title="Toggle favorite">{{ '★' if _fav_path in user_favorites else '☆' }}</span>
             {% end %}
             </div>
           </td>
@@ -151,14 +131,14 @@
             data-tags="{{ escape(','.join(_file_tags)) if _file_tags else '' }}">
             <div class="tags-cell-inner">
               {% if _file_tags %}
-              <span class="file-tag-list" title="{{ escape(', '.join(_file_tags)) }}">
-                {% set _max_show = 3 %}
-                {% for _ti in range(min(len(_file_tags), _max_show)) %}
-                <a href="/tagged/{{ escape(_file_tags[_ti]) }}"
-                   class="file-tag-chip" onclick="event.stopPropagation()">{{ escape(_file_tags[_ti]) }}</a>
-                {% end %}
-                {% if len(_file_tags) > _max_show %}
-                <span class="file-tag-more">+{{ len(_file_tags) - _max_show }}</span>
+              {% set _max_show = 1 %}
+              <span class="file-tag-list{% if len(_file_tags) > _max_show %} file-tag-list--overflow{% end %}">
+                <a href="/tagged/{{ escape(_file_tags[0]) }}"
+                   class="file-tag-chip" onclick="event.stopPropagation()">{{ escape(_file_tags[0]) }}</a>
+                {% if len(_file_tags) > 1 %}
+                <button type="button" class="file-tag-more file-tag-more-trigger"
+                  aria-label="Show all {{ len(_file_tags) }} tags"
+                  title="Show all tags">+{{ len(_file_tags) - 1 }}</button>
                 {% end %}
               </span>
               {% end %}
@@ -173,8 +153,8 @@
               {% end %}
             </div>
           </td>
-          <td class="size-cell" data-label="Size" data-bytes="{{ file.get('size_bytes', 0) }}">
-            {{ file.get('size_str', '-') }}
+          <td class="size-cell{% if file['is_dir'] %} folder-size-pending{% end %}" data-label="Size" data-bytes="{{ file.get('size_bytes', 0) }}">
+            {% if file['is_dir'] %}…{% else %}{{ file.get('size_str', '-') }}{% end %}
           </td>
           <td class="modified-cell" data-label="Modified" data-timestamp="{{ file.get('modified_timestamp', 0) }}">
             {{ file.get('modified', '-') }}
@@ -182,7 +162,7 @@
           <td class="actions-cell" data-label="Actions">
             {% if not file["is_dir"] %}
             {% if features['file_download'] %}
-            <a href="/files/{{ escape(join_path(current_path, file['name'])) }}?download=1"
+            <a href="#" data-download-path="{{ escape(join_path(current_path, file['name'])) }}"
               class="action-link download-btn" title="Download" aria-label="Download"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <path d="M12 3v12"/>
                 <path d="M7 10l5 5 5-5"/>
@@ -220,23 +200,7 @@
         </tr>
         {% end %}
 
-        <!-- Empty directory: allow sharing the folder itself -->
-        {% if not files and current_path %}
-        <tr class="file-row" data-path="{{ escape(current_path) }}">
-          <td class="name-cell" data-label="Name">
-            <div class="name-cell-contents">
-              <input type="checkbox" class="row-checkbox" data-path="{{ escape(current_path) }}" data-is-dir="1" />
-              <span class="file-link">
-                <span class="file-icon">📁</span>{{ escape(current_path.split('/')[-1] or current_path) }}
-              </span>
-            </div>
-          </td>
-          <td class="tags-cell" data-label="Tags"><span class="tags-cell-empty">—</span></td>
-          <td class="size-cell" data-label="Size">-</td>
-          <td class="modified-cell" data-label="Modified">-</td>
-          <td class="actions-cell" data-label="Actions"><span class="text-base-content/50 text-xs">Empty folder</span></td>
-        </tr>
-        {% elif not files %}
+        {% if not files %}
         <tr>
           <td colspan="5" class="empty-state-cell">
             <div class="empty-state">
@@ -280,6 +244,11 @@
     </div>
 
     <div class="browse-drawer-actions">
+      {% if features.get('file_download') %}
+      <button type="button" id="bulkDownloadBtn" class="browse-drawer-btn browse-drawer-btn-primary">
+        ⬇ Download selected
+      </button>
+      {% end %}
       {% if features.get('file_share') %}
       <button type="button" id="bulkCreateShareBtn" class="browse-drawer-btn browse-drawer-btn-primary">
         Create share
@@ -304,7 +273,7 @@
         <button type="button" id="bulkCopyBtn" class="browse-drawer-btn-inline">Copy</button>
         <button type="button" id="bulkMoveBtn" class="browse-drawer-btn-inline">Move</button>
         {% end %}
-        <button type="button" id="clearSelectionBtn" class="browse-drawer-btn-inline" style="opacity:0.6;">Clear</button>
+        <button type="button" id="clearSelectionBtn" class="browse-drawer-btn-inline">Clear</button>
       </div>
     </div>
     </div>
@@ -370,16 +339,23 @@
 
   <input type="hidden" id="currentPath" value="{{ current_path or '' }}" />
   <script src="/static/js/aird-core.js"></script>
+  <script src="/static/js/file-transfer-ws.js"></script>
+  <script src="/static/js/download-manager.js"></script>
   <script src="/static/js/components/folder-picker.js"></script>
   <script nonce="{{ csp_nonce }}">
     globalThis.__BROWSE_CONFIG = {
       maxFileSize: {{ max_file_size }},
-      uploadChunkSize: {{ upload_chunk_size }},
-      uploadMaxParallel: {{ upload_max_parallel }},
       canTag: {{ 'true' if current_user and current_user.get('role') == 'admin' else 'false' }}
     };
   </script>
   <script src="/static/js/browse/app.js?v={{ static_version }}"></script>
+  <script src="/static/js/folder-size-scan.js?v={{ static_version }}"></script>
+
+  <!-- Hover popup: all tags for a row (overflow) -->
+  <div id="fileTagsHoverPopover" class="file-tags-hover-popover" role="tooltip" hidden>
+    <p class="file-tags-hover-popover-title">All tags</p>
+    <div class="file-tags-hover-popover-list"></div>
+  </div>
 
   <!-- Inline tag popover (per-row + button) -->
   <div id="rowTagPopoverBackdrop" class="row-tag-popover-backdrop" hidden></div>

@@ -41,6 +41,7 @@ FEATURE_FLAGS = {
     "storage_quotas": False,
     "abac_engine": False,
     "abac_audit_decisions": True,
+    "email_notifications": False,
 }
 
 # WebSocket connection configuration
@@ -59,13 +60,10 @@ UPLOAD_CONFIG = {
     "allow_all_file_types": 0,  # 0 = use whitelist below, 1 = allow any extension
 }
 
-# Per-request body limit (Cloudflare: keep each POST under ~100 MB and ~100s proxy timeout)
-UPLOAD_CHUNK_SIZE_BYTES = 50 * 1024 * 1024  # 50 MiB per HTTP request
-UPLOAD_REQUEST_MAX_BODY_SIZE = UPLOAD_CHUNK_SIZE_BYTES + (1024 * 1024)  # chunk + slack
-UPLOAD_MAX_PARALLEL_CHUNKS = 3  # fewer concurrent POSTs through reverse proxies
-
 # File operation constants (derived from UPLOAD_CONFIG at startup)
 MAX_FILE_SIZE = UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
+# HTTP /upload body limit (browser uploads use WebSocket; CLI may POST whole file)
+UPLOAD_REQUEST_MAX_BODY_SIZE = MAX_FILE_SIZE + (1024 * 1024)
 MAX_READABLE_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
 # Default line window for /files/... viewer when no ?end_line= is supplied (protects DOM from huge renders)
@@ -102,6 +100,8 @@ UPLOAD_ALLOWED_EXTENSIONS = set(ALLOWED_UPLOAD_EXTENSIONS)
 # Mmap constants
 MMAP_MIN_SIZE = 1 * 1024 * 1024  # 1 MB
 CHUNK_SIZE = 64 * 1024  # 64 KB
+# WebSocket binary frame size (stay under Cloudflare ~1 MiB message limit)
+WS_TRANSFER_FRAME_BYTES = 768 * 1024
 
 # Network share manager (set at startup)
 NETWORK_SHARE_MANAGER = None

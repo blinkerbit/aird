@@ -44,6 +44,8 @@ let currentPath = '';
       uploading: false
     };
 
+    let filePickerLoaded = false;
+
     function getXSRFToken() {
       return globalThis.AirdCore.getXSRFToken();
     }
@@ -742,6 +744,30 @@ let currentPath = '';
         }
       });
       elements.currentPath.innerHTML = crumbs.join(' ');
+    }
+
+    function openShareFilePicker() {
+      const section = document.getElementById('shareFilePickerSection');
+      const startBtn = document.getElementById('startCreateShareBtn');
+      if (!section) return;
+      section.classList.remove('share-file-picker-hidden');
+      section.setAttribute('aria-hidden', 'false');
+      if (startBtn) startBtn.setAttribute('aria-expanded', 'true');
+      if (!filePickerLoaded) {
+        filePickerLoaded = true;
+        loadDirectory();
+      }
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function closeShareFilePicker() {
+      const section = document.getElementById('shareFilePickerSection');
+      const startBtn = document.getElementById('startCreateShareBtn');
+      if (!section) return;
+      section.classList.add('share-file-picker-hidden');
+      section.setAttribute('aria-hidden', 'true');
+      if (startBtn) startBtn.setAttribute('aria-expanded', 'false');
+      clearSelection();
     }
 
     async function loadDirectory(path = '') {
@@ -2156,26 +2182,32 @@ let currentPath = '';
         const sharedWithMe = Array.isArray(data.shared_with_me) ? data.shared_with_me : [];
         sharedWithMe.sort((a, b) => new Date(b.created || 0) - new Date(a.created || 0));
 
-        if (elements.sharedWithMeSection) {
-          elements.sharedWithMeSection.style.display = sharedWithMe.length > 0 ? '' : 'none';
-        }
         if (elements.sharedWithMeCount) {
           elements.sharedWithMeCount.textContent = sharedWithMe.length;
         }
         if (elements.sharedWithMeTableBody) {
-          elements.sharedWithMeTableBody.innerHTML = '';
-          sharedWithMe.forEach(share => {
-            elements.sharedWithMeTableBody.appendChild(_buildShareRow(share, {
-              showOwner: true,
-              allowManage: Boolean(share.can_edit_paths),
-              allowRevoke: Boolean(share.can_revoke),
-            }));
-          });
+          if (sharedWithMe.length === 0) {
+            elements.sharedWithMeTableBody.innerHTML =
+              '<tr><td colspan="6" class="p-8 text-center text-base-content/50">No shares from others</td></tr>';
+          } else {
+            elements.sharedWithMeTableBody.innerHTML = '';
+            sharedWithMe.forEach(share => {
+              elements.sharedWithMeTableBody.appendChild(_buildShareRow(share, {
+                showOwner: true,
+                allowManage: Boolean(share.can_edit_paths),
+                allowRevoke: Boolean(share.can_revoke),
+              }));
+            });
+          }
         }
 
       } catch (error) {
         console.error('Error loading active shares:', error);
         elements.sharesTableBody.innerHTML = '<tr><td colspan="5" class="p-10 text-center"><div class="alert alert-error">Error loading shares</div></td></tr>';
+        if (elements.sharedWithMeTableBody) {
+          elements.sharedWithMeTableBody.innerHTML =
+            '<tr><td colspan="6" class="p-10 text-center"><div class="alert alert-error">Error loading shares</div></td></tr>';
+        }
       } finally {
         if (refreshBtn) refreshBtn.classList.remove('loading');
       }
@@ -2391,19 +2423,21 @@ let currentPath = '';
         if (typeof p === 'string' && p.length > 0) addToSelection(p);
       });
       if (selectedFiles.size > 0) {
+        openShareFilePicker();
         openShareConfigModal();
       }
     }
 
     // Initialize
     document.addEventListener('DOMContentLoaded', () => {
-      loadDirectory();
       loadActiveShares();
       setupUserSearch();
       setupModifyUserSearch();
       consumeShareCreatePrefill();
 
       document.getElementById('refreshSharesBtn')?.addEventListener('click', loadActiveShares);
+      document.getElementById('startCreateShareBtn')?.addEventListener('click', openShareFilePicker);
+      document.getElementById('cancelCreateShareBtn')?.addEventListener('click', closeShareFilePicker);
 
       // Event listeners for CSP compliance - static elements
       document.getElementById('cloudBrowserClose')?.addEventListener('click', closeCloudBrowser);

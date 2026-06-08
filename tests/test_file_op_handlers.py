@@ -2,11 +2,6 @@ import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 from aird.handlers.file_op_handlers import (
     UploadHandler,
-    _parse_chunk_headers,
-    _upload_chunks_complete,
-    _stitch_upload_session,
-    _iter_expected_chunks,
-    _expected_part_length,
     DeleteHandler,
     RenameHandler,
     EditHandler,
@@ -50,9 +45,6 @@ class TestUploadHandler:
         handler._bytes_received = 100
         handler.upload_dir = upload_dir
         handler.filename = filename
-        handler._chunk_mode = False
-        handler._chunk_info = None
-        handler._keep_part_file = False
 
     @pytest.mark.asyncio
     async def test_upload_success(self):
@@ -62,20 +54,17 @@ class TestUploadHandler:
 
         with patch(
             "aird.handlers.base_handler.is_feature_enabled", side_effect=lambda k, default=True: False if k == "abac_engine" else True
-        ), patch("os.path.realpath", side_effect=lambda p: p), patch(
-            "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(
-            "aird.handlers.file_op_handlers.ALLOWED_UPLOAD_EXTENSIONS", {".txt"}
-        ), patch(
-            "shutil.move"
-        ) as mock_move, patch(
-            "os.makedirs"
-        ), patch.object(
+            "aird.handlers.file_op_handlers.finalize_upload_to_disk",
+            return_value=(True, 200, "Upload successful"),
+        ) as mock_finalize, patch.object(
             handler, "write"
-        ) as mock_write:
+        ) as mock_write, patch.object(
+            handler, "set_status"
+        ):
 
             await handler.post()
-            mock_move.assert_called()
+            mock_finalize.assert_called_once()
             assert mock_write.call_args[0][0] == "Upload successful"
 
     @pytest.mark.asyncio
@@ -403,93 +392,6 @@ class TestUploadHandler:
         handler.on_finish()
 
 
-class TestChunkedUploadHelpers:
-    def test_expected_part_length(self):
-        with patch(
-            "aird.handlers.file_op_handlers.constants_module.UPLOAD_CHUNK_SIZE_BYTES",
-            100,
-        ):
-            assert _expected_part_length(250, 0) == 100
-            assert _expected_part_length(250, 200) == 50
-
-    def test_iter_expected_chunks(self):
-        with patch(
-            "aird.handlers.file_op_handlers.constants_module.UPLOAD_CHUNK_SIZE_BYTES",
-            100,
-        ):
-            parts = _iter_expected_chunks(250)
-        assert parts == [(0, 100), (100, 100), (200, 50)]
-
-    def test_upload_chunks_complete_and_stitch(self, tmp_path):
-        session = tmp_path / "session"
-        session.mkdir()
-        total = 250
-        with patch(
-            "aird.handlers.file_op_handlers.constants_module.UPLOAD_CHUNK_SIZE_BYTES",
-            100,
-        ):
-            for offset, length in _iter_expected_chunks(total):
-                part = session / f"{offset}.part"
-                part.write_bytes(b"x" * length)
-            assert _upload_chunks_complete(str(session), total)
-            out = tmp_path / "out.bin"
-            _stitch_upload_session(str(session), str(out), total)
-        assert out.read_bytes() == b"x" * total
-
-    def test_parse_chunk_headers_absent(self):
-        info, err = _parse_chunk_headers({})
-        assert info is None
-        assert err is None
-
-    def test_parse_chunk_headers_complete(self):
-        headers = {
-            "X-Upload-Id": "550e8400-e29b-41d4-a716-446655440000",
-            "X-Chunk-Offset": "0",
-            "X-Upload-Total-Size": "1000",
-            "X-Chunk-Last": "0",
-        }
-        info, err = _parse_chunk_headers(headers)
-        assert err is None
-        assert info["offset"] == 0
-        assert info["total_size"] == 1000
-        assert info["is_last"] is False
-
-    def test_parse_chunk_headers_from_query_string(self):
-        query = {
-            b"upload_id": [b"550e8400-e29b-41d4-a716-446655440000"],
-            b"chunk_offset": [b"90"],
-            b"total_size": [b"1000"],
-            b"chunk_last": [b"0"],
-        }
-        info, err = _parse_chunk_headers({}, query)
-        assert err is None
-        assert info["offset"] == 90
-
-    def test_parse_chunk_headers_query_fallback_when_header_stripped(self):
-        headers = {"X-Chunk-Offset": "0", "X-Upload-Total-Size": "1000", "X-Chunk-Last": "0"}
-        query = {b"upload_id": [b"550e8400-e29b-41d4-a716-446655440000"]}
-        info, err = _parse_chunk_headers(headers, query)
-        assert err is None
-        assert info["upload_id"] == "550e8400-e29b-41d4-a716-446655440000"
-
-    def test_parse_chunk_headers_accepts_fallback_style_upload_id(self):
-        headers = {
-            "X-Upload-Id": "upload-1710000000000-abc123",
-            "X-Chunk-Offset": "0",
-            "X-Upload-Total-Size": "100",
-            "X-Chunk-Last": "1",
-        }
-        info, err = _parse_chunk_headers(headers)
-        assert err is None
-        assert info["upload_id"] == "upload-1710000000000-abc123"
-
-    def test_parse_chunk_headers_partial_rejected(self):
-        headers = {"X-Upload-Id": "../evil"}
-        info, err = _parse_chunk_headers(headers)
-        assert info is None
-        assert err is not None
-
-
 class TestUploadHandlerDynamicMaxSize:
     """Tests for dynamic max file size enforcement in UploadHandler"""
 
@@ -641,76 +543,6 @@ class TestUploadHandlerDynamicMaxSize:
             mock_set_status.assert_called_with(413)
             msg = mock_write.call_args[0][0]
             assert "2048" in msg
-
-    @pytest.mark.asyncio
-    async def test_chunked_upload_intermediate_response(self):
-        handler = prepare_handler(UploadHandler(self.mock_app, self.mock_request))
-        authenticate(handler, role="user")
-        self._setup_handler_for_post(handler)
-        handler._chunk_mode = True
-        handler._session_dir = "/tmp/upload-session"
-        handler._chunk_info = {
-            "upload_id": "550e8400-e29b-41d4-a716-446655440000",
-            "offset": 0,
-            "total_size": 200,
-            "is_last": False,
-        }
-        handler._bytes_received = 100
-        handler._temp_path = "/tmp/upload-session/0.part"
-
-        with patch(
-            "aird.handlers.base_handler.is_feature_enabled", side_effect=lambda k, default=True: False if k == "abac_engine" else True
-        ), patch("os.path.getsize", return_value=100), patch(
-            "aird.handlers.file_op_handlers._upload_chunks_complete", return_value=False
-        ), patch.object(
-            handler, "write"
-        ) as mock_write, patch.object(
-            handler, "set_status"
-        ):
-            await handler.post()
-            assert "chunk_received" in mock_write.call_args[0][0]
-
-    @pytest.mark.asyncio
-    async def test_chunked_upload_final_chunk_moves_file(self):
-        handler = prepare_handler(UploadHandler(self.mock_app, self.mock_request))
-        authenticate(handler, role="user")
-        self._setup_handler_for_post(handler)
-        handler._chunk_mode = True
-        handler._session_dir = "/tmp/upload-session"
-        handler._chunk_info = {
-            "upload_id": "550e8400-e29b-41d4-a716-446655440000",
-            "offset": 100,
-            "total_size": 200,
-            "is_last": True,
-        }
-        handler._bytes_received = 100
-        handler._temp_path = "/tmp/upload-session/assembled.part"
-
-        with patch(
-            "aird.handlers.base_handler.is_feature_enabled", side_effect=lambda k, default=True: False if k == "abac_engine" else True
-        ), patch("os.path.getsize", return_value=100), patch(
-            "aird.handlers.file_op_handlers._upload_chunks_complete", return_value=True
-        ), patch(
-            "aird.handlers.file_op_handlers._try_acquire_stitch_lock", return_value=True
-        ), patch(
-            "aird.handlers.file_op_handlers._stitch_upload_session"
-        ), patch(
-            "aird.handlers.file_op_handlers._release_stitch_lock"
-        ), patch(
-            "aird.handlers.file_op_handlers._remove_upload_session"
-        ), patch(
-            "os.path.realpath", side_effect=lambda p: p
-        ), patch(
-            "aird.handlers.file_op_handlers.is_within_root", return_value=True
-        ), patch(
-            "aird.handlers.file_op_handlers.ALLOWED_UPLOAD_EXTENSIONS", {".txt"}
-        ), patch("shutil.move") as mock_move, patch("os.makedirs"), patch.object(
-            handler, "write"
-        ) as mock_write:
-            await handler.post()
-            mock_move.assert_called_once()
-            assert mock_write.call_args[0][0] == "Upload successful"
-
 
 class TestDeleteHandler:
     def setup_method(self):

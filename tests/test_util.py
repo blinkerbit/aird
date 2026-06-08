@@ -18,6 +18,9 @@ from aird.utils.util import (
     get_files_in_directory,
     is_video_file,
     is_audio_file,
+    is_image_file,
+    is_pdf_file,
+    browser_media_kind,
     get_all_files_recursive,
     matches_glob_patterns,
     filter_files_by_patterns,
@@ -1233,6 +1236,19 @@ class TestAdditionalFileIconCoverage:
 
     def test_ppt_icon(self):
         assert get_file_icon("slides.pptx") == "📋"
+
+
+class TestBrowserMediaKind:
+    def test_image_kinds(self):
+        assert is_image_file("photo.JPG")
+        assert browser_media_kind("x.png") == "image"
+
+    def test_pdf_kind(self):
+        assert is_pdf_file("doc.PDF")
+        assert browser_media_kind("doc.pdf") == "pdf"
+
+    def test_text_not_media(self):
+        assert browser_media_kind("readme.txt") is None
 
 
 class TestSanitizeCloudFilenameEdgeCases:

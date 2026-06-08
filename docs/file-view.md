@@ -4,7 +4,7 @@
 **Template:** `aird/templates/file.html`  
 **Loads:** `aird-core.js` (head), inline nonce script for fetch/WebSocket logic, `theme.js`.
 
-**Modes:** Normal HTML view (`file.html`), `?download=1`, `?mode=raw` (browse thumbnails & client decode), optional `open_editor`; line range via `start_line` / `end_line` with `DEFAULT_FILE_VIEW_LINE_LIMIT`.
+**Modes:** Normal HTML view (`file.html`), `?download=1`, `?mode=raw` (media viewer & client decode), optional `open_editor`; line range via `start_line` / `end_line` with `DEFAULT_FILE_VIEW_LINE_LIMIT`.
 
 **Sockets:** `WS /features` for toggling `[data-feature]` buttons; `WS /stream/{path}` with optional `filter`, `n` for live log streaming.
 

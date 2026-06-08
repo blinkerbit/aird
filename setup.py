@@ -15,7 +15,7 @@ install_requires = [
 
 setup(
     name="aird",
-    version="0.4.23.dev7",
+    version="0.4.23.dev14",
     packages=find_packages(),
     include_package_data=True,
     package_data={"aird": [
@@ -31,6 +31,7 @@ setup(
     entry_points={
         "console_scripts": [
             "aird=aird.main:main",
+            "aird-cli=aird.cli.main:main",
         ],
     },
     install_requires=install_requires,

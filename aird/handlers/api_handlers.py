@@ -63,7 +63,8 @@ from aird.core.mmap_handler import MMapFileHandler
 class FeatureFlagSocketHandler(
     ManagedWebSocketMixin, tornado.websocket.WebSocketHandler
 ):
-    # Use connection manager with configurable limits for feature flags
+    """Legacy WebSocket kept for backward compatibility; new clients use GET /api/features."""
+
     connection_manager = WebSocketConnectionManager(
         "feature_flags", default_max_connections=50, default_idle_timeout=600
     )
@@ -76,23 +77,28 @@ class FeatureFlagSocketHandler(
         if not self.register_connection():
             return
 
-        # Load current feature flags from SQLite and send to client
         current_flags = self._get_current_feature_flags()
         self.write_message(json.dumps(current_flags))
 
     def check_origin(self, origin):
-        # Improved origin validation (Priority 2)
         return is_valid_websocket_origin(self, origin)
 
     def _get_current_feature_flags(self):
-        """Get current feature flags using the consolidated implementation."""
         return get_current_feature_flags()
 
     @classmethod
     def send_updates(cls):
-        """Send feature flag updates to all connected clients."""
         current_flags = get_current_feature_flags()
         cls.connection_manager.broadcast_message(json.dumps(current_flags))
+
+
+class FeatureFlagAPIHandler(BaseHandler):
+    """GET /api/features — lightweight JSON endpoint for on-demand flag checks."""
+
+    @tornado.web.authenticated
+    def get(self):
+        self.set_header("Content-Type", "application/json")
+        self.write(json.dumps(get_current_feature_flags()))
 
 
 class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandler):

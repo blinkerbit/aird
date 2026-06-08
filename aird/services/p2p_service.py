@@ -57,7 +57,7 @@ class P2PSignalingService:
 
     def leave_room(self, room):
         if room and not room.peers:
-            self.room_manager.remove_room(room.room_id)
+            self.room_manager.mark_room_empty(room)
 
     def forward_to_other_peer(
         self, room, peer_id: str, payload: dict[str, Any]

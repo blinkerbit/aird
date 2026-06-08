@@ -36,6 +36,8 @@ class P2PRoom:
         self.peers: Dict[str, "P2PSignalingHandler"] = {}
         self.file_info: Optional[dict] = None  # Info about file being shared
         self.allow_anonymous = allow_anonymous  # Whether anonymous users can join
+        # Set when the last peer leaves; anonymous rooms stay joinable for a grace period.
+        self.empty_since: Optional[float] = None
 
     def add_peer(self, peer_id: str, handler: "P2PSignalingHandler"):
         self.peers[peer_id] = handler
@@ -69,6 +71,8 @@ class P2PRoomManager:
     # Optional clamp when expiry_seconds is set (tests / internal use only; API does not set expiry)
     MIN_EXPIRY = 300
     MAX_EXPIRY = 604800
+    # Anonymous share links stay valid briefly after the sender disconnects (refresh, etc.)
+    ANONYMOUS_EMPTY_GRACE = 3600
 
     def create_room(
         self,
@@ -102,16 +106,34 @@ class P2PRoomManager:
             logger.info(f"Removed P2P room: {room_id}")
 
     def cleanup_old_rooms(self):
-        """Remove rooms older than their individual expiry (only if expiry_seconds is set)."""
+        """Remove expired rooms and anonymous rooms empty past the grace window."""
         now = time.time()
-        to_remove = [
-            room_id
-            for room_id, room in self.rooms.items()
-            if room.expiry_seconds is not None
-            and now - room.created_at > room.expiry_seconds
-        ]
+        to_remove = []
+        for room_id, room in self.rooms.items():
+            if (
+                room.expiry_seconds is not None
+                and now - room.created_at > room.expiry_seconds
+            ):
+                to_remove.append(room_id)
+            elif (
+                room.empty_since is not None
+                and now - room.empty_since > self.ANONYMOUS_EMPTY_GRACE
+            ):
+                to_remove.append(room_id)
         for room_id in to_remove:
             self.remove_room(room_id)
+
+    def mark_room_empty(self, room: P2PRoom) -> None:
+        """Retain or drop a room after the last peer leaves."""
+        if room.allow_anonymous:
+            room.empty_since = time.time()
+            logger.info(
+                "P2P room %s is empty; keeping for anonymous joins (grace %ss)",
+                room.room_id,
+                self.ANONYMOUS_EMPTY_GRACE,
+            )
+            return
+        self.remove_room(room.room_id)
 
 
 # Global room manager instance
@@ -145,13 +167,21 @@ class P2PTransferHandler(BaseHandler):
         return True
 
     def _handle_anonymous_p2p(self, room_id: str | None) -> None:
+        room_join_error = None
         if room_id:
             room_mgr = self.room_manager or room_manager
             room = room_mgr.get_room(room_id)
-            if not room or not room.allow_anonymous:
-                self.redirect(self.get_login_url())
-                return
-        self.render("p2p_transfer.html", room_id=room_id, current_user=None, is_anonymous=True)
+            if not room:
+                room_join_error = "not_found"
+            elif not room.allow_anonymous:
+                room_join_error = "requires_login"
+        self.render(
+            "p2p_transfer.html",
+            room_id=room_id,
+            current_user=None,
+            is_anonymous=True,
+            room_join_error=room_join_error,
+        )
 
     def get(self):
         if not self.require_feature(
@@ -176,6 +206,7 @@ class P2PTransferHandler(BaseHandler):
             room_id=room_id,
             current_user=current_user,
             is_anonymous=False,
+            room_join_error=None,
         )
 
 
@@ -251,16 +282,29 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
                 room = self._room_manager.get_room(room_id)
                 if room and room.allow_anonymous:
                     self.pending_room_id = room_id
+                elif room:
+                    self.write_message(
+                        json.dumps(
+                            {
+                                "type": "error",
+                                "message": "This share link requires an Aird login. Sign in, then open the link again.",
+                                "code": "requires_login",
+                            }
+                        )
+                    )
+                    self.close(code=1008, reason="Authentication required for room")
+                    return
                 else:
                     self.write_message(
                         json.dumps(
                             {
                                 "type": "error",
-                                "message": "This share link requires login. Please log in to receive the file.",
+                                "message": "Share room not found. It may have expired, or the server was restarted. Ask the sender for a new link.",
+                                "code": "room_not_found",
                             }
                         )
                     )
-                    self.close(code=1008, reason="Authentication required for room")
+                    self.close(code=1008, reason="Room not found")
                     return
 
             self.username, self.peer_id = self._service.make_anonymous_identity()
@@ -400,6 +444,7 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
         if self.room:
             self._handle_leave_room()
 
+        room.empty_since = None
         room.add_peer(self.peer_id, self)
         self.room = room
 
@@ -444,7 +489,7 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
             {"type": "peer_left", "peer_id": self.peer_id, "username": self.username}
         )
 
-        # Clean up empty rooms
+        # Clean up or retain empty rooms (anonymous rooms kept for a grace period)
         if not self.room.peers:
             self._service.leave_room(self.room)
 

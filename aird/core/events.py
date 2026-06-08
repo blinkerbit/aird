@@ -46,6 +46,8 @@ class ShareCreatedEvent:
     creator: str
     path_count: int
     created_at: float
+    allowed_users: tuple[str, ...] = ()
+    modify_users: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

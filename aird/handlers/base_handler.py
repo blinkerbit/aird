@@ -874,8 +874,10 @@ class BaseHandler(tornado.web.RequestHandler):
             f"script-src 'self' 'nonce-{nonce}'; "
             f"style-src 'self' 'unsafe-inline'; "
             f"font-src 'self' data:; "
-            f"img-src 'self' data:; "
+            f"img-src 'self' data: blob:; "
             f"connect-src 'self'; "
+            f"frame-src 'self' blob:; "
+            f"object-src 'self' blob:; "
             f"frame-ancestors 'none'; "
         )
         self.set_header("Content-Security-Policy", csp)

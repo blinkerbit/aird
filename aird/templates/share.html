@@ -17,43 +17,11 @@
 {% set show_admin_link = False %}
 {% include '_app_nav_header.html' %}
 
-    <!-- File Browser -->
-    <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
-      <div class="flex flex-wrap items-center gap-x-1 gap-y-1 bg-base-200/50 p-2 px-4 rounded-lg text-sm" aria-label="Current directory">
-        <span id="currentPath" class="inline-flex flex-wrap items-center gap-x-1 gap-y-1">Browse &amp; select files</span>
-      </div>
-      <div class="flex gap-2">
-        <button class="btn btn-sm" id="selectAllVisible">Select All</button>
-        <button class="btn btn-sm btn-outline" id="openCloudBrowser">Cloud Drives</button>
-      </div>
-    </div>
-    <div class="overflow-x-auto bg-base-100 rounded-box border border-base-300 shadow-sm mb-6">
-    <table class="table table-zebra w-full" id="fileTable">
-      <thead class="bg-base-200">
-        <tr>
-          <th class="select-col px-4 py-3">✓</th>
-          <th class="name-col px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Name</th>
-          <th class="size-col px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Size</th>
-          <th class="modified-col px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Modified</th>
-          <th class="actions-col px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70 text-right">Actions</th>
-        </tr>
-      </thead>
-      <tbody id="fileTableBody">
-        <tr>
-          <td colspan="5" class="p-6 text-center text-base-content/50">
-            <span class="loading loading-spinner loading-sm align-middle mr-2"></span>
-            <span class="align-middle">Loading files…</span>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-    </div>
-
     <!-- Success banner: no DaisyUI alert colors until JS fills content (avoids empty green strip after refresh) -->
     <output class="mb-6 hidden block w-full" id="shareResult" aria-live="polite"></output>
 
-    <!-- Active Shares (My Shares) -->
-    <div class="mt-8">
+    <!-- My Shares -->
+    <div class="mt-2">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-xl font-bold">My Shares (<span id="activeSharesCount">0</span>)</h2>
         <button id="refreshSharesBtn" class="btn btn-sm btn-ghost gap-1" title="Refresh shares list">
@@ -86,9 +54,9 @@
     </div>
 
     <!-- Shared with Me -->
-    <div class="mt-8" id="sharedWithMeSection" style="display:none;">
-      <h2 class="text-xl font-bold mb-4">Shares from Others (<span id="sharedWithMeCount">0</span>)</h2>
-      
+    <div class="mt-8" id="sharedWithMeSection">
+      <h2 class="text-xl font-bold mb-4">Shared with Me (<span id="sharedWithMeCount">0</span>)</h2>
+
       <div class="overflow-x-auto bg-base-100 rounded-box border border-base-300 shadow-sm">
       <table class="table table-zebra w-full" id="sharedWithMeTable">
         <thead class="bg-base-200">
@@ -102,10 +70,57 @@
         </tr>
       </thead>
         <tbody id="sharedWithMeTableBody">
+          <tr>
+            <td colspan="6" class="p-8 text-center text-base-content/50">Loading…</td>
+          </tr>
         </tbody>
       </table>
       </div>
     </div>
+
+    <!-- Create share -->
+    <div class="share-create-toolbar mt-8 flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <h2 class="text-xl font-bold">Create a share</h2>
+        <p class="text-sm text-base-content/60 mt-1">Pick files or folders from your library, then configure access.</p>
+      </div>
+      <button type="button" class="btn btn-primary" id="startCreateShareBtn" aria-expanded="false" aria-controls="shareFilePickerSection">
+        Create Share
+      </button>
+    </div>
+
+    <!-- File picker (hidden until Create Share) -->
+    <section id="shareFilePickerSection" class="share-file-picker-section share-file-picker-hidden mt-4" aria-hidden="true">
+      <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+        <h3 class="text-lg font-semibold m-0">Select files</h3>
+        <div class="flex gap-2">
+          <button type="button" class="btn btn-sm btn-ghost" id="cancelCreateShareBtn">Close</button>
+          <button type="button" class="btn btn-sm" id="selectAllVisible">Select All</button>
+          <button type="button" class="btn btn-sm btn-outline" id="openCloudBrowser">Cloud Drives</button>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-x-1 gap-y-1 bg-base-200/50 p-2 px-4 rounded-lg text-sm mb-4" aria-label="Current directory">
+        <span id="currentPath" class="inline-flex flex-wrap items-center gap-x-1 gap-y-1">Browse &amp; select files</span>
+      </div>
+      <div class="overflow-x-auto bg-base-100 rounded-box border border-base-300 shadow-sm mb-6">
+      <table class="table table-zebra w-full" id="fileTable">
+        <thead class="bg-base-200">
+          <tr>
+            <th class="select-col px-4 py-3">✓</th>
+            <th class="name-col px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Name</th>
+            <th class="size-col px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Size</th>
+            <th class="modified-col px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70">Modified</th>
+            <th class="actions-col px-4 py-3 font-bold text-xs uppercase tracking-wider text-base-content/70 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="fileTableBody">
+          <tr>
+            <td colspan="5" class="p-6 text-center text-base-content/50 text-sm">Open this section to browse files.</td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
     </div>
 
   <!-- Sticky selection bar (appears when files are selected); uses .selection-bar.visible from app.css (same as browse) -->

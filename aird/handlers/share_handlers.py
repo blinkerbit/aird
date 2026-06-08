@@ -703,8 +703,12 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
                 ip=self.request.remote_ip,
             )
             self.publish_event(ShareCreatedEvent(
-                share_id=sid, creator=self.get_display_username(),
-                path_count=len(final_paths), created_at=now_ts(),
+                share_id=sid,
+                creator=self.get_display_username(),
+                path_count=len(final_paths),
+                created_at=now_ts(),
+                allowed_users=tuple(req.allowed_users or ()),
+                modify_users=tuple(req.modify_users or ()),
             ))
             response_data = ShareCreateResponse(
                 share_id=sid, url=f"/shared/{sid}",

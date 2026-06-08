@@ -152,14 +152,39 @@
       position: relative;
     }
 
-    .resizer {
+    .col-resizer {
       position: absolute;
       top: 0;
-      right: 0;
-      width: 5px;
+      right: -2px;
+      width: 7px;
       cursor: col-resize;
       user-select: none;
       height: 100%;
+      z-index: 2;
+    }
+
+    .col-resizer::after {
+      content: '';
+      position: absolute;
+      top: 25%;
+      right: 3px;
+      width: 1px;
+      height: 50%;
+      background: var(--color-base-300);
+      opacity: 0;
+      transition: opacity 150ms;
+    }
+
+    .col-resizer:hover::after,
+    .col-resizer.col-resizing::after {
+      opacity: 1;
+      background: var(--color-primary);
+      width: 2px;
+    }
+
+    .file-table.col-resize-active {
+      cursor: col-resize;
+      user-select: none;
     }
 
     .file-table td {
@@ -293,10 +318,6 @@
       white-space: nowrap;
     }
 
-    .name-cell-contents .fav-star {
-      flex-shrink: 0;
-    }
-
     .name-cell-contents .shared-icon {
       flex-shrink: 0;
     }
@@ -307,16 +328,21 @@
     .file-tag-list {
       display: inline-flex;
       align-items: center;
+      flex-wrap: nowrap;
       gap: 3px;
-      flex-shrink: 0;
-      max-width: 200px;
+      flex-shrink: 1;
+      min-width: 0;
       overflow: hidden;
+    }
+
+    .file-tag-list--overflow {
+      cursor: default;
     }
 
     .file-tag-chip {
       display: inline-block;
       font-size: 10px;
-      line-height: 1;
+      line-height: 1.15;
       padding: 2px 6px;
       border-radius: 999px;
       background: var(--color-base-200);
@@ -325,6 +351,11 @@
       text-decoration: none;
       font-weight: 600;
       white-space: nowrap;
+      max-width: 5.5rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      vertical-align: middle;
+      flex-shrink: 1;
       transition: background 120ms, border-color 120ms;
     }
 
@@ -335,42 +366,96 @@
     }
 
     .file-tag-more {
-      display: inline-block;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       font-size: 10px;
       line-height: 1;
       padding: 2px 5px;
       border-radius: 999px;
-      background: var(--color-base-300);
-      color: var(--color-base-content);
-      font-weight: 600;
+      background: color-mix(in oklch, var(--color-primary) 14%, var(--color-base-200));
+      color: var(--color-primary);
+      border: 1px solid color-mix(in oklch, var(--color-primary) 35%, transparent);
+      font-weight: 700;
       white-space: nowrap;
+      flex-shrink: 0;
+      cursor: pointer;
+      transition: background 120ms, border-color 120ms, transform 80ms;
+    }
+
+    .file-tag-more:hover,
+    .file-tag-more:focus-visible {
+      background: color-mix(in oklch, var(--color-primary) 22%, var(--color-base-200));
+      border-color: var(--color-primary);
+      outline: none;
+    }
+
+    .file-tag-more:active {
+      transform: scale(0.96);
+    }
+
+    .file-tags-hover-popover {
+      position: fixed;
+      z-index: 2395;
+      min-width: 10rem;
+      max-width: min(20rem, calc(100vw - 1.5rem));
+      padding: 0.65rem 0.75rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--color-base-300);
+      background: var(--color-base-100);
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+      pointer-events: auto;
+    }
+
+    .file-tags-hover-popover-title {
+      margin: 0 0 0.45rem;
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--color-base-content);
+      opacity: 0.65;
+    }
+
+    .file-tags-hover-popover-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      max-height: 12rem;
+      overflow-y: auto;
+    }
+
+    .file-tags-hover-popover-list .file-tag-chip {
+      max-width: none;
+      flex-shrink: 0;
     }
 
     .tags-col-header {
       cursor: default;
       user-select: none;
       font-weight: 600;
-      width: 11rem;
-      min-width: 8rem;
+      width: 7rem;
+      min-width: 4.5rem;
     }
 
     .tags-cell {
       vertical-align: middle;
-      max-width: 14rem;
+      overflow: hidden;
     }
 
     .tags-cell-inner {
       display: flex;
       align-items: center;
-      flex-wrap: wrap;
-      gap: 4px;
+      flex-wrap: nowrap;
+      gap: 3px;
       min-height: 1.5rem;
+      overflow: hidden;
     }
 
     .tags-cell-inner .file-tag-list {
-      max-width: 100%;
-      flex: 1 1 auto;
+      flex: 1 1 0;
       min-width: 0;
+      overflow: hidden;
     }
 
     .tags-cell-empty {
@@ -767,6 +852,10 @@
         border-bottom: 0;
       }
 
+      .col-resizer {
+        display: none;
+      }
+
       .file-table td::before {
         content: attr(data-label);
         position: absolute;
@@ -799,27 +888,25 @@
         display: none;
       }
 
-    }
+      .tags-cell {
+        width: 100%;
+        max-width: 100%;
+        padding-left: 10px !important;
+        text-align: left !important;
+      }
 
-    /* Favorites */
-    .fav-star {
-      cursor: pointer;
-      font-size: 16px;
-      color: var(--ds-text-subtle);
-      margin-left: 6px;
-      display: inline-block;
-      user-select: none;
-      transition:
-        color var(--ds-duration-fast) var(--ds-ease),
-        transform var(--ds-duration-fast) var(--ds-ease);
-    }
-    .fav-star:hover { color: var(--ds-gold); transform: rotate(-15deg) scale(1.15); }
-    .fav-star:active { transform: scale(0.9); transition-duration: 60ms; }
-    .fav-star.fav-active { color: var(--ds-gold); animation: favPop 280ms var(--ds-ease); }
-    @keyframes favPop {
-      0%   { transform: scale(1); }
-      40%  { transform: scale(1.35) rotate(12deg); }
-      100% { transform: scale(1) rotate(0); }
+      .tags-cell::before {
+        display: none;
+      }
+
+      .tags-cell-inner {
+        justify-content: flex-start;
+      }
+
+      .file-tag-chip {
+        max-width: 8rem;
+      }
+
     }
 
     /* Sticky selection bar at bottom of viewport — uses the

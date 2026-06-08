@@ -26,6 +26,23 @@ VIDEO_EXTENSIONS: frozenset = frozenset(
     }
 )
 
+IMAGE_BROWSER_EXTENSIONS: frozenset = frozenset(
+    {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".gif",
+        ".bmp",
+        ".webp",
+        ".tiff",
+        ".tif",
+        ".svg",
+        ".ico",
+    }
+)
+
+PDF_BROWSER_EXTENSION = ".pdf"
+
 AUDIO_EXTENSIONS: frozenset = frozenset(
     {
         ".mp3",

@@ -5,13 +5,6 @@
     const RELOAD_DELAY_MS = 500;
     const MIN_COLUMN_WIDTH = 50;
     const MAX_FILE_SIZE = globalThis.__BROWSE_CONFIG ? globalThis.__BROWSE_CONFIG.maxFileSize : 10737418240;
-    const UPLOAD_CHUNK_SIZE = globalThis.__BROWSE_CONFIG && globalThis.__BROWSE_CONFIG.uploadChunkSize
-      ? globalThis.__BROWSE_CONFIG.uploadChunkSize
-      : (50 * 1024 * 1024);
-    const UPLOAD_MAX_PARALLEL = Math.max(
-      1,
-      Number(globalThis.__BROWSE_CONFIG?.uploadMaxParallel) || 5
-    );
     const CAN_TAG = !!(globalThis.__BROWSE_CONFIG && globalThis.__BROWSE_CONFIG.canTag);
 
     const SelectionStore = {
@@ -58,17 +51,6 @@
     function escapeAttr(text) {
       return globalThis.AirdCore.escapeAttr(text);
     }
-
-    // Fallback for image thumbnails that fail to load
-    document.addEventListener('error', function(e) {
-      if (e.target.tagName === 'IMG' && e.target.dataset.fallbackIcon) {
-        const icon = e.target.dataset.fallbackIcon;
-        const span = document.createElement('span');
-        span.className = 'file-icon';
-        span.textContent = icon;
-        e.target.replaceWith(span);
-      }
-    }, true);
 
     const showDialog = (...args) => {
       if (globalThis.AirdCore?.showDialog) {
@@ -195,7 +177,7 @@
 
         const queueItem = { file: fw.file, bar, info, cancelBtn, item, xhr: null, start: null, uploadDir, uploadName: fileName };
         queueItem.cancelBtn.addEventListener("click", function() {
-          if (queueItem.xhr || queueItem.activeXhrs) {
+          if (queueItem.xhr || queueItem.activeXhrs || queueItem.uploadSignal) {
             abortActiveUploads(queueItem);
           } else {
             const idx = uploadQueue.indexOf(queueItem);
@@ -258,7 +240,7 @@
         const queueItem = { file, bar, info, cancelBtn, item, xhr: null, start: null };
 
         cancelBtn.addEventListener("click", () => {
-          if (queueItem.xhr || queueItem.activeXhrs) {
+          if (queueItem.xhr || queueItem.activeXhrs || queueItem.uploadSignal) {
             abortActiveUploads(queueItem);
           } else {
             const idx = uploadQueue.indexOf(queueItem);
@@ -334,32 +316,17 @@
       return globalThis.AirdCore.formatBytes(bytes);
     }
 
-    /** UUID for chunked uploads; works on plain HTTP where crypto.randomUUID is unavailable. */
-    function newUploadId() {
-      if (typeof globalThis.crypto?.randomUUID === "function") {
-        return globalThis.crypto.randomUUID();
-      }
-      const bytes = new Uint8Array(16);
-      if (typeof globalThis.crypto?.getRandomValues === "function") {
-        globalThis.crypto.getRandomValues(bytes);
-      } else {
-        for (let i = 0; i < bytes.length; i++) {
-          bytes[i] = Math.floor(Math.random() * 256);
-        }
-      }
-      bytes[6] = (bytes[6] & 0x0f) | 0x40;
-      bytes[8] = (bytes[8] & 0x3f) | 0x80;
-      const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-    }
-
     function abortActiveUploads(item) {
-      if (item.activeXhrs) {
-        for (const xhr of item.activeXhrs) {
-          try { xhr.abort(); } catch { /* ignore */ }
-        }
-      } else if (item.xhr) {
-        item.xhr.abort();
+      item.cancelled = true;
+      if (item.uploadSignal) {
+        item.uploadSignal.aborted = true;
+      }
+      if (item.info) {
+        item.info.textContent = 'Cancelling…';
+        item.info.classList.add('opacity-70');
+      }
+      if (item.cancelBtn) {
+        item.cancelBtn.disabled = true;
       }
     }
 
@@ -369,48 +336,13 @@
       const elapsed = (Date.now() - item.start) / 1000;
       const speed = loaded / (elapsed || 1);
       const remaining = Math.max(0, totalSize - loaded);
-      let chunkNote = "";
-      if (item.chunkProgress) {
-        const totalChunks = item.chunkProgress.size;
-        const inFlight = item.chunksInFlight || 0;
-        const maxP = item.parallelMax || 1;
-        chunkNote = ` · ${item.chunksDone || 0}/${totalChunks} done`;
-        if (maxP > 1 && totalChunks > 1) {
-          chunkNote += ` · ${inFlight}/${maxP} uploading`;
-        }
-      }
       item.bar.value = percent;
-      item.info.textContent = `${Math.round(percent)}% - ${formatBytes(loaded)} of ${formatBytes(totalSize)} (${formatBytes(remaining)} left) @ ${formatBytes(speed)}/s${chunkNote}`;
-    }
-
-    function syncUploadProgress(item, totalSize) {
-      let loaded = 0;
-      let chunksDone = 0;
-      if (item.chunkProgress) {
-        for (const part of item.chunkProgress.values()) {
-          loaded += Math.min(part.loaded, part.size);
-          if (part.loaded >= part.size) chunksDone += 1;
-        }
+      if (loaded >= totalSize && !item.serverConfirmed) {
+        item.info.textContent = `Saving to disk…`;
+        item.bar.classList.add('progress-warning');
+      } else {
+        item.info.textContent = `${Math.round(percent)}% - ${formatBytes(loaded)} of ${formatBytes(totalSize)} (${formatBytes(remaining)} left) @ ${formatBytes(speed)}/s`;
       }
-      item.bytesUploaded = loaded;
-      item.chunksDone = chunksDone;
-      updateUploadProgress(item, totalSize);
-    }
-
-    function formatUploadError(responseText, status) {
-      const text = (responseText || "").trim();
-      if (!text) return `HTTP ${status}`;
-      if (text.startsWith("<!") || text.startsWith("<html") || text.includes("<!DOCTYPE")) {
-        if (status === 403) {
-          return "Access denied (403). Refresh the page and try again.";
-        }
-        const titleMatch = /<title[^>]*>([^<]+)<\/title>/i.exec(text);
-        if (titleMatch) {
-          return titleMatch[1].replace(/\s*·\s*Aird\s*$/i, "").trim();
-        }
-        return `Request failed (HTTP ${status})`;
-      }
-      return text.length > 400 ? text.slice(0, 400) + "…" : text;
     }
 
     /** Plain-language message for the upload row (not console-only). */
@@ -418,7 +350,7 @@
       const raw = (err && err.message) ? String(err.message).trim() : "";
       if (!raw || raw === "cancelled") return raw;
       const lower = raw.toLowerCase();
-      if (lower.includes("network")) {
+      if (lower.includes("network") || lower.includes("websocket")) {
         return "Upload interrupted. Check your connection and try again.";
       }
       if (lower.includes("403") || lower.includes("access denied")) {
@@ -426,9 +358,6 @@
       }
       if (lower.includes("413") || lower.includes("too large")) {
         return "This file is too large for the server limit.";
-      }
-      if (lower.includes("chunk") || lower.includes("out of order")) {
-        return "Upload was interrupted. Please try again.";
       }
       return "Upload could not be completed. Please try again.";
     }
@@ -480,147 +409,29 @@
       setUploadRowOutcome(item, "error", friendlyUploadErrorMessage(err));
     }
 
-    async function uploadChunkWithRetry(item, blob, uploadId, offset, totalSize, isLast) {
-      const maxAttempts = 4;
-      let lastErr = null;
-      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-        try {
-          await uploadChunk(item, blob, uploadId, offset, totalSize, isLast);
-          return;
-        } catch (err) {
-          lastErr = err;
-          if (err?.message === "cancelled") {
-            throw err;
-          }
-          if (attempt < maxAttempts - 1) {
-            await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
-          }
-        }
-      }
-      throw lastErr || new Error("upload failed");
-    }
-
-    function uploadChunk(item, blob, uploadId, offset, totalSize, isLast) {
-      return new Promise((resolve, reject) => {
-        item.chunksInFlight = (item.chunksInFlight || 0) + 1;
-        syncUploadProgress(item, totalSize);
-
-        const xhr = new XMLHttpRequest();
-        if (!item.activeXhrs) item.activeXhrs = [];
-        item.activeXhrs.push(xhr);
-        item.xhr = xhr;
-
-        const releaseSlot = () => {
-          item.chunksInFlight = Math.max(0, (item.chunksInFlight || 0) - 1);
-          const idx = item.activeXhrs ? item.activeXhrs.indexOf(xhr) : -1;
-          if (idx >= 0) item.activeXhrs.splice(idx, 1);
-          syncUploadProgress(item, totalSize);
-        };
-        const dir = item.uploadDir ?? document.getElementById('currentPath')?.value ?? '';
-        const fname = item.uploadName ?? item.file.name;
-        const qs = new URLSearchParams({
-          upload_id: uploadId,
-          chunk_offset: String(offset),
-          total_size: String(totalSize),
-          chunk_last: isLast ? "1" : "0",
-          upload_dir: dir,
-          upload_filename: fname,
-        });
-        const xsrfToken = getXSRFToken();
-        if (xsrfToken) {
-          qs.set("_xsrf", xsrfToken);
-        }
-        xhr.open("POST", "/upload?" + qs.toString());
-
-        xhr.upload.addEventListener("progress", (e) => {
-          if (!e.lengthComputable || !item.chunkProgress) return;
-          const part = item.chunkProgress.get(offset);
-          if (!part) return;
-          part.loaded = Math.min(e.loaded, part.size);
-          syncUploadProgress(item, totalSize);
-        });
-
-        xhr.addEventListener("load", () => {
-          const part = item.chunkProgress?.get(offset);
-          if (part) {
-            part.loaded = part.size;
-          }
-          releaseSlot();
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve();
-          } else {
-            reject(new Error(formatUploadError(xhr.responseText, xhr.status)));
-          }
-        });
-        xhr.addEventListener("error", () => {
-          releaseSlot();
-          reject(new Error("network error"));
-        });
-        xhr.addEventListener("abort", () => {
-          releaseSlot();
-          reject(new Error("cancelled"));
-        });
-
-        xhr.setRequestHeader("X-Upload-Dir", encodeURIComponent(dir));
-        xhr.setRequestHeader("X-Upload-Filename", encodeURIComponent(fname));
-        xhr.setRequestHeader("X-Upload-Id", uploadId);
-        xhr.setRequestHeader("X-Chunk-Offset", String(offset));
-        xhr.setRequestHeader("X-Upload-Total-Size", String(totalSize));
-        xhr.setRequestHeader("X-Chunk-Last", isLast ? "1" : "0");
-        xhr.setRequestHeader("Content-Type", "application/octet-stream");
-        if (xsrfToken) {
-          xhr.setRequestHeader("X-XSRFToken", xsrfToken);
-        }
-        xhr.send(blob);
-      });
-    }
-
     async function uploadFile(item) {
+      const FTW = globalThis.AirdFileTransferWs;
+      if (!FTW?.uploadFile) {
+        throw new Error("WebSocket upload unavailable. Hard-refresh the page.");
+      }
       const totalSize = item.file.size;
-      const uploadId = newUploadId();
       item.start = Date.now();
       item.bytesUploaded = 0;
-      item.activeXhrs = [];
-
-      const chunks = [];
-      for (let offset = 0; offset < totalSize; offset += UPLOAD_CHUNK_SIZE) {
-        const end = Math.min(offset + UPLOAD_CHUNK_SIZE, totalSize);
-        chunks.push({
-          offset,
-          blob: item.file.slice(offset, end),
-          isLast: end >= totalSize,
-        });
-      }
-      item.chunkProgress = new Map();
-      for (const chunk of chunks) {
-        item.chunkProgress.set(chunk.offset, { loaded: 0, size: chunk.blob.size });
-      }
-
-      const workerCount = Math.min(UPLOAD_MAX_PARALLEL, chunks.length);
-      item.parallelMax = workerCount;
-      item.chunksInFlight = 0;
-
-      async function runChunkWorker() {
-        while (true) {
-          const index = runChunkWorker.nextIndex++;
-          if (index >= chunks.length) return;
-          const chunk = chunks[index];
-          await uploadChunkWithRetry(
-            item,
-            chunk.blob,
-            uploadId,
-            chunk.offset,
-            totalSize,
-            chunk.isLast
-          );
-        }
-      }
-      runChunkWorker.nextIndex = 0;
-
+      const dir = item.uploadDir ?? document.getElementById('currentPath')?.value ?? '';
+      const fname = item.uploadName ?? item.file.name;
+      item.uploadSignal = { aborted: false };
       try {
-        await Promise.all(
-          Array.from({ length: workerCount }, () => runChunkWorker())
-        );
+        await FTW.uploadFile(item.file, {
+          uploadDir: dir,
+          filename: fname,
+          onProgress: (_pct, loaded) => {
+            item.bytesUploaded = loaded;
+            updateUploadProgress(item, totalSize);
+          },
+          signal: item.uploadSignal,
+        });
+        item.serverConfirmed = true;
+        item.bar.classList.remove('progress-warning');
         setUploadRowOutcome(item, "ok", "Upload completed");
         item.bar.value = 100;
       } catch (err) {
@@ -861,6 +672,265 @@
       } catch (e) {
         showDialog('Create folder failed: ' + e.message, 'Error');
       }
+    }
+
+    function downloadUrlForPath(path) {
+      const enc = String(path || '').split('/').filter(Boolean).map(encodeURIComponent).join('/');
+      return `/files/${enc}?download=1`;
+    }
+
+    async function downloadFileViaWs(filePath) {
+      const FTW = globalThis.AirdFileTransferWs;
+      const Dl = globalThis.AirdDownloadManager;
+      if (!FTW?.downloadFile) {
+        globalThis.location.href = downloadUrlForPath(filePath);
+        return;
+      }
+      const container = document.getElementById('downloadProgressContainer');
+      if (container) container.classList.remove('hidden');
+      if (Dl?.DownloadBatch) {
+        const batch = new Dl.DownloadBatch({
+          container: container || document.body,
+          title: 'Downloads',
+        });
+        batch.addWsItem(filePath, filePath);
+        await batch.run();
+        return;
+      }
+      try {
+        const result = await FTW.downloadFile(filePath);
+        FTW.saveBlob(result.blob, result.filename);
+      } catch (err) {
+        showDialog('Download failed: ' + (err?.message || err), 'Download');
+      }
+    }
+
+    async function listDirectoryForDownload(path) {
+      const segments = String(path || '').split('/').filter(Boolean);
+      const url = segments.length
+        ? '/api/files/' + segments.map(encodeURIComponent).join('/')
+        : '/api/files/';
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      return res.json();
+    }
+
+    async function expandSelectionToFiles(paths) {
+      const out = [];
+      const seen = new Set();
+      const addFile = (p) => {
+        if (p && !seen.has(p)) {
+          seen.add(p);
+          out.push(p);
+        }
+      };
+      for (const path of paths) {
+        const data = await listDirectoryForDownload(path);
+        if (data && Array.isArray(data.files) && data.files.length > 0) {
+          const walk = async (base, entries) => {
+            for (const entry of entries) {
+              const child = base ? `${base}/${entry.name}` : entry.name;
+              if (entry.is_dir) {
+                const sub = await listDirectoryForDownload(child);
+                if (sub && Array.isArray(sub.files)) {
+                  await walk(child, sub.files);
+                }
+              } else {
+                addFile(child);
+              }
+            }
+          };
+          await walk(path, data.files);
+        } else {
+          addFile(path);
+        }
+      }
+      return out;
+    }
+
+    async function bulkDownload() {
+      const paths = getSelectedPaths();
+      if (paths.length === 0) return;
+      const DLM = globalThis.AirdDownloadManager;
+      if (!DLM) {
+        await showDialog('Download manager failed to load. Hard-refresh the page.', 'Download');
+        return;
+      }
+      const container = document.getElementById('downloadProgressContainer');
+      if (container) container.classList.remove('hidden');
+      const batch = new DLM.DownloadBatch({ container, title: 'Downloads' });
+      const btn = document.getElementById('bulkDownloadBtn');
+      if (btn) btn.disabled = true;
+      try {
+        const files = await expandSelectionToFiles(paths);
+        if (!files.length) {
+          await showDialog('No files to download in the current selection.', 'Download');
+          batch.close();
+          return;
+        }
+        for (const filePath of files) {
+          if (DLM.addWsItem && globalThis.AirdFileTransferWs?.downloadFile) {
+            batch.addWsItem(filePath, filePath);
+          } else {
+            batch.addItem(filePath, downloadUrlForPath(filePath));
+          }
+        }
+        await batch.run();
+      } catch (e) {
+        await showDialog('Could not prepare downloads: ' + (e && e.message ? e.message : String(e)), 'Download');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function filesDownloadUrl(path) {
+      const enc = String(path || '')
+        .replace(/^\/+/, '')
+        .split('/')
+        .filter(Boolean)
+        .map(encodeURIComponent)
+        .join('/');
+      return enc ? `/files/${enc}?download=1` : '/files/?download=1';
+    }
+
+    async function listDirectoryForDownload(remotePath) {
+      const enc = String(remotePath || '')
+        .replace(/^\/+/, '')
+        .split('/')
+        .filter(Boolean)
+        .map(encodeURIComponent)
+        .join('/');
+      const url = enc ? `/api/files/${enc}` : '/api/files/';
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return Array.isArray(data.files) ? data.files : [];
+    }
+
+    async function expandSelectionToFiles(paths) {
+      const files = [];
+      const seen = new Set();
+      for (const raw of paths) {
+        const p = String(raw || '').trim().replace(/^\/+/, '');
+        if (!p) continue;
+        const entries = await listDirectoryForDownload(p);
+        if (entries === null) {
+          if (!seen.has(p)) {
+            seen.add(p);
+            files.push(p);
+          }
+          continue;
+        }
+        if (!entries.length) continue;
+        async function walk(dir, dirEntries) {
+          for (const entry of dirEntries) {
+            const child = dir ? `${dir}/${entry.name}` : entry.name;
+            if (entry.is_dir) {
+              const sub = await listDirectoryForDownload(child);
+              if (sub && sub.length) await walk(child, sub);
+            } else if (!seen.has(child)) {
+              seen.add(child);
+              files.push(child);
+            }
+          }
+        }
+        await walk(p, entries);
+      }
+      return files;
+    }
+
+    function pathIsDirectory(relPath) {
+      const target = String(relPath || '');
+      const match = document.querySelector(
+        '.row-checkbox[data-path="' + CSS.escape(target) + '"]'
+      );
+      if (match) return match.dataset.isDir === '1';
+      return false;
+    }
+
+    function selectionNeedsZip(paths) {
+      if (paths.length > 1) return true;
+      if (paths.length === 1) return pathIsDirectory(paths[0]);
+      return false;
+    }
+
+    async function downloadSelectionAsZip(paths) {
+      const res = await fetch('/api/download/zip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-XSRFToken': getXSRFToken(),
+        },
+        body: JSON.stringify({ paths }),
+      });
+      if (!res.ok) {
+        const msg = (await res.text()).trim() || `HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      let name = 'aird-download.zip';
+      if (paths.length === 1) {
+        const base = String(paths[0]).replace(/\/+$/, '').split('/').pop();
+        if (base) name = base + '.zip';
+      }
+      const save = globalThis.AirdFileTransferWs?.saveBlob;
+      if (save) {
+        save(blob, name);
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    }
+
+    async function bulkDownload() {
+      const paths = getSelectedPaths();
+      if (paths.length === 0) return;
+      closeSelectionDrawer();
+
+      if (selectionNeedsZip(paths)) {
+        try {
+          await downloadSelectionAsZip(paths);
+        } catch (err) {
+          showDialog('Could not download zip: ' + (err?.message || err), 'Download');
+        }
+        return;
+      }
+
+      const filePath = paths[0];
+      const Dl = globalThis.AirdDownloadManager;
+      const FTW = globalThis.AirdFileTransferWs;
+      const container = document.getElementById('downloadProgressContainer');
+      if (FTW?.downloadFile) {
+        const batch = Dl?.DownloadBatch
+          ? new Dl.DownloadBatch({ container: container || document.body, title: 'Downloads' })
+          : null;
+        if (batch?.addWsItem) {
+          batch.addWsItem(filePath, filePath);
+          await batch.run();
+          return;
+        }
+        try {
+          const result = await FTW.downloadFile(filePath);
+          FTW.saveBlob(result.blob, result.filename);
+        } catch (err) {
+          showDialog('Download failed: ' + (err?.message || err), 'Download');
+        }
+        return;
+      }
+      if (!Dl?.DownloadBatch) {
+        showDialog('Download manager failed to load. Hard-refresh the page.', 'Download');
+        return;
+      }
+      const batch = new Dl.DownloadBatch({
+        container: container || document.body,
+        title: 'Downloads',
+      });
+      batch.addItem(filePath, filesDownloadUrl(filePath));
+      await batch.run();
     }
 
     async function bulkDelete() {
@@ -1251,16 +1321,16 @@
     }
 
     function _renderTagsCellInner(tags, path) {
-      const maxShow = 3;
       let html = '';
       if (tags.length) {
-        html += '<span class="file-tag-list" title="' + escapeAttr(tags.join(', ')) + '">';
-        tags.slice(0, maxShow).forEach(function (t) {
-          html += '<a href="/tagged/' + encodeURIComponent(t) + '" class="file-tag-chip" onclick="event.stopPropagation()">'
-            + escapeHtml(t) + '</a>';
-        });
-        if (tags.length > maxShow) {
-          html += '<span class="file-tag-more">+' + (tags.length - maxShow) + '</span>';
+        const overflow = tags.length > 1;
+        html += '<span class="file-tag-list' + (overflow ? ' file-tag-list--overflow' : '') + '">';
+        html += '<a href="/tagged/' + encodeURIComponent(tags[0]) + '" class="file-tag-chip" onclick="event.stopPropagation()">'
+          + escapeHtml(tags[0]) + '</a>';
+        if (overflow) {
+          html += '<button type="button" class="file-tag-more file-tag-more-trigger"'
+            + ' aria-label="Show all ' + tags.length + ' tags" title="Show all tags">'
+            + '+' + (tags.length - 1) + '</button>';
         }
         html += '</span>';
       }
@@ -1282,6 +1352,129 @@
       tagsCell.dataset.tags = sorted.join(',');
       const inner = tagsCell.querySelector('.tags-cell-inner');
       if (inner) inner.innerHTML = _renderTagsCellInner(sorted, path);
+    }
+
+    function _positionFileTagsHoverPopover(anchorEl, pop) {
+      if (!anchorEl || !pop) return;
+      pop.removeAttribute('hidden');
+      pop.style.display = 'block';
+      pop.style.visibility = 'hidden';
+      pop.style.left = '0';
+      pop.style.top = '0';
+
+      const rect = anchorEl.getBoundingClientRect();
+      const margin = 8;
+      const gap = 6;
+      const popW = pop.offsetWidth;
+      const popH = pop.offsetHeight;
+
+      let left = rect.left;
+      let top = rect.bottom + gap;
+      if (left + popW > window.innerWidth - margin) {
+        left = Math.max(margin, window.innerWidth - margin - popW);
+      }
+      if (top + popH > window.innerHeight - margin) {
+        const above = rect.top - gap - popH;
+        top = above >= margin ? above : Math.max(margin, window.innerHeight - margin - popH);
+      }
+
+      pop.style.left = Math.round(left) + 'px';
+      pop.style.top = Math.round(top) + 'px';
+      pop.style.visibility = 'visible';
+    }
+
+    function _initFileTagsHoverPopover() {
+      const pop = document.getElementById('fileTagsHoverPopover');
+      const listEl = pop?.querySelector('.file-tags-hover-popover-list');
+      const table = document.getElementById('fileTable');
+      if (!pop || !listEl || !table) return;
+
+      let hideTimer = null;
+      let activeAnchor = null;
+
+      function hidePopover() {
+        pop.hidden = true;
+        pop.style.display = '';
+        pop.style.visibility = '';
+        pop.style.left = '';
+        pop.style.top = '';
+        activeAnchor = null;
+      }
+
+      function scheduleHide() {
+        clearTimeout(hideTimer);
+        hideTimer = setTimeout(hidePopover, 130);
+      }
+
+      function cancelHide() {
+        clearTimeout(hideTimer);
+      }
+
+      function showPopover(anchorEl, tags) {
+        if (!tags.length) return;
+        cancelHide();
+        activeAnchor = anchorEl;
+        listEl.innerHTML = tags.map(function (t) {
+          return '<a href="/tagged/' + encodeURIComponent(t) + '" class="file-tag-chip"'
+            + ' onclick="event.stopPropagation()">' + escapeHtml(t) + '</a>';
+        }).join('');
+        _positionFileTagsHoverPopover(anchorEl, pop);
+      }
+
+      function tagsFromEventTarget(target) {
+        const trigger = target.closest('.file-tag-list--overflow, .file-tag-more-trigger');
+        if (!trigger) return null;
+        const list = trigger.classList.contains('file-tag-list')
+          ? trigger
+          : trigger.closest('.file-tag-list');
+        const cell = (list || trigger).closest('.tags-cell');
+        if (!cell) return null;
+        const tags = _tagsCellTags(cell);
+        if (tags.length <= 1) return null;
+        return { anchor: list || trigger, tags: tags };
+      }
+
+      table.addEventListener('mouseover', function (e) {
+        const info = tagsFromEventTarget(e.target);
+        if (!info) return;
+        showPopover(info.anchor, info.tags);
+      });
+
+      table.addEventListener('mouseout', function (e) {
+        const info = tagsFromEventTarget(e.target);
+        if (!info) return;
+        const related = e.relatedTarget;
+        if (related && (info.anchor.contains(related) || pop.contains(related))) return;
+        scheduleHide();
+      });
+
+      pop.addEventListener('mouseenter', cancelHide);
+      pop.addEventListener('mouseleave', scheduleHide);
+
+      table.addEventListener('focusin', function (e) {
+        const btn = e.target.closest('.file-tag-more-trigger');
+        if (!btn) return;
+        const cell = btn.closest('.tags-cell');
+        const tags = _tagsCellTags(cell);
+        if (tags.length <= 1) return;
+        const list = btn.closest('.file-tag-list') || btn;
+        showPopover(list, tags);
+      });
+
+      table.addEventListener('focusout', function (e) {
+        if (!e.target.closest('.file-tag-more-trigger')) return;
+        scheduleHide();
+      });
+
+      document.addEventListener('scroll', function () {
+        if (!activeAnchor || pop.hidden) return;
+        _positionFileTagsHoverPopover(activeAnchor, pop);
+      }, true);
+
+      window.addEventListener('resize', function () {
+        if (!activeAnchor || pop.hidden) return;
+        _positionFileTagsHoverPopover(activeAnchor, pop);
+      });
     }
 
     function _positionRowTagPopover(anchorEl, pop) {
@@ -1552,10 +1745,6 @@
     }
 
     function calculateSkipRows(allRows) {
-      // Skip parent directory link if present (must stay first; never sort with file rows).
-      if (allRows.length > 0 && allRows[0].classList.contains("parent-row")) {
-        return 1;
-      }
       // Skip empty directory message
       if (
         allRows.length > 0 &&
@@ -1891,6 +2080,8 @@
       });
       const newFolderBtn = document.getElementById('newFolderBtn');
       if (newFolderBtn) newFolderBtn.addEventListener('click', newFolder);
+      const bulkDownloadBtn = document.getElementById('bulkDownloadBtn');
+      if (bulkDownloadBtn) bulkDownloadBtn.addEventListener('click', bulkDownload);
       const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
       if (bulkDeleteBtn) bulkDeleteBtn.addEventListener('click', bulkDelete);
       const bulkCopyBtn = document.getElementById('bulkCopyBtn');
@@ -1963,6 +2154,19 @@
         });
       }
 
+      _initFileTagsHoverPopover();
+
+      document.getElementById('fileTable')?.addEventListener('click', function (e) {
+        const dl = e.target.closest('.download-btn');
+        if (dl) {
+          e.preventDefault();
+          const path = dl.dataset.downloadPath
+            || dl.closest('tr.file-row')?.dataset.path;
+          if (path) void downloadFileViaWs(path);
+          return;
+        }
+      });
+
       // Per-row tag add (+) buttons (re-bound after cell refresh)
       document.getElementById('fileTable')?.addEventListener('click', function (e) {
         const btn = e.target.closest('.row-tag-add-btn');
@@ -1987,32 +2191,6 @@
           e.preventDefault();
           revokeShare(el.dataset.id);
         }
-      });
-
-      // --- Favorites ---
-      document.querySelectorAll('.fav-star').forEach(function(star) {
-        star.addEventListener('click', async function(e) {
-          e.preventDefault();
-          e.stopPropagation();
-          const path = star.dataset.favPath;
-          try {
-            const r = await fetch('/api/favorites/toggle', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
-              body: JSON.stringify({ path })
-            });
-            const data = await r.json();
-            if (data.favorited) {
-              star.textContent = '\u2605';
-              star.classList.add('fav-active');
-            } else {
-              star.textContent = '\u2606';
-              star.classList.remove('fav-active');
-            }
-          } catch (e) {
-            console.warn('Favorite toggle failed:', e);
-          }
-        });
       });
 
       // --- Keyboard Shortcuts ---
@@ -2124,6 +2302,67 @@
         if (handleShortcutSelectAll(e)) return;
         handleShortcutDelete(e);
       });
+      // --- Column Resize ---
+      (function initColumnResize() {
+        const table = document.getElementById('fileTable');
+        if (!table) return;
+        const resizers = table.querySelectorAll('.col-resizer');
+        if (!resizers.length) return;
+
+        const STORAGE_KEY = 'aird_browse_col_widths';
+        const ths = Array.from(table.querySelectorAll('thead th'));
+
+        function saveWidths() {
+          try {
+            const widths = ths.map(function (th) { return th.style.width || ''; });
+            sessionStorage.setItem(STORAGE_KEY, JSON.stringify(widths));
+          } catch (_) { /* ignore */ }
+        }
+
+        function restoreWidths() {
+          try {
+            const raw = sessionStorage.getItem(STORAGE_KEY);
+            if (!raw) return;
+            const widths = JSON.parse(raw);
+            if (!Array.isArray(widths) || widths.length !== ths.length) return;
+            widths.forEach(function (w, i) {
+              if (w) ths[i].style.width = w;
+            });
+          } catch (_) { /* ignore */ }
+        }
+
+        restoreWidths();
+
+        resizers.forEach(function (resizer) {
+          let startX, startW, th;
+
+          function onMouseMove(e) {
+            const diff = e.clientX - startX;
+            const newW = Math.max(40, startW + diff);
+            th.style.width = newW + 'px';
+          }
+
+          function onMouseUp() {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            resizer.classList.remove('col-resizing');
+            table.classList.remove('col-resize-active');
+            saveWidths();
+          }
+
+          resizer.addEventListener('mousedown', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            th = resizer.parentElement;
+            startX = e.clientX;
+            startW = th.offsetWidth;
+            resizer.classList.add('col-resizing');
+            table.classList.add('col-resize-active');
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+          });
+        });
+      })();
     });
 
 })();

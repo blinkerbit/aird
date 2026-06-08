@@ -16,6 +16,8 @@ from aird.constants import (
 from aird.constants.media import (
     VIDEO_EXTENSIONS,
     AUDIO_EXTENSIONS,
+    IMAGE_BROWSER_EXTENSIONS,
+    PDF_BROWSER_EXTENSION,
     SPECIAL_FILENAMES,
     EXTENSION_ICONS,
 )
@@ -325,6 +327,26 @@ def is_audio_file(filename):
     """Check if file is a supported audio format"""
     ext = os.path.splitext(filename)[1].lower()
     return ext in AUDIO_EXTENSIONS
+
+
+def is_image_file(filename):
+    """True when the file can be shown inline in the browser as an image."""
+    ext = os.path.splitext(filename)[1].lower()
+    return ext in IMAGE_BROWSER_EXTENSIONS
+
+
+def is_pdf_file(filename):
+    ext = os.path.splitext(filename)[1].lower()
+    return ext == PDF_BROWSER_EXTENSION
+
+
+def browser_media_kind(filename) -> str | None:
+    """Return ``'image'``, ``'pdf'``, or ``None`` for inline browser viewing."""
+    if is_image_file(filename):
+        return "image"
+    if is_pdf_file(filename):
+        return "pdf"
+    return None
 
 
 _feature_flags_cache: dict | None = None

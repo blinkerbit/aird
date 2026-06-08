@@ -22,12 +22,12 @@
     </span>
     {% end %}
 
-    <div class="dropdown dropdown-end">
-      <button type="button" tabindex="0" class="btn btn-ghost btn-sm" title="Change theme" aria-haspopup="menu" aria-label="Theme menu">
+    <div class="dropdown dropdown-end aird-app-dropdown">
+      <button type="button" tabindex="0" class="btn btn-ghost btn-sm" title="Change theme" aria-haspopup="menu" aria-label="Theme menu" aria-expanded="false">
         <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
         <span class="hidden sm:inline text-xs">Theme</span>
       </button>
-      <ul class="dropdown-content menu bg-base-200 rounded-box z-50 w-44 p-2 shadow-lg border border-base-300">
+      <ul tabindex="0" class="dropdown-content menu bg-base-200 rounded-box z-[100] w-44 max-w-[calc(100vw-1rem)] p-2 shadow-lg border border-base-300 aird-app-dropdown-panel">
         <li><button type="button" data-set-theme="light" class="text-sm">☀️ Light</button></li>
         <li><button type="button" data-set-theme="dark" class="text-sm">🌙 Dark</button></li>
         <li><button type="button" data-set-theme="nord" class="text-sm">❄️ Nord</button></li>
@@ -68,6 +68,22 @@
     </a>
     {% end %}
     {% end %}
+    <!-- Transfer progress indicator (hidden when idle) -->
+    <div class="transfer-tracker-wrap" id="transferTrackerWrap">
+      <button type="button" class="btn btn-ghost btn-sm btn-circle transfer-tracker-btn transfer-tracker-hidden"
+              id="transferTrackerBtn" aria-label="Transfer progress" title="Transfers">
+        <svg class="tt-ring" width="28" height="28" viewBox="0 0 40 40">
+          <circle cx="20" cy="20" r="18" fill="none" stroke="var(--color-base-300)" stroke-width="3"/>
+          <circle id="transferTrackerCircle" cx="20" cy="20" r="18" fill="none"
+                  stroke="var(--color-primary)" stroke-width="3"
+                  stroke-linecap="round" transform="rotate(-90 20 20)"
+                  style="stroke-dasharray:113.1;stroke-dashoffset:113.1;transition:stroke-dashoffset .3s ease"/>
+        </svg>
+        <span class="tt-btn-label" id="transferTrackerPct"></span>
+      </button>
+      <div class="tt-tooltip" id="transferTrackerTooltip">No transfers</div>
+    </div>
+
     {% if current_user %}
     <button type="button" class="btn btn-ghost btn-sm gap-1" title="Command palette (Cmd+K / Ctrl+K)"
             data-aird-cmdk>
@@ -89,7 +105,20 @@
   </div>
 </div>
 <script src="/static/js/aird-core.js"></script>
+<script src="/static/js/transfer-tracker.js"></script>
 <script src="/static/js/common/command-palette.js" defer></script>
 {% if current_user %}
 <script nonce="{{ csp_nonce }}" src="/static/js/feature-flags-live.js" defer></script>
 {% end %}
+
+<!-- Transfer tracker sidebar -->
+<div id="transferTrackerBackdrop" class="tt-backdrop"></div>
+<aside id="transferTrackerSidebar" class="tt-sidebar" role="dialog" aria-label="Transfer details">
+  <div class="tt-sidebar-header">
+    <h3 class="text-sm font-bold">Transfers</h3>
+    <button type="button" id="transferTrackerClose" class="btn btn-ghost btn-xs btn-circle" aria-label="Close">&times;</button>
+  </div>
+  <div id="transferTrackerList" class="tt-sidebar-body">
+    <p class="text-sm text-base-content/50 p-4 text-center">No transfers</p>
+  </div>
+</aside>

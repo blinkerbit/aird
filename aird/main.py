@@ -38,6 +38,8 @@ from aird.db import (
 from aird.services import (
     AuditService,
     ConfigService,
+    EmailNotificationSubscriber,
+    EmailService,
     EventLoggingSubscriber,
     EventMetricsSubscriber,
     FavoritesService,
@@ -84,6 +86,7 @@ from aird.handlers.admin_handlers import (
 from aird.handlers.api_handlers import (
     FavoriteToggleAPIHandler,
     FavoritesListAPIHandler,
+    FeatureFlagAPIHandler,
     FeatureFlagSocketHandler,
     FileListAPIHandler,
     FileStreamHandler,
@@ -102,6 +105,8 @@ from aird.handlers.auth_handlers import (
     MandatoryPasswordHandler,
     ProfileHandler,
 )
+from aird.handlers.folder_size_ws_handlers import FolderSizeWebSocketHandler
+from aird.handlers.transfer_ws_handlers import FileTransferWebSocketHandler
 from aird.handlers.file_op_handlers import (
     CloudUploadHandler,
     CopyHandler,
@@ -110,6 +115,7 @@ from aird.handlers.file_op_handlers import (
     EditHandler,
     MoveHandler,
     BulkHandler,
+    DownloadZipHandler,
     RenameHandler,
     UploadHandler,
 )
@@ -230,7 +236,10 @@ def make_app(
         (r"/admin/api/abac/user-attributes", AdminUserAttributeAPIHandler),
         (r"/ws/policy-decisions", PolicyDecisionsWebSocket),
         (r"/stream/(.*)", FileStreamHandler),
+        (r"/ws/file-transfer", FileTransferWebSocketHandler),
+        (r"/ws/folder-sizes", FolderSizeWebSocketHandler),
         (r"/features", FeatureFlagSocketHandler),
+        (r"/api/features", FeatureFlagAPIHandler),
         (r"/upload", UploadHandler),
         (r"/mkdir", CreateFolderHandler),
         (r"/delete", DeleteHandler),
@@ -238,6 +247,7 @@ def make_app(
         (r"/copy", CopyHandler),
         (r"/move", MoveHandler),
         (r"/api/bulk", BulkHandler),
+        (r"/api/download/zip", DownloadZipHandler),
         (r"/edit/(.*)", EditViewHandler),
         (r"/edit", EditHandler),
         (r"/api/files/(.*)", FileListAPIHandler),
@@ -456,8 +466,11 @@ def _build_app_context() -> AppContext:
     policy_metrics = PolicyDecisionMetricsSubscriber()
     event_bus.subscribe(UserAuthenticatedEvent, event_metrics.on_user_authenticated)
     event_bus.subscribe(UserAuthenticatedEvent, event_logging.on_user_authenticated)
+    email_service = EmailService()
+    email_subscriber = EmailNotificationSubscriber(email_service)
     event_bus.subscribe(ShareCreatedEvent, event_metrics.on_share_created)
     event_bus.subscribe(ShareCreatedEvent, event_logging.on_share_created)
+    event_bus.subscribe(ShareCreatedEvent, email_subscriber.on_share_created)
     event_bus.subscribe(TransferStartedEvent, event_metrics.on_transfer_started)
     event_bus.subscribe(TransferStartedEvent, event_logging.on_transfer_started)
     event_bus.subscribe(PolicyDecisionEvent, event_logging.on_policy_decision)
@@ -478,6 +491,7 @@ def _build_app_context() -> AppContext:
         "share_service": ShareService(),
         "tag_service": tag_service,
         "user_service": UserService(),
+        "email_service": email_service,
     }
     return AppContext(
         db_conn=constants.DB_CONN,

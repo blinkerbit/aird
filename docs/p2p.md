@@ -10,4 +10,6 @@
 
 **Flags:** `p2p_transfer` feature; login page may link to anonymous P2P when enabled.
 
-**Do not change without testing:** State machine + signaling message schema; `data-is-anonymous` / `data-pending-room-id` attributes read by page JS.
+**Do not change without testing:** State machine + signaling message schema; `data-is-anonymous` / `data-pending-room-id` / `data-room-join-error` attributes read by page JS.
+
+**Multi-process:** P2P rooms are in-memory per process. Docker defaults to one `aird` instance (`AIRD_DOCKER_INSTANCES`, default `1`). Multiple workers or round-robin backends without sticky sessions break anonymous share links.

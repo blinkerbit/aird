@@ -1,12 +1,18 @@
 /**
- * Live feature-flag updates via WebSocket (/features).
- * Hides or shows elements with data-aird-feature="<flag_key>".
+ * On-demand feature-flag sync (GET /api/features).
+ * Call AirdFeatures.refresh() before gating an action.
+ * No persistent WebSocket — flags are server-rendered at page load;
+ * this module only re-checks when explicitly asked.
  */
-(function featureFlagsLive(global) {
+(function featureFlags(global) {
   'use strict';
+
+  let _cache = null;
+  let _inflight = null;
 
   function applyFlags(flags) {
     if (!flags || typeof flags !== 'object') return;
+    _cache = flags;
     document.querySelectorAll('[data-aird-feature]').forEach(function (el) {
       const key = el.dataset.airdFeature;
       if (!key) return;
@@ -17,27 +23,22 @@
     });
   }
 
-  function connect() {
-    const proto = global.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let ws;
-    try {
-      ws = new WebSocket(proto + '//' + global.location.host + '/features');
-    } catch {
-      return;
-    }
-    ws.addEventListener('message', function (ev) {
-      try {
-        applyFlags(JSON.parse(ev.data));
-      } catch {
-        /* ignore malformed payloads */
-      }
-    });
-    ws.addEventListener('close', function () {
-      global.setTimeout(connect, 5000);
-    });
+  function refresh() {
+    if (_inflight) return _inflight;
+    _inflight = fetch('/api/features')
+      .then(function (r) { return r.ok ? r.json() : {}; })
+      .then(function (flags) { applyFlags(flags); return flags; })
+      .catch(function () { return _cache || {}; })
+      .finally(function () { _inflight = null; });
+    return _inflight;
   }
 
-  if (document.querySelector('[data-aird-feature]')) {
-    connect();
+  function isEnabled(key, fallback) {
+    if (!_cache) return fallback !== undefined ? fallback : true;
+    const val = _cache[key];
+    if (val === undefined) return fallback !== undefined ? fallback : true;
+    return val !== false && val !== 0 && val !== '0' && val !== 'false';
   }
+
+  global.AirdFeatures = { refresh: refresh, isEnabled: isEnabled, applyFlags: applyFlags };
 }(globalThis));

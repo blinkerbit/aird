@@ -84,6 +84,7 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
         let otherPeerInRoom = false;
         const pendingRoomIdRaw = document.body.dataset.pendingRoomId || '';
         let pendingRoomId = pendingRoomIdRaw || null;
+        const roomJoinError = document.body.dataset.roomJoinError || '';
         let receivedFiles = []; // Array to store received files for manual download
         const p2pPatternKit = globalThis.P2PPatterns?.createP2PPatternKit({
             currentMode: null,
@@ -100,13 +101,22 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
             setupFileInput();
             setupDropZone();
 
+            if (roomJoinError) {
+                log(
+                    roomJoinError === 'requires_login'
+                        ? 'This share link requires an Aird login.'
+                        : 'Share room not found — it may have expired.',
+                    'error'
+                );
+            }
+
             // Check for room ID in URL or if anonymous user with pending room
             const urlParams = new URLSearchParams(globalThis.location.search);
             const roomId = urlParams.get('room');
-            if (roomId || pendingRoomId) {
+            if ((roomId || pendingRoomId) && !roomJoinError) {
                 selectMode('receive');
                 document.getElementById('room-code-input').value = roomId || pendingRoomId;
-                // For anonymous users, the auto-join happens after WebSocket connects
+                // Auto-join for guests happens after WebSocket connects (pending_room)
             }
 
             // Warn user before leaving if transfer is active (standard BeforeUnloadEvent; avoid legacy window.event / returnValue text)
@@ -158,8 +168,8 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
             const protocol = globalThis.location.protocol === 'https:' ? 'wss:' : 'ws:';
             let wsUrl = `${protocol}//${globalThis.location.host}/p2p/signal`;
 
-            // For anonymous users, pass the room ID in the WebSocket URL
-            if (isAnonymous && pendingRoomId) {
+            // Pass room ID when joining via share link (anonymous access pre-check on server)
+            if (pendingRoomId) {
                 wsUrl += `?room=${encodeURIComponent(pendingRoomId)}`;
             }
 
@@ -181,8 +191,8 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
                 // Only reconnect if not a deliberate close or auth failure
                 if (event.code !== 1000 && event.code !== 1008) {
                     setTimeout(initWebSocket, 3000);
-                } else if (event.code === 1008 && isAnonymous) {
-                    log('This share link requires login. Please log in to receive the file.', 'error');
+                } else if (event.code === 1008) {
+                    log(event.reason || 'Connection closed by server.', 'error');
                 }
             };
 

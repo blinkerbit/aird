@@ -16,9 +16,7 @@ from aird.constants import (
     ALLOWED_UPLOAD_EXTENSIONS as _ALLOWED_UPLOAD_EXTENSIONS,
     MMAP_MIN_SIZE as _MMAP_MIN_SIZE,
     CHUNK_SIZE as _CHUNK_SIZE,
-    UPLOAD_CHUNK_SIZE_BYTES as _UPLOAD_CHUNK_SIZE_BYTES,
     UPLOAD_REQUEST_MAX_BODY_SIZE as _UPLOAD_REQUEST_MAX_BODY_SIZE,
-    UPLOAD_MAX_PARALLEL_CHUNKS as _UPLOAD_MAX_PARALLEL_CHUNKS,
 )
 
 # Module-level variables to hold configuration
@@ -49,9 +47,35 @@ MAX_READABLE_FILE_SIZE = _MAX_READABLE_FILE_SIZE
 ALLOWED_UPLOAD_EXTENSIONS = _ALLOWED_UPLOAD_EXTENSIONS
 MMAP_MIN_SIZE = _MMAP_MIN_SIZE
 CHUNK_SIZE = _CHUNK_SIZE
-UPLOAD_CHUNK_SIZE_BYTES = _UPLOAD_CHUNK_SIZE_BYTES
 UPLOAD_REQUEST_MAX_BODY_SIZE = _UPLOAD_REQUEST_MAX_BODY_SIZE
-UPLOAD_MAX_PARALLEL_CHUNKS = _UPLOAD_MAX_PARALLEL_CHUNKS
+BREVO_API_KEY = None
+BREVO_SENDER_EMAIL = None
+BREVO_SENDER_NAME = "Aird"
+PUBLIC_BASE_URL = None
+
+
+def _apply_brevo_settings(config: dict) -> None:
+    global BREVO_API_KEY, BREVO_SENDER_EMAIL, BREVO_SENDER_NAME, PUBLIC_BASE_URL
+    brevo = config.get("brevo") if isinstance(config, dict) else {}
+    if not isinstance(brevo, dict):
+        brevo = {}
+    BREVO_API_KEY = (
+        os.environ.get("AIRD_BREVO_API_KEY", "").strip() or brevo.get("api_key")
+    )
+    BREVO_SENDER_EMAIL = (
+        os.environ.get("AIRD_BREVO_SENDER_EMAIL", "").strip()
+        or brevo.get("sender_email")
+    )
+    BREVO_SENDER_NAME = (
+        os.environ.get("AIRD_BREVO_SENDER_NAME", "").strip()
+        or brevo.get("sender_name")
+        or "Aird"
+    )
+    PUBLIC_BASE_URL = (
+        os.environ.get("AIRD_PUBLIC_BASE_URL", "").strip()
+        or brevo.get("public_base_url")
+        or None
+    )
 
 
 def _configure_google_drive(cloud_config: dict) -> None:
@@ -172,6 +196,7 @@ def init_config():
     global LDAP_BASE_DN, LDAP_USER_TEMPLATE, LDAP_FILTER_TEMPLATE, LDAP_ATTRIBUTES
     global LDAP_ATTRIBUTE_MAP, HOSTNAME, SSL_CERT, SSL_KEY, ADMIN_USERS, FEATURE_FLAGS, CLOUD_MANAGER
     global MULTI_USER, WORKERS
+    global BREVO_API_KEY, BREVO_SENDER_EMAIL, BREVO_SENDER_NAME, PUBLIC_BASE_URL
 
     parser = argparse.ArgumentParser(description="Run Aird")
     parser.add_argument("--config", help="Path to JSON config file")
@@ -251,6 +276,7 @@ def init_config():
     LDAP_ATTRIBUTE_MAP = ldap_settings["attribute_map"]
 
     _apply_feature_flags_from_config(config)
+    _apply_brevo_settings(config)
 
     MULTI_USER = args.multi_user or config.get("multi_user", False)
 
