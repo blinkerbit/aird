@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Edit {{ filename }} · Aird</title>
-  <script src="/static/js/aird-core.js"></script>
+  <script src="/static/js/aird-core.js?v={{ static_version }}"></script>
   <style>
     body { background: var(--ds-bg); margin: 0; }
 
@@ -202,7 +202,7 @@
     document.getElementById('backBtn').addEventListener('click', function () { history.back(); });
 
   </script>
-  <script src="/static/js/theme.js" defer></script>
+  <script src="/static/js/theme.js?v={{ static_version }}" defer></script>
 </body>
 
 </html>

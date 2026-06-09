@@ -2,6 +2,7 @@
 
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from aird.cloud import CloudManager
@@ -143,3 +144,42 @@ def _read_app_version() -> str:
 
 
 APP_VERSION = _read_app_version()
+
+_UI_PACKAGE_SUFFIXES = frozenset(
+    {".html", ".css", ".js", ".png", ".ico", ".svg", ".jpg", ".jpeg", ".webp", ".gif"}
+)
+_PKG_ROOT = Path(__file__).resolve().parent.parent
+_static_version_cache: tuple[float, str] | None = None
+_STATIC_VERSION_TTL = 2.0
+
+
+def _ui_fingerprint() -> str:
+    """Hex fingerprint from latest mtime among shipped UI package-data files."""
+    latest = 0
+    for sub in ("static", "templates"):
+        base = _PKG_ROOT / sub
+        if not base.is_dir():
+            continue
+        for path in base.rglob("*"):
+            if not path.is_file():
+                continue
+            if path.suffix.lower() not in _UI_PACKAGE_SUFFIXES:
+                continue
+            try:
+                latest = max(latest, path.stat().st_mtime_ns)
+            except OSError:
+                pass
+    return format(latest, "x")
+
+
+def get_static_version() -> str:
+    """Cache-bust query value: package version plus UI file fingerprint."""
+    import time
+
+    global _static_version_cache
+    now = time.monotonic()
+    if _static_version_cache and now - _static_version_cache[0] < _STATIC_VERSION_TTL:
+        return _static_version_cache[1]
+    version = f"{APP_VERSION}-{_ui_fingerprint()}"
+    _static_version_cache = (now, version)
+    return version

@@ -298,15 +298,30 @@ class TestGetFilesInDirectory:
             assert file_info["size_bytes"] == 2048
             assert "KB" in file_info["size_str"]
 
-    def test_get_files_directory_size(self):
-        """Test that directory size shows as dash"""
+    def test_get_files_directory_child_count(self):
+        """Test that directories show immediate child count"""
         with tempfile.TemporaryDirectory() as temp_dir:
-            os.makedirs(os.path.join(temp_dir, "subdir"))
+            subdir = os.path.join(temp_dir, "subdir")
+            os.makedirs(subdir)
+            with open(os.path.join(subdir, "inner.txt"), "w") as f:
+                f.write("x")
 
             files = get_files_in_directory(temp_dir)
 
             dir_info = [f for f in files if f["is_dir"]][0]
-            assert dir_info["size_str"] == "-"
+            assert dir_info["child_count"] == 1
+            assert dir_info["size_str"] == "1 item"
+
+    def test_get_files_empty_subdirectory_count(self):
+        """Empty subdirectory reports zero items"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            os.makedirs(os.path.join(temp_dir, "empty"))
+
+            files = get_files_in_directory(temp_dir)
+
+            dir_info = [f for f in files if f["is_dir"]][0]
+            assert dir_info["child_count"] == 0
+            assert dir_info["size_str"] == "0 items"
 
     def test_get_files_empty_directory(self):
         """Test getting files in empty directory"""

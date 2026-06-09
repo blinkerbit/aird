@@ -22,7 +22,13 @@
           <h1 class="text-2xl font-bold">Tag: <a href="/tagged/{{ escape(tag_name) }}" class="file-tag-chip">{{ escape(tag_name) }}</a></h1>
           <p class="text-sm text-base-content/60 mt-1">
             {% if patterns %}
-              {{ len(files) }} file(s) matching {{ len(patterns) }} pattern(s):
+              {% if file_count and folder_count %}
+                {{ file_count }} file(s) and {{ folder_count }} folder(s) matching {{ len(patterns) }} pattern(s):
+              {% elif folder_count %}
+                {{ folder_count }} folder(s) matching {{ len(patterns) }} pattern(s):
+              {% else %}
+                {{ file_count }} file(s) matching {{ len(patterns) }} pattern(s):
+              {% end %}
               {% for p in patterns %}<code class="ml-1 bg-base-300 rounded px-1 text-xs">{{ escape(p) }}</code>{% end %}
             {% else %}
               No glob patterns registered for this tag.
@@ -55,12 +61,12 @@
           {% end %}
         </span>
       </div>
-      {% elif not files %}
+      {% elif not entries %}
       <div class="alert shadow-sm">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
         </svg>
-        <span>No files currently match this tag's patterns.</span>
+        <span>No files or folders currently match this tag's patterns.</span>
       </div>
       {% else %}
       <div class="card bg-base-100 shadow-sm border border-base-300">
@@ -68,20 +74,36 @@
           <table class="table table-zebra table-sm w-full">
             <thead>
               <tr>
-                <th class="pl-4">File</th>
+                <th class="pl-4 w-24">Type</th>
+                <th>Name</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {% for f in files %}
+              {% for entry in entries %}
               <tr>
                 <td class="pl-4">
-                  <a href="/files/{{ escape(f) }}" class="link link-hover font-mono text-sm">{{ escape(f) }}</a>
+                  {% if entry['is_dir'] %}
+                  <span class="badge badge-ghost badge-sm">Folder</span>
+                  {% else %}
+                  <span class="badge badge-outline badge-sm">File</span>
+                  {% end %}
+                </td>
+                <td>
+                  <a href="/files/{{ escape(entry['path']) }}" class="link link-hover font-mono text-sm inline-flex items-center gap-1">
+                    {% if entry['is_dir'] %}
+                    <span class="file-icon">📁</span>{{ escape(entry['name']) }}
+                    {% else %}
+                    <span class="file-icon">{{ get_file_icon(entry['name']) }}</span>{{ escape(entry['name']) }}
+                    {% end %}
+                  </a>
                 </td>
                 <td class="flex gap-2 items-center">
-                  <a href="/files/{{ escape(f) }}" class="btn btn-xs btn-ghost">View</a>
-                  {% if not f.endswith('/') %}
-                  <a href="/files/{{ escape(f) }}?download=1" class="btn btn-xs btn-ghost">Download</a>
+                  {% if entry['is_dir'] %}
+                  <a href="/files/{{ escape(entry['path']) }}" class="btn btn-xs btn-ghost">Open</a>
+                  {% else %}
+                  <a href="/files/{{ escape(entry['path']) }}" class="btn btn-xs btn-ghost">View</a>
+                  <a href="/files/{{ escape(entry['path']) }}?download=1" class="btn btn-xs btn-ghost">Download</a>
                   {% end %}
                 </td>
               </tr>
@@ -94,6 +116,6 @@
 
     </div>
   </div>
-  <script src="/static/js/theme.js" defer></script>
+  <script src="/static/js/theme.js?v={{ static_version }}" defer></script>
 </body>
 </html>

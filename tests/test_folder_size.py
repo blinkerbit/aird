@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from aird.core.folder_size import FolderSizeWalker
+from aird.core.folder_size import FolderSizeWalker, compute_folder_size
 
 
 @pytest.fixture
@@ -37,3 +37,9 @@ def test_folder_size_walker_batches(sample_tree):
     assert done2 is True
     assert count2 == 3
     assert total2 == 175
+
+
+def test_compute_folder_size(sample_tree):
+    total, count = compute_folder_size(sample_tree)
+    assert count == 3
+    assert total == 175

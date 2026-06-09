@@ -506,18 +506,31 @@ class TaggedFilesHandler(BaseHandler):
         patterns = [r["glob_pattern"] for r in rules if r.get("tag") == tag_name]
         all_tags = sorted({r["tag"] for r in rules if r.get("tag")})
 
-        files: list[str] = []
+        entries: list[dict] = []
+        file_count = 0
+        folder_count = 0
         if patterns:
             root = constants_module.ROOT_DIR
-            files = get_files_by_tag_patterns(patterns, root)
+            for path in get_files_by_tag_patterns(patterns, root):
+                is_dir = path.endswith("/")
+                if is_dir:
+                    folder_count += 1
+                    name = path.rstrip("/")
+                else:
+                    file_count += 1
+                    name = path
+                entries.append({"path": path, "name": name, "is_dir": is_dir})
 
         self.render(
             "tagged_files.html",
             tag_name=tag_name,
             patterns=patterns,
-            files=files,
+            entries=entries,
+            file_count=file_count,
+            folder_count=folder_count,
             all_tags=all_tags,
             user=self.current_user,
+            get_file_icon=get_file_icon,
         )
 
 

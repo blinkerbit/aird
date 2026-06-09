@@ -89,6 +89,7 @@ from aird.handlers.api_handlers import (
     FeatureFlagAPIHandler,
     FeatureFlagSocketHandler,
     FileListAPIHandler,
+    FolderSizeAPIHandler,
     FileStreamHandler,
     ShareDetailsAPIHandler,
     ShareDetailsByIdAPIHandler,
@@ -105,7 +106,6 @@ from aird.handlers.auth_handlers import (
     MandatoryPasswordHandler,
     ProfileHandler,
 )
-from aird.handlers.folder_size_ws_handlers import FolderSizeWebSocketHandler
 from aird.handlers.transfer_ws_handlers import FileTransferWebSocketHandler
 from aird.handlers.file_op_handlers import (
     CloudUploadHandler,
@@ -237,7 +237,7 @@ def make_app(
         (r"/ws/policy-decisions", PolicyDecisionsWebSocket),
         (r"/stream/(.*)", FileStreamHandler),
         (r"/ws/file-transfer", FileTransferWebSocketHandler),
-        (r"/ws/folder-sizes", FolderSizeWebSocketHandler),
+        (r"/api/folder-size", FolderSizeAPIHandler),
         (r"/features", FeatureFlagSocketHandler),
         (r"/api/features", FeatureFlagAPIHandler),
         (r"/upload", UploadHandler),

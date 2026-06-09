@@ -104,11 +104,11 @@
     {% end %}
   </div>
 </div>
-<script src="/static/js/aird-core.js"></script>
-<script src="/static/js/transfer-tracker.js"></script>
-<script src="/static/js/common/command-palette.js" defer></script>
+<script src="/static/js/aird-core.js?v={{ static_version }}"></script>
+<script src="/static/js/transfer-tracker.js?v={{ static_version }}"></script>
+<script src="/static/js/common/command-palette.js?v={{ static_version }}" defer></script>
 {% if current_user %}
-<script nonce="{{ csp_nonce }}" src="/static/js/feature-flags-live.js" defer></script>
+<script nonce="{{ csp_nonce }}" src="/static/js/feature-flags-live.js?v={{ static_version }}" defer></script>
 {% end %}
 
 <!-- Transfer tracker sidebar -->

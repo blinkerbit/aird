@@ -134,6 +134,6 @@
     const existingToken = sessionStorage.getItem(`share_token_${shareId}`);
     if (existingToken) { showInfo('You already have access to this share. Redirecting…'); setTimeout(() => accessShareWithToken(shareId, existingToken), 800); }
   </script>
-  <script src="/static/js/theme.js"></script>
+  <script src="/static/js/theme.js?v={{ static_version }}"></script>
 </body>
 </html>

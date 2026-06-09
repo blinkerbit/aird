@@ -189,8 +189,8 @@
     </div>
   </dialog>
 
-  <script src="/static/js/theme.js"></script>
-  <script src="/static/js/aird-core.js"></script>
+  <script src="/static/js/theme.js?v={{ static_version }}"></script>
+  <script src="/static/js/aird-core.js?v={{ static_version }}"></script>
   <script nonce="{{ csp_nonce }}">
   (function () {
     const m = /(?:^|; )_xsrf=([^;]*)/.exec(document.cookie);

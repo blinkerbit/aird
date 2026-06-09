@@ -336,6 +336,59 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
         return is_valid_websocket_origin(self, origin)
 
 
+class FolderSizeAPIHandler(BaseHandler):
+    """GET /api/folder-size?path= — recursive folder byte total (on demand)."""
+
+    @tornado.web.authenticated
+    async def get(self):
+        from aird.core.folder_size import (
+            compute_folder_size,
+            norm_rel_path,
+            resolve_folder_abspath,
+        )
+        from aird.utils.util import format_size
+
+        path = self.get_argument("path", "").strip()
+        norm_path = norm_rel_path(path)
+        decision = self.check_access("file.list", resource_path=norm_path)
+        if decision is not None and decision.is_deny:
+            self.set_status(403)
+            self.set_header("Content-Type", "application/json")
+            self.write(json.dumps({"error": decision.reason or "Access denied"}))
+            return
+
+        user_root = get_user_root(self)
+        abs_path = resolve_folder_abspath(user_root, path)
+        if not abs_path:
+            self.set_status(404)
+            self.set_header("Content-Type", "application/json")
+            self.write(json.dumps({"error": "Folder not found"}))
+            return
+
+        try:
+            total_bytes, file_count = await asyncio.to_thread(
+                compute_folder_size, abs_path
+            )
+        except Exception:
+            logging.exception("Folder size calculation failed for %s", norm_path)
+            self.set_status(500)
+            self.set_header("Content-Type", "application/json")
+            self.write(json.dumps({"error": "Folder size calculation failed"}))
+            return
+
+        self.set_header("Content-Type", "application/json")
+        self.write(
+            json.dumps(
+                {
+                    "path": norm_path,
+                    "bytes": total_bytes,
+                    "files": file_count,
+                    "size_str": format_size(total_bytes),
+                }
+            )
+        )
+
+
 class FileListAPIHandler(BaseHandler):
     @tornado.web.authenticated
     @require_action("file.list", resource_arg="path")

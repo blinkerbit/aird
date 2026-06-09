@@ -104,7 +104,12 @@
     const totalSize = file.size;
 
     const TT = global.AirdTransferTracker;
-    const ttId = TT ? TT.addTransfer(filename, totalSize, 'upload') : null;
+    const ttId = TT ? TT.addTransfer(filename, totalSize, 'upload', {
+      onCancel: options.onCancel,
+    }) : null;
+    if (TT && ttId && options.onCancel) {
+      TT.setCancelHandler(ttId, options.onCancel);
+    }
 
     const ws = await openSocket();
     try {

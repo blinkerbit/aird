@@ -33,7 +33,6 @@
       </span>
     </header>
 
-    <div id="downloadProgressContainer" class="mb-3"></div>
 
     <div class="flex flex-wrap items-center gap-3 mb-3" id="bulkDownloadBar">
       <label class="label cursor-pointer justify-start gap-2 py-0">
@@ -193,10 +192,7 @@
         updateSelectionUI();
         return;
       }
-      const batch = new Dl.DownloadBatch({
-        container: document.getElementById('downloadProgressContainer'),
-        title: 'Share downloads',
-      });
+      const batch = new Dl.DownloadBatch({ title: 'Share downloads' });
       for (const filePath of paths) {
         const enc = String(filePath).split('/').map(encodeURIComponent).join('/');
         batch.addItem(filePath, `/shared/${shareId}/file/${enc}?download=1`);
@@ -341,7 +337,7 @@
       }
     });
   </script>
-  <script src="/static/js/download-manager.js"></script>
-  <script src="/static/js/theme.js"></script>
+  <script src="/static/js/download-manager.js?v={{ static_version }}"></script>
+  <script src="/static/js/theme.js?v={{ static_version }}"></script>
 </body>
 </html>

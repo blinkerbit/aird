@@ -296,18 +296,39 @@ class WebSocketConnectionManager:
                 self.remove_connection(conn)
 
 
+def _count_dir_children(dir_path: str) -> int:
+    """Immediate children count (one scandir; no recursive walk)."""
+    try:
+        with os.scandir(dir_path) as it:
+            return sum(1 for _ in it)
+    except OSError:
+        return 0
+
+
+def _format_child_count(count: int) -> str:
+    return f"{count} item" if count == 1 else f"{count} items"
+
+
 def get_files_in_directory(path="."):
     files = []
     for entry in os.scandir(path):
         stat = entry.stat()
+        is_dir = entry.is_dir()
+        if is_dir:
+            child_count = _count_dir_children(entry.path)
+            size_str = _format_child_count(child_count)
+            size_bytes = 0
+        else:
+            child_count = None
+            size_bytes = stat.st_size
+            size_str = f"{stat.st_size / 1024:.2f} KB"
         files.append(
             {
                 "name": entry.name,
-                "is_dir": entry.is_dir(),
-                "size_bytes": stat.st_size,
-                "size_str": (
-                    f"{stat.st_size / 1024:.2f} KB" if not entry.is_dir() else "-"
-                ),
+                "is_dir": is_dir,
+                "child_count": child_count,
+                "size_bytes": size_bytes,
+                "size_str": size_str,
                 "modified": datetime.fromtimestamp(stat.st_mtime).strftime(
                     "%Y-%m-%d %H:%M:%S"
                 ),

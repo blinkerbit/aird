@@ -541,6 +541,11 @@ body {
   color: var(--color-error);
 }
 
+.tt-icon.tt-browser {
+  background: color-mix(in oklch, var(--color-success) 15%, transparent);
+  color: var(--color-success);
+}
+
 .tt-name {
   flex: 1;
   min-width: 0;

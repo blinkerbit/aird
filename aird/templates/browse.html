@@ -27,10 +27,6 @@
       <p class="text-sm opacity-60">or click to select files from your computer</p>
       <input type="file" id="fileInput" multiple class="hidden" />
     </div>
-    <div id="progressContainer" class="hidden w-full"></div>
-    {% end %}
-    {% if features['file_download'] %}
-    <div id="downloadProgressContainer" class="w-full"></div>
     {% end %}
 
     {% if features.get('folder_create') %}
@@ -153,8 +149,14 @@
               {% end %}
             </div>
           </td>
-          <td class="size-cell{% if file['is_dir'] %} folder-size-pending{% end %}" data-label="Size" data-bytes="{{ file.get('size_bytes', 0) }}">
-            {% if file['is_dir'] %}…{% else %}{{ file.get('size_str', '-') }}{% end %}
+          <td class="size-cell" data-label="Size" data-bytes="{{ file.get('size_bytes', 0) }}"{% if file['is_dir'] %} data-is-dir="1"{% end %}>
+            {% if file['is_dir'] %}
+            <span class="folder-item-count">{{ file.get('size_str', '0 items') }}</span><span class="folder-size-total" hidden></span>
+            <button type="button" class="btn btn-ghost btn-xs folder-size-details-btn"
+                    data-folder-path="{{ escape(join_path(current_path, file['name'])) }}"
+                    title="Calculate total size of this folder and subfolders"
+                    aria-label="Calculate total size of {{ escape(file['name']) }}">Details</button>
+            {% else %}{{ file.get('size_str', '-') }}{% end %}
           </td>
           <td class="modified-cell" data-label="Modified" data-timestamp="{{ file.get('modified_timestamp', 0) }}">
             {{ file.get('modified', '-') }}
@@ -338,10 +340,10 @@
   </dialog>
 
   <input type="hidden" id="currentPath" value="{{ current_path or '' }}" />
-  <script src="/static/js/aird-core.js"></script>
-  <script src="/static/js/file-transfer-ws.js"></script>
-  <script src="/static/js/download-manager.js"></script>
-  <script src="/static/js/components/folder-picker.js"></script>
+  <script src="/static/js/aird-core.js?v={{ static_version }}"></script>
+  <script src="/static/js/file-transfer-ws.js?v={{ static_version }}"></script>
+  <script src="/static/js/download-manager.js?v={{ static_version }}"></script>
+  <script src="/static/js/components/folder-picker.js?v={{ static_version }}"></script>
   <script nonce="{{ csp_nonce }}">
     globalThis.__BROWSE_CONFIG = {
       maxFileSize: {{ max_file_size }},
@@ -435,7 +437,7 @@
     </div>
     <form method="dialog" class="modal-backdrop"><button type="submit">close</button></form>
   </dialog>
-  <script src="/static/js/theme.js" defer></script>
+  <script src="/static/js/theme.js?v={{ static_version }}" defer></script>
 </body>
 
 </html>

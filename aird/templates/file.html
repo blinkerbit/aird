@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>{{ filename }} · Aird</title>
-  <script src="/static/js/aird-core.js"></script>
+  <script src="/static/js/aird-core.js?v={{ static_version }}"></script>
   <meta id="page-flags" data-open-editor="{{ open_editor }}">
   <style nonce="{{ csp_nonce }}">
     /* Keep gutter cells in column 1 (no display:none) so content stays in column 2 under table-fixed */
@@ -504,7 +504,7 @@
             });
         });
     </script>
-    <script src="/static/js/theme.js" defer></script>
+    <script src="/static/js/theme.js?v={{ static_version }}" defer></script>
     </main>
   </div>
 </body>

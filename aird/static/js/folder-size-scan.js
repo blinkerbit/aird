@@ -1,14 +1,23 @@
 /**
- * Background folder size scan via WebSocket (non-blocking server walk).
+ * On-demand recursive folder size via HTTP GET /api/folder-size.
+ * Item count (immediate children) is rendered server-side — not changed here.
  */
 (function (global) {
   'use strict';
 
-  const WS_PATH = '/ws/folder-sizes';
+  const API_PATH = '/api/folder-size';
+  const SCAN_TIMEOUT_MS = 180000;
+  const _active = new Map();
 
-  function wsUrl() {
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return proto + '//' + location.host + WS_PATH;
+  function getXsrf() {
+    return global.AirdCore?.getXSRFToken?.() || '';
+  }
+
+  function normPath(p) {
+    return String(p || '')
+      .replace(/\\/g, '/')
+      .replace(/^\/+/, '')
+      .replace(/\/+$/, '');
   }
 
   function formatBytes(bytes) {
@@ -27,89 +36,153 @@
     return v.toFixed(v >= 10 ? 1 : 2) + ' ' + units[i];
   }
 
-  function updateFolderSizeCell(relPath, bytes, sizeStr, scanning) {
-    const esc = global.AirdCore?.escapeCssAttrValue
+  function escapePathAttr(relPath) {
+    return global.AirdCore?.escapeCssAttrValue
       ? global.AirdCore.escapeCssAttrValue(relPath)
-      : relPath.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    const row = document.querySelector('tr.file-row[data-path="' + esc + '"]');
-    if (!row) return;
+      : String(relPath).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  }
+
+  function rowForPath(relPath) {
+    const n = normPath(relPath);
+    const rows = document.querySelectorAll('tr.file-row[data-path]');
+    for (let i = 0; i < rows.length; i++) {
+      if (normPath(rows[i].getAttribute('data-path')) === n) {
+        return rows[i];
+      }
+    }
+    return document.querySelector('tr.file-row[data-path="' + escapePathAttr(relPath) + '"]');
+  }
+
+  function cellParts(relPath) {
+    const row = rowForPath(relPath);
+    if (!row) return null;
     const cell = row.querySelector('.size-cell');
-    if (!cell) return;
-    cell.dataset.bytes = String(bytes || 0);
-    cell.classList.toggle('folder-size-pending', !!scanning);
-    const label = sizeStr || formatBytes(bytes);
-    cell.textContent = scanning ? label + ' …' : label;
+    if (!cell) return null;
+    return {
+      cell,
+      totalEl: cell.querySelector('.folder-size-total'),
+      btn: cell.querySelector('.folder-size-details-btn'),
+    };
   }
 
-  function collectFolderPaths() {
-    const paths = [];
-    document.querySelectorAll('.row-checkbox[data-is-dir="1"]').forEach(function (cb) {
-      const p = (cb.dataset.path || '').trim();
-      if (p) paths.push(p);
-    });
-    return paths;
+  function setScanning(relPath, on) {
+    const p = cellParts(relPath);
+    if (!p) return;
+    p.cell.classList.toggle('folder-size-scanning', !!on);
+    if (p.btn) {
+      p.btn.disabled = !!on;
+      p.btn.textContent = on ? '…' : 'Details';
+    }
+    if (on && p.totalEl) {
+      p.totalEl.hidden = false;
+      p.totalEl.textContent = 'calculating…';
+      p.totalEl.classList.remove('folder-size-total--error');
+    }
   }
 
-  function startBrowseFolderSizeScan() {
-    const folders = collectFolderPaths();
-    if (!folders.length) return;
+  function setTotal(relPath, text, isError) {
+    const p = cellParts(relPath);
+    if (!p || !p.totalEl) return;
+    p.totalEl.hidden = false;
+    p.totalEl.textContent = text;
+    p.totalEl.classList.toggle('folder-size-total--error', !!isError);
+  }
 
-    folders.forEach(function (p) {
-      updateFolderSizeCell(p, 0, '…', true);
-    });
+  function clearScan(relPath) {
+    const p = cellParts(relPath);
+    if (!p) return;
+    p.cell.classList.remove('folder-size-scanning');
+    if (p.btn) {
+      p.btn.disabled = false;
+      p.btn.textContent = 'Details';
+    }
+  }
 
-    const ws = new WebSocket(wsUrl());
-    let opened = false;
-
-    ws.addEventListener('message', function (ev) {
-      if (typeof ev.data !== 'string') return;
-      let msg;
-      try {
-        msg = JSON.parse(ev.data);
-      } catch {
-        return;
-      }
-      if (msg.type === 'ready') {
-        opened = true;
-        ws.send(JSON.stringify({ action: 'scan', folders: folders }));
-        return;
-      }
-      if (msg.type === 'folder_progress' || msg.type === 'folder_size') {
-        updateFolderSizeCell(
-          msg.path,
-          msg.bytes,
-          msg.size_str,
-          !msg.done
-        );
-        return;
-      }
-      if (msg.type === 'folder_error') {
-        updateFolderSizeCell(msg.path, 0, '—', false);
-        return;
-      }
-      if (msg.type === 'scan_complete' || msg.type === 'error') {
+  function finishScan(relPath, state) {
+    const key = normPath(relPath);
+    const entry = _active.get(key);
+    if (entry) {
+      clearTimeout(entry.timer);
+      if (entry.controller) {
         try {
-          ws.close();
+          entry.controller.abort();
         } catch {
           /* ignore */
         }
       }
-    });
-
-    ws.addEventListener('close', function () {
-      if (!opened) {
-        folders.forEach(function (p) {
-          updateFolderSizeCell(p, 0, '—', false);
-        });
+      _active.delete(key);
+    }
+    clearScan(relPath);
+    if (state && state.error) {
+      setTotal(relPath, state.error, true);
+    } else if (state && state.bytes != null) {
+      setTotal(relPath, state.sizeStr || formatBytes(state.bytes), false);
+      const p = cellParts(relPath);
+      if (p?.cell) {
+        p.cell.dataset.bytes = String(state.bytes);
       }
-    });
+    }
   }
 
-  global.AirdFolderSizeScan = { startBrowseFolderSizeScan: startBrowseFolderSizeScan };
+  async function scanFolder(relPath) {
+    const path = String(relPath || '').trim();
+    const key = normPath(path);
+    if (!key || _active.has(key)) return;
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', startBrowseFolderSizeScan);
-  } else {
-    startBrowseFolderSizeScan();
+    setScanning(path, true);
+
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = setTimeout(function () {
+      if (controller) controller.abort();
+      finishScan(path, { error: 'timed out' });
+    }, SCAN_TIMEOUT_MS);
+
+    _active.set(key, { controller, timer });
+
+    const url = API_PATH + '?path=' + encodeURIComponent(path);
+
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: { 'X-XSRFToken': getXsrf() },
+        signal: controller?.signal,
+      });
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = null;
+      }
+      if (!res.ok) {
+        finishScan(path, { error: (data && data.error) || 'unavailable' });
+        return;
+      }
+      finishScan(path, {
+        bytes: data.bytes,
+        sizeStr: data.size_str || formatBytes(data.bytes),
+      });
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        if (_active.has(key)) {
+          finishScan(path, { error: 'cancelled' });
+        }
+        return;
+      }
+      finishScan(path, { error: 'failed' });
+    }
   }
+
+  function onDetailsClick(ev) {
+    const btn = ev.target.closest('.folder-size-details-btn');
+    if (!btn || btn.disabled) return;
+    ev.preventDefault();
+    const path = btn.getAttribute('data-folder-path');
+    if (path) void scanFolder(path);
+  }
+
+  document.addEventListener('click', onDetailsClick);
+
+  global.AirdFolderSizeScan = { scanFolder: scanFolder };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

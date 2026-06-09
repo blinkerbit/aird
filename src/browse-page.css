@@ -232,6 +232,49 @@
       color: var(--ds-text-muted);
     }
 
+    .size-cell .folder-item-count {
+      display: inline;
+      vertical-align: middle;
+    }
+
+    .size-cell .folder-size-total::before {
+      content: " · ";
+      opacity: 0.5;
+    }
+
+    .size-cell .folder-size-total {
+      display: inline;
+      vertical-align: middle;
+      font-weight: 600;
+      color: var(--ds-text);
+    }
+
+    .size-cell .folder-size-total[hidden] {
+      display: none;
+    }
+
+    .size-cell .folder-size-total--error {
+      color: var(--ds-text-muted);
+      font-weight: normal;
+      font-style: italic;
+    }
+
+    .size-cell.folder-size-scanning .folder-size-total {
+      font-weight: normal;
+      color: var(--ds-text-muted);
+      font-style: italic;
+    }
+
+    .folder-size-details-btn {
+      min-height: 1.5rem;
+      height: 1.5rem;
+      padding-left: 0.4rem;
+      padding-right: 0.4rem;
+      font-size: 0.65rem;
+      line-height: 1;
+      vertical-align: middle;
+    }
+
     .actions-cell {
       text-align: right;
     }

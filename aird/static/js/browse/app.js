@@ -74,13 +74,12 @@
     // File upload functionality (DOM only exists when feature file_upload is enabled)
     const uploadZone = document.getElementById("uploadZone");
     const fileInput = document.getElementById("fileInput");
-    const progressContainer = document.getElementById("progressContainer");
     let uploadQueue = [];
     let isUploading = false;
     let uploadBatchHadError = false;
     let reloadTimer = null;
 
-    if (uploadZone && fileInput && progressContainer) {
+    if (uploadZone && fileInput) {
     uploadZone.addEventListener("click", () => fileInput.click());
     uploadZone.addEventListener("dragover", (e) => {
       e.preventDefault();
@@ -153,39 +152,13 @@
       for (const fw of filesWithPaths) {
         if (fw.file.size > MAX_FILE_SIZE) { rejected.push(fw.relativePath); continue; }
 
-        const item = document.createElement("div");
-        item.style.marginTop = "5px";
-        const nameEl = document.createElement("div");
-        nameEl.textContent = fw.relativePath;
-        const bar = document.createElement("progress");
-        bar.max = 100; bar.value = 0; bar.style.width = "100%";
-        const info = document.createElement("span");
-        info.style.display = "block"; info.style.fontSize = "12px";
-        const cancelBtn = document.createElement("button");
-        cancelBtn.type = "button";
-        cancelBtn.className = "btn btn-ghost btn-xs mt-1";
-        cancelBtn.textContent = "Cancel";
-        item.appendChild(nameEl); item.appendChild(bar); item.appendChild(info); item.appendChild(cancelBtn);
-        progressContainer.appendChild(item);
-
-        // Compute the upload dir: current path + relative folder path
         const parts = fw.relativePath.split('/');
         const fileName = parts.pop();
         const subDir = parts.join('/');
         let uploadDir = document.getElementById('currentPath')?.value ?? '';
         if (subDir) uploadDir = uploadDir ? uploadDir + '/' + subDir : subDir;
 
-        const queueItem = { file: fw.file, bar, info, cancelBtn, item, xhr: null, start: null, uploadDir, uploadName: fileName };
-        queueItem.cancelBtn.addEventListener("click", function() {
-          if (queueItem.xhr || queueItem.activeXhrs || queueItem.uploadSignal) {
-            abortActiveUploads(queueItem);
-          } else {
-            const idx = uploadQueue.indexOf(queueItem);
-            if (idx !== -1) uploadQueue.splice(idx, 1);
-            queueItem.item.remove();
-            if (progressContainer.children.length === 0) progressContainer.style.display = "none";
-          }
-        });
+        const queueItem = { file: fw.file, uploadDir, uploadName: fileName, uploadSignal: null, ttId: null };
         uploadQueue.push(queueItem);
       }
       if (rejected.length > 0) {
@@ -197,7 +170,7 @@
       if (!isUploading && uploadQueue.length > 0) {
         uploadBatchHadError = false;
         isUploading = true;
-        progressContainer.style.display = "block";
+        globalThis.AirdTransferTracker?.openSidebar?.();
         processQueue();
       }
     }
@@ -215,46 +188,7 @@
           continue;
         }
 
-        const item = document.createElement("div");
-        item.style.marginTop = "5px";
-        const nameEl = document.createElement("div");
-        nameEl.textContent = file.name;
-        const bar = document.createElement("progress");
-        bar.max = 100;
-        bar.value = 0;
-        bar.style.width = "100%";
-        const info = document.createElement("span");
-        info.style.display = "block";
-        info.style.fontSize = "12px";
-        const cancelBtn = document.createElement("button");
-        cancelBtn.type = "button";
-        cancelBtn.className = "btn btn-ghost btn-xs mt-1";
-        cancelBtn.textContent = "Cancel";
-
-        item.appendChild(nameEl);
-        item.appendChild(bar);
-        item.appendChild(info);
-        item.appendChild(cancelBtn);
-        progressContainer.appendChild(item);
-
-        const queueItem = { file, bar, info, cancelBtn, item, xhr: null, start: null };
-
-        cancelBtn.addEventListener("click", () => {
-          if (queueItem.xhr || queueItem.activeXhrs || queueItem.uploadSignal) {
-            abortActiveUploads(queueItem);
-          } else {
-            const idx = uploadQueue.indexOf(queueItem);
-            if (idx !== -1) {
-              uploadQueue.splice(idx, 1);
-            }
-            item.remove();
-            if (progressContainer.children.length === 0) {
-              progressContainer.style.display = "none";
-            }
-          }
-        });
-
-        uploadQueue.push(queueItem);
+        uploadQueue.push({ file, uploadSignal: null, ttId: null });
       }
 
       if (rejected.length > 0) {
@@ -267,7 +201,7 @@
       if (!isUploading && uploadQueue.length > 0) {
         uploadBatchHadError = false;
         isUploading = true;
-        progressContainer.style.display = "block";
+        globalThis.AirdTransferTracker?.openSidebar?.();
         processQueue();
       }
     }
@@ -275,9 +209,6 @@
     async function processQueue() {
       if (uploadQueue.length === 0) {
         isUploading = false;
-        if (progressContainer.children.length === 0) {
-          progressContainer.style.display = "none";
-        }
         if (!uploadBatchHadError) {
           scheduleReload();
         }
@@ -290,7 +221,6 @@
         await uploadFile(current);
       } catch (err) {
         uploadBatchHadError = true;
-        markUploadFailed(current, err);
         if (err?.message !== "cancelled") {
           console.warn("Upload failed:", err);
           void showDialog(
@@ -321,28 +251,6 @@
       if (item.uploadSignal) {
         item.uploadSignal.aborted = true;
       }
-      if (item.info) {
-        item.info.textContent = 'Cancelling…';
-        item.info.classList.add('opacity-70');
-      }
-      if (item.cancelBtn) {
-        item.cancelBtn.disabled = true;
-      }
-    }
-
-    function updateUploadProgress(item, totalSize) {
-      const loaded = Math.min(item.bytesUploaded || 0, totalSize);
-      const percent = totalSize > 0 ? Math.min(100, (loaded / totalSize) * 100) : 0;
-      const elapsed = (Date.now() - item.start) / 1000;
-      const speed = loaded / (elapsed || 1);
-      const remaining = Math.max(0, totalSize - loaded);
-      item.bar.value = percent;
-      if (loaded >= totalSize && !item.serverConfirmed) {
-        item.info.textContent = `Saving to disk…`;
-        item.bar.classList.add('progress-warning');
-      } else {
-        item.info.textContent = `${Math.round(percent)}% - ${formatBytes(loaded)} of ${formatBytes(totalSize)} (${formatBytes(remaining)} left) @ ${formatBytes(speed)}/s`;
-      }
     }
 
     /** Plain-language message for the upload row (not console-only). */
@@ -362,93 +270,25 @@
       return "Upload could not be completed. Please try again.";
     }
 
-    function setUploadRowOutcome(item, outcome, message) {
-      if (!item?.item) return;
-      const row = item.item;
-      row.classList.remove(
-        "border", "border-error", "bg-error/10", "rounded-lg", "p-2", "px-3", "py-2"
-      );
-      item.info.classList.remove("text-error", "font-semibold", "text-success");
-      if (outcome === "error") {
-        row.classList.add(
-          "border", "border-error", "bg-error/10", "rounded-lg", "p-2", "px-3", "py-2"
-        );
-        item.info.classList.add("text-error", "font-semibold");
-      } else if (outcome === "ok") {
-        item.info.classList.add("text-success");
-      } else if (outcome === "cancelled") {
-        item.info.classList.add("opacity-70");
-      }
-      item.info.textContent = message;
-      if (item.cancelBtn?.parentNode) {
-        item.cancelBtn.remove();
-        item.cancelBtn = null;
-      }
-      if (outcome === "error" && !item.dismissBtn) {
-        const dismissBtn = document.createElement("button");
-        dismissBtn.type = "button";
-        dismissBtn.className = "btn btn-ghost btn-xs mt-1";
-        dismissBtn.textContent = "Dismiss";
-        dismissBtn.addEventListener("click", () => {
-          row.remove();
-          if (progressContainer.children.length === 0) {
-            progressContainer.style.display = "none";
-          }
-        });
-        row.appendChild(dismissBtn);
-        item.dismissBtn = dismissBtn;
-      }
-    }
-
-    function markUploadFailed(item, err) {
-      if (!item) return;
-      if (err?.message === "cancelled") {
-        setUploadRowOutcome(item, "cancelled", "Cancelled");
-        return;
-      }
-      setUploadRowOutcome(item, "error", friendlyUploadErrorMessage(err));
-    }
-
     async function uploadFile(item) {
       const FTW = globalThis.AirdFileTransferWs;
       if (!FTW?.uploadFile) {
         throw new Error("WebSocket upload unavailable. Hard-refresh the page.");
       }
-      const totalSize = item.file.size;
-      item.start = Date.now();
-      item.bytesUploaded = 0;
       const dir = item.uploadDir ?? document.getElementById('currentPath')?.value ?? '';
       const fname = item.uploadName ?? item.file.name;
       item.uploadSignal = { aborted: false };
-      try {
-        await FTW.uploadFile(item.file, {
-          uploadDir: dir,
-          filename: fname,
-          onProgress: (_pct, loaded) => {
-            item.bytesUploaded = loaded;
-            updateUploadProgress(item, totalSize);
-          },
-          signal: item.uploadSignal,
-        });
-        item.serverConfirmed = true;
-        item.bar.classList.remove('progress-warning');
-        setUploadRowOutcome(item, "ok", "Upload completed");
-        item.bar.value = 100;
-      } catch (err) {
-        markUploadFailed(item, err);
-        if (err.message !== "cancelled") {
-          console.warn("Upload failed:", item.file.name, err);
-          try {
-            await showDialog(friendlyUploadErrorMessage(err), "Upload failed");
-          } catch {
-            /* inline row message is enough */
-          }
-        }
-        throw err;
-      }
+      const TT = globalThis.AirdTransferTracker;
+      const cancelFn = () => abortActiveUploads(item);
+      await FTW.uploadFile(item.file, {
+        uploadDir: dir,
+        filename: fname,
+        signal: item.uploadSignal,
+        onCancel: cancelFn,
+      });
     }
 
-    } // end upload UI (uploadZone && fileInput && progressContainer)
+    } // end upload UI (uploadZone && fileInput)
 
     // CSRF Protection: Get XSRF token from cookie (used by upload + rest of page)
     function getXSRFToken() {
@@ -686,23 +526,18 @@
         globalThis.location.href = downloadUrlForPath(filePath);
         return;
       }
-      const container = document.getElementById('downloadProgressContainer');
-      if (container) container.classList.remove('hidden');
-      if (Dl?.DownloadBatch) {
-        const batch = new Dl.DownloadBatch({
-          container: container || document.body,
-          title: 'Downloads',
-        });
-        batch.addWsItem(filePath, filePath);
-        await batch.run();
+      if (!Dl?.DownloadBatch) {
+        try {
+          const result = await FTW.downloadFile(filePath);
+          FTW.saveBlob(result.blob, result.filename);
+        } catch (err) {
+          showDialog('Download failed: ' + (err?.message || err), 'Download');
+        }
         return;
       }
-      try {
-        const result = await FTW.downloadFile(filePath);
-        FTW.saveBlob(result.blob, result.filename);
-      } catch (err) {
-        showDialog('Download failed: ' + (err?.message || err), 'Download');
-      }
+      const batch = new Dl.DownloadBatch({ title: 'Downloads' });
+      batch.addWsItem(filePath, filePath);
+      await batch.run();
     }
 
     async function listDirectoryForDownload(path) {
@@ -746,41 +581,6 @@
         }
       }
       return out;
-    }
-
-    async function bulkDownload() {
-      const paths = getSelectedPaths();
-      if (paths.length === 0) return;
-      const DLM = globalThis.AirdDownloadManager;
-      if (!DLM) {
-        await showDialog('Download manager failed to load. Hard-refresh the page.', 'Download');
-        return;
-      }
-      const container = document.getElementById('downloadProgressContainer');
-      if (container) container.classList.remove('hidden');
-      const batch = new DLM.DownloadBatch({ container, title: 'Downloads' });
-      const btn = document.getElementById('bulkDownloadBtn');
-      if (btn) btn.disabled = true;
-      try {
-        const files = await expandSelectionToFiles(paths);
-        if (!files.length) {
-          await showDialog('No files to download in the current selection.', 'Download');
-          batch.close();
-          return;
-        }
-        for (const filePath of files) {
-          if (DLM.addWsItem && globalThis.AirdFileTransferWs?.downloadFile) {
-            batch.addWsItem(filePath, filePath);
-          } else {
-            batch.addItem(filePath, downloadUrlForPath(filePath));
-          }
-        }
-        await batch.run();
-      } catch (e) {
-        await showDialog('Could not prepare downloads: ' + (e && e.message ? e.message : String(e)), 'Download');
-      } finally {
-        if (btn) btn.disabled = false;
-      }
     }
 
     function filesDownloadUrl(path) {
@@ -900,37 +700,34 @@
         return;
       }
 
-      const filePath = paths[0];
       const Dl = globalThis.AirdDownloadManager;
-      const FTW = globalThis.AirdFileTransferWs;
-      const container = document.getElementById('downloadProgressContainer');
-      if (FTW?.downloadFile) {
-        const batch = Dl?.DownloadBatch
-          ? new Dl.DownloadBatch({ container: container || document.body, title: 'Downloads' })
-          : null;
-        if (batch?.addWsItem) {
-          batch.addWsItem(filePath, filePath);
-          await batch.run();
-          return;
-        }
-        try {
-          const result = await FTW.downloadFile(filePath);
-          FTW.saveBlob(result.blob, result.filename);
-        } catch (err) {
-          showDialog('Download failed: ' + (err?.message || err), 'Download');
-        }
-        return;
-      }
       if (!Dl?.DownloadBatch) {
         showDialog('Download manager failed to load. Hard-refresh the page.', 'Download');
         return;
       }
-      const batch = new Dl.DownloadBatch({
-        container: container || document.body,
-        title: 'Downloads',
-      });
-      batch.addItem(filePath, filesDownloadUrl(filePath));
-      await batch.run();
+      const batch = new Dl.DownloadBatch({ title: 'Downloads' });
+      const btn = document.getElementById('bulkDownloadBtn');
+      if (btn) btn.disabled = true;
+      try {
+        const files = await expandSelectionToFiles(paths);
+        if (!files.length) {
+          await showDialog('No files to download in the current selection.', 'Download');
+          batch.close();
+          return;
+        }
+        for (const filePath of files) {
+          if (globalThis.AirdFileTransferWs?.downloadFile && batch.addWsItem) {
+            batch.addWsItem(filePath, filePath);
+          } else {
+            batch.addItem(filePath, filesDownloadUrl(filePath));
+          }
+        }
+        await batch.run();
+      } catch (e) {
+        await showDialog('Could not prepare downloads: ' + (e?.message || String(e)), 'Download');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
     }
 
     async function bulkDelete() {

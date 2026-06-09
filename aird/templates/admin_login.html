@@ -166,8 +166,8 @@
     <p class="text-center text-xs text-base-content/40 mt-4">Aird · secure, lightweight file access</p>
   </div>
 
-  <script src="/static/js/theme.js" defer></script>
-  <script src="/static/js/login-ui.js" defer></script>
+  <script src="/static/js/theme.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/login-ui.js?v={{ static_version }}" defer></script>
   <script nonce="{{ csp_nonce }}">
   globalThis.addEventListener('load', function () {
     if (globalThis.AirdLoginUI) {

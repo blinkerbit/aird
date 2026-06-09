@@ -49,3 +49,53 @@ class FolderSizeWalker:
                 processed += 1
 
         return self.total_bytes, self.file_count, self.done
+
+
+def norm_rel_path(rel_path: str) -> str:
+    return rel_path.replace("\\", "/").strip().strip("/")
+
+
+def resolve_folder_abspath(user_root: str, rel_path: str) -> str | None:
+    """Return absolute folder path or None if invalid / not a directory."""
+    from aird.core.security import is_within_root
+
+    rel = norm_rel_path(rel_path)
+    if not rel or ".." in rel.split("/"):
+        return None
+    abs_path = os.path.abspath(os.path.join(user_root, rel))
+    if not is_within_root(abs_path, user_root) or not os.path.isdir(abs_path):
+        return None
+    return abs_path
+
+
+def compute_folder_size(root_abspath: str) -> tuple[int, int]:
+    """Sum file sizes under *root_abspath*. Returns (total_bytes, file_count)."""
+    walker = FolderSizeWalker(root_abspath)
+    while not walker.done:
+        walker.step(FOLDER_SIZE_BATCH_FILES)
+    return walker.total_bytes, walker.file_count
+
+
+def norm_rel_path(rel_path: str) -> str:
+    return rel_path.replace("\\", "/").strip().strip("/")
+
+
+def resolve_folder_abspath(user_root: str, rel_path: str) -> str | None:
+    """Return absolute folder path or None if invalid / not a directory."""
+    from aird.core.security import is_within_root
+
+    rel = norm_rel_path(rel_path)
+    if not rel or ".." in rel.split("/"):
+        return None
+    abs_path = os.path.abspath(os.path.join(user_root, rel))
+    if not is_within_root(abs_path, user_root) or not os.path.isdir(abs_path):
+        return None
+    return abs_path
+
+
+def compute_folder_size(root_abspath: str) -> tuple[int, int]:
+    """Sum file sizes under *root_abspath*. Returns (total_bytes, file_count)."""
+    walker = FolderSizeWalker(root_abspath)
+    while not walker.done:
+        walker.step(FOLDER_SIZE_BATCH_FILES)
+    return walker.total_bytes, walker.file_count
