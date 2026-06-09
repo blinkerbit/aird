@@ -155,22 +155,30 @@
 
   /**
    * @param {string} path relative file path
-   * @param {{ onProgress?: (loaded: number, total: number) => void, signal?: { aborted: boolean } }} options
+   * @param {{ onProgress?: (loaded: number, total: number) => void, signal?: { aborted: boolean }, onCancel?: Function }} options
    */
   async function downloadFile(path, options) {
     options = options || {};
     const onProgress = options.onProgress || function () {};
-    const signal = options.signal;
+    const signal = options.signal || { aborted: false };
     const ws = await openSocket();
     const chunks = [];
     let meta = null;
+    let settled = false;
+    let abortPoll = null;
 
     const TT = global.AirdTransferTracker;
     const fname = path.split('/').pop() || path;
-    const ttId = TT ? TT.addTransfer(fname, 0, 'download') : null;
+    const ttId = TT
+      ? TT.addTransfer(fname, 0, 'download', { onCancel: options.onCancel })
+      : null;
 
     return new Promise((resolve, reject) => {
       function cleanup() {
+        if (abortPoll !== null) {
+          clearInterval(abortPoll);
+          abortPoll = null;
+        }
         ws.removeEventListener('message', onMessage);
         try {
           ws.close();
@@ -179,11 +187,38 @@
         }
       }
 
+      function finishCancel() {
+        if (settled) return;
+        settled = true;
+        signal.aborted = true;
+        try {
+          ws.send(JSON.stringify({ action: 'cancel' }));
+        } catch {
+          /* ignore */
+        }
+        cleanup();
+        if (TT && ttId) TT.failTransfer(ttId, 'Cancelled');
+        reject(new Error('cancelled'));
+      }
+
+      if (TT && ttId) {
+        TT.setCancelHandler(ttId, function () {
+          if (typeof options.onCancel === 'function') {
+            options.onCancel();
+          }
+          finishCancel();
+        });
+      }
+
+      if (signal) {
+        abortPoll = setInterval(() => {
+          if (signal.aborted) finishCancel();
+        }, 100);
+      }
+
       function onMessage(ev) {
-        if (signal && signal.aborted) {
-          cleanup();
-          if (TT && ttId) TT.failTransfer(ttId, 'Cancelled');
-          reject(new Error('cancelled'));
+        if (signal.aborted) {
+          finishCancel();
           return;
         }
         if (typeof ev.data === 'string') {
@@ -194,6 +229,8 @@
             return;
           }
           if (msg.type === 'error') {
+            if (settled) return;
+            settled = true;
             cleanup();
             if (TT && ttId) TT.failTransfer(ttId, msg.message);
             reject(new Error(msg.message || 'download failed'));
@@ -205,6 +242,8 @@
             return;
           }
           if (msg.type === 'download_end') {
+            if (settled) return;
+            settled = true;
             cleanup();
             if (TT && ttId) TT.completeTransfer(ttId);
             const blob = new Blob(chunks, {
@@ -229,6 +268,8 @@
 
       ws.addEventListener('message', onMessage);
       ws.addEventListener('error', () => {
+        if (settled) return;
+        settled = true;
         cleanup();
         if (TT && ttId) TT.failTransfer(ttId, 'WebSocket error');
         reject(new Error('WebSocket error'));

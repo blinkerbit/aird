@@ -258,7 +258,7 @@
       const raw = (err && err.message) ? String(err.message).trim() : "";
       if (!raw || raw === "cancelled") return raw;
       const lower = raw.toLowerCase();
-      if (lower.includes("network") || lower.includes("websocket") || lower.includes("http")) {
+      if (lower.includes("network") || lower.includes("websocket")) {
         return "Upload interrupted. Check your connection and try again.";
       }
       if (lower.includes("403") || lower.includes("access denied")) {
@@ -271,15 +271,15 @@
     }
 
     async function uploadFile(item) {
-      const FT = globalThis.AirdFileTransfer;
-      if (!FT?.uploadFile) {
-        throw new Error("Upload unavailable. Hard-refresh the page.");
+      const FTW = globalThis.AirdFileTransferWs;
+      if (!FTW?.uploadFile) {
+        throw new Error("WebSocket upload unavailable. Hard-refresh the page.");
       }
       const dir = item.uploadDir ?? document.getElementById('currentPath')?.value ?? '';
       const fname = item.uploadName ?? item.file.name;
       item.uploadSignal = { aborted: false };
       const cancelFn = () => abortActiveUploads(item);
-      await FT.uploadFile(item.file, {
+      await FTW.uploadFile(item.file, {
         uploadDir: dir,
         filename: fname,
         signal: item.uploadSignal,

@@ -59,19 +59,9 @@
 
     cancelOne(item) {
       if (!item) return;
-      if (item.status === 'downloading' && item.cancelSignal) {
+      if (item.status === 'downloading' || item.status === 'queued') {
         item.cancelSignal.aborted = true;
         item.status = 'cancelled';
-        if (item.ttId != null) {
-          global.AirdTransferTracker?.failTransfer(item.ttId, 'Cancelled');
-        }
-        return;
-      }
-      if (item.status !== 'queued') return;
-      item.status = 'cancelled';
-      item.cancelSignal.aborted = true;
-      if (item.ttId != null) {
-        global.AirdTransferTracker?.failTransfer(item.ttId, 'Cancelled');
       }
     }
 
@@ -103,9 +93,14 @@
         if (item.ws && FTW?.downloadFile) {
           item.status = 'downloading';
           item.downloadStart = Date.now();
+          const onCancel = () => {
+            item.cancelSignal.aborted = true;
+            item.status = 'cancelled';
+          };
           try {
             const result = await FTW.downloadFile(item.path, {
               signal: item.cancelSignal,
+              onCancel: onCancel,
             });
             if (item.cancelSignal?.aborted || this.cancelled) {
               item.status = 'cancelled';

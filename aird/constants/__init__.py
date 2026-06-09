@@ -63,7 +63,7 @@ UPLOAD_CONFIG = {
 
 # File operation constants (derived from UPLOAD_CONFIG at startup)
 MAX_FILE_SIZE = UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
-# HTTP /upload body limit (browser uploads stream POST /upload; CLI may POST whole file)
+# HTTP /upload body limit (browser uploads use WebSocket; CLI may POST whole file)
 UPLOAD_REQUEST_MAX_BODY_SIZE = MAX_FILE_SIZE + (1024 * 1024)
 MAX_READABLE_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 

@@ -349,7 +349,7 @@ def _process_bulk_action(
 
 @tornado.web.stream_request_body
 class UploadHandler(BaseHandler):
-    """Streamed HTTP upload (browser, CLI, reverse proxy, or direct origin)."""
+    """Single-request HTTP upload (CLI / direct origin). Browser uses WebSocket."""
 
     def check_xsrf_cookie(self) -> None:
         """Streamed uploads send raw body; accept X-XSRFToken header or ?_xsrf= query param."""
@@ -363,13 +363,6 @@ class UploadHandler(BaseHandler):
             raise tornado.web.HTTPError(403, "XSRF validation failed")
 
     async def prepare(self):
-        BaseHandler.prepare(self)
-        self.check_xsrf_cookie()
-        if not self.get_current_user():
-            raise tornado.web.HTTPError(403, "Authentication required")
-        if not self.has_modify_privileges():
-            raise tornado.web.HTTPError(403, ACCESS_DENIED)
-
         self._reject: bool = False
         self._reject_reason: str | None = None
         self._temp_path: str | None = None
