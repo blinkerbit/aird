@@ -363,6 +363,13 @@ class UploadHandler(BaseHandler):
             raise tornado.web.HTTPError(403, "XSRF validation failed")
 
     async def prepare(self):
+        BaseHandler.prepare(self)
+        self.check_xsrf_cookie()
+        if not self.get_current_user():
+            raise tornado.web.HTTPError(403, "Authentication required")
+        if not self.has_modify_privileges():
+            raise tornado.web.HTTPError(403, ACCESS_DENIED)
+
         self._reject: bool = False
         self._reject_reason: str | None = None
         self._temp_path: str | None = None

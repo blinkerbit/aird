@@ -278,6 +278,12 @@
     }, 8000);
   }
 
+  function removeTransfer(id) {
+    if (_items.delete(id)) {
+      _render();
+    }
+  }
+
   function completeByExternalId(externalId) {
     var id = _findByExternalId(externalId);
     if (id != null) completeTransfer(id);
@@ -305,6 +311,7 @@
     setCancelHandler: setCancelHandler,
     completeTransfer: completeTransfer,
     failTransfer: failTransfer,
+    removeTransfer: removeTransfer,
     completeByExternalId: completeByExternalId,
     failByExternalId: failByExternalId,
     updateProgressByExternalId: updateProgressByExternalId,

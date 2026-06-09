@@ -1,5 +1,5 @@
 /**
- * Upload facade: HTTP first (CF or direct origin), WebSocket fallback when needed.
+ * Upload: HTTP first (QUIC to Cloudflare edge when proxied), WebSocket fallback.
  */
 (function (global) {
   'use strict';
@@ -9,16 +9,29 @@
     return msg === 'cancelled';
   }
 
-  /** Use WS when HTTP is blocked, proxied limits apply, or the connection failed. */
+  /** WS retry unless the failure is user cancel or a validation error HTTP/WS share. */
   function shouldFallbackToWs(err) {
     if (!err || isCancelled(err)) return false;
     const status = err.httpStatus ?? 0;
-    if (status === 401 || status === 403 || status === 400) return false;
-    if (status === 413 || status === 0 || status === 502 || status === 503 || status === 504) {
-      return true;
+    if (status === 400) {
+      const msg = String(err.message || '').toLowerCase();
+      if (
+        msg.includes('filename')
+        || msg.includes('invalid')
+        || msg.includes('disabled')
+        || msg.includes('too large')
+      ) {
+        return false;
+      }
     }
-    const msg = String(err.message || '').toLowerCase();
-    return msg.includes('network error');
+    return true;
+  }
+
+  function clearHttpTracker(err) {
+    const TT = global.AirdTransferTracker;
+    if (TT && err?.ttId != null && TT.removeTransfer) {
+      TT.removeTransfer(err.ttId);
+    }
   }
 
   /**
@@ -32,10 +45,23 @@
 
     if (http?.uploadFile) {
       try {
-        return await http.uploadFile(file, options);
+        return await http.uploadFile(file, Object.assign({}, options, {
+          suppressTrackerFail: true,
+        }));
       } catch (err) {
         if (ws?.uploadFile && shouldFallbackToWs(err)) {
+          clearHttpTracker(err);
+          if (global.console?.warn) {
+            global.console.warn(
+              '[aird] HTTP upload failed, retrying via WebSocket:',
+              err.message || err
+            );
+          }
           return ws.uploadFile(file, options);
+        }
+        const TT = global.AirdTransferTracker;
+        if (TT && err?.ttId != null) {
+          TT.failTransfer(err.ttId, err.message || 'Upload failed');
         }
         throw err;
       }

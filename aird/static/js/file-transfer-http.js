@@ -8,13 +8,18 @@
     if (global.AirdCore?.getXSRFToken) {
       return global.AirdCore.getXSRFToken();
     }
-    const match = document.cookie.match(/\b_xsrf=([^;]*)/);
-    return match ? decodeURIComponent(match[1]) : '';
+    const m = /(?:^|; )_xsrf=([^;]*)/.exec(document.cookie);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  function looksLikeHtml(body) {
+    const t = (body || '').trim().slice(0, 64).toLowerCase();
+    return t.startsWith('<!doctype') || t.startsWith('<html') || t.startsWith('<!');
   }
 
   /**
    * @param {File|Blob} file
-   * @param {{ uploadDir?: string, filename?: string, onProgress?: Function, signal?: { aborted: boolean }, onCancel?: Function }} options
+   * @param {{ uploadDir?: string, filename?: string, onProgress?: Function, signal?: { aborted: boolean }, onCancel?: Function, suppressTrackerFail?: boolean }} options
    */
   function uploadFile(file, options) {
     options = options || {};
@@ -23,6 +28,7 @@
     const onProgress = options.onProgress || function () {};
     const signal = options.signal;
     const totalSize = file.size;
+    const xsrf = getXSRFToken();
 
     const TT = global.AirdTransferTracker;
     const ttId = TT
@@ -48,7 +54,10 @@
         const msg = err?.message || String(err);
         const error = err instanceof Error ? err : new Error(msg);
         error.httpStatus = httpStatus ?? 0;
-        if (TT && ttId) TT.failTransfer(ttId, msg);
+        error.ttId = ttId;
+        if (TT && ttId && !options.suppressTrackerFail) {
+          TT.failTransfer(ttId, msg);
+        }
         reject(error);
       }
 
@@ -62,13 +71,17 @@
 
       xhr.addEventListener('load', () => {
         cleanup();
+        const body = (xhr.responseText || '').trim();
         if (xhr.status >= 200 && xhr.status < 300) {
+          if (looksLikeHtml(body)) {
+            fail(new Error('Session expired — refresh and sign in again'), 403);
+            return;
+          }
           onProgress(100, totalSize, totalSize);
           if (TT && ttId) TT.completeTransfer(ttId);
-          resolve({ message: xhr.responseText || 'Upload successful' });
+          resolve({ message: body || 'Upload successful' });
           return;
         }
-        const body = (xhr.responseText || '').trim();
         fail(new Error(body || `Upload failed (HTTP ${xhr.status})`), xhr.status);
       });
 
@@ -83,10 +96,18 @@
         }, 100);
       }
 
-      xhr.open('POST', '/upload');
+      let url = '/upload';
+      if (xsrf) {
+        url += '?_xsrf=' + encodeURIComponent(xsrf);
+      }
+      xhr.open('POST', url);
+      xhr.withCredentials = true;
+      xhr.setRequestHeader('X-Aird-Upload', '1');
       xhr.setRequestHeader('X-Upload-Dir', uploadDir);
       xhr.setRequestHeader('X-Upload-Filename', filename);
-      xhr.setRequestHeader('X-XSRFToken', getXSRFToken());
+      if (xsrf) {
+        xhr.setRequestHeader('X-XSRFToken', xsrf);
+      }
       xhr.setRequestHeader('Content-Type', 'application/octet-stream');
       xhr.send(file);
     });
