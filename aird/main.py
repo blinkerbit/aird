@@ -595,6 +595,10 @@ def _start_server(ssl_options, port: int, hostname: str, worker_count: int) -> N
 
 
 def main():
+    from aird.event_loop import install_uvloop_if_linux
+
+    install_uvloop_if_linux()
+
     print_banner()
     config.init_config()
 

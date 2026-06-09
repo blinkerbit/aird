@@ -2,6 +2,7 @@ from setuptools import setup, find_packages
 
 install_requires = [
     "tornado>=6.5.1",
+    "uvloop>=0.19.0; sys_platform == 'linux'",
     "ldap3>=2.9.1",
     "aiofiles>=23.0.0",
     "argon2-cffi>=23.1.0",
@@ -15,7 +16,7 @@ install_requires = [
 
 setup(
     name="aird",
-    version="0.4.23.dev15",
+    version="0.4.23.dev17",
     packages=find_packages(),
     include_package_data=True,
     package_data={"aird": [

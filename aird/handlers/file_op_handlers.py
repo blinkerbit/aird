@@ -349,7 +349,7 @@ def _process_bulk_action(
 
 @tornado.web.stream_request_body
 class UploadHandler(BaseHandler):
-    """Single-request HTTP upload (CLI / direct origin). Browser uses WebSocket."""
+    """Streamed HTTP upload (browser, CLI, reverse proxy, or direct origin)."""
 
     def check_xsrf_cookie(self) -> None:
         """Streamed uploads send raw body; accept X-XSRFToken header or ?_xsrf= query param."""
