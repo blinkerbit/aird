@@ -17,7 +17,7 @@ install_requires = [
 
 setup(
     name="aird",
-    version="0.4.23.dev21",
+    version="0.4.24",
     packages=find_packages(),
     include_package_data=True,
     package_data={"aird": [
