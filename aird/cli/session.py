@@ -91,6 +91,43 @@ def _load_cookies(session: requests.Session) -> bool:
     return bool(data.get("cookies") or token)
 
 
+def _collect_local_upload_files(
+    local_dir: Path, remote_dir: str
+) -> list[tuple[Path, str]]:
+    files: list[tuple[Path, str]] = []
+
+    def walk(base: Path, rel_remote: str) -> None:
+        for child in sorted(base.iterdir()):
+            rel = f"{rel_remote}/{child.name}" if rel_remote else child.name
+            if child.is_dir():
+                walk(child, rel)
+            elif child.is_file():
+                remote_parent = (
+                    f"{remote_dir}/{rel_remote}".strip("/") if rel_remote else remote_dir
+                )
+                files.append((child, remote_parent.strip("/")))
+
+    walk(local_dir, "")
+    return files
+
+
+def _run_path_jobs(
+    file_paths: list[str],
+    job: Callable[[str], str],
+    workers: int,
+    on_progress: Callable[[str], None] | None,
+) -> int:
+    count = 0
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        futures = [pool.submit(job, p) for p in file_paths]
+        for fut in as_completed(futures):
+            p = fut.result()
+            count += 1
+            if on_progress:
+                on_progress(p)
+    return count
+
+
 class AirdClient:
     def __init__(self, server_url: str | None = None, *, _reuse: "AirdClient | None" = None):
         if _reuse is not None:
@@ -309,29 +346,15 @@ class AirdClient:
     ) -> int:
         if not local_dir.is_dir():
             raise NotADirectoryError(local_dir)
-        local_dir = local_dir.resolve()
-        files: list[tuple[Path, str]] = []
-
-        def walk(base: Path, rel_remote: str) -> None:
-            for child in sorted(base.iterdir()):
-                rel = f"{rel_remote}/{child.name}" if rel_remote else child.name
-                if child.is_dir():
-                    walk(child, rel)
-                elif child.is_file():
-                    remote_parent = (
-                        f"{remote_dir}/{rel_remote}".strip("/") if rel_remote else remote_dir
-                    )
-                    files.append((child, remote_parent.strip("/")))
-
-        walk(local_dir, "")
+        files = _collect_local_upload_files(local_dir.resolve(), remote_dir)
         if not files:
             return 0
 
-        count = 0
         def _upload_job(lp: Path, rd: str) -> Path:
             self.clone().upload_file(lp, rd)
             return lp
 
+        count = 0
         with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
             futures = {pool.submit(_upload_job, lp, rd): (lp, rd) for lp, rd in files}
             for fut in as_completed(futures):
@@ -360,31 +383,34 @@ class AirdClient:
                 return s, False
         return None, False
 
+    def _expand_single_path(self, raw: str, seen: set[str], files: list[str]) -> None:
+        p = (raw or "").strip("/")
+        if not p:
+            return
+        try:
+            self.list_dir(p)
+            for rel, _ in self.iter_tree(p):
+                if rel not in seen:
+                    seen.add(rel)
+                    files.append(rel)
+        except AirdAPIError as exc:
+            if exc.status == 404:
+                if p not in seen:
+                    seen.add(p)
+                    files.append(p)
+            else:
+                raise
+
     def expand_paths_to_files(self, paths: list[str]) -> list[str]:
         """Expand share path entries (files or folders) to file paths in your tree."""
         files: list[str] = []
         seen: set[str] = set()
         for raw in paths:
-            p = (raw or "").strip("/")
-            if not p:
-                continue
-            try:
-                self.list_dir(p)
-                for rel, _ in self.iter_tree(p):
-                    if rel not in seen:
-                        seen.add(rel)
-                        files.append(rel)
-            except AirdAPIError as exc:
-                if exc.status == 404:
-                    if p not in seen:
-                        seen.add(p)
-                        files.append(p)
-                else:
-                    raise
+            self._expand_single_path(raw, seen, files)
         return files
 
     def verify_share(self, share_id: str, token: str) -> None:
-        xsrf = self.refresh_xsrf()
+        self.refresh_xsrf()
         r = self.http.post(
             self._url(f"/shared/{quote(share_id)}/verify"),
             json={"token": token},
@@ -433,6 +459,42 @@ class AirdClient:
                     if chunk:
                         f.write(chunk)
 
+    def _own_share_download_job(self, local_dir: Path) -> Callable[[str], str]:
+        def _own_job(path: str) -> str:
+            dest = local_dir / path
+            self.clone().download_file(path, dest)
+            return path
+
+        return _own_job
+
+    def _shared_download_job(
+        self, share_id: str, local_dir: Path
+    ) -> Callable[[str], str]:
+        def _shared_job(path: str) -> str:
+            dest = local_dir / path
+            self.clone().download_share_file(share_id, path, dest)
+            return path
+
+        return _shared_job
+
+    def _resolve_own_share_paths(self, share: dict) -> list[str]:
+        paths = self.expand_paths_to_files(list(share.get("paths") or []))
+        if not paths:
+            raise AirdAPIError("No files in share")
+        return paths
+
+    def _resolve_shared_file_paths(
+        self, share_id: str, share_token: str | None, share: dict | None
+    ) -> list[str]:
+        if share_token:
+            self.verify_share(share_id, share_token)
+        file_paths = self.share_file_paths(share_id)
+        if not file_paths and share:
+            file_paths = list(share.get("paths") or [])
+        if not file_paths:
+            raise AirdAPIError("No files in share (or access denied — try --token)")
+        return file_paths
+
     def download_share(
         self,
         share_id: str,
@@ -445,42 +507,13 @@ class AirdClient:
         share, is_mine = self.find_share(share_id)
 
         if is_mine and share:
-            paths = self.expand_paths_to_files(list(share.get("paths") or []))
-            if not paths:
-                raise AirdAPIError("No files in share")
-
-            def _own_job(path: str) -> str:
-                dest = local_dir / path
-                self.clone().download_file(path, dest)
-                return path
-
-            jobs = _own_job
-            file_paths = paths
+            file_paths = self._resolve_own_share_paths(share)
+            jobs = self._own_share_download_job(local_dir)
         else:
-            if share_token:
-                self.verify_share(share_id, share_token)
-            file_paths = self.share_file_paths(share_id)
-            if not file_paths and share:
-                file_paths = list(share.get("paths") or [])
-            if not file_paths:
-                raise AirdAPIError("No files in share (or access denied — try --token)")
+            file_paths = self._resolve_shared_file_paths(share_id, share_token, share)
+            jobs = self._shared_download_job(share_id, local_dir)
 
-            def _shared_job(path: str) -> str:
-                dest = local_dir / path
-                self.clone().download_share_file(share_id, path, dest)
-                return path
-
-            jobs = _shared_job
-
-        count = 0
-        with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-            futures = [pool.submit(jobs, p) for p in file_paths]
-            for fut in as_completed(futures):
-                p = fut.result()
-                count += 1
-                if on_progress:
-                    on_progress(p)
-        return count
+        return _run_path_jobs(file_paths, jobs, workers, on_progress)
 
     def download_all_shares(
         self,

@@ -35,12 +35,55 @@ def _safe_arcname(rel_path: str) -> str | None:
     return "/".join(parts)
 
 
+class _ZipEntryCollector:
+    """Accumulate zip entries while enforcing size and count limits."""
+
+    def __init__(self) -> None:
+        self.entries: list[tuple[str, str]] = []
+        self._seen_arc: set[str] = set()
+        self._total_bytes = 0
+
+    def add_file(self, file_abs: str, arc: str | None) -> None:
+        if arc is None or arc in self._seen_arc:
+            return
+        try:
+            size = os.path.getsize(file_abs)
+        except OSError:
+            return
+        self._total_bytes += size
+        if self._total_bytes > MAX_ZIP_UNCOMPRESSED_BYTES:
+            raise ZipDownloadError("Selection is too large to zip", 413)
+        self._seen_arc.add(arc)
+        self.entries.append((file_abs, arc))
+        if len(self.entries) > MAX_ZIP_ENTRIES:
+            raise ZipDownloadError("Too many files in selection", 400)
+
+
+def _collect_dir_zip_entries(
+    collector: _ZipEntryCollector, abspath: str, root_dir: str
+) -> None:
+    for dirpath, _dirnames, filenames in os.walk(abspath):
+        for fname in filenames:
+            full = os.path.join(dirpath, fname)
+            if not os.path.isfile(full):
+                continue
+            file_rel = os.path.relpath(full, root_dir).replace("\\", "/")
+            collector.add_file(full, _safe_arcname(file_rel))
+
+
+def _resolve_zip_path(root_dir: str, rel: str) -> tuple[str, str]:
+    abspath = os.path.realpath(os.path.join(root_dir, rel))
+    if not is_within_root(abspath, root_dir):
+        raise ZipDownloadError("Access denied", 403)
+    if not os.path.exists(abspath):
+        raise ZipDownloadError(f"Not found: {rel}", 404)
+    return rel, abspath
+
+
 def collect_zip_entries(root_dir: str, paths: Iterable[str]) -> list[tuple[str, str]]:
     """Return (absolute_path, archive_name) pairs for all files under *paths*."""
     root_dir = os.path.realpath(root_dir)
-    entries: list[tuple[str, str]] = []
-    seen_arc: set[str] = set()
-    total_bytes = 0
+    collector = _ZipEntryCollector()
 
     for raw in paths:
         if not isinstance(raw, str):
@@ -48,48 +91,19 @@ def collect_zip_entries(root_dir: str, paths: Iterable[str]) -> list[tuple[str, 
         rel = _normalise_rel_path(raw)
         if not rel:
             continue
-        abspath = os.path.realpath(os.path.join(root_dir, rel))
-        if not is_within_root(abspath, root_dir):
-            raise ZipDownloadError("Access denied", 403)
-        if not os.path.exists(abspath):
-            raise ZipDownloadError(f"Not found: {rel}", 404)
-
-        def add_file(file_abs: str, arc: str | None) -> None:
-            nonlocal total_bytes
-            if arc is None:
-                return
-            if arc in seen_arc:
-                return
-            try:
-                size = os.path.getsize(file_abs)
-            except OSError:
-                return
-            total_bytes += size
-            if total_bytes > MAX_ZIP_UNCOMPRESSED_BYTES:
-                raise ZipDownloadError("Selection is too large to zip", 413)
-            seen_arc.add(arc)
-            entries.append((file_abs, arc))
-            if len(entries) > MAX_ZIP_ENTRIES:
-                raise ZipDownloadError("Too many files in selection", 400)
+        rel, abspath = _resolve_zip_path(root_dir, rel)
 
         if os.path.isfile(abspath):
-            add_file(abspath, _safe_arcname(rel))
+            collector.add_file(abspath, _safe_arcname(rel))
             continue
 
         if os.path.isdir(abspath):
-            prefix = _safe_arcname(rel)
-            for dirpath, _dirnames, filenames in os.walk(abspath):
-                for fname in filenames:
-                    full = os.path.join(dirpath, fname)
-                    if not os.path.isfile(full):
-                        continue
-                    file_rel = os.path.relpath(full, root_dir).replace("\\", "/")
-                    add_file(full, _safe_arcname(file_rel))
+            _collect_dir_zip_entries(collector, abspath, root_dir)
             continue
 
         raise ZipDownloadError(f"Not a file or folder: {rel}", 400)
 
-    return entries
+    return collector.entries
 
 
 def build_zip_file(entries: list[tuple[str, str]]) -> str:

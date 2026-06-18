@@ -116,8 +116,8 @@
     </p>
     <hr>
     <div id="editor-container" class="flex h-[60vh] hidden">
-        <textarea id="line-numbers-editor" class="w-10 p-1 text-right bg-base-200 text-base-content/50 border border-base-300 border-r-0 overflow-y-hidden resize-none font-mono text-base leading-snug" readonly></textarea>
-        <textarea id="editor" class="flex-1 h-full border border-base-300 resize-none font-mono text-base leading-snug p-2 bg-base-100 text-base-content focus:outline-none focus:border-primary">{% if open_editor %}{{ full_file_content }}{% end %}</textarea>
+        <textarea id="line-numbers-editor" class="w-10 p-1 text-right bg-base-200 text-base-content/50 border border-base-300 border-r-0 overflow-y-hidden resize-none font-mono text-base leading-snug" readonly aria-hidden="true" tabindex="-1"></textarea>
+        <textarea id="editor" class="flex-1 h-full border border-base-300 resize-none font-mono text-base leading-snug p-2 bg-base-100 text-base-content focus:outline-none focus:border-primary" aria-label="File content editor">{% if open_editor %}{{ full_file_content }}{% end %}</textarea>
     </div>
     <div class="w-full overflow-x-auto border border-base-300 rounded-lg bg-base-100">
         <table id="file-content" class="w-full table-fixed border-collapse text-left">

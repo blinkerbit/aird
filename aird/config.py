@@ -40,7 +40,7 @@ FEATURE_FLAGS = {}
 CLOUD_MANAGER = CloudManager()
 WEBSOCKET_CONFIG = {}
 MULTI_USER = False
-WORKERS = None  # None = auto (1.25 * threads_per_core * physical_cores)
+WORKERS = None
 DB_CONN = None
 MAX_FILE_SIZE = _MAX_FILE_SIZE
 MAX_READABLE_FILE_SIZE = _MAX_READABLE_FILE_SIZE
@@ -187,6 +187,82 @@ def _apply_feature_flags_from_config(config: dict) -> None:
             FEATURE_FLAGS[feature_name] = bool(feature_value)
 
 
+def _load_config_dict(args) -> dict:
+    global CONFIG_FILE
+    if not args.config:
+        return {}
+    CONFIG_FILE = args.config
+    with open(CONFIG_FILE, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _apply_access_tokens(args, config: dict) -> tuple[bool, bool]:
+    """Apply ACCESS_TOKEN and ADMIN_TOKEN; return (access_explicit, admin_explicit)."""
+    global ACCESS_TOKEN, ADMIN_TOKEN
+
+    token_provided_explicitly = bool(
+        args.token or config.get("token") or os.environ.get("AIRD_ACCESS_TOKEN")
+    )
+    admin_token_provided_explicitly = bool(
+        args.admin_token or config.get("admin_token")
+    )
+
+    ACCESS_TOKEN = (
+        args.token
+        or config.get("token")
+        or os.environ.get("AIRD_ACCESS_TOKEN")
+        or secrets.token_urlsafe(64)
+    )
+    ADMIN_TOKEN = (
+        args.admin_token or config.get("admin_token") or secrets.token_urlsafe(64)
+    )
+    return token_provided_explicitly, admin_token_provided_explicitly
+
+
+def _apply_server_settings(args, config: dict) -> None:
+    global ROOT_DIR, PORT, MULTI_USER, WORKERS, SSL_CERT, SSL_KEY, ADMIN_USERS, HOSTNAME
+
+    ROOT_DIR = args.root or config.get("root") or os.getcwd()
+    PORT = args.port or config.get("port") or 8000
+    MULTI_USER = args.multi_user or config.get("multi_user", False)
+    workers_arg = args.workers if args.workers is not None else config.get("workers")
+    WORKERS = int(workers_arg) if workers_arg is not None else None
+    SSL_CERT = args.ssl_cert or config.get("ssl_cert")
+    SSL_KEY = args.ssl_key or config.get("ssl_key")
+    ADMIN_USERS = config.get("admin_users", [])
+    HOSTNAME = args.hostname or config.get("hostname") or socket.getfqdn()
+
+
+def _apply_ldap_globals(ldap_settings: dict) -> None:
+    global LDAP_ENABLED, LDAP_SERVER, LDAP_BASE_DN, LDAP_USER_TEMPLATE
+    global LDAP_FILTER_TEMPLATE, LDAP_ATTRIBUTES, LDAP_ATTRIBUTE_MAP
+
+    LDAP_ENABLED = ldap_settings["enabled"]
+    LDAP_SERVER = ldap_settings["server"]
+    LDAP_BASE_DN = ldap_settings["base_dn"]
+    LDAP_USER_TEMPLATE = ldap_settings["user_template"]
+    LDAP_FILTER_TEMPLATE = ldap_settings["filter_template"]
+    LDAP_ATTRIBUTES = ldap_settings["attributes"]
+    LDAP_ATTRIBUTE_MAP = ldap_settings["attribute_map"]
+
+
+def _print_generated_tokens(
+    token_provided_explicitly: bool, admin_token_provided_explicitly: bool
+) -> None:
+    if not token_provided_explicitly:
+        print(f"\n{'='*60}")
+        print(f"Access token (generated): {ACCESS_TOKEN}")
+        print(f"{'='*60}")
+        print("Note: Copy the token above exactly as shown .")
+        print("WARNING: Store this token securely. It grants access to your files.")
+        print(f"{'='*60}\n")
+    if not admin_token_provided_explicitly:
+        print(f"\n{'='*60}")
+        print(f"Admin token (generated): {ADMIN_TOKEN}")
+        print("WARNING: Store this token securely. It grants admin access.")
+        print(f"{'='*60}\n")
+
+
 def init_config():
     """
     Initializes the application configuration by parsing command-line arguments,
@@ -236,70 +312,19 @@ def init_config():
     )
     args = parser.parse_args()
 
-    config = {}
-    if args.config:
-        CONFIG_FILE = args.config
-        with open(CONFIG_FILE) as f:
-            config = json.load(f)
-    else:
-        config = {}
+    config = _load_config_dict(args)
 
     _configure_cloud_providers(config)
 
-    ROOT_DIR = args.root or config.get("root") or os.getcwd()
-    PORT = args.port or config.get("port") or 8000
-
-    token_provided_explicitly = bool(
-        args.token or config.get("token") or os.environ.get("AIRD_ACCESS_TOKEN")
+    token_provided_explicitly, admin_token_provided_explicitly = _apply_access_tokens(
+        args, config
     )
-    admin_token_provided_explicitly = bool(
-        args.admin_token or config.get("admin_token")
-    )
-
-    ACCESS_TOKEN = (
-        args.token
-        or config.get("token")
-        or os.environ.get("AIRD_ACCESS_TOKEN")
-        or secrets.token_urlsafe(64)
-    )
-    ADMIN_TOKEN = (
-        args.admin_token or config.get("admin_token") or secrets.token_urlsafe(64)
-    )
+    _apply_server_settings(args, config)
 
     ldap_settings = _parse_ldap_settings(args, config)
-    LDAP_ENABLED = ldap_settings["enabled"]
-    LDAP_SERVER = ldap_settings["server"]
-    LDAP_BASE_DN = ldap_settings["base_dn"]
-    LDAP_USER_TEMPLATE = ldap_settings["user_template"]
-    LDAP_FILTER_TEMPLATE = ldap_settings["filter_template"]
-    LDAP_ATTRIBUTES = ldap_settings["attributes"]
-    LDAP_ATTRIBUTE_MAP = ldap_settings["attribute_map"]
+    _apply_ldap_globals(ldap_settings)
 
     _apply_feature_flags_from_config(config)
     _apply_brevo_settings(config)
 
-    MULTI_USER = args.multi_user or config.get("multi_user", False)
-
-    workers_arg = args.workers if args.workers is not None else config.get("workers")
-    WORKERS = int(workers_arg) if workers_arg is not None else None
-
-    SSL_CERT = args.ssl_cert or config.get("ssl_cert")
-    SSL_KEY = args.ssl_key or config.get("ssl_key")
-
-    ADMIN_USERS = config.get("admin_users", [])
-
-    HOSTNAME = args.hostname or config.get("hostname") or socket.getfqdn()
-
-    # Print tokens when they were not explicitly provided (masked for security)
-    if not token_provided_explicitly:
-        print(f"\n{'='*60}")
-        print(f"Access token (generated): {ACCESS_TOKEN}")
-        print(f"{'='*60}")
-        print("Note: Copy the token above exactly as shown .")
-        print("WARNING: Store this token securely. It grants access to your files.")
-        print(f"{'='*60}\n")
-    if not admin_token_provided_explicitly:
-        print(f"\n{'='*60}")
-        print(f"Admin token (generated): {ADMIN_TOKEN}")
-        print("WARNING: Store this token securely. It grants admin access.")
-        print(f"{'='*60}\n")
+    _print_generated_tokens(token_provided_explicitly, admin_token_provided_explicitly)

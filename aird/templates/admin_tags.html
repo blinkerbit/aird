@@ -98,7 +98,7 @@
           <table class="table table-zebra table-sm" id="tags-table">
             <thead>
               <tr>
-                <th class="w-8"><input type="checkbox" id="select-all" class="checkbox checkbox-sm" /></th>
+                <th class="w-8"><input type="checkbox" id="select-all" class="checkbox checkbox-sm" aria-label="Select all tag rules" /></th>
                 <th>ID</th>
                 <th>Tag</th>
                 <th>Glob pattern</th>
@@ -111,7 +111,7 @@
             <tbody id="tags-tbody">
               {% for t in tags %}
               <tr data-tag-id="{{ t['id'] }}">
-                <td><input type="checkbox" class="checkbox checkbox-sm row-checkbox" value="{{ t['id'] }}" /></td>
+                <td><input type="checkbox" class="checkbox checkbox-sm row-checkbox" value="{{ t['id'] }}" aria-label="Select tag rule #{{ t['id'] }}" /></td>
                 <td class="text-xs text-base-content/50 font-mono">#{{ t['id'] }}</td>
                 <td><a href="/tagged/{{ escape(t['tag']) }}" class="file-tag-chip">{{ escape(t['tag']) }}</a></td>
                 <td class="font-mono text-sm">{{ escape(t['glob_pattern']) }}</td>

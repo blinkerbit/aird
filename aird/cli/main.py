@@ -42,27 +42,92 @@ def cmd_config_show(_args: argparse.Namespace) -> int:
     cfg = load_config()
     if not cfg:
         print("(no config — use: aird-cli config set server https://host)")
-        return 0
-    for k, v in sorted(cfg.items()):
-        if k == "password":
-            print(f"{k}: ***")
-        else:
-            print(f"{k}: {v}")
+    else:
+        for k, v in sorted(cfg.items()):
+            if k == "password":
+                print(f"{k}: ***")
+            else:
+                print(f"{k}: {v}")
     return 0
 
 
-def cmd_login(args: argparse.Namespace) -> int:
+def _resolve_login_server(args: argparse.Namespace) -> str | None:
     server = get_server_url()
     if not server and args.server:
         cfg = load_config()
         cfg["server"] = args.server.rstrip("/")
         save_config(cfg)
         server = cfg["server"]
+    return server
+
+
+def _try_token_login(client: AirdClient, server: str, args: argparse.Namespace) -> int | None:
+    if not args.token:
+        return None
+    client.set_bearer_token(args.token)
+    client.refresh_xsrf()
+    client.save()
+    try:
+        client.check_auth()
+        print(f"Logged in to {server} (access token)")
+        return 0
+    except (AirdAuthError, AirdAPIError) as exc:
+        print(f"Token login failed: {exc}", file=sys.stderr)
+        return 1
+
+
+def _run_authelia_login(
+    client: AirdClient,
+    authelia_url: str,
+    username: str,
+    password: str,
+    totp: str | None,
+    server: str,
+) -> int | None:
+    try:
+        authelia_login(
+            client.http,
+            authelia_url,
+            username,
+            password,
+            totp=totp,
+            target_url=f"{server}/login",
+        )
+    except AutheliaError as exc:
+        if str(exc) != "second_factor_required":
+            print(f"Authelia login failed: {exc}", file=sys.stderr)
+            return 1
+        totp = totp or _prompt_totp()
+        try:
+            second_factor(client.http, authelia_url, totp)
+        except AutheliaError as exc2:
+            print(f"Authelia login failed: {exc2}", file=sys.stderr)
+            return 1
+    return None
+
+
+def _save_login_config(
+    username: str, server: str, authelia_url: str | None
+) -> None:
+    cfg = load_config()
+    cfg["username"] = username
+    cfg["server"] = server
+    if authelia_url:
+        cfg["authelia_url"] = authelia_url
+    save_config(cfg)
+
+
+def cmd_login(args: argparse.Namespace) -> int:
+    server = _resolve_login_server(args)
     if not server:
         print("Set server URL first: aird-cli config set server https://your-host", file=sys.stderr)
         return 1
 
     client = AirdClient(server)
+    token_result = _try_token_login(client, server, args)
+    if token_result is not None:
+        return token_result
+
     authelia_url = get_authelia_url() or args.authelia_url
 
     username = args.username or load_config().get("username") or input("Username: ").strip()
@@ -70,55 +135,22 @@ def cmd_login(args: argparse.Namespace) -> int:
         print("Username required", file=sys.stderr)
         return 1
 
-    if args.token:
-        client.set_bearer_token(args.token)
-        client.refresh_xsrf()
-        client.save()
-        try:
-            client.check_auth()
-            print(f"Logged in to {server} (access token)")
-            return 0
-        except (AirdAuthError, AirdAPIError) as exc:
-            print(f"Token login failed: {exc}", file=sys.stderr)
-            return 1
-
     password = args.password or _prompt_password()
     totp = args.totp
 
     if authelia_url:
-        try:
-            authelia_login(
-                client.http,
-                authelia_url,
-                username,
-                password,
-                totp=totp,
-                target_url=f"{server}/login",
-            )
-        except AutheliaError as exc:
-            if str(exc) == "second_factor_required":
-                totp = totp or _prompt_totp()
-                try:
-                    second_factor(client.http, authelia_url, totp)
-                except AutheliaError as exc2:
-                    print(f"Authelia login failed: {exc2}", file=sys.stderr)
-                    return 1
-            else:
-                print(f"Authelia login failed: {exc}", file=sys.stderr)
-                return 1
+        authelia_result = _run_authelia_login(
+            client, authelia_url, username, password, totp, server
+        )
+        if authelia_result is not None:
+            return authelia_result
 
-    aird_token = args.aird_token
-    if aird_token:
-        client.login_password("", "", token=aird_token)
+    if args.aird_token:
+        client.login_password("", "", token=args.aird_token)
     else:
         client.login_password(username, password)
 
-    cfg = load_config()
-    cfg["username"] = username
-    cfg["server"] = server
-    if authelia_url:
-        cfg["authelia_url"] = authelia_url
-    save_config(cfg)
+    _save_login_config(username, server, authelia_url)
     client.save()
 
     try:
@@ -250,6 +282,24 @@ def cmd_upload(args: argparse.Namespace) -> int:
         return 1
 
 
+def _print_my_shares(mine) -> None:
+    print("My shares:")
+    items = mine.values() if isinstance(mine, dict) else mine
+    for s in items:
+        sid = s.get("id", "?")
+        paths = s.get("paths") or []
+        print(f"  {sid}\t{len(paths)} path(s)\t{s.get('created_at', '')}")
+
+
+def _print_shared_with_me(shared) -> None:
+    print("Shared with me:")
+    for s in shared:
+        sid = s.get("id", "?")
+        creator = s.get("creator") or s.get("username") or "?"
+        paths = s.get("paths") or []
+        print(f"  {sid}\tfrom {creator}\t{len(paths)} path(s)")
+
+
 def cmd_shares_list(_args: argparse.Namespace) -> int:
     try:
         client = AirdClient()
@@ -260,19 +310,9 @@ def cmd_shares_list(_args: argparse.Namespace) -> int:
             print("(no shares)")
             return 0
         if mine:
-            print("My shares:")
-            items = mine.values() if isinstance(mine, dict) else mine
-            for s in items:
-                sid = s.get("id", "?")
-                paths = s.get("paths") or []
-                print(f"  {sid}\t{len(paths)} path(s)\t{s.get('created_at', '')}")
+            _print_my_shares(mine)
         if shared:
-            print("Shared with me:")
-            for s in shared:
-                sid = s.get("id", "?")
-                creator = s.get("creator") or s.get("username") or "?"
-                paths = s.get("paths") or []
-                print(f"  {sid}\tfrom {creator}\t{len(paths)} path(s)")
+            _print_shared_with_me(shared)
         return 0
     except (AirdAuthError, AirdAPIError) as exc:
         print(str(exc), file=sys.stderr)

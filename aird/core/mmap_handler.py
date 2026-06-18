@@ -71,6 +71,45 @@ class _SyncChunkReader:
             self._file = None
 
 
+async def _yield_aiofile_chunks(
+    file_path: str, start: int, end: int | None, file_size: int, chunk_size: int
+):
+    """Yield file chunks using aiofiles (small files)."""
+    remaining = (end - start + 1) if end is not None else file_size - start
+    async with aiofiles.open(file_path, "rb") as f:
+        await f.seek(start)
+        while remaining > 0:
+            chunk = await f.read(min(chunk_size, remaining))
+            if not chunk:
+                break
+            yield chunk
+            remaining -= len(chunk)
+
+
+async def _yield_reader_chunks(
+    file_path: str,
+    start: int,
+    end: int | None,
+    file_size: int,
+    chunk_size: int,
+    *,
+    use_mmap: bool,
+):
+    """Yield file chunks via _SyncChunkReader."""
+    reader = _SyncChunkReader(
+        file_path, start, end, file_size, chunk_size, use_mmap=use_mmap
+    )
+    try:
+        await asyncio.to_thread(reader.open)
+        while True:
+            chunk = await asyncio.to_thread(reader.read_next)
+            if not chunk:
+                break
+            yield chunk
+    finally:
+        await asyncio.to_thread(reader.close)
+
+
 class MMapFileHandler:
     """Efficient file handling using memory mapping for large files"""
 
@@ -88,44 +127,23 @@ class MMapFileHandler:
             file_size = await asyncio.to_thread(os.path.getsize, file_path)
 
             if not MMapFileHandler.should_use_mmap(file_size):
-                remaining = (end - start + 1) if end is not None else file_size - start
-                async with aiofiles.open(file_path, "rb") as f:
-                    await f.seek(start)
-                    while remaining > 0:
-                        chunk = await f.read(min(chunk_size, remaining))
-                        if not chunk:
-                            break
-                        yield chunk
-                        remaining -= len(chunk)
+                async for chunk in _yield_aiofile_chunks(
+                    file_path, start, end, file_size, chunk_size
+                ):
+                    yield chunk
                 return
 
-            reader = _SyncChunkReader(
+            async for chunk in _yield_reader_chunks(
                 file_path, start, end, file_size, chunk_size, use_mmap=True
-            )
-            try:
-                await asyncio.to_thread(reader.open)
-                while True:
-                    chunk = await asyncio.to_thread(reader.read_next)
-                    if not chunk:
-                        break
-                    yield chunk
-            finally:
-                await asyncio.to_thread(reader.close)
+            ):
+                yield chunk
 
         except (OSError, ValueError):
             file_size = await asyncio.to_thread(os.path.getsize, file_path)
-            reader = _SyncChunkReader(
+            async for chunk in _yield_reader_chunks(
                 file_path, start, end, file_size, chunk_size, use_mmap=False
-            )
-            try:
-                await asyncio.to_thread(reader.open)
-                while True:
-                    chunk = await asyncio.to_thread(reader.read_next)
-                    if not chunk:
-                        break
-                    yield chunk
-            finally:
-                await asyncio.to_thread(reader.close)
+            ):
+                yield chunk
 
     @staticmethod
     def find_line_offsets(file_path: str, max_lines: int = None) -> list[int]:

@@ -277,7 +277,7 @@
         <button class="btn" type="button" id="cloudUpButton">⬆️ Up</button>
       </div>
       <div class="flex gap-2 items-center mb-2 flex-wrap text-sm">
-        <input type="file" id="cloudUploadInput" title="Choose a file to upload to the selected cloud folder">
+        <input type="file" id="cloudUploadInput" title="Choose a file to upload to the selected cloud folder" aria-label="Choose a file to upload to the selected cloud folder">
         <button class="btn" type="button" id="cloudUploadButton">Upload to folder</button>
       </div>
       <div class="cloud-upload-status" id="cloudUploadStatus"></div>
@@ -346,7 +346,8 @@
         <p id="dialogMessage" class="text-base-content/70 text-sm mb-6"></p>
         
         <div id="dialogInputContainer" class="hidden mb-6">
-          <input type="text" id="dialogInput" class="input input-bordered w-full focus:input-primary transition-all" placeholder="Enter value...">
+          <label class="sr-only" for="dialogInput">Dialog input</label>
+          <input type="text" id="dialogInput" class="input input-bordered w-full focus:input-primary transition-all" placeholder="Enter value..." aria-label="Dialog input">
         </div>
         
         <div class="flex flex-col gap-2">

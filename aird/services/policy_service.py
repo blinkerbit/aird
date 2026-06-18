@@ -146,8 +146,7 @@ class PolicyService:
         if resource.path and not resource.tags:
             tags = self._tags.resolve(conn, resource.path)
             if tags:
-                enriched: AccessRequest = replace(request, resource=replace(resource, tags=tags))
-                return enriched
+                return replace(request, resource=replace(resource, tags=tags))
         return request
 
     def _finalise(

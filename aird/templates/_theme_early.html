@@ -14,14 +14,14 @@
     autumn: '#faf1e9'
   };
   var key = 'aird_theme';
-  var keyEsc = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  var m = document.cookie.match(new RegExp('(?:^|; )' + keyEsc + '=([^;]*)'));
+  var cookieRe = new RegExp(String.raw`(?:^|; )${key}=([^;]*)`);
+  var m = document.cookie.match(cookieRe);
   var t = m ? decodeURIComponent(m[1]) : null;
-  if (!t || THEMES.indexOf(t) < 0) {
-    t = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  if (!t || !THEMES.includes(t)) {
+    t = (globalThis.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
   }
   var root = document.documentElement;
-  root.setAttribute('data-theme', t);
+  root.dataset.theme = t;
   root.style.colorScheme = DARK[t] ? 'dark' : 'light';
   root.style.backgroundColor = BG[t] || BG.light;
   root.classList.add('theme-early');

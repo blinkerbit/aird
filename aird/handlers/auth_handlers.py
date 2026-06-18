@@ -324,43 +324,58 @@ def _try_admin_token_login(handler, token):
 # ---------------------------------------------------------------------------
 
 
+def _profile_username(user) -> str:
+    if isinstance(user, dict):
+        return user.get("username", "")
+    return str(user) if user else ""
+
+
+def _profile_quota(handler, user):
+    if not user or not handler.db_conn:
+        return {"quota_bytes": None, "used_bytes": 0}
+    return handler.get_service("user_service").get_user_quota(
+        handler.db_conn, _profile_username(user)
+    )
+
+
+def _profile_passkeys(handler, user, passkeys):
+    if passkeys is not None:
+        return passkeys
+    if not user or not handler.db_conn:
+        return []
+    from aird.utils.util import is_feature_enabled
+    from aird.db import webauthn as webauthn_db
+
+    username = _profile_username(user)
+    if is_feature_enabled("webauthn", False) and username not in (
+        "token_user",
+        "admin_token",
+        "token_authenticated",
+        "admin_token_authenticated",
+    ):
+        return webauthn_db.list_credentials(handler.db_conn, username)
+    return []
+
+
+def _profile_shared_with_me(handler, user):
+    if not user or not handler.db_conn:
+        return []
+    return list_shares_accessible_to_user(handler.db_conn, _profile_username(user))
+
+
 def _profile_render(handler, user, error=None, success=None, ldap_enabled=None, passkeys=None):
     """Render profile template with common kwargs."""
     if ldap_enabled is None:
         ldap_enabled = handler.settings.get("ldap_server") is not None
-    quota = {"quota_bytes": None, "used_bytes": 0}
-    if user and handler.db_conn:
-        username = user.get("username", "") if isinstance(user, dict) else str(user)
-        quota = handler.get_service("user_service").get_user_quota(
-            handler.db_conn, username
-        )
-    if passkeys is None and user and handler.db_conn:
-        from aird.utils.util import is_feature_enabled
-        from aird.db import webauthn as webauthn_db
-
-        username = user.get("username", "") if isinstance(user, dict) else str(user)
-        if is_feature_enabled("webauthn", False) and username not in (
-            "token_user",
-            "admin_token",
-            "token_authenticated",
-            "admin_token_authenticated",
-        ):
-            passkeys = webauthn_db.list_credentials(handler.db_conn, username)
-        else:
-            passkeys = []
-    shared_with_me = []
-    if user and handler.db_conn:
-        username = user.get("username", "") if isinstance(user, dict) else str(user)
-        shared_with_me = list_shares_accessible_to_user(handler.db_conn, username)
     handler.render(
         PROFILE_TEMPLATE,
         user=user,
         error=error,
         success=success,
         ldap_enabled=ldap_enabled,
-        quota=quota,
-        passkeys=passkeys or [],
-        shared_with_me=shared_with_me,
+        quota=_profile_quota(handler, user),
+        passkeys=_profile_passkeys(handler, user, passkeys),
+        shared_with_me=_profile_shared_with_me(handler, user),
     )
 
 

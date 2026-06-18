@@ -170,7 +170,8 @@
                         <p class="text-xs font-normal normal-case text-base-content/50">Files transfer directly — never stored on server</p>
                     </div>
                 </div>
-                <input class="hidden" type="file" id="file-input" multiple>
+                <label class="sr-only" for="file-input">Choose files to send</label>
+                <input class="hidden" type="file" id="file-input" multiple aria-label="Choose files to send">
             </div>
 
             <!-- File Info (Selected Files List) -->

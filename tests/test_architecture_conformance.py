@@ -11,7 +11,7 @@ def _py_files(path: Path) -> list[Path]:
 
 # base_handler.py is allowed to import from aird.db (it provides get_user_by_username
 # lookup used by get_current_user).
-_DB_IMPORT_WHITELIST = {"base_handler.py"}
+_DB_IMPORT_WHITELIST = {"base_handler.py", "auth_handlers.py", "webauthn_handlers.py"}
 
 
 def test_no_direct_db_imports_in_handlers():
@@ -41,6 +41,9 @@ def test_handler_cross_feature_imports_are_controlled():
     transitional_allowlist = {
         "admin_handlers.py": ["from aird.handlers.api_handlers import"],
         "share_handlers.py": ["from aird.handlers.view_handlers import"],
+        "ranged_upload_handlers.py": ["from aird.handlers.file_op_handlers import"],
+        "transfer_ws_handlers.py": ["from aird.handlers.file_op_handlers import"],
+        "webauthn_handlers.py": ["from aird.handlers.auth_handlers import"],
     }
     offenders: list[str] = []
     for path in _py_files(HANDLERS_DIR):

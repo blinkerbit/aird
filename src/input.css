@@ -48,6 +48,8 @@ html.theme-ready {
 
 body {
   background-color: var(--color-base-100);
+  color: var(--color-base-content);
+  min-height: 100vh;
 }
 
 /* Super Search — common pattern chips (WCAG AA: base-content on base-200/300) */
@@ -307,13 +309,6 @@ body {
 .ds-grid { display: grid; gap: var(--ds-space-4); }
 .ds-grid--cols-2 { grid-template-columns: repeat(2, 1fr); }
 
-
-/* Global Theme Support */
-body {
-  background-color: var(--color-base-100);
-  color: var(--color-base-content);
-  min-height: 100vh;
-}
 
 /* Enhance table divider visibility in DaisyUI v5 */
 .table :where(thead tr :is(td,th),tbody tr:not(:last-child) :is(td,th)) {

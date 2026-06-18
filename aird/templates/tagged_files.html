@@ -39,7 +39,7 @@
           {% if all_tags %}
           <div class="dropdown dropdown-end aird-app-dropdown">
             <button tabindex="0" class="btn btn-ghost btn-sm">Switch tag ▾</button>
-            <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow-lg z-[100] w-48 max-w-[calc(100vw-1rem)] p-1 border border-base-300 aird-app-dropdown-panel" role="menu">
+            <ul class="dropdown-content menu bg-base-100 rounded-box shadow-lg z-[100] w-48 max-w-[calc(100vw-1rem)] p-1 border border-base-300 aird-app-dropdown-panel">
               {% for t in all_tags %}
               <li><a href="/tagged/{{ escape(t) }}" class="{% if t == tag_name %}font-bold text-primary{% end %}">{{ escape(t) }}</a></li>
               {% end %}

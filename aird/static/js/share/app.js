@@ -1120,20 +1120,32 @@ let currentPath = '';
       if (radio) radio.checked = true;
     }
 
-    function renderShareManagementModal(share) {
-      const body = document.getElementById('shareManagementBody');
-      const editorOnly = Boolean(share.can_edit_paths && !share.is_owner);
-      const isTag = (share.share_type || 'static') === 'tag';
-      const isStatic = !isTag && (share.share_type || 'static') === 'static';
-      const expiryValue = toLocalDatetimeInput(share.expiry_date);
-      const hasSecret = Boolean(share.secret_token || share.has_token);
-      const disableTokenInitially = !hasSecret;
-      const enableTokenInitially = hasSecret;
-      const tokenHtml = _buildTokenDisplayHtml(share, hasSecret);
-      const pathsSection = _buildPathsSection(share, isTag);
-      const shareTypeBlock = _buildShareTypeEditBlock(share, isTag, isStatic);
+    function _buildShareSecurityTokenBlock(share, hasSecret, disableTokenInitially, enableTokenInitially, tokenHtml) {
+      const rotateBlock = (share.secret_token || share.has_token)
+        ? '<label class="label cursor-pointer justify-start gap-3">'
+          + '<input type="checkbox" id="rotateTokenEdit" class="checkbox checkbox-secondary checkbox-sm">'
+          + '<span class="label-text text-sm">Regenerate secret token on save (invalidates old links)</span>'
+          + '</label>'
+        : '';
+      return '<div class="collapse collapse-arrow bg-base-100 border border-base-300 rounded-box" data-owner-only>'
+        + '<input type="radio" name="mgmt-accordion" />'
+        + '<div class="collapse-title font-semibold text-sm">Security & Token</div>'
+        + '<div class="collapse-content space-y-3">'
+        + '<label class="label cursor-pointer justify-start gap-3">'
+        + '<input type="checkbox" id="disableTokenEdit" class="checkbox checkbox-error checkbox-sm"' + (disableTokenInitially ? ' checked' : '') + '>'
+        + '<span class="label-text text-sm">Disable Secret Token (Public Access)</span>'
+        + '</label>'
+        + '<label class="label cursor-pointer justify-start gap-3">'
+        + '<input type="checkbox" id="enableTokenEdit" class="checkbox checkbox-primary checkbox-sm"' + (enableTokenInitially ? ' checked' : '') + '>'
+        + '<span class="label-text text-sm">Enable / Rotate Secret Token</span>'
+        + '</label>'
+        + rotateBlock
+        + tokenHtml
+        + '</div></div>';
+    }
 
-      body.innerHTML = `
+    function _buildShareManagementBodyHtml(share, editorOnly, shareTypeBlock, pathsSection, tokenBlock, expiryValue) {
+      return `
         <div class="space-y-4 pb-4">
           <div class="card bg-base-200 shadow-inner">
             <div class="card-body p-4">
@@ -1186,26 +1198,7 @@ let currentPath = '';
             </div>
           </div>
 
-          <div class="collapse collapse-arrow bg-base-100 border border-base-300 rounded-box" data-owner-only>
-            <input type="radio" name="mgmt-accordion" />
-            <div class="collapse-title font-semibold text-sm">Security & Token</div>
-            <div class="collapse-content space-y-3">
-              <label class="label cursor-pointer justify-start gap-3">
-                <input type="checkbox" id="disableTokenEdit" class="checkbox checkbox-error checkbox-sm" ${disableTokenInitially ? 'checked' : ''}>
-                <span class="label-text text-sm">Disable Secret Token (Public Access)</span>
-              </label>
-              <label class="label cursor-pointer justify-start gap-3">
-                <input type="checkbox" id="enableTokenEdit" class="checkbox checkbox-primary checkbox-sm" ${enableTokenInitially ? 'checked' : ''}>
-                <span class="label-text text-sm">Enable / Rotate Secret Token</span>
-              </label>
-              ${(share.secret_token || share.has_token) ? `
-              <label class="label cursor-pointer justify-start gap-3">
-                <input type="checkbox" id="rotateTokenEdit" class="checkbox checkbox-secondary checkbox-sm">
-                <span class="label-text text-sm">Regenerate secret token on save (invalidates old links)</span>
-              </label>` : ''}
-              ${tokenHtml}
-            </div>
-          </div>
+          ${tokenBlock}
 
           <div class="collapse collapse-arrow bg-base-100 border border-base-300 rounded-box">
             <input type="radio" name="mgmt-accordion" />
@@ -1247,6 +1240,25 @@ let currentPath = '';
           </div>
         </div>
       `;
+    }
+
+    function renderShareManagementModal(share) {
+      const body = document.getElementById('shareManagementBody');
+      const editorOnly = Boolean(share.can_edit_paths && !share.is_owner);
+      const isTag = (share.share_type || 'static') === 'tag';
+      const isStatic = !isTag && (share.share_type || 'static') === 'static';
+      const expiryValue = toLocalDatetimeInput(share.expiry_date);
+      const hasSecret = Boolean(share.secret_token || share.has_token);
+      const tokenHtml = _buildTokenDisplayHtml(share, hasSecret);
+      const pathsSection = _buildPathsSection(share, isTag);
+      const shareTypeBlock = _buildShareTypeEditBlock(share, isTag, isStatic);
+      const tokenBlock = _buildShareSecurityTokenBlock(
+        share, hasSecret, !hasSecret, hasSecret, tokenHtml
+      );
+
+      body.innerHTML = _buildShareManagementBodyHtml(
+        share, editorOnly, shareTypeBlock, pathsSection, tokenBlock, expiryValue
+      );
 
       currentShareData = share;
       _applyShareManagementEditorMode(body, editorOnly);

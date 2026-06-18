@@ -49,7 +49,7 @@
     .input-icon-wrap .i-right:hover { opacity:0.85; }
     .input-icon-wrap input { padding-left:2.4rem; }
     .input-icon-wrap input.has-right { padding-right:2.4rem; }
-    .btn-signin { background: linear-gradient(135deg,oklch(0.45 0.2 270) 0%,oklch(0.55 0.25 270) 60%,oklch(0.6 0.22 280) 100%); color:#fff; border:none; transition:filter 0.2s,transform 0.15s,box-shadow 0.2s; box-shadow:0 4px 14px rgba(99,102,241,0.35); }
+    .btn-signin { display:inline-flex; align-items:center; justify-content:center; background:linear-gradient(135deg,oklch(0.45 0.2 270) 0%,oklch(0.55 0.25 270) 60%,oklch(0.6 0.22 280) 100%); color:#fff; border:none; transition:filter 0.2s,transform 0.15s,box-shadow 0.2s; box-shadow:0 4px 14px rgba(99,102,241,0.35); }
     .btn-signin:hover { filter:brightness(1.1); transform:translateY(-1px); box-shadow:0 6px 20px rgba(99,102,241,0.45); }
     .btn-signin:active { transform:translateY(0) scale(0.98); }
     .p2p-card { display:flex; align-items:center; gap:0.75rem; padding:0.75rem; border-radius:0.875rem; border:1.5px solid var(--color-base-300,#e5e7eb); text-decoration:none; color:inherit; transition:border-color 0.2s, background 0.2s, box-shadow 0.2s; }
@@ -80,11 +80,6 @@
     #tab-switcher button[role="tab"] {
       min-height: 2.25rem;
       line-height: 1.2;
-    }
-    .btn-signin {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
     }
     @media (max-width: 639px) {
       .login-shell { padding-top: 2.75rem; }
@@ -228,9 +223,10 @@
                   <span id="paste-token-label">Paste</span>
                 </button>
               </div>
+              <label class="sr-only" for="access-token">Access token</label>
               <textarea class="textarea w-full font-mono text-sm border-0 rounded-none resize-none" id="access-token"
                 name="token" rows="3"
-                autocomplete="off" spellcheck="false" style="background:var(--color-base-200,#f3f4f6);" placeholder="Paste your access token here…"></textarea>
+                autocomplete="off" spellcheck="false" style="background:var(--color-base-200,#f3f4f6);" placeholder="Paste your access token here…" aria-label="Access token"></textarea>
             </div>
             <p class="text-xs mt-1.5" style="opacity:0.4;">Printed to the console at server startup</p>
           </div>

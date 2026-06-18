@@ -191,6 +191,7 @@
         try {
           ws = new WebSocket(url);
         } catch (err) {
+          console.warn("WebSocket connection failed", err);
           setStatus("Live feed unavailable", "badge-error");
           return;
         }

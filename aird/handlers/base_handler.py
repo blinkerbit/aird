@@ -318,7 +318,11 @@ def _parse_username_from_cookie(user_json):
     """Parse username from cookie value (JSON or raw string/bytes). Returns (username, True if parsed from JSON)."""
     try:
         user_data = json.loads(user_json)
-        return (user_data.get("username", ""), True)
+        if isinstance(user_data, dict):
+            return (user_data.get("username", ""), True)
+        if isinstance(user_data, str):
+            return (user_data, True)
+        return ("", True)
     except (json.JSONDecodeError, TypeError):
         raw = (
             user_json.decode("utf-8")
@@ -364,12 +368,15 @@ class CookieAuthStrategy:
             username, _ = _parse_username_from_cookie(user_json)
             db_conn = handler.settings.get("db_conn")
             if db_conn:
-                user = get_user_by_username(db_conn, username)
-                if user:
-                    user.pop("password_hash", None)
-                    return user
+                try:
+                    user = get_user_by_username(db_conn, username)
+                    if user:
+                        user.pop("password_hash", None)
+                        return user
+                except Exception:
+                    logger.debug("CookieAuthStrategy: db lookup failed", exc_info=True)
             return self._token_user_from_username(handler, username)
-        except (UnicodeDecodeError, TypeError, ValueError, KeyError):
+        except (TypeError, ValueError, KeyError):
             logger.debug("CookieAuthStrategy: cookie parse error", exc_info=True)
             return self._token_user_from_cookie_bytes(handler, user_json)
 

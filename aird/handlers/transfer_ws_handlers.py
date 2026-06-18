@@ -112,6 +112,7 @@ class FileTransferWebSocketHandler(
         self._upload_buffer_event = asyncio.Event()
         self._upload_writer_done = False
         self._upload_writer_task: asyncio.Task | None = None
+        self._abort_upload_task: asyncio.Task | None = None
         self._cancelled = False
         self._download_task: asyncio.Task | None = None
 
@@ -235,7 +236,7 @@ class FileTransferWebSocketHandler(
                 if self._upload_writer_done:
                     return
         except asyncio.CancelledError:
-            pass
+            raise
         except Exception:
             logger.debug("WS upload writer loop failed", exc_info=True)
 
@@ -377,7 +378,7 @@ class FileTransferWebSocketHandler(
         if self._download_task and not self._download_task.done():
             self._download_task.cancel()
         if self._upload:
-            asyncio.create_task(self._abort_upload())
+            self._abort_upload_task = asyncio.create_task(self._abort_upload())
         super().on_close()
 
     def check_origin(self, origin):

@@ -20,6 +20,8 @@ from aird.handlers.constants import (
     REDIRECT_SEARCH,
     FILESHARE_DISABLED_MSG,
     DB_NOT_AVAILABLE_MSG,
+    CONTENT_TYPE_JSON,
+    ACCESS_DENIED_MSG,
 )
 from aird.handlers.base_handler import (
     BaseHandler,
@@ -97,7 +99,7 @@ class FeatureFlagAPIHandler(BaseHandler):
 
     @tornado.web.authenticated
     def get(self):
-        self.set_header("Content-Type", "application/json")
+        self.set_header("Content-Type", CONTENT_TYPE_JSON)
         self.write(json.dumps(get_current_feature_flags()))
 
 
@@ -355,15 +357,15 @@ class FolderSizeAPIHandler(BaseHandler):
         decision = self.check_access("file.list", resource_path=norm_path)
         if decision is not None and decision.is_deny:
             self.set_status(403)
-            self.set_header("Content-Type", "application/json")
-            self.write(json.dumps({"error": decision.reason or "Access denied"}))
+            self.set_header("Content-Type", CONTENT_TYPE_JSON)
+            self.write(json.dumps({"error": decision.reason or ACCESS_DENIED_MSG}))
             return
 
         user_root = get_user_root(self)
         abs_path = resolve_folder_abspath(user_root, path)
         if not abs_path:
             self.set_status(404)
-            self.set_header("Content-Type", "application/json")
+            self.set_header("Content-Type", CONTENT_TYPE_JSON)
             self.write(json.dumps({"error": "Folder not found"}))
             return
 
@@ -374,11 +376,11 @@ class FolderSizeAPIHandler(BaseHandler):
         except Exception:
             logging.exception("Folder size calculation failed for %s", norm_path)
             self.set_status(500)
-            self.set_header("Content-Type", "application/json")
+            self.set_header("Content-Type", CONTENT_TYPE_JSON)
             self.write(json.dumps({"error": "Folder size calculation failed"}))
             return
 
-        self.set_header("Content-Type", "application/json")
+        self.set_header("Content-Type", CONTENT_TYPE_JSON)
         self.write(
             json.dumps(
                 {
@@ -399,7 +401,7 @@ class FileListAPIHandler(BaseHandler):
         abspath = os.path.abspath(os.path.join(user_root, path))
         if not is_within_root(abspath, user_root):
             self.set_status(403)
-            self.write("Access denied")
+            self.write(ACCESS_DENIED_MSG)
             return
         if not os.path.isdir(abspath):
             self.set_status(404)
@@ -958,6 +960,52 @@ class ShareDetailsAPIHandler(BaseHandler):
         self.run_json_action(action, on_error_message="Failed to retrieve share details")
 
 
+def _format_share_by_id_details(
+    handler, share: dict, share_service, db_conn, share_id: str
+) -> dict:
+    """Build the share detail payload for ShareDetailsByIdAPIHandler."""
+    allowed_users = share.get("allowed_users")
+    modify_users = share.get("modify_users")
+    show_secret = handler.can_manage_share_secrets(share)
+    token = share.get("secret_token")
+    is_owner = handler.is_share_owner(share)
+    return {
+        "id": share["id"],
+        "created": share.get("created", ""),
+        "allowed_users": allowed_users if allowed_users is not None else [],
+        "modify_users": modify_users if modify_users is not None else [],
+        "url": f"/shared/{share['id']}",
+        "paths": share.get("paths", []),
+        "has_token": token is not None,
+        "secret_token": token if show_secret else None,
+        "share_type": share.get("share_type", "static"),
+        "tag_name": share.get("tag_name"),
+        "allow_list": share.get("allow_list", []),
+        "avoid_list": share.get("avoid_list", []),
+        "expiry_date": share.get("expiry_date"),
+        "download_count": share_service.get_download_count(db_conn, share_id),
+        "is_owner": is_owner,
+        "can_revoke": is_owner,
+        "can_manage": is_owner,
+        "can_edit_paths": handler.can_edit_share_paths(share),
+    }
+
+
+def _load_share_for_details_by_id(handler, share_service, db_conn, share_id: str):
+    """Return share dict or None after writing any error response."""
+    if share_service is None:
+        handler.write_json_error(500, "Share service not available")
+        return None
+    share = share_service.get_share(db_conn, share_id)
+    if not share:
+        handler.write_json_error(404, "Share not found")
+        return None
+    if not handler.can_edit_share_paths(share):
+        handler.write_json_error(403, ACCESS_DENIED_MSG)
+        return None
+    return share
+
+
 class ShareDetailsByIdAPIHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
@@ -979,48 +1027,17 @@ class ShareDetailsByIdAPIHandler(BaseHandler):
             db_conn = self.require_db_connection(DB_NOT_AVAILABLE_MSG)
             if not db_conn:
                 return None
-            
+
             share_service = self.get_service("share_service")
-            if share_service is None:
-                self.write_json_error(500, "Share service not available")
-                return None
-                
-            share = share_service.get_share(db_conn, share_id)
+            share = _load_share_for_details_by_id(
+                self, share_service, db_conn, share_id
+            )
             if not share:
-                self.write_json_error(404, "Share not found")
                 return None
 
-            if not self.can_edit_share_paths(share):
-                self.write_json_error(403, "Access denied")
-                return None
-
-            allowed_users = share.get("allowed_users")
-            modify_users = share.get("modify_users")
-            show_secret = self.can_manage_share_secrets(share)
-            token = share.get("secret_token")
-            share_info = {
-                "id": share["id"],
-                "created": share.get("created", ""),
-                "allowed_users": allowed_users if allowed_users is not None else [],
-                "modify_users": modify_users if modify_users is not None else [],
-                "url": f"/shared/{share['id']}",
-                "paths": share.get("paths", []),
-                "has_token": token is not None,
-                "secret_token": token if show_secret else None,
-                "share_type": share.get("share_type", "static"),
-                "tag_name": share.get("tag_name"),
-                "allow_list": share.get("allow_list", []),
-                "avoid_list": share.get("avoid_list", []),
-                "expiry_date": share.get("expiry_date"),
-                "download_count": share_service.get_download_count(
-                    db_conn, share_id
-                ),
-                "is_owner": self.is_share_owner(share),
-                "can_revoke": self.is_share_owner(share),
-                "can_manage": self.is_share_owner(share),
-                "can_edit_paths": self.can_edit_share_paths(share),
-            }
-
+            share_info = _format_share_by_id_details(
+                self, share, share_service, db_conn, share_id
+            )
             return {"share": share_info}
 
         self.run_json_action(

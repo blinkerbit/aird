@@ -430,6 +430,8 @@ class TestProfileHandlerExtended:
                 error=None,
                 ldap_enabled=False,
                 quota=ANY,
+                passkeys=ANY,
+                shared_with_me=ANY,
             )
 
     def test_post_password_mismatch(self):
@@ -464,6 +466,8 @@ class TestProfileHandlerExtended:
                 success=None,
                 ldap_enabled=False,
                 quota=ANY,
+                passkeys=ANY,
+                shared_with_me=ANY,
             )
 
 

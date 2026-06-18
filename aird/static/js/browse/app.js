@@ -5,7 +5,7 @@
     const RELOAD_DELAY_MS = 500;
     const MIN_COLUMN_WIDTH = 50;
     const MAX_FILE_SIZE = globalThis.__BROWSE_CONFIG ? globalThis.__BROWSE_CONFIG.maxFileSize : 10737418240;
-    const CAN_TAG = !!(globalThis.__BROWSE_CONFIG && globalThis.__BROWSE_CONFIG.canTag);
+    const CAN_TAG = !!globalThis.__BROWSE_CONFIG?.canTag;
 
     const SelectionStore = {
       KEY: 'aird_browse_selections',
@@ -223,7 +223,7 @@
         uploadBatchHadError = true;
         if (err?.message !== "cancelled") {
           console.warn("Upload failed:", err);
-          void showDialog(
+          showDialog(
             friendlyUploadErrorMessage(err),
             "Upload failed"
           );
@@ -251,7 +251,7 @@
 
     /** Plain-language message for the upload row (not console-only). */
     function friendlyUploadErrorMessage(err) {
-      const raw = (err && err.message) ? String(err.message).trim() : "";
+      const raw = err?.message ? String(err.message).trim() : "";
       if (!raw || raw === "cancelled") return raw;
       const lower = raw.toLowerCase();
       if (lower.includes("network") || lower.includes("websocket")) {
@@ -552,6 +552,38 @@
       });
     }
 
+    function _bindColumnResizer(resizer, table, saveWidths) {
+      let startX;
+      let startW;
+      let th;
+
+      function onMouseMove(e) {
+        const diff = e.clientX - startX;
+        const newW = Math.max(40, startW + diff);
+        th.style.width = newW + 'px';
+      }
+
+      function onMouseUp() {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        resizer.classList.remove('col-resizing');
+        table.classList.remove('col-resize-active');
+        saveWidths();
+      }
+
+      resizer.addEventListener('mousedown', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        th = resizer.parentElement;
+        startX = e.clientX;
+        startW = th.offsetWidth;
+        resizer.classList.add('col-resizing');
+        table.classList.add('col-resize-active');
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+      });
+    }
+
     function initBrowseColumnResize() {
       const table = document.getElementById('fileTable');
       if (!table) return;
@@ -587,35 +619,7 @@
       restoreWidths();
 
       resizers.forEach(function (resizer) {
-        let startX;
-        let startW;
-        let th;
-
-        function onMouseMove(e) {
-          const diff = e.clientX - startX;
-          const newW = Math.max(40, startW + diff);
-          th.style.width = newW + 'px';
-        }
-
-        function onMouseUp() {
-          document.removeEventListener('mousemove', onMouseMove);
-          document.removeEventListener('mouseup', onMouseUp);
-          resizer.classList.remove('col-resizing');
-          table.classList.remove('col-resize-active');
-          saveWidths();
-        }
-
-        resizer.addEventListener('mousedown', function (e) {
-          e.preventDefault();
-          e.stopPropagation();
-          th = resizer.parentElement;
-          startX = e.clientX;
-          startW = th.offsetWidth;
-          resizer.classList.add('col-resizing');
-          table.classList.add('col-resize-active');
-          document.addEventListener('mousemove', onMouseMove);
-          document.addEventListener('mouseup', onMouseUp);
-        });
+        _bindColumnResizer(resizer, table, saveWidths);
       });
     }
 
@@ -791,59 +795,6 @@
       await batch.run();
     }
 
-    async function listDirectoryForDownload(path) {
-      const segments = String(path || '').split('/').filter(Boolean);
-      const url = segments.length
-        ? '/api/files/' + segments.map(encodeURIComponent).join('/')
-        : '/api/files/';
-      const res = await fetch(url);
-      if (!res.ok) return null;
-      return res.json();
-    }
-
-    async function expandSelectionToFiles(paths) {
-      const out = [];
-      const seen = new Set();
-      const addFile = (p) => {
-        if (p && !seen.has(p)) {
-          seen.add(p);
-          out.push(p);
-        }
-      };
-      for (const path of paths) {
-        const data = await listDirectoryForDownload(path);
-        if (data && Array.isArray(data.files) && data.files.length > 0) {
-          const walk = async (base, entries) => {
-            for (const entry of entries) {
-              const child = base ? `${base}/${entry.name}` : entry.name;
-              if (entry.is_dir) {
-                const sub = await listDirectoryForDownload(child);
-                if (sub && Array.isArray(sub.files)) {
-                  await walk(child, sub.files);
-                }
-              } else {
-                addFile(child);
-              }
-            }
-          };
-          await walk(path, data.files);
-        } else {
-          addFile(path);
-        }
-      }
-      return out;
-    }
-
-    function filesDownloadUrl(path) {
-      const enc = String(path || '')
-        .replace(/^\/+/, '')
-        .split('/')
-        .filter(Boolean)
-        .map(encodeURIComponent)
-        .join('/');
-      return enc ? `/files/${enc}?download=1` : '/files/?download=1';
-    }
-
     async function listDirectoryForDownload(remotePath) {
       const enc = String(remotePath || '')
         .replace(/^\/+/, '')
@@ -858,13 +809,27 @@
       return Array.isArray(data.files) ? data.files : [];
     }
 
+    async function walkDownloadTree(dir, dirEntries, listFn, seen, files) {
+      for (const entry of dirEntries) {
+        const child = dir ? `${dir}/${entry.name}` : entry.name;
+        if (entry.is_dir) {
+          const sub = await listFn(child);
+          if (sub && sub.length) await walkDownloadTree(child, sub, listFn, seen, files);
+        } else if (!seen.has(child)) {
+          seen.add(child);
+          files.push(child);
+        }
+      }
+    }
+
     async function expandSelectionToFiles(paths) {
       const files = [];
       const seen = new Set();
+      const listFn = listDirectoryForDownload;
       for (const raw of paths) {
         const p = String(raw || '').trim().replace(/^\/+/, '');
         if (!p) continue;
-        const entries = await listDirectoryForDownload(p);
+        const entries = await listFn(p);
         if (entries === null) {
           if (!seen.has(p)) {
             seen.add(p);
@@ -873,21 +838,19 @@
           continue;
         }
         if (!entries.length) continue;
-        async function walk(dir, dirEntries) {
-          for (const entry of dirEntries) {
-            const child = dir ? `${dir}/${entry.name}` : entry.name;
-            if (entry.is_dir) {
-              const sub = await listDirectoryForDownload(child);
-              if (sub && sub.length) await walk(child, sub);
-            } else if (!seen.has(child)) {
-              seen.add(child);
-              files.push(child);
-            }
-          }
-        }
-        await walk(p, entries);
+        await walkDownloadTree(p, entries, listFn, seen, files);
       }
       return files;
+    }
+
+    function filesDownloadUrl(path) {
+      const enc = String(path || '')
+        .replace(/^\/+/, '')
+        .split('/')
+        .filter(Boolean)
+        .map(encodeURIComponent)
+        .join('/');
+      return enc ? `/files/${enc}?download=1` : '/files/?download=1';
     }
 
     function pathIsDirectory(relPath) {
@@ -1124,7 +1087,7 @@
 
     function _commitTagInput(inputEl, pendingTags) {
       inputEl.value.split(',')
-        .map(function (s) { return s.trim().toLowerCase().replace(/\s+/g, '-'); })
+        .map(function (s) { return s.trim().toLowerCase().replaceAll(/\s+/g, '-'); })
         .filter(Boolean)
         .forEach(function (t) { pendingTags.add(t); });
       inputEl.value = '';
@@ -1180,11 +1143,15 @@
     }
 
     function _normalizeRelPath(p) {
-      return String(p).replace(/\\/g, '/').replace(/^\/+/, '');
+      return String(p).replaceAll('\\', '/').replace(/^\/+/, '');
+    }
+
+    function _escapeGlobChar(ch) {
+      return ch.replaceAll(/[.+^${}()|[\]\\]/g, '\\$&');
     }
 
     function _globPatternToRegex(pattern) {
-      let p = String(pattern).replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/$/, '');
+      let p = String(pattern).replaceAll('\\', '/').replace(/^\/+/, '').replace(/\/$/, '');
       if (!p) return null;
       let out = '';
       for (let i = 0; i < p.length; i += 1) {
@@ -1197,7 +1164,7 @@
         } else if (ch === '?') {
           out += '[^/]';
         } else {
-          out += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+          out += _escapeGlobChar(ch);
         }
       }
       return new RegExp('^' + out + '$');
@@ -1433,6 +1400,19 @@
       pop.style.visibility = 'visible';
     }
 
+    function _tagsFromEventTarget(target) {
+      const trigger = target.closest('.file-tag-list--overflow, .file-tag-more-trigger');
+      if (!trigger) return null;
+      const list = trigger.classList.contains('file-tag-list')
+        ? trigger
+        : trigger.closest('.file-tag-list');
+      const cell = (list || trigger).closest('.tags-cell');
+      if (!cell) return null;
+      const tags = _tagsCellTags(cell);
+      if (tags.length <= 1) return null;
+      return { anchor: list || trigger, tags: tags };
+    }
+
     function _initFileTagsHoverPopover() {
       const pop = document.getElementById('fileTagsHoverPopover');
       const listEl = pop?.querySelector('.file-tags-hover-popover-list');
@@ -1471,27 +1451,14 @@
         _positionFileTagsHoverPopover(anchorEl, pop);
       }
 
-      function tagsFromEventTarget(target) {
-        const trigger = target.closest('.file-tag-list--overflow, .file-tag-more-trigger');
-        if (!trigger) return null;
-        const list = trigger.classList.contains('file-tag-list')
-          ? trigger
-          : trigger.closest('.file-tag-list');
-        const cell = (list || trigger).closest('.tags-cell');
-        if (!cell) return null;
-        const tags = _tagsCellTags(cell);
-        if (tags.length <= 1) return null;
-        return { anchor: list || trigger, tags: tags };
-      }
-
       table.addEventListener('mouseover', function (e) {
-        const info = tagsFromEventTarget(e.target);
+        const info = _tagsFromEventTarget(e.target);
         if (!info) return;
         showPopover(info.anchor, info.tags);
       });
 
       table.addEventListener('mouseout', function (e) {
-        const info = tagsFromEventTarget(e.target);
+        const info = _tagsFromEventTarget(e.target);
         if (!info) return;
         const related = e.relatedTarget;
         if (related && (info.anchor.contains(related) || pop.contains(related))) return;
@@ -2149,7 +2116,7 @@
         if (dl) {
           e.preventDefault();
           const path = dl.dataset.downloadPath || dl.closest('tr.file-row')?.dataset.path;
-          if (path) void downloadFileViaHttp(path);
+          if (path) downloadFileViaHttp(path);
           return;
         }
         const tagBtn = e.target.closest('.row-tag-add-btn');

@@ -63,6 +63,17 @@ def _glob_pattern_to_regex(pattern: str) -> re.Pattern:
     return re.compile(r"^" + regex + r"$")
 
 
+def _glob_match_with_wildcards(path_cmp: str, pattern: str) -> bool:
+    """Match *path_cmp* against a pattern that contains ``**``."""
+    compiled = _glob_pattern_to_regex(pattern)
+    if compiled.match(path_cmp):
+        return True
+    if pattern.endswith("/**"):
+        prefix = pattern[:-3]
+        return fnmatch.fnmatch(path_cmp, prefix)
+    return False
+
+
 def _glob_match(path: str, pattern: str) -> bool:
     """Match *path* against *pattern* with full ``**`` wildcard support.
 
@@ -80,19 +91,17 @@ def _glob_match(path: str, pattern: str) -> bool:
     if "**" not in pattern:
         return fnmatch.fnmatch(path_cmp, pattern)
 
-    # Use regex-based matching for ** patterns
-    compiled = _glob_pattern_to_regex(pattern)
-    if compiled.match(path_cmp):
-        return True
+    return _glob_match_with_wildcards(path_cmp, pattern)
 
-    # A directory-scoped pattern like "docs/**" should also tag the "docs"
-    # directory entry itself — try the prefix before /**
-    if pattern.endswith("/**"):
-        prefix = pattern[:-3]  # e.g. "docs"
-        if fnmatch.fnmatch(path_cmp, prefix):
-            return True
 
-    return False
+def _should_include_filtered_file(
+    file_path: str, allow_list: list[str] | None, avoid_list: list[str] | None
+) -> bool:
+    if avoid_list and matches_glob_patterns(file_path, avoid_list):
+        return False
+    if allow_list:
+        return matches_glob_patterns(file_path, allow_list)
+    return True
 
 
 def matches_glob_patterns(file_path: str, patterns: list[str]) -> bool:
@@ -113,22 +122,11 @@ def filter_files_by_patterns(
     if not files:
         return files
 
-    filtered_files = []
-
-    for file_path in files:
-        # Check avoid list first (takes priority)
-        if avoid_list and matches_glob_patterns(file_path, avoid_list):
-            continue
-
-        # Check allow list
-        if allow_list:
-            if matches_glob_patterns(file_path, allow_list):
-                filtered_files.append(file_path)
-        else:
-            # No allow list means all files are allowed (unless in avoid list)
-            filtered_files.append(file_path)
-
-    return filtered_files
+    return [
+        file_path
+        for file_path in files
+        if _should_include_filtered_file(file_path, allow_list, avoid_list)
+    ]
 
 
 def get_tags_for_path(rules: list[dict], rel_path: str) -> list[str]:
@@ -158,23 +156,41 @@ def _process_walk_entry(root_dir: str, dirpath: str, name: str, is_dir: bool, no
     return rel + "/" if is_dir else rel
 
 
+def _append_walk_matches(
+    result: list[str],
+    root_dir: str,
+    dirpath: str,
+    names: list[str],
+    *,
+    is_dir: bool,
+    normalised: list[str],
+    max_files: int,
+) -> bool:
+    """Append matching walk entries. Returns True when *max_files* is reached."""
+    for name in names:
+        entry = _process_walk_entry(root_dir, dirpath, name, is_dir, normalised)
+        if entry is not None:
+            result.append(entry)
+            if len(result) >= max_files:
+                return True
+    return False
+
+
 def _walk_and_match(root_dir: str, normalised: list[str], max_files: int) -> list[str]:
     """Walk root_dir and collect paths matching normalised glob patterns."""
     result: list[str] = []
     try:
         for dirpath, dirnames, filenames in os.walk(root_dir):
-            for dname in dirnames:
-                entry = _process_walk_entry(root_dir, dirpath, dname, True, normalised)
-                if entry is not None:
-                    result.append(entry)
-                    if len(result) >= max_files:
-                        return result
-            for fname in filenames:
-                entry = _process_walk_entry(root_dir, dirpath, fname, False, normalised)
-                if entry is not None:
-                    result.append(entry)
-                    if len(result) >= max_files:
-                        return result
+            if _append_walk_matches(
+                result, root_dir, dirpath, dirnames, is_dir=True,
+                normalised=normalised, max_files=max_files,
+            ):
+                return result
+            if _append_walk_matches(
+                result, root_dir, dirpath, filenames, is_dir=False,
+                normalised=normalised, max_files=max_files,
+            ):
+                return result
     except OSError as exc:
         logger.warning("get_files_by_tag_patterns scan error: %s", exc)
     return result

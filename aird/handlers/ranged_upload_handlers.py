@@ -35,6 +35,7 @@ from aird.handlers.base_handler import (
     require_action,
     require_modify_access,
 )
+from aird.handlers.constants import DB_UNAVAILABLE_SHORT
 from aird.handlers.file_op_handlers import finalize_upload_to_disk, _query_arg
 from aird.utils.util import is_feature_enabled
 
@@ -94,7 +95,7 @@ class RangedUploadSessionHandler(BaseHandler):
 
         if self.db_conn is None:
             self.set_status(500)
-            self.write({"error": "Database unavailable"})
+            self.write({"error": DB_UNAVAILABLE_SHORT})
             return
 
         session_id = secrets.token_urlsafe(16)
@@ -151,7 +152,7 @@ class RangedUploadChunkHandler(BaseHandler):
             return
         if self.db_conn is None:
             self.set_status(500)
-            self.write({"error": "Database unavailable"})
+            self.write({"error": DB_UNAVAILABLE_SHORT})
             return
 
         session = get_session(self.db_conn, upload_id)
@@ -242,7 +243,7 @@ class RangedUploadStatusHandler(BaseHandler):
     async def get(self, upload_id: str):
         if self.db_conn is None:
             self.set_status(500)
-            self.write({"error": "Database unavailable"})
+            self.write({"error": DB_UNAVAILABLE_SHORT})
             return
         session = get_session(self.db_conn, upload_id)
         if not session:

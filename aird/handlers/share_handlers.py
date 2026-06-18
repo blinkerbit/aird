@@ -283,30 +283,47 @@ def _is_user_allowed_for_modify(share, get_secure_cookie):
     return (True, None)
 
 
+def _append_share_path_files(
+    collected: list[str],
+    root: str,
+    rel_path: str,
+    *,
+    include_missing_files: bool,
+) -> None:
+    """Append file paths for a single share path entry to *collected*."""
+    full_path = os.path.abspath(os.path.join(root, rel_path))
+    if not is_within_root(full_path, root):
+        return
+    if os.path.isdir(full_path):
+        for sub in get_all_files_recursive(full_path, rel_path):
+            collected.append(str(sub).replace("\\", "/"))
+    elif os.path.isfile(full_path):
+        collected.append(str(rel_path).replace("\\", "/"))
+    elif include_missing_files:
+        collected.append(str(rel_path).replace("\\", "/"))
+
+
+def _dedupe_paths(paths: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for path in paths:
+        if path not in seen:
+            seen.add(path)
+            unique.append(path)
+    return unique
+
+
 def _collect_files_for_share_paths(root: str, paths: list, *, include_missing_files: bool) -> list[str]:
     """Resolve share path entries to relative file paths under *root*."""
     collected: list[str] = []
     for rel_path in paths or []:
         try:
-            full_path = os.path.abspath(os.path.join(root, rel_path))
-            if not is_within_root(full_path, root):
-                continue
-            if os.path.isdir(full_path):
-                for sub in get_all_files_recursive(full_path, rel_path):
-                    collected.append(str(sub).replace("\\", "/"))
-            elif os.path.isfile(full_path):
-                collected.append(str(rel_path).replace("\\", "/"))
-            elif include_missing_files:
-                collected.append(str(rel_path).replace("\\", "/"))
+            _append_share_path_files(
+                collected, root, rel_path, include_missing_files=include_missing_files
+            )
         except Exception:
             logging.debug("Skipping share path %r", rel_path, exc_info=True)
-    seen: set[str] = set()
-    unique: list[str] = []
-    for path in collected:
-        if path not in seen:
-            seen.add(path)
-            unique.append(path)
-    return unique
+    return _dedupe_paths(collected)
 
 
 def _get_share_file_list(share, db_conn=None):

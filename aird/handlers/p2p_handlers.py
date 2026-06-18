@@ -111,15 +111,15 @@ class P2PRoomManager:
         now = time.time()
         to_remove = []
         for room_id, room in self.rooms.items():
-            if (
+            expired = (
                 room.expiry_seconds is not None
                 and now - room.created_at > room.expiry_seconds
-            ):
-                to_remove.append(room_id)
-            elif (
+            )
+            empty_past_grace = (
                 room.empty_since is not None
                 and now - room.empty_since > self.ANONYMOUS_EMPTY_GRACE
-            ):
+            )
+            if expired or empty_past_grace:
                 to_remove.append(room_id)
         for room_id in to_remove:
             self.remove_room(room_id)

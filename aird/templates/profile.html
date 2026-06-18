@@ -243,7 +243,7 @@
     document.querySelectorAll('.passkey-remove-btn').forEach(function (btn) {
       btn.addEventListener('click', async function () {
         const row = btn.closest('[data-passkey-id]');
-        const id = row?.getAttribute('data-passkey-id');
+        const id = row?.dataset.passkeyId;
         if (!id) return;
         btn.disabled = true;
         try {

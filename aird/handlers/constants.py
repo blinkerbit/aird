@@ -13,6 +13,12 @@ APPLICATION_OCTET_STREAM = "application/octet-stream"
 CLOUD_DOWNLOAD_FAILED = "Failed to download cloud files"
 
 
+CONTENT_TYPE_JSON = "application/json"
+DB_UNAVAILABLE_MSG = "Database unavailable."
+DB_UNAVAILABLE_SHORT = "Database unavailable"
+INVALID_JSON_MSG = "Invalid JSON."
+ACCESS_DENIED_MSG = "Access denied"
+
 FILES_BASE_URL = "/files/"
 LOGIN_HTML = "login.html"
 TOO_MANY_LOGIN_ATTEMPTS_MSG = "Too many login attempts. Please try again later."
