@@ -206,6 +206,41 @@ def init_db(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_policy_decisions_username "
         "ON policy_decisions(username)"
     )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ranged_upload_sessions (
+            id TEXT PRIMARY KEY,
+            username TEXT NOT NULL,
+            upload_dir TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            temp_path TEXT NOT NULL,
+            total_size INTEGER NOT NULL,
+            ranges_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL
+        )
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS webauthn_credentials (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            credential_id TEXT NOT NULL UNIQUE,
+            public_key BLOB NOT NULL,
+            sign_count INTEGER NOT NULL DEFAULT 0,
+            transports TEXT,
+            aaguid TEXT,
+            prf_capable INTEGER NOT NULL DEFAULT 0,
+            nickname TEXT,
+            created_at TEXT NOT NULL,
+            last_used_at TEXT
+        )
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS webauthn_challenges (
+            challenge TEXT PRIMARY KEY,
+            username TEXT,
+            purpose TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """)
 
     conn.commit()
 

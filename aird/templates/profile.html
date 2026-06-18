@@ -111,6 +111,30 @@
         </div>
         {% end %}
 
+        {% if is_feature_enabled('webauthn', False) %}
+        <div id="passkey-card" class="card bg-base-100 shadow-sm border border-base-300 hidden">
+          <div class="card-body">
+            <h3 class="font-semibold">Passkeys</h3>
+            <p class="text-sm text-base-content/60 mt-1">Optional sign-in with fingerprint, face, or security key. Password login still works.</p>
+            <div id="passkey-list" class="space-y-2 mt-3">
+              {% for pk in passkeys %}
+              <div class="flex items-center justify-between gap-3 rounded-lg border border-base-300 px-3 py-2 text-sm" data-passkey-id="{{ pk['id'] }}">
+                <div>
+                  <span class="font-medium">{{ escape(pk.get('nickname') or 'Passkey') }}</span>
+                  <span class="text-xs text-base-content/50 block">Added {{ escape((pk.get('created_at') or '')[:10]) }}</span>
+                </div>
+                <button type="button" class="btn btn-ghost btn-xs text-error passkey-remove-btn">Remove</button>
+              </div>
+              {% end %}
+            </div>
+            <div class="flex justify-end mt-3">
+              <button type="button" id="passkey-add-btn" class="btn btn-outline btn-sm">Add passkey</button>
+            </div>
+            <p id="passkey-msg" class="text-sm mt-2 hidden"></p>
+          </div>
+        </div>
+        {% end %}
+
         <!-- Account info -->
         <div class="card bg-base-100 shadow-sm border border-base-300">
           <div class="card-body">
@@ -188,5 +212,51 @@
     </div>
   </div>
   <script src="/static/js/theme.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/webauthn.js?v={{ static_version }}" defer></script>
+  <script nonce="{{ csp_nonce }}">
+  globalThis.addEventListener('load', function () {
+    const WA = globalThis.AirdWebAuthn;
+    if (!WA) return;
+    WA.showIfEnabled('passkey-card');
+    const addBtn = document.getElementById('passkey-add-btn');
+    const msg = document.getElementById('passkey-msg');
+    function showMsg(text, isErr) {
+      if (!msg) return;
+      msg.textContent = text;
+      msg.classList.remove('hidden', 'text-error', 'text-success');
+      msg.classList.add(isErr ? 'text-error' : 'text-success');
+    }
+    if (addBtn) {
+      addBtn.addEventListener('click', async function () {
+        addBtn.disabled = true;
+        try {
+          await WA.registerPasskey('Passkey');
+          showMsg('Passkey added. You can use it on the login page.', false);
+          globalThis.setTimeout(function () { globalThis.location.reload(); }, 800);
+        } catch (e) {
+          showMsg(e?.message || 'Could not add passkey.', true);
+        } finally {
+          addBtn.disabled = false;
+        }
+      });
+    }
+    document.querySelectorAll('.passkey-remove-btn').forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        const row = btn.closest('[data-passkey-id]');
+        const id = row?.getAttribute('data-passkey-id');
+        if (!id) return;
+        btn.disabled = true;
+        try {
+          await WA.deletePasskey(id);
+          row?.remove();
+          showMsg('Passkey removed.', false);
+        } catch (e) {
+          showMsg(e?.message || 'Could not remove passkey.', true);
+          btn.disabled = false;
+        }
+      });
+    });
+  });
+  </script>
 </body>
 </html>

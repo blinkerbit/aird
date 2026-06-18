@@ -22,20 +22,12 @@
     </span>
     {% end %}
 
-    <div class="dropdown dropdown-end aird-app-dropdown">
-      <button type="button" tabindex="0" class="btn btn-ghost btn-sm" title="Change theme" aria-haspopup="menu" aria-label="Theme menu" aria-expanded="false">
+    <div class="aird-theme-picker">
+      <button type="button" id="airdAppThemeBtn" class="btn btn-ghost btn-sm" title="Change theme"
+        aria-haspopup="menu" aria-label="Theme menu" aria-expanded="false" aria-controls="airdAppThemeMenu">
         <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
         <span class="hidden sm:inline text-xs">Theme</span>
       </button>
-      <ul tabindex="0" class="dropdown-content menu bg-base-200 rounded-box z-[100] w-44 max-w-[calc(100vw-1rem)] p-2 shadow-lg border border-base-300 aird-app-dropdown-panel">
-        <li><button type="button" data-set-theme="light" class="text-sm">☀️ Light</button></li>
-        <li><button type="button" data-set-theme="dark" class="text-sm">🌙 Dark</button></li>
-        <li><button type="button" data-set-theme="nord" class="text-sm">❄️ Nord</button></li>
-        <li><button type="button" data-set-theme="dracula" class="text-sm">🧛 Dracula</button></li>
-        <li><button type="button" data-set-theme="cyberpunk" class="text-sm">🤖 Cyberpunk</button></li>
-        <li><button type="button" data-set-theme="retro" class="text-sm">📺 Retro</button></li>
-        <li><button type="button" data-set-theme="autumn" class="text-sm">🍂 Autumn</button></li>
-      </ul>
     </div>
 
     <a href="/files/" class="btn btn-ghost btn-sm gap-1" title="Browse files">
@@ -86,8 +78,8 @@
 
     {% if current_user %}
     <button type="button" class="btn btn-ghost btn-sm gap-1" title="Command palette (Cmd+K / Ctrl+K)"
-            data-aird-cmdk>
-      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            data-aird-cmdk aria-label="Command palette">
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
       <span class="hidden sm:inline">⌘K</span>
     </button>
     {% end %}
@@ -104,6 +96,17 @@
     {% end %}
   </div>
 </div>
+
+<div id="airdAppThemeMenu" class="aird-app-theme-menu" role="menu" aria-label="Choose theme" hidden>
+  <button type="button" data-set-theme="light" role="menuitem" class="aird-app-theme-menu-item">☀️ Light</button>
+  <button type="button" data-set-theme="dark" role="menuitem" class="aird-app-theme-menu-item">🌙 Dark</button>
+  <button type="button" data-set-theme="nord" role="menuitem" class="aird-app-theme-menu-item">❄️ Nord</button>
+  <button type="button" data-set-theme="dracula" role="menuitem" class="aird-app-theme-menu-item">🧛 Dracula</button>
+  <button type="button" data-set-theme="cyberpunk" role="menuitem" class="aird-app-theme-menu-item">🤖 Cyberpunk</button>
+  <button type="button" data-set-theme="retro" role="menuitem" class="aird-app-theme-menu-item">📺 Retro</button>
+  <button type="button" data-set-theme="autumn" role="menuitem" class="aird-app-theme-menu-item">🍂 Autumn</button>
+</div>
+
 <script src="/static/js/aird-core.js?v={{ static_version }}"></script>
 <script src="/static/js/transfer-tracker.js?v={{ static_version }}"></script>
 <script src="/static/js/common/command-palette.js?v={{ static_version }}" defer></script>

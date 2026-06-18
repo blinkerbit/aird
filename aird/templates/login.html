@@ -58,6 +58,38 @@
     .p2p-card:hover .p2p-icon { background:oklch(0.55 0.25 270 / 0.22); }
     .p2p-chevron { margin-left:auto; flex-shrink:0; opacity:0.3; transition:opacity 0.2s, transform 0.2s; }
     .p2p-card:hover .p2p-chevron { opacity:0.7; transform:translateX(3px); }
+    .login-brand-badges {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      row-gap: 0.35rem;
+    }
+    .login-brand-badges .badge {
+      height: auto;
+      min-height: 1.65rem;
+      padding: 0.35rem 0.55rem;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+    #tab-switcher {
+      align-items: stretch;
+      min-height: 2.5rem;
+    }
+    #tab-switcher button[role="tab"] {
+      min-height: 2.25rem;
+      line-height: 1.2;
+    }
+    .btn-signin {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    @media (max-width: 639px) {
+      .login-shell { padding-top: 2.75rem; }
+      .login-card .card-body { padding-top: 1rem; }
+    }
   </style>
 </head>
 
@@ -65,8 +97,8 @@
   {% include '_theme_login_corner.html' %}
   {% include '_bg_canvas.html' %}
 
-  <div class="w-full max-w-sm animate-fade-in-up" style="position:relative;z-index:1;">
-    <div class="card bg-base-100 shadow-xl">
+  <div class="w-full max-w-sm animate-fade-in-up login-shell" style="position:relative;z-index:1;">
+    <div class="card bg-base-100 shadow-xl login-card">
       <div class="card-body">
 
         <!-- Brand -->
@@ -74,7 +106,7 @@
           <div class="b-icon flex items-center justify-center mb-3">
             <img src="/static/img/logo.png" alt="Aird" class="h-14 w-auto object-contain" style="max-width:240px;">
           </div>
-          <div class="flex items-center justify-center gap-2">
+          <div class="login-brand-badges">
             <span class="b-badge1 badge badge-outline text-xs font-semibold gap-1">🔒 Secure</span>
             <span class="b-badge2 badge badge-outline text-xs font-semibold gap-1">⚡ Fast</span>
             <span class="b-badge3 badge badge-outline text-xs font-semibold gap-1">🪶 Lightweight</span>
@@ -172,6 +204,13 @@
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
             </button>
           </div>
+          <div id="passkey-login-wrap" class="hidden f3 pt-2">
+            <div class="divider text-xs opacity-50 my-1">or</div>
+            <button type="button" id="passkey-login-btn" class="btn btn-block btn-outline gap-2">
+              Sign in with passkey
+            </button>
+            <p id="passkey-login-error" class="text-error text-xs mt-2 hidden"></p>
+          </div>
         </form>
 
         <!-- Token form -->
@@ -226,6 +265,7 @@
 
   <script src="/static/js/theme.js?v={{ static_version }}" defer></script>
   <script src="/static/js/login-ui.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/webauthn.js?v={{ static_version }}" defer></script>
   <script nonce="{{ csp_nonce }}">
   globalThis.addEventListener('load', function () {
     if (globalThis.AirdLoginUI) {
@@ -244,6 +284,33 @@
         eyeInput:     'local-pwd',
         eyeBtn:       'pwd-eye',
         eyeIcon:      'pwd-eye-icon',
+      });
+    }
+    const WA = globalThis.AirdWebAuthn;
+    const wrap = document.getElementById('passkey-login-wrap');
+    const btn = document.getElementById('passkey-login-btn');
+    const errEl = document.getElementById('passkey-login-error');
+    if (WA && wrap && btn) {
+      WA.isEnabled().then(function (on) {
+        if (on) wrap.classList.remove('hidden');
+      });
+      btn.addEventListener('click', async function () {
+        if (errEl) { errEl.classList.add('hidden'); errEl.textContent = ''; }
+        const username = (document.getElementById('local-username')?.value || '').trim();
+        if (!username) {
+          if (errEl) { errEl.textContent = 'Enter your username first.'; errEl.classList.remove('hidden'); }
+          return;
+        }
+        btn.disabled = true;
+        try {
+          const next = document.querySelector('input[name="next"]')?.value || '/files/';
+          const res = await WA.loginWithPasskey(username, next);
+          globalThis.location.href = res.redirect || '/files/';
+        } catch (e) {
+          if (errEl) { errEl.textContent = e?.message || 'Passkey sign-in failed.'; errEl.classList.remove('hidden'); }
+        } finally {
+          btn.disabled = false;
+        }
       });
     }
   });

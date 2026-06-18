@@ -71,24 +71,25 @@ def _glob_match(path: str, pattern: str) -> bool:
     - ``docs/**``  matches everything *inside* docs AND the ``docs`` entry itself.
     - ``docs/``    is normalised to ``docs`` (trailing slash stripped).
     """
-    # Normalise trailing slash (e.g. "docs/" → "docs")
+    # Normalise trailing slashes (walk emits ``docs/`` for directories).
     pattern = pattern.rstrip("/")
     if not pattern:
         return False
+    path_cmp = path.rstrip("/")
 
     if "**" not in pattern:
-        return fnmatch.fnmatch(path, pattern)
+        return fnmatch.fnmatch(path_cmp, pattern)
 
     # Use regex-based matching for ** patterns
     compiled = _glob_pattern_to_regex(pattern)
-    if compiled.match(path):
+    if compiled.match(path_cmp):
         return True
 
     # A directory-scoped pattern like "docs/**" should also tag the "docs"
     # directory entry itself — try the prefix before /**
     if pattern.endswith("/**"):
         prefix = pattern[:-3]  # e.g. "docs"
-        if fnmatch.fnmatch(path, prefix):
+        if fnmatch.fnmatch(path_cmp, prefix):
             return True
 
     return False

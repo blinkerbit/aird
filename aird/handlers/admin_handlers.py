@@ -160,6 +160,7 @@ class AdminHandler(BaseHandler):
         FEATURE_FLAGS["abac_audit_decisions"] = (
             self.get_argument("abac_audit_decisions", "off") == "on"
         )
+        FEATURE_FLAGS["webauthn"] = self.get_argument("webauthn", "off") == "on"
 
         # Update WebSocket configuration
         websocket_config = {}

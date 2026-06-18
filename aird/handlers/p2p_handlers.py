@@ -10,6 +10,7 @@ import tornado.web
 import tornado.websocket
 
 from aird.handlers.base_handler import BaseHandler, authenticate_handler, require_action
+import aird.constants as constants_module
 from aird.core.events import TransferStartedEvent, now_ts
 from aird.core.security import is_valid_websocket_origin
 from aird.utils.util import is_feature_enabled
@@ -342,6 +343,12 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
         )
 
     def on_message(self, message: str):
+        nbytes = len(message.encode("utf-8", errors="replace"))
+        if nbytes > constants_module.WS_JSON_MESSAGE_MAX_BYTES:
+            self.write_message(
+                json.dumps({"type": "error", "message": "Message too large"})
+            )
+            return
         try:
             data = json.loads(message)
             msg_type = data.get("type")

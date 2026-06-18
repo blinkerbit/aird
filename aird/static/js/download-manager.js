@@ -1,5 +1,5 @@
 /**
- * Queued file downloads over WebSocket. Progress in navbar transfer tracker.
+ * Queued file downloads over HTTP. Progress in navbar transfer tracker.
  */
 (function (global) {
   'use strict';
@@ -32,11 +32,11 @@
       this.running = false;
     }
 
-    addWsItem(label, path) {
+    addHttpItem(label, path) {
       const item = {
         label,
         path,
-        ws: true,
+        http: true,
         status: 'queued',
         cancelSignal: { aborted: false },
       };
@@ -44,12 +44,12 @@
       return item;
     }
 
-    /** HTTP fallback (e.g. shared links without WS). */
+    /** Direct URL (shared links). */
     addItem(label, url) {
       const item = {
         label,
         url,
-        ws: false,
+        http: false,
         status: 'queued',
         cancelSignal: { aborted: false },
       };
@@ -83,29 +83,27 @@
     async run() {
       if (this.running || this.items.length === 0) return;
       this.running = true;
-      const FTW = globalThis.AirdFileTransferWs;
-      const TT = global.AirdTransferTracker;
+      const FTH = global.AirdFileTransferHttp;
 
       for (const item of this.items) {
         if (this.cancelled) break;
         if (item.status !== 'queued') continue;
 
-        if (item.ws && FTW?.downloadFile) {
+        if (item.http && FTH?.downloadFile) {
           item.status = 'downloading';
-          item.downloadStart = Date.now();
           const onCancel = () => {
             item.cancelSignal.aborted = true;
             item.status = 'cancelled';
           };
           try {
-            const result = await FTW.downloadFile(item.path, {
+            const result = await FTH.downloadFile(item.path, {
               signal: item.cancelSignal,
               onCancel: onCancel,
             });
             if (item.cancelSignal?.aborted || this.cancelled) {
               item.status = 'cancelled';
             } else {
-              FTW.saveBlob(result.blob, result.filename);
+              FTH.saveBlob(result.blob, result.filename);
               item.status = 'done';
             }
           } catch (err) {
@@ -117,6 +115,7 @@
           }
         } else if (item.url) {
           const fname = fileNameFromPath(item.label);
+          const TT = global.AirdTransferTracker;
           if (TT) {
             item.ttId = TT.addTransfer(fname, 0, 'download');
             TT.setTransferStatus(item.ttId, 'browser', 'Starting in browser…');

@@ -106,7 +106,20 @@ from aird.handlers.auth_handlers import (
     MandatoryPasswordHandler,
     ProfileHandler,
 )
+from aird.handlers.webauthn_handlers import (
+    WebAuthnAuthOptionsHandler,
+    WebAuthnAuthVerifyHandler,
+    WebAuthnCredentialDeleteHandler,
+    WebAuthnRegisterOptionsHandler,
+    WebAuthnRegisterVerifyHandler,
+    WebAuthnStatusHandler,
+)
 from aird.handlers.transfer_ws_handlers import FileTransferWebSocketHandler
+from aird.handlers.ranged_upload_handlers import (
+    RangedUploadChunkHandler,
+    RangedUploadSessionHandler,
+    RangedUploadStatusHandler,
+)
 from aird.handlers.file_op_handlers import (
     CloudUploadHandler,
     CopyHandler,
@@ -213,6 +226,12 @@ def make_app(
         (r"/logout", LogoutHandler),
         (r"/auth/mandatory-password", MandatoryPasswordHandler),
         (r"/profile", ProfileHandler),
+        (r"/api/webauthn/status", WebAuthnStatusHandler),
+        (r"/api/webauthn/register/options", WebAuthnRegisterOptionsHandler),
+        (r"/api/webauthn/register/verify", WebAuthnRegisterVerifyHandler),
+        (r"/api/webauthn/auth/options", WebAuthnAuthOptionsHandler),
+        (r"/api/webauthn/auth/verify", WebAuthnAuthVerifyHandler),
+        (r"/api/webauthn/credentials/([0-9]+)", WebAuthnCredentialDeleteHandler),
         (r"/tagged/([^/]+)", TaggedFilesHandler),
         (r"/admin/login", AdminLoginHandler),
         (r"/admin", AdminHandler),
@@ -241,6 +260,9 @@ def make_app(
         (r"/features", FeatureFlagSocketHandler),
         (r"/api/features", FeatureFlagAPIHandler),
         (r"/upload", UploadHandler),
+        (r"/api/upload/range/session", RangedUploadSessionHandler),
+        (r"/api/upload/range/([^/]+)/status", RangedUploadStatusHandler),
+        (r"/api/upload/range/([^/]+)", RangedUploadChunkHandler),
         (r"/mkdir", CreateFolderHandler),
         (r"/delete", DeleteHandler),
         (r"/rename", RenameHandler),

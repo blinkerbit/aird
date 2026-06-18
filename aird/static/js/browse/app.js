@@ -271,15 +271,15 @@
     }
 
     async function uploadFile(item) {
-      const FTW = globalThis.AirdFileTransferWs;
-      if (!FTW?.uploadFile) {
-        throw new Error("WebSocket upload unavailable. Hard-refresh the page.");
+      const FTH = globalThis.AirdFileTransferHttp;
+      if (!FTH?.uploadFile) {
+        throw new Error("HTTP upload unavailable. Hard-refresh the page.");
       }
       const dir = item.uploadDir ?? document.getElementById('currentPath')?.value ?? '';
       const fname = item.uploadName ?? item.file.name;
       item.uploadSignal = { aborted: false };
       const cancelFn = () => abortActiveUploads(item);
-      await FTW.uploadFile(item.file, {
+      await FTH.uploadFile(item.file, {
         uploadDir: dir,
         filename: fname,
         signal: item.uploadSignal,
@@ -367,6 +367,82 @@
 
     let _selectionDrawerIsOpen = false;
     let _lastBulkCount = 0;
+    const FILE_VIEW_STORAGE_KEY = 'aird-browse-file-view';
+
+    function applyFileListView(compact) {
+      const panel = document.getElementById('browseListingPanel');
+      const btn = document.getElementById('fileViewToggleBtn');
+      if (panel) {
+        panel.classList.toggle('browse-listing--compact', compact);
+      }
+      if (btn) {
+        btn.setAttribute('aria-pressed', compact ? 'true' : 'false');
+        btn.title = compact ? 'Show size, date, and tags' : 'Hide size, date, and tags';
+        const detailedIcon = btn.querySelector('.file-view-toggle-icon--detailed');
+        const compactIcon = btn.querySelector('.file-view-toggle-icon--compact');
+        if (detailedIcon) detailedIcon.classList.toggle('hidden', !compact);
+        if (compactIcon) compactIcon.classList.toggle('hidden', compact);
+      }
+    }
+
+    function initFileListViewToggle() {
+      let compact = false;
+      try {
+        compact = localStorage.getItem(FILE_VIEW_STORAGE_KEY) === 'compact';
+      } catch {
+        compact = false;
+      }
+      applyFileListView(compact);
+      const btn = document.getElementById('fileViewToggleBtn');
+      if (!btn) return;
+      btn.addEventListener('click', function () {
+        const panel = document.getElementById('browseListingPanel');
+        const nextCompact = !panel?.classList.contains('browse-listing--compact');
+        try {
+          localStorage.setItem(FILE_VIEW_STORAGE_KEY, nextCompact ? 'compact' : 'detailed');
+        } catch {
+          /* ignore */
+        }
+        applyFileListView(nextCompact);
+      });
+    }
+
+    function closeMobileActionMenus(exceptCell) {
+      document.querySelectorAll('.actions-cell.mobile-actions-open').forEach(function (cell) {
+        if (cell === exceptCell) return;
+        cell.classList.remove('mobile-actions-open');
+        const btn = cell.querySelector('.mobile-actions-toggle');
+        if (btn) btn.setAttribute('aria-expanded', 'false');
+      });
+    }
+
+    function initMobileActionMenus() {
+      document.querySelectorAll('.mobile-actions-toggle').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          const cell = btn.closest('.actions-cell');
+          if (!cell) return;
+          const opening = !cell.classList.contains('mobile-actions-open');
+          closeMobileActionMenus(cell);
+          cell.classList.toggle('mobile-actions-open', opening);
+          btn.setAttribute('aria-expanded', opening ? 'true' : 'false');
+        });
+      });
+
+      document.addEventListener('click', function (e) {
+        if (!e.target.closest('.actions-cell')) {
+          closeMobileActionMenus();
+        }
+      });
+
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+          closeMobileActionMenus();
+        }
+      });
+    }
+
     let _selectionInitDone = false;
 
     function _setDrawerExpandedAttrs(expanded) {
@@ -518,24 +594,24 @@
       return `/files/${enc}?download=1`;
     }
 
-    async function downloadFileViaWs(filePath) {
-      const FTW = globalThis.AirdFileTransferWs;
+    async function downloadFileViaHttp(filePath) {
+      const FTH = globalThis.AirdFileTransferHttp;
       const Dl = globalThis.AirdDownloadManager;
-      if (!FTW?.downloadFile) {
+      if (!FTH?.downloadFile) {
         globalThis.location.href = downloadUrlForPath(filePath);
         return;
       }
       if (!Dl?.DownloadBatch) {
         try {
-          const result = await FTW.downloadFile(filePath);
-          FTW.saveBlob(result.blob, result.filename);
+          const result = await FTH.downloadFile(filePath);
+          FTH.saveBlob(result.blob, result.filename);
         } catch (err) {
           showDialog('Download failed: ' + (err?.message || err), 'Download');
         }
         return;
       }
       const batch = new Dl.DownloadBatch({ title: 'Downloads' });
-      batch.addWsItem(filePath, filePath);
+      batch.addHttpItem(filePath, filePath);
       await batch.run();
     }
 
@@ -672,7 +748,7 @@
         const base = String(paths[0]).replace(/\/+$/, '').split('/').pop();
         if (base) name = base + '.zip';
       }
-      const save = globalThis.AirdFileTransferWs?.saveBlob;
+      const save = globalThis.AirdFileTransferHttp?.saveBlob;
       if (save) {
         save(blob, name);
       } else {
@@ -715,8 +791,8 @@
           return;
         }
         for (const filePath of files) {
-          if (globalThis.AirdFileTransferWs?.downloadFile && batch.addWsItem) {
-            batch.addWsItem(filePath, filePath);
+          if (globalThis.AirdFileTransferHttp?.downloadFile && batch.addHttpItem) {
+            batch.addHttpItem(filePath, filePath);
           } else {
             batch.addItem(filePath, filesDownloadUrl(filePath));
           }
@@ -754,6 +830,7 @@
     async function bulkCopy() {
       const paths = getSelectedPaths();
       if (paths.length === 0) return;
+      closeSelectionDrawer();
       const destDir = await FolderPicker.open('copy');
       if (destDir == null) return;
       let failed = 0;
@@ -773,6 +850,7 @@
     async function bulkMove() {
       const paths = getSelectedPaths();
       if (paths.length === 0) return;
+      closeSelectionDrawer();
       const destDir = await FolderPicker.open('move');
       if (destDir == null) return;
       let failed = 0;
@@ -1876,6 +1954,8 @@
       });
       const newFolderBtn = document.getElementById('newFolderBtn');
       if (newFolderBtn) newFolderBtn.addEventListener('click', newFolder);
+      initFileListViewToggle();
+      initMobileActionMenus();
       const bulkDownloadBtn = document.getElementById('bulkDownloadBtn');
       if (bulkDownloadBtn) bulkDownloadBtn.addEventListener('click', bulkDownload);
       const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
@@ -1958,7 +2038,7 @@
           e.preventDefault();
           const path = dl.dataset.downloadPath
             || dl.closest('tr.file-row')?.dataset.path;
-          if (path) void downloadFileViaWs(path);
+          if (path) void downloadFileViaHttp(path);
           return;
         }
       });

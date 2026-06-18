@@ -3,6 +3,8 @@ import os
 from unittest.mock import patch, MagicMock
 from aird.core.file_operations import (
     get_all_files_recursive,
+    get_files_by_tag_patterns,
+    get_tags_for_path,
     matches_glob_patterns,
     filter_files_by_patterns,
     cloud_root_dir,
@@ -85,6 +87,23 @@ class TestFileOperations:
         assert matches_glob_patterns("test.txt", ["*.py"]) is False
         assert matches_glob_patterns("test.py", []) is False
         assert matches_glob_patterns("path/to/test.py", ["*.py"]) is True
+
+    def test_matches_glob_patterns_exact_folder_with_trailing_slash(self):
+        assert matches_glob_patterns("docs/", ["docs"]) is True
+        assert matches_glob_patterns("docs/reports/", ["docs/reports"]) is True
+
+    def test_get_files_by_tag_patterns_includes_tagged_folders(self, tmp_path):
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "a.txt").write_text("a", encoding="utf-8")
+        (tmp_path / "other").mkdir()
+
+        found = get_files_by_tag_patterns(["/docs"], str(tmp_path))
+        assert "docs/" in found
+        assert "docs/a.txt" not in found
+
+    def test_get_tags_for_path_exact_folder_pattern(self):
+        rules = [{"tag": "archive", "glob_pattern": "/docs/reports"}]
+        assert get_tags_for_path(rules, "docs/reports") == ["archive"]
 
     # --- filter_files_by_patterns ---
     def test_filter_files_by_patterns(self):

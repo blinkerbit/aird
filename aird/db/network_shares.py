@@ -4,6 +4,7 @@ import logging
 import sqlite3
 from datetime import datetime
 
+from aird.core.secret_storage import decrypt_secret, encrypt_secret
 from aird.sql_identifiers import format_update_by_id_sql
 
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ def create_network_share(
                     protocol,
                     port,
                     username,
-                    password,
+                    encrypt_secret(password),
                     1 if read_only else 0,
                     created_at,
                 ),
@@ -59,7 +60,7 @@ def get_all_network_shares(conn: sqlite3.Connection) -> list[dict]:
                 "protocol": r[3],
                 "port": r[4],
                 "username": r[5],
-                "password": r[6],
+                "password": decrypt_secret(r[6]),
                 "enabled": bool(r[7]),
                 "read_only": bool(r[8]),
                 "created_at": r[9],
@@ -86,7 +87,7 @@ def get_network_share(conn: sqlite3.Connection, share_id: str) -> dict | None:
                 "protocol": row[3],
                 "port": row[4],
                 "username": row[5],
-                "password": row[6],
+                "password": decrypt_secret(row[6]),
                 "enabled": bool(row[7]),
                 "read_only": bool(row[8]),
                 "created_at": row[9],
@@ -128,6 +129,8 @@ def update_network_share(conn: sqlite3.Connection, share_id: str, **kwargs) -> b
         updates.append(field_sql[field])
         if field in ("enabled", "read_only"):
             values.append(1 if value else 0)
+        elif field == "password":
+            values.append(encrypt_secret(value))
         else:
             values.append(value)
     if not updates:

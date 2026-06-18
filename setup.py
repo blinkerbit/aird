@@ -12,11 +12,12 @@ install_requires = [
     "wsgidav>=4.3.0",
     "cheroot>=10.0.0",
     "pyasn1>=0.6.2",
+    "webauthn>=2.0.0",
 ]
 
 setup(
     name="aird",
-    version="0.4.23.dev19",
+    version="0.4.23.dev21",
     packages=find_packages(),
     include_package_data=True,
     package_data={"aird": [

@@ -34,6 +34,13 @@ def get_data_dir() -> str:
 
 def init_db(conn: sqlite3.Connection) -> None:
     """Initialize database tables and migrations."""
+    import warnings
+
+    warnings.warn(
+        "aird.database.db.init_db is deprecated; use aird.db.schema.init_db instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     conn.execute("""
         CREATE TABLE IF NOT EXISTS feature_flags (
             key TEXT PRIMARY KEY,

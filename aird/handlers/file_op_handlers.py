@@ -349,7 +349,7 @@ def _process_bulk_action(
 
 @tornado.web.stream_request_body
 class UploadHandler(BaseHandler):
-    """Single-request HTTP upload (CLI / direct origin). Browser uses WebSocket."""
+    """Single-request HTTP upload for files under the large-file threshold."""
 
     def check_xsrf_cookie(self) -> None:
         """Streamed uploads send raw body; accept X-XSRFToken header or ?_xsrf= query param."""
@@ -363,6 +363,13 @@ class UploadHandler(BaseHandler):
             raise tornado.web.HTTPError(403, "XSRF validation failed")
 
     async def prepare(self):
+        BaseHandler.prepare(self)
+        self.check_xsrf_cookie()
+        if not self.get_current_user():
+            raise tornado.web.HTTPError(403, "Authentication required")
+        if not self.has_modify_privileges():
+            raise tornado.web.HTTPError(403, ACCESS_DENIED)
+
         self._reject: bool = False
         self._reject_reason: str | None = None
         self._temp_path: str | None = None
@@ -396,6 +403,18 @@ class UploadHandler(BaseHandler):
             self._reject = True
             self._reject_reason = MISSING_UPLOAD_FILENAME_HEADER
             return
+
+        declared = self.request.headers.get("Content-Length")
+        if declared:
+            try:
+                if int(declared) >= constants_module.LARGE_FILE_THRESHOLD_BYTES:
+                    self._reject = True
+                    self._reject_reason = (
+                        "File exceeds single-request limit; use ranged upload API"
+                    )
+                    return
+            except ValueError:
+                pass
 
         fd, self._temp_path = tempfile.mkstemp(prefix="aird_upload_")
         os.close(fd)
@@ -548,6 +567,7 @@ class CreateFolderHandler(BaseHandler):
 
 
 def path_to_rel(abspath, root_dir=None):
+    """Return *abspath* relative to *root_dir* (required in multi-user mode)."""
     try:
         if root_dir is None:
             import aird.constants as _c

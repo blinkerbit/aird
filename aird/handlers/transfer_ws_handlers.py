@@ -1,4 +1,4 @@
-"""WebSocket file upload/download for clients behind reverse proxies (e.g. Cloudflare)."""
+"""Legacy WebSocket file transfer (optional fallback; HTTP is primary)."""
 
 from __future__ import annotations
 
@@ -135,6 +135,8 @@ class FileTransferWebSocketHandler(
     async def on_message(self, message):
         if isinstance(message, bytes):
             await self._handle_upload_binary(message)
+            return
+        if self.reject_oversized_ws_message(message):
             return
         try:
             data = json.loads(message)

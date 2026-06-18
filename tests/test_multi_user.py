@@ -168,7 +168,8 @@ class TestSanitizeUsernameForFolder:
         long_name = "a" * 30
         result = sanitize_username_for_folder(long_name)
         assert result is not None
-        assert len(result) <= 20
+        assert result.startswith("a" * 20 + "_")
+        assert len(result) == 33  # 20 + 1 + 12 hex
 
     def test_exactly_20_chars(self):
         name = "a" * 20

@@ -44,6 +44,7 @@ from aird.constants import CHUNK_SIZE
 from aird.cloud import CloudManager
 from aird.constants.file_ops import PROVIDER_NOT_CONFIGURED
 from aird.core.file_operations import get_files_by_tag_patterns, get_tags_for_path
+from aird.core.http_range import parse_range_header
 from aird.db.resource_tags import list_resource_tags
 
 # ---------------------------------------------------------------------------
@@ -56,7 +57,7 @@ DOWNLOAD_DISABLED_MSG = (
 
 
 async def _serve_download(handler, abspath, filename):
-    """Serve file as attachment, with optional gzip compression."""
+    """Serve file as attachment with Accept-Ranges and optional Range (206)."""
     if not handler.require_feature("file_download", True, body=DOWNLOAD_DISABLED_MSG):
         return
     handler.set_header("Content-Disposition", f'attachment; filename="{filename}"')
@@ -64,31 +65,70 @@ async def _serve_download(handler, abspath, filename):
     mime_type = mime_type or APPLICATION_OCTET_STREAM
     handler.set_header("Content-Type", mime_type)
 
-    if is_feature_enabled("compression", True):
-        compressible = (
-            "text/",
-            "application/json",
-            "application/javascript",
-            "application/xml",
+    try:
+        file_size = os.path.getsize(abspath)
+    except OSError:
+        handler.set_status(404)
+        handler.write("File not found")
+        return
+
+    handler.set_header("Accept-Ranges", "bytes")
+    head_only = handler.request.method == "HEAD"
+    range_header = handler.request.headers.get("Range")
+    byte_range = parse_range_header(range_header, file_size)
+
+    use_gzip = (
+        not byte_range
+        and is_feature_enabled("compression", True)
+        and any(
+            mime_type.startswith(p)
+            for p in (
+                "text/",
+                "application/json",
+                "application/javascript",
+                "application/xml",
+            )
         )
-        if any(mime_type.startswith(p) for p in compressible):
-            handler.set_header("Content-Encoding", "gzip")
+    )
 
-            def compress_file():
-                buffer = BytesIO()
-                with open(abspath, "rb") as f_in, gzip.GzipFile(
-                    fileobj=buffer, mode="wb"
-                ) as f_out:
-                    shutil.copyfileobj(f_in, f_out)
-                return buffer.getvalue()
-
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                compressed_data = await asyncio.get_event_loop().run_in_executor(
-                    executor, compress_file
-                )
-            handler.write(compressed_data)
-            await handler.flush()
+    if byte_range:
+        start, end = byte_range.start, byte_range.end
+        handler.set_status(206)
+        handler.set_header(
+            "Content-Range", f"bytes {start}-{end}/{file_size}"
+        )
+        handler.set_header("Content-Length", str(byte_range.length))
+        if head_only:
             return
+        async for chunk in MMapFileHandler.serve_file_chunk(
+            abspath, start=start, end=end
+        ):
+            handler.write(chunk)
+            await handler.flush()
+        return
+
+    handler.set_header("Content-Length", str(file_size))
+    if head_only:
+        return
+
+    if use_gzip:
+        handler.set_header("Content-Encoding", "gzip")
+
+        def compress_file():
+            buffer = BytesIO()
+            with open(abspath, "rb") as f_in, gzip.GzipFile(
+                fileobj=buffer, mode="wb"
+            ) as f_out:
+                shutil.copyfileobj(f_in, f_out)
+            return buffer.getvalue()
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            compressed_data = await asyncio.get_event_loop().run_in_executor(
+                executor, compress_file
+            )
+        handler.write(compressed_data)
+        await handler.flush()
+        return
 
     async for chunk in MMapFileHandler.serve_file_chunk(abspath):
         handler.write(chunk)
@@ -232,12 +272,13 @@ class MainHandler(BaseHandler):
             get_file_icon=get_file_icon,
             features=flags_for_template,
             max_file_size=constants_module.MAX_FILE_SIZE,
+            large_file_threshold=constants_module.LARGE_FILE_THRESHOLD_BYTES,
+            range_chunk_bytes=constants_module.RANGE_CHUNK_BYTES,
             user_favorites=user_favorites,
             file_tags_map=file_tags_map,
         )
 
-    @tornado.web.authenticated
-    async def get(self, path):
+    async def _handle_file_path(self, path: str) -> None:
         user_root = get_user_root(self)
         abspath = os.path.abspath(os.path.join(user_root, path))
 
@@ -249,6 +290,10 @@ class MainHandler(BaseHandler):
             return
 
         if os.path.isdir(abspath):
+            if self.request.method == "HEAD":
+                self.set_status(405)
+                self.write("HEAD not supported for directories")
+                return
             self._render_directory_browse(path, abspath)
             return
 
@@ -260,6 +305,14 @@ class MainHandler(BaseHandler):
         self.write(
             "File not found: The requested file may have been moved or deleted"
         )
+
+    @tornado.web.authenticated
+    async def get(self, path):
+        await self._handle_file_path(path)
+
+    @tornado.web.authenticated
+    async def head(self, path):
+        await self._handle_file_path(path)
 
     @staticmethod
     async def serve_file(handler, abspath, user_root=None):
@@ -510,7 +563,7 @@ class TaggedFilesHandler(BaseHandler):
         file_count = 0
         folder_count = 0
         if patterns:
-            root = constants_module.ROOT_DIR
+            root = get_user_root(self)
             for path in get_files_by_tag_patterns(patterns, root):
                 is_dir = path.endswith("/")
                 if is_dir:

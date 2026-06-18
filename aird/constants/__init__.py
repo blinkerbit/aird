@@ -43,6 +43,7 @@ FEATURE_FLAGS = {
     "abac_engine": False,
     "abac_audit_decisions": True,
     "email_notifications": False,
+    "webauthn": False,
 }
 
 # WebSocket connection configuration
@@ -63,8 +64,13 @@ UPLOAD_CONFIG = {
 
 # File operation constants (derived from UPLOAD_CONFIG at startup)
 MAX_FILE_SIZE = UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
-# HTTP /upload body limit (browser uploads use WebSocket; CLI may POST whole file)
+# HTTP /upload body limit (browser small uploads + CLI)
 UPLOAD_REQUEST_MAX_BODY_SIZE = MAX_FILE_SIZE + (1024 * 1024)
+# Files below this use single POST /upload; at or above use Content-Range API
+LARGE_FILE_THRESHOLD_BYTES = 500 * 1024 * 1024
+RANGE_CHUNK_BYTES = 16 * 1024 * 1024
+# Max JSON WebSocket control message size (search, stream commands, P2P signaling)
+WS_JSON_MESSAGE_MAX_BYTES = 64 * 1024
 MAX_READABLE_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
 # Default line window for /files/... viewer when no ?end_line= is supplied (protects DOM from huge renders)
@@ -101,8 +107,8 @@ UPLOAD_ALLOWED_EXTENSIONS = set(ALLOWED_UPLOAD_EXTENSIONS)
 # Mmap constants
 MMAP_MIN_SIZE = 1 * 1024 * 1024  # 1 MB
 CHUNK_SIZE = 64 * 1024  # 64 KB
-# WebSocket binary frame size (stay under Cloudflare ~1 MiB message limit)
-WS_TRANSFER_FRAME_BYTES = 768 * 1024
+# Legacy WebSocket frame size (optional fallback; HTTP is primary for transfers)
+WS_TRANSFER_FRAME_BYTES = 2 * 1024 * 1024
 
 # Network share manager (set at startup)
 NETWORK_SHARE_MANAGER = None

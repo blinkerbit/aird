@@ -85,6 +85,10 @@
               <input type="checkbox" name="abac_audit_decisions" class="toggle toggle-primary toggle-sm" {% if features.get('abac_audit_decisions') %}checked{% end %}>
               <span class="label-text">ABAC decision audit</span>
             </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+              <input type="checkbox" name="webauthn" class="toggle toggle-primary toggle-sm" {% if features.get('webauthn') %}checked{% end %}>
+              <span class="label-text">WebAuthn passkeys (optional login)</span>
+            </label>
           </div>
         </div>
       </div>

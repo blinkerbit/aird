@@ -1,5 +1,6 @@
 """Security utilities for path validation and WebSocket origin checking."""
 
+import hashlib
 import os
 import re
 from urllib.parse import urlparse
@@ -69,9 +70,12 @@ def sanitize_username_for_folder(username: str) -> str | None:
     if not name:
         return None
 
-    # Enforce length limit
+    # Long names: append hash suffix to avoid truncation collisions
     if len(name) > 20:
-        name = name[:20]
+        digest = hashlib.sha256(username.encode("utf-8")).hexdigest()[:12]
+        name = name[:20] + "_" + digest
+    elif len(name) > 64:
+        name = name[:64]
 
     # Block Windows reserved names (case-insensitive, with or without extension)
     stem = name.split(".")[0].upper()
@@ -86,6 +90,27 @@ def sanitize_username_for_folder(username: str) -> str | None:
     if name in (".", "..") or ".." in name:
         return None
 
+    return name
+
+
+def legacy_folder_name(username: str) -> str | None:
+    """Pre-hash folder names: sanitize then truncate to 20 chars."""
+    if not isinstance(username, str) or not username.strip():
+        return None
+    name = username.strip()
+    name = _SAFE_FOLDER_CHAR_RE.sub("_", name)
+    name = name.lstrip("._").rstrip(". ")
+    if not name:
+        return None
+    if len(name) > 20:
+        name = name[:20]
+    stem = name.split(".")[0].upper()
+    if stem in _WINDOWS_RESERVED:
+        return None
+    if os.sep in name or "/" in name or "\\" in name:
+        return None
+    if name in (".", "..") or ".." in name:
+        return None
     return name
 
 

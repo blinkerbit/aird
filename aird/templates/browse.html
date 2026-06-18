@@ -29,14 +29,25 @@
     </div>
     {% end %}
 
-    {% if features.get('folder_create') %}
     <div class="browse-toolbar mb-4">
+      {% if features.get('folder_create') %}
       <button type="button" id="newFolderBtn" class="btn btn-primary shadow-md">
         <svg class="ico w-5 h-5" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
         New folder
       </button>
+      {% end %}
+      <button type="button" id="fileViewToggleBtn" class="btn btn-ghost btn-sm shadow-sm border border-base-300"
+        title="Hide size, date, and tags" aria-label="Toggle file list details" aria-pressed="false">
+        <svg class="ico w-4 h-4 file-view-toggle-icon file-view-toggle-icon--detailed hidden" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <rect x="3" y="5" width="18" height="14" rx="2"/>
+          <path d="M3 10h18"/><path d="M8 10v9"/><path d="M13 10v9"/><path d="M18 10v9"/>
+        </svg>
+        <svg class="ico w-4 h-4 file-view-toggle-icon file-view-toggle-icon--compact" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/>
+        </svg>
+        <span class="hidden sm:inline">Details</span>
+      </button>
     </div>
-    {% end %}
 
     <div class="flex flex-wrap items-center gap-x-1 gap-y-1 bg-base-200/50 p-2 px-4 rounded-lg mb-4 text-sm" aria-label="Path from file root — Home is your workspace root, not your computer account home folder">
       <a href="/files/" class="flex items-center gap-1 hover:text-primary transition-colors shrink-0" title="File root — your Aird workspace for this login (not your operating system user home folder)"><svg class="ico w-4 h-4" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>Home</a>
@@ -50,7 +61,8 @@
       {% end %}
     </div>
 
-    <!-- Mobile sort control (visible only on small screens; the table header is hidden there) -->
+    <!-- File Listing Table -->
+    <div id="browseListingPanel" class="browse-listing-panel">
     <div class="mobile-sort-control" aria-label="Sort files">
       <label for="mobileSortSelect">Sort by:</label>
       <select id="mobileSortSelect">
@@ -162,6 +174,15 @@
             {{ file.get('modified', '-') }}
           </td>
           <td class="actions-cell" data-label="Actions">
+            <button type="button" class="mobile-actions-toggle"
+              aria-label="Show actions for {{ escape(file['name']) }}" aria-expanded="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <circle cx="5" cy="12" r="1.5"/>
+                <circle cx="12" cy="12" r="1.5"/>
+                <circle cx="19" cy="12" r="1.5"/>
+              </svg>
+            </button>
+            <div class="mobile-actions-menu">
             {% if not file["is_dir"] %}
             {% if features['file_download'] %}
             <a href="#" data-download-path="{{ escape(join_path(current_path, file['name'])) }}"
@@ -198,6 +219,7 @@
                 <path d="M14 11v7"/>
               </svg></a>
             {% end %}
+            </div>
           </td>
         </tr>
         {% end %}
@@ -215,6 +237,7 @@
         {% end %}
       </tbody>
     </table>
+    </div>
     </div>
 
   </div>
@@ -341,12 +364,14 @@
 
   <input type="hidden" id="currentPath" value="{{ current_path or '' }}" />
   <script src="/static/js/aird-core.js?v={{ static_version }}"></script>
-  <script src="/static/js/file-transfer-ws.js?v={{ static_version }}"></script>
+  <script src="/static/js/file-transfer-http.js?v={{ static_version }}"></script>
   <script src="/static/js/download-manager.js?v={{ static_version }}"></script>
   <script src="/static/js/components/folder-picker.js?v={{ static_version }}"></script>
   <script nonce="{{ csp_nonce }}">
     globalThis.__BROWSE_CONFIG = {
       maxFileSize: {{ max_file_size }},
+      largeFileThreshold: {{ large_file_threshold }},
+      rangeChunkBytes: {{ range_chunk_bytes }},
       canTag: {{ 'true' if current_user and current_user.get('role') == 'admin' else 'false' }}
     };
   </script>

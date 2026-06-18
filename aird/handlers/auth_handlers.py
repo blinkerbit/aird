@@ -324,7 +324,7 @@ def _try_admin_token_login(handler, token):
 # ---------------------------------------------------------------------------
 
 
-def _profile_render(handler, user, error=None, success=None, ldap_enabled=None):
+def _profile_render(handler, user, error=None, success=None, ldap_enabled=None, passkeys=None):
     """Render profile template with common kwargs."""
     if ldap_enabled is None:
         ldap_enabled = handler.settings.get("ldap_server") is not None
@@ -334,6 +334,24 @@ def _profile_render(handler, user, error=None, success=None, ldap_enabled=None):
         quota = handler.get_service("user_service").get_user_quota(
             handler.db_conn, username
         )
+    if passkeys is None and user and handler.db_conn:
+        from aird.utils.util import is_feature_enabled
+        from aird.db import webauthn as webauthn_db
+
+        username = user.get("username", "") if isinstance(user, dict) else str(user)
+        if is_feature_enabled("webauthn", False) and username not in (
+            "token_user",
+            "admin_token",
+            "token_authenticated",
+            "admin_token_authenticated",
+        ):
+            passkeys = webauthn_db.list_credentials(handler.db_conn, username)
+        else:
+            passkeys = []
+    shared_with_me = []
+    if user and handler.db_conn:
+        username = user.get("username", "") if isinstance(user, dict) else str(user)
+        shared_with_me = list_shares_accessible_to_user(handler.db_conn, username)
     handler.render(
         PROFILE_TEMPLATE,
         user=user,
@@ -341,6 +359,8 @@ def _profile_render(handler, user, error=None, success=None, ldap_enabled=None):
         success=success,
         ldap_enabled=ldap_enabled,
         quota=quota,
+        passkeys=passkeys or [],
+        shared_with_me=shared_with_me,
     )
 
 
@@ -786,6 +806,17 @@ class ProfileHandler(BaseHandler):
                 self.db_conn, username
             )
             shared_with_me = list_shares_accessible_to_user(self.db_conn, username)
+        passkeys = []
+        if user and self.db_conn:
+            from aird.utils.util import is_feature_enabled
+            from aird.db import webauthn as webauthn_db
+
+            uname = user.get("username", "") if isinstance(user, dict) else str(user)
+            if is_feature_enabled("webauthn", False) and uname not in (
+                "token_user",
+                "admin_token",
+            ):
+                passkeys = webauthn_db.list_credentials(self.db_conn, uname)
         self.render(
             PROFILE_TEMPLATE,
             user=user,
@@ -794,6 +825,7 @@ class ProfileHandler(BaseHandler):
             ldap_enabled=ldap_enabled,
             quota=quota,
             shared_with_me=shared_with_me,
+            passkeys=passkeys,
         )
 
     @tornado.web.authenticated

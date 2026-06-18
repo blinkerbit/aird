@@ -1,15 +1,26 @@
 {# Floating theme selector for login/admin-login pages #}
 <style nonce="{{ csp_nonce }}">
-#theme-btn { transition: box-shadow 0.15s, transform 0.12s; }
+#theme-corner-wrap {
+  position: fixed;
+  top: max(0.75rem, env(safe-area-inset-top));
+  right: max(0.75rem, env(safe-area-inset-right));
+  z-index: 50000;
+  pointer-events: auto;
+}
+#theme-btn {
+  transition: box-shadow 0.15s, transform 0.12s;
+  touch-action: manipulation;
+  min-height: 2.5rem;
+}
 #theme-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.13); }
 #theme-btn:active { transform: translateY(0) scale(0.97); }
 #theme-menu {
   display: none;
   position: fixed;
-  top: 3.2rem;
+  top: calc(max(0.75rem, env(safe-area-inset-top)) + 2.85rem);
   right: max(0.75rem, env(safe-area-inset-right));
   left: auto;
-  z-index: 9999;
+  z-index: 50001;
   min-width: 13rem;
   max-width: calc(100vw - 1.5rem - env(safe-area-inset-left) - env(safe-area-inset-right));
   max-height: min(70dvh, 20rem);
@@ -17,13 +28,7 @@
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   transform-origin: top right;
-}
-@media (max-width: 639px) {
-  #theme-menu {
-    top: auto;
-    bottom: max(0.75rem, env(safe-area-inset-bottom));
-    transform-origin: bottom right;
-  }
+  pointer-events: auto;
 }
 #theme-menu.open {
   display: block;
@@ -35,7 +40,7 @@
 }
 </style>
 
-<div class="fixed top-4 right-4 z-50">
+<div id="theme-corner-wrap">
   <button type="button" id="theme-btn"
     title="Switch theme"
     class="btn btn-sm bg-base-100 border border-base-300 shadow-md gap-1.5 normal-case rounded-full"
@@ -77,14 +82,21 @@
     });
   }
 
-  btn.addEventListener('click', function(e) { e.stopPropagation(); toggle(); });
+  btn.addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    toggle();
+  });
 
   menu.querySelectorAll('[data-set-theme]').forEach(function(b) {
-    b.addEventListener('click', function() { close(); });
+    b.addEventListener('click', function(e) {
+      e.stopPropagation();
+      close();
+    });
   });
 
   document.addEventListener('click', function(e) {
-    if (!menu.contains(e.target) && e.target !== btn) close();
+    if (!btn.contains(e.target) && !menu.contains(e.target)) close();
   });
 
   document.addEventListener('keydown', function(e) {

@@ -847,14 +847,13 @@ class TokenVerificationHandler(BaseHandler):
         """Check if the request is within rate limits. Returns True if allowed."""
         remote_ip = self.request.remote_ip
         now = time.time()
-        # Purge expired entries to prevent unbounded dict growth
-        if len(self._TOKEN_VERIFY_ATTEMPTS) > 500:
-            stale = [
-                ip for ip, (_, ts) in self._TOKEN_VERIFY_ATTEMPTS.items()
-                if now - ts > self._RATE_LIMIT_WINDOW
-            ]
-            for ip in stale:
-                self._TOKEN_VERIFY_ATTEMPTS.pop(ip, None)
+        stale = [
+            ip
+            for ip, (_, ts) in self._TOKEN_VERIFY_ATTEMPTS.items()
+            if now - ts > self._RATE_LIMIT_WINDOW
+        ]
+        for ip in stale:
+            self._TOKEN_VERIFY_ATTEMPTS.pop(ip, None)
         attempts, timestamp = self._TOKEN_VERIFY_ATTEMPTS.get(remote_ip, (0, now))
 
         if now - timestamp > self._RATE_LIMIT_WINDOW:

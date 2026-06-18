@@ -14,7 +14,7 @@ import tornado.websocket
 
 import aird.config as config_module
 import aird.constants as constants_module
-from aird.core.security import sanitize_username_for_folder
+from aird.core.security import legacy_folder_name, sanitize_username_for_folder
 from aird.db import get_user_attributes, get_user_by_username
 from aird.domain.models import (
     AccessDecision,
@@ -88,6 +88,14 @@ def get_user_root(handler) -> str:
         return constants_module.ROOT_DIR
 
     user_root = os.path.join(constants_module.ROOT_DIR, safe_name)
+    # Legacy: pre-hash folders used plain 20-char truncation
+    if constants_module.MULTI_USER and not os.path.isdir(user_root):
+        legacy = legacy_folder_name(username)
+        if legacy and legacy != safe_name:
+            legacy_root = os.path.join(constants_module.ROOT_DIR, legacy)
+            if os.path.isdir(legacy_root):
+                user_root = legacy_root
+
     os.makedirs(user_root, exist_ok=True)
     return user_root
 
@@ -264,6 +272,20 @@ class ManagedWebSocketMixin:
     def on_close(self):
         self.connection_manager.remove_connection(self)
 
+    def reject_oversized_ws_message(self, message) -> bool:
+        """Return True and send error if *message* exceeds WS_JSON_MESSAGE_MAX_BYTES."""
+        limit = constants_module.WS_JSON_MESSAGE_MAX_BYTES
+        if isinstance(message, bytes):
+            nbytes = len(message)
+        else:
+            nbytes = len(str(message).encode("utf-8", errors="replace"))
+        if nbytes > limit:
+            self.write_message(
+                json.dumps({"type": "error", "message": "Message too large"})
+            )
+            return True
+        return False
+
     def get_current_user(self):
         # WebSocket handler doesn't have a default auth mechanism, so we explicitly call authenticate_handler
         return authenticate_handler(self)
@@ -347,8 +369,8 @@ class CookieAuthStrategy:
                     user.pop("password_hash", None)
                     return user
             return self._token_user_from_username(handler, username)
-        except Exception:
-            logger.debug("CookieAuthStrategy: unexpected error parsing cookie", exc_info=True)
+        except (UnicodeDecodeError, TypeError, ValueError, KeyError):
+            logger.debug("CookieAuthStrategy: cookie parse error", exc_info=True)
             return self._token_user_from_cookie_bytes(handler, user_json)
 
 
@@ -666,8 +688,11 @@ class BaseHandler(tornado.web.RequestHandler):
                 self.db_conn, request, audit=audit
             )
         except Exception:
-            logger.debug("PDP evaluation failed", exc_info=True)
-            return None
+            logger.warning("PDP evaluation failed; denying access", exc_info=True)
+            return AccessDecision(
+                effect="deny",
+                reason="Policy engine unavailable",
+            )
         if decision.is_deny and raise_on_deny:
             raise tornado.web.HTTPError(403, decision.reason)
         return decision
@@ -926,9 +951,7 @@ class BaseHandler(tornado.web.RequestHandler):
             logger.debug("BaseHandler.on_finish cleanup failed", exc_info=True)
 
     def is_admin_user(self) -> bool:
-        """Return True if the current user is an admin.
-        Checks the user object (if provided by get_current_user) and an 'admin' secure cookie.
-        """
+        """Return True if the current user's DB role is admin."""
         try:
             if hasattr(self, "get_current_admin"):
                 try:
@@ -939,14 +962,9 @@ class BaseHandler(tornado.web.RequestHandler):
             user = self.get_current_user()
             if isinstance(user, dict) and user.get("role") == "admin":
                 return True
-            # Note: Removed dangerous string check that matched any username containing 'admin'
-            # Admin status should only be determined by role, not by username substring
-        except Exception:
+        except (AttributeError, TypeError, KeyError):
             logger.debug("is_admin_user role check failed", exc_info=True)
-        try:
-            return bool(self.get_secure_cookie("admin"))
-        except Exception:
-            return False
+        return False
 
     def get_display_username(self) -> str:
         """Get username for display purposes"""

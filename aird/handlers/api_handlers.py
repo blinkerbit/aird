@@ -229,6 +229,8 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
             self.write_message(json.dumps({"type": "error", "message": str(e)}))
 
     async def on_message(self, message):
+        if self.reject_oversized_ws_message(message):
+            return
         try:
             data = json.loads(message)
         except json.JSONDecodeError:
@@ -509,6 +511,8 @@ class SuperSearchWebSocketHandler(
             return
 
     async def on_message(self, message):
+        if self.reject_oversized_ws_message(message):
+            return
         # Validate authentication on each message to ensure session is still valid
         user = self.get_current_user()
         if not user:
