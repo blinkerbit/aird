@@ -91,6 +91,83 @@
     });
   }
 
+  async function sendWsUploadChunks(ws, file, totalSize, signal, onProgress, TT, ttId) {
+    for (let offset = 0; offset < totalSize; offset += READ_BUFFER) {
+      if (signal && signal.aborted) {
+        throw new Error('cancelled');
+      }
+      const end = Math.min(offset + READ_BUFFER, totalSize);
+      const buf = await file.slice(offset, end).arrayBuffer();
+      ws.send(buf);
+      await waitForDrain(ws);
+      const acked = Math.max(0, end - ws.bufferedAmount);
+      onProgress(Math.round((acked / totalSize) * 100), acked, totalSize);
+      if (TT && ttId) TT.updateProgress(ttId, acked, totalSize);
+    }
+  }
+
+  function wsChunksLoaded(chunks) {
+    return chunks.reduce((sum, c) => sum + c.byteLength, 0);
+  }
+
+  function handleWsDownloadError(ctx, msg) {
+    if (ctx.settled) return;
+    ctx.settled = true;
+    ctx.cleanup();
+    const { TT, ttId, reject } = ctx;
+    if (TT && ttId) TT.failTransfer(ttId, msg.message);
+    reject(new Error(msg.message || 'download failed'));
+  }
+
+  function handleWsDownloadStart(ctx, msg) {
+    ctx.meta = msg;
+    const { TT, ttId } = ctx;
+    if (TT && ttId && msg.size) TT.updateProgress(ttId, 0, msg.size);
+  }
+
+  function handleWsDownloadEnd(ctx) {
+    if (ctx.settled) return;
+    ctx.settled = true;
+    ctx.cleanup();
+    const { TT, ttId, chunks, resolve, path, fname } = ctx;
+    if (TT && ttId) TT.completeTransfer(ttId);
+    const meta = ctx.meta;
+    const blob = new Blob(chunks, {
+      type: (meta && meta.content_type) || 'application/octet-stream',
+    });
+    resolve({
+      blob: blob,
+      filename: (meta && meta.filename) || fname,
+      path: path,
+      size: (meta && meta.size) || blob.size,
+    });
+  }
+
+  function handleWsDownloadJson(ctx, msg) {
+    if (msg.type === 'error') {
+      handleWsDownloadError(ctx, msg);
+      return true;
+    }
+    if (msg.type === 'download_start') {
+      handleWsDownloadStart(ctx, msg);
+      return true;
+    }
+    if (msg.type === 'download_end') {
+      handleWsDownloadEnd(ctx);
+      return true;
+    }
+    return false;
+  }
+
+  function handleWsDownloadBinary(ctx, data) {
+    const { chunks, meta, onProgress, TT, ttId } = ctx;
+    chunks.push(new Uint8Array(data));
+    if (!meta) return;
+    const loaded = wsChunksLoaded(chunks);
+    onProgress(loaded, meta.size);
+    if (TT && ttId) TT.updateProgress(ttId, loaded, meta.size);
+  }
+
   /**
    * @param {File|Blob} file
    * @param {{ uploadDir?: string, filename?: string, onProgress?: Function, signal?: { aborted: boolean } }} options
@@ -123,18 +200,7 @@
       );
       await waitForJson(ws, (m) => m.type === 'upload_started');
 
-      for (let offset = 0; offset < totalSize; offset += READ_BUFFER) {
-        if (signal && signal.aborted) {
-          throw new Error('cancelled');
-        }
-        const end = Math.min(offset + READ_BUFFER, totalSize);
-        const buf = await file.slice(offset, end).arrayBuffer();
-        ws.send(buf);
-        await waitForDrain(ws);
-        const acked = Math.max(0, end - ws.bufferedAmount);
-        onProgress(Math.round((acked / totalSize) * 100), acked, totalSize);
-        if (TT && ttId) TT.updateProgress(ttId, acked, totalSize);
-      }
+      await sendWsUploadChunks(ws, file, totalSize, signal, onProgress, TT, ttId);
 
       ws.send(JSON.stringify({ action: 'upload_end' }));
       const resp = await waitForJson(ws, (m) => m.type === 'upload_complete');
@@ -163,9 +229,6 @@
     const signal = options.signal || { aborted: false };
     const ws = await openSocket();
     const chunks = [];
-    let meta = null;
-    let settled = false;
-    let abortPoll = null;
 
     const TT = global.AirdTransferTracker;
     const fname = path.split('/').pop() || path;
@@ -174,10 +237,26 @@
       : null;
 
     return new Promise((resolve, reject) => {
+      const ctx = {
+        ws,
+        signal,
+        chunks,
+        path,
+        fname,
+        meta: null,
+        settled: false,
+        abortPoll: null,
+        TT,
+        ttId,
+        onProgress,
+        resolve,
+        reject,
+      };
+
       function cleanup() {
-        if (abortPoll !== null) {
-          clearInterval(abortPoll);
-          abortPoll = null;
+        if (ctx.abortPoll !== null) {
+          clearInterval(ctx.abortPoll);
+          ctx.abortPoll = null;
         }
         ws.removeEventListener('message', onMessage);
         try {
@@ -186,10 +265,11 @@
           /* ignore */
         }
       }
+      ctx.cleanup = cleanup;
 
       function finishCancel() {
-        if (settled) return;
-        settled = true;
+        if (ctx.settled) return;
+        ctx.settled = true;
         signal.aborted = true;
         try {
           ws.send(JSON.stringify({ action: 'cancel' }));
@@ -211,7 +291,7 @@
       }
 
       if (signal) {
-        abortPoll = setInterval(() => {
+        ctx.abortPoll = setInterval(() => {
           if (signal.aborted) finishCancel();
         }, 100);
       }
@@ -228,48 +308,16 @@
           } catch {
             return;
           }
-          if (msg.type === 'error') {
-            if (settled) return;
-            settled = true;
-            cleanup();
-            if (TT && ttId) TT.failTransfer(ttId, msg.message);
-            reject(new Error(msg.message || 'download failed'));
-            return;
-          }
-          if (msg.type === 'download_start') {
-            meta = msg;
-            if (TT && ttId && meta.size) TT.updateProgress(ttId, 0, meta.size);
-            return;
-          }
-          if (msg.type === 'download_end') {
-            if (settled) return;
-            settled = true;
-            cleanup();
-            if (TT && ttId) TT.completeTransfer(ttId);
-            const blob = new Blob(chunks, {
-              type: (meta && meta.content_type) || 'application/octet-stream',
-            });
-            resolve({
-              blob: blob,
-              filename: (meta && meta.filename) || fname,
-              path: path,
-              size: (meta && meta.size) || blob.size,
-            });
-          }
+          handleWsDownloadJson(ctx, msg);
           return;
         }
-        chunks.push(new Uint8Array(ev.data));
-        if (meta) {
-          const loaded = chunks.reduce((sum, c) => sum + c.byteLength, 0);
-          onProgress(loaded, meta.size);
-          if (TT && ttId) TT.updateProgress(ttId, loaded, meta.size);
-        }
+        handleWsDownloadBinary(ctx, ev.data);
       }
 
       ws.addEventListener('message', onMessage);
       ws.addEventListener('error', () => {
-        if (settled) return;
-        settled = true;
+        if (ctx.settled) return;
+        ctx.settled = true;
         cleanup();
         if (TT && ttId) TT.failTransfer(ttId, 'WebSocket error');
         reject(new Error('WebSocket error'));

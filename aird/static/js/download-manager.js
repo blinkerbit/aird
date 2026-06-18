@@ -80,6 +80,48 @@
       this.cancelled = false;
     }
 
+    async _runHttpItem(item) {
+      const FTH = global.AirdFileTransferHttp;
+      item.status = 'downloading';
+      const onCancel = () => {
+        item.cancelSignal.aborted = true;
+        item.status = 'cancelled';
+      };
+      try {
+        const result = await FTH.downloadFile(item.path, {
+          signal: item.cancelSignal,
+          onCancel: onCancel,
+        });
+        if (item.cancelSignal?.aborted || this.cancelled) {
+          item.status = 'cancelled';
+        } else {
+          FTH.saveBlob(result.blob, result.filename);
+          item.status = 'done';
+        }
+      } catch (err) {
+        if (err?.message === 'cancelled' || item.cancelSignal?.aborted) {
+          item.status = 'cancelled';
+        } else {
+          item.status = 'error';
+        }
+      }
+    }
+
+    _runUrlItem(item) {
+      const fname = fileNameFromPath(item.label);
+      const TT = global.AirdTransferTracker;
+      if (TT) {
+        item.ttId = TT.addTransfer(fname, 0, 'download');
+        TT.setTransferStatus(item.ttId, 'browser', 'Starting in browser…');
+      }
+      triggerNativeDownload(item.url, fname);
+      item.status = 'browser';
+      if (TT && item.ttId) {
+        TT.setTransferStatus(item.ttId, 'browser', 'In browser downloads');
+        setTimeout(() => TT.completeTransfer(item.ttId), 4000);
+      }
+    }
+
     async run() {
       if (this.running || this.items.length === 0) return;
       this.running = true;
@@ -90,42 +132,9 @@
         if (item.status !== 'queued') continue;
 
         if (item.http && FTH?.downloadFile) {
-          item.status = 'downloading';
-          const onCancel = () => {
-            item.cancelSignal.aborted = true;
-            item.status = 'cancelled';
-          };
-          try {
-            const result = await FTH.downloadFile(item.path, {
-              signal: item.cancelSignal,
-              onCancel: onCancel,
-            });
-            if (item.cancelSignal?.aborted || this.cancelled) {
-              item.status = 'cancelled';
-            } else {
-              FTH.saveBlob(result.blob, result.filename);
-              item.status = 'done';
-            }
-          } catch (err) {
-            if (err?.message === 'cancelled' || item.cancelSignal?.aborted) {
-              item.status = 'cancelled';
-            } else {
-              item.status = 'error';
-            }
-          }
+          await this._runHttpItem(item);
         } else if (item.url) {
-          const fname = fileNameFromPath(item.label);
-          const TT = global.AirdTransferTracker;
-          if (TT) {
-            item.ttId = TT.addTransfer(fname, 0, 'download');
-            TT.setTransferStatus(item.ttId, 'browser', 'Starting in browser…');
-          }
-          triggerNativeDownload(item.url, fname);
-          item.status = 'browser';
-          if (TT && item.ttId) {
-            TT.setTransferStatus(item.ttId, 'browser', 'In browser downloads');
-            setTimeout(() => TT.completeTransfer(item.ttId), 4000);
-          }
+          this._runUrlItem(item);
         }
 
         const moreQueued = this.items.some((i) => i.status === 'queued');

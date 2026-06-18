@@ -33,7 +33,9 @@
     const bytes = new Uint8Array(buf);
     let bin = '';
     for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    let out = btoa(bin).replace(/\+/g, '-').replace(/\//g, '_');
+    while (out.endsWith('=')) out = out.slice(0, -1);
+    return out;
   }
 
   function decodeCreationOptions(json) {

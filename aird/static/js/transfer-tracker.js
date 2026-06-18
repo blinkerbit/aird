@@ -72,6 +72,62 @@
   /* ── Render ─────────────────────────────────────────────────────── */
   const CIRC = 2 * Math.PI * 18;
 
+  function _ttStatusCls(status) {
+    if (status === 'done') return 'tt-done';
+    if (status === 'error') return 'tt-error';
+    if (status === 'browser') return 'tt-browser';
+    return 'tt-active';
+  }
+
+  function _ttPctLabel(it) {
+    if (it.status === 'done') return '✓';
+    if (it.status === 'error') return '✗';
+    if (it.status === 'browser') return '…';
+    return _pct(it.loaded, it.total) + '%';
+  }
+
+  function _ttProgressCls(status) {
+    if (status === 'error') return 'progress-error';
+    if (status === 'browser') return 'progress-success';
+    return 'progress-primary';
+  }
+
+  function _ttRowDetail(it) {
+    if (it.detail) return it.detail;
+    if (it.status === 'browser') {
+      return 'Downloading in your browser — safe to close this tab';
+    }
+    if (it.total <= 0) return '';
+    let detail = _fmt(it.loaded) + ' / ' + _fmt(it.total);
+    if (it.status === 'active' && it.loaded > 0) {
+      detail += ' @ ' + _fmt(_speed(it.loaded, it.startedAt)) + '/s';
+    }
+    return detail;
+  }
+
+  function _ttActiveSpeedLabel(agg) {
+    if (!agg.active || agg.loadedBytes <= 0) return null;
+    let earliest = null;
+    _items.forEach(function (it) {
+      if (it.status === 'active' && it.startedAt) {
+        if (earliest === null || it.startedAt < earliest) earliest = it.startedAt;
+      }
+    });
+    if (earliest === null) return null;
+    return _fmt(_speed(agg.loadedBytes, earliest)) + '/s';
+  }
+
+  function _ttTooltipParts(agg) {
+    const parts = [];
+    if (agg.active) parts.push(agg.active + ' transferring');
+    if (agg.browser) parts.push(agg.browser + ' in browser');
+    const speed = _ttActiveSpeedLabel(agg);
+    if (speed) parts.push(speed);
+    if (agg.done) parts.push(agg.done + ' done');
+    if (agg.failed) parts.push(agg.failed + ' failed');
+    return parts;
+  }
+
   function _render() {
     _refs();
     if (!_btn) return;
@@ -97,28 +153,7 @@
     }
 
     if (_tooltip) {
-      var parts = [];
-      if (agg.active) {
-        parts.push(agg.active + ' transferring');
-      }
-      if (agg.browser) {
-        parts.push(agg.browser + ' in browser');
-      }
-      if (agg.active) {
-        if (agg.loadedBytes > 0) {
-          var earliest = null;
-          _items.forEach(function (it) {
-            if (it.status === 'active' && it.startedAt) {
-              if (earliest === null || it.startedAt < earliest) earliest = it.startedAt;
-            }
-          });
-          if (earliest !== null) {
-            parts.push(_fmt(_speed(agg.loadedBytes, earliest)) + '/s');
-          }
-        }
-      }
-      if (agg.done) parts.push(agg.done + ' done');
-      if (agg.failed) parts.push(agg.failed + ' failed');
+      const parts = _ttTooltipParts(agg);
       _tooltip.textContent = parts.join(' · ') || 'No transfers';
     }
 
@@ -132,29 +167,22 @@
       _sidebarList.innerHTML = '<p class="text-sm text-base-content/50 p-4 text-center">No transfers</p>';
       return;
     }
-    _items.forEach(function (it, id) {
+    _items.forEach(function (it, _id) {
       var row = document.createElement('div');
       row.className = 'tt-row';
       var icon = it.direction === 'upload' ? '↑' : '↓';
-      var statusCls = it.status === 'done' ? 'tt-done' : it.status === 'error' ? 'tt-error' : it.status === 'browser' ? 'tt-browser' : 'tt-active';
+      var statusCls = _ttStatusCls(it.status);
       var pct = _pct(it.loaded, it.total);
-      var detail = it.detail || '';
-      if (!detail && it.status === 'browser') {
-        detail = 'Downloading in your browser — safe to close this tab';
-      } else if (!detail && it.total > 0) {
-        detail = _fmt(it.loaded) + ' / ' + _fmt(it.total);
-        if (it.status === 'active' && it.loaded > 0) {
-          detail += ' @ ' + _fmt(_speed(it.loaded, it.startedAt)) + '/s';
-        }
-      }
-      var pctLabel = it.status === 'done' ? '✓' : it.status === 'error' ? '✗' : it.status === 'browser' ? '…' : pct + '%';
+      var detail = _ttRowDetail(it);
+      var pctLabel = _ttPctLabel(it);
+      var progressVal = it.status === 'browser' ? 100 : pct;
       row.innerHTML =
         '<div class="tt-row-header">' +
           '<span class="tt-icon ' + statusCls + '">' + icon + '</span>' +
           '<span class="tt-name" title="' + _escAttr(it.name) + '">' + _escHtml(it.name) + '</span>' +
           '<span class="tt-pct">' + pctLabel + '</span>' +
         '</div>' +
-        '<progress class="progress progress-sm w-full ' + (it.status === 'error' ? 'progress-error' : it.status === 'browser' ? 'progress-success' : 'progress-primary') + '" value="' + (it.status === 'browser' ? 100 : pct) + '" max="100"></progress>' +
+        '<progress class="progress progress-sm w-full ' + _ttProgressCls(it.status) + '" value="' + progressVal + '" max="100"></progress>' +
         '<div class="tt-detail">' + _escHtml(detail) + '</div>';
       if (it.status === 'active' && it.onCancel) {
         var cancelBtn = document.createElement('button');

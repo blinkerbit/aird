@@ -831,7 +831,7 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
 
             selectedIds.forEach((id, i) => {
                 setTimeout(() => {
-                    requestFile(id);
+                    globalThis.requestFile(id);
                 }, i * 200); // Stagger requests slightly to not choke the WS/RTC buffers
             });
         }
@@ -1211,7 +1211,7 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
                 if (!btn) return;
                 const id = btn.dataset.fileId;
                 if (!btn.disabled) {
-                    requestFile(id);
+                    globalThis.requestFile(id);
                 }
             });
 

@@ -242,10 +242,6 @@
       }, RELOAD_DELAY_MS);
     }
 
-    function formatBytes(bytes) {
-      return globalThis.AirdCore.formatBytes(bytes);
-    }
-
     function abortActiveUploads(item) {
       item.cancelled = true;
       if (item.uploadSignal) {
@@ -440,6 +436,186 @@
         if (e.key === 'Escape') {
           closeMobileActionMenus();
         }
+      });
+    }
+
+    let _shortcutsOverlay = null;
+
+    function hideBrowseShortcutsHelp() {
+      if (_shortcutsOverlay) { _shortcutsOverlay.remove(); _shortcutsOverlay = null; }
+    }
+
+    function showBrowseShortcutsHelp() {
+      if (_shortcutsOverlay) { hideBrowseShortcutsHelp(); return; }
+      _shortcutsOverlay = document.createElement('div');
+      _shortcutsOverlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
+      const card = document.createElement('div');
+      card.style.cssText = 'background:var(--ds-surface);border:2px solid var(--ds-border-strong);border-radius:8px;padding:24px 32px;max-width:420px;width:90%;font-family:monospace;font-size:13px;color:var(--ds-text);';
+      card.innerHTML = '<h3 style="margin:0 0 16px 0;">Keyboard Shortcuts</h3>' +
+        '<table style="width:100%;border-collapse:collapse;">' +
+        '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">?</td><td>Show this help</td></tr>' +
+        '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">/</td><td>Focus search (if available)</td></tr>' +
+        '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">n</td><td>New folder</td></tr>' +
+        '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">u</td><td>Upload file</td></tr>' +
+        '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Ctrl+A</td><td>Select all files</td></tr>' +
+        '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Delete</td><td>Delete selected files</td></tr>' +
+        '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Escape</td><td>Deselect / close</td></tr>' +
+        '</table>' +
+        '<p style="margin:16px 0 0;font-size:11px;color:#888;">Press Escape or ? to close</p>';
+      _shortcutsOverlay.appendChild(card);
+      _shortcutsOverlay.addEventListener('click', function (e) {
+        if (e.target === _shortcutsOverlay) hideBrowseShortcutsHelp();
+      });
+      document.body.appendChild(_shortcutsOverlay);
+    }
+
+    function _handleBrowseEscapeKey() {
+      if (_shortcutsOverlay) { hideBrowseShortcutsHelp(); return; }
+      if (_isRowTagPopoverOpen()) { closeRowTagPopover(); return; }
+      if (globalThis.AirdCore.cancelActiveDialog()) return;
+      const fpOverlay = document.getElementById('folderPickerOverlay');
+      if (fpOverlay?.classList.contains('show')) { FolderPicker.close(null); return; }
+      const sharePicker = document.getElementById('sharePickerModal');
+      if (sharePicker?.open) {
+        document.getElementById('sharePickerCancel')?.click();
+        return;
+      }
+      const sharePopup = document.getElementById('sharePopup');
+      if (sharePopup?.open) { closeSharePopup(); return; }
+      SelectionStore.clear();
+      document.querySelectorAll('.row-checkbox:checked').forEach(function (cb) { cb.checked = false; });
+      const selectAll = document.getElementById('selectAllCheckbox');
+      if (selectAll) selectAll.checked = false;
+      updateBulkToolbar();
+    }
+
+    function _browseShortcutQuestionMark(e) {
+      if (e.key !== '?') return false;
+      e.preventDefault();
+      showBrowseShortcutsHelp();
+      return true;
+    }
+
+    function _browseShortcutSlash(e) {
+      if (e.key !== '/') return false;
+      e.preventDefault();
+      const searchInput = document.querySelector('input[type="text"][placeholder*="earch"], input[type="search"]');
+      if (searchInput) searchInput.focus();
+      return true;
+    }
+
+    function _browseShortcutNewFolder(e) {
+      if (e.key !== 'n' || e.ctrlKey || e.metaKey) return false;
+      e.preventDefault();
+      document.getElementById('newFolderBtn')?.click();
+      return true;
+    }
+
+    function _browseShortcutUpload(e) {
+      if (e.key !== 'u' || e.ctrlKey || e.metaKey) return false;
+      e.preventDefault();
+      document.getElementById('fileInput')?.click();
+      return true;
+    }
+
+    function _browseShortcutSelectAll(e) {
+      if (e.key !== 'a' || (!e.ctrlKey && !e.metaKey)) return false;
+      e.preventDefault();
+      const selectAllCb = document.getElementById('selectAllCheckbox');
+      if (selectAllCb) {
+        selectAllCb.checked = true;
+        selectAllCb.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      return true;
+    }
+
+    function _browseShortcutDelete(e) {
+      if (e.key !== 'Delete') return false;
+      const checked = document.querySelectorAll('.row-checkbox:checked');
+      if (checked.length > 0) document.getElementById('bulkDeleteBtn')?.click();
+      return true;
+    }
+
+    function initBrowseKeyboardShortcuts() {
+      document.addEventListener('keydown', function browseGlobalKeydown(e) {
+        if (e.key === 'Escape') {
+          _handleBrowseEscapeKey();
+          return;
+        }
+        if (isInputKeyTarget(e.target)) return;
+        if (_browseShortcutQuestionMark(e)) return;
+        if (_browseShortcutSlash(e)) return;
+        if (_browseShortcutNewFolder(e)) return;
+        if (_browseShortcutUpload(e)) return;
+        if (_browseShortcutSelectAll(e)) return;
+        _browseShortcutDelete(e);
+      });
+    }
+
+    function initBrowseColumnResize() {
+      const table = document.getElementById('fileTable');
+      if (!table) return;
+      const resizers = table.querySelectorAll('.col-resizer');
+      if (!resizers.length) return;
+
+      const STORAGE_KEY = 'aird_browse_col_widths';
+      const ths = Array.from(table.querySelectorAll('thead th'));
+
+      function saveWidths() {
+        try {
+          const widths = ths.map(function (th) { return th.style.width || ''; });
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(widths));
+        } catch {
+          /* sessionStorage unavailable */
+        }
+      }
+
+      function restoreWidths() {
+        try {
+          const raw = sessionStorage.getItem(STORAGE_KEY);
+          if (!raw) return;
+          const widths = JSON.parse(raw);
+          if (!Array.isArray(widths) || widths.length !== ths.length) return;
+          widths.forEach(function (w, i) {
+            if (w) ths[i].style.width = w;
+          });
+        } catch {
+          /* ignore corrupt stored widths */
+        }
+      }
+
+      restoreWidths();
+
+      resizers.forEach(function (resizer) {
+        let startX;
+        let startW;
+        let th;
+
+        function onMouseMove(e) {
+          const diff = e.clientX - startX;
+          const newW = Math.max(40, startW + diff);
+          th.style.width = newW + 'px';
+        }
+
+        function onMouseUp() {
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+          resizer.classList.remove('col-resizing');
+          table.classList.remove('col-resize-active');
+          saveWidths();
+        }
+
+        resizer.addEventListener('mousedown', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          th = resizer.parentElement;
+          startX = e.clientX;
+          startW = th.offsetWidth;
+          resizer.classList.add('col-resizing');
+          table.classList.add('col-resize-active');
+          document.addEventListener('mousemove', onMouseMove);
+          document.addEventListener('mouseup', onMouseUp);
+        });
       });
     }
 
@@ -745,7 +921,7 @@
       const blob = await res.blob();
       let name = 'aird-download.zip';
       if (paths.length === 1) {
-        const base = String(paths[0]).replace(/\/+$/, '').split('/').pop();
+        const base = String(paths[0]).split('/').filter(Boolean).pop();
         if (base) name = base + '.zip';
       }
       const save = globalThis.AirdFileTransferHttp?.saveBlob;
@@ -1422,13 +1598,6 @@
       }
     }
 
-    async function _fetchExistingTagNames() {
-      const rules = await _fetchAllTagRules();
-      return [...new Set(rules.map(function (t) { return t.tag; }))].sort(function (a, b) {
-        return a.localeCompare(b);
-      });
-    }
-
     async function openRowTagPopover(path, anchorEl) {
       if (!CAN_TAG) return;
       closeRowTagPopover();
@@ -1875,18 +2044,17 @@
       }
     }
 
-    // Event delegation for CSP compliance - handle all clicks through event listeners
-    document.addEventListener('DOMContentLoaded', function () {
-      FolderPicker.init();
+    function wireBrowseButton(id, handler) {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('click', handler);
+    }
 
-      // Sort headers
+    function wireBrowseRowActions() {
       document.querySelectorAll('[data-sort-column]').forEach(function (el) {
         el.addEventListener('click', function () {
           sortTable(Number.parseInt(this.dataset.sortColumn, 10));
         });
       });
-
-      // Shared icons
       document.querySelectorAll('[data-share-path]').forEach(function (el) {
         el.addEventListener('click', function (e) {
           e.stopPropagation();
@@ -1894,33 +2062,25 @@
           showShareDetails(this.dataset.sharePath);
         });
       });
-
-      // Rename buttons
       document.querySelectorAll('[data-rename-path]').forEach(function (el) {
         el.addEventListener('click', function (e) {
           e.preventDefault();
           renameItem(this.dataset.renamePath);
         });
       });
-
-      // Delete buttons
       document.querySelectorAll('[data-delete-path]').forEach(function (el) {
         el.addEventListener('click', function (e) {
           e.preventDefault();
           deleteItem(this.dataset.deletePath, this.dataset.isDir === '1');
         });
       });
-
-      // Popup close button
       document.querySelectorAll('.popup-close').forEach(function (el) {
-        el.addEventListener('click', function () {
-          closeSharePopup();
-        });
+        el.addEventListener('click', closeSharePopup);
       });
+    }
 
+    function initBrowseSelectionUi() {
       closeSelectionDrawer();
-
-      // Restore selections from sessionStorage (drawer stays closed until user opens it)
       document.querySelectorAll('.row-checkbox').forEach(function (cb) {
         if (SelectionStore.has(cb.dataset.path)) {
           cb.checked = true;
@@ -1929,7 +2089,6 @@
       updateBulkToolbar();
       _selectionInitDone = true;
 
-      // Select all checkbox
       const selectAllCheckbox = document.getElementById('selectAllCheckbox');
       if (selectAllCheckbox) {
         selectAllCheckbox.addEventListener('click', function (e) {
@@ -1952,43 +2111,27 @@
           updateBulkToolbar();
         });
       });
-      const newFolderBtn = document.getElementById('newFolderBtn');
-      if (newFolderBtn) newFolderBtn.addEventListener('click', newFolder);
-      initFileListViewToggle();
-      initMobileActionMenus();
-      const bulkDownloadBtn = document.getElementById('bulkDownloadBtn');
-      if (bulkDownloadBtn) bulkDownloadBtn.addEventListener('click', bulkDownload);
-      const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
-      if (bulkDeleteBtn) bulkDeleteBtn.addEventListener('click', bulkDelete);
-      const bulkCopyBtn = document.getElementById('bulkCopyBtn');
-      if (bulkCopyBtn) bulkCopyBtn.addEventListener('click', bulkCopy);
-      const bulkMoveBtn = document.getElementById('bulkMoveBtn');
-      if (bulkMoveBtn) bulkMoveBtn.addEventListener('click', bulkMove);
-      const bulkAddToShareBtn = document.getElementById('bulkAddToShareBtn');
-      if (bulkAddToShareBtn) bulkAddToShareBtn.addEventListener('click', bulkAddToShare);
-      const bulkCreateShareBtn = document.getElementById('bulkCreateShareBtn');
-      if (bulkCreateShareBtn) bulkCreateShareBtn.addEventListener('click', bulkCreateShare);
-      const bulkAddTagsBtn = document.getElementById('bulkAddTagsBtn');
-      if (bulkAddTagsBtn) bulkAddTagsBtn.addEventListener('click', bulkAddTags);
-      const shareByTagBtn = document.getElementById('shareByTagBtn');
-      if (shareByTagBtn) shareByTagBtn.addEventListener('click', openShareByTag);
-      const clearSelectionBtn = document.getElementById('clearSelectionBtn');
-      if (clearSelectionBtn) clearSelectionBtn.addEventListener('click', function () {
+    }
+
+    function wireBrowseBulkActions() {
+      wireBrowseButton('newFolderBtn', newFolder);
+      wireBrowseButton('bulkDownloadBtn', bulkDownload);
+      wireBrowseButton('bulkDeleteBtn', bulkDelete);
+      wireBrowseButton('bulkCopyBtn', bulkCopy);
+      wireBrowseButton('bulkMoveBtn', bulkMove);
+      wireBrowseButton('bulkAddToShareBtn', bulkAddToShare);
+      wireBrowseButton('bulkCreateShareBtn', bulkCreateShare);
+      wireBrowseButton('bulkAddTagsBtn', bulkAddTags);
+      wireBrowseButton('shareByTagBtn', openShareByTag);
+      wireBrowseButton('clearSelectionBtn', function () {
         SelectionStore.clear();
         document.querySelectorAll('.row-checkbox:checked').forEach(function (cb) { cb.checked = false; });
         const sa = document.getElementById('selectAllCheckbox');
         if (sa) sa.checked = false;
         updateBulkToolbar();
       });
-
-      const selectionCountBtn = document.getElementById('selectionCountBtn');
-      if (selectionCountBtn) {
-        selectionCountBtn.addEventListener('click', toggleSelectionDrawer);
-      }
-      const selectionDrawerClose = document.getElementById('selectionDrawerClose');
-      if (selectionDrawerClose) {
-        selectionDrawerClose.addEventListener('click', closeSelectionDrawer);
-      }
+      wireBrowseButton('selectionCountBtn', toggleSelectionDrawer);
+      wireBrowseButton('selectionDrawerClose', closeSelectionDrawer);
       const browseSelectionBackdrop = document.getElementById('browseSelectionBackdrop');
       if (browseSelectionBackdrop) {
         browseSelectionBackdrop.addEventListener('click', closeSelectionDrawer);
@@ -1998,8 +2141,49 @@
           closeSelectionDrawer();
         }
       });
+    }
 
-      // Copy current path button in breadcrumb
+    function wireBrowseTableDelegation() {
+      document.getElementById('fileTable')?.addEventListener('click', function (e) {
+        const dl = e.target.closest('.download-btn');
+        if (dl) {
+          e.preventDefault();
+          const path = dl.dataset.downloadPath || dl.closest('tr.file-row')?.dataset.path;
+          if (path) void downloadFileViaHttp(path);
+          return;
+        }
+        const tagBtn = e.target.closest('.row-tag-add-btn');
+        if (!tagBtn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openRowTagPopover(tagBtn.dataset.path, tagBtn);
+      });
+
+      document.addEventListener('click', function (e) {
+        const el = e.target.closest('[data-action]');
+        if (!el) return;
+        const action = el.dataset.action;
+        if (action === 'copyToClipboard') {
+          e.preventDefault();
+          copyToClipboard(el.dataset.text, el);
+        } else if (action === 'openShare') {
+          e.preventDefault();
+          openShare(el.dataset.url);
+        } else if (action === 'revokeShare') {
+          e.preventDefault();
+          revokeShare(el.dataset.id);
+        }
+      });
+    }
+
+    function initBrowsePage() {
+      FolderPicker.init();
+      wireBrowseRowActions();
+      initBrowseSelectionUi();
+      initFileListViewToggle();
+      initMobileActionMenus();
+      wireBrowseBulkActions();
+
       const copyPathBtn = document.getElementById('copyPathBtn');
       if (copyPathBtn) {
         copyPathBtn.addEventListener('click', async function () {
@@ -2021,7 +2205,6 @@
         });
       }
 
-      // Mobile sort select (mirrors clicking the column header)
       const mobileSortSelect = document.getElementById('mobileSortSelect');
       if (mobileSortSelect) {
         mobileSortSelect.addEventListener('change', function () {
@@ -2031,214 +2214,12 @@
       }
 
       _initFileTagsHoverPopover();
+      wireBrowseTableDelegation();
+      initBrowseKeyboardShortcuts();
+      initBrowseColumnResize();
+    }
 
-      document.getElementById('fileTable')?.addEventListener('click', function (e) {
-        const dl = e.target.closest('.download-btn');
-        if (dl) {
-          e.preventDefault();
-          const path = dl.dataset.downloadPath
-            || dl.closest('tr.file-row')?.dataset.path;
-          if (path) void downloadFileViaHttp(path);
-          return;
-        }
-      });
-
-      // Per-row tag add (+) buttons (re-bound after cell refresh)
-      document.getElementById('fileTable')?.addEventListener('click', function (e) {
-        const btn = e.target.closest('.row-tag-add-btn');
-        if (!btn) return;
-        e.preventDefault();
-        e.stopPropagation();
-        openRowTagPopover(btn.dataset.path, btn);
-      });
-
-      // Event delegation for dynamically generated share popup buttons
-      document.addEventListener('click', function (e) {
-        const el = e.target.closest('[data-action]');
-        if (!el) return;
-        const action = el.dataset.action;
-        if (action === 'copyToClipboard') {
-          e.preventDefault();
-          copyToClipboard(el.dataset.text, el);
-        } else if (action === 'openShare') {
-          e.preventDefault();
-          openShare(el.dataset.url);
-        } else if (action === 'revokeShare') {
-          e.preventDefault();
-          revokeShare(el.dataset.id);
-        }
-      });
-
-      // --- Keyboard Shortcuts ---
-      let shortcutsOverlay = null;
-
-      function showShortcutsHelp() {
-        if (shortcutsOverlay) { hideShortcutsHelp(); return; }
-        shortcutsOverlay = document.createElement('div');
-        shortcutsOverlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
-        const card = document.createElement('div');
-        card.style.cssText = 'background:var(--ds-surface);border:2px solid var(--ds-border-strong);border-radius:8px;padding:24px 32px;max-width:420px;width:90%;font-family:monospace;font-size:13px;color:var(--ds-text);';
-        card.innerHTML = '<h3 style="margin:0 0 16px 0;">Keyboard Shortcuts</h3>' +
-          '<table style="width:100%;border-collapse:collapse;">' +
-          '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">?</td><td>Show this help</td></tr>' +
-          '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">/</td><td>Focus search (if available)</td></tr>' +
-          '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">n</td><td>New folder</td></tr>' +
-          '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">u</td><td>Upload file</td></tr>' +
-          '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Ctrl+A</td><td>Select all files</td></tr>' +
-          '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Delete</td><td>Delete selected files</td></tr>' +
-          '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Escape</td><td>Deselect / close</td></tr>' +
-          '</table>' +
-          '<p style="margin:16px 0 0;font-size:11px;color:#888;">Press Escape or ? to close</p>';
-        shortcutsOverlay.appendChild(card);
-        shortcutsOverlay.addEventListener('click', function(e) { if (e.target === shortcutsOverlay) hideShortcutsHelp(); });
-        document.body.appendChild(shortcutsOverlay);
-      }
-
-      function hideShortcutsHelp() {
-        if (shortcutsOverlay) { shortcutsOverlay.remove(); shortcutsOverlay = null; }
-      }
-
-      function _handleEscapeKey() {
-        if (shortcutsOverlay) { hideShortcutsHelp(); return; }
-        if (_isRowTagPopoverOpen()) { closeRowTagPopover(); return; }
-        if (globalThis.AirdCore.cancelActiveDialog()) return;
-        const fpOverlay = document.getElementById('folderPickerOverlay');
-        if (fpOverlay?.classList.contains('show')) { FolderPicker.close(null); return; }
-        const sharePicker = document.getElementById('sharePickerModal');
-        if (sharePicker?.open) {
-          document.getElementById('sharePickerCancel')?.click();
-          return;
-        }
-        const sharePopup = document.getElementById('sharePopup');
-        if (sharePopup?.open) { closeSharePopup(); return; }
-        SelectionStore.clear();
-        document.querySelectorAll('.row-checkbox:checked').forEach(function(cb) { cb.checked = false; });
-        const selectAll = document.getElementById('selectAllCheckbox');
-        if (selectAll) selectAll.checked = false;
-        updateBulkToolbar();
-      }
-
-      function handleShortcutQuestionMark(e) {
-        if (e.key !== '?') return false;
-        e.preventDefault();
-        showShortcutsHelp();
-        return true;
-      }
-
-      function handleShortcutSlash(e) {
-        if (e.key !== '/') return false;
-        e.preventDefault();
-        const searchInput = document.querySelector('input[type="text"][placeholder*="earch"], input[type="search"]');
-        if (searchInput) searchInput.focus();
-        return true;
-      }
-
-      function handleShortcutNewFolder(e) {
-        if (e.key !== 'n' || e.ctrlKey || e.metaKey) return false;
-        e.preventDefault();
-        document.getElementById('newFolderBtn')?.click();
-        return true;
-      }
-
-      function handleShortcutUpload(e) {
-        if (e.key !== 'u' || e.ctrlKey || e.metaKey) return false;
-        e.preventDefault();
-        document.getElementById('fileInput')?.click();
-        return true;
-      }
-
-      function handleShortcutSelectAll(e) {
-        if (e.key !== 'a' || (!e.ctrlKey && !e.metaKey)) return false;
-        e.preventDefault();
-        const selectAllCb = document.getElementById('selectAllCheckbox');
-        if (selectAllCb) {
-          selectAllCb.checked = true;
-          selectAllCb.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-        return true;
-      }
-
-      function handleShortcutDelete(e) {
-        if (e.key !== 'Delete') return false;
-        const checked = document.querySelectorAll('.row-checkbox:checked');
-        if (checked.length > 0) document.getElementById('bulkDeleteBtn')?.click();
-        return true;
-      }
-
-      document.addEventListener('keydown', function browseGlobalKeydown(e) {
-        if (e.key === 'Escape') {
-          _handleEscapeKey();
-          return;
-        }
-        if (isInputKeyTarget(e.target)) return;
-        if (handleShortcutQuestionMark(e)) return;
-        if (handleShortcutSlash(e)) return;
-        if (handleShortcutNewFolder(e)) return;
-        if (handleShortcutUpload(e)) return;
-        if (handleShortcutSelectAll(e)) return;
-        handleShortcutDelete(e);
-      });
-      // --- Column Resize ---
-      (function initColumnResize() {
-        const table = document.getElementById('fileTable');
-        if (!table) return;
-        const resizers = table.querySelectorAll('.col-resizer');
-        if (!resizers.length) return;
-
-        const STORAGE_KEY = 'aird_browse_col_widths';
-        const ths = Array.from(table.querySelectorAll('thead th'));
-
-        function saveWidths() {
-          try {
-            const widths = ths.map(function (th) { return th.style.width || ''; });
-            sessionStorage.setItem(STORAGE_KEY, JSON.stringify(widths));
-          } catch (_) { /* ignore */ }
-        }
-
-        function restoreWidths() {
-          try {
-            const raw = sessionStorage.getItem(STORAGE_KEY);
-            if (!raw) return;
-            const widths = JSON.parse(raw);
-            if (!Array.isArray(widths) || widths.length !== ths.length) return;
-            widths.forEach(function (w, i) {
-              if (w) ths[i].style.width = w;
-            });
-          } catch (_) { /* ignore */ }
-        }
-
-        restoreWidths();
-
-        resizers.forEach(function (resizer) {
-          let startX, startW, th;
-
-          function onMouseMove(e) {
-            const diff = e.clientX - startX;
-            const newW = Math.max(40, startW + diff);
-            th.style.width = newW + 'px';
-          }
-
-          function onMouseUp() {
-            document.removeEventListener('mousemove', onMouseMove);
-            document.removeEventListener('mouseup', onMouseUp);
-            resizer.classList.remove('col-resizing');
-            table.classList.remove('col-resize-active');
-            saveWidths();
-          }
-
-          resizer.addEventListener('mousedown', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            th = resizer.parentElement;
-            startX = e.clientX;
-            startW = th.offsetWidth;
-            resizer.classList.add('col-resizing');
-            table.classList.add('col-resize-active');
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
-          });
-        });
-      })();
-    });
+    // Event delegation for CSP compliance - handle all clicks through event listeners
+    document.addEventListener('DOMContentLoaded', initBrowsePage);
 
 })();

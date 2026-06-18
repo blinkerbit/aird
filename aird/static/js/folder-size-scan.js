@@ -13,11 +13,14 @@
     return global.AirdCore?.getXSRFToken?.() || '';
   }
 
+  function trimEndSlashes(s) {
+    let out = s;
+    while (out.endsWith('/')) out = out.slice(0, -1);
+    return out;
+  }
+
   function normPath(p) {
-    return String(p || '')
-      .replace(/\\/g, '/')
-      .replace(/^\/+/, '')
-      .replace(/\/+$/, '');
+    return trimEndSlashes(String(p || '').replace(/\\/g, '/').replace(/^\/+/, ''));
   }
 
   function formatBytes(bytes) {

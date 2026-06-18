@@ -1098,6 +1098,28 @@ let currentPath = '';
         + '</div></div>';
     }
 
+    function _shareAccessBadgeHtml(share) {
+      const restricted = share.allowed_users && share.allowed_users.length > 0;
+      const badgeCls = restricted ? 'badge-warning' : 'badge-success';
+      const label = restricted ? 'Restricted' : 'Public';
+      return '<span><span class="opacity-60">Access:</span> <span class="badge ' + badgeCls + ' badge-sm">' + label + '</span></span>';
+    }
+
+    function _applyShareManagementEditorMode(body, editorOnly) {
+      document.querySelector('.share-management-title').textContent = editorOnly
+        ? 'Edit shared files'
+        : 'Manage Share';
+      const updateBtn = document.getElementById('updateShareBtn');
+      if (updateBtn) updateBtn.classList.toggle('hidden', editorOnly);
+      if (!editorOnly) return;
+      body.querySelectorAll('[data-owner-only]').forEach((el) => el.classList.add('hidden'));
+      const pathsCollapse = body.querySelector('#manageSharePathsList')?.closest('.collapse');
+      if (!pathsCollapse) return;
+      pathsCollapse.classList.remove('hidden');
+      const radio = pathsCollapse.querySelector('input[type="radio"]');
+      if (radio) radio.checked = true;
+    }
+
     function renderShareManagementModal(share) {
       const body = document.getElementById('shareManagementBody');
       const editorOnly = Boolean(share.can_edit_paths && !share.is_owner);
@@ -1133,7 +1155,7 @@ let currentPath = '';
               </div>
               <div class="flex flex-wrap gap-3 mt-2 text-xs">
                 <span><span class="opacity-60">Downloads:</span> <span class="badge badge-ghost badge-sm">${share.download_count || 0}</span></span>
-                <span><span class="opacity-60">Access:</span> <span class="badge ${share.allowed_users && share.allowed_users.length > 0 ? 'badge-warning' : 'badge-success'} badge-sm">${share.allowed_users && share.allowed_users.length > 0 ? 'Restricted' : 'Public'}</span></span>
+                ${_shareAccessBadgeHtml(share)}
                 <span><span class="opacity-60">Type:</span> <span class="badge badge-info badge-sm capitalize">${escapeHtml(share.share_type || 'static')}</span></span>
               </div>
             </div>
@@ -1227,20 +1249,7 @@ let currentPath = '';
       `;
 
       currentShareData = share;
-      document.querySelector('.share-management-title').textContent = editorOnly
-        ? 'Edit shared files'
-        : 'Manage Share';
-      const updateBtn = document.getElementById('updateShareBtn');
-      if (updateBtn) updateBtn.classList.toggle('hidden', editorOnly);
-      if (editorOnly) {
-        body.querySelectorAll('[data-owner-only]').forEach((el) => el.classList.add('hidden'));
-        const pathsCollapse = body.querySelector('#manageSharePathsList')?.closest('.collapse');
-        if (pathsCollapse) {
-          pathsCollapse.classList.remove('hidden');
-          const radio = pathsCollapse.querySelector('input[type="radio"]');
-          if (radio) radio.checked = true;
-        }
-      }
+      _applyShareManagementEditorMode(body, editorOnly);
       setupTokenEditCheckboxes();
     }
 

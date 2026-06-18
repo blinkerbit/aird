@@ -42,9 +42,142 @@
     return xsrf ? `/upload?_xsrf=${encodeURIComponent(xsrf)}` : '/upload';
   }
 
-  function isCancelled(err) {
-    const msg = (err && err.message) ? String(err.message).toLowerCase() : '';
-    return msg === 'cancelled';
+  function trackUpload(filename, totalSize, options) {
+    const TT = global.AirdTransferTracker;
+    const ttId = TT
+      ? TT.addTransfer(filename, totalSize, 'upload', { onCancel: options.onCancel })
+      : null;
+    if (TT && ttId && options.onCancel) {
+      TT.setCancelHandler(ttId, options.onCancel);
+    }
+    return { TT, ttId };
+  }
+
+  function trackDownload(fname, options) {
+    const TT = global.AirdTransferTracker;
+    const ttId = TT ? TT.addTransfer(fname, 0, 'download', { onCancel: options.onCancel }) : null;
+    if (TT && ttId && options.onCancel) {
+      TT.setCancelHandler(ttId, options.onCancel);
+    }
+    return { TT, ttId };
+  }
+
+  async function putRangeChunk(uploadId, start, end, totalSize, body, xsrf) {
+    return fetch(`/api/upload/range/${encodeURIComponent(uploadId)}`, {
+      method: 'PUT',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Range': `bytes ${start}-${end}/${totalSize}`,
+        'X-XSRFToken': xsrf,
+      },
+      body,
+    });
+  }
+
+  async function readStreamToBlob(reader, total, ttId, onProgress) {
+    const TT = global.AirdTransferTracker;
+    const chunks = [];
+    let loaded = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      loaded += value.byteLength;
+      if (TT && ttId) TT.updateProgress(ttId, loaded, total || loaded);
+      if (onProgress) onProgress(loaded, total || loaded);
+    }
+    return new Blob(chunks);
+  }
+
+  async function fetchRangePart(url, start, end, signal) {
+    const res = await fetch(url, {
+      credentials: 'same-origin',
+      signal,
+      headers: { Range: `bytes=${start}-${end}` },
+    });
+    if (res.status !== 206 && res.status !== 200) {
+      throw new Error(`Range download failed (${res.status})`);
+    }
+    return res.arrayBuffer();
+  }
+
+  function ttFail(TT, ttId, msg) {
+    if (TT && ttId) TT.failTransfer(ttId, msg);
+  }
+
+  function ttComplete(TT, ttId) {
+    if (TT && ttId) TT.completeTransfer(ttId);
+  }
+
+  function ttUpdate(TT, ttId, loaded, total) {
+    if (TT && ttId) TT.updateProgress(ttId, loaded, total);
+  }
+
+  async function createRangeUploadSession(uploadDir, filename, totalSize, xsrf, TT, ttId) {
+    const sessionRes = await fetch('/api/upload/range/session', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-XSRFToken': xsrf,
+      },
+      body: JSON.stringify({
+        upload_dir: uploadDir,
+        filename: filename,
+        total_size: totalSize,
+      }),
+    });
+    if (!sessionRes.ok) {
+      const errText = await sessionRes.text();
+      ttFail(TT, ttId, errText);
+      throw new Error(errText || `Session failed (${sessionRes.status})`);
+    }
+    const session = await sessionRes.json();
+    return session.upload_id;
+  }
+
+  async function sendRangeUploadChunk(file, uploadId, start, chunkSize, totalSize, xsrf, signal, onProgress, TT, ttId) {
+    if (signal?.aborted) {
+      ttFail(TT, ttId, 'Cancelled');
+      throw new Error('cancelled');
+    }
+    const end = Math.min(start + chunkSize - 1, totalSize - 1);
+    const buf = await file.slice(start, end + 1).arrayBuffer();
+    const putRes = await putRangeChunk(uploadId, start, end, totalSize, buf, xsrf);
+
+    if (putRes.status === 201) {
+      onProgress(100, totalSize, totalSize);
+      ttComplete(TT, ttId);
+      return { finished: true };
+    }
+    if (!putRes.ok && putRes.status !== 200) {
+      const errText = await putRes.text();
+      ttFail(TT, ttId, errText);
+      throw new Error(errText || `Chunk failed (${putRes.status})`);
+    }
+
+    const uploaded = end + 1;
+    onProgress(Math.round((uploaded / totalSize) * 100), uploaded, totalSize);
+    ttUpdate(TT, ttId, uploaded, totalSize);
+    return { finished: false };
+  }
+
+  async function downloadRangeChunk(url, start, chunkSize, total, signal, parts, TT, ttId) {
+    if (signal?.aborted) {
+      ttFail(TT, ttId, 'Cancelled');
+      throw new Error('cancelled');
+    }
+    const end = Math.min(start + chunkSize - 1, total - 1);
+    let buf;
+    try {
+      buf = await fetchRangePart(url, start, end, signal);
+    } catch (err) {
+      ttFail(TT, ttId, err.message);
+      throw err;
+    }
+    parts[Math.floor(start / chunkSize)] = new Uint8Array(buf);
+    return buf.byteLength;
   }
 
   function smallUpload(file, options) {
@@ -130,76 +263,19 @@
     const totalSize = file.size;
     const chunkSize = rangeChunkBytes();
     const xsrf = getXSRFToken();
-
-    const TT = global.AirdTransferTracker;
-    const ttId = TT
-      ? TT.addTransfer(filename, totalSize, 'upload', { onCancel: options.onCancel })
-      : null;
-    if (TT && ttId && options.onCancel) {
-      TT.setCancelHandler(ttId, options.onCancel);
-    }
-
-    const sessionRes = await fetch('/api/upload/range/session', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-XSRFToken': xsrf,
-      },
-      body: JSON.stringify({
-        upload_dir: uploadDir,
-        filename: filename,
-        total_size: totalSize,
-      }),
-    });
-    if (!sessionRes.ok) {
-      const errText = await sessionRes.text();
-      if (TT && ttId) TT.failTransfer(ttId, errText);
-      throw new Error(errText || `Session failed (${sessionRes.status})`);
-    }
-    const session = await sessionRes.json();
-    const uploadId = session.upload_id;
-    let uploaded = 0;
+    const { TT, ttId } = trackUpload(filename, totalSize, options);
+    const uploadId = await createRangeUploadSession(uploadDir, filename, totalSize, xsrf, TT, ttId);
 
     for (let start = 0; start < totalSize; start += chunkSize) {
-      if (signal?.aborted) {
-        if (TT && ttId) TT.failTransfer(ttId, 'Cancelled');
-        throw new Error('cancelled');
-      }
-      const end = Math.min(start + chunkSize - 1, totalSize - 1);
-      const slice = file.slice(start, end + 1);
-      const buf = await slice.arrayBuffer();
-
-      const putRes = await fetch(`/api/upload/range/${encodeURIComponent(uploadId)}`, {
-        method: 'PUT',
-        credentials: 'same-origin',
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'Content-Range': `bytes ${start}-${end}/${totalSize}`,
-          'X-XSRFToken': xsrf,
-        },
-        body: buf,
-      });
-
-      if (putRes.status === 201) {
-        uploaded = totalSize;
-        onProgress(100, totalSize, totalSize);
-        if (TT && ttId) TT.completeTransfer(ttId);
+      const result = await sendRangeUploadChunk(
+        file, uploadId, start, chunkSize, totalSize, xsrf, signal, onProgress, TT, ttId
+      );
+      if (result.finished) {
         return { message: 'Upload successful' };
       }
-      if (!putRes.ok && putRes.status !== 200) {
-        const errText = await putRes.text();
-        if (TT && ttId) TT.failTransfer(ttId, errText);
-        throw new Error(errText || `Chunk failed (${putRes.status})`);
-      }
-
-      uploaded = end + 1;
-      const pct = Math.round((uploaded / totalSize) * 100);
-      onProgress(pct, uploaded, totalSize);
-      if (TT && ttId) TT.updateProgress(ttId, uploaded, totalSize);
     }
 
-    if (TT && ttId) TT.completeTransfer(ttId);
+    ttComplete(TT, ttId);
     return { message: 'Upload successful' };
   }
 
@@ -224,8 +300,7 @@
     const url = filesUrl(path);
     const signal = options.signal;
     const fname = path.split('/').pop() || path;
-    const TT = global.AirdTransferTracker;
-    const ttId = TT ? TT.addTransfer(fname, 0, 'download', { onCancel: options.onCancel }) : null;
+    const { TT, ttId } = trackDownload(fname, options);
 
     const res = await fetch(url, { credentials: 'same-origin', signal });
     if (!res.ok) {
@@ -242,17 +317,7 @@
       return { blob, filename: fname, path, size: blob.size };
     }
 
-    const chunks = [];
-    let loaded = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      loaded += value.byteLength;
-      if (TT && ttId) TT.updateProgress(ttId, loaded, total || loaded);
-      if (options.onProgress) options.onProgress(loaded, total || loaded);
-    }
-    const blob = new Blob(chunks);
+    const blob = await readStreamToBlob(reader, total, ttId, options.onProgress);
     if (TT && ttId) TT.completeTransfer(ttId);
     return { blob, filename: fname, path, size: blob.size };
   }
@@ -263,11 +328,7 @@
     const signal = options.signal;
     const chunkSize = rangeChunkBytes();
     const fname = path.split('/').pop() || path;
-    const TT = global.AirdTransferTracker;
-    const ttId = TT ? TT.addTransfer(fname, 0, 'download', { onCancel: options.onCancel }) : null;
-    if (TT && ttId && options.onCancel) {
-      TT.setCancelHandler(ttId, options.onCancel);
-    }
+    const { TT, ttId } = trackDownload(fname, options);
 
     const total = await fetchFileSize(url, signal);
     if (TT && ttId) TT.updateProgress(ttId, 0, total);
@@ -276,30 +337,15 @@
     let loaded = 0;
 
     for (let start = 0; start < total; start += chunkSize) {
-      if (signal?.aborted) {
-        if (TT && ttId) TT.failTransfer(ttId, 'Cancelled');
-        throw new Error('cancelled');
-      }
-      const end = Math.min(start + chunkSize - 1, total - 1);
-      const res = await fetch(url, {
-        credentials: 'same-origin',
-        signal,
-        headers: { Range: `bytes=${start}-${end}` },
-      });
-      if (res.status !== 206 && res.status !== 200) {
-        if (TT && ttId) TT.failTransfer(ttId, `HTTP ${res.status}`);
-        throw new Error(`Range download failed (${res.status})`);
-      }
-      const buf = await res.arrayBuffer();
-      const idx = Math.floor(start / chunkSize);
-      parts[idx] = new Uint8Array(buf);
-      loaded += buf.byteLength;
-      if (TT && ttId) TT.updateProgress(ttId, loaded, total);
+      loaded += await downloadRangeChunk(
+        url, start, chunkSize, total, signal, parts, TT, ttId
+      );
+      ttUpdate(TT, ttId, loaded, total);
       if (options.onProgress) options.onProgress(loaded, total);
     }
 
     const blob = new Blob(parts);
-    if (TT && ttId) TT.completeTransfer(ttId);
+    ttComplete(TT, ttId);
     return { blob, filename: fname, path, size: blob.size };
   }
 
