@@ -8,16 +8,17 @@ install_requires = [
     "argon2-cffi>=23.1.0",
     "requests>=2.31.0",
     "chardet>=5.0.0,<6.0.0",
-    "pysmbserver>=0.1.0; python_version>='3.13'",
-    "wsgidav>=4.3.0",
-    "cheroot>=10.0.0",
     "pyasn1>=0.6.2",
     "webauthn>=2.0.0",
 ]
 
+extras_require = {
+    "compress": ["zstandard>=0.22.0", "brotli>=1.1.0"],
+}
+
 setup(
     name="aird",
-    version="0.4.24",
+    version="0.4.25.dev0",
     packages=find_packages(),
     include_package_data=True,
     package_data={"aird": [
@@ -37,6 +38,7 @@ setup(
         ],
     },
     install_requires=install_requires,
+    extras_require=extras_require,
     author="Viswantha Srinivas P",
     author_email="psviswanatha@gmail.com",  # Please fill this in
     description="Aird - A lightweight web-based file browser, editor, and streamer with real-time capabilities",

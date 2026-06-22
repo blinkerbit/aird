@@ -36,9 +36,7 @@ class ConfigService:
                 logger.debug(
                     "Upload config '%s' set to %s from database", key, int(value)
                 )
-        constants.MAX_FILE_SIZE = (
-            constants.UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
-        )
+        constants.refresh_upload_derived_constants()
 
         constants.UPLOAD_ALLOWED_EXTENSIONS = load_allowed_extensions(conn)
         if not constants.UPLOAD_ALLOWED_EXTENSIONS:

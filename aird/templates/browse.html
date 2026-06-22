@@ -375,6 +375,8 @@
       maxFileSize: {{ max_file_size }},
       largeFileThreshold: {{ large_file_threshold }},
       rangeChunkBytes: {{ range_chunk_bytes }},
+      rangeUploadConcurrency: {{ range_upload_concurrency }},
+      rangeDownloadConcurrency: {{ range_download_concurrency }},
       canTag: {{ 'true' if current_user and current_user.get('role') == 'admin' else 'false' }}
     };
   </script>

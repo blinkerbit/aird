@@ -1,13 +1,9 @@
 import tornado.web
 import os
 import mimetypes
-import gzip
-from io import BytesIO
-import shutil
 import asyncio
 import aiofiles
 import mmap
-import concurrent.futures
 import logging
 
 from aird.handlers.base_handler import (
@@ -45,6 +41,9 @@ from aird.cloud import CloudManager
 from aird.constants.file_ops import PROVIDER_NOT_CONFIGURED
 from aird.core.file_operations import get_files_by_tag_patterns, get_tags_for_path
 from aird.core.http_range import parse_range_header
+from aird.core.compression import negotiate_encoding, should_compress, compress_file
+from aird.core.file_send import sendfile_available, sendfile_to_socket
+from aird.core.rate_limit import TransferRateLimiter
 from aird.db.resource_tags import list_resource_tags
 
 # ---------------------------------------------------------------------------
@@ -60,6 +59,19 @@ async def _serve_download(handler, abspath, filename):
     """Serve file as attachment with Accept-Ranges and optional Range (206)."""
     if not handler.require_feature("file_download", True, body=DOWNLOAD_DISABLED_MSG):
         return
+    user_key = handler.get_display_username() or handler.request.remote_ip or "anonymous"
+    if not TransferRateLimiter.try_acquire_concurrent(user_key):
+        handler.set_status(429)
+        handler.set_header("Retry-After", "5")
+        handler.write({"error": "Too many concurrent transfers"})
+        return
+    try:
+        await _serve_download_body(handler, abspath, filename, user_key)
+    finally:
+        TransferRateLimiter.release_concurrent(user_key)
+
+
+async def _serve_download_body(handler, abspath, filename, user_key):
     handler.set_header("Content-Disposition", f'attachment; filename="{filename}"')
     mime_type, _ = mimetypes.guess_type(abspath)
     mime_type = mime_type or APPLICATION_OCTET_STREAM
@@ -77,17 +89,23 @@ async def _serve_download(handler, abspath, filename):
     range_header = handler.request.headers.get("Range")
     byte_range = parse_range_header(range_header, file_size)
 
-    use_gzip = (
-        not byte_range
-        and is_feature_enabled("compression", True)
-        and any(
-            mime_type.startswith(p)
-            for p in (
-                "text/",
-                "application/json",
-                "application/javascript",
-                "application/xml",
-            )
+    encoding = negotiate_encoding(
+        handler.request.headers.get("Accept-Encoding"),
+        constants_module.COMPRESSION_CONFIG.get("algorithms"),
+    )
+    use_compression = (
+        encoding
+        and should_compress(
+            path=abspath,
+            mime_type=mime_type,
+            file_size=file_size,
+            has_range=bool(byte_range),
+            remote_ip=handler.request.remote_ip or "",
+            compression_enabled=is_feature_enabled("compression", True),
+            mode=constants_module.COMPRESSION_CONFIG.get("mode", "wan_only"),
+            min_bytes=int(constants_module.COMPRESSION_CONFIG.get("min_bytes", 1024)),
+            max_bytes=int(constants_module.COMPRESSION_CONFIG.get("max_bytes", 50 * 1024 * 1024)),
+            corporate_cidrs=constants_module.CORPORATE_IP_CIDRS,
         )
     )
 
@@ -100,9 +118,26 @@ async def _serve_download(handler, abspath, filename):
         handler.set_header("Content-Length", str(byte_range.length))
         if head_only:
             return
+        if (
+            is_feature_enabled("transfer_sendfile", False)
+            and sendfile_available()
+            and not use_compression
+        ):
+            stream = getattr(handler.request.connection, "stream", None)
+            sock = getattr(stream, "socket", None) if stream else None
+            if sock and await sendfile_to_socket(
+                sock, abspath, start, byte_range.length
+            ):
+                await TransferRateLimiter.wait_for_bytes(
+                    user_key, byte_range.length, direction="download"
+                )
+                return
         async for chunk in MMapFileHandler.serve_file_chunk(
             abspath, start=start, end=end
         ):
+            await TransferRateLimiter.wait_for_bytes(
+                user_key, len(chunk), direction="download"
+            )
             handler.write(chunk)
             await handler.flush()
         return
@@ -111,26 +146,34 @@ async def _serve_download(handler, abspath, filename):
     if head_only:
         return
 
-    if use_gzip:
-        handler.set_header("Content-Encoding", "gzip")
-
-        def compress_file():
-            buffer = BytesIO()
-            with open(abspath, "rb") as f_in, gzip.GzipFile(
-                fileobj=buffer, mode="wb"
-            ) as f_out:
-                shutil.copyfileobj(f_in, f_out)
-            return buffer.getvalue()
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            compressed_data = await asyncio.get_event_loop().run_in_executor(
-                executor, compress_file
-            )
-        handler.write(compressed_data)
+    if use_compression and encoding:
+        handler.set_header("Content-Encoding", encoding)
+        handler.set_header("Vary", "Accept-Encoding")
+        level = int(constants_module.COMPRESSION_CONFIG.get("level", 6))
+        compressed = await compress_file(abspath, encoding, level)
+        await TransferRateLimiter.wait_for_bytes(
+            user_key, len(compressed), direction="download"
+        )
+        handler.write(compressed)
         await handler.flush()
         return
 
+    if (
+        is_feature_enabled("transfer_sendfile", False)
+        and sendfile_available()
+    ):
+        stream = getattr(handler.request.connection, "stream", None)
+        sock = getattr(stream, "socket", None) if stream else None
+        if sock and await sendfile_to_socket(sock, abspath, 0, file_size):
+            await TransferRateLimiter.wait_for_bytes(
+                user_key, file_size, direction="download"
+            )
+            return
+
     async for chunk in MMapFileHandler.serve_file_chunk(abspath):
+        await TransferRateLimiter.wait_for_bytes(
+            user_key, len(chunk), direction="download"
+        )
         handler.write(chunk)
         await handler.flush()
 
@@ -274,6 +317,8 @@ class MainHandler(BaseHandler):
             max_file_size=constants_module.MAX_FILE_SIZE,
             large_file_threshold=constants_module.LARGE_FILE_THRESHOLD_BYTES,
             range_chunk_bytes=constants_module.RANGE_CHUNK_BYTES,
+            range_upload_concurrency=constants_module.RANGE_UPLOAD_CONCURRENCY,
+            range_download_concurrency=constants_module.RANGE_DOWNLOAD_CONCURRENCY,
             user_favorites=user_favorites,
             file_tags_map=file_tags_map,
         )

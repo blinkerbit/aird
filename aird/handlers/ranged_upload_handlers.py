@@ -38,8 +38,23 @@ from aird.handlers.base_handler import (
 from aird.handlers.constants import DB_UNAVAILABLE_SHORT
 from aird.handlers.file_op_handlers import finalize_upload_to_disk, _query_arg
 from aird.utils.util import is_feature_enabled
+from aird.core.rate_limit import TransferRateLimiter
 
 logger = logging.getLogger(__name__)
+
+_session_locks: dict[str, asyncio.Lock] = {}
+
+
+def _session_lock(upload_id: str) -> asyncio.Lock:
+    lock = _session_locks.get(upload_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _session_locks[upload_id] = lock
+    return lock
+
+
+def _release_session_lock(upload_id: str) -> None:
+    _session_locks.pop(upload_id, None)
 
 
 def _write_range_sync(temp_path: str, start: int, data: bytes) -> None:
@@ -155,6 +170,8 @@ class RangedUploadChunkHandler(BaseHandler):
             self.write({"error": DB_UNAVAILABLE_SHORT})
             return
 
+        user_key = self.get_display_username() or self.request.remote_ip or "anonymous"
+
         session = get_session(self.db_conn, upload_id)
         if not session:
             self.set_status(404)
@@ -191,6 +208,10 @@ class RangedUploadChunkHandler(BaseHandler):
             self.write({"error": "Range beyond file size"})
             return
 
+        await TransferRateLimiter.wait_for_bytes(
+            user_key, len(body), direction="upload"
+        )
+
         temp_path = session["temp_path"]
         try:
             await asyncio.to_thread(_write_range_sync, temp_path, start, body)
@@ -200,40 +221,49 @@ class RangedUploadChunkHandler(BaseHandler):
             self.write({"error": UPLOAD_SAVE_FAILED})
             return
 
-        new_ranges = merge_ranges(session["ranges"] + [ByteRange(start, end)])
-        update_ranges(self.db_conn, upload_id, new_ranges)
-
-        if ranges_cover_file(new_ranges, session["total_size"]):
-            success, status, message = await asyncio.to_thread(
-                finalize_upload_to_disk,
-                upload_dir=session["upload_dir"],
-                filename=session["filename"],
-                temp_path=temp_path,
-                user_root=get_user_root(self),
-                username=self.get_display_username(),
-                db_conn=self.db_conn,
-                quota_service=self.get_service("quota_service"),
-                audit_service=self.get_service("audit_service"),
-                remote_ip=self.request.remote_ip,
-                upload_bytes=session["total_size"],
-            )
-            delete_session(self.db_conn, upload_id)
-            if not success:
-                self.set_status(status)
-                self.write({"error": message})
+        lock = _session_lock(upload_id)
+        async with lock:
+            session = get_session(self.db_conn, upload_id)
+            if not session:
+                self.set_status(404)
+                self.write({"error": "Upload session not found"})
                 return
-            self.set_status(201)
-            self.write({"status": "complete", "message": message})
-            return
 
-        self.set_status(200)
-        self.write(
-            {
-                "status": "chunk_received",
-                "ranges": ranges_to_json(new_ranges),
-                "total_size": session["total_size"],
-            }
-        )
+            new_ranges = merge_ranges(session["ranges"] + [ByteRange(start, end)])
+            update_ranges(self.db_conn, upload_id, new_ranges)
+
+            if ranges_cover_file(new_ranges, session["total_size"]):
+                success, status, message = await asyncio.to_thread(
+                    finalize_upload_to_disk,
+                    upload_dir=session["upload_dir"],
+                    filename=session["filename"],
+                    temp_path=temp_path,
+                    user_root=get_user_root(self),
+                    username=self.get_display_username(),
+                    db_conn=self.db_conn,
+                    quota_service=self.get_service("quota_service"),
+                    audit_service=self.get_service("audit_service"),
+                    remote_ip=self.request.remote_ip,
+                    upload_bytes=session["total_size"],
+                )
+                delete_session(self.db_conn, upload_id)
+                _release_session_lock(upload_id)
+                if not success:
+                    self.set_status(status)
+                    self.write({"error": message})
+                    return
+                self.set_status(201)
+                self.write({"status": "complete", "message": message})
+                return
+
+            self.set_status(200)
+            self.write(
+                {
+                    "status": "chunk_received",
+                    "ranges": ranges_to_json(new_ranges),
+                    "total_size": session["total_size"],
+                }
+            )
 
 
 class RangedUploadStatusHandler(BaseHandler):

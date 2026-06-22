@@ -4,6 +4,7 @@ import secrets
 import socket
 import sqlite3
 import ssl
+import sys
 
 import tornado.httpserver
 import tornado.ioloop
@@ -398,7 +399,7 @@ def _load_and_merge_configs(db_conn) -> None:
         for key, value in persisted_upload.items():
             constants.UPLOAD_CONFIG[key] = int(value)
             logger.debug("Upload config '%s' set to %s from database", key, int(value))
-    constants.MAX_FILE_SIZE = constants.UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
+    constants.refresh_upload_derived_constants()
 
     constants.UPLOAD_ALLOWED_EXTENSIONS = load_allowed_extensions(db_conn)
     if not constants.UPLOAD_ALLOWED_EXTENSIONS:
@@ -413,6 +414,10 @@ def _load_and_merge_configs(db_conn) -> None:
         "Max upload file size: %s MB",
         constants.UPLOAD_CONFIG["max_file_size_mb"],
     )
+
+    from aird.core.rate_limit import TransferRateLimiter
+
+    TransferRateLimiter.apply_transfer_config(constants.TRANSFER_CONFIG)
 
 
 def _auto_start_network_shares(db_conn) -> None:
@@ -552,6 +557,9 @@ def _build_application():
 
 
 def _run_http_server(app, ssl_options, sockets) -> None:
+    from aird.event_loop import apply_io_thread_pool
+
+    apply_io_thread_pool()
     server = tornado.httpserver.HTTPServer(
         app,
         ssl_options=ssl_options,
@@ -641,6 +649,10 @@ def main():
     root_logger.addHandler(console_handler)
 
     logger.info("Logging initialized. Writing logs to %s", log_file)
+
+    gil_checker = getattr(sys, "_is_gil_enabled", None)
+    if callable(gil_checker) and not gil_checker():
+        logger.info("Free-threaded Python runtime detected (GIL disabled)")
 
     if not _validate_ldap_config():
         return

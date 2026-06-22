@@ -89,6 +89,14 @@
               <input type="checkbox" name="webauthn" class="toggle toggle-primary toggle-sm" {% if features.get('webauthn') %}checked{% end %}>
               <span class="label-text">WebAuthn passkeys (optional login)</span>
             </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors{% if not webdav_library_available %} opacity-60{% end %}">
+              <input type="checkbox" name="webdav_server" class="toggle toggle-primary toggle-sm" {% if features.get('webdav_server') %}checked{% end %}{% if not webdav_library_available %} disabled{% end %}>
+              <span class="label-text">WebDAV network shares{% if not webdav_library_available %} <span class="text-xs text-base-content/50">(install wsgidav, cheroot)</span>{% end %}</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors{% if not smb_library_available %} opacity-60{% end %}">
+              <input type="checkbox" name="smb_server" class="toggle toggle-primary toggle-sm" {% if features.get('smb_server') %}checked{% end %}{% if not smb_library_available %} disabled{% end %}>
+              <span class="label-text">SMB network shares{% if not smb_library_available %} <span class="text-xs text-base-content/50">(install pysmbserver)</span>{% end %}</span>
+            </label>
           </div>
         </div>
       </div>

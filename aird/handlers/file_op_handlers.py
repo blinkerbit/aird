@@ -404,18 +404,6 @@ class UploadHandler(BaseHandler):
             self._reject_reason = MISSING_UPLOAD_FILENAME_HEADER
             return
 
-        declared = self.request.headers.get("Content-Length")
-        if declared:
-            try:
-                if int(declared) >= constants_module.LARGE_FILE_THRESHOLD_BYTES:
-                    self._reject = True
-                    self._reject_reason = (
-                        "File exceeds single-request limit; use ranged upload API"
-                    )
-                    return
-            except ValueError:
-                pass
-
         fd, self._temp_path = tempfile.mkstemp(prefix="aird_upload_")
         os.close(fd)
         self._aiofile = await aiofiles.open(self._temp_path, "wb")
@@ -437,7 +425,6 @@ class UploadHandler(BaseHandler):
             while self._buffer:
                 data = self._buffer.popleft()
                 await self._aiofile.write(data)
-            await self._aiofile.flush()
         finally:
             self._writing = False
 
@@ -449,6 +436,7 @@ class UploadHandler(BaseHandler):
                 logging.debug("upload writer task await failed", exc_info=True)
         if self._aiofile is not None:
             try:
+                await self._aiofile.flush()
                 await self._aiofile.close()
             except Exception:
                 logging.debug("upload aiofile close failed", exc_info=True)

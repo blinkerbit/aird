@@ -5,7 +5,8 @@
   'use strict';
 
   const DEFAULT_LARGE_THRESHOLD = 500 * 1024 * 1024;
-  const DEFAULT_RANGE_CHUNK = 16 * 1024 * 1024;
+  const DEFAULT_RANGE_CHUNK = 32 * 1024 * 1024;
+  const DEFAULT_RANGE_CONCURRENCY = 4;
 
   function config() {
     return global.__BROWSE_CONFIG || {};
@@ -17,6 +18,49 @@
 
   function rangeChunkBytes() {
     return config().rangeChunkBytes || DEFAULT_RANGE_CHUNK;
+  }
+
+  function rangeUploadConcurrency() {
+    const n = config().rangeUploadConcurrency || DEFAULT_RANGE_CONCURRENCY;
+    return Math.max(1, Math.min(8, Number(n) || DEFAULT_RANGE_CONCURRENCY));
+  }
+
+  function rangeDownloadConcurrency() {
+    const n = config().rangeDownloadConcurrency || DEFAULT_RANGE_CONCURRENCY;
+    return Math.max(1, Math.min(8, Number(n) || DEFAULT_RANGE_CONCURRENCY));
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function putRangeChunkWithRetry(uploadId, start, end, totalSize, body, xsrf, signal) {
+    let lastRes = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (signal?.aborted) throw new Error('cancelled');
+      lastRes = await putRangeChunk(uploadId, start, end, totalSize, body, xsrf);
+      if (lastRes.status === 201 || lastRes.status === 200) return lastRes;
+      if (lastRes.status === 429 || lastRes.status >= 500) {
+        await sleep(Math.min(1000 * 2 ** attempt, 8000));
+        continue;
+      }
+      return lastRes;
+    }
+    return lastRes;
+  }
+
+  async function fetchRangePartWithRetry(url, start, end, signal) {
+    let lastErr = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (signal?.aborted) throw new Error('cancelled');
+      try {
+        return await fetchRangePart(url, start, end, signal);
+      } catch (err) {
+        lastErr = err;
+        await sleep(Math.min(1000 * 2 ** attempt, 8000));
+      }
+    }
+    throw lastErr || new Error('Range download failed');
   }
 
   function getXSRFToken() {
@@ -144,12 +188,12 @@
     }
     const end = Math.min(start + chunkSize - 1, totalSize - 1);
     const buf = await file.slice(start, end + 1).arrayBuffer();
-    const putRes = await putRangeChunk(uploadId, start, end, totalSize, buf, xsrf);
+    const putRes = await putRangeChunkWithRetry(
+      uploadId, start, end, totalSize, buf, xsrf, signal
+    );
 
     if (putRes.status === 201) {
-      onProgress(100, totalSize, totalSize);
-      ttComplete(TT, ttId);
-      return { finished: true };
+      return { finished: true, bytes: end - start + 1 };
     }
     if (!putRes.ok && putRes.status !== 200) {
       const errText = await putRes.text();
@@ -157,10 +201,7 @@
       throw new Error(errText || `Chunk failed (${putRes.status})`);
     }
 
-    const uploaded = end + 1;
-    onProgress(Math.round((uploaded / totalSize) * 100), uploaded, totalSize);
-    ttUpdate(TT, ttId, uploaded, totalSize);
-    return { finished: false };
+    return { finished: false, bytes: end - start + 1 };
   }
 
   async function downloadRangeChunk(url, start, chunkSize, total, signal, parts, TT, ttId) {
@@ -171,7 +212,7 @@
     const end = Math.min(start + chunkSize - 1, total - 1);
     let buf;
     try {
-      buf = await fetchRangePart(url, start, end, signal);
+      buf = await fetchRangePartWithRetry(url, start, end, signal);
     } catch (err) {
       ttFail(TT, ttId, err.message);
       throw err;
@@ -262,20 +303,57 @@
     const signal = options.signal;
     const totalSize = file.size;
     const chunkSize = rangeChunkBytes();
+    const concurrency = rangeUploadConcurrency();
     const xsrf = getXSRFToken();
     const { TT, ttId } = trackUpload(filename, totalSize, options);
     const uploadId = await createRangeUploadSession(uploadDir, filename, totalSize, xsrf, TT, ttId);
 
-    for (let start = 0; start < totalSize; start += chunkSize) {
-      const result = await sendRangeUploadChunk(
-        file, uploadId, start, chunkSize, totalSize, xsrf, signal, onProgress, TT, ttId
-      );
-      if (result.finished) {
-        return { message: 'Upload successful' };
+    const totalChunks = Math.ceil(totalSize / chunkSize);
+    let nextChunkIndex = 0;
+    let bytesUploaded = 0;
+    let finished = false;
+    let failure = null;
+    const chunkDone = new Array(totalChunks).fill(false);
+
+    function reportProgress() {
+      const pct = totalSize > 0 ? Math.round((bytesUploaded / totalSize) * 100) : 0;
+      onProgress(pct, bytesUploaded, totalSize);
+      ttUpdate(TT, ttId, bytesUploaded, totalSize);
+    }
+
+    async function worker() {
+      while (!finished && !failure) {
+        const idx = nextChunkIndex++;
+        if (idx >= totalChunks) return;
+        const start = idx * chunkSize;
+        try {
+          const result = await sendRangeUploadChunk(
+            file, uploadId, start, chunkSize, totalSize, xsrf, signal, onProgress, TT, ttId
+          );
+          if (result.finished) {
+            finished = true;
+            bytesUploaded = totalSize;
+            reportProgress();
+            ttComplete(TT, ttId);
+            return;
+          }
+          if (!chunkDone[idx]) {
+            chunkDone[idx] = true;
+            bytesUploaded += result.bytes || Math.min(chunkSize, totalSize - start);
+            reportProgress();
+          }
+        } catch (err) {
+          failure = err;
+          return;
+        }
       }
     }
 
-    ttComplete(TT, ttId);
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+    if (failure) throw failure;
+    if (!finished) {
+      ttComplete(TT, ttId);
+    }
     return { message: 'Upload successful' };
   }
 
@@ -327,6 +405,7 @@
     const url = filesUrl(path);
     const signal = options.signal;
     const chunkSize = rangeChunkBytes();
+    const concurrency = rangeDownloadConcurrency();
     const fname = path.split('/').pop() || path;
     const { TT, ttId } = trackDownload(fname, options);
 
@@ -334,15 +413,35 @@
     if (TT && ttId) TT.updateProgress(ttId, 0, total);
 
     const parts = new Array(Math.ceil(total / chunkSize));
+    const totalChunks = parts.length;
+    let nextChunkIndex = 0;
     let loaded = 0;
+    let failure = null;
 
-    for (let start = 0; start < total; start += chunkSize) {
-      loaded += await downloadRangeChunk(
-        url, start, chunkSize, total, signal, parts, TT, ttId
-      );
+    function reportDlProgress() {
       ttUpdate(TT, ttId, loaded, total);
       if (options.onProgress) options.onProgress(loaded, total);
     }
+
+    async function worker() {
+      while (!failure) {
+        const idx = nextChunkIndex++;
+        if (idx >= totalChunks) return;
+        const start = idx * chunkSize;
+        try {
+          loaded += await downloadRangeChunk(
+            url, start, chunkSize, total, signal, parts, TT, ttId
+          );
+          reportDlProgress();
+        } catch (err) {
+          failure = err;
+          return;
+        }
+      }
+    }
+
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+    if (failure) throw failure;
 
     const blob = new Blob(parts);
     ttComplete(TT, ttId);
@@ -363,7 +462,25 @@
     return smallDownload(path, options);
   }
 
-  function saveBlob(blob, filename) {
+  async function saveBlob(blob, filename) {
+    if (typeof window.showSaveFilePicker === 'function' && blob.stream) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: filename || 'download',
+        });
+        const writable = await handle.createWritable();
+        const reader = blob.stream().getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          await writable.write(value);
+        }
+        await writable.close();
+        return;
+      } catch (err) {
+        if (err && err.name === 'AbortError') throw err;
+      }
+    }
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -383,5 +500,7 @@
     filesUrl,
     largeThreshold,
     rangeChunkBytes,
+    rangeUploadConcurrency,
+    rangeDownloadConcurrency,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

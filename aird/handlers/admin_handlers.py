@@ -31,6 +31,12 @@ from aird.constants import (
     UPLOAD_CONFIG,
 )
 from aird.utils.util import invalidate_feature_flags_cache
+from aird.network_share_manager import (
+    is_smb_server_available,
+    is_webdav_server_available,
+    smb_library_available,
+    webdav_library_available,
+)
 from aird.constants.admin import (
     ACCESS_DENIED,
     ACCESS_DENIED_JSON,
@@ -59,6 +65,8 @@ from aird.constants.admin import (
     ERR_DB_UNAVAILABLE,
     ERR_FAILED_CREATE_SHARE,
     ERR_INVALID_PROTOCOL,
+    ERR_SMB_UNAVAILABLE,
+    ERR_WEBDAV_UNAVAILABLE,
     ERR_PORT_RANGE,
     URL_ADMIN_NETWORK_SHARES,
     URL_ADMIN_USERS,
@@ -128,6 +136,8 @@ class AdminHandler(BaseHandler):
             ldap_enabled=ldap_enabled,
             available_extensions=available_extensions,
             allowed_extensions_current=allowed_current,
+            smb_library_available=smb_library_available(),
+            webdav_library_available=webdav_library_available(),
         )
 
     @tornado.web.authenticated
@@ -161,6 +171,8 @@ class AdminHandler(BaseHandler):
             self.get_argument("abac_audit_decisions", "off") == "on"
         )
         FEATURE_FLAGS["webauthn"] = self.get_argument("webauthn", "off") == "on"
+        FEATURE_FLAGS["smb_server"] = self.get_argument("smb_server", "off") == "on"
+        FEATURE_FLAGS["webdav_server"] = self.get_argument("webdav_server", "off") == "on"
 
         # Update WebSocket configuration
         websocket_config = {}
@@ -205,7 +217,7 @@ class AdminHandler(BaseHandler):
         try:
             max_file_size_mb = max(1, int(self.get_argument("max_file_size_mb", "512")))
             UPLOAD_CONFIG["max_file_size_mb"] = max_file_size_mb
-            constants_module.MAX_FILE_SIZE = max_file_size_mb * 1024 * 1024
+            constants_module.refresh_upload_derived_constants()
             UPLOAD_CONFIG["allow_all_file_types"] = (
                 1 if self.get_argument("allow_all_file_types", "off") == "on" else 0
             )
@@ -824,6 +836,8 @@ class AdminNetworkSharesHandler(BaseHandler):
             error=error,
             server_host=server_host,
             server_host_js=json.dumps(server_host),
+            smb_server_available=is_smb_server_available(),
+            webdav_server_available=is_webdav_server_available(),
         )
 
     @tornado.web.authenticated
@@ -851,6 +865,12 @@ class AdminNetworkSharesHandler(BaseHandler):
             return
         if protocol not in ("smb", "webdav"):
             self.redirect(f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_INVALID_PROTOCOL}")
+            return
+        if protocol == "smb" and not is_smb_server_available():
+            self.redirect(f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_SMB_UNAVAILABLE}")
+            return
+        if protocol == "webdav" and not is_webdav_server_available():
+            self.redirect(f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_WEBDAV_UNAVAILABLE}")
             return
         if not os.path.isdir(folder_path):
             self.redirect("/admin/network-shares?error=Folder+does+not+exist")
@@ -942,6 +962,13 @@ class AdminNetworkShareToggleHandler(BaseHandler):
             return
 
         new_enabled = not share["enabled"]
+        if new_enabled and share.get("protocol") == "smb" and not is_smb_server_available():
+            self.redirect(f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_SMB_UNAVAILABLE}")
+            return
+        if new_enabled and share.get("protocol") == "webdav" and not is_webdav_server_available():
+            self.redirect(f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_WEBDAV_UNAVAILABLE}")
+            return
+
         self.get_service("network_share_service").update(
             db_conn, share_id, enabled=new_enabled
         )

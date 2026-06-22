@@ -14,10 +14,16 @@ from urllib.parse import quote, urljoin
 import requests
 
 from aird.cli.config import ensure_config_dir, get_authelia_url, get_server_url, session_path
+from aird.cli.transfer_http import (
+    DEFAULT_CONCURRENCY,
+    download_file_ranged,
+    upload_file_ranged,
+)
 
 logger = logging.getLogger(__name__)
 
 XSRF_COOKIE = "_xsrf"
+LARGE_CLI_TRANSFER_BYTES = 100 * 1024 * 1024
 
 
 def _remote_url(base_path: str, remote_path: str) -> str:
@@ -266,10 +272,26 @@ class AirdClient:
                 size = int(entry.get("size_bytes") or entry.get("size") or 0)
                 yield child, size
 
-    def download_file(self, remote_path: str, local_path: Path) -> None:
+    def download_file(self, remote_path: str, local_path: Path, *, workers: int = 2) -> None:
         self.ensure_auth()
         url = self._url(_remote_url("/files", remote_path)) + "?download=1"
         local_path.parent.mkdir(parents=True, exist_ok=True)
+        head = self.http.head(url, timeout=120)
+        if head.status_code >= 400:
+            raise AirdAPIError(
+                f"Download failed for {remote_path} (HTTP {head.status_code})",
+                head.status_code,
+            )
+        total = int(head.headers.get("Content-Length") or 0)
+        if total >= LARGE_CLI_TRANSFER_BYTES:
+            download_file_ranged(
+                self.http,
+                self.server.rstrip("/"),
+                remote_path,
+                local_path,
+                workers=max(1, workers or DEFAULT_CONCURRENCY),
+            )
+            return
         with self.http.get(url, stream=True, timeout=300) as r:
             if r.status_code >= 400:
                 raise AirdAPIError(
@@ -280,6 +302,41 @@ class AirdClient:
                 for chunk in r.iter_content(chunk_size=1024 * 1024):
                     if chunk:
                         f.write(chunk)
+
+    def upload_file(
+        self, local_path: Path, remote_dir: str = "", *, workers: int = 2
+    ) -> None:
+        self.ensure_auth()
+        if not local_path.is_file():
+            raise FileNotFoundError(local_path)
+        remote_dir = remote_dir.strip("/")
+        filename = local_path.name
+        size = local_path.stat().st_size
+        if size >= LARGE_CLI_TRANSFER_BYTES:
+            upload_file_ranged(
+                self.http,
+                self.server.rstrip("/"),
+                self._xsrf_header(),
+                local_path,
+                remote_dir,
+                workers=max(1, workers or DEFAULT_CONCURRENCY),
+            )
+            return
+        r = self.http.post(
+            self._url("/upload"),
+            params={"upload_dir": remote_dir, "upload_filename": filename},
+            data=local_path.read_bytes(),
+            headers={
+                **self._xsrf_header(),
+                "Content-Type": "application/octet-stream",
+            },
+            timeout=600,
+        )
+        if r.status_code >= 400:
+            raise AirdAPIError(
+                f"Upload failed for {filename} (HTTP {r.status_code})",
+                r.status_code,
+            )
 
     def download_tree(
         self,
@@ -314,27 +371,6 @@ class AirdClient:
                     on_progress(path)
         return count
 
-    def upload_file(self, local_path: Path, remote_dir: str = "") -> None:
-        self.ensure_auth()
-        if not local_path.is_file():
-            raise FileNotFoundError(local_path)
-        remote_dir = remote_dir.strip("/")
-        filename = local_path.name
-        r = self.http.post(
-            self._url("/upload"),
-            params={"upload_dir": remote_dir, "upload_filename": filename},
-            data=local_path.read_bytes(),
-            headers={
-                **self._xsrf_header(),
-                "Content-Type": "application/octet-stream",
-            },
-            timeout=600,
-        )
-        if r.status_code >= 400:
-            raise AirdAPIError(
-                f"Upload failed for {filename} (HTTP {r.status_code})",
-                r.status_code,
-            )
 
     def upload_tree(
         self,

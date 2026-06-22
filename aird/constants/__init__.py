@@ -44,6 +44,9 @@ FEATURE_FLAGS = {
     "abac_audit_decisions": True,
     "email_notifications": False,
     "webauthn": False,
+    "smb_server": False,
+    "webdav_server": False,
+    "transfer_sendfile": False,
 }
 
 # WebSocket connection configuration
@@ -60,15 +63,48 @@ WEBSOCKET_CONFIG = {
 UPLOAD_CONFIG = {
     "max_file_size_mb": 512,  # Default max upload file size in MB
     "allow_all_file_types": 0,  # 0 = use whitelist below, 1 = allow any extension
+    # 0 = stream via single POST up to max_file_size_mb; set lower (e.g. 90) behind reverse proxies
+    "single_request_max_mb": 0,
 }
 
-# File operation constants (derived from UPLOAD_CONFIG at startup)
+# File operation constants (derived from UPLOAD_CONFIG; call refresh_upload_derived_constants after changes)
 MAX_FILE_SIZE = UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
-# HTTP /upload body limit (browser small uploads + CLI)
 UPLOAD_REQUEST_MAX_BODY_SIZE = MAX_FILE_SIZE + (1024 * 1024)
-# Files below this use single POST /upload; at or above use Content-Range API
-LARGE_FILE_THRESHOLD_BYTES = 500 * 1024 * 1024
-RANGE_CHUNK_BYTES = 16 * 1024 * 1024
+LARGE_FILE_THRESHOLD_BYTES = MAX_FILE_SIZE
+RANGE_CHUNK_BYTES = 32 * 1024 * 1024
+RANGE_UPLOAD_CONCURRENCY = 4
+RANGE_DOWNLOAD_CONCURRENCY = 4
+
+COMPRESSION_CONFIG = {
+    "mode": "wan_only",
+    "level": 6,
+    "algorithms": ["zstd", "br", "gzip"],
+    "min_bytes": 1024,
+    "max_bytes": 50 * 1024 * 1024,
+}
+
+TRANSFER_CONFIG = {
+    "upload_mb_per_sec": 0,
+    "download_mb_per_sec": 0,
+    "burst_mb": 64,
+    "max_concurrent": 0,
+}
+
+
+def refresh_upload_derived_constants() -> None:
+    """Recompute upload size limits after UPLOAD_CONFIG is loaded or changed."""
+    global MAX_FILE_SIZE, UPLOAD_REQUEST_MAX_BODY_SIZE, LARGE_FILE_THRESHOLD_BYTES
+    MAX_FILE_SIZE = UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
+    UPLOAD_REQUEST_MAX_BODY_SIZE = MAX_FILE_SIZE + (1024 * 1024)
+    single_mb = int(UPLOAD_CONFIG.get("single_request_max_mb", 0) or 0)
+    if single_mb <= 0:
+        single_mb = UPLOAD_CONFIG["max_file_size_mb"]
+    else:
+        single_mb = min(single_mb, UPLOAD_CONFIG["max_file_size_mb"])
+    LARGE_FILE_THRESHOLD_BYTES = single_mb * 1024 * 1024
+
+
+refresh_upload_derived_constants()
 # Max JSON WebSocket control message size (search, stream commands, P2P signaling)
 WS_JSON_MESSAGE_MAX_BYTES = 64 * 1024
 MAX_READABLE_FILE_SIZE = 50 * 1024 * 1024  # 50 MB

@@ -779,8 +779,8 @@ class TestAdminHandlerUploadConfig:
             mock_constants.DB_CONN = mock_db_conn
             handler.post()
 
-            # Should update constants_module.MAX_FILE_SIZE to 256 MB in bytes
-            assert mock_constants.MAX_FILE_SIZE == 256 * 1024 * 1024
+            mock_constants.refresh_upload_derived_constants.assert_called()
+            assert upload_config["max_file_size_mb"] == 256
 
     def test_post_default_max_file_size_when_not_provided(
         self, mock_tornado_app, mock_tornado_request, mock_db_conn

@@ -7,6 +7,8 @@
     "css:build": "npx @tailwindcss/cli -i ./src/input.css -o ./aird/static/css/app.css --minify",
     "css:watch": "npx @tailwindcss/cli -i ./src/input.css -o ./aird/static/css/app.css --watch",
     "lint:js": "eslint aird/static/js",
+    "js:share": "esbuild aird/static/js/share/src/main.js --bundle --platform=browser --format=iife --outfile=aird/static/js/share/app.js",
+    "js:share:watch": "esbuild aird/static/js/share/src/main.js --bundle --platform=browser --format=iife --outfile=aird/static/js/share/app.js --watch",
     "vendor:qrcode": "esbuild node_modules/qrcode/lib/browser.js --bundle --platform=browser --format=iife --global-name=AirdQRCode --outfile=aird/static/js/vendor/qrcode-browser.js"
   },
   "devDependencies": {
