@@ -219,8 +219,18 @@ class RangedUploadChunkHandler(BaseHandler):
             constants_module.RANGE_CHUNK_BYTES * 2, 4 * 1024 * 1024
         )
         if expected_len > max_chunk:
+            max_mb = max_chunk // (1024 * 1024)
+            chunk_mb = expected_len // (1024 * 1024)
             self.set_status(413)
-            self.write({"error": f"Chunk too large ({expected_len} > {max_chunk})"})
+            self.write(
+                {
+                    "error": (
+                        f"Chunk too large ({chunk_mb} MB > {max_mb} MB server limit). "
+                        "Admin → Upload settings → lower HTTP chunk (MB) or redeploy "
+                        "so server matches client."
+                    ),
+                }
+            )
             return
         body = self.request.body or b""
         if len(body) != expected_len:

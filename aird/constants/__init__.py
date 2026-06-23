@@ -64,7 +64,7 @@ WEBSOCKET_CONFIG = {
 UPLOAD_CONFIG = {
     "max_file_size_mb": 10240,  # Default max upload file size in MB (10 GB)
     "allow_all_file_types": 0,  # 0 = use whitelist below, 1 = allow any extension
-    # Files >= this use parallel Range PUT. Keep <= proxy body limits (e.g. 100).
+    # Files >= this use parallel Range PUT. 0 = default 100 MB (proxy-safe).
     "single_request_max_mb": 100,
     # HTTP parallel upload: chunk size (MB) and concurrent streams.
     # Peak server RAM per active upload ≈ range_chunk_mb × range_upload_concurrency.
@@ -103,17 +103,22 @@ TRANSFER_CONFIG = {
 _RUNTIME_CONFIG_LOCK = threading.RLock()
 
 
+# Default parallel threshold when single_request_max_mb is 0 (proxy-safe).
+_DEFAULT_PARALLEL_THRESHOLD_MB = 100
+
+
 def _refresh_upload_derived_constants_impl() -> None:
     global MAX_FILE_SIZE, UPLOAD_REQUEST_MAX_BODY_SIZE, LARGE_FILE_THRESHOLD_BYTES
     global WS_CHUNK_BYTES, RANGE_CHUNK_BYTES, RANGE_UPLOAD_CONCURRENCY
     MAX_FILE_SIZE = UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
-    single_mb = int(UPLOAD_CONFIG.get("single_request_max_mb", 0) or 0)
-    if single_mb <= 0:
-        single_mb = UPLOAD_CONFIG["max_file_size_mb"]
+    single_mb_cfg = int(UPLOAD_CONFIG.get("single_request_max_mb", 0) or 0)
+    if single_mb_cfg <= 0:
+        # 0 means "use default parallel threshold", not "one POST up to max file size".
+        parallel_mb = min(_DEFAULT_PARALLEL_THRESHOLD_MB, UPLOAD_CONFIG["max_file_size_mb"])
     else:
-        single_mb = min(single_mb, UPLOAD_CONFIG["max_file_size_mb"])
-    LARGE_FILE_THRESHOLD_BYTES = single_mb * 1024 * 1024
-    single_request_bytes = single_mb * 1024 * 1024
+        parallel_mb = min(single_mb_cfg, UPLOAD_CONFIG["max_file_size_mb"])
+    LARGE_FILE_THRESHOLD_BYTES = parallel_mb * 1024 * 1024
+    single_request_bytes = LARGE_FILE_THRESHOLD_BYTES
     range_mb = int(UPLOAD_CONFIG.get("range_chunk_mb", 90) or 90)
     range_mb = max(4, min(range_mb, 200))
     RANGE_CHUNK_BYTES = range_mb * 1024 * 1024

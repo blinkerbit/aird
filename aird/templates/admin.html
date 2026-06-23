@@ -126,7 +126,7 @@
             <label for="single_request_max_mb" class="text-sm font-semibold w-48">Single-request max (MB)</label>
             <input type="number" id="single_request_max_mb" name="single_request_max_mb" class="input input-bordered input-sm w-28"
                    value="{{ upload_config.get('single_request_max_mb', 100) }}" min="0" step="1">
-            <span class="text-xs text-base-content/50">Files larger than this use parallel HTTP range uploads. Set 0 to allow one POST up to max size. Default 100 (proxy-safe).</span>
+            <span class="text-xs text-base-content/50">Files larger than this use parallel HTTP range uploads. Set 0 for default (100 MB). Default 100 (proxy-safe).</span>
           </div>
           <div class="flex flex-wrap items-center gap-3">
             <label for="range_chunk_mb" class="text-sm font-semibold w-48">HTTP chunk (MB)</label>

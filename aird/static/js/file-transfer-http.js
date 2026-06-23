@@ -297,7 +297,10 @@
       throw new Error(errText || `Session failed (${sessionRes.status})`);
     }
     const session = await sessionRes.json();
-    return session.upload_id;
+    return {
+      uploadId: session.upload_id,
+      chunkBytes: session.chunk_bytes || rangeChunkBytes(),
+    };
   }
 
   async function sendRangeUploadChunk(file, uploadId, start, chunkSize, totalSize, xsrf, cancelScope, onChunkProgress, TT, ttId, concurrencyHints) {
@@ -412,12 +415,15 @@
     const onProgress = options.onProgress || function () {};
     const cancelScope = options.signal;
     const totalSize = file.size;
-    const chunkSize = rangeChunkBytes();
-    const maxConcurrency = rangeUploadConcurrency();
     const xsrf = getXSRFToken();
     const { TT, ttId } = trackUpload(filename, totalSize, options);
     ttPreparing(TT, ttId);
-    const uploadId = await createRangeUploadSession(uploadDir, filename, totalSize, xsrf, TT, ttId);
+    const session = await createRangeUploadSession(
+      uploadDir, filename, totalSize, xsrf, TT, ttId
+    );
+    const uploadId = session.uploadId;
+    const chunkSize = session.chunkBytes;
+    const maxConcurrency = rangeUploadConcurrency();
 
     const totalChunks = Math.ceil(totalSize / chunkSize);
     let nextChunkIndex = 0;

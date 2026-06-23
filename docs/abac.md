@@ -1,4 +1,4 @@
-> **Scope:** Extended roadmap and architecture discussion. **Implemented** ABAC engine behavior is summarized in [`specdoc.md`](../specdoc.md) (§12 ABAC) and [`admin-policies.md`](admin-policies.md).
+> **Scope:** Extended roadmap and architecture discussion. **Implemented** ABAC engine behavior is summarized in [`specdoc.md`](../specdoc.md) (§12 ABAC) and [`admin-policies.md`](admin-policies.md). For file transfer architecture see [`transfers.md`](transfers.md).
 
 Technical Report: Transitioning Aird from RBAC to Attribute-Based Access Control (ABAC)
 

@@ -13,5 +13,14 @@
 ## CSP  
 Inline scripts with `nonce="{{ csp_nonce }}"` must stay in sync with `render()` CSP header logic.
 
-## Static versioning  
-Browse uses cache-busting query on `app.css` / `browse/app.js`; other pages mostly no version—keep intentional to avoid stale asset bugs.
+## Static versioning
+
+Browse and most pages use `?v={{ static_version }}` on CSS/JS (package version + UI fingerprint from `get_static_version()`). Hard-refresh after deploy if assets look stale.
+
+## Service worker
+
+`GET /sw-transfer.js` — registered from `transfer-engine/engine.js` on browse; `updateViaCache: 'none'`. See [transfers.md](transfers.md).
+
+## Security headers (browse / transfers)
+
+`BaseHandler` sets COOP/COEP/CORP for `SharedArrayBuffer` / worker compression paths; CSP includes `worker-src 'self'`.

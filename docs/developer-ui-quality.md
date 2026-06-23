@@ -69,5 +69,7 @@ The repo combines **SonarQube/SonarScanner** (see `sonar-project.properties`; pr
 | JS lint / Sonar-style rules | `eslint.config.mjs`, `npm run lint:js` |
 | Sonar scan scope | `sonar-project.properties` |
 | Theming | `aird/static/js/theme.js`, DaisyUI/Tailwind in `src/input.css` → `aird/static/css/app.css` |
+| Transfer UI / HTTP client | `aird/static/js/file-transfer-http.js`, [transfers.md](transfers.md) |
+| Frontend build | `npm run css:build`, `npm run js:share`, `npm run vendor:fflate` |
 
 For accessibility depth beyond MDN’s hub, WCAG summaries linked from **[Understanding WCAG (MDN)](https://developer.mozilla.org/en-US/docs/Web/Accessibility/Guides)** (guide list) remain the canonical bar for conformance discussions.
