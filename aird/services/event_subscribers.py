@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from collections import Counter
 
 from aird.core.events import (
@@ -20,18 +21,23 @@ class EventMetricsSubscriber:
 
     def __init__(self):
         self._counter: Counter[str] = Counter()
+        self._lock = threading.Lock()
 
     def on_user_authenticated(self, _event: UserAuthenticatedEvent) -> None:
-        self._counter["user_authenticated"] += 1
+        with self._lock:
+            self._counter["user_authenticated"] += 1
 
     def on_share_created(self, _event: ShareCreatedEvent) -> None:
-        self._counter["share_created"] += 1
+        with self._lock:
+            self._counter["share_created"] += 1
 
     def on_transfer_started(self, _event: TransferStartedEvent) -> None:
-        self._counter["transfer_started"] += 1
+        with self._lock:
+            self._counter["transfer_started"] += 1
 
     def snapshot(self) -> dict[str, int]:
-        return dict(self._counter)
+        with self._lock:
+            return dict(self._counter)
 
 
 class EventLoggingSubscriber:

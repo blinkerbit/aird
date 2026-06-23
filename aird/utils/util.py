@@ -211,7 +211,8 @@ class WebSocketConnectionManager:
 
     def update_activity(self, connection):
         """Update last activity time for a connection"""
-        self.last_activity[connection] = time.time()
+        with self._cleanup_lock:
+            self.last_activity[connection] = time.time()
 
     def cleanup_dead_connections(self):
         """Remove connections that can't receive messages"""
@@ -373,13 +374,15 @@ def browser_media_kind(filename) -> str | None:
 _feature_flags_cache: dict | None = None
 _feature_flags_cache_ts: float = 0.0
 _FEATURE_FLAGS_TTL = 5.0  # seconds
+_feature_flags_lock = threading.Lock()
 
 
 def invalidate_feature_flags_cache() -> None:
     """Call after updating feature flags to force a fresh read on next access."""
     global _feature_flags_cache, _feature_flags_cache_ts
-    _feature_flags_cache = None
-    _feature_flags_cache_ts = 0.0
+    with _feature_flags_lock:
+        _feature_flags_cache = None
+        _feature_flags_cache_ts = 0.0
 
 
 def _merge_flags(current: dict, persisted: dict) -> dict:
@@ -402,32 +405,30 @@ def get_current_feature_flags() -> dict:
     global _feature_flags_cache, _feature_flags_cache_ts
 
     now = time.time()
-    if (
-        _feature_flags_cache is not None
-        and (now - _feature_flags_cache_ts) < _FEATURE_FLAGS_TTL
-    ):
-        return _feature_flags_cache.copy()
+    with _feature_flags_lock:
+        if (
+            _feature_flags_cache is not None
+            and (now - _feature_flags_cache_ts) < _FEATURE_FLAGS_TTL
+        ):
+            return _feature_flags_cache.copy()
 
-    # Start with in-memory flags (which may have just been updated)
     current = FEATURE_FLAGS.copy()
-
     db_conn = constants_module.DB_CONN
+    merged = current
     if db_conn is not None:
         try:
             persisted = load_feature_flags(db_conn)
             if persisted:
                 merged = _merge_flags(current, persisted)
-                _feature_flags_cache = merged
-                _feature_flags_cache_ts = now
-                return merged.copy()
         except Exception:
             logging.getLogger(__name__).debug(
                 "load_feature_flags failed; using in-memory flags", exc_info=True
             )
 
-    _feature_flags_cache = current
-    _feature_flags_cache_ts = now
-    return current
+    with _feature_flags_lock:
+        _feature_flags_cache = merged
+        _feature_flags_cache_ts = now
+        return merged.copy()
 
 
 def get_current_websocket_config() -> dict:

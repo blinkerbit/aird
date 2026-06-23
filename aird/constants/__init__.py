@@ -2,6 +2,7 @@
 
 import os
 import sys
+import threading
 from pathlib import Path
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -46,7 +47,7 @@ FEATURE_FLAGS = {
     "webauthn": False,
     "smb_server": False,
     "webdav_server": False,
-    "transfer_sendfile": False,
+    "transfer_sendfile": True,
 }
 
 # WebSocket connection configuration
@@ -61,24 +62,32 @@ WEBSOCKET_CONFIG = {
 
 # Upload configuration (admin-configurable, persisted to database)
 UPLOAD_CONFIG = {
-    "max_file_size_mb": 512,  # Default max upload file size in MB
+    "max_file_size_mb": 10240,  # Default max upload file size in MB (10 GB)
     "allow_all_file_types": 0,  # 0 = use whitelist below, 1 = allow any extension
-    # 0 = stream via single POST up to max_file_size_mb; set lower (e.g. 90) behind reverse proxies
-    "single_request_max_mb": 0,
+    # Files >= this use parallel Range PUT. Keep <= proxy body limits (e.g. 100).
+    "single_request_max_mb": 100,
+    # HTTP parallel upload: chunk size (MB) and concurrent streams.
+    # Peak server RAM per active upload ≈ range_chunk_mb × range_upload_concurrency.
+    "range_chunk_mb": 90,
+    "range_upload_concurrency": 16,
+    # WebSocket upload chunk size (MB). Optional fallback path.
+    "ws_chunk_mb": 90,
 }
 
 # File operation constants (derived from UPLOAD_CONFIG; call refresh_upload_derived_constants after changes)
 MAX_FILE_SIZE = UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
 UPLOAD_REQUEST_MAX_BODY_SIZE = MAX_FILE_SIZE + (1024 * 1024)
 LARGE_FILE_THRESHOLD_BYTES = MAX_FILE_SIZE
-RANGE_CHUNK_BYTES = 32 * 1024 * 1024
-RANGE_UPLOAD_CONCURRENCY = 4
-RANGE_DOWNLOAD_CONCURRENCY = 4
+RANGE_CHUNK_BYTES = 90 * 1024 * 1024  # from range_chunk_mb via refresh_upload_derived_constants()
+RANGE_UPLOAD_CONCURRENCY = 16
+RANGE_DOWNLOAD_CONCURRENCY = 12
+RANGE_PIPELINE_DEPTH = 2
+WS_CHUNK_BYTES = 90 * 1024 * 1024  # from ws_chunk_mb via refresh_upload_derived_constants()
 
 COMPRESSION_CONFIG = {
     "mode": "wan_only",
     "level": 6,
-    "algorithms": ["zstd", "br", "gzip"],
+    "algorithms": ["gzip"],
     "min_bytes": 1024,
     "max_bytes": 50 * 1024 * 1024,
 }
@@ -91,17 +100,56 @@ TRANSFER_CONFIG = {
 }
 
 
-def refresh_upload_derived_constants() -> None:
-    """Recompute upload size limits after UPLOAD_CONFIG is loaded or changed."""
+_RUNTIME_CONFIG_LOCK = threading.RLock()
+
+
+def _refresh_upload_derived_constants_impl() -> None:
     global MAX_FILE_SIZE, UPLOAD_REQUEST_MAX_BODY_SIZE, LARGE_FILE_THRESHOLD_BYTES
+    global WS_CHUNK_BYTES, RANGE_CHUNK_BYTES, RANGE_UPLOAD_CONCURRENCY
     MAX_FILE_SIZE = UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
-    UPLOAD_REQUEST_MAX_BODY_SIZE = MAX_FILE_SIZE + (1024 * 1024)
     single_mb = int(UPLOAD_CONFIG.get("single_request_max_mb", 0) or 0)
     if single_mb <= 0:
         single_mb = UPLOAD_CONFIG["max_file_size_mb"]
     else:
         single_mb = min(single_mb, UPLOAD_CONFIG["max_file_size_mb"])
     LARGE_FILE_THRESHOLD_BYTES = single_mb * 1024 * 1024
+    single_request_bytes = single_mb * 1024 * 1024
+    range_mb = int(UPLOAD_CONFIG.get("range_chunk_mb", 90) or 90)
+    range_mb = max(4, min(range_mb, 200))
+    RANGE_CHUNK_BYTES = range_mb * 1024 * 1024
+    RANGE_UPLOAD_CONCURRENCY = max(
+        1, min(64, int(UPLOAD_CONFIG.get("range_upload_concurrency", 16) or 16))
+    )
+    ws_mb = int(UPLOAD_CONFIG.get("ws_chunk_mb", 90) or 90)
+    ws_mb = max(1, min(ws_mb, 200))
+    WS_CHUNK_BYTES = ws_mb * 1024 * 1024
+    chunk_body_bytes = RANGE_CHUNK_BYTES + (2 * 1024 * 1024)
+    UPLOAD_REQUEST_MAX_BODY_SIZE = max(single_request_bytes, chunk_body_bytes) + (
+        1024 * 1024
+    )
+
+
+def refresh_upload_derived_constants() -> None:
+    """Recompute upload size limits after UPLOAD_CONFIG is loaded or changed."""
+    with _RUNTIME_CONFIG_LOCK:
+        _refresh_upload_derived_constants_impl()
+
+
+def merge_persisted_upload_config(persisted_upload: dict | None) -> None:
+    """Apply upload settings from DB under the runtime config lock."""
+    with _RUNTIME_CONFIG_LOCK:
+        if persisted_upload:
+            for key, value in persisted_upload.items():
+                UPLOAD_CONFIG[key] = int(value)
+        if "single_request_max_mb" not in (persisted_upload or {}):
+            UPLOAD_CONFIG["single_request_max_mb"] = 100
+        if "range_chunk_mb" not in (persisted_upload or {}):
+            UPLOAD_CONFIG.setdefault("range_chunk_mb", 90)
+        if "range_upload_concurrency" not in (persisted_upload or {}):
+            UPLOAD_CONFIG.setdefault("range_upload_concurrency", 16)
+        if "ws_chunk_mb" not in (persisted_upload or {}):
+            UPLOAD_CONFIG.setdefault("ws_chunk_mb", 90)
+        _refresh_upload_derived_constants_impl()
 
 
 refresh_upload_derived_constants()

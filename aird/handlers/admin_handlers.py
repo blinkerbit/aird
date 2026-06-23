@@ -128,6 +128,9 @@ class AdminHandler(BaseHandler):
         )
         available_extensions = sorted(constants_module.ALLOWED_UPLOAD_EXTENSIONS)
 
+        if db_conn:
+            self.get_service("config_service").sync_upload_config_from_db(db_conn)
+
         self.render(
             "admin.html",
             features=current_features,
@@ -215,8 +218,32 @@ class AdminHandler(BaseHandler):
 
         # Update upload configuration
         try:
-            max_file_size_mb = max(1, int(self.get_argument("max_file_size_mb", "512")))
+            max_file_size_mb = max(
+                1, int(self.get_argument("max_file_size_mb", "10240"))
+            )
             UPLOAD_CONFIG["max_file_size_mb"] = max_file_size_mb
+            single_request_max_mb = int(
+                self.get_argument("single_request_max_mb", "100")
+            )
+            if single_request_max_mb <= 0:
+                UPLOAD_CONFIG["single_request_max_mb"] = 0
+            else:
+                UPLOAD_CONFIG["single_request_max_mb"] = min(
+                    single_request_max_mb, max_file_size_mb
+                )
+            ws_chunk_mb = max(1, min(200, int(self.get_argument("ws_chunk_mb", "90"))))
+            UPLOAD_CONFIG["ws_chunk_mb"] = ws_chunk_mb
+            range_chunk_mb = max(
+                4, min(200, int(self.get_argument("range_chunk_mb", "90")))
+            )
+            UPLOAD_CONFIG["range_chunk_mb"] = range_chunk_mb
+            UPLOAD_CONFIG["range_upload_concurrency"] = max(
+                1,
+                min(
+                    64,
+                    int(self.get_argument("range_upload_concurrency", "16")),
+                ),
+            )
             constants_module.refresh_upload_derived_constants()
             UPLOAD_CONFIG["allow_all_file_types"] = (
                 1 if self.get_argument("allow_all_file_types", "off") == "on" else 0
@@ -238,6 +265,7 @@ class AdminHandler(BaseHandler):
                 self.get_service("config_service").save_upload_config(
                     db_conn, UPLOAD_CONFIG
                 )
+                self.get_service("config_service").sync_upload_config_from_db(db_conn)
                 # When "allow all file types" is off, persist selected extensions from checkboxes
                 if not UPLOAD_CONFIG.get("allow_all_file_types"):
                     selected_extensions = {

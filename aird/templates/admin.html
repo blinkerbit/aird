@@ -119,8 +119,32 @@
           <div class="flex flex-wrap items-center gap-3">
             <label for="max_file_size_mb" class="text-sm font-semibold w-48">Max file size (MB)</label>
             <input type="number" id="max_file_size_mb" name="max_file_size_mb" class="input input-bordered input-sm w-28"
-                   value="{{ upload_config.get('max_file_size_mb', 512) }}" min="1" step="1">
-            <span class="text-xs text-base-content/50">Min 1 MB · default 512 · files upload in 90 MB parts (Cloudflare-safe)</span>
+                   value="{{ upload_config.get('max_file_size_mb', 10240) }}" min="1" step="1">
+            <span class="text-xs text-base-content/50">Default 10240 (10 GB). ISOs and large archives need a high value here.</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <label for="single_request_max_mb" class="text-sm font-semibold w-48">Single-request max (MB)</label>
+            <input type="number" id="single_request_max_mb" name="single_request_max_mb" class="input input-bordered input-sm w-28"
+                   value="{{ upload_config.get('single_request_max_mb', 100) }}" min="0" step="1">
+            <span class="text-xs text-base-content/50">Files larger than this use parallel HTTP range uploads. Set 0 to allow one POST up to max size. Default 100 (proxy-safe).</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <label for="range_chunk_mb" class="text-sm font-semibold w-48">HTTP chunk (MB)</label>
+            <input type="number" id="range_chunk_mb" name="range_chunk_mb" class="input input-bordered input-sm w-28"
+                   value="{{ upload_config.get('range_chunk_mb', 90) }}" min="4" max="200" step="1">
+            <span class="text-xs text-base-content/50">Bytes per HTTP range PUT. Default 90. Does not cap line speed — only bounds RAM per stream (~chunk × parallelism).</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <label for="range_upload_concurrency" class="text-sm font-semibold w-48">HTTP parallelism</label>
+            <input type="number" id="range_upload_concurrency" name="range_upload_concurrency" class="input input-bordered input-sm w-28"
+                   value="{{ upload_config.get('range_upload_concurrency', 16) }}" min="1" max="64" step="1">
+            <span class="text-xs text-base-content/50">Concurrent upload streams (1 Gbps: try 16–32). Default 16.</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <label for="ws_chunk_mb" class="text-sm font-semibold w-48">WS chunk (MB)</label>
+            <input type="number" id="ws_chunk_mb" name="ws_chunk_mb" class="input input-bordered input-sm w-28"
+                   value="{{ upload_config.get('ws_chunk_mb', 90) }}" min="1" max="200" step="1">
+            <span class="text-xs text-base-content/50">WebSocket fallback chunk size. Large files use HTTP parallel by default.</span>
           </div>
           <div class="flex flex-wrap items-center gap-3">
             <label class="label cursor-pointer justify-start gap-2">

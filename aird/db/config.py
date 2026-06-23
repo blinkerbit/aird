@@ -51,7 +51,7 @@ def save_upload_config(conn: sqlite3.Connection, config: dict) -> None:
                     (key, int(value)),
                 )
     except Exception:
-        logger.debug("save_upload_config failed", exc_info=True)
+        logger.warning("save_upload_config failed", exc_info=True)
 
 
 def load_allowed_extensions(conn: sqlite3.Connection) -> set:

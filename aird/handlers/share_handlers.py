@@ -1,6 +1,7 @@
 import tornado.web
 import json
 import secrets
+import threading
 import time
 from datetime import datetime, timezone
 import os
@@ -851,6 +852,7 @@ class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
 class TokenVerificationHandler(BaseHandler):
     # Rate limiting for token verification (IP -> (attempts, timestamp))
     _TOKEN_VERIFY_ATTEMPTS = {}
+    _TOKEN_VERIFY_LOCK = threading.Lock()
     _RATE_LIMIT_WINDOW = 300  # 5 minutes
     _MAX_ATTEMPTS = 10  # Max 10 attempts per 5 minutes
 
@@ -864,24 +866,25 @@ class TokenVerificationHandler(BaseHandler):
         """Check if the request is within rate limits. Returns True if allowed."""
         remote_ip = self.request.remote_ip
         now = time.time()
-        stale = [
-            ip
-            for ip, (_, ts) in self._TOKEN_VERIFY_ATTEMPTS.items()
-            if now - ts > self._RATE_LIMIT_WINDOW
-        ]
-        for ip in stale:
-            self._TOKEN_VERIFY_ATTEMPTS.pop(ip, None)
-        attempts, timestamp = self._TOKEN_VERIFY_ATTEMPTS.get(remote_ip, (0, now))
+        with self._TOKEN_VERIFY_LOCK:
+            stale = [
+                ip
+                for ip, (_, ts) in self._TOKEN_VERIFY_ATTEMPTS.items()
+                if now - ts > self._RATE_LIMIT_WINDOW
+            ]
+            for ip in stale:
+                self._TOKEN_VERIFY_ATTEMPTS.pop(ip, None)
+            attempts, timestamp = self._TOKEN_VERIFY_ATTEMPTS.get(remote_ip, (0, now))
 
-        if now - timestamp > self._RATE_LIMIT_WINDOW:
-            attempts = 0
-            timestamp = now
+            if now - timestamp > self._RATE_LIMIT_WINDOW:
+                attempts = 0
+                timestamp = now
 
-        if attempts >= self._MAX_ATTEMPTS:
-            return False
+            if attempts >= self._MAX_ATTEMPTS:
+                return False
 
-        self._TOKEN_VERIFY_ATTEMPTS[remote_ip] = (attempts + 1, timestamp)
-        return True
+            self._TOKEN_VERIFY_ATTEMPTS[remote_ip] = (attempts + 1, timestamp)
+            return True
 
     @require_db
     def get(self, sid):

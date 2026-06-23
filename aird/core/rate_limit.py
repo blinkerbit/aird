@@ -50,22 +50,11 @@ class TransferRateLimiter:
         burst_mb: float = 64.0,
         max_concurrent: int = 0,
     ) -> None:
-        cls._upload_rate = max(0.0, upload_mb_per_sec) * 1024 * 1024
-        cls._download_rate = max(0.0, download_mb_per_sec) * 1024 * 1024
-        cls._burst_mb = max(1.0, burst_mb)
-        cls._max_concurrent = max(0, max_concurrent)
-
-    @classmethod
-    def _bucket(cls, key: str, rate: float) -> _TokenBucket | None:
-        if rate <= 0:
-            return None
-        burst = cls._burst_mb * 1024 * 1024
         with cls._lock:
-            bucket = cls._buckets.get(key)
-            if bucket is None or bucket.rate != rate or bucket.burst != burst:
-                bucket = _TokenBucket(rate, burst)
-                cls._buckets[key] = bucket
-            return bucket
+            cls._upload_rate = max(0.0, upload_mb_per_sec) * 1024 * 1024
+            cls._download_rate = max(0.0, download_mb_per_sec) * 1024 * 1024
+            cls._burst_mb = max(1.0, burst_mb)
+            cls._max_concurrent = max(0, max_concurrent)
 
     @classmethod
     async def wait_for_bytes(
@@ -74,12 +63,25 @@ class TransferRateLimiter:
         import asyncio
 
         rate = cls._upload_rate if direction == "upload" else cls._download_rate
-        bucket = cls._bucket(f"{direction}:{username}", rate)
-        if bucket is None:
-            return
-        wait = bucket.consume(nbytes)
+        with cls._lock:
+            bucket = cls._bucket_locked(f"{direction}:{username}", rate)
+            if bucket is None:
+                return
+            wait = bucket.consume(nbytes)
         if wait > 0:
             await asyncio.sleep(wait)
+
+    @classmethod
+    def _bucket_locked(cls, key: str, rate: float) -> _TokenBucket | None:
+        """Return token bucket; caller must hold ``cls._lock``."""
+        if rate <= 0:
+            return None
+        burst = cls._burst_mb * 1024 * 1024
+        bucket = cls._buckets.get(key)
+        if bucket is None or bucket.rate != rate or bucket.burst != burst:
+            bucket = _TokenBucket(rate, burst)
+            cls._buckets[key] = bucket
+        return bucket
 
     @classmethod
     def try_acquire_concurrent(cls, username: str) -> bool:

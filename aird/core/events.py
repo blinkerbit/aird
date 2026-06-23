@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -17,12 +18,15 @@ class EventBus:
 
     def __init__(self):
         self._subscribers: dict[type, list[EventHandler]] = {}
+        self._lock = threading.RLock()
 
     def subscribe(self, event_type: type, handler: EventHandler) -> None:
-        self._subscribers.setdefault(event_type, []).append(handler)
+        with self._lock:
+            self._subscribers.setdefault(event_type, []).append(handler)
 
     def publish(self, event: Any) -> None:
-        handlers = self._subscribers.get(type(event), [])
+        with self._lock:
+            handlers = list(self._subscribers.get(type(event), []))
         for handler in handlers:
             try:
                 handler(event)

@@ -1,6 +1,7 @@
 """Health check endpoint for load balancers and monitoring."""
 
 import logging
+import os
 
 import tornado.web
 import aird.constants as constants_module
@@ -35,3 +36,21 @@ class HealthHandler(tornado.web.RequestHandler):
             self.set_status(503)
 
         self.write(status)
+
+
+class ServiceWorkerHandler(tornado.web.RequestHandler):
+    """Serve the transfer service worker from site root (scope /)."""
+
+    def get(self):
+        sw_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "static",
+            "js",
+            "sw-transfer.js",
+        )
+        self.set_header("Content-Type", "application/javascript; charset=utf-8")
+        self.set_header("Service-Worker-Allowed", "/")
+        self.set_header("Cache-Control", "no-store, must-revalidate")
+        self.set_header("Pragma", "no-cache")
+        with open(sw_path, "rb") as fh:
+            self.write(fh.read())

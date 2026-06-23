@@ -9,13 +9,11 @@ from aird.core.compression import (
 )
 
 
-def test_negotiate_encoding_prefers_zstd():
-    enc = negotiate_encoding("gzip, deflate, br, zstd")
+def test_negotiate_encoding_prefers_zstd_on_gil_builds():
+    enc = negotiate_encoding("gzip, deflate, zstd")
     avail = codecs_available()
     if avail["zstd"]:
         assert enc == "zstd"
-    elif avail["br"]:
-        assert enc == "br"
     else:
         assert enc == "gzip"
 

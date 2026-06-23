@@ -13,12 +13,12 @@ install_requires = [
 ]
 
 extras_require = {
-    "compress": ["zstandard>=0.22.0", "brotli>=1.1.0"],
+    "compress": ["zstandard>=0.22.0"],
 }
 
 setup(
     name="aird",
-    version="0.4.25.dev0",
+    version="0.4.25.dev1",
     packages=find_packages(),
     include_package_data=True,
     package_data={"aird": [

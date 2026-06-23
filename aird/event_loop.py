@@ -54,7 +54,14 @@ def apply_io_thread_pool(loop: Any = None) -> bool:
         from concurrent.futures import ThreadPoolExecutor
 
         if loop is None:
-            loop = asyncio.get_event_loop()
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
 
         cpus = os.cpu_count() or 4
         workers = max(8, min(32, cpus * 4))

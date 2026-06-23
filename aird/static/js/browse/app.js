@@ -244,8 +244,12 @@
 
     function abortActiveUploads(item) {
       item.cancelled = true;
+      uploadQueue.length = 0;
       if (item.uploadSignal) {
         item.uploadSignal.aborted = true;
+        if (typeof item.uploadSignal.abort === 'function') {
+          item.uploadSignal.abort();
+        }
       }
     }
 
@@ -261,7 +265,12 @@
         return "Upload not allowed. Refresh the page and try again.";
       }
       if (lower.includes("413") || lower.includes("too large")) {
-        return "This file is too large for the server limit.";
+        const m = raw.match(/(\d+)\s*MB/i);
+        if (m) {
+          return `This file exceeds the server limit (${m[1]} MB). Admin → Upload settings → raise Max file size, then refresh this page.`;
+        }
+        const limitGB = (MAX_FILE_SIZE / (1024 * 1024 * 1024)).toFixed(2);
+        return `This file exceeds the server limit (${limitGB} GB). Admin → Upload settings → raise Max file size, then refresh this page.`;
       }
       return "Upload could not be completed. Please try again.";
     }

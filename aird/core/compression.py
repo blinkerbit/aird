@@ -1,4 +1,4 @@
-"""HTTP response compression: zstd, brotli, gzip with streaming."""
+"""HTTP response compression: gzip (stdlib); optional zstd on GIL builds only."""
 
 from __future__ import annotations
 
@@ -7,7 +7,8 @@ import gzip
 import io
 import logging
 import os
-from typing import AsyncIterator
+import sys
+from typing import Any, AsyncIterator
 
 logger = logging.getLogger(__name__)
 
@@ -39,39 +40,49 @@ _INCOMPRESSIBLE_EXTENSIONS = frozenset(
         ".gif",
         ".ico",
         ".pdf",
-        ".br",
         ".zst",
         ".zstd",
     }
 )
 
-_zstd_available = False
-_brotli_available = False
+_zstd_module: Any | None = None
+_zstd_probe_done = False
 
-try:
-    import zstandard as _zstd  # noqa: F401
 
-    _zstd_available = True
-except ImportError:
-    _zstd = None
+def _gil_enabled() -> bool:
+    checker = getattr(sys, "_is_gil_enabled", None)
+    if callable(checker):
+        return bool(checker())
+    return True
 
-try:
-    import brotli as _brotli  # noqa: F401
 
-    _brotli_available = True
-except ImportError:
-    _brotli = None
+def _zstd_available() -> bool:
+    """zstandard C ext may re-enable the GIL on free-threaded builds — skip it there."""
+    global _zstd_module, _zstd_probe_done
+    if not _gil_enabled():
+        return False
+    if _zstd_probe_done:
+        return _zstd_module is not None
+    _zstd_probe_done = True
+    try:
+        import zstandard
+
+        _zstd_module = zstandard
+    except ImportError:
+        _zstd_module = None
+        logger.debug("zstandard not installed; HTTP compression will use gzip only")
+    return _zstd_module is not None
 
 
 def codecs_available() -> dict[str, bool]:
-    return {"zstd": _zstd_available, "br": _brotli_available, "gzip": True}
+    return {"zstd": _zstd_available(), "gzip": True}
 
 
 def negotiate_encoding(accept_header: str | None, enabled: list[str] | None = None) -> str | None:
-    """Pick best Content-Encoding from Accept-Encoding (zstd > br > gzip)."""
+    """Pick best Content-Encoding from Accept-Encoding (zstd > gzip when allowed)."""
     if not accept_header:
         return None
-    allowed = enabled or ["zstd", "br", "gzip"]
+    allowed = enabled or ["gzip"]
     tokens: dict[str, float] = {}
     for part in accept_header.split(","):
         piece = part.strip()
@@ -90,11 +101,9 @@ def negotiate_encoding(accept_header: str | None, enabled: list[str] | None = No
         name = name.strip().lower()
         if qval > 0:
             tokens[name] = max(tokens.get(name, 0.0), qval)
-    for codec in ("zstd", "br", "gzip"):
+    for codec in ("zstd", "gzip"):
         if codec in allowed and codec in tokens:
-            if codec == "zstd" and not _zstd_available:
-                continue
-            if codec == "br" and not _brotli_available:
+            if codec == "zstd" and not _zstd_available():
                 continue
             return codec
     return None
@@ -148,10 +157,13 @@ def _compress_file_sync(path: str, encoding: str, level: int) -> bytes:
     with open(path, "rb") as f_in:
         raw = f_in.read()
     if encoding == "zstd":
-        cctx = _zstd.ZstdCompressor(level=level)
-        return cctx.compress(raw)
-    if encoding == "br":
-        return _brotli.compress(raw, quality=min(level, 11))
+        if not _zstd_available():
+            encoding = "gzip"
+        else:
+            cctx = _zstd_module.ZstdCompressor(level=level)
+            return cctx.compress(raw)
+    if encoding != "gzip":
+        raise ValueError(f"Unsupported encoding: {encoding}")
     buf = io.BytesIO()
     with gzip.GzipFile(fileobj=buf, mode="wb", compresslevel=min(level, 9)) as gz:
         gz.write(raw)

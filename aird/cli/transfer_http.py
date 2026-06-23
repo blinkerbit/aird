@@ -10,8 +10,8 @@ from typing import Any, Callable
 import requests
 
 
-DEFAULT_CHUNK = 32 * 1024 * 1024
-DEFAULT_CONCURRENCY = 4
+DEFAULT_CHUNK = 16 * 1024 * 1024
+DEFAULT_CONCURRENCY = 12
 
 
 def _clone_session(http: requests.Session) -> requests.Session:

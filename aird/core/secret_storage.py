@@ -6,12 +6,14 @@ import base64
 import hashlib
 import logging
 import os
+import threading
 
 logger = logging.getLogger(__name__)
 
 _PREFIX = "enc:v1:"
 _fernet = None
 _fernet_unavailable_logged = False
+_fernet_lock = threading.Lock()
 
 
 def _reset_fernet_cache() -> None:
@@ -22,30 +24,31 @@ def _reset_fernet_cache() -> None:
 
 def _get_fernet():
     global _fernet, _fernet_unavailable_logged
-    if _fernet is not None:
-        return _fernet
-    key_material = (
-        os.environ.get("AIRD_SECRETS_KEY", "").strip()
-        or os.environ.get("AIRD_COOKIE_SECRET", "").strip()
-    )
-    if not key_material:
-        if not _fernet_unavailable_logged:
-            logger.debug(
-                "AIRD_SECRETS_KEY / AIRD_COOKIE_SECRET unset; secrets stored as plaintext"
-            )
-            _fernet_unavailable_logged = True
-        return None
-    try:
-        from cryptography.fernet import Fernet
-
-        derived = base64.urlsafe_b64encode(
-            hashlib.sha256(key_material.encode("utf-8")).digest()
+    with _fernet_lock:
+        if _fernet is not None:
+            return _fernet
+        key_material = (
+            os.environ.get("AIRD_SECRETS_KEY", "").strip()
+            or os.environ.get("AIRD_COOKIE_SECRET", "").strip()
         )
-        _fernet = Fernet(derived)
-        return _fernet
-    except Exception:
-        logger.warning("Could not initialize secret encryption", exc_info=True)
-        return None
+        if not key_material:
+            if not _fernet_unavailable_logged:
+                logger.debug(
+                    "AIRD_SECRETS_KEY / AIRD_COOKIE_SECRET unset; secrets stored as plaintext"
+                )
+                _fernet_unavailable_logged = True
+            return None
+        try:
+            from cryptography.fernet import Fernet
+
+            derived = base64.urlsafe_b64encode(
+                hashlib.sha256(key_material.encode("utf-8")).digest()
+            )
+            _fernet = Fernet(derived)
+            return _fernet
+        except Exception:
+            logger.warning("Could not initialize secret encryption", exc_info=True)
+            return None
 
 
 def encrypt_secret(plaintext: str) -> str:

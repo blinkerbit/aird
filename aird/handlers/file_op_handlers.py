@@ -364,6 +364,7 @@ class UploadHandler(BaseHandler):
 
     async def prepare(self):
         BaseHandler.prepare(self)
+        self.sync_upload_config_from_db()
         self.check_xsrf_cookie()
         if not self.get_current_user():
             raise tornado.web.HTTPError(403, "Authentication required")
@@ -1038,6 +1039,7 @@ class CloudUploadHandler(BaseHandler):
     @require_action("file.write")
     @require_modify_access()
     async def post(self, provider_name: str):
+        self.sync_upload_config_from_db()
         manager: CloudManager = self.application.settings.get(
             "cloud_manager", CLOUD_MANAGER
         )
