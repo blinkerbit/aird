@@ -10,9 +10,12 @@
     "js:share": "esbuild aird/static/js/share/src/main.js --bundle --platform=browser --format=iife --outfile=aird/static/js/share/app.js",
     "js:share:watch": "esbuild aird/static/js/share/src/main.js --bundle --platform=browser --format=iife --outfile=aird/static/js/share/app.js --watch",
     "vendor:qrcode": "esbuild node_modules/qrcode/lib/browser.js --bundle --platform=browser --format=iife --global-name=AirdQRCode --outfile=aird/static/js/vendor/qrcode-browser.js",
-    "vendor:fflate": "esbuild node_modules/fflate/umd/index.js --bundle --platform=browser --format=iife --global-name=fflate --outfile=aird/static/js/vendor/fflate.js"
+    "vendor:fflate": "esbuild node_modules/fflate/umd/index.js --bundle --platform=browser --format=iife --global-name=fflate --outfile=aird/static/js/vendor/fflate.js",
+    "demo:record": "node scripts/record-demo.mjs"
   },
   "devDependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "playwright": "^1.52.0",
     "fflate": "^0.8.2",
     "@tailwindcss/cli": "^4",
     "daisyui": "^5",
