@@ -50,3 +50,4 @@ node_modules/
 *mcp-server*
 *.md
 *.err
+coverage.json

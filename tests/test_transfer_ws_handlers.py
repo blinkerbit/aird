@@ -99,3 +99,34 @@ async def test_download_streams_file(tmp_path):
     assert "download_start" in types
     assert "binary" in types
     assert "download_end" in types
+
+
+def test_ws_helper_functions():
+    from aird.app_context import AppContext
+    from aird.handlers.transfer_ws_handlers import (
+        _ws_db_conn,
+        _ws_display_username,
+        _ws_get_service,
+        _ws_has_modify_privileges,
+    )
+
+    handler = MagicMock()
+    handler.get_current_user.return_value = None
+    assert _ws_has_modify_privileges(handler) is False
+    assert _ws_display_username(handler) == "Guest"
+
+    handler.get_current_user.return_value = {"username": "token_user", "role": "user"}
+    assert _ws_has_modify_privileges(handler) is False
+
+    handler.get_current_user.return_value = {"username": "alice", "role": "user"}
+    assert _ws_has_modify_privileges(handler) is True
+    assert _ws_display_username(handler) == "alice (User)"
+
+    ctx = AppContext(db_conn=object(), services={"audit_service": object()})
+    handler.settings = {"app_context": ctx}
+    assert _ws_db_conn(handler) is ctx.db_conn
+    assert _ws_get_service(handler, "audit_service") is not None
+
+    handler.settings = {"db_conn": "db", "services": {"x": 1}}
+    assert _ws_db_conn(handler) == "db"
+    assert _ws_get_service(handler, "x") == 1

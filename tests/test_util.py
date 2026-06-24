@@ -1259,3 +1259,40 @@ class TestSanitizeCloudFilenameEdgeCases:
     def test_all_underscores_returns_default(self):
         result = sanitize_cloud_filename("___")
         assert result == "cloud_file"
+
+
+class TestShareVisibilityHelpers:
+    def test_share_visible_to_viewer(self):
+        from aird.utils.util import (
+            augment_with_shared_status,
+            share_relevant_for_viewers_file_tree,
+            share_visible_to_viewer_for_listing,
+        )
+
+        share = {
+            "paths": ["docs"],
+            "allowed_users": ["bob"],
+            "created_by": "alice",
+        }
+        assert share_visible_to_viewer_for_listing(share, "bob", False) is True
+        assert share_visible_to_viewer_for_listing(share, None, False) is False
+        assert share_visible_to_viewer_for_listing(share, "eve", False) is False
+        assert share_visible_to_viewer_for_listing(share, "eve", True) is True
+
+        with patch(
+            "aird.core.share_root.filesystem_root_for_share", return_value="/root"
+        ):
+            assert share_relevant_for_viewers_file_tree(
+                share, viewer_username="bob", viewer_is_admin=False, viewer_root="/root"
+            )
+
+        files = [{"name": "a.txt"}]
+        augment_with_shared_status(
+            files,
+            "",
+            {"s1": share},
+            viewer_username="bob",
+            viewer_is_admin=False,
+        )
+        assert "is_shared" in files[0]
+

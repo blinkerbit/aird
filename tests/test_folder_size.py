@@ -3,6 +3,7 @@
 import os
 
 import pytest
+from unittest.mock import patch
 
 from aird.core.folder_size import FolderSizeWalker, compute_folder_size
 
@@ -43,3 +44,25 @@ def test_compute_folder_size(sample_tree):
     total, count = compute_folder_size(sample_tree)
     assert count == 3
     assert total == 175
+
+
+def test_norm_rel_path_and_resolve(tmp_path):
+    from aird.core.folder_size import norm_rel_path, resolve_folder_abspath
+
+    assert norm_rel_path("\\docs\\") == "docs"
+    root = str(tmp_path)
+    (tmp_path / "docs").mkdir()
+    assert resolve_folder_abspath(root, "docs") is not None
+    assert resolve_folder_abspath(root, "../etc") is None
+    assert resolve_folder_abspath(root, "missing") is None
+
+
+def test_walker_account_os_error(tmp_path):
+    root = tmp_path / "walk"
+    root.mkdir()
+    (root / "f.txt").write_bytes(b"x")
+    walker = FolderSizeWalker(str(root))
+    with patch("os.path.getsize", side_effect=OSError("nope")):
+        walker.step()
+    assert walker.file_count == 1
+

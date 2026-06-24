@@ -1015,3 +1015,23 @@ class TestAssignAdminEdgeCases:
 
     def test_none_admin_users(self, db_conn):
         assign_admin_privileges(db_conn, None)
+
+
+class TestBuildAppContext:
+    def test_build_app_context_and_application(self):
+        from aird.main import _build_app_context, _build_application
+
+        ctx = _build_app_context()
+        assert ctx.event_bus is not None
+        assert ctx.services.get("policy_service") is not None
+        app = _build_application()
+        assert app is not None
+        assert "app_context" in app.settings
+
+    def test_run_cleanup_logs_deleted(self):
+        with patch("aird.main.constants.DB_CONN", MagicMock()), patch(
+            "aird.main.cleanup_expired_shares", return_value=2
+        ), patch("aird.main.tornado.ioloop.IOLoop.current") as loop:
+            _run_cleanup_expired_shares()
+            loop.return_value.call_later.assert_called_once()
+
