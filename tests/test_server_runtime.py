@@ -27,7 +27,7 @@ def test_resolve_worker_count_windows_forces_one():
 
 
 def test_detect_physical_cpu_count_fallback():
-    with patch("aird.server_runtime.os.cpu_count", return_value=8), patch(
-        "aird.server_runtime.detect_threads_per_core", return_value=2.0
-    ):
+    with patch("aird.server_runtime.sys.platform", "darwin"), patch(
+        "aird.server_runtime.os.cpu_count", return_value=8
+    ), patch("aird.server_runtime.detect_threads_per_core", return_value=2.0):
         assert detect_physical_cpu_count() == 4
