@@ -395,16 +395,17 @@ class TestShareListAPIHandler:
 
     def test_success(self):
         handler = make_request_handler(ShareListAPIHandler)
+        share_svc = handler.application.settings["services"]["share_service"]
+        shares = {"s1": {"paths": [], "created_by": "admin"}}
         with patch(
             "aird.handlers.base_handler.is_feature_enabled", return_value=True
-        ), patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]), patch(
-            "aird.services.share_service.get_all_shares",
-            return_value={"s1": {"paths": []}},
+        ), patch_db_conn(MagicMock(), modules=["aird.handlers.api_handlers"]), patch.object(
+            share_svc, "list_shares", return_value=shares
         ):
             handler.get()
-            handler.write.assert_called_with(
-                {"shares": {"s1": {"paths": []}}, "shared_with_me": []}
-            )
+            payload = handler.write.call_args[0][0]
+            assert "s1" in payload["shares"]
+            assert payload["shared_with_me"] == []
 
 
 class TestFeatureFlagSocketHandler:

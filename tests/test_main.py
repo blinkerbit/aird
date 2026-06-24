@@ -818,7 +818,7 @@ class TestMainModuleHelpers:
                 "aird.main.load_feature_flags",
                 return_value={"super_search": False},
             ), patch(
-                "aird.main.load_upload_config",
+                "aird.services.config_service.load_upload_config",
                 return_value={"max_file_size_mb": 77, "allow_all_file_types": 0},
             ), patch(
                 "aird.main.load_allowed_extensions", return_value={".zz"}
@@ -844,7 +844,7 @@ class TestMainModuleHelpers:
         orig_ext = constants_module.UPLOAD_ALLOWED_EXTENSIONS.copy()
         try:
             with patch("aird.main.load_feature_flags", return_value={}), patch(
-                "aird.main.load_upload_config", return_value={}
+                "aird.services.config_service.load_upload_config", return_value={}
             ), patch("aird.main.load_allowed_extensions", return_value=set()), patch(
                 "aird.main.save_allowed_extensions"
             ) as mock_save:
@@ -869,9 +869,10 @@ class TestMainModuleHelpers:
             with patch("aird.main.os.makedirs"), patch(
                 "aird.main.os.path.join", return_value="/fake/db.sqlite3"
             ), patch("aird.main.os.path.expanduser", return_value="/home"), patch(
-                "aird.main.sqlite3.connect", return_value=mock_sql_conn
-            ), patch("aird.main.init_db") as mock_init:
+                "aird.main._open_db_connection", return_value=mock_sql_conn
+            ) as mock_open, patch("aird.main.init_db") as mock_init:
                 _create_emergency_db_connection()
+            mock_open.assert_called_once_with("/fake/db.sqlite3")
             assert constants_module.DB_CONN is mock_sql_conn
             mock_init.assert_called_once_with(mock_sql_conn)
             assert constants_module.DB_PATH == "/fake/db.sqlite3"

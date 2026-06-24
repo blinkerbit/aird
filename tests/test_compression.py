@@ -1,9 +1,14 @@
 """Tests for compression negotiation."""
 
+import asyncio
 import gzip
+import tempfile
+from pathlib import Path
 
+import aird.constants as constants
 from aird.core.compression import (
     codecs_available,
+    compress_file,
     negotiate_encoding,
     should_compress,
 )
@@ -46,13 +51,12 @@ def test_should_not_compress_range():
     )
 
 
+def test_compression_algorithms_default_gzip_only():
+    assert "gzip" in constants.COMPRESSION_CONFIG["algorithms"]
+    assert "br" not in constants.COMPRESSION_CONFIG["algorithms"]
+
+
 def test_compress_file_gzip():
-    import asyncio
-    import tempfile
-    from pathlib import Path
-
-    from aird.core.compression import compress_file
-
     with tempfile.NamedTemporaryFile("wb", delete=False, suffix=".txt") as f:
         f.write(b"hello world " * 100)
         path = f.name

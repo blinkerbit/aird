@@ -72,6 +72,7 @@ def _wheel_members(wheel: Path) -> set[str]:
 
 @pytest.fixture(scope="module")
 def built_wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    pytest.importorskip("build")
     out = tmp_path_factory.mktemp("dist")
     subprocess.run(
         [sys.executable, "-m", "build", "--wheel", "-o", str(out)],

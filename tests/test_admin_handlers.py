@@ -785,7 +785,7 @@ class TestAdminHandlerUploadConfig:
     def test_post_default_max_file_size_when_not_provided(
         self, mock_tornado_app, mock_tornado_request, mock_db_conn
     ):
-        """Test AdminHandler POST uses default 512 when max_file_size_mb not in form"""
+        """Test AdminHandler POST uses default 10240 when max_file_size_mb not in form"""
         handler = AdminHandler(mock_tornado_app, mock_tornado_request)
 
         handler.get_argument = MagicMock(
@@ -808,7 +808,7 @@ class TestAdminHandlerUploadConfig:
             }.get(key, default)
         )
 
-        upload_config = {"max_file_size_mb": 512}
+        upload_config = {"max_file_size_mb": 256}
 
         with patch.object(
             handler,
@@ -836,7 +836,7 @@ class TestAdminHandlerUploadConfig:
 
             handler.post()
 
-            assert upload_config["max_file_size_mb"] == 512
+            assert upload_config["max_file_size_mb"] == 10240
 
 
 @pytest.mark.skipif(
