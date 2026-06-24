@@ -1,5 +1,6 @@
 import {
   elements,
+  selectedFiles,
 } from './state.js';
 import {
   clearSelection,
@@ -58,7 +59,6 @@ import {
   showShareDetails,
   closeSharePopup,
 } from './share-popup.js';
-import { selectedFiles } from './state.js';
 
 function consumeShareCreatePrefill() {
   let raw;

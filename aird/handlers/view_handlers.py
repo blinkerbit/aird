@@ -72,6 +72,96 @@ async def _serve_download(handler, abspath, filename):
         TransferRateLimiter.release_concurrent(user_key)
 
 
+def _download_socket(handler):
+    stream = getattr(handler.request.connection, "stream", None)
+    return getattr(stream, "socket", None) if stream else None
+
+
+def _download_wants_compression(handler, abspath, mime_type, file_size, byte_range):
+    encoding = negotiate_encoding(
+        handler.request.headers.get("Accept-Encoding"),
+        constants_module.COMPRESSION_CONFIG.get("algorithms"),
+    )
+    if not encoding:
+        return None
+    if not should_compress(
+        path=abspath,
+        mime_type=mime_type,
+        file_size=file_size,
+        has_range=bool(byte_range),
+        remote_ip=handler.request.remote_ip or "",
+        compression_enabled=is_feature_enabled("compression", True),
+        mode=constants_module.COMPRESSION_CONFIG.get("mode", "wan_only"),
+        min_bytes=int(constants_module.COMPRESSION_CONFIG.get("min_bytes", 1024)),
+        max_bytes=int(constants_module.COMPRESSION_CONFIG.get("max_bytes", 50 * 1024 * 1024)),
+        corporate_cidrs=constants_module.CORPORATE_IP_CIDRS,
+    ):
+        return None
+    return encoding
+
+
+async def _stream_chunks_to_handler(handler, chunk_iter, user_key):
+    async for chunk in chunk_iter:
+        await TransferRateLimiter.wait_for_bytes(
+            user_key, len(chunk), direction="download"
+        )
+        handler.write(chunk)
+        await handler.flush()
+
+
+async def _try_sendfile_download(handler, abspath, offset, length, user_key):
+    if not is_feature_enabled("transfer_sendfile", False) or not sendfile_available():
+        return False
+    sock = _download_socket(handler)
+    if not sock:
+        return False
+    if not await sendfile_to_socket(sock, abspath, offset, length):
+        return False
+    await TransferRateLimiter.wait_for_bytes(user_key, length, direction="download")
+    return True
+
+
+async def _serve_download_range(handler, abspath, byte_range, file_size, user_key, use_compression):
+    start, end = byte_range.start, byte_range.end
+    handler.set_status(206)
+    handler.set_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+    handler.set_header("Content-Length", str(byte_range.length))
+    if handler.request.method == "HEAD":
+        return
+    if not use_compression and await _try_sendfile_download(
+        handler, abspath, start, byte_range.length, user_key
+    ):
+        return
+    await _stream_chunks_to_handler(
+        handler,
+        MMapFileHandler.serve_file_chunk(abspath, start=start, end=end),
+        user_key,
+    )
+
+
+async def _serve_download_compressed(handler, abspath, encoding, user_key):
+    handler.set_header("Content-Encoding", encoding)
+    handler.set_header("Vary", "Accept-Encoding")
+    level = int(constants_module.COMPRESSION_CONFIG.get("level", 6))
+    compressed = await compress_file(abspath, encoding, level)
+    await TransferRateLimiter.wait_for_bytes(
+        user_key, len(compressed), direction="download"
+    )
+    handler.write(compressed)
+    await handler.flush()
+
+
+async def _serve_download_full(handler, abspath, file_size, user_key):
+    handler.set_header("Content-Length", str(file_size))
+    if handler.request.method == "HEAD":
+        return
+    if await _try_sendfile_download(handler, abspath, 0, file_size, user_key):
+        return
+    await _stream_chunks_to_handler(
+        handler, MMapFileHandler.serve_file_chunk(abspath), user_key
+    )
+
+
 async def _serve_download_body(handler, abspath, filename, user_key):
     handler.set_header("Content-Disposition", f'attachment; filename="{filename}"')
     mime_type, _ = mimetypes.guess_type(abspath)
@@ -86,97 +176,20 @@ async def _serve_download_body(handler, abspath, filename, user_key):
         return
 
     handler.set_header("Accept-Ranges", "bytes")
-    head_only = handler.request.method == "HEAD"
-    range_header = handler.request.headers.get("Range")
-    byte_range = parse_range_header(range_header, file_size)
-
-    encoding = negotiate_encoding(
-        handler.request.headers.get("Accept-Encoding"),
-        constants_module.COMPRESSION_CONFIG.get("algorithms"),
-    )
-    use_compression = (
-        encoding
-        and should_compress(
-            path=abspath,
-            mime_type=mime_type,
-            file_size=file_size,
-            has_range=bool(byte_range),
-            remote_ip=handler.request.remote_ip or "",
-            compression_enabled=is_feature_enabled("compression", True),
-            mode=constants_module.COMPRESSION_CONFIG.get("mode", "wan_only"),
-            min_bytes=int(constants_module.COMPRESSION_CONFIG.get("min_bytes", 1024)),
-            max_bytes=int(constants_module.COMPRESSION_CONFIG.get("max_bytes", 50 * 1024 * 1024)),
-            corporate_cidrs=constants_module.CORPORATE_IP_CIDRS,
-        )
-    )
+    byte_range = parse_range_header(handler.request.headers.get("Range"), file_size)
+    encoding = _download_wants_compression(handler, abspath, mime_type, file_size, byte_range)
 
     if byte_range:
-        start, end = byte_range.start, byte_range.end
-        handler.set_status(206)
-        handler.set_header(
-            "Content-Range", f"bytes {start}-{end}/{file_size}"
+        await _serve_download_range(
+            handler, abspath, byte_range, file_size, user_key, encoding
         )
-        handler.set_header("Content-Length", str(byte_range.length))
-        if head_only:
-            return
-        if (
-            is_feature_enabled("transfer_sendfile", False)
-            and sendfile_available()
-            and not use_compression
-        ):
-            stream = getattr(handler.request.connection, "stream", None)
-            sock = getattr(stream, "socket", None) if stream else None
-            if sock and await sendfile_to_socket(
-                sock, abspath, start, byte_range.length
-            ):
-                await TransferRateLimiter.wait_for_bytes(
-                    user_key, byte_range.length, direction="download"
-                )
-                return
-        async for chunk in MMapFileHandler.serve_file_chunk(
-            abspath, start=start, end=end
-        ):
-            await TransferRateLimiter.wait_for_bytes(
-                user_key, len(chunk), direction="download"
-            )
-            handler.write(chunk)
-            await handler.flush()
         return
 
-    handler.set_header("Content-Length", str(file_size))
-    if head_only:
+    if encoding:
+        await _serve_download_compressed(handler, abspath, encoding, user_key)
         return
 
-    if use_compression and encoding:
-        handler.set_header("Content-Encoding", encoding)
-        handler.set_header("Vary", "Accept-Encoding")
-        level = int(constants_module.COMPRESSION_CONFIG.get("level", 6))
-        compressed = await compress_file(abspath, encoding, level)
-        await TransferRateLimiter.wait_for_bytes(
-            user_key, len(compressed), direction="download"
-        )
-        handler.write(compressed)
-        await handler.flush()
-        return
-
-    if (
-        is_feature_enabled("transfer_sendfile", False)
-        and sendfile_available()
-    ):
-        stream = getattr(handler.request.connection, "stream", None)
-        sock = getattr(stream, "socket", None) if stream else None
-        if sock and await sendfile_to_socket(sock, abspath, 0, file_size):
-            await TransferRateLimiter.wait_for_bytes(
-                user_key, file_size, direction="download"
-            )
-            return
-
-    async for chunk in MMapFileHandler.serve_file_chunk(abspath):
-        await TransferRateLimiter.wait_for_bytes(
-            user_key, len(chunk), direction="download"
-        )
-        handler.write(chunk)
-        await handler.flush()
+    await _serve_download_full(handler, abspath, file_size, user_key)
 
 
 def _raw_mode_allows_same_origin_frame(mime_type: str, abspath: str) -> bool:

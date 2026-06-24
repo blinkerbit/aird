@@ -7,7 +7,7 @@ importScripts('/static/js/vendor/fflate.js');
 
 const jobs = new Map();
 
-self.onmessage = (ev) => {
+globalThis.onmessage = (ev) => {
   const msg = ev.data || {};
   if (msg.type === 'cancel') {
     const job = jobs.get(msg.jobId);
@@ -26,16 +26,17 @@ self.onmessage = (ev) => {
   try {
     if (job.cancelled) { post(jobId, { type: 'error', message: 'cancelled' }); return; }
 
-    const input = new Uint8Array(buffer, 0, byteLength | 0);
-    const compressed = fflate.zlibSync(input, { level: level | 0 });
+    const plainLen = Math.trunc(byteLength);
+    const input = new Uint8Array(buffer, 0, plainLen);
+    const compressed = fflate.zlibSync(input, { level: Math.trunc(level) });
 
     // If compression didn't help (≥98% of original), send raw to avoid overhead.
     if (compressed.byteLength >= input.byteLength * 0.98) {
       // Transfer the original buffer slice back as-is.
       const rawOut = buffer instanceof SharedArrayBuffer
-        ? input.buffer.slice(0, byteLength)
-        : buffer.slice(0, byteLength);
-      post(jobId, { type: 'skipped', compressedBytes: byteLength, buffer: rawOut }, [rawOut]);
+        ? input.buffer.slice(0, plainLen)
+        : buffer.slice(0, plainLen);
+      post(jobId, { type: 'skipped', compressedBytes: plainLen, buffer: rawOut }, [rawOut]);
       return;
     }
 
@@ -46,7 +47,7 @@ self.onmessage = (ev) => {
     post(jobId, {
       type: 'compressed',
       compressedBytes: compressed.byteLength,
-      plainBytes: byteLength,
+      plainBytes: plainLen,
       buffer: out,
     }, [out]);
   } catch (err) {
@@ -57,5 +58,5 @@ self.onmessage = (ev) => {
 };
 
 function post(jobId, msg, transfer) {
-  self.postMessage({ jobId, ...msg }, transfer || []);
+  globalThis.postMessage({ jobId, ...msg }, transfer || []);
 }

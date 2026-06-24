@@ -78,11 +78,16 @@ def codecs_available() -> dict[str, bool]:
     return {"zstd": _zstd_available(), "gzip": True}
 
 
-def negotiate_encoding(accept_header: str | None, enabled: list[str] | None = None) -> str | None:
-    """Pick best Content-Encoding from Accept-Encoding (zstd > gzip when allowed)."""
-    if not accept_header:
-        return None
-    allowed = enabled or ["gzip"]
+def _parse_accept_q_value(qpart: str) -> float:
+    if "q=" not in qpart:
+        return 1.0
+    try:
+        return float(qpart.split("q=", 1)[1].strip())
+    except ValueError:
+        return 0.0
+
+
+def _parse_accept_encoding_tokens(accept_header: str) -> dict[str, float]:
     tokens: dict[str, float] = {}
     for part in accept_header.split(","):
         piece = part.strip()
@@ -90,17 +95,21 @@ def negotiate_encoding(accept_header: str | None, enabled: list[str] | None = No
             continue
         if ";" in piece:
             name, _, qpart = piece.partition(";")
-            qval = 1.0
-            if "q=" in qpart:
-                try:
-                    qval = float(qpart.split("q=", 1)[1].strip())
-                except ValueError:
-                    qval = 0.0
+            qval = _parse_accept_q_value(qpart)
         else:
             name, qval = piece, 1.0
         name = name.strip().lower()
         if qval > 0:
             tokens[name] = max(tokens.get(name, 0.0), qval)
+    return tokens
+
+
+def negotiate_encoding(accept_header: str | None, enabled: list[str] | None = None) -> str | None:
+    """Pick best Content-Encoding from Accept-Encoding (zstd > gzip when allowed)."""
+    if not accept_header:
+        return None
+    allowed = enabled or ["gzip"]
+    tokens = _parse_accept_encoding_tokens(accept_header)
     for codec in ("zstd", "gzip"):
         if codec in allowed and codec in tokens:
             if codec == "zstd" and not _zstd_available():
@@ -175,9 +184,11 @@ async def compress_file(path: str, encoding: str, level: int = 6) -> bytes:
 
 
 async def stream_uncompressed(path: str, chunk_size: int = 65536) -> AsyncIterator[bytes]:
-    with open(path, "rb") as f:
+    import aiofiles
+
+    async with aiofiles.open(path, "rb") as f:
         while True:
-            chunk = await asyncio.to_thread(f.read, chunk_size)
+            chunk = await f.read(chunk_size)
             if not chunk:
                 break
             yield chunk

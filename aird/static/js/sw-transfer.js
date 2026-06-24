@@ -3,22 +3,22 @@
  */
 'use strict';
 
-self.addEventListener('install', (event) => {
-  self.skipWaiting();
+globalThis.addEventListener('install', (event) => {
+  globalThis.skipWaiting();
 });
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+globalThis.addEventListener('activate', (event) => {
+  event.waitUntil(globalThis.clients.claim());
 });
 
-self.addEventListener('sync', (event) => {
+globalThis.addEventListener('sync', (event) => {
   if (event.tag === 'aird-transfer-retry') {
     event.waitUntil(notifyClientsRetry());
   }
 });
 
 async function notifyClientsRetry() {
-  const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  const clients = await globalThis.clients.matchAll({ type: 'window', includeUncontrolled: true });
   for (const client of clients) {
     client.postMessage({ type: 'aird-transfer-retry' });
   }

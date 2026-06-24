@@ -268,7 +268,7 @@
         if (lower.includes("chunk too large")) {
           return raw;
         }
-        const m = raw.match(/(\d+)\s*MB/i);
+        const m = /(\d+)\s*MB/i.exec(raw);
         if (m) {
           return `This file exceeds the server limit (${m[1]} MB). Admin → Upload settings → raise Max file size, then refresh this page.`;
         }

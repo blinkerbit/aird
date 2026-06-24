@@ -49,13 +49,19 @@
       aborted = true;
       if (externalSignal) externalSignal.aborted = true;
       xhrs.forEach((xhr) => {
-        try { xhr.abort(); } catch (_) { /* ignore */ }
+        try { xhr.abort(); } catch (abortErr) {
+          console.debug('xhr abort ignored', abortErr);
+        }
       });
       controllers.forEach((ac) => {
-        try { ac.abort(); } catch (_) { /* ignore */ }
+        try { ac.abort(); } catch (abortErr) {
+          console.debug('abort controller ignored', abortErr);
+        }
       });
       abortListeners.forEach((fn) => {
-        try { fn(); } catch (_) { /* ignore */ }
+        try { fn(); } catch (listenerErr) {
+          console.debug('abort listener ignored', listenerErr);
+        }
       });
     }
 
@@ -95,6 +101,12 @@
 
   function isCancelError(err) {
     return err?.message === 'cancelled' || err?.name === 'AbortError';
+  }
+
+  function cancelError() {
+    const err = new Error('cancelled');
+    err.name = 'AbortError';
+    return err;
   }
 
   function wrapCancelOptions(options) {

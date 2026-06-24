@@ -25,8 +25,28 @@
     return Math.max(8 * 1024 * 1024, Math.floor(transferChunkBytes() / 4));
   }
 
-  // MIME prefixes / exact types that are already compressed or not compressible.
-  const INCOMPRESSIBLE_RE = /^(image\/(?!bmp|tiff|x-icon)|video\/|audio\/|application\/(?:zip|gzip|x-7z|x-rar|zstd|x-bzip|pdf|wasm|octet-stream|x-msdownload|x-ms-dos-executable|vnd\.microsoft\.portable-executable|x-dosexec|x-executable)|font\/(woff|woff2))/i;
+  const INCOMPRESSIBLE_APP_TYPES = new Set([
+    'zip', 'gzip', 'x-7z', 'x-rar', 'zstd', 'x-bzip', 'pdf', 'wasm',
+    'octet-stream', 'x-msdownload', 'x-ms-dos-executable',
+    'vnd.microsoft.portable-executable', 'x-dosexec', 'x-executable',
+  ]);
+  const COMPRESSIBLE_IMAGE_TYPES = new Set(['bmp', 'tiff', 'x-icon']);
+
+  function isIncompressibleMime(mime) {
+    if (!mime) return false;
+    const lower = String(mime).toLowerCase();
+    if (lower.startsWith('video/') || lower.startsWith('audio/')) return true;
+    if (lower.startsWith('font/woff')) return true;
+    if (lower.startsWith('image/')) {
+      const subtype = lower.slice('image/'.length);
+      return !COMPRESSIBLE_IMAGE_TYPES.has(subtype);
+    }
+    if (lower.startsWith('application/')) {
+      const subtype = lower.slice('application/'.length);
+      return INCOMPRESSIBLE_APP_TYPES.has(subtype);
+    }
+    return false;
+  }
 
   let compressWorker = null;
   let compressJobId = 0;
@@ -43,7 +63,7 @@
 
   function shouldCompressMime(mime) {
     if (!mime) return true; // unknown → try
-    return !INCOMPRESSIBLE_RE.test(mime);
+    return !isIncompressibleMime(mime);
   }
 
   // ─── Compress worker ──────────────────────────────────────────────────────
