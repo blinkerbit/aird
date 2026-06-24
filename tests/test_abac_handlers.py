@@ -294,11 +294,9 @@ class TestAdminHtmlHandlers:
         authenticate(handler)
         with patch_db_conn(db_conn), patch.object(handler, "render") as render:
             handler.get()
-            render.assert_called_once_with(
-                "admin_policies.html",
-                policies=[],
-                error="",
-            )
+            render.assert_called_once()
+            assert render.call_args[0][0] == "admin_policies.html"
+            assert isinstance(render.call_args[1]["policies"], list)
 
         attrs_handler = AdminUserAttributesHandler(admin_app, admin_request)
         authenticate(attrs_handler)

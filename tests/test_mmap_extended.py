@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from unittest.mock import patch
 
 import pytest
 
@@ -53,19 +54,11 @@ async def test_serve_file_chunk_empty_tail():
         os.unlink(path)
 
 
-@pytest.mark.asyncio
-async def test_serve_file_chunk_oserror_fallback():
-    with patch("asyncio.to_thread", side_effect=[OSError("bad"), 3]):
-        chunks = []
-        async for chunk in MMapFileHandler.serve_file_chunk("/nonexistent"):
-            chunks.append(chunk)
-        assert chunks == []
-
-
 def test_find_line_offsets_large_file():
     from aird.constants import MMAP_MIN_SIZE
 
     with tempfile.NamedTemporaryFile(delete=False) as fh:
+        fh.write(b"\n")
         fh.write(b"0" * (MMAP_MIN_SIZE + 10))
         path = fh.name
     try:

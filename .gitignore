@@ -42,6 +42,10 @@ node_modules/
 *.log
 *.pdf
 *.iso
+*aird.db
+*.exe
+*.jar
+*.ps1
 28092_heic.webp
 *mcp-server*
 *.md

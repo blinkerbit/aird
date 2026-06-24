@@ -361,17 +361,29 @@ class TestServices:
       assert len(svc.get_logs(db_conn)) == 1
 
   def test_config_service_merge_from_db(self, db_conn):
+      import copy
+
       import aird.constants as constants
       from aird.db.config import save_allowed_extensions, save_feature_flags, save_upload_config
 
-      save_feature_flags(db_conn, {"favorites": 1})
-      save_upload_config(db_conn, {"max_file_size_mb": 10})
-      save_allowed_extensions(db_conn, {".txt"})
-      svc = ConfigService()
-      svc.merge_from_db(db_conn)
-      assert constants.FEATURE_FLAGS["favorites"] is True
-      assert constants.MAX_FILE_SIZE == 10 * 1024 * 1024
-      assert ".txt" in constants.UPLOAD_ALLOWED_EXTENSIONS
+      orig_upload = copy.deepcopy(constants.UPLOAD_CONFIG)
+      orig_max = constants.MAX_FILE_SIZE
+      orig_ext = set(constants.UPLOAD_ALLOWED_EXTENSIONS)
+      try:
+          save_feature_flags(db_conn, {"favorites": 1})
+          save_upload_config(db_conn, {"max_file_size_mb": 10})
+          save_allowed_extensions(db_conn, {".txt"})
+          svc = ConfigService()
+          svc.merge_from_db(db_conn)
+          assert constants.FEATURE_FLAGS["favorites"] is True
+          assert constants.MAX_FILE_SIZE == 10 * 1024 * 1024
+          assert ".txt" in constants.UPLOAD_ALLOWED_EXTENSIONS
+      finally:
+          constants.UPLOAD_CONFIG.clear()
+          constants.UPLOAD_CONFIG.update(orig_upload)
+          constants.MAX_FILE_SIZE = orig_max
+          constants.UPLOAD_ALLOWED_EXTENSIONS = orig_ext
+          constants.refresh_upload_derived_constants()
 
   def test_network_share_service(self, db_conn):
       svc = NetworkShareService()
@@ -799,7 +811,7 @@ class TestRangedUploadHandler:
       ):
           import asyncio
 
-          asyncio.get_event_loop().run_until_complete(handler.post())
+          asyncio.run(handler.post())
       handler.set_status.assert_called_with(400)
       import asyncio
 
@@ -826,7 +838,7 @@ class TestRangedUploadHandler:
       ), patch.object(
           constants, "LARGE_FILE_THRESHOLD_BYTES", 100
       ):
-          asyncio.get_event_loop().run_until_complete(handler.post())
+          asyncio.run(handler.post())
       handler.set_status.assert_called_with(400)
 
 
@@ -862,7 +874,7 @@ class TestRangedUploadSessionSuccess:
       ), patch(
           "aird.handlers.ranged_upload_handlers.get_user_root", return_value=temp_dir
       ), patch.object(constants, "MAX_FILE_SIZE", 1024 * 1024 * 1024):
-          asyncio.get_event_loop().run_until_complete(handler.post())
+          asyncio.run(handler.post())
       handler.set_status.assert_called_with(201)
       payload = handler.write.call_args[0][0]
       assert "upload_id" in payload
@@ -944,7 +956,7 @@ class TestConstantsModule:
       with patch("importlib.metadata.version", side_effect=Exception("no pkg")):
           from aird.constants import _read_app_version
 
-          assert _read_app_version() in (constants.APP_VERSION, "0.4.24", "dev")
+          assert _read_app_version() in (constants.APP_VERSION, "0.4.24", "0.4.25.dev3", "dev")
 
   def test_get_static_version(self):
       from aird.constants import get_static_version

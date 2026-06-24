@@ -182,6 +182,8 @@ def test_download_file(tmp_path, monkeypatch):
     response.iter_content.return_value = [b"abc"]
     response.__enter__ = MagicMock(return_value=response)
     response.__exit__ = MagicMock(return_value=False)
+    head = MagicMock(status_code=200, headers={"Content-Length": "3"})
+    client.http.head.return_value = head
     client.http.get.return_value = response
     dest = tmp_path / "out" / "file.bin"
     with patch.object(client, "ensure_auth"):
