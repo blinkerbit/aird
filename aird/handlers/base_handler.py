@@ -561,6 +561,12 @@ class BaseHandler(tornado.web.RequestHandler):
             return self.app_context.get_service(name, default)
         return services.get(name, default)
 
+    def sync_upload_config_from_db(self) -> None:
+        """Apply upload limits from DB so all workers see admin changes."""
+        config_service = self.get_service("config_service")
+        if config_service is not None and self.db_conn is not None:
+            config_service.sync_upload_config_from_db(self.db_conn)
+
     def publish_event(self, event: Any) -> None:
         bus = self.event_bus
         if bus is not None:
@@ -890,6 +896,10 @@ class BaseHandler(tornado.web.RequestHandler):
             "Permissions-Policy",
             "camera=(), microphone=(), geolocation=(), payment=()",
         )
+        # SharedArrayBuffer / Wasm workers (cross-origin isolated context)
+        self.set_header("Cross-Origin-Opener-Policy", "same-origin")
+        self.set_header("Cross-Origin-Embedder-Policy", "credentialless")
+        self.set_header("Cross-Origin-Resource-Policy", "same-origin")
         if getattr(self.request, "protocol", None) == "https":
             self.set_header(
                 "Strict-Transport-Security",
@@ -908,6 +918,7 @@ class BaseHandler(tornado.web.RequestHandler):
             f"font-src 'self' data:; "
             f"img-src 'self' data: blob:; "
             f"connect-src 'self'; "
+            f"worker-src 'self'; "
             f"frame-src 'self' blob:; "
             f"object-src 'self' blob:; "
             f"frame-ancestors 'none'; "

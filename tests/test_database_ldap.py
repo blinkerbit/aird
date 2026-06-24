@@ -15,7 +15,9 @@ from aird.database.ldap import (
     get_ldap_sync_logs,
     extract_username_from_dn,
     sync_ldap_users,
+    _collect_usernames_from_ldap_entries,
 )
+from aird.db.users import get_user_by_username
 
 
 @pytest.fixture
@@ -422,3 +424,40 @@ class TestSyncLdapUsers:
         assert result["status"] == "success"
         assert len(result["config_results"]) == 1
         assert result["config_results"][0]["status"] == "error"
+
+    @patch("aird.database.ldap.Server")
+    @patch("aird.database.ldap.Connection")
+    def test_sync_ldap_success(self, mock_conn_class, mock_server_class, db_conn):
+        from aird.db import init_db
+
+        init_db(db_conn)
+        create_ldap_config(
+            db_conn, "Corp", "ldap://corp", "dc=corp", "member", "uid={username},dc=corp"
+        )
+        entry = MagicMock()
+        entry.member = ["uid=alice,dc=corp"]
+        mock_conn = MagicMock()
+        mock_conn.bind.return_value = True
+        mock_conn.entries = [entry]
+        mock_conn_class.return_value = mock_conn
+
+        result = sync_ldap_users(db_conn)
+        assert result["status"] == "success"
+        assert result["users_created"] >= 1
+        assert get_user_by_username(db_conn, "alice") is not None
+
+
+class TestCollectLdapUsernames:
+    def test_collect_usernames_from_entries(self):
+        entry = MagicMock()
+        entry.member = ["uid=bob,dc=example,dc=com"]
+        users = _collect_usernames_from_ldap_entries(
+            [entry], "member", "uid={username},dc=example,dc=com"
+        )
+        assert users == {"bob"}
+
+        empty = MagicMock(spec=[])
+        users = _collect_usernames_from_ldap_entries(
+            [empty], "member", "uid={username}"
+        )
+        assert users == set()

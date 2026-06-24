@@ -97,6 +97,9 @@ class TestMainHandler:
     async def test_serve_file_download_compression(self):
         handler = MainHandler(self.mock_app, self.mock_request)
         handler._current_user = {"username": "user"}
+        self.mock_request.headers.get = MagicMock(
+            side_effect=lambda k, default=None: None if k == "Range" else default
+        )
 
         handler.get_argument = MagicMock(return_value="true")
 
@@ -107,38 +110,37 @@ class TestMainHandler:
         ), patch(
             "aird.handlers.base_handler.is_feature_enabled",
             side_effect=lambda k, default=True: False if k == "abac_engine" else True,
-        ), patch(
+        ), patch("os.path.getsize", return_value=12), patch(
             "mimetypes.guess_type", return_value=("text/plain", None)
         ), patch(
-            "builtins.open", new_callable=MagicMock
-        ) as mock_open, patch(
-            "shutil.copyfileobj"
-        ) as mock_copy:
+            "aird.handlers.view_handlers.negotiate_encoding", return_value="gzip"
+        ), patch(
+            "aird.handlers.view_handlers.should_compress", return_value=True
+        ), patch(
+            "aird.handlers.view_handlers.compress_file",
+            new_callable=AsyncMock,
+            return_value=b"\x1f\x8b\x08" + b"compressed",
+        ), patch.object(
+            handler, "get_display_username", return_value="user"
+        ), patch.object(
+            handler, "set_header"
+        ) as mock_header, patch.object(
+            handler, "write"
+        ) as mock_write, patch.object(handler, "flush", new_callable=AsyncMock):
 
-            mock_file = MagicMock()
-            mock_open.return_value.__enter__.return_value = mock_file
+            await handler.get("file.txt")
 
-            def side_effect(f_in, f_out):
-                f_out.write(b"compressed")
-
-            mock_copy.side_effect = side_effect
-
-            with patch.object(handler, "set_header") as mock_header, patch.object(
-                handler, "write"
-            ) as mock_write, patch.object(handler, "flush", new_callable=AsyncMock):
-
-                await handler.get("file.txt")
-
-                mock_header.assert_any_call("Content-Encoding", "gzip")
-                # Check that write was called with gzip data (magic bytes)
-                args = mock_write.call_args[0]
-                assert len(args) == 1
-                assert args[0].startswith(b"\x1f\x8b")
+            mock_header.assert_any_call("Content-Encoding", "gzip")
+            mock_write.assert_called_once()
+            assert mock_write.call_args[0][0].startswith(b"\x1f\x8b")
 
     @pytest.mark.asyncio
     async def test_serve_file_download_no_compression(self):
         handler = MainHandler(self.mock_app, self.mock_request)
         handler._current_user = {"username": "user"}
+        self.mock_request.headers.get = MagicMock(
+            side_effect=lambda k, default=None: None if k == "Range" else default
+        )
 
         handler.get_argument = MagicMock(return_value="true")
 
@@ -151,10 +153,12 @@ class TestMainHandler:
             side_effect=lambda k, default=True: False if k == "abac_engine" else True,
         ), patch(
             "mimetypes.guess_type", return_value=("image/png", None)
-        ), patch(
+        ), patch("os.path.getsize", return_value=100), patch(
             "aird.handlers.view_handlers.MMapFileHandler.serve_file_chunk",
             return_value=AsyncMock(),
-        ) as mock_serve_chunk:
+        ) as mock_serve_chunk, patch.object(
+            handler, "get_display_username", return_value="user"
+        ):
 
             async def async_gen(path):
                 yield b"image_data"

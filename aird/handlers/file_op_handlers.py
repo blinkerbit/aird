@@ -364,6 +364,7 @@ class UploadHandler(BaseHandler):
 
     async def prepare(self):
         BaseHandler.prepare(self)
+        self.sync_upload_config_from_db()
         self.check_xsrf_cookie()
         if not self.get_current_user():
             raise tornado.web.HTTPError(403, "Authentication required")
@@ -404,18 +405,6 @@ class UploadHandler(BaseHandler):
             self._reject_reason = MISSING_UPLOAD_FILENAME_HEADER
             return
 
-        declared = self.request.headers.get("Content-Length")
-        if declared:
-            try:
-                if int(declared) >= constants_module.LARGE_FILE_THRESHOLD_BYTES:
-                    self._reject = True
-                    self._reject_reason = (
-                        "File exceeds single-request limit; use ranged upload API"
-                    )
-                    return
-            except ValueError:
-                pass
-
         fd, self._temp_path = tempfile.mkstemp(prefix="aird_upload_")
         os.close(fd)
         self._aiofile = await aiofiles.open(self._temp_path, "wb")
@@ -437,7 +426,6 @@ class UploadHandler(BaseHandler):
             while self._buffer:
                 data = self._buffer.popleft()
                 await self._aiofile.write(data)
-            await self._aiofile.flush()
         finally:
             self._writing = False
 
@@ -449,6 +437,7 @@ class UploadHandler(BaseHandler):
                 logging.debug("upload writer task await failed", exc_info=True)
         if self._aiofile is not None:
             try:
+                await self._aiofile.flush()
                 await self._aiofile.close()
             except Exception:
                 logging.debug("upload aiofile close failed", exc_info=True)
@@ -712,6 +701,30 @@ class RenameHandler(BaseHandler):
         self.redirect(FILES_URL_STRING + parent if parent else FILES_URL_STRING)
 
 
+def _resolve_copy_move_paths(handler, path: str, dest: str) -> tuple[str, str] | None:
+    """Validate copy/move path pair; write error response and return None on failure."""
+    if not path or not dest:
+        handler.set_status(400)
+        handler.write(INVALID_REQUEST_PATH_DEST)
+        return None
+    user_root = get_user_root(handler)
+    src_abs = os.path.abspath(os.path.join(user_root, path))
+    dest_abs = os.path.abspath(os.path.join(user_root, dest))
+    if not is_within_root(src_abs, user_root) or not is_within_root(dest_abs, user_root):
+        handler.set_status(403)
+        handler.write(ACCESS_DENIED_SHORT)
+        return None
+    if not os.path.exists(src_abs):
+        handler.set_status(404)
+        handler.write(SOURCE_NOT_FOUND)
+        return None
+    if os.path.exists(dest_abs):
+        handler.set_status(409)
+        handler.write(DESTINATION_EXISTS)
+        return None
+    return src_abs, dest_abs
+
+
 class CopyHandler(BaseHandler):
     @tornado.web.authenticated
     @require_action("file.write")
@@ -721,27 +734,10 @@ class CopyHandler(BaseHandler):
             return
         path = self.get_argument("path", "").strip()
         dest = self.get_argument("dest", "").strip()
-        if not path or not dest:
-            self.set_status(400)
-            self.write(INVALID_REQUEST_PATH_DEST)
+        resolved = _resolve_copy_move_paths(self, path, dest)
+        if resolved is None:
             return
-        user_root = get_user_root(self)
-        src_abs = os.path.abspath(os.path.join(user_root, path))
-        dest_abs = os.path.abspath(os.path.join(user_root, dest))
-        if not is_within_root(src_abs, user_root) or not is_within_root(
-            dest_abs, user_root
-        ):
-            self.set_status(403)
-            self.write(ACCESS_DENIED_SHORT)
-            return
-        if not os.path.exists(src_abs):
-            self.set_status(404)
-            self.write(SOURCE_NOT_FOUND)
-            return
-        if os.path.exists(dest_abs):
-            self.set_status(409)
-            self.write(DESTINATION_EXISTS)
-            return
+        src_abs, dest_abs = resolved
         try:
             if os.path.isdir(src_abs):
                 shutil.copytree(src_abs, dest_abs)
@@ -779,27 +775,10 @@ class MoveHandler(BaseHandler):
             return
         path = self.get_argument("path", "").strip()
         dest = self.get_argument("dest", "").strip()
-        if not path or not dest:
-            self.set_status(400)
-            self.write(INVALID_REQUEST_PATH_DEST)
+        resolved = _resolve_copy_move_paths(self, path, dest)
+        if resolved is None:
             return
-        user_root = get_user_root(self)
-        src_abs = os.path.abspath(os.path.join(user_root, path))
-        dest_abs = os.path.abspath(os.path.join(user_root, dest))
-        if not is_within_root(src_abs, user_root) or not is_within_root(
-            dest_abs, user_root
-        ):
-            self.set_status(403)
-            self.write(ACCESS_DENIED_SHORT)
-            return
-        if not os.path.exists(src_abs):
-            self.set_status(404)
-            self.write(SOURCE_NOT_FOUND)
-            return
-        if os.path.exists(dest_abs):
-            self.set_status(409)
-            self.write(DESTINATION_EXISTS)
-            return
+        src_abs, dest_abs = resolved
         try:
             shutil.move(src_abs, dest_abs)
         except OSError:
@@ -1050,6 +1029,7 @@ class CloudUploadHandler(BaseHandler):
     @require_action("file.write")
     @require_modify_access()
     async def post(self, provider_name: str):
+        self.sync_upload_config_from_db()
         manager: CloudManager = self.application.settings.get(
             "cloud_manager", CLOUD_MANAGER
         )

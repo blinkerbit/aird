@@ -31,6 +31,12 @@ from aird.constants import (
     UPLOAD_CONFIG,
 )
 from aird.utils.util import invalidate_feature_flags_cache
+from aird.network_share_manager import (
+    is_smb_server_available,
+    is_webdav_server_available,
+    smb_library_available,
+    webdav_library_available,
+)
 from aird.constants.admin import (
     ACCESS_DENIED,
     ACCESS_DENIED_JSON,
@@ -59,6 +65,8 @@ from aird.constants.admin import (
     ERR_DB_UNAVAILABLE,
     ERR_FAILED_CREATE_SHARE,
     ERR_INVALID_PROTOCOL,
+    ERR_SMB_UNAVAILABLE,
+    ERR_WEBDAV_UNAVAILABLE,
     ERR_PORT_RANGE,
     URL_ADMIN_NETWORK_SHARES,
     URL_ADMIN_USERS,
@@ -120,6 +128,9 @@ class AdminHandler(BaseHandler):
         )
         available_extensions = sorted(constants_module.ALLOWED_UPLOAD_EXTENSIONS)
 
+        if db_conn:
+            self.get_service("config_service").sync_upload_config_from_db(db_conn)
+
         self.render(
             "admin.html",
             features=current_features,
@@ -128,6 +139,8 @@ class AdminHandler(BaseHandler):
             ldap_enabled=ldap_enabled,
             available_extensions=available_extensions,
             allowed_extensions_current=allowed_current,
+            smb_library_available=smb_library_available(),
+            webdav_library_available=webdav_library_available(),
         )
 
     @tornado.web.authenticated
@@ -161,6 +174,8 @@ class AdminHandler(BaseHandler):
             self.get_argument("abac_audit_decisions", "off") == "on"
         )
         FEATURE_FLAGS["webauthn"] = self.get_argument("webauthn", "off") == "on"
+        FEATURE_FLAGS["smb_server"] = self.get_argument("smb_server", "off") == "on"
+        FEATURE_FLAGS["webdav_server"] = self.get_argument("webdav_server", "off") == "on"
 
         # Update WebSocket configuration
         websocket_config = {}
@@ -203,9 +218,33 @@ class AdminHandler(BaseHandler):
 
         # Update upload configuration
         try:
-            max_file_size_mb = max(1, int(self.get_argument("max_file_size_mb", "512")))
+            max_file_size_mb = max(
+                1, int(self.get_argument("max_file_size_mb", "10240"))
+            )
             UPLOAD_CONFIG["max_file_size_mb"] = max_file_size_mb
-            constants_module.MAX_FILE_SIZE = max_file_size_mb * 1024 * 1024
+            single_request_max_mb = int(
+                self.get_argument("single_request_max_mb", "100")
+            )
+            if single_request_max_mb <= 0:
+                UPLOAD_CONFIG["single_request_max_mb"] = 0
+            else:
+                UPLOAD_CONFIG["single_request_max_mb"] = min(
+                    single_request_max_mb, max_file_size_mb
+                )
+            ws_chunk_mb = max(1, min(200, int(self.get_argument("ws_chunk_mb", "90"))))
+            UPLOAD_CONFIG["ws_chunk_mb"] = ws_chunk_mb
+            range_chunk_mb = max(
+                4, min(200, int(self.get_argument("range_chunk_mb", "90")))
+            )
+            UPLOAD_CONFIG["range_chunk_mb"] = range_chunk_mb
+            UPLOAD_CONFIG["range_upload_concurrency"] = max(
+                1,
+                min(
+                    64,
+                    int(self.get_argument("range_upload_concurrency", "16")),
+                ),
+            )
+            constants_module.refresh_upload_derived_constants()
             UPLOAD_CONFIG["allow_all_file_types"] = (
                 1 if self.get_argument("allow_all_file_types", "off") == "on" else 0
             )
@@ -226,6 +265,7 @@ class AdminHandler(BaseHandler):
                 self.get_service("config_service").save_upload_config(
                     db_conn, UPLOAD_CONFIG
                 )
+                self.get_service("config_service").sync_upload_config_from_db(db_conn)
                 # When "allow all file types" is off, persist selected extensions from checkboxes
                 if not UPLOAD_CONFIG.get("allow_all_file_types"):
                     selected_extensions = {
@@ -824,6 +864,8 @@ class AdminNetworkSharesHandler(BaseHandler):
             error=error,
             server_host=server_host,
             server_host_js=json.dumps(server_host),
+            smb_server_available=is_smb_server_available(),
+            webdav_server_available=is_webdav_server_available(),
         )
 
     @tornado.web.authenticated
@@ -851,6 +893,12 @@ class AdminNetworkSharesHandler(BaseHandler):
             return
         if protocol not in ("smb", "webdav"):
             self.redirect(f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_INVALID_PROTOCOL}")
+            return
+        if protocol == "smb" and not is_smb_server_available():
+            self.redirect(f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_SMB_UNAVAILABLE}")
+            return
+        if protocol == "webdav" and not is_webdav_server_available():
+            self.redirect(f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_WEBDAV_UNAVAILABLE}")
             return
         if not os.path.isdir(folder_path):
             self.redirect("/admin/network-shares?error=Folder+does+not+exist")
@@ -942,6 +990,13 @@ class AdminNetworkShareToggleHandler(BaseHandler):
             return
 
         new_enabled = not share["enabled"]
+        if new_enabled and share.get("protocol") == "smb" and not is_smb_server_available():
+            self.redirect(f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_SMB_UNAVAILABLE}")
+            return
+        if new_enabled and share.get("protocol") == "webdav" and not is_webdav_server_available():
+            self.redirect(f"{URL_ADMIN_NETWORK_SHARES}?error={ERR_WEBDAV_UNAVAILABLE}")
+            return
+
         self.get_service("network_share_service").update(
             db_conn, share_id, enabled=new_enabled
         )

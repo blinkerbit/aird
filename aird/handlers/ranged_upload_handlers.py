@@ -8,6 +8,7 @@ import os
 import secrets
 import tempfile
 import asyncio
+import threading
 from urllib.parse import unquote
 
 import tornado.web
@@ -38,14 +39,153 @@ from aird.handlers.base_handler import (
 from aird.handlers.constants import DB_UNAVAILABLE_SHORT
 from aird.handlers.file_op_handlers import finalize_upload_to_disk, _query_arg
 from aird.utils.util import is_feature_enabled
+from aird.core.rate_limit import TransferRateLimiter
 
 logger = logging.getLogger(__name__)
 
+_SESSION_NOT_FOUND = "Upload session not found"
+_session_locks: dict[str, asyncio.Lock] = {}
+_session_registry_lock = threading.Lock()
+
+
+def _session_lock(upload_id: str) -> asyncio.Lock:
+    with _session_registry_lock:
+        lock = _session_locks.get(upload_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _session_locks[upload_id] = lock
+        return lock
+
+
+def _release_session_lock(upload_id: str) -> None:
+    with _session_registry_lock:
+        _session_locks.pop(upload_id, None)
+
 
 def _write_range_sync(temp_path: str, start: int, data: bytes) -> None:
+    """Write one chunk at *start* into the session temp file (in-place assembly).
+
+    Chunks are written directly at their byte offset — no separate part files and
+    no concat/copy step at finalize (just truncate + rename). Safe for parallel
+    writers when ranges do not overlap (enforced by Content-Range).
+    """
+    pwrite = getattr(os, "pwrite", None)
+    if pwrite is not None:
+        fd = os.open(temp_path, os.O_RDWR)
+        try:
+            pwrite(fd, data, start)
+        finally:
+            os.close(fd)
+        return
     with open(temp_path, "r+b") as fh:
         fh.seek(start)
         fh.write(data)
+
+
+def _ensure_upload_file_size_sync(temp_path: str, total_size: int) -> None:
+    """Set exact file length once at finalize (cheap vs pre-allocating total_size)."""
+    size = os.path.getsize(temp_path)
+    if size != total_size:
+        os.truncate(temp_path, total_size)
+
+
+def _chunk_put_error(
+    handler: BaseHandler, status: int, error: str
+) -> None:
+    handler.set_status(status)
+    handler.write({"error": error})
+
+
+def _validate_chunk_put_request(
+    handler: BaseHandler,
+    session: dict,
+    parsed: tuple[int, int, int | None] | None,
+    body: bytes,
+) -> tuple[int, int] | None:
+    """Return (start, end) when valid; otherwise write error response and return None."""
+    if not parsed:
+        _chunk_put_error(handler, 400, "Content-Range header required")
+        return None
+    start, end, total = parsed
+    if total is not None and total != session["total_size"]:
+        _chunk_put_error(handler, 400, "Content-Range total does not match session")
+        return None
+
+    expected_len = end - start + 1
+    max_chunk = max(constants_module.RANGE_CHUNK_BYTES * 2, 4 * 1024 * 1024)
+    if expected_len > max_chunk:
+        max_mb = max_chunk // (1024 * 1024)
+        chunk_mb = expected_len // (1024 * 1024)
+        handler.set_status(413)
+        handler.write(
+            {
+                "error": (
+                    f"Chunk too large ({chunk_mb} MB > {max_mb} MB server limit). "
+                    "Admin → Upload settings → lower HTTP chunk (MB) or redeploy "
+                    "so server matches client."
+                ),
+            }
+        )
+        return None
+    if len(body) != expected_len:
+        handler.set_status(400)
+        handler.write(
+            {
+                "error": (
+                    f"Body length {len(body)} does not match range length {expected_len}"
+                ),
+            }
+        )
+        return None
+    if end >= session["total_size"]:
+        _chunk_put_error(handler, 416, "Range beyond file size")
+        return None
+    return start, end
+
+
+async def _finalize_ranged_upload_if_complete(
+    handler: BaseHandler,
+    upload_id: str,
+    session: dict,
+    temp_path: str,
+    new_ranges: list,
+) -> bool:
+    """Finalize when all ranges received. Return True if response was sent."""
+    if not ranges_cover_file(new_ranges, session["total_size"]):
+        return False
+    try:
+        await asyncio.to_thread(
+            _ensure_upload_file_size_sync,
+            temp_path,
+            session["total_size"],
+        )
+    except OSError:
+        logger.exception("Ranged upload finalize size check failed")
+        handler.set_status(500)
+        handler.write({"error": UPLOAD_SAVE_FAILED})
+        return True
+    success, status, message = await asyncio.to_thread(
+        finalize_upload_to_disk,
+        upload_dir=session["upload_dir"],
+        filename=session["filename"],
+        temp_path=temp_path,
+        user_root=get_user_root(handler),
+        username=handler.get_display_username(),
+        db_conn=handler.db_conn,
+        quota_service=handler.get_service("quota_service"),
+        audit_service=handler.get_service("audit_service"),
+        remote_ip=handler.request.remote_ip,
+        upload_bytes=session["total_size"],
+    )
+    delete_session(handler.db_conn, upload_id)
+    _release_session_lock(upload_id)
+    if not success:
+        handler.set_status(status)
+        handler.write({"error": message})
+        return True
+    handler.set_status(201)
+    handler.write({"status": "complete", "message": message})
+    return True
 
 
 class RangedUploadSessionHandler(BaseHandler):
@@ -55,6 +195,7 @@ class RangedUploadSessionHandler(BaseHandler):
     @require_action("file.write")
     @require_modify_access()
     async def post(self):
+        self.sync_upload_config_from_db()
         if not self.require_feature("file_upload", True, body=FILE_UPLOAD_DISABLED_ADMIN):
             return
         if not is_feature_enabled("file_upload", True):
@@ -101,16 +242,7 @@ class RangedUploadSessionHandler(BaseHandler):
         session_id = secrets.token_urlsafe(16)
         fd, temp_path = tempfile.mkstemp(prefix="aird_range_")
         os.close(fd)
-        try:
-            await asyncio.to_thread(os.truncate, temp_path, total_size)
-        except OSError:
-            try:
-                os.remove(temp_path)
-            except OSError:
-                pass
-            self.set_status(500)
-            self.write({"error": UPLOAD_SAVE_FAILED})
-            return
+        # Empty temp file; ranges extend it on write (no upfront truncate of total_size).
 
         create_session(
             self.db_conn,
@@ -148,6 +280,7 @@ class RangedUploadChunkHandler(BaseHandler):
     @require_action("file.write")
     @require_modify_access()
     async def put(self, upload_id: str):
+        self.sync_upload_config_from_db()
         if not self.require_feature("file_upload", True, body=FILE_UPLOAD_DISABLED_ADMIN):
             return
         if self.db_conn is None:
@@ -155,10 +288,12 @@ class RangedUploadChunkHandler(BaseHandler):
             self.write({"error": DB_UNAVAILABLE_SHORT})
             return
 
+        user_key = self.get_display_username() or self.request.remote_ip or "anonymous"
+
         session = get_session(self.db_conn, upload_id)
         if not session:
             self.set_status(404)
-            self.write({"error": "Upload session not found"})
+            self.write({"error": _SESSION_NOT_FOUND})
             return
         if session["username"] != self.get_display_username():
             self.set_status(403)
@@ -166,30 +301,15 @@ class RangedUploadChunkHandler(BaseHandler):
             return
 
         parsed = parse_content_range(self.request.headers.get("Content-Range"))
-        if not parsed:
-            self.set_status(400)
-            self.write({"error": "Content-Range header required"})
-            return
-        start, end, total = parsed
-        if total is not None and total != session["total_size"]:
-            self.set_status(400)
-            self.write({"error": "Content-Range total does not match session"})
-            return
-
-        expected_len = end - start + 1
         body = self.request.body or b""
-        if len(body) != expected_len:
-            self.set_status(400)
-            self.write(
-                {
-                    "error": f"Body length {len(body)} does not match range length {expected_len}",
-                }
-            )
+        validated = _validate_chunk_put_request(self, session, parsed, body)
+        if validated is None:
             return
-        if end >= session["total_size"]:
-            self.set_status(416)
-            self.write({"error": "Range beyond file size"})
-            return
+        start, end = validated
+
+        await TransferRateLimiter.wait_for_bytes(
+            user_key, len(body), direction="upload"
+        )
 
         temp_path = session["temp_path"]
         try:
@@ -200,40 +320,30 @@ class RangedUploadChunkHandler(BaseHandler):
             self.write({"error": UPLOAD_SAVE_FAILED})
             return
 
-        new_ranges = merge_ranges(session["ranges"] + [ByteRange(start, end)])
-        update_ranges(self.db_conn, upload_id, new_ranges)
-
-        if ranges_cover_file(new_ranges, session["total_size"]):
-            success, status, message = await asyncio.to_thread(
-                finalize_upload_to_disk,
-                upload_dir=session["upload_dir"],
-                filename=session["filename"],
-                temp_path=temp_path,
-                user_root=get_user_root(self),
-                username=self.get_display_username(),
-                db_conn=self.db_conn,
-                quota_service=self.get_service("quota_service"),
-                audit_service=self.get_service("audit_service"),
-                remote_ip=self.request.remote_ip,
-                upload_bytes=session["total_size"],
-            )
-            delete_session(self.db_conn, upload_id)
-            if not success:
-                self.set_status(status)
-                self.write({"error": message})
+        lock = _session_lock(upload_id)
+        async with lock:
+            session = get_session(self.db_conn, upload_id)
+            if not session:
+                self.set_status(404)
+                self.write({"error": _SESSION_NOT_FOUND})
                 return
-            self.set_status(201)
-            self.write({"status": "complete", "message": message})
-            return
 
-        self.set_status(200)
-        self.write(
-            {
-                "status": "chunk_received",
-                "ranges": ranges_to_json(new_ranges),
-                "total_size": session["total_size"],
-            }
-        )
+            new_ranges = merge_ranges(session["ranges"] + [ByteRange(start, end)])
+            update_ranges(self.db_conn, upload_id, new_ranges)
+
+            if await _finalize_ranged_upload_if_complete(
+                self, upload_id, session, temp_path, new_ranges
+            ):
+                return
+
+            self.set_status(200)
+            self.write(
+                {
+                    "status": "chunk_received",
+                    "ranges": ranges_to_json(new_ranges),
+                    "total_size": session["total_size"],
+                }
+            )
 
 
 class RangedUploadStatusHandler(BaseHandler):
@@ -248,7 +358,7 @@ class RangedUploadStatusHandler(BaseHandler):
         session = get_session(self.db_conn, upload_id)
         if not session:
             self.set_status(404)
-            self.write({"error": "Upload session not found"})
+            self.write({"error": _SESSION_NOT_FOUND})
             return
         if session["username"] != self.get_display_username():
             self.set_status(403)

@@ -20,6 +20,18 @@ logger = logging.getLogger(__name__)
 
 
 class ConfigService:
+    def sync_upload_config_from_db(self, conn: Any) -> None:
+        """Reload upload limits from SQLite (required with multiple workers)."""
+        if conn is None:
+            return
+        persisted_upload = load_upload_config(conn)
+        constants.merge_persisted_upload_config(persisted_upload)
+        if persisted_upload:
+            for key, value in persisted_upload.items():
+                logger.debug(
+                    "Upload config '%s' set to %s from database", key, int(value)
+                )
+
     def merge_from_db(self, conn: Any) -> None:
         persisted_flags = load_feature_flags(conn)
         if persisted_flags:
@@ -29,16 +41,7 @@ class ConfigService:
                     "Feature flag '%s' set to %s from database", key, bool(value)
                 )
 
-        persisted_upload = load_upload_config(conn)
-        if persisted_upload:
-            for key, value in persisted_upload.items():
-                constants.UPLOAD_CONFIG[key] = int(value)
-                logger.debug(
-                    "Upload config '%s' set to %s from database", key, int(value)
-                )
-        constants.MAX_FILE_SIZE = (
-            constants.UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
-        )
+        self.sync_upload_config_from_db(conn)
 
         constants.UPLOAD_ALLOWED_EXTENSIONS = load_allowed_extensions(conn)
         if not constants.UPLOAD_ALLOWED_EXTENSIONS:

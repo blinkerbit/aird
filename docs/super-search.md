@@ -26,7 +26,7 @@ Concise reference for humans and tools: **what the Super Search screen does**, *
 
 ## Page chrome (matching the UI)
 
-- **Title:** “Super Search” (`<h1>`) with **`WebSocket Powered`** outline badge beside it.
+- **Title:** “Super Search” (`<h1>`).
 - **Global header:** Standard app nav (`_app_nav_header.html`) — user chip, Browse, Search, Share, P2P (if enabled), theme, ⌘K-style palette if present, logout.
 
 ---

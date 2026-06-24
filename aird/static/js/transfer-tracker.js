@@ -6,6 +6,16 @@
 (function (global) {
   'use strict';
 
+  (function injectTtStyles() {
+    if (document.getElementById('tt-styles')) return;
+    const s = document.createElement('style');
+    s.id = 'tt-styles';
+    s.textContent =
+      '@keyframes tt-indeterminate-pulse{0%,100%{opacity:.35}50%{opacity:1}}' +
+      'progress.tt-indeterminate{animation:tt-indeterminate-pulse 1.2s ease-in-out infinite}';
+    document.head.appendChild(s);
+  })();
+
   const _items = new Map();
   let _nextId = 1;
 
@@ -20,13 +30,37 @@
 
   function _pct(loaded, total) {
     if (!total || total <= 0) return 0;
-    return Math.min(100, Math.round((loaded / total) * 100));
+    return Math.min(100, (loaded / total) * 100);
+  }
+
+  function _pctLabel(loaded, total) {
+    const v = _pct(loaded, total);
+    return v >= 10 ? v.toFixed(1) : v.toFixed(2);
   }
 
   function _speed(loaded, startedAt) {
     if (!loaded || !startedAt) return 0;
     const elapsed = (Date.now() - startedAt) / 1000;
     return loaded / (elapsed || 1);
+  }
+
+  /* Eased display value: ramps toward the real byte count so parallel
+     socket-buffer bursts show as smooth motion instead of sudden jumps. */
+  function _dispLoaded(it) {
+    if (it.status === 'done') return it.total;
+    var d = (it.displayLoaded == null) ? it.loaded : it.displayLoaded;
+    return it.total ? Math.min(d, it.total) : d;
+  }
+
+  function _easeDisplay(it) {
+    if (it.displayLoaded == null) it.displayLoaded = 0;
+    if (it.status === 'done') { it.displayLoaded = it.total; return; }
+    if (it.status === 'error') return;
+    var target = it.total ? Math.min(it.loaded, it.total) : it.loaded;
+    if (target <= it.displayLoaded) return;
+    var gap = target - it.displayLoaded;
+    var step = Math.max(gap * 0.12, 1);
+    it.displayLoaded = Math.min(target, it.displayLoaded + step);
   }
 
   /* ── DOM refs (lazy) ────────────────────────────────────────────── */
@@ -60,8 +94,8 @@
     let totalBytes = 0, loadedBytes = 0, active = 0, done = 0, failed = 0, browser = 0;
     _items.forEach(function (it) {
       totalBytes += it.total || 0;
-      loadedBytes += it.loaded || 0;
-      if (it.status === 'active') active++;
+      loadedBytes += _dispLoaded(it) || 0;
+      if (it.status === 'active' || it.status === 'preparing') active++;
       else if (it.status === 'browser') browser++;
       else if (it.status === 'done') done++;
       else if (it.status === 'error') failed++;
@@ -71,11 +105,51 @@
 
   /* ── Render ─────────────────────────────────────────────────────── */
   const CIRC = 2 * Math.PI * 18;
+  let _renderPending = false;
+  let _animFrame = null;
+
+  function _hasActiveTransfers() {
+    let active = false;
+    _items.forEach(function (it) {
+      if (it.status === 'active' || it.status === 'browser' || it.status === 'preparing') active = true;
+    });
+    return active;
+  }
+
+  function _startAnimLoop() {
+    if (_animFrame) return;
+    function tick() {
+      if (!_hasActiveTransfers()) {
+        _animFrame = null;
+        return;
+      }
+      _render();
+      _animFrame = requestAnimationFrame(tick);
+    }
+    _animFrame = requestAnimationFrame(tick);
+  }
+
+  function _stopAnimLoop() {
+    if (_animFrame) {
+      cancelAnimationFrame(_animFrame);
+      _animFrame = null;
+    }
+  }
+
+  function _scheduleRender() {
+    if (_renderPending) return;
+    _renderPending = true;
+    requestAnimationFrame(function () {
+      _renderPending = false;
+      _render();
+    });
+  }
 
   function _ttStatusCls(status) {
     if (status === 'done') return 'tt-done';
     if (status === 'error') return 'tt-error';
     if (status === 'browser') return 'tt-browser';
+    if (status === 'preparing') return 'tt-preparing';
     return 'tt-active';
   }
 
@@ -83,22 +157,24 @@
     if (it.status === 'done') return '✓';
     if (it.status === 'error') return '✗';
     if (it.status === 'browser') return '…';
-    return _pct(it.loaded, it.total) + '%';
+    if (it.status === 'preparing') return '0%';
+    return _pctLabel(_dispLoaded(it), it.total) + '%';
   }
 
   function _ttProgressCls(status) {
     if (status === 'error') return 'progress-error';
     if (status === 'browser') return 'progress-success';
+    if (status === 'preparing') return 'progress-primary';
     return 'progress-primary';
   }
 
   function _ttRowDetail(it) {
-    if (it.detail) return it.detail;
     if (it.status === 'browser') {
       return 'Downloading in your browser — safe to close this tab';
     }
     if (it.total <= 0) return '';
-    let detail = _fmt(it.loaded) + ' / ' + _fmt(it.total);
+    var disp = _dispLoaded(it);
+    let detail = _fmt(disp) + ' / ' + _fmt(it.total);
     if (it.status === 'active' && it.loaded > 0) {
       detail += ' @ ' + _fmt(_speed(it.loaded, it.startedAt)) + '/s';
     }
@@ -132,6 +208,7 @@
     _refs();
     if (!_btn) return;
 
+    _items.forEach(_easeDisplay);
     var agg = _aggregate();
     var hasWork = agg.active > 0 || agg.browser > 0;
 
@@ -146,7 +223,7 @@
     }
     if (_pctText) {
       if (hasWork) {
-        _pctText.textContent = pct + '%';
+        _pctText.textContent = _pctLabel(agg.loadedBytes, agg.totalBytes) + '%';
       } else if (agg.count > 0) {
         _pctText.textContent = '✓';
       }
@@ -160,41 +237,76 @@
     _renderSidebarList();
   }
 
+  function _syncRowUi(it, id) {
+    if (!it._ui) return;
+    var pct = _pct(_dispLoaded(it), it.total);
+    var progressVal = it.status === 'browser' ? 100 : pct;
+    var preparing = it.status === 'preparing';
+    it._ui.progress.classList.toggle('tt-indeterminate', preparing);
+    it._ui.progress.value = preparing ? 0 : progressVal;
+    it._ui.pctEl.textContent = _ttPctLabel(it);
+    it._ui.detailEl.textContent = _ttRowDetail(it);
+    var showCancel = (it.status === 'active' || it.status === 'preparing') && it.onCancel;
+    it._ui.cancelBtn.style.display = showCancel ? '' : 'none';
+  }
+
+  function _ensureRowUi(it, id) {
+    if (it._ui) return;
+    var row = document.createElement('div');
+    row.className = 'tt-row';
+    var icon = it.direction === 'upload' ? '↑' : '↓';
+    var statusCls = _ttStatusCls(it.status);
+    row.innerHTML =
+      '<div class="tt-row-header">' +
+        '<span class="tt-icon ' + statusCls + '">' + icon + '</span>' +
+        '<span class="tt-name" title="' + _escAttr(it.name) + '">' + _escHtml(it.name) + '</span>' +
+        '<span class="tt-pct"></span>' +
+      '</div>' +
+      '<progress class="progress progress-sm w-full ' + _ttProgressCls(it.status) + '" max="100"></progress>' +
+      '<div class="tt-detail"></div>';
+    var cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn btn-ghost btn-xs mt-1';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', function () {
+      if (it.status !== 'active' && it.status !== 'preparing') return;
+      var cancelFn = it.onCancel;
+      it.onCancel = null;
+      if (typeof cancelFn === 'function') cancelFn();
+      failTransfer(id, 'Cancelled');
+    });
+    row.appendChild(cancelBtn);
+    it._ui = {
+      row: row,
+      pctEl: row.querySelector('.tt-pct'),
+      progress: row.querySelector('progress'),
+      detailEl: row.querySelector('.tt-detail'),
+      cancelBtn: cancelBtn,
+    };
+    _sidebarList.appendChild(row);
+  }
+
   function _renderSidebarList() {
     if (!_sidebarList) return;
-    _sidebarList.innerHTML = '';
     if (_items.size === 0) {
       _sidebarList.innerHTML = '<p class="text-sm text-base-content/50 p-4 text-center">No transfers</p>';
       return;
     }
-    _items.forEach(function (it, _id) {
-      var row = document.createElement('div');
-      row.className = 'tt-row';
-      var icon = it.direction === 'upload' ? '↑' : '↓';
-      var statusCls = _ttStatusCls(it.status);
-      var pct = _pct(it.loaded, it.total);
-      var detail = _ttRowDetail(it);
-      var pctLabel = _ttPctLabel(it);
-      var progressVal = it.status === 'browser' ? 100 : pct;
-      row.innerHTML =
-        '<div class="tt-row-header">' +
-          '<span class="tt-icon ' + statusCls + '">' + icon + '</span>' +
-          '<span class="tt-name" title="' + _escAttr(it.name) + '">' + _escHtml(it.name) + '</span>' +
-          '<span class="tt-pct">' + pctLabel + '</span>' +
-        '</div>' +
-        '<progress class="progress progress-sm w-full ' + _ttProgressCls(it.status) + '" value="' + progressVal + '" max="100"></progress>' +
-        '<div class="tt-detail">' + _escHtml(detail) + '</div>';
-      if (it.status === 'active' && it.onCancel) {
-        var cancelBtn = document.createElement('button');
-        cancelBtn.type = 'button';
-        cancelBtn.className = 'btn btn-ghost btn-xs mt-1';
-        cancelBtn.textContent = 'Cancel';
-        cancelBtn.addEventListener('click', function () {
-          if (typeof it.onCancel === 'function') it.onCancel();
-        });
-        row.appendChild(cancelBtn);
+    if (_sidebarList.firstElementChild && _sidebarList.firstElementChild.tagName === 'P') {
+      _sidebarList.innerHTML = '';
+    }
+    const liveIds = new Set();
+    _items.forEach(function (it, id) {
+      liveIds.add(id);
+      _ensureRowUi(it, id);
+      _syncRowUi(it, id);
+    });
+    _items.forEach(function (it, id) {
+      if (liveIds.has(id)) return;
+      if (it._ui) {
+        it._ui.row.remove();
+        it._ui = null;
       }
-      _sidebarList.appendChild(row);
     });
   }
 
@@ -255,7 +367,8 @@
       onCancel: opts.onCancel || null,
       startedAt: Date.now(),
     });
-    _render();
+    _scheduleRender();
+    _startAnimLoop();
     return id;
   }
 
@@ -264,14 +377,16 @@
     if (!it) return;
     it.status = status;
     if (detail !== undefined) it.detail = detail;
-    _render();
+    if (it._ui) _syncRowUi(it, id);
+    _scheduleRender();
+    if (status === 'preparing' || status === 'active') _startAnimLoop();
   }
 
   function setCancelHandler(id, fn) {
     var it = _items.get(id);
     if (!it) return;
     it.onCancel = fn;
-    _render();
+    _scheduleRender();
   }
 
   function updateProgress(id, loaded, total) {
@@ -279,7 +394,9 @@
     if (!it) return;
     it.loaded = loaded;
     if (total !== undefined) it.total = total;
-    _render();
+    if (it._ui) _syncRowUi(it, id);
+    _scheduleRender();
+    _startAnimLoop();
   }
 
   function completeTransfer(id) {
@@ -287,6 +404,7 @@
     if (!it) return;
     it.loaded = it.total;
     it.status = 'done';
+    _stopAnimLoop();
     _render();
     setTimeout(function () {
       _items.delete(id);
@@ -299,6 +417,7 @@
     if (!it) return;
     it.status = 'error';
     it.errorMsg = msg || 'Failed';
+    _stopAnimLoop();
     _render();
     setTimeout(function () {
       _items.delete(id);

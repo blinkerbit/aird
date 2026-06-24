@@ -1,388 +1,277 @@
-# Aird - Modern Web-Based File Management Platform
+# Aird
 
 <p align="center">
   <img src="aird/static/img/logo.png" alt="Aird" width="280">
 </p>
 
-![Aird Demo Video](./demo.webp)
+![Aird demo](./demo.webp)
 
-🚀 **A lightweight, fast, and secure web-based file browser, editor, and sharing platform built with Python and Tornado.**
+**Aird** is a self-hosted file browser, editor, and sharing platform built on **Python** and **Tornado**. It targets fast local and LAN use: parallel HTTP transfers for large files, real-time log streaming, content search, secure shares, optional multi-user isolation, and an admin console that applies settings without restarts.
 
-Aird provides a comprehensive file management solution with real-time streaming, in-browser editing, advanced search capabilities, and secure file sharing through a clean and intuitive web interface. Perfect for development teams, system administrators, and anyone who needs efficient file management.
+---
 
-## ✨ Key Features
+## Highlights
 
-### 📁 **File Management**
-- **Browse & Navigate** - Intuitive file browser with resizable columns and mobile-responsive design
-- **In-Browser Editing** - Full-featured editor with syntax highlighting, line numbers, and auto-save
-- **Large File Support** - Memory-efficient handling of large files with streaming capabilities
-- **File Type Recognition** - Smart file type detection with appropriate icons and handling
+| Area | What you get |
+|------|----------------|
+| **File manager** | Browse, upload, download, rename, move, copy, bulk ops, in-browser text edit, ZIP download |
+| **Large transfers** | Parallel **HTTP `Content-Range`** uploads/downloads (primary path for big files) |
+| **Search** | **Super Search** — glob + regex content search with live WebSocket progress |
+| **Streaming** | Tail log files over WebSocket with filters |
+| **Sharing** | Token-based public/private shares, static or live folder views |
+| **Security** | CSRF, CSP, path traversal checks, optional **ABAC** policies, WebAuthn, LDAP |
+| **Integrations** | Google Drive / OneDrive browse, P2P WebRTC rooms, optional embedded SMB & WebDAV |
+| **Ops** | SQLite-backed settings, audit log, feature flags, transfer rate limits, health endpoint |
 
-### 🔍 **Super Search**
-- **Content-Based Search** - Find text patterns across your entire directory structure
-- **Advanced Pattern Matching** - Support for regular expressions and complex search queries
-- **Real-Time Results** - Live search with WebSocket updates as you type
-- **Context Display** - See matching lines with surrounding context for better understanding
-- **Interactive Navigation** - Click any result to jump directly to the file and line
-- **Performance Optimized** - Memory-mapped operations for fast searching in large codebases
+---
 
-### 📡 **File Streaming**
-- **Real-Time Log Monitoring** - Perfect for following log files and monitoring system output
-- **WebSocket-Based Streaming** - Live updates without page refreshes
-- **Configurable Controls** - Set number of lines to display, play/stop controls
-- **Filter Support** - Advanced filtering with AND/OR logic and regex patterns
-- **Memory Efficient** - Stream line-by-line without loading entire files into memory
+## File transfers
 
-### 🔐 **Secure File Sharing**
-- **Token-Based Security** - Generate secure, randomly generated tokens for share access control
-- **Public/Private Shares** - Choose between token-protected or public access for shares
-- **Dynamic vs Static Shares** - Live folder sharing or snapshot-based sharing
-- **Advanced Filtering** - Use glob patterns to include/exclude specific files
-- **Share Management** - Create, update, and revoke shares with real-time updates
-- **Session Persistence** - Tokens stored in cookies and Authorization headers for seamless access
+Large uploads are designed for **high-throughput links** (e.g. gigabit LAN or VPN):
 
-### ☁️ **Cloud Storage Integration**
-- **Multi-Cloud Support** - Seamlessly link your Google Drive and Microsoft OneDrive accounts directly into Aird
-- **Unified Interface** - Browse, view, and manage your cloud files using the familiar Aird file manager UI
-- **Chunked Uploads** - Support for large file uploads with resumable, chunked uploads out-of-the-box
-- **Direct Downloads** - Proxy and stream downloads directly from cloud storage to your browser
+1. **Small files** — single `POST /upload`.
+2. **Large files** — client opens a range session (`POST /api/upload/range/session`), then sends many parallel **`PUT`** requests with `Content-Range`. Each chunk is written **in place** at the correct byte offset on disk (no separate part files, no concat step at the end).
+3. **Downloads** — `GET /files/...?download=1` with optional `Range` for parallel fetch.
 
-### ⚡ **Peer-to-Peer (P2P) Transfers**
-- **WebRTC Integration** - Direct browser-to-browser file transfers without storing files temporarily on the server
-- **Secure Anonymous Rooms** - Create shareable transfer rooms for external guests or known users
-- **Real-Time WebSockets** - Instant signaling and room management
-- **Privacy First** - Files are sent directly between clients, improving speed and security
+Defaults (all adjustable in **Admin → Upload settings**):
 
-### 🖥️ **Network File Sharing (SMB & WebDAV)**
-- **Embedded SMB Server** - Run your own native SMB (Server Message Block) server so you can mount Aird folders directly in Windows File Explorer or macOS Finder.
-- **Embedded WebDAV Server** - Run a fully-featured WebDAV server with locking support to map network drives over HTTP.
-- **Dynamic Provisioning** - Start and stop shares on the fly, directly from the Aird administrator dashboard without restarting the app.
-- **Access Control** - Protect your native network shares with custom usernames, passwords, and optional strictly read-only modes.
+| Setting | Default | Notes |
+|---------|---------|--------|
+| Max file size | 10 240 MB (10 GiB) | Hard cap per file |
+| Single-request max | 100 MB | Files **≥** this use parallel HTTP ranges |
+| HTTP chunk size | 90 MB | Per range `PUT` body |
+| HTTP parallelism | 16 | Concurrent upload streams |
 
-### 🔌 **API-First Architecture**
-- **RESTful API** - Complete REST API for all file operations and management
-- **WebSocket Support** - Real-time communication for streaming and live updates
-- **Extensible Design** - Build custom applications and integrations on top of Aird
-- **JSON Responses** - Clean, consistent API responses for easy integration
-- **Authentication Support** - Token-based and LDAP authentication for secure API access
+**Behind nginx/Caddy:** set `client_max_body_size` (or equivalent) to at least your HTTP chunk size. If **Single-request max** is `0`, Aird uses a **100 MB** parallel threshold (proxy-safe), not a single POST for the entire max file size.
 
-### ⚙️ **Administration & Security**
-- **Multi-User Environments** - Enable isolated private home folders and storage quota limits per user.
-- **Feature Flags** - Granular control over file operations (upload, delete, rename, edit, download, share)
-- **User Management** - Database-based user authentication with role-based access control
-- **LDAP Integration** - Enterprise-grade authentication with Active Directory support
-- **Real-Time Configuration** - Changes apply instantly without server restart
-- **Security Headers** - CSRF protection, XSS prevention, and path traversal protection
-- **Input Validation** - Comprehensive input sanitization and length validation
+Optional WebSocket upload (`/ws/file-transfer`) remains for specialized paths; the browser UI uses **HTTP parallel** by default.
 
-## 🚀 Quick Start
+Transfer progress, cancel, and resume metadata are handled in the browser (`transfer-tracker.js`, `transfer-engine/`, service worker `sw-transfer.js`).
 
-### Installation
+---
+
+## Quick start
+
+### Install
 
 ```bash
-# Install from PyPI
 pip install aird
 
-# Or install from source
+# Optional: HTTP response compression codecs (gzip is always available)
+pip install "aird[compress]"
+
+# From source
 git clone https://github.com/blinkerbit/aird.git
 cd aird
 pip install -e .
 ```
 
-### Basic Usage
+**Python:** 3.10+ required. On Linux, **free-threaded** builds (`3.13t` / `3.14t`) are supported and recommended for parallel disk I/O; the server detects nogil at startup and sizes the I/O thread pool accordingly.
+
+### Run
 
 ```bash
-# Start with default settings
-aird
+# Default: port 8000, current directory as root
+python -m aird
 
-# Custom port and root directory
-aird --port 8080 --root /path/to/files
+# Custom root and port
+python -m aird --root /data --port 8080
 
-# With authentication token
-aird --token your-secure-token
+# Multi-user (per-user home directories under root)
+python -m aird --root /data --multi-user
 
-# Enable LDAP authentication
-aird --ldap --ldap-server ldap://your-server.com
+# TLS
+python -m aird --ssl-cert /path/cert.pem --ssl-key /path/key.pem --port 443
 
-# Enable Multi-User Mode with isolated home folders
-aird --multi-user
+# Worker processes (Linux; default is auto from CPU topology)
+python -m aird --workers 4
 ```
 
-### Docker Usage
+On first start, random **access** and **admin** tokens are printed unless you set them via `--token`, `--admin-token`, `config.json`, or `AIRD_ACCESS_TOKEN`.
 
-You can run Aird inside a Docker container and share a folder from your host operating system using a volume mount.
+Open `http://localhost:8000/` → redirects to `/files/`.
+
+### CLI client
 
 ```bash
-# Build the Docker image
-docker build -t aird-app .
-
-# Run and share a specific directory (e.g., /path/to/files)
-docker run -v "/path/to/files:/shared" -p 8000:8000 aird-app python -m aird --root /shared
-
-# Run and share your current directory (PowerShell/Linux/macOS)
-docker run -v "$PWD:/shared" -p 8000:8000 aird-app python -m aird --root /shared
-
-# Run and share your current directory (Windows Command Prompt)
-docker run -v "%cd%:/shared" -p 8000:8000 aird-app python -m aird --root /shared
+pip install aird   # includes aird-cli
+aird-cli config set server https://your-host
+aird-cli login
+aird-cli ls /
 ```
 
-### Configuration
+---
 
-Create a `config.json` file for advanced configuration:
+## Configuration
+
+### `config.json`
 
 ```json
 {
-  "port": 8080,
-  "root_dir": "/path/to/files",
-  "access_token": "your-secure-token",
-  "admin_token": "admin-secure-token",
+  "port": 8000,
+  "root": "/srv/files",
+  "hostname": "files.example.com",
+  "token": "your-access-token",
+  "admin_token": "your-admin-token",
+  "multi_user": false,
+  "workers": 2,
   "ldap": {
-    "enabled": true,
-    "server": "ldap://your-server.com",
+    "enabled": false,
+    "server": "ldap://ldap.example.com",
     "base_dn": "dc=example,dc=com"
   },
   "feature_flags": {
     "file_upload": true,
-    "file_delete": true,
-    "file_share": true,
-    "super_search": true
+    "super_search": true,
+    "abac_engine": false
   }
 }
 ```
 
-## 🔌 API Usage
-
-Aird provides a comprehensive REST API for all operations:
-
-### File Operations
 ```bash
-# List files in a directory
-GET /api/files/path/to/directory
-
-# Upload a file
-POST /upload
-Content-Type: multipart/form-data
-
-# Download a file
-GET /files/path/to/file?download=1
-
-# Edit a file
-POST /edit/path/to/file
-Content-Type: application/json
-{"content": "new file content"}
-
-# Delete a file
-POST /delete
-Content-Type: application/json
-{"path": "path/to/file"}
+python -m aird --config /etc/aird/config.json
 ```
 
-### Search Operations
-```bash
-# Search for text patterns
-GET /search?q=search+term&path=/directory
+### Environment variables (common)
 
-# WebSocket search (real-time)
-WebSocket: /search/ws
-```
+| Variable | Purpose |
+|----------|---------|
+| `AIRD_ACCESS_TOKEN` | Login token |
+| `AIRD_COOKIE_SECRET` | Persistent session signing (set in production) |
+| `AIRD_CORPORATE_IP_CIDRS` | Comma-separated CIDRs for ABAC / WAN compression rules |
+| `AIRD_GDRIVE_ACCESS_TOKEN` / `AIRD_ONEDRIVE_ACCESS_TOKEN` | Cloud providers |
 
-### Share Management
-```bash
-# Create a share
-POST /share/create
-Content-Type: application/json
-{
-  "paths": ["/path/to/file1", "/path/to/file2"],
-  "share_type": "static",
-  "expiry_date": "2024-12-31T23:59:59"
-}
+### Admin console
 
-# List active shares
-GET /share/list
-
-# Update a share
-POST /share/update
-Content-Type: application/json
-{
-  "share_id": "share-id",
-  "share_type": "dynamic",
-  "allow_list": ["*.txt", "*.log"]
-}
-```
-
-### WebSocket Streaming
-```javascript
-// Connect to file streaming
-const ws = new WebSocket('ws://localhost:8080/stream/path/to/logfile.log');
-
-ws.onmessage = function(event) {
-    const data = JSON.parse(event.data);
-    console.log('New line:', data.line);
-};
-```
-
-## 🛠️ Building Custom Applications
-
-Aird's API-first design makes it perfect for building custom applications:
-
-### Example: Custom File Manager
-```python
-import requests
-
-class AirdClient:
-    def __init__(self, base_url, token):
-        self.base_url = base_url
-        self.headers = {'Authorization': f'Bearer {token}'}
-    
-    def list_files(self, path):
-        response = requests.get(f'{self.base_url}/api/files/{path}', headers=self.headers)
-        return response.json()
-    
-    def search_files(self, query, path='/'):
-        response = requests.get(f'{self.base_url}/search', 
-                              params={'q': query, 'path': path}, 
-                              headers=self.headers)
-        return response.json()
-    
-    def create_share(self, paths, share_type='static'):
-        data = {'paths': paths, 'share_type': share_type}
-        response = requests.post(f'{self.base_url}/share/create', 
-                               json=data, headers=self.headers)
-        return response.json()
-
-# Usage
-client = AirdClient('http://localhost:8080', 'your-token')
-files = client.list_files('/documents')
-results = client.search_files('error', '/logs')
-```
-
-### Example: Log Monitoring Dashboard
-```javascript
-// Real-time log monitoring
-const logStream = new WebSocket('ws://localhost:8080/stream/var/log/app.log');
-
-logStream.onmessage = function(event) {
-    const data = JSON.parse(event.data);
-    addLogEntry(data.line, data.timestamp);
-};
-
-function addLogEntry(line, timestamp) {
-    const logContainer = document.getElementById('logs');
-    const entry = document.createElement('div');
-    entry.className = 'log-entry';
-    entry.innerHTML = `<span class="timestamp">${timestamp}</span> ${line}`;
-    logContainer.insertBefore(entry, logContainer.firstChild);
-}
-```
-
-## 🔧 Advanced Features
-
-### Memory-Mapped File Operations
-- Efficient handling of large files (>1MB) using memory mapping
-- Falls back to traditional I/O for smaller files to avoid overhead
-- Used for file streaming, content search, and large file viewing
-
-### WebSocket Connection Management
-- Configurable connection limits and idle timeouts
-- Automatic cleanup of dead/idle connections
-- Real-time statistics and monitoring
-
-### Filter Expression System
-- Complex AND/OR logic with parentheses
-- Quoted terms, escaped expressions, and regex patterns
-- Used across file streaming and search functionality
-
-### Database Integration
-- SQLite-backed persistence for feature flags and settings
-- User management with secure password hashing
-- Share management with automatic schema migrations
-
-## 📱 Mobile & Accessibility
-
-- **Mobile-Responsive Design** - Optimized for smartphones and tablets
-- **Touch-Friendly Controls** - Easy navigation on touch devices
-- **Keyboard Shortcuts** - Efficient navigation and operations
-- **Screen Reader Support** - Proper accessibility features
-- **Progressive Web App Ready** - Can be installed as a web app
-
-## 🔒 Security Features
-
-- **Path Traversal Protection** - Built-in security measures to prevent unauthorized access
-- **Input Validation** - Comprehensive input sanitization and length validation
-- **Secure Session Management** - HTTP-only cookies with CSRF protection
-- **Token-Based Authentication** - Secure access with customizable tokens
-- **LDAP/Active Directory Integration** - Enterprise-grade authentication
-- **Content Security Policy** - XSS prevention and security headers
-
-## 🎯 Use Cases
-
-### Development Teams
-- **Code Review** - Share code snippets and files with team members
-- **Log Monitoring** - Real-time monitoring of application logs
-- **File Collaboration** - Edit and share files in real-time
-- **Search Codebase** - Find patterns across entire codebases
-
-### System Administrators
-- **Server File Management** - Browse and manage server files remotely
-- **Log Analysis** - Stream and analyze system logs
-- **Configuration Management** - Edit configuration files safely
-- **Backup Monitoring** - Monitor backup files and logs
-
-### Content Creators
-- **File Organization** - Organize and manage large file collections
-- **Content Sharing** - Share files with clients and collaborators
-- **Version Control** - Track file changes and versions
-- **Search Content** - Find specific content across files
-
-## 📊 Performance
-
-- **Memory Efficient** - Handles large files without loading them entirely into memory
-- **Fast Search** - Memory-mapped operations for quick content searching
-- **Concurrent Users** - Supports multiple users with WebSocket connection pooling
-- **Scalable** - Built on Tornado's async architecture for high performance
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
-
-### Development Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/blinkerbit/aird.git
-cd aird
-
-# Install in development mode
-pip install -e .
-
-# Run tests
-python -m pytest tests/
-
-# Start development server
-python -m aird --debug
-```
-
-## 📄 License
-
-This project is licensed under the **Business Source License 1.1 (BSL)** - see the [LICENSE](LICENSE) file for complete details.
-
-### License Summary:
-- ✅ **Free for most uses** - Use, modify, and distribute freely for personal, educational, and internal business purposes.
-- ✅ **Eventually Open Source** - Code converts to the **Apache 2.0 License** 10 years after release.
-- ⚠️ **Commercial restriction** - You may not use Aird to provide a commercial "File-Management-as-a-Service" offering without a commercial enterprise license.
-- 🚫 **No AI Training** - You may not use the source code or documentation to train, fine-tune, or improve any AI or machine learning models.
-
-For commercial service licensing, please contact **Viswantha Srinivas P**.
-
-## 🔗 Links
-
-- **GitHub Repository:** [https://github.com/blinkerbit/aird](https://github.com/blinkerbit/aird)
-- **PyPI Package:** [https://pypi.org/project/aird/](https://pypi.org/project/aird/)
-- **Documentation:** [https://github.com/blinkerbit/aird/wiki](https://github.com/blinkerbit/aird/wiki)
-- **Issue Tracker:** [https://github.com/blinkerbit/aird/issues](https://github.com/blinkerbit/aird/issues)
+`GET /admin` — feature flags, upload limits, extension allow-list, WebSocket pool limits, LDAP, network shares, ABAC policies/tags, users, audit. Changes persist to SQLite and apply without restart (feature-flag subscribers refresh over `/features` WebSocket).
 
 ---
 
-**Made with ❤️ by Viswantha Srinivas P**
+## Production deployment
 
-*Star ⭐ this repo if you find it useful!*
+### Reverse proxy
+
+Aird listens on one port (default **8000**). Terminate TLS at **Caddy**, **nginx**, or similar.
+
+**nginx example** (adjust chunk size to match Admin → HTTP chunk):
+
+```nginx
+client_max_body_size 128m;
+
+location / {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+WebSocket routes (`/stream/`, `/search/ws`, `/features`, `/ws/…`) need `Upgrade` and `Connection` headers if you proxy them.
+
+### Ubuntu deploy script
+
+`deploy_local.ps1` (run from Windows) syncs source or a wheel to a remote host, creates a **uv** venv with **Python 3.14t**, and installs the package. See `docs/wireguard-deploy.md` for VPN-only TLS layouts.
+
+### Systemd
+
+Run `python -m aird` (or the venv equivalent) as a service user with `--config` pointing at your JSON file. Logs go to the data directory (`aird.log` under the platform app data path).
+
+---
+
+## API overview
+
+Authentication: session cookie after `/login`, bearer token, or `Authorization` header where supported. Mutating requests require the `_xsrf` cookie + `X-XSRFToken` header.
+
+| Operation | Method / path |
+|-----------|----------------|
+| List directory | `GET /api/files/{path}` |
+| Upload (small) | `POST /upload` |
+| Upload (large) | `POST /api/upload/range/session` then `PUT /api/upload/range/{id}` |
+| Upload status | `GET /api/upload/range/{id}/status` |
+| Download | `GET /files/{path}?download=1` |
+| Edit | `GET /edit/{path}`, `POST /edit` |
+| Delete / rename / mkdir | `POST /delete`, `POST /rename`, `POST /mkdir` |
+| Search UI | `GET /search` |
+| Search (live) | WebSocket `/search/ws` |
+| Log stream | WebSocket `/stream/{path}` |
+| Shares | `POST /share/create`, `GET /share/list`, … |
+| Health | `GET /health` |
+
+Page-level UI contracts and routes are documented under [`docs/`](docs/README.md).
+
+---
+
+## Architecture notes
+
+- **Async I/O:** Tornado event loop; on Linux optionally **uvloop**.
+- **Free-threaded Python:** SQLite access is wrapped (`aird/db/sync.py`); upload chunk writes use `asyncio.to_thread` / `os.pwrite` so parallel range PUTs do not block the loop.
+- **HTTP compression:** `gzip` by default; optional `zstandard` via `pip install aird[compress]` (loaded only on builds where the extension is nogil-safe).
+- **Security headers:** COOP/COEP/CORP for transfer workers; strict CSP on HTML pages.
+- **ABAC:** Optional policy engine (`abac_engine` flag) with admin-defined policies, tags, and user attributes.
+
+---
+
+## Development
+
+### Frontend assets
+
+```bash
+npm install
+npm run css:build          # Tailwind → aird/static/css/app.css
+npm run js:share           # Bundle share UI
+npm run vendor:fflate      # Compression worker dependency
+```
+
+### Tests
+
+```bash
+python -m pytest tests/
+```
+
+### Project layout
+
+```
+aird/
+  handlers/       # HTTP & WebSocket handlers
+  services/       # Config, quota, share, audit, …
+  static/js/      # Browser UI & transfer engine
+  templates/      # Jinja2 pages
+  core/           # Compression, mmap, rate limits, …
+docs/             # Per-page UI & admin documentation
+```
+
+---
+
+## Security
+
+- Path traversal and symlink checks on file access
+- Argon2 password hashing for local users
+- CSRF on state-changing requests
+- Upload extension allow-list (or allow-all) with max size enforced server-side
+- Optional storage quotas (multi-user)
+- Audit trail and live policy-decision stream for ABAC
+
+Report issues via GitHub. For production, set `AIRD_COOKIE_SECRET`, use TLS, and restrict admin routes.
+
+---
+
+## License
+
+**Business Source License 1.1 (BSL)** — see [LICENSE](LICENSE). Converts to **Apache 2.0** after the change date in the license file.
+
+Commercial **File-Management-as-a-Service** use requires a separate license. Contact **Viswanatha Srinivas P**.
+
+---
+
+## Links
+
+- **Repository:** https://github.com/blinkerbit/aird  
+- **PyPI:** https://pypi.org/project/aird/  
+- **UI / admin docs:** [docs/README.md](docs/README.md) · [docs/transfers.md](docs/transfers.md)  
+- **Issues:** https://github.com/blinkerbit/aird/issues  
+
+---
+
+Made by **Viswanatha Srinivas P**

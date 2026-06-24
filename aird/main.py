@@ -3,6 +3,7 @@ import os
 import secrets
 import socket
 import sqlite3
+import sys
 import ssl
 
 import tornado.httpserver
@@ -34,6 +35,7 @@ from aird.db import (
     assign_admin_privileges,
     cleanup_expired_shares,
     save_allowed_extensions,
+    wrap_connection,
 )
 from aird.services import (
     AuditService,
@@ -132,7 +134,7 @@ from aird.handlers.file_op_handlers import (
     RenameHandler,
     UploadHandler,
 )
-from aird.handlers.health_handler import HealthHandler
+from aird.handlers.health_handler import HealthHandler, ServiceWorkerHandler
 from aird.handlers.share_handlers import (
     ShareCreateHandler,
     ShareFilesHandler,
@@ -222,6 +224,7 @@ def make_app(
         ),
         (r"/", RootHandler),
         (r"/health", HealthHandler),
+        (r"/sw-transfer.js", ServiceWorkerHandler),
         (r"/login", login_handler),
         (r"/logout", LogoutHandler),
         (r"/auth/mandatory-password", MandatoryPasswordHandler),
@@ -370,6 +373,12 @@ def _validate_ssl_config() -> bool:
     return True
 
 
+def _open_db_connection(db_path: str):
+    """Open SQLite and wrap for free-threaded (nogil) safety."""
+    raw = sqlite3.connect(db_path, check_same_thread=False)
+    return wrap_connection(raw)
+
+
 def _create_emergency_db_connection() -> None:
     logger.warning("Database connection is None, attempting to create...")
     try:
@@ -377,7 +386,7 @@ def _create_emergency_db_connection() -> None:
             os.path.expanduser("~"), ".local", "aird", "aird.sqlite3"
         )
         os.makedirs(os.path.dirname(constants.DB_PATH), exist_ok=True)
-        constants.DB_CONN = sqlite3.connect(constants.DB_PATH, check_same_thread=False)
+        constants.DB_CONN = _open_db_connection(constants.DB_PATH)
         init_db(constants.DB_CONN)
         logger.info(f"Created emergency database connection: {constants.DB_CONN}")
     except Exception:
@@ -387,18 +396,16 @@ def _create_emergency_db_connection() -> None:
 def _load_and_merge_configs(db_conn) -> None:
     # Keep legacy helper function references for test compatibility while
     # preserving behavior equivalent to ConfigService.merge_from_db.
+    from aird.services.config_service import ConfigService
+
+    config_service = ConfigService()
     persisted_flags = load_feature_flags(db_conn)
     if persisted_flags:
         for key, value in persisted_flags.items():
             constants.FEATURE_FLAGS[key] = bool(value)
             logger.debug("Feature flag '%s' set to %s from database", key, bool(value))
 
-    persisted_upload = load_upload_config(db_conn)
-    if persisted_upload:
-        for key, value in persisted_upload.items():
-            constants.UPLOAD_CONFIG[key] = int(value)
-            logger.debug("Upload config '%s' set to %s from database", key, int(value))
-    constants.MAX_FILE_SIZE = constants.UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
+    config_service.sync_upload_config_from_db(db_conn)
 
     constants.UPLOAD_ALLOWED_EXTENSIONS = load_allowed_extensions(db_conn)
     if not constants.UPLOAD_ALLOWED_EXTENSIONS:
@@ -413,6 +420,10 @@ def _load_and_merge_configs(db_conn) -> None:
         "Max upload file size: %s MB",
         constants.UPLOAD_CONFIG["max_file_size_mb"],
     )
+
+    from aird.core.rate_limit import TransferRateLimiter
+
+    TransferRateLimiter.apply_transfer_config(constants.TRANSFER_CONFIG)
 
 
 def _auto_start_network_shares(db_conn) -> None:
@@ -438,7 +449,7 @@ def _init_database() -> None:
         logger.info(
             f"Database already exists: {'Yes' if db_exists else 'No (will be created)'}"
         )
-        constants.DB_CONN = sqlite3.connect(constants.DB_PATH, check_same_thread=False)
+        constants.DB_CONN = _open_db_connection(constants.DB_PATH)
         init_db(constants.DB_CONN)
 
         _load_and_merge_configs(constants.DB_CONN)
@@ -551,7 +562,46 @@ def _build_application():
     )
 
 
+def _tune_sockets(sockets: list) -> None:
+    """Apply TCP tuning for high-throughput file transfers."""
+    for sock in sockets:
+        try:
+            # Large send/receive buffers — 4 MB each enables high BDP on fast LANs.
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4 * 1024 * 1024)
+        except OSError:
+            pass
+        try:
+            # TCP_NODELAY: disable Nagle — reduces latency for small control frames.
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError:
+            pass
+        try:
+            # TCP_CORK / TCP_NOPUSH: batch large writes (Linux/macOS).
+            _TCP_CORK = getattr(socket, "TCP_CORK", None)
+            if _TCP_CORK is not None:
+                sock.setsockopt(socket.IPPROTO_TCP, _TCP_CORK, 0)
+        except OSError:
+            pass
+        try:
+            # Enable BBR congestion control if the kernel supports it (Linux 4.9+).
+            # Falls back silently on kernels without BBR or on non-Linux.
+            _TCP_CONGESTION = getattr(socket, "TCP_CONGESTION", 13)
+            sock.setsockopt(socket.IPPROTO_TCP, _TCP_CONGESTION, b"bbr\x00")
+        except OSError:
+            pass
+        try:
+            # Increase the socket-level accept backlog hint (actual limit is
+            # also controlled by /proc/sys/net/core/somaxconn on Linux).
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        except OSError:
+            pass
+
+
 def _run_http_server(app, ssl_options, sockets) -> None:
+    from aird.event_loop import apply_io_thread_pool
+
+    _tune_sockets(sockets)
     server = tornado.httpserver.HTTPServer(
         app,
         ssl_options=ssl_options,
@@ -559,11 +609,11 @@ def _run_http_server(app, ssl_options, sockets) -> None:
         max_buffer_size=constants.UPLOAD_REQUEST_MAX_BODY_SIZE,
     )
     server.add_sockets(sockets)
+    io_loop = tornado.ioloop.IOLoop.current()
+    apply_io_thread_pool()
     if tornado.process.task_id() in (0, None):
-        tornado.ioloop.IOLoop.current().call_later(
-            3600, _run_cleanup_expired_shares
-        )
-    tornado.ioloop.IOLoop.current().start()
+        io_loop.call_later(3600, _run_cleanup_expired_shares)
+    io_loop.start()
 
 
 def _start_server(ssl_options, port: int, hostname: str, worker_count: int) -> None:
@@ -641,6 +691,10 @@ def main():
     root_logger.addHandler(console_handler)
 
     logger.info("Logging initialized. Writing logs to %s", log_file)
+
+    gil_checker = getattr(sys, "_is_gil_enabled", None)
+    if callable(gil_checker) and not gil_checker():
+        logger.info("Free-threaded Python runtime detected (GIL disabled)")
 
     if not _validate_ldap_config():
         return

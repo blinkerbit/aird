@@ -146,11 +146,23 @@
           </div>
           <div class="flex flex-wrap items-center gap-3">
             <label for="protocol" class="label-text font-semibold min-w-[160px]">Protocol</label>
-            <select id="protocol" name="protocol" class="select select-bordered select-sm w-80">
+            <select id="protocol" name="protocol" class="select select-bordered select-sm w-80"{% if not webdav_server_available and not smb_server_available %} disabled{% end %}>
+              {% if webdav_server_available %}
               <option value="webdav" selected>WebDAV (Class 2 locking, digest auth)</option>
-              <option value="smb">SMB (v1/v2)</option>
+              {% end %}
+              {% if smb_server_available %}
+              <option value="smb"{% if not webdav_server_available %} selected{% end %}>SMB (v1/v2)</option>
+              {% end %}
             </select>
-            <span class="text-xs text-base-content/50">WebDAV is recommended for full locking, Office support, cross-platform.</span>
+            {% if webdav_server_available or smb_server_available %}
+            <span class="text-xs text-base-content/50">
+              {% if webdav_server_available %}WebDAV supports locking and cross-platform clients.{% end %}
+              {% if not webdav_server_available %} Enable <strong>WebDAV network shares</strong> in Admin → Features (requires <code>wsgidav</code> and <code>cheroot</code>).{% end %}
+              {% if not smb_server_available %} SMB requires <strong>SMB network shares</strong> and <code>pysmbserver</code>.{% end %}
+            </span>
+            {% else %}
+            <span class="text-xs text-warning">No network share protocols are enabled. Turn on WebDAV and/or SMB under Admin → Features after installing optional packages.</span>
+            {% end %}
           </div>
           <div class="flex flex-wrap items-center gap-3">
             <label for="port" class="label-text font-semibold min-w-[160px]">Port</label>

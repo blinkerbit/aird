@@ -1,13 +1,10 @@
 import tornado.web
 import os
 import mimetypes
-import gzip
-from io import BytesIO
-import shutil
 import asyncio
 import aiofiles
-import mmap
 import concurrent.futures
+import mmap
 import logging
 
 from aird.handlers.base_handler import (
@@ -45,6 +42,9 @@ from aird.cloud import CloudManager
 from aird.constants.file_ops import PROVIDER_NOT_CONFIGURED
 from aird.core.file_operations import get_files_by_tag_patterns, get_tags_for_path
 from aird.core.http_range import parse_range_header
+from aird.core.compression import negotiate_encoding, should_compress, compress_file
+from aird.core.file_send import sendfile_available, sendfile_to_socket
+from aird.core.rate_limit import TransferRateLimiter
 from aird.db.resource_tags import list_resource_tags
 
 # ---------------------------------------------------------------------------
@@ -60,6 +60,109 @@ async def _serve_download(handler, abspath, filename):
     """Serve file as attachment with Accept-Ranges and optional Range (206)."""
     if not handler.require_feature("file_download", True, body=DOWNLOAD_DISABLED_MSG):
         return
+    user_key = handler.get_display_username() or handler.request.remote_ip or "anonymous"
+    if not TransferRateLimiter.try_acquire_concurrent(user_key):
+        handler.set_status(429)
+        handler.set_header("Retry-After", "5")
+        handler.write({"error": "Too many concurrent transfers"})
+        return
+    try:
+        await _serve_download_body(handler, abspath, filename, user_key)
+    finally:
+        TransferRateLimiter.release_concurrent(user_key)
+
+
+def _download_socket(handler):
+    stream = getattr(handler.request.connection, "stream", None)
+    return getattr(stream, "socket", None) if stream else None
+
+
+def _download_wants_compression(handler, abspath, mime_type, file_size, byte_range):
+    encoding = negotiate_encoding(
+        handler.request.headers.get("Accept-Encoding"),
+        constants_module.COMPRESSION_CONFIG.get("algorithms"),
+    )
+    if not encoding:
+        return None
+    if not should_compress(
+        path=abspath,
+        mime_type=mime_type,
+        file_size=file_size,
+        has_range=bool(byte_range),
+        remote_ip=handler.request.remote_ip or "",
+        compression_enabled=is_feature_enabled("compression", True),
+        mode=constants_module.COMPRESSION_CONFIG.get("mode", "wan_only"),
+        min_bytes=int(constants_module.COMPRESSION_CONFIG.get("min_bytes", 1024)),
+        max_bytes=int(constants_module.COMPRESSION_CONFIG.get("max_bytes", 50 * 1024 * 1024)),
+        corporate_cidrs=constants_module.CORPORATE_IP_CIDRS,
+    ):
+        return None
+    return encoding
+
+
+async def _stream_chunks_to_handler(handler, chunk_iter, user_key):
+    async for chunk in chunk_iter:
+        await TransferRateLimiter.wait_for_bytes(
+            user_key, len(chunk), direction="download"
+        )
+        handler.write(chunk)
+        await handler.flush()
+
+
+async def _try_sendfile_download(handler, abspath, offset, length, user_key):
+    if not is_feature_enabled("transfer_sendfile", False) or not sendfile_available():
+        return False
+    sock = _download_socket(handler)
+    if not sock:
+        return False
+    if not await sendfile_to_socket(sock, abspath, offset, length):
+        return False
+    await TransferRateLimiter.wait_for_bytes(user_key, length, direction="download")
+    return True
+
+
+async def _serve_download_range(handler, abspath, byte_range, file_size, user_key, use_compression):
+    start, end = byte_range.start, byte_range.end
+    handler.set_status(206)
+    handler.set_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+    handler.set_header("Content-Length", str(byte_range.length))
+    if handler.request.method == "HEAD":
+        return
+    if not use_compression and await _try_sendfile_download(
+        handler, abspath, start, byte_range.length, user_key
+    ):
+        return
+    await _stream_chunks_to_handler(
+        handler,
+        MMapFileHandler.serve_file_chunk(abspath, start=start, end=end),
+        user_key,
+    )
+
+
+async def _serve_download_compressed(handler, abspath, encoding, user_key):
+    handler.set_header("Content-Encoding", encoding)
+    handler.set_header("Vary", "Accept-Encoding")
+    level = int(constants_module.COMPRESSION_CONFIG.get("level", 6))
+    compressed = await compress_file(abspath, encoding, level)
+    await TransferRateLimiter.wait_for_bytes(
+        user_key, len(compressed), direction="download"
+    )
+    handler.write(compressed)
+    await handler.flush()
+
+
+async def _serve_download_full(handler, abspath, file_size, user_key):
+    handler.set_header("Content-Length", str(file_size))
+    if handler.request.method == "HEAD":
+        return
+    if await _try_sendfile_download(handler, abspath, 0, file_size, user_key):
+        return
+    await _stream_chunks_to_handler(
+        handler, MMapFileHandler.serve_file_chunk(abspath), user_key
+    )
+
+
+async def _serve_download_body(handler, abspath, filename, user_key):
     handler.set_header("Content-Disposition", f'attachment; filename="{filename}"')
     mime_type, _ = mimetypes.guess_type(abspath)
     mime_type = mime_type or APPLICATION_OCTET_STREAM
@@ -73,66 +176,20 @@ async def _serve_download(handler, abspath, filename):
         return
 
     handler.set_header("Accept-Ranges", "bytes")
-    head_only = handler.request.method == "HEAD"
-    range_header = handler.request.headers.get("Range")
-    byte_range = parse_range_header(range_header, file_size)
-
-    use_gzip = (
-        not byte_range
-        and is_feature_enabled("compression", True)
-        and any(
-            mime_type.startswith(p)
-            for p in (
-                "text/",
-                "application/json",
-                "application/javascript",
-                "application/xml",
-            )
-        )
-    )
+    byte_range = parse_range_header(handler.request.headers.get("Range"), file_size)
+    encoding = _download_wants_compression(handler, abspath, mime_type, file_size, byte_range)
 
     if byte_range:
-        start, end = byte_range.start, byte_range.end
-        handler.set_status(206)
-        handler.set_header(
-            "Content-Range", f"bytes {start}-{end}/{file_size}"
+        await _serve_download_range(
+            handler, abspath, byte_range, file_size, user_key, encoding
         )
-        handler.set_header("Content-Length", str(byte_range.length))
-        if head_only:
-            return
-        async for chunk in MMapFileHandler.serve_file_chunk(
-            abspath, start=start, end=end
-        ):
-            handler.write(chunk)
-            await handler.flush()
         return
 
-    handler.set_header("Content-Length", str(file_size))
-    if head_only:
+    if encoding:
+        await _serve_download_compressed(handler, abspath, encoding, user_key)
         return
 
-    if use_gzip:
-        handler.set_header("Content-Encoding", "gzip")
-
-        def compress_file():
-            buffer = BytesIO()
-            with open(abspath, "rb") as f_in, gzip.GzipFile(
-                fileobj=buffer, mode="wb"
-            ) as f_out:
-                shutil.copyfileobj(f_in, f_out)
-            return buffer.getvalue()
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            compressed_data = await asyncio.get_event_loop().run_in_executor(
-                executor, compress_file
-            )
-        handler.write(compressed_data)
-        await handler.flush()
-        return
-
-    async for chunk in MMapFileHandler.serve_file_chunk(abspath):
-        handler.write(chunk)
-        await handler.flush()
+    await _serve_download_full(handler, abspath, file_size, user_key)
 
 
 def _raw_mode_allows_same_origin_frame(mime_type: str, abspath: str) -> bool:
@@ -263,6 +320,8 @@ class MainHandler(BaseHandler):
             rel = join_path(path, f["name"]) if path else f["name"]
             file_tags_map[f["name"]] = get_tags_for_path(tag_rules, rel)
 
+        self.sync_upload_config_from_db()
+
         self.render(
             "browse.html",
             current_path=path,
@@ -274,6 +333,10 @@ class MainHandler(BaseHandler):
             max_file_size=constants_module.MAX_FILE_SIZE,
             large_file_threshold=constants_module.LARGE_FILE_THRESHOLD_BYTES,
             range_chunk_bytes=constants_module.RANGE_CHUNK_BYTES,
+            range_upload_concurrency=constants_module.RANGE_UPLOAD_CONCURRENCY,
+            range_download_concurrency=constants_module.RANGE_DOWNLOAD_CONCURRENCY,
+            range_pipeline_depth=constants_module.RANGE_PIPELINE_DEPTH,
+            ws_chunk_bytes=constants_module.WS_CHUNK_BYTES,
             user_favorites=user_favorites,
             file_tags_map=file_tags_map,
         )

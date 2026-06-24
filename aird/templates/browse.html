@@ -367,6 +367,9 @@
 
   <input type="hidden" id="currentPath" value="{{ current_path or '' }}" />
   <script src="/static/js/aird-core.js?v={{ static_version }}"></script>
+  <script src="/static/js/transfer-engine/resume-store.js?v={{ static_version }}"></script>
+  <script src="/static/js/transfer-engine/engine.js?v={{ static_version }}"></script>
+  <script src="/static/js/file-transfer-ws.js?v={{ static_version }}"></script>
   <script src="/static/js/file-transfer-http.js?v={{ static_version }}"></script>
   <script src="/static/js/download-manager.js?v={{ static_version }}"></script>
   <script src="/static/js/components/folder-picker.js?v={{ static_version }}"></script>
@@ -375,6 +378,10 @@
       maxFileSize: {{ max_file_size }},
       largeFileThreshold: {{ large_file_threshold }},
       rangeChunkBytes: {{ range_chunk_bytes }},
+      rangeUploadConcurrency: {{ range_upload_concurrency }},
+      rangeDownloadConcurrency: {{ range_download_concurrency }},
+      rangePipelineDepth: {{ range_pipeline_depth }},
+      wsChunkBytes: {{ ws_chunk_bytes }},
       canTag: {{ 'true' if current_user and current_user.get('role') == 'admin' else 'false' }}
     };
   </script>

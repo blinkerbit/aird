@@ -745,6 +745,8 @@ class TestSecurityHeaders:
         assert calls["X-Content-Type-Options"] == "nosniff"
         assert calls["X-Frame-Options"] == "DENY"
         assert calls["Referrer-Policy"] == "strict-origin-when-cross-origin"
+        assert calls["Cross-Origin-Opener-Policy"] == "same-origin"
+        assert calls["Cross-Origin-Embedder-Policy"] == "credentialless"
         assert "Permissions-Policy" in calls
 
 

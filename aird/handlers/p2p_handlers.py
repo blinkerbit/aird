@@ -3,6 +3,7 @@
 import json
 import logging
 import secrets
+import threading
 import time
 from typing import Dict, Optional
 
@@ -35,32 +36,50 @@ class P2PRoom:
         # None = no time-based expiry (room lives until empty or server restart)
         self.expiry_seconds = expiry_seconds
         self.peers: Dict[str, "P2PSignalingHandler"] = {}
+        self._lock = threading.RLock()
         self.file_info: Optional[dict] = None  # Info about file being shared
         self.allow_anonymous = allow_anonymous  # Whether anonymous users can join
         # Set when the last peer leaves; anonymous rooms stay joinable for a grace period.
         self.empty_since: Optional[float] = None
 
     def add_peer(self, peer_id: str, handler: "P2PSignalingHandler"):
-        self.peers[peer_id] = handler
+        with self._lock:
+            self.peers[peer_id] = handler
 
     def remove_peer(self, peer_id: str):
-        self.peers.pop(peer_id, None)
+        with self._lock:
+            self.peers.pop(peer_id, None)
+
+    @property
+    def peer_count(self) -> int:
+        with self._lock:
+            return len(self.peers)
+
+    def is_empty(self) -> bool:
+        with self._lock:
+            return not self.peers
 
     def get_other_peer(self, peer_id: str) -> Optional["P2PSignalingHandler"]:
         """Get the other peer in the room (for 1:1 transfers)."""
-        for pid, handler in self.peers.items():
-            if pid != peer_id:
-                return handler
+        with self._lock:
+            for pid, handler in self.peers.items():
+                if pid != peer_id:
+                    return handler
         return None
 
     def broadcast(self, message: dict, exclude_peer: str = None):
         """Send message to all peers except the excluded one."""
-        for peer_id, handler in self.peers.items():
-            if peer_id != exclude_peer:
-                try:
-                    handler.write_message(json.dumps(message))
-                except Exception:
-                    logger.exception("Error broadcasting to peer %s", peer_id)
+        with self._lock:
+            targets = [
+                (peer_id, handler)
+                for peer_id, handler in self.peers.items()
+                if peer_id != exclude_peer
+            ]
+        for peer_id, handler in targets:
+            try:
+                handler.write_message(json.dumps(message))
+            except Exception:
+                logger.exception("Error broadcasting to peer %s", peer_id)
 
 
 class P2PRoomManager:
@@ -68,6 +87,7 @@ class P2PRoomManager:
 
     def __init__(self):
         self.rooms: Dict[str, P2PRoom] = {}
+        self._lock = threading.RLock()
 
     # Optional clamp when expiry_seconds is set (tests / internal use only; API does not set expiry)
     MIN_EXPIRY = 300
@@ -84,45 +104,51 @@ class P2PRoomManager:
         """Create a new room with a unique ID. expiry_seconds None = never expire by age."""
         if expiry_seconds is not None:
             expiry_seconds = max(self.MIN_EXPIRY, min(self.MAX_EXPIRY, expiry_seconds))
-        room_id = secrets.token_urlsafe(64)
-        while room_id in self.rooms:
+        with self._lock:
             room_id = secrets.token_urlsafe(64)
+            while room_id in self.rooms:
+                room_id = secrets.token_urlsafe(64)
 
-        room = P2PRoom(
-            room_id,
-            creator_id,
-            allow_anonymous=allow_anonymous,
-            expiry_seconds=expiry_seconds,
-        )
-        self.rooms[room_id] = room
+            room = P2PRoom(
+                room_id,
+                creator_id,
+                allow_anonymous=allow_anonymous,
+                expiry_seconds=expiry_seconds,
+            )
+            self.rooms[room_id] = room
         logger.info(f"Created P2P room: {room_id} (anonymous: {allow_anonymous})")
         return room
 
     def get_room(self, room_id: str) -> Optional[P2PRoom]:
-        return self.rooms.get(room_id)
+        with self._lock:
+            return self.rooms.get(room_id)
 
     def remove_room(self, room_id: str):
-        if room_id in self.rooms:
-            del self.rooms[room_id]
-            logger.info(f"Removed P2P room: {room_id}")
+        with self._lock:
+            if room_id in self.rooms:
+                del self.rooms[room_id]
+                logger.info(f"Removed P2P room: {room_id}")
 
     def cleanup_old_rooms(self):
         """Remove expired rooms and anonymous rooms empty past the grace window."""
         now = time.time()
-        to_remove = []
-        for room_id, room in self.rooms.items():
-            expired = (
-                room.expiry_seconds is not None
-                and now - room.created_at > room.expiry_seconds
-            )
-            empty_past_grace = (
-                room.empty_since is not None
-                and now - room.empty_since > self.ANONYMOUS_EMPTY_GRACE
-            )
-            if expired or empty_past_grace:
-                to_remove.append(room_id)
-        for room_id in to_remove:
-            self.remove_room(room_id)
+        with self._lock:
+            to_remove = []
+            for room_id, room in self.rooms.items():
+                expired = (
+                    room.expiry_seconds is not None
+                    and now - room.created_at > room.expiry_seconds
+                )
+                empty_past_grace = (
+                    room.empty_since is not None
+                    and now - room.empty_since > self.ANONYMOUS_EMPTY_GRACE
+                )
+                if expired or empty_past_grace:
+                    to_remove.append(room_id)
+            for room_id in to_remove:
+                if room_id in self.rooms:
+                    del self.rooms[room_id]
+                    logger.info(f"Removed P2P room: {room_id}")
 
     def mark_room_empty(self, room: P2PRoom) -> None:
         """Retain or drop a room after the last peer leaves."""
@@ -444,7 +470,7 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
             )
             return
 
-        if len(room.peers) >= 2:
+        if room.peer_count >= 2:
             self.write_message(json.dumps({"type": "error", "message": "Room is full"}))
             return
 
@@ -462,7 +488,7 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
                     "type": "room_joined",
                     "room_id": room.room_id,
                     "file_info": room.file_info,
-                    "peer_count": len(room.peers),
+                    "peer_count": room.peer_count,
                     "allow_anonymous": room.allow_anonymous,
                 }
             )
@@ -497,7 +523,7 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
         )
 
         # Clean up or retain empty rooms (anonymous rooms kept for a grace period)
-        if not self.room.peers:
+        if self.room.is_empty():
             self._service.leave_room(self.room)
 
         self.room = None

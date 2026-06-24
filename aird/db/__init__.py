@@ -9,6 +9,7 @@ Or import from the package root (legacy):
 """
 
 from aird.db.schema import init_db, PRAGMA_TABLE_INFO  # noqa: F401
+from aird.db.sync import DB_LOCK, db_sync, wrap_connection  # noqa: F401
 
 from aird.db.users import (  # noqa: F401
     ARGON2_AVAILABLE,

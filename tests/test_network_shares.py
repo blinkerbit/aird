@@ -293,7 +293,9 @@ class TestNetworkShareManager:
             "share": sample_share,
         }
 
-        with patch.object(mgr, "_start_webdav", return_value=True) as mock_start:
+        with patch("aird.network_share_manager.is_webdav_server_available", return_value=True), patch.object(
+            mgr, "_start_webdav", return_value=True
+        ) as mock_start:
             result = mgr.start_share(sample_share)
         assert result is True
         mock_start.assert_called_once()
@@ -337,8 +339,10 @@ class TestNetworkShareManager:
     def test_start_webdav_creates_thread(self, sample_share):
         mgr = NetworkShareManager()
         with patch("aird.network_share_manager._WEBDAV_AVAILABLE", True), patch(
-            "aird.network_share_manager.WsgiDAVApp"
-        ), patch("aird.network_share_manager.cheroot_wsgi"):
+            "aird.network_share_manager.is_webdav_server_available", return_value=True
+        ), patch(
+            "aird.network_share_manager.WsgiDAVApp", create=True
+        ), patch("aird.network_share_manager.cheroot_wsgi", create=True):
             result = mgr._start_webdav(sample_share)
         assert result is True
         assert "test-share-1" in mgr._servers
@@ -350,8 +354,8 @@ class TestNetworkShareManager:
         mgr = NetworkShareManager()
         smb_share = {**sample_share, "protocol": "smb"}
         with patch("aird.network_share_manager._SMB_AVAILABLE", True), patch(
-            "aird.network_share_manager.PySMBServer"
-        ):
+            "aird.network_share_manager.is_smb_server_available", return_value=True
+        ), patch("aird.network_share_manager.PySMBServer", create=True):
             result = mgr._start_smb(smb_share)
         assert result is True
         assert "test-share-1" in mgr._servers
@@ -386,13 +390,17 @@ class TestNetworkShareManager:
     def test_protocol_routing_smb(self, sample_share):
         mgr = NetworkShareManager()
         smb_share = {**sample_share, "protocol": "smb"}
-        with patch.object(mgr, "_start_smb", return_value=True) as m:
+        with patch("aird.network_share_manager.is_smb_server_available", return_value=True), patch.object(
+            mgr, "_start_smb", return_value=True
+        ) as m:
             mgr.start_share(smb_share)
         m.assert_called_once_with(smb_share)
 
     def test_protocol_routing_webdav(self, sample_share):
         mgr = NetworkShareManager()
-        with patch.object(mgr, "_start_webdav", return_value=True) as m:
+        with patch("aird.network_share_manager.is_webdav_server_available", return_value=True), patch.object(
+            mgr, "_start_webdav", return_value=True
+        ) as m:
             mgr.start_share(sample_share)
         m.assert_called_once_with(sample_share)
 
@@ -401,7 +409,9 @@ class TestNetworkShareManager:
         mgr = NetworkShareManager()
         no_proto = {**sample_share, "protocol": ""}
         no_proto.pop("protocol")
-        with patch.object(mgr, "_start_webdav", return_value=True) as m:
+        with patch("aird.network_share_manager.is_webdav_server_available", return_value=True), patch.object(
+            mgr, "_start_webdav", return_value=True
+        ) as m:
             mgr.start_share(no_proto)
         m.assert_called_once()
 
@@ -442,7 +452,9 @@ class TestNetworkShareManager:
     def test_start_share_with_read_only(self, sample_share):
         mgr = NetworkShareManager()
         ro_share = {**sample_share, "read_only": True}
-        with patch.object(mgr, "_start_webdav", return_value=True) as m:
+        with patch("aird.network_share_manager.is_webdav_server_available", return_value=True), patch.object(
+            mgr, "_start_webdav", return_value=True
+        ) as m:
             result = mgr.start_share(ro_share)
         assert result is True
         m.assert_called_once_with(ro_share)
@@ -450,7 +462,9 @@ class TestNetworkShareManager:
     def test_start_share_protocol_case_insensitive(self, sample_share):
         mgr = NetworkShareManager()
         upper = {**sample_share, "protocol": "SMB"}
-        with patch.object(mgr, "_start_smb", return_value=True) as m:
+        with patch("aird.network_share_manager.is_smb_server_available", return_value=True), patch.object(
+            mgr, "_start_smb", return_value=True
+        ) as m:
             mgr.start_share(upper)
         m.assert_called_once()
 
@@ -510,8 +524,10 @@ class TestNetworkShareManager:
         ro_share = {**sample_share, "read_only": True}
         # WsgiDAVApp runs inside a daemon thread; keep patches active until invoked.
         with patch("aird.network_share_manager._WEBDAV_AVAILABLE", True), patch(
-            "aird.network_share_manager.WsgiDAVApp"
-        ) as mock_app, patch("aird.network_share_manager.cheroot_wsgi"):
+            "aird.network_share_manager.is_webdav_server_available", return_value=True
+        ), patch(
+            "aird.network_share_manager.WsgiDAVApp", create=True
+        ) as mock_app, patch("aird.network_share_manager.cheroot_wsgi", create=True):
             mgr._start_webdav(ro_share)
             deadline = time.time() + 5.0
             while not mock_app.called and time.time() < deadline:
@@ -533,6 +549,15 @@ class TestAdminNetworkShareHandlers:
     def _mock_getfqdn(self):
         with patch(
             "aird.handlers.admin_handlers._socket.getfqdn", return_value="test.local"
+        ):
+            yield
+
+    @pytest.fixture(autouse=True)
+    def _network_protocols_enabled(self):
+        with patch(
+            "aird.handlers.admin_handlers.is_webdav_server_available", return_value=True
+        ), patch(
+            "aird.handlers.admin_handlers.is_smb_server_available", return_value=True
         ):
             yield
 
@@ -1026,7 +1051,9 @@ class TestAdminNetworkShareHandlers:
 
         mock_mgr = MagicMock()
         mock_tornado_app.settings["network_share_manager"] = mock_mgr
-        with patch_db_conn(db), patch.object(
+        with patch_db_conn(db), patch(
+            "aird.handlers.admin_handlers.is_smb_server_available", return_value=True
+        ), patch.object(
             handler, "get_argument", side_effect=get_arg
         ), patch.object(
             handler, "get_display_username", return_value="admin"
@@ -1036,6 +1063,64 @@ class TestAdminNetworkShareHandlers:
             handler.post()
             shares = get_all_network_shares(db)
             assert shares[0]["protocol"] == "smb"
+
+    def test_post_smb_protocol_when_disabled(
+        self, mock_tornado_app, mock_tornado_request, db, share_dir
+    ):
+        handler = self._make_handler(
+            AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request
+        )
+
+        def get_arg(name, default=""):
+            return {
+                "name": "SMBShare",
+                "folder_path": share_dir,
+                "protocol": "smb",
+                "share_username": "u",
+                "share_password": "p",
+                "port": "4455",
+                "read_only": "off",
+            }.get(name, default)
+
+        with patch_db_conn(db), patch(
+            "aird.handlers.admin_handlers.is_smb_server_available", return_value=False
+        ), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(handler, "redirect") as mock_redir:
+            handler.post()
+            mock_redir.assert_called_with(
+                "/admin/network-shares?error=SMB+server+is+disabled+or+pysmbserver+is+not+installed"
+            )
+            assert len(get_all_network_shares(db)) == 0
+
+    def test_post_webdav_protocol_when_disabled(
+        self, mock_tornado_app, mock_tornado_request, db, share_dir
+    ):
+        handler = self._make_handler(
+            AdminNetworkSharesHandler, mock_tornado_app, mock_tornado_request
+        )
+
+        def get_arg(name, default=""):
+            return {
+                "name": "DAVShare",
+                "folder_path": share_dir,
+                "protocol": "webdav",
+                "share_username": "u",
+                "share_password": "p",
+                "port": "8443",
+                "read_only": "off",
+            }.get(name, default)
+
+        with patch_db_conn(db), patch(
+            "aird.handlers.admin_handlers.is_webdav_server_available", return_value=False
+        ), patch.object(
+            handler, "get_argument", side_effect=get_arg
+        ), patch.object(handler, "redirect") as mock_redir:
+            handler.post()
+            mock_redir.assert_called_with(
+                "/admin/network-shares?error=WebDAV+server+is+disabled+or+wsgidav+is+not+installed"
+            )
+            assert len(get_all_network_shares(db)) == 0
 
     # -- DELETE: empty share_id --
 

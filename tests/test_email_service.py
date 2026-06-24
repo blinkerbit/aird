@@ -74,3 +74,20 @@ def test_notify_share_created(mock_send, _mock_flag):
 @patch("aird.config.PORT", 443)
 def test_public_base_url_https_default_port():
     assert public_base_url() == "https://files.example.com"
+
+
+@patch("aird.email.brevo.requests.post")
+def test_brevo_send_errors(mock_post):
+    client = BrevoClient("", sender_email="")
+    assert client.configured is False
+    assert client.send("a@b.co", "s", html_content="<p>x</p>") is False
+    assert client.send("", "s", html_content="<p>x</p>") is False
+
+    client = BrevoClient("key", sender_email="noreply@aird.test")
+    mock_post.side_effect = __import__("requests").RequestException("net")
+    assert client.send("a@b.co", "s", html_content="<p>x</p>") is False
+
+    mock_post.side_effect = None
+    mock_post.return_value = MagicMock(status_code=500, text="err")
+    assert client.send("a@b.co", "s", html_content="<p>x</p>") is False
+

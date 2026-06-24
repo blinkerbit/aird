@@ -55,10 +55,22 @@ def build_css():
     else:
         print("Warning: package.json not found, skipping CSS build.")
 
+
+def build_js():
+    """Bundle share UI (esbuild output is not committed; see .gitignore)."""
+    if os.path.exists("package.json"):
+        print("Building share JS bundle...")
+        run_command("npm install")
+        run_command("npm run js:share")
+    else:
+        print("Warning: package.json not found, skipping JS bundle.")
+
+
 def build():
     """Build the Python package binaries."""
     clean()
     build_css()
+    build_js()
     if run_shell_command_checked("uv build"):
         return
     if (

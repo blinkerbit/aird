@@ -8,6 +8,7 @@ import logging
 import mimetypes
 import os
 import tempfile
+import zlib
 from collections import deque
 from urllib.parse import unquote
 
@@ -101,6 +102,11 @@ class FileTransferWebSocketHandler(
 ):
     """Stream files over a single WebSocket (no HTTP-style chunk sessions)."""
 
+    @property
+    def max_message_size(self):
+        # One WS frame = one transfer chunk (raw or compressed). Add 4 MB headroom.
+        return constants_module.WS_CHUNK_BYTES + (4 * 1024 * 1024)
+
     connection_manager = WebSocketConnectionManager(
         "file_streaming", default_max_connections=200, default_idle_timeout=300
     )
@@ -174,6 +180,7 @@ class FileTransferWebSocketHandler(
         upload_dir = unquote((data.get("upload_dir") or "").strip())
         filename = unquote((data.get("filename") or "").strip())
         total_size = data.get("total_size")
+        compressed = bool(data.get("compressed"))
 
         if not filename or not isinstance(total_size, int) or total_size < 0:
             await self._send_json({"type": "error", "message": "Invalid upload metadata"})
@@ -200,6 +207,7 @@ class FileTransferWebSocketHandler(
             "upload_dir": upload_dir,
             "filename": filename,
             "total_size": total_size,
+            "compressed": compressed,
             "bytes_received": 0,
             "temp_path": temp_path,
             "aiofile": aiofile,
@@ -213,6 +221,13 @@ class FileTransferWebSocketHandler(
         if not self._upload or self._cancelled:
             await self._send_json({"type": "error", "message": "No upload in progress"})
             return
+
+        if self._upload.get("compressed"):
+            try:
+                data = zlib.decompress(data)
+            except Exception as exc:
+                await self._abort_upload(f"Decompression failed: {exc}")
+                return
 
         self._upload["bytes_received"] += len(data)
         if self._upload["bytes_received"] > self._upload["total_size"]:
@@ -295,6 +310,7 @@ class FileTransferWebSocketHandler(
             )
             return
 
+        upload_bytes = expected
         user_root = get_user_root(self)
         success, status, message = await asyncio.to_thread(
             finalize_upload_to_disk,
@@ -307,7 +323,7 @@ class FileTransferWebSocketHandler(
             quota_service=_ws_get_service(self, "quota_service"),
             audit_service=_ws_get_service(self, "audit_service"),
             remote_ip=getattr(self.request, "remote_ip", None),
-            upload_bytes=expected,
+            upload_bytes=upload_bytes,
         )
         if success:
             await self._send_json({"type": "upload_complete", "message": message})

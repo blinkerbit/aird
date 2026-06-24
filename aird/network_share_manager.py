@@ -29,6 +29,34 @@ except Exception:
 _DEFAULT_BIND_ADDRESS = "127.0.0.1"
 
 
+def smb_library_available() -> bool:
+    """True when optional pysmbserver is importable."""
+    return _SMB_AVAILABLE
+
+
+def is_smb_server_available() -> bool:
+    """SMB shares require admin feature flag and pysmbserver (optional install)."""
+    if not _SMB_AVAILABLE:
+        return False
+    from aird.utils.util import is_feature_enabled
+
+    return is_feature_enabled("smb_server", False)
+
+
+def webdav_library_available() -> bool:
+    """True when optional wsgidav/cheroot are importable."""
+    return _WEBDAV_AVAILABLE
+
+
+def is_webdav_server_available() -> bool:
+    """WebDAV shares require admin feature flag and wsgidav/cheroot (optional install)."""
+    if not _WEBDAV_AVAILABLE:
+        return False
+    from aird.utils.util import is_feature_enabled
+
+    return is_feature_enabled("webdav_server", False)
+
+
 class NetworkShareManager:
     """Start / stop pure-Python SMB and WebDAV servers in daemon threads."""
 
@@ -60,7 +88,19 @@ class NetworkShareManager:
 
         protocol = share.get("protocol", "webdav").lower()
         if protocol == "smb":
+            if not is_smb_server_available():
+                logger.error(
+                    "SMB share %s not started: feature disabled or pysmbserver missing",
+                    sid,
+                )
+                return False
             return self._start_smb(share)
+        if not is_webdav_server_available():
+            logger.error(
+                "WebDAV share %s not started: feature disabled or wsgidav missing",
+                sid,
+            )
+            return False
         return self._start_webdav(share)
 
     def stop_share(self, share_id: str) -> bool:
@@ -104,8 +144,10 @@ class NetworkShareManager:
     # ------------------------------------------------------------------
 
     def _start_smb(self, share: dict) -> bool:
-        if not _SMB_AVAILABLE:
-            logger.error("pysmbserver is not installed – cannot start SMB share")
+        if not is_smb_server_available():
+            logger.error(
+                "SMB share unavailable: enable smb_server in Admin or install pysmbserver"
+            )
             return False
 
         sid = share["id"]
@@ -147,8 +189,10 @@ class NetworkShareManager:
     # ------------------------------------------------------------------
 
     def _start_webdav(self, share: dict) -> bool:
-        if not _WEBDAV_AVAILABLE:
-            logger.error("wsgidav/cheroot is not installed – cannot start WebDAV share")
+        if not is_webdav_server_available():
+            logger.error(
+                "WebDAV share unavailable: enable webdav_server in Admin or install wsgidav"
+            )
             return False
 
         sid = share["id"]

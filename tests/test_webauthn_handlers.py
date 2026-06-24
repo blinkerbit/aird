@@ -3,6 +3,7 @@
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
 import aird.constants as constants
 from aird.db.schema import init_db
 from aird.handlers.webauthn_handlers import (
@@ -82,26 +83,25 @@ class TestWebAuthnAuthOptionsHandler:
         constants.FEATURE_FLAGS["webauthn"] = False
         invalidate_feature_flags_cache()
 
-    def test_auth_options_404_when_disabled(self):
+    @pytest.mark.asyncio
+    async def test_auth_options_404_when_disabled(self):
         handler = prepare_handler(WebAuthnAuthOptionsHandler(self.mock_app, self.mock_request))
-        import asyncio
-
-        asyncio.get_event_loop().run_until_complete(handler.post())
+        await handler.post()
         assert handler.set_status.call_args[0][0] == 404
 
-    def test_auth_options_no_credentials(self):
+    @pytest.mark.asyncio
+    async def test_auth_options_no_credentials(self):
         constants.FEATURE_FLAGS["webauthn"] = True
         invalidate_feature_flags_cache()
         conn = _sqlite_conn()
         handler = prepare_handler(WebAuthnAuthOptionsHandler(self.mock_app, self.mock_request))
         with patch_db_conn(conn, modules=["aird.handlers.webauthn_handlers"]):
-            import asyncio
-
-            asyncio.get_event_loop().run_until_complete(handler.post())
+            await handler.post()
         assert handler.set_status.call_args[0][0] == 400
         conn.close()
 
-    def test_register_options_requires_auth(self):
+    @pytest.mark.asyncio
+    async def test_register_options_requires_auth(self):
         constants.FEATURE_FLAGS["webauthn"] = True
         invalidate_feature_flags_cache()
         conn = _sqlite_conn()
@@ -109,16 +109,15 @@ class TestWebAuthnAuthOptionsHandler:
             WebAuthnRegisterOptionsHandler(self.mock_app, self.mock_request)
         )
         with patch_db_conn(conn, modules=["aird.handlers.webauthn_handlers"]):
-            import asyncio
-            import pytest
             from tornado.web import HTTPError
 
             with pytest.raises(HTTPError) as exc:
-                asyncio.get_event_loop().run_until_complete(handler.post())
+                await handler.post()
             assert exc.value.status_code == 403
         conn.close()
 
-    def test_register_options_authenticated(self):
+    @pytest.mark.asyncio
+    async def test_register_options_authenticated(self):
         constants.FEATURE_FLAGS["webauthn"] = True
         invalidate_feature_flags_cache()
         conn = _sqlite_conn()
@@ -127,9 +126,7 @@ class TestWebAuthnAuthOptionsHandler:
         )
         authenticate(handler, role="user", username="alice")
         with patch_db_conn(conn, modules=["aird.handlers.webauthn_handlers"]):
-            import asyncio
-
-            asyncio.get_event_loop().run_until_complete(handler.post())
+            await handler.post()
         body = _response_body(handler)
         payload = json.loads(body)
         assert "challenge" in payload

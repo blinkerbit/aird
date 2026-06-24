@@ -1,6 +1,8 @@
 import tornado.web
 import tornado.escape
 import logging
+import threading
+import time
 from aird.handlers.base_handler import BaseHandler
 from datetime import datetime
 import secrets
@@ -30,11 +32,11 @@ from aird.handlers.constants import (
     LOGIN_HTML,
     DB_NOT_AVAILABLE_MSG,
 )
-import time
 from aird.db.shares import list_shares_accessible_to_user
 
 # IP -> (attempts, timestamp)
 _LOGIN_ATTEMPTS = {}
+_LOGIN_ATTEMPTS_LOCK = threading.Lock()
 
 
 def _publish_user_authenticated(handler, username: str, role: str) -> None:
@@ -52,13 +54,38 @@ def _publish_user_authenticated(handler, username: str, role: str) -> None:
 def cleanup_stale_rate_limits():
     """Remove expired entries from the rate-limit dict to prevent unbounded growth."""
     now = time.time()
-    stale = [
-        ip
-        for ip, (_, ts) in _LOGIN_ATTEMPTS.items()
-        if now - ts > constants_module.LOGIN_RATE_LIMIT_WINDOW
-    ]
-    for ip in stale:
-        _LOGIN_ATTEMPTS.pop(ip, None)
+    with _LOGIN_ATTEMPTS_LOCK:
+        stale = [
+            ip
+            for ip, (_, ts) in _LOGIN_ATTEMPTS.items()
+            if now - ts > constants_module.LOGIN_RATE_LIMIT_WINDOW
+        ]
+        for ip in stale:
+            _LOGIN_ATTEMPTS.pop(ip, None)
+
+
+def check_login_rate_limit(remote_ip):
+    now = time.time()
+    with _LOGIN_ATTEMPTS_LOCK:
+        if len(_LOGIN_ATTEMPTS) > 500:
+            stale = [
+                ip
+                for ip, (_, ts) in _LOGIN_ATTEMPTS.items()
+                if now - ts > constants_module.LOGIN_RATE_LIMIT_WINDOW
+            ]
+            for ip in stale:
+                _LOGIN_ATTEMPTS.pop(ip, None)
+        attempts, timestamp = _LOGIN_ATTEMPTS.get(remote_ip, (0, now))
+
+        if now - timestamp > constants_module.LOGIN_RATE_LIMIT_WINDOW:
+            attempts = 0
+            timestamp = now
+
+        if attempts >= constants_module.LOGIN_RATE_LIMIT_ATTEMPTS:
+            return False
+
+        _LOGIN_ATTEMPTS[remote_ip] = (attempts + 1, timestamp)
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -403,24 +430,6 @@ def _do_profile_password_update(
             "Error updating password for user %s", user.get("username")
         )
         return (None, "Error updating password. Please try again.")
-
-
-def check_login_rate_limit(remote_ip):
-    now = time.time()
-    # Purge stale entries when dict grows large to prevent unbounded memory use
-    if len(_LOGIN_ATTEMPTS) > 500:
-        cleanup_stale_rate_limits()
-    attempts, timestamp = _LOGIN_ATTEMPTS.get(remote_ip, (0, now))
-
-    if now - timestamp > constants_module.LOGIN_RATE_LIMIT_WINDOW:
-        attempts = 0
-        timestamp = now
-
-    if attempts >= constants_module.LOGIN_RATE_LIMIT_ATTEMPTS:
-        return False
-
-    _LOGIN_ATTEMPTS[remote_ip] = (attempts + 1, timestamp)
-    return True
 
 
 class LDAPLoginHandler(BaseHandler):

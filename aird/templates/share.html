@@ -228,10 +228,10 @@
             </div>
             <div style="border-top: 1px solid var(--color-base-300); margin-top: 14px; padding-top: 14px;">
               <div class="mb-4 last:mb-0 form-control">
-                <label for="expiryDate" style="display: block; margin-bottom: 6px;">Expiry Date</label>
-                <input type="datetime-local" id="expiryDate">
+                <label for="expiryDate" style="display: block; margin-bottom: 6px;">Expiry date &amp; time</label>
+                <input type="datetime-local" id="expiryDate" step="1">
                 <div class="text-xs text-base-content/60 mt-1">
-                  Leave empty for no expiration.
+                  Defaults to 30 days from now (end of day). Clear the field for no expiration. Past dates are not allowed.
                 </div>
               </div>
             </div>

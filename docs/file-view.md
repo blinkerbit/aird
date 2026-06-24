@@ -6,6 +6,8 @@
 
 **Modes:** Normal HTML view (`file.html`), `?download=1`, `?mode=raw` (media viewer & client decode), optional `open_editor`; line range via `start_line` / `end_line` with `DEFAULT_FILE_VIEW_LINE_LIMIT`.
 
+**Download:** Browser may use `AirdFileTransferHttp.downloadFile()` from browse context — small files in one `GET`, large files via parallel `Range` requests (see [transfers.md](transfers.md)). Server may apply `Content-Encoding: gzip` or `zstd` when `compression` feature is on and client sends `Accept-Encoding`.
+
 **Sockets:** `WS /features` for toggling `[data-feature]` buttons; `WS /stream/{path}` with optional `filter`, `n` for live log streaming.
 
 **ABAC:** Enforced on read/stream actions via base handler PEP (alongside features).

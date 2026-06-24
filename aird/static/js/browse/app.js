@@ -244,8 +244,12 @@
 
     function abortActiveUploads(item) {
       item.cancelled = true;
+      uploadQueue.length = 0;
       if (item.uploadSignal) {
         item.uploadSignal.aborted = true;
+        if (typeof item.uploadSignal.abort === 'function') {
+          item.uploadSignal.abort();
+        }
       }
     }
 
@@ -261,7 +265,25 @@
         return "Upload not allowed. Refresh the page and try again.";
       }
       if (lower.includes("413") || lower.includes("too large")) {
-        return "This file is too large for the server limit.";
+        if (lower.includes("chunk too large")) {
+          return raw;
+        }
+        const m = /^(\d+)\s*MB/i.exec(raw.trim());
+        if (m) {
+          return `This file exceeds the server limit (${m[1]} MB). Admin → Upload settings → raise Max file size, then refresh this page.`;
+        }
+        if (lower.includes("entity too large") || lower.includes("request entity")) {
+          return (
+            'Upload blocked by the reverse proxy (body size limit). ' +
+            'Set Admin → Single-request max to 100 MB or lower so large files use parallel HTTP chunks, ' +
+            'and raise client_max_body_size in nginx to at least your HTTP chunk size.'
+          );
+        }
+        const limitGB = (MAX_FILE_SIZE / (1024 * 1024 * 1024)).toFixed(2);
+        return `This file exceeds the server limit (${limitGB} GB). Admin → Upload settings → raise Max file size, then refresh this page.`;
+      }
+      if (raw.length > 0 && raw.length < 500) {
+        return raw;
       }
       return "Upload could not be completed. Please try again.";
     }
