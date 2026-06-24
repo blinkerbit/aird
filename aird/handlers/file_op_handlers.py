@@ -701,6 +701,30 @@ class RenameHandler(BaseHandler):
         self.redirect(FILES_URL_STRING + parent if parent else FILES_URL_STRING)
 
 
+def _resolve_copy_move_paths(handler, path: str, dest: str) -> tuple[str, str] | None:
+    """Validate copy/move path pair; write error response and return None on failure."""
+    if not path or not dest:
+        handler.set_status(400)
+        handler.write(INVALID_REQUEST_PATH_DEST)
+        return None
+    user_root = get_user_root(handler)
+    src_abs = os.path.abspath(os.path.join(user_root, path))
+    dest_abs = os.path.abspath(os.path.join(user_root, dest))
+    if not is_within_root(src_abs, user_root) or not is_within_root(dest_abs, user_root):
+        handler.set_status(403)
+        handler.write(ACCESS_DENIED_SHORT)
+        return None
+    if not os.path.exists(src_abs):
+        handler.set_status(404)
+        handler.write(SOURCE_NOT_FOUND)
+        return None
+    if os.path.exists(dest_abs):
+        handler.set_status(409)
+        handler.write(DESTINATION_EXISTS)
+        return None
+    return src_abs, dest_abs
+
+
 class CopyHandler(BaseHandler):
     @tornado.web.authenticated
     @require_action("file.write")
@@ -710,27 +734,10 @@ class CopyHandler(BaseHandler):
             return
         path = self.get_argument("path", "").strip()
         dest = self.get_argument("dest", "").strip()
-        if not path or not dest:
-            self.set_status(400)
-            self.write(INVALID_REQUEST_PATH_DEST)
+        resolved = _resolve_copy_move_paths(self, path, dest)
+        if resolved is None:
             return
-        user_root = get_user_root(self)
-        src_abs = os.path.abspath(os.path.join(user_root, path))
-        dest_abs = os.path.abspath(os.path.join(user_root, dest))
-        if not is_within_root(src_abs, user_root) or not is_within_root(
-            dest_abs, user_root
-        ):
-            self.set_status(403)
-            self.write(ACCESS_DENIED_SHORT)
-            return
-        if not os.path.exists(src_abs):
-            self.set_status(404)
-            self.write(SOURCE_NOT_FOUND)
-            return
-        if os.path.exists(dest_abs):
-            self.set_status(409)
-            self.write(DESTINATION_EXISTS)
-            return
+        src_abs, dest_abs = resolved
         try:
             if os.path.isdir(src_abs):
                 shutil.copytree(src_abs, dest_abs)
@@ -768,27 +775,10 @@ class MoveHandler(BaseHandler):
             return
         path = self.get_argument("path", "").strip()
         dest = self.get_argument("dest", "").strip()
-        if not path or not dest:
-            self.set_status(400)
-            self.write(INVALID_REQUEST_PATH_DEST)
+        resolved = _resolve_copy_move_paths(self, path, dest)
+        if resolved is None:
             return
-        user_root = get_user_root(self)
-        src_abs = os.path.abspath(os.path.join(user_root, path))
-        dest_abs = os.path.abspath(os.path.join(user_root, dest))
-        if not is_within_root(src_abs, user_root) or not is_within_root(
-            dest_abs, user_root
-        ):
-            self.set_status(403)
-            self.write(ACCESS_DENIED_SHORT)
-            return
-        if not os.path.exists(src_abs):
-            self.set_status(404)
-            self.write(SOURCE_NOT_FOUND)
-            return
-        if os.path.exists(dest_abs):
-            self.set_status(409)
-            self.write(DESTINATION_EXISTS)
-            return
+        src_abs, dest_abs = resolved
         try:
             shutil.move(src_abs, dest_abs)
         except OSError:

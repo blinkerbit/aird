@@ -73,6 +73,14 @@ def _wheel_members(wheel: Path) -> set[str]:
 @pytest.fixture(scope="module")
 def built_wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
     pytest.importorskip("build")
+    if (ROOT / "package.json").is_file():
+        subprocess.run(
+            ["npm", "run", "js:share"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
     out = tmp_path_factory.mktemp("dist")
     subprocess.run(
         [sys.executable, "-m", "build", "--wheel", "-o", str(out)],
