@@ -24,7 +24,7 @@ import threading
 import time
 from dataclasses import replace
 from datetime import datetime, time as dtime
-from typing import Any, Iterable
+from typing import Any, Iterable, cast
 
 from aird.core.events import EventBus, PolicyDecisionEvent, now_ts
 from aird.db.policies import list_policies
@@ -146,7 +146,10 @@ class PolicyService:
         if resource.path and not resource.tags:
             tags = self._tags.resolve(conn, resource.path)
             if tags:
-                return replace(request, resource=replace(resource, tags=tags))
+                return cast(
+                    AccessRequest,
+                    replace(request, resource=replace(resource, tags=tags)),
+                )
         return request
 
     def _finalise(

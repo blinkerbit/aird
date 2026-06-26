@@ -187,11 +187,23 @@ def _apply_feature_flags_from_config(config: dict) -> None:
             FEATURE_FLAGS[feature_name] = bool(feature_value)
 
 
+def _validate_config_path(config_path: str) -> str:
+    """Resolve and validate a CLI config path before reading from disk."""
+    if not isinstance(config_path, str) or not config_path.strip():
+        raise ValueError("Config path must be a non-empty string")
+    if "\0" in config_path:
+        raise ValueError("Invalid config path")
+    resolved = os.path.realpath(os.path.abspath(config_path.strip()))
+    if not os.path.isfile(resolved):
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    return resolved
+
+
 def _load_config_dict(args) -> dict:
     global CONFIG_FILE
     if not args.config:
         return {}
-    CONFIG_FILE = args.config
+    CONFIG_FILE = _validate_config_path(args.config)
     with open(CONFIG_FILE, encoding="utf-8") as f:
         return json.load(f)
 

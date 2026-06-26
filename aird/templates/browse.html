@@ -146,17 +146,14 @@
                    class="file-tag-chip" onclick="event.stopPropagation()">{{ escape(_file_tags[0]) }}</a>
                 {% if len(_file_tags) > 1 %}
                 <button type="button" class="file-tag-more file-tag-more-trigger"
-                  aria-label="Show all {{ len(_file_tags) }} tags"
-                  title="Show all tags">+{{ len(_file_tags) - 1 }}</button>
+                  title="Show all tags">+{{ len(_file_tags) - 1 }}<span class="sr-only"> more tags</span></button>
                 {% end %}
               </span>
               {% end %}
               {% if _can_tag %}
               <button type="button" class="row-tag-add-btn"
                 data-path="{{ escape(join_path(current_path, file['name'])) }}"
-                title="Add tag" aria-label="Add tag to {{ escape(file['name']) }}">
-                <span aria-hidden="true">+</span>
-              </button>
+                title="Add tag"><span aria-hidden="true">+</span><span class="sr-only"> Add tag to {{ escape(file['name']) }}</span></button>
               {% elif not _file_tags %}
               <span class="tags-cell-empty">—</span>
               {% end %}

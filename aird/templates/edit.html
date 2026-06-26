@@ -121,7 +121,7 @@
   <div class="editor-wrap" id="editorWrap">
     <div id="gutter" class="gutter"></div>
     <label class="sr-only" for="editor">File content editor</label>
-    <textarea id="editor" spellcheck="false" wrap="off" aria-label="File content editor">{{ full_file_content }}</textarea>
+    <textarea id="editor" spellcheck="false" wrap="off">{{ full_file_content }}</textarea>
   </div>
   <script nonce="{{ csp_nonce }}">
     const path = document.getElementById('path').value;

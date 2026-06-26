@@ -836,7 +836,7 @@
         const child = dir ? `${dir}/${entry.name}` : entry.name;
         if (entry.is_dir) {
           const sub = await listFn(child);
-          if (sub && sub.length) await walkDownloadTree(child, sub, listFn, seen, files);
+          if (sub?.length) await walkDownloadTree(child, sub, listFn, seen, files);
         } else if (!seen.has(child)) {
           seen.add(child);
           files.push(child);
@@ -906,7 +906,7 @@
       const blob = await res.blob();
       let name = 'aird-download.zip';
       if (paths.length === 1) {
-        const base = String(paths[0]).split('/').filter(Boolean).pop();
+        const base = String(paths[0]).split('/').filter(Boolean).findLast(() => true);
         if (base) name = base + '.zip';
       }
       const save = globalThis.AirdFileTransferHttp?.saveBlob;
@@ -1115,8 +1115,8 @@
       inputEl.value = '';
     }
 
-    function _renderTagSuggestions(inputEl, existingTagNames, pendingTags, onPick, suggestionsId) {
-      const sugId = suggestionsId || 'tagPickerSuggestions';
+    function _renderTagSuggestions(inputEl, existingTagNames, pendingTags, onPick, suggestionsId = 'tagPickerSuggestions') {
+      const sugId = suggestionsId;
       const q = inputEl.value.trim().toLowerCase();
       const matches = q
         ? existingTagNames.filter(function (n) { return n.includes(q) && !pendingTags.has(n); })
@@ -1169,7 +1169,7 @@
     }
 
     function _escapeGlobChar(ch) {
-      return ch.replaceAll(/[.+^${}()|[\]\\]/g, '\\$&');
+      return ch.replaceAll(/[.+^${}()|[\]\\]/g, String.raw`\$&`);
     }
 
     function _globPatternToRegex(pattern) {

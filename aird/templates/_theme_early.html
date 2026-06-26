@@ -14,7 +14,7 @@
     autumn: '#faf1e9'
   };
   var key = 'aird_theme';
-  var cookieRe = new RegExp(String.raw`(?:^|; )${key}=([^;]*)`);
+  var cookieRe = new RegExp('(?:^|; )' + key + '=([^;]*)');
   var m = document.cookie.match(cookieRe);
   var t = m ? decodeURIComponent(m[1]) : null;
   if (!t || !THEMES.includes(t)) {

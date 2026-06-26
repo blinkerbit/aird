@@ -168,7 +168,7 @@ class TestInitConfig:
 
                 config.init_config()
 
-                assert config.CONFIG_FILE == config_file
+                assert config.CONFIG_FILE == os.path.realpath(os.path.abspath(config_file))
                 assert config.ROOT_DIR == "/test/root"
                 assert config.PORT == 9000
                 assert config.ACCESS_TOKEN == "test_token"
