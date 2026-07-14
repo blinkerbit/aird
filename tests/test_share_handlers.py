@@ -695,8 +695,28 @@ class TestSharedFileHandler:
                 "Access denied: Invalid or expired access token"
             )
 
-
-class TestApplyMetadataUpdates:
+    @pytest.mark.asyncio
+    async def test_shared_file_rejects_path_traversal(self):
+        handler = prepare_handler(SharedFileHandler(self.mock_app, self.mock_request))
+        handler.set_status = MagicMock()
+        handler.write = MagicMock()
+        share_data = {
+            "paths": ["safe/foo.txt"],
+            "share_type": "static",
+            "secret_token": None,
+        }
+        with patch_db_conn(
+            MagicMock(), modules=["aird.handlers.share_handlers"]
+        ), patch(
+            "aird.services.share_service.get_share_by_id", return_value=share_data
+        ), patch(
+            "aird.services.share_service.is_share_expired", return_value=False
+        ), patch(
+            "aird.handlers.share_handlers.share_covers_relative_path", return_value=True
+        ):
+            await handler.get("share1", "../outside.txt")
+        handler.set_status.assert_called_with(403)
+        handler.write.assert_called_with("Access denied: Invalid path")
     def test_clearing_allowed_users_does_not_implicitly_clear_token(self):
         uf = {}
         _apply_metadata_updates(

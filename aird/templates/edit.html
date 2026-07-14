@@ -113,7 +113,10 @@
       <a href="/profile" class="user-chip" title="Profile">👤 {{ handler.get_display_username() }}</a>
       <button id="backBtn" type="button" class="edit-btn">← Back</button>
       <button id="saveBtn" type="button" class="edit-btn primary" title="Save (Ctrl/Cmd+S)">💾 Save</button>
-      <a href="/logout" class="edit-btn">↩ Logout</a>
+      <form method="post" action="/logout" style="display:inline">
+        {% raw xsrf_form_html() %}
+        <button type="submit" class="edit-btn">↩ Logout</button>
+      </form>
       <span id="status" class="status"></span>
     </div>
   </header>

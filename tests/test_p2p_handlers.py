@@ -433,56 +433,27 @@ class TestP2PSignalingHandler:
     # -------------------------------------------------------------------------
 
     def test_get_current_user_no_cookie(self):
-        """Test get_current_user with no cookie."""
+        """Test get_current_user when auth handler returns None."""
         handler = self._create_handler()
-        handler.get_secure_cookie = MagicMock(return_value=None)
-
-        result = handler.get_current_user()
-
+        with patch("aird.handlers.p2p_handlers.authenticate_handler", return_value=None):
+            result = handler.get_current_user()
         assert result is None
 
-    def test_get_current_user_json_dict_cookie(self):
-        """Test get_current_user with JSON dict cookie."""
+    def test_get_current_user_from_auth_handler(self):
+        """Test get_current_user delegates to authenticate_handler."""
         handler = self._create_handler()
         user_data = {"username": "testuser", "role": "admin"}
-        handler.get_secure_cookie = MagicMock(
-            return_value=json.dumps(user_data).encode("utf-8")
-        )
-
-        result = handler.get_current_user()
-
+        with patch(
+            "aird.handlers.p2p_handlers.authenticate_handler", return_value=user_data
+        ):
+            result = handler.get_current_user()
         assert result == user_data
 
-    def test_get_current_user_json_string_cookie(self):
-        """Test get_current_user with JSON string cookie."""
-        handler = self._create_handler()
-        handler.get_secure_cookie = MagicMock(
-            return_value=json.dumps("testuser").encode("utf-8")
-        )
-
-        result = handler.get_current_user()
-
-        assert result == {"username": "testuser", "role": "user"}
-
-    def test_get_current_user_plain_string_cookie(self):
-        """Test get_current_user with plain string cookie."""
-        handler = self._create_handler()
-        handler.get_secure_cookie = MagicMock(return_value=b"plainuser")
-
-        result = handler.get_current_user()
-
-        assert result == {"username": "plainuser", "role": "user"}
-
     def test_get_current_user_invalid_cookie(self):
-        """Test get_current_user with cookie that causes parsing error."""
+        """Test get_current_user when auth handler rejects session."""
         handler = self._create_handler()
-        # Create a mock cookie that raises exception during decode
-        mock_cookie = MagicMock()
-        mock_cookie.decode = MagicMock(side_effect=Exception("Decode error"))
-        handler.get_secure_cookie = MagicMock(return_value=mock_cookie)
-
-        result = handler.get_current_user()
-
+        with patch("aird.handlers.p2p_handlers.authenticate_handler", return_value=None):
+            result = handler.get_current_user()
         assert result is None
 
     # -------------------------------------------------------------------------
@@ -492,11 +463,11 @@ class TestP2PSignalingHandler:
     def test_open_authenticated_user(self):
         """Test WebSocket open with authenticated user."""
         handler = self._create_handler()
-        handler.get_secure_cookie = MagicMock(
-            return_value=json.dumps({"username": "testuser", "role": "user"}).encode()
-        )
-
-        handler.open()
+        with patch(
+            "aird.handlers.p2p_handlers.authenticate_handler",
+            return_value={"username": "testuser", "role": "user"},
+        ):
+            handler.open()
 
         assert handler.username == "testuser"
         assert handler.peer_id is not None
@@ -1131,22 +1102,24 @@ class TestP2PIntegration:
         sender.write_message = MagicMock()
         sender.close = MagicMock()
         sender.get_argument = MagicMock(return_value=None)
-        sender.get_secure_cookie = MagicMock(
-            return_value=json.dumps({"username": "sender", "role": "user"}).encode()
-        )
         sender.initialize()
-        sender.open()
+        with patch(
+            "aird.handlers.p2p_handlers.authenticate_handler",
+            return_value={"username": "sender", "role": "user"},
+        ):
+            sender.open()
 
         # Create receiver handler
         receiver = P2PSignalingHandler(mock_app, MagicMock())
         receiver.write_message = MagicMock()
         receiver.close = MagicMock()
         receiver.get_argument = MagicMock(return_value=None)
-        receiver.get_secure_cookie = MagicMock(
-            return_value=json.dumps({"username": "receiver", "role": "user"}).encode()
-        )
         receiver.initialize()
-        receiver.open()
+        with patch(
+            "aird.handlers.p2p_handlers.authenticate_handler",
+            return_value={"username": "receiver", "role": "user"},
+        ):
+            receiver.open()
 
         # Sender creates room
         sender.on_message(

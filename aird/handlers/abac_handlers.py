@@ -9,6 +9,7 @@ import tornado.web
 import tornado.websocket
 
 from aird.core.events import PolicyDecisionEvent
+from aird.core.security import is_valid_websocket_origin
 from aird.db.policies import (
     delete_policy,
     get_policy,
@@ -24,6 +25,7 @@ from aird.db.resource_tags import (
     list_resource_tags,
     update_resource_tag,
 )
+from aird.db.tag_colors import delete_tag_color, get_tag_colors_map, set_tag_color
 from aird.db.user_attributes import (
     delete_user_attribute,
     list_all_user_attributes,
@@ -43,6 +45,7 @@ from aird.constants.input_limits import (
     InputTooLongError,
     RESOURCE_TAG_MAX_LEN,
 )
+from aird.utils.tag_display import tag_chip_inline_style
 from aird.core.input_validation import (
     validate_abac_tag_rule,
     validate_policy_payload as check_policy_payload_sizes,
@@ -92,7 +95,14 @@ class AdminTagsHandler(BaseHandler):
     def get(self) -> None:
         db_conn = self.db_conn
         tags = list_resource_tags(db_conn) if db_conn is not None else []
-        self.render("admin_tags.html", tags=tags, error=self.get_argument("error", ""))
+        tag_colors = get_tag_colors_map(db_conn) if db_conn is not None else {}
+        self.render(
+            "admin_tags.html",
+            tags=tags,
+            tag_colors=tag_colors,
+            tag_chip_style=tag_chip_inline_style,
+            error=self.get_argument("error", ""),
+        )
 
 
 class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
@@ -111,6 +121,12 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
             logger.debug(AUDIT_LOG_FAILED_MSG, exc_info=True)
 
     def _invalidate_caches(self) -> None:
+        try:
+            from aird.db.shares import clear_tag_file_cache
+
+            clear_tag_file_cache()
+        except Exception:
+            logger.debug("clear_tag_file_cache failed", exc_info=True)
         for key in ("tag_service", "policy_service"):
             svc = self.get_service(key)
             if svc and hasattr(svc, "invalidate"):
@@ -124,7 +140,10 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
     @require_db
     def get(self) -> None:
         self.set_header("Content-Type", CONTENT_TYPE_JSON)
-        self.write({"tags": list_resource_tags(self.db_conn)})
+        self.write({
+            "tags": list_resource_tags(self.db_conn),
+            "colors": get_tag_colors_map(self.db_conn),
+        })
 
     @tornado.web.authenticated
     @require_admin(deny_status=403, deny_body="Access denied")
@@ -144,6 +163,14 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
             self.set_status(400)
             self.write({"error": "tag or glob_pattern exceeds maximum length"})
             return
+        color_raw = payload.get("color")
+        if color_raw is not None and str(color_raw).strip():
+            from aird.utils.tag_display import normalize_tag_color
+
+            if normalize_tag_color(color_raw) is None:
+                self.set_status(400)
+                self.write({"error": "Invalid tag color"})
+                return
         new_id = insert_resource_tag(
             self.db_conn,
             tag,
@@ -155,6 +182,12 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
             self.set_status(409)
             self.write({"error": "Tag rule already exists or could not be created"})
             return
+        if color_raw is not None and str(color_raw).strip():
+            if not set_tag_color(self.db_conn, tag, str(color_raw)):
+                delete_resource_tag(self.db_conn, int(new_id))
+                self.set_status(400)
+                self.write({"error": "Invalid tag color"})
+                return
         self._invalidate_caches()
         self._audit(
             "abac_tag_create",
@@ -173,6 +206,7 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
             self.write({"error": "tag exceeds maximum length"})
             return
         count = delete_resource_tag_by_name(self.db_conn, tn)
+        delete_tag_color(self.db_conn, tn)
         self._invalidate_caches()
         self._audit("abac_tag_delete_all", f"tag={tag_name} count={count}")
         self.write({"deleted": True, "tag": tag_name, "count": count})
@@ -258,6 +292,51 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
         self._invalidate_caches()
         self._audit("abac_tag_update", f"id={tag_id} tag={tag} glob={glob_pattern} priority={priority}")
         self.write({"updated": True, "id": int(tag_id)})
+
+
+class AdminTagColorAPIHandler(XSRFTokenMixin, BaseHandler):
+    """Set or clear per-tag chip colors."""
+
+    def _audit(self, action: str, details: str) -> None:
+        try:
+            self.get_service("audit_service").log(
+                self.db_conn,
+                action,
+                username=self.get_display_username(),
+                details=details,
+                ip=self.request.remote_ip,
+            )
+        except Exception:
+            logger.debug(AUDIT_LOG_FAILED_MSG, exc_info=True)
+
+    @tornado.web.authenticated
+    @require_admin(deny_status=403, deny_body="Access denied")
+    @require_db
+    def get(self) -> None:
+        self.set_header("Content-Type", CONTENT_TYPE_JSON)
+        self.write({"colors": get_tag_colors_map(self.db_conn)})
+
+    @tornado.web.authenticated
+    @require_admin(deny_status=403, deny_body="Access denied")
+    @require_db
+    def put(self) -> None:
+        payload = self.parse_json_body() or {}
+        tag = str(payload.get("tag", "")).strip()
+        if not tag or len(tag) > RESOURCE_TAG_MAX_LEN:
+            self.set_status(400)
+            self.write({"error": "tag is required"})
+            return
+        color = payload.get("color")
+        if color is not None and str(color).strip() and not set_tag_color(
+            self.db_conn, tag, str(color)
+        ):
+            self.set_status(400)
+            self.write({"error": "Invalid color"})
+            return
+        if color is not None and not str(color).strip():
+            delete_tag_color(self.db_conn, tag)
+        self._audit("abac_tag_color", f"tag={tag} color={color}")
+        self.write({"ok": True, "tag": tag, "color": get_tag_colors_map(self.db_conn).get(tag)})
 
 
 # ---------------------------------------------------------------------------
@@ -479,8 +558,8 @@ class PolicyDecisionsWebSocket(ManagedWebSocketMixin, tornado.websocket.WebSocke
             return self.app_context.get_service(name, default)
         return self.settings.get("services", {}).get(name, default)
 
-    def check_origin(self, _origin: str) -> bool:
-        return True
+    def check_origin(self, origin: str) -> bool:
+        return is_valid_websocket_origin(self, origin)
 
     def open(self) -> None:
         user = self.get_current_user()

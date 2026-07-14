@@ -356,6 +356,91 @@ class TestGetSharesForPath:
         projects = get_shares_for_path(db_conn, "/projects")
         assert len(projects) == 1 and projects[0]["id"] == "share1"
 
+    def test_get_shares_for_path_tag_share(self, db_conn, temp_dir):
+        """Tag shares resolve via tag globs, not the paths column."""
+        import os
+
+        from aird.db.resource_tags import insert_resource_tag
+        from aird.db.shares import share_covers_relative_path
+
+        db_conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS resource_tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tag TEXT NOT NULL,
+                glob_pattern TEXT NOT NULL,
+                priority INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                created_by TEXT,
+                UNIQUE(tag, glob_pattern)
+            )
+            """
+        )
+        os.makedirs(os.path.join(temp_dir, "docs"), exist_ok=True)
+        with open(os.path.join(temp_dir, "docs", "a.txt"), "w", encoding="utf-8") as fh:
+            fh.write("x")
+        insert_resource_tag(db_conn, "docs", "docs/*.txt")
+        insert_share(
+            db_conn,
+            "tag-share",
+            "2024-01-01T00:00:00",
+            [],
+            share_type="tag",
+            tag_name="docs",
+        )
+        with patch("aird.constants.ROOT_DIR", temp_dir), patch(
+            "aird.constants.MULTI_USER", False
+        ):
+            result = get_shares_for_path(db_conn, "docs/a.txt")
+        assert len(result) == 1
+        assert result[0]["id"] == "tag-share"
+        share = result[0]
+        with patch("aird.constants.ROOT_DIR", temp_dir), patch(
+            "aird.constants.MULTI_USER", False
+        ):
+            assert share_covers_relative_path(
+                db_conn, share, "docs/a.txt", temp_dir
+            )
+            assert not share_covers_relative_path(
+                db_conn, share, "docs/b.txt", temp_dir
+            )
+
+    def test_get_shares_for_path_dynamic_share(self, db_conn, temp_dir):
+        """Dynamic shares enumerate files under folder roots."""
+        import os
+
+        os.makedirs(os.path.join(temp_dir, "docs"), exist_ok=True)
+        with open(os.path.join(temp_dir, "docs", "a.txt"), "w", encoding="utf-8") as fh:
+            fh.write("x")
+        insert_share(
+            db_conn,
+            "dyn-share",
+            "2024-01-01T00:00:00",
+            ["docs"],
+            share_type="dynamic",
+        )
+        with patch("aird.constants.ROOT_DIR", temp_dir), patch(
+            "aird.constants.MULTI_USER", False
+        ):
+            result = get_shares_for_path(db_conn, "docs/a.txt")
+        assert len(result) == 1
+        assert result[0]["id"] == "dyn-share"
+
+    def test_share_covers_static_respects_avoid_list(self, db_conn, temp_dir):
+        """Direct file access must not bypass avoid_list via path-prefix matching."""
+        from aird.db.shares import share_covers_relative_path
+
+        share = {
+            "share_type": "static",
+            "paths": ["docs/allowed.txt", "docs/blocked.txt"],
+            "allow_list": [],
+            "avoid_list": ["docs/blocked.txt"],
+        }
+        assert share_covers_relative_path(db_conn, share, "docs/allowed.txt", temp_dir)
+        assert not share_covers_relative_path(
+            db_conn, share, "docs/blocked.txt", temp_dir
+        )
+
 
 class TestIsShareExpired:
     """Tests for is_share_expired function"""

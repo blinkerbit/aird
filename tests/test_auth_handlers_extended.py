@@ -384,14 +384,23 @@ class TestLogoutHandler:
         self.mock_request = MagicMock()
         self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
 
-    def test_get(self):
+    def test_post(self):
+        handler = LogoutHandler(self.mock_app, self.mock_request)
+        with patch.object(handler, "clear_cookie") as mock_clear, patch.object(
+            handler, "redirect"
+        ) as mock_redirect:
+            handler.post()
+            mock_clear.assert_any_call("user")
+            mock_clear.assert_any_call("admin")
+            mock_redirect.assert_called_with("/login")
+
+    def test_get_deprecated(self):
         handler = LogoutHandler(self.mock_app, self.mock_request)
         with patch.object(handler, "clear_cookie") as mock_clear, patch.object(
             handler, "redirect"
         ) as mock_redirect:
             handler.get()
-            mock_clear.assert_any_call("user")
-            mock_clear.assert_any_call("admin")
+            mock_clear.assert_not_called()
             mock_redirect.assert_called_with("/login")
 
 

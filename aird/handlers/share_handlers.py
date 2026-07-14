@@ -6,6 +6,7 @@ import time
 from datetime import datetime, timezone
 import os
 import logging
+import posixpath
 
 from aird.handlers.base_handler import (
     BaseHandler,
@@ -209,9 +210,18 @@ def _get_provided_token(share_id, request, get_cookie):
     return get_cookie(f"share_token_{share_id}")
 
 
+def _share_has_user_acl(share: dict) -> bool:
+    """True when share restricts access by user lists (including empty allow-list)."""
+    allowed = share.get("allowed_users")
+    if isinstance(allowed, list):
+        return True
+    modify = share.get("modify_users")
+    return bool(modify)
+
+
 def _share_access_without_secret_token(share: dict) -> tuple[bool, bool, tuple | None]:
     """When share has no secret_token: deny if user-restricted; else allow."""
-    if share.get("allowed_users") or share.get("modify_users"):
+    if _share_has_user_acl(share):
         return False, False, (403, ACCESS_TOKEN_INVALID_OR_EXPIRED)
     return True, False, None
 
@@ -1009,8 +1019,22 @@ class SharedFileHandler(BaseHandler):
             self.set_status(403)
             self.write("Access denied: This file is not part of the share")
             return
+        rel = path.replace("\\", "/").lstrip("/")
+        norm = posixpath.normpath(rel)
+        if norm.startswith("..") or os.path.isabs(norm):
+            self.set_status(403)
+            self.write("Access denied: Invalid path")
+            return
+        if norm != rel and not _is_path_in_share(share, norm, self.db_conn):
+            self.set_status(403)
+            self.write("Access denied: This file is not part of the share")
+            return
         root = _root_dir_for_share(share)
-        abspath = os.path.abspath(os.path.join(root, path))
+        abspath = os.path.abspath(os.path.join(root, norm))
+        if not is_within_root(abspath, root):
+            self.set_status(403)
+            self.write("Access denied: Path outside share root")
+            return
         if not os.path.isfile(abspath):
             self.set_status(404)
             return

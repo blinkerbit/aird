@@ -19,7 +19,7 @@
 
       <header class="flex flex-wrap items-center justify-between gap-3 pb-3 mb-4 border-b border-base-300">
         <div>
-          <h1 class="text-2xl font-bold">Tag: <a href="/tagged/{{ escape(tag_name) }}" class="file-tag-chip">{{ escape(tag_name) }}</a></h1>
+          <h1 class="text-2xl font-bold">Tag: <a href="/tagged/{{ escape(tag_name) }}" class="file-tag-chip"{% set _htc = tag_colors.get(tag_name) %}{% if _htc %} style="{{ tag_chip_style(_htc) }}"{% end %}>{{ escape(tag_name) }}</a></h1>
           <p class="text-sm text-base-content/60 mt-1">
             {% if patterns %}
               {% if file_count and folder_count %}
@@ -41,7 +41,7 @@
             <button tabindex="0" class="btn btn-ghost btn-sm">Switch tag ▾</button>
             <ul class="dropdown-content menu bg-base-100 rounded-box shadow-lg z-[100] w-48 max-w-[calc(100vw-1rem)] p-1 border border-base-300 aird-app-dropdown-panel">
               {% for t in all_tags %}
-              <li><a href="/tagged/{{ escape(t) }}" class="{% if t == tag_name %}font-bold text-primary{% end %}">{{ escape(t) }}</a></li>
+              <li><a href="/tagged/{{ escape(t) }}" class="{% if t == tag_name %}font-bold text-primary{% end %}"{% set _stc = tag_colors.get(t) %}{% if _stc %} style="{{ tag_chip_style(_stc) }};display:inline-block"{% end %}>{{ escape(t) }}</a></li>
               {% end %}
             </ul>
           </div>

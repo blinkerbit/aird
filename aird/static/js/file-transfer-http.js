@@ -30,24 +30,18 @@
     return Math.max(1, Math.min(64, Number(n) || DEFAULT_RANGE_CONCURRENCY));
   }
 
-  function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
   function createCancelScope(externalSignal) {
     const xhrs = new Set();
     const controllers = new Set();
     const abortListeners = new Set();
     let aborted = false;
+    let softAborting = false;
 
     function isAborted() {
       return aborted || !!(externalSignal && externalSignal.aborted);
     }
 
-    function abort() {
-      if (aborted) return;
-      aborted = true;
-      if (externalSignal) externalSignal.aborted = true;
+    function abortTracked() {
       xhrs.forEach((xhr) => {
         try { xhr.abort(); } catch (abortErr) {
           console.debug('xhr abort ignored', abortErr);
@@ -58,6 +52,14 @@
           console.debug('abort controller ignored', abortErr);
         }
       });
+    }
+
+    function abort() {
+      if (aborted) return;
+      aborted = true;
+      softAborting = false;
+      if (externalSignal) externalSignal.aborted = true;
+      abortTracked();
       abortListeners.forEach((fn) => {
         try { fn(); } catch (listenerErr) {
           console.debug('abort listener ignored', listenerErr);
@@ -65,10 +67,23 @@
       });
     }
 
+    /** Abort in-flight requests without cancelling the transfer (background pause). */
+    function pauseInFlight() {
+      softAborting = true;
+      try {
+        abortTracked();
+      } finally {
+        // Abort handlers run sync during abort(); clear after they settle.
+        queueMicrotask(() => { softAborting = false; });
+      }
+    }
+
     return {
       get aborted() { return isAborted(); },
       set aborted(v) { if (v) abort(); },
+      get softAborting() { return softAborting; },
       abort,
+      pauseInFlight,
       addEventListener(type, listener) {
         if (type === 'abort') abortListeners.add(listener);
       },
@@ -91,16 +106,57 @@
     };
   }
 
-  async function abortableSleep(ms, cancelScope) {
-    const end = Date.now() + ms;
-    while (Date.now() < end) {
-      cancelScope.throwIfAborted();
-      await sleep(Math.min(50, end - Date.now()));
+  function abortableSleep(ms, cancelScope) {
+    return new Promise((resolve, reject) => {
+      if (cancelScope.aborted) {
+        reject(new Error('cancelled'));
+        return;
+      }
+      const timer = setTimeout(() => {
+        cancelScope.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+      function onAbort() {
+        clearTimeout(timer);
+        cancelScope.removeEventListener('abort', onAbort);
+        reject(new Error('cancelled'));
+      }
+      cancelScope.addEventListener('abort', onAbort);
+    });
+  }
+
+  function createProgressReporter(fn, intervalMs) {
+    const interval = intervalMs || 100;
+    let last = 0;
+    let timer = null;
+    function flush() {
+      timer = null;
+      last = Date.now();
+      fn();
     }
+    return function report(force) {
+      if (force) {
+        if (timer) { clearTimeout(timer); timer = null; }
+        flush();
+        return;
+      }
+      const now = Date.now();
+      if (now - last >= interval) {
+        if (timer) { clearTimeout(timer); timer = null; }
+        flush();
+        return;
+      }
+      if (!timer) timer = setTimeout(flush, interval - (now - last));
+    };
   }
 
   function isCancelError(err) {
     return err?.message === 'cancelled' || err?.name === 'AbortError';
+  }
+
+  function isPauseError(err) {
+    return err?.message === 'paused'
+      || (global.AirdTransferBackground && global.AirdTransferBackground.isPauseError(err));
   }
 
   function cancelError() {
@@ -190,18 +246,12 @@
     const ttId = TT
       ? TT.addTransfer(filename, totalSize, 'upload', { onCancel: options.onCancel })
       : null;
-    if (TT && ttId && options.onCancel) {
-      TT.setCancelHandler(ttId, options.onCancel);
-    }
     return { TT, ttId };
   }
 
   function trackDownload(fname, options) {
     const TT = global.AirdTransferTracker;
     const ttId = TT ? TT.addTransfer(fname, 0, 'download', { onCancel: options.onCancel }) : null;
-    if (TT && ttId && options.onCancel) {
-      TT.setCancelHandler(ttId, options.onCancel);
-    }
     return { TT, ttId };
   }
 
@@ -227,6 +277,10 @@
         reject(new Error('Network error during chunk upload'));
       });
       xhr.addEventListener('abort', () => {
+        if (cancelScope && cancelScope.softAborting) {
+          reject(new Error('paused'));
+          return;
+        }
         reject(new Error('cancelled'));
       });
 
@@ -287,6 +341,23 @@
 
   function ttActivate(TT, ttId) {
     if (TT && ttId) TT.setTransferStatus(ttId, 'active');
+  }
+
+  function chunkRangeCovered(idx, chunkSz, total, ranges) {
+    const start = idx * chunkSz;
+    const end = Math.min(start + chunkSz - 1, total - 1);
+    return ranges.some((r) => r[0] <= start && r[1] >= end);
+  }
+
+  async function fetchUploadStatus(uploadId, xsrf) {
+    const res = await fetch(
+      `/api/upload/range/${encodeURIComponent(uploadId)}/status`,
+      { credentials: 'same-origin', headers: { 'X-XSRFToken': xsrf } }
+    );
+    if (!res.ok) {
+      throw new Error(await res.text() || `Status failed (${res.status})`);
+    }
+    return res.json();
   }
 
   async function createRangeUploadSession(uploadDir, filename, totalSize, xsrf, TT, ttId) {
@@ -360,64 +431,65 @@
     const cancelScope = options.signal;
     const totalSize = file.size;
     const xsrf = getXSRFToken();
-
-    const TT = global.AirdTransferTracker;
-    const ttId = TT
-      ? TT.addTransfer(filename, totalSize, 'upload', { onCancel: options.onCancel })
-      : null;
-    if (TT && ttId && options.onCancel) {
-      TT.setCancelHandler(ttId, options.onCancel);
-    }
+    const BG = global.AirdTransferBackground;
+    const { TT, ttId } = trackUpload(filename, totalSize, options);
     ttPreparing(TT, ttId);
 
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      cancelScope.trackXhr(xhr);
-      let transferActive = false;
+    return (async () => {
+      if (BG) await BG.acquireWakeLock();
+      try {
+        return await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          cancelScope.trackXhr(xhr);
+          let transferActive = false;
 
-      function fail(err, httpStatus) {
-        const error = err instanceof Error ? err : new Error(String(err));
-        error.httpStatus = httpStatus ?? 0;
-        if (TT && ttId) TT.failTransfer(ttId, error.message);
-        reject(error);
+          function fail(err, httpStatus) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            error.httpStatus = httpStatus ?? 0;
+            if (TT && ttId) TT.failTransfer(ttId, error.message);
+            reject(error);
+          }
+
+          xhr.upload.addEventListener('progress', (ev) => {
+            if (!ev.lengthComputable) return;
+            const loaded = ev.loaded;
+            if (!transferActive && loaded > 0) {
+              transferActive = true;
+              ttActivate(TT, ttId);
+            }
+            onProgress(totalSize > 0 ? (loaded / totalSize) * 100 : 0, loaded, totalSize);
+            if (TT && ttId) TT.updateProgress(ttId, loaded, totalSize);
+          });
+
+          xhr.addEventListener('load', () => {
+            if (cancelScope.aborted) {
+              fail(new Error('cancelled'), 0);
+              return;
+            }
+            if (xhr.status >= 200 && xhr.status < 300) {
+              onProgress(100, totalSize, totalSize);
+              if (TT && ttId) TT.completeTransfer(ttId);
+              resolve({ message: xhr.responseText || 'Upload successful' });
+              return;
+            }
+            fail(new Error(xhr.responseText || `HTTP ${xhr.status}`), xhr.status);
+          });
+
+          xhr.addEventListener('error', () => fail(new Error('Network error during upload'), 0));
+          xhr.addEventListener('abort', () => fail(new Error('cancelled'), 0));
+
+          xhr.open('POST', uploadUrl());
+          xhr.withCredentials = true;
+          xhr.setRequestHeader('X-Upload-Dir', uploadDir);
+          xhr.setRequestHeader('X-Upload-Filename', filename);
+          if (xsrf) xhr.setRequestHeader('X-XSRFToken', xsrf);
+          xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+          xhr.send(file);
+        });
+      } finally {
+        if (BG) BG.releaseWakeLock();
       }
-
-      xhr.upload.addEventListener('progress', (ev) => {
-        if (!ev.lengthComputable) return;
-        const loaded = ev.loaded;
-        if (!transferActive && loaded > 0) {
-          transferActive = true;
-          ttActivate(TT, ttId);
-        }
-        onProgress(totalSize > 0 ? (loaded / totalSize) * 100 : 0, loaded, totalSize);
-        if (TT && ttId) TT.updateProgress(ttId, loaded, totalSize);
-      });
-
-      xhr.addEventListener('load', () => {
-        if (cancelScope.aborted) {
-          fail(new Error('cancelled'), 0);
-          return;
-        }
-        if (xhr.status >= 200 && xhr.status < 300) {
-          onProgress(100, totalSize, totalSize);
-          if (TT && ttId) TT.completeTransfer(ttId);
-          resolve({ message: xhr.responseText || 'Upload successful' });
-          return;
-        }
-        fail(new Error(xhr.responseText || `HTTP ${xhr.status}`), xhr.status);
-      });
-
-      xhr.addEventListener('error', () => fail(new Error('Network error during upload'), 0));
-      xhr.addEventListener('abort', () => fail(new Error('cancelled'), 0));
-
-      xhr.open('POST', uploadUrl());
-      xhr.withCredentials = true;
-      xhr.setRequestHeader('X-Upload-Dir', uploadDir);
-      xhr.setRequestHeader('X-Upload-Filename', filename);
-      if (xsrf) xhr.setRequestHeader('X-XSRFToken', xsrf);
-      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-      xhr.send(file);
-    });
+    })();
   }
 
   async function rangedUpload(file, options) {
@@ -428,120 +500,292 @@
     const cancelScope = options.signal;
     const totalSize = file.size;
     const xsrf = getXSRFToken();
+    const BG = global.AirdTransferBackground;
     const { TT, ttId } = trackUpload(filename, totalSize, options);
     ttPreparing(TT, ttId);
-    const session = await createRangeUploadSession(
-      uploadDir, filename, totalSize, xsrf, TT, ttId
-    );
-    const uploadId = session.uploadId;
-    const chunkSize = session.chunkBytes;
-    const maxConcurrency = rangeUploadConcurrency();
+    if (BG) await BG.acquireWakeLock();
 
-    const totalChunks = Math.ceil(totalSize / chunkSize);
-    let nextChunkIndex = 0;
-    let bytesUploaded = 0;
-    let finished = false;
-    let failure = null;
-    let active = 0;
-    let transferActive = false;
+    let unsub = null;
+    try {
+      const session = await createRangeUploadSession(
+        uploadDir, filename, totalSize, xsrf, TT, ttId
+      );
+      const uploadId = session.uploadId;
+      const chunkSize = session.chunkBytes;
+      const maxConcurrency = rangeUploadConcurrency();
+      const totalChunks = Math.ceil(totalSize / chunkSize);
 
-    // Adaptive concurrency: start at maxConcurrency, halve on 429, recover slowly.
-    let activeConcurrency = maxConcurrency;
-    const concurrencyHints = { backoff: false };
+      const chunkDone = new Uint8Array(totalChunks);
+      const inFlight = new Map();
+      const pending = new Set();
+      for (let i = 0; i < totalChunks; i++) pending.add(i);
 
-    const chunkDone = new Array(totalChunks).fill(false);
-    const inFlight = new Map();
+      let bytesUploaded = 0;
+      let remaining = totalChunks;
+      let finished = false;
+      let failure = null;
+      let active = 0;
+      let transferActive = false;
+      let uiPaused = false;
+      let activeConcurrency = maxConcurrency;
+      let resumeSync = null;
+      const concurrencyHints = { backoff: false };
 
-    function loadedBytes() {
-      let loaded = bytesUploaded;
-      inFlight.forEach((n) => { loaded += n; });
-      return Math.min(totalSize, loaded);
-    }
+      let settleResolve = null;
+      const settled = new Promise((resolve) => { settleResolve = resolve; });
 
-    function reportProgress() {
-      const loaded = loadedBytes();
-      if (!transferActive && loaded > 0) {
-        transferActive = true;
-        ttActivate(TT, ttId);
-      }
-      const pct = totalSize > 0 ? (loaded / totalSize) * 100 : 0;
-      onProgress(Math.round(pct), loaded, totalSize);
-      ttUpdate(TT, ttId, loaded, totalSize);
-    }
-
-    function startNext() {
-      if (failure || finished || cancelScope.aborted) return;
-
-      // Adaptive: if a 429 was signalled, halve concurrency (floor 1).
-      if (concurrencyHints.backoff) {
-        concurrencyHints.backoff = false;
-        activeConcurrency = Math.max(1, Math.floor(activeConcurrency / 2));
-      } else if (active === 0 && activeConcurrency < maxConcurrency) {
-        // Gradually recover when pipeline drains.
-        activeConcurrency = Math.min(maxConcurrency, activeConcurrency + 1);
+      function markDone(idx, bytes) {
+        if (chunkDone[idx]) return;
+        chunkDone[idx] = 1;
+        remaining -= 1;
+        bytesUploaded += bytes;
       }
 
-      while (active < activeConcurrency && nextChunkIndex < totalChunks) {
-        const idx = nextChunkIndex++;
-        const start = idx * chunkSize;
-        active += 1;
-        inFlight.set(idx, 0);
-        reportProgress();
+      function maybeSettle() {
+        if (finished || failure) {
+          settleResolve();
+          return;
+        }
+        if (cancelScope.aborted) {
+          failure = failure || new Error('cancelled');
+          settleResolve();
+          return;
+        }
+        if (active === 0 && pending.size === 0 && remaining === 0) {
+          finished = true;
+          settleResolve();
+        }
+      }
 
-        sendRangeUploadChunk(
-          file, uploadId, start, chunkSize, totalSize, xsrf, cancelScope,
-          (chunkLoaded) => {
-            inFlight.set(idx, chunkLoaded);
-            reportProgress();
-          },
-          TT, ttId, concurrencyHints
-        ).then((result) => {
-          active -= 1;
-          inFlight.delete(idx);
-          if (cancelScope.aborted) {
-            failure = new Error('cancelled');
-            return;
+      cancelScope.addEventListener('abort', () => {
+        failure = failure || new Error('cancelled');
+        settleResolve();
+      });
+
+      function loadedBytes() {
+        let loaded = bytesUploaded;
+        inFlight.forEach((n) => { loaded += n; });
+        return Math.min(totalSize, loaded);
+      }
+
+      const reportProgress = createProgressReporter(() => {
+        const loaded = loadedBytes();
+        if (!transferActive && loaded > 0 && !uiPaused) {
+          transferActive = true;
+          ttActivate(TT, ttId);
+        }
+        const pct = totalSize > 0 ? (loaded / totalSize) * 100 : 0;
+        onProgress(Math.round(pct), loaded, totalSize);
+        ttUpdate(TT, ttId, loaded, totalSize);
+      });
+
+      function setPaused(paused, reason) {
+        if (uiPaused === paused) {
+          if (paused && TT && ttId && reason) {
+            TT.setTransferStatus(ttId, 'preparing', reason);
           }
-          if (result.finished) {
-            finished = true;
-            bytesUploaded = totalSize;
-            reportProgress();
-            ttComplete(TT, ttId);
-            return;
-          }
-          if (!chunkDone[idx]) {
-            chunkDone[idx] = true;
-            bytesUploaded += result.bytes || Math.min(chunkSize, totalSize - start);
-            reportProgress();
-          }
-          startNext();
-        }).catch((err) => {
-          active -= 1;
-          inFlight.delete(idx);
-          failure = err;
-        });
+          return;
+        }
+        uiPaused = paused;
+        if (!TT || !ttId) return;
+        if (paused) {
+          TT.setTransferStatus(ttId, 'preparing', reason || BG?.pauseReason() || '');
+        } else {
+          TT.setTransferStatus(ttId, 'active', '');
+          transferActive = true;
+        }
       }
-    }
 
-    startNext();
-
-    while (!finished && !failure) {
-      if (cancelScope.aborted) {
-        failure = new Error('cancelled');
-        break;
+      function requeue(idx) {
+        if (!chunkDone[idx] && !inFlight.has(idx)) pending.add(idx);
       }
-      if (active === 0 && nextChunkIndex >= totalChunks) break;
-      await sleep(20);
-    }
 
-    if (failure) {
-      if (failure.message === 'cancelled') ttFail(TT, ttId, 'Cancelled');
-      throw failure;
+      function rebuildPending() {
+        pending.clear();
+        for (let i = 0; i < totalChunks; i++) {
+          if (!chunkDone[i] && !inFlight.has(i)) pending.add(i);
+        }
+      }
+
+      async function syncFromServer() {
+        const status = await fetchUploadStatus(uploadId, xsrf);
+        if (status.complete) {
+          remaining = 0;
+          bytesUploaded = totalSize;
+          finished = true;
+          reportProgress(true);
+          ttComplete(TT, ttId);
+          settleResolve();
+          return true;
+        }
+        const ranges = status.ranges || [];
+        let confirmed = 0;
+        let left = 0;
+        for (let i = 0; i < totalChunks; i++) {
+          const covered = chunkRangeCovered(i, chunkSize, totalSize, ranges);
+          chunkDone[i] = covered ? 1 : 0;
+          if (covered) confirmed += Math.min(chunkSize, totalSize - i * chunkSize);
+          else left += 1;
+        }
+        remaining = left;
+        bytesUploaded = confirmed;
+        rebuildPending();
+        reportProgress(true);
+        return false;
+      }
+
+      function shouldRetry(err) {
+        return isPauseError(err)
+          || BG?.isRetryableError(err)
+          || BG?.isBackgroundPaused();
+      }
+
+      function startNext() {
+        if (failure || finished || cancelScope.aborted) {
+          maybeSettle();
+          return;
+        }
+        if (BG?.isBackgroundPaused()) {
+          setPaused(true, BG.pauseReason());
+          return;
+        }
+        setPaused(false);
+
+        if (concurrencyHints.backoff) {
+          concurrencyHints.backoff = false;
+          activeConcurrency = Math.max(1, Math.floor(activeConcurrency / 2));
+        } else if (active === 0 && activeConcurrency < maxConcurrency) {
+          activeConcurrency = Math.min(maxConcurrency, activeConcurrency + 1);
+        }
+
+        while (active < activeConcurrency && pending.size > 0) {
+          const idx = pending.values().next().value;
+          pending.delete(idx);
+          if (chunkDone[idx] || inFlight.has(idx)) continue;
+          const start = idx * chunkSize;
+          active += 1;
+          inFlight.set(idx, 0);
+          reportProgress();
+
+          sendRangeUploadChunk(
+            file, uploadId, start, chunkSize, totalSize, xsrf, cancelScope,
+            (chunkLoaded) => {
+              inFlight.set(idx, chunkLoaded);
+              reportProgress();
+            },
+            TT, ttId, concurrencyHints
+          ).then((result) => {
+            active -= 1;
+            inFlight.delete(idx);
+            if (cancelScope.aborted) {
+              failure = new Error('cancelled');
+              maybeSettle();
+              return;
+            }
+            if (result.finished) {
+              finished = true;
+              failure = null;
+              remaining = 0;
+              bytesUploaded = totalSize;
+              reportProgress(true);
+              ttComplete(TT, ttId);
+              cancelScope.pauseInFlight();
+              maybeSettle();
+              return;
+            }
+            markDone(idx, result.bytes || Math.min(chunkSize, totalSize - start));
+            reportProgress();
+            startNext();
+            maybeSettle();
+          }).catch((err) => {
+            active -= 1;
+            inFlight.delete(idx);
+            if (finished) {
+              maybeSettle();
+              return;
+            }
+            if (cancelScope.aborted || (isCancelError(err) && !isPauseError(err))) {
+              failure = isCancelError(err) ? err : new Error('cancelled');
+              maybeSettle();
+              return;
+            }
+            if (shouldRetry(err)) {
+              requeue(idx);
+              if (BG?.isBackgroundPaused()) {
+                setPaused(true, BG.pauseReason());
+                maybeSettle();
+                return;
+              }
+              abortableSleep(Math.min(1000 * (1 + inFlight.size), 4000), cancelScope)
+                .then(() => { if (!finished && !failure) startNext(); })
+                .catch(() => {
+                  failure = new Error('cancelled');
+                  maybeSettle();
+                });
+              return;
+            }
+            failure = err;
+            maybeSettle();
+          });
+        }
+        maybeSettle();
+      }
+
+      unsub = BG?.onChange((ev) => {
+        if (finished || failure) return;
+        if (ev.type === 'pause') {
+          setPaused(true, ev.reason || BG.pauseReason());
+          cancelScope.pauseInFlight();
+          return;
+        }
+        if (resumeSync) return;
+        resumeSync = syncFromServer()
+          .then((done) => {
+            if (done || finished || failure || cancelScope.aborted) return;
+            startNext();
+          })
+          .catch(() => {
+            if (!finished && !failure) startNext();
+          })
+          .finally(() => { resumeSync = null; });
+      });
+
+      if (BG?.isBackgroundPaused()) {
+        setPaused(true, BG.pauseReason());
+      } else {
+        startNext();
+      }
+
+      await settled;
+
+      if (finished) {
+        return { message: 'Upload successful' };
+      }
+      if (cancelScope.aborted && !failure) failure = new Error('cancelled');
+      if (failure) {
+        if (failure.message === 'cancelled') ttFail(TT, ttId, 'Cancelled');
+        else ttFail(TT, ttId, failure.message);
+        throw failure;
+      }
+      if (!finished) {
+        try {
+          await syncFromServer();
+        } catch (_) { /* fall through */ }
+      }
+      if (!finished && remaining === 0) {
+        finished = true;
+        ttComplete(TT, ttId);
+      }
+      if (!finished) {
+        const err = new Error('Upload did not complete');
+        ttFail(TT, ttId, err.message);
+        throw err;
+      }
+      return { message: 'Upload successful' };
+    } finally {
+      if (typeof unsub === 'function') unsub();
+      if (BG) BG.releaseWakeLock();
     }
-    if (!finished) {
-      ttComplete(TT, ttId);
-    }
-    return { message: 'Upload successful' };
   }
 
   async function uploadFile(file, options) {

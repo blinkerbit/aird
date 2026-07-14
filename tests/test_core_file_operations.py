@@ -239,12 +239,19 @@ class TestFileOperations:
             with pytest.raises(CloudProviderError, match="not configured"):
                 download_cloud_item("share1", {"provider": "gd", "id": "1"})
 
-    def test_download_cloud_items(self):
+    def test_download_cloud_items_success(self):
+        with patch(
+            "aird.core.file_operations.download_cloud_item",
+            side_effect=["path1", "path2"],
+        ):
+            paths = download_cloud_items("share1", [{}, {}])
+            assert paths == ["path1", "path2"]
+
+    def test_download_cloud_items_failure(self):
         with patch(
             "aird.core.file_operations.download_cloud_item",
             side_effect=["path1", CloudProviderError("fail")],
         ), patch("builtins.print") as mock_print:
-
-            paths = download_cloud_items("share1", [{}, {}])
-            assert paths == ["path1"]
+            with pytest.raises(CloudProviderError, match="fail"):
+                download_cloud_items("share1", [{}, {}])
             mock_print.assert_called()

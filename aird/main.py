@@ -61,6 +61,7 @@ from aird.handlers.abac_handlers import (
     AdminPoliciesHandler,
     AdminPolicyAPIHandler,
     AdminTagAPIHandler,
+    AdminTagColorAPIHandler,
     AdminTagsHandler,
     AdminUserAttributeAPIHandler,
     AdminUserAttributesHandler,
@@ -250,6 +251,7 @@ def make_app(
         (r"/admin/network-shares/toggle", AdminNetworkShareToggleHandler),
         (r"/admin/tags", AdminTagsHandler),
         (r"/admin/api/abac/tags", AdminTagAPIHandler),
+        (r"/admin/api/abac/tag-colors", AdminTagColorAPIHandler),
         (r"/admin/policies", AdminPoliciesHandler),
         (r"/admin/api/abac/policies", AdminPolicyAPIHandler),
         (r"/admin/api/abac/policies/([0-9]+)", AdminPolicyAPIHandler),
@@ -540,7 +542,10 @@ def _build_app_context() -> AppContext:
 
 def _build_application():
     """Create the Tornado app (call after _init_database in each process)."""
-    cookie_secret = os.environ.get("AIRD_COOKIE_SECRET") or secrets.token_urlsafe(64)
+    from aird.core.auth_secrets import resolve_cookie_secret
+
+    cookie_secret, _ = resolve_cookie_secret(constants.ROOT_DIR)
+    os.environ.setdefault("AIRD_COOKIE_SECRET", cookie_secret)
     settings = {
         "cookie_secret": cookie_secret,
         "xsrf_cookies": True,
@@ -715,10 +720,18 @@ def main():
         logger.info("Single-user mode — all users share root: %s", constants.ROOT_DIR)
 
     if not os.environ.get("AIRD_COOKIE_SECRET"):
-        os.environ["AIRD_COOKIE_SECRET"] = secrets.token_urlsafe(64)
+        from aird.core.auth_secrets import describe_ephemeral_secret, secrets_dir_for_root
+
+        secrets_dir = secrets_dir_for_root(constants.ROOT_DIR)
+        cookie_path = secrets_dir / "cookie_secret"
         logger.warning(
-            "cookie_secret is randomly generated; sessions will be invalidated on restart. "
-            "Set the AIRD_COOKIE_SECRET environment variable for persistent sessions."
+            "%s",
+            describe_ephemeral_secret(
+                "Cookie secret",
+                secrets_dir,
+                "cookie_secret",
+                created=not cookie_path.is_file(),
+            ),
         )
 
     ssl_options = None

@@ -33,7 +33,7 @@
     <section class="card bg-base-100 shadow-sm border border-base-300">
       <div class="card-body">
         <h2 class="card-title text-base">Add a tag rule</h2>
-        <form id="tag-create-form" class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end mt-2">
+        <form id="tag-create-form" class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end mt-2">
           {% raw xsrf_form_html() %}
           <label class="form-control">
             <div class="label"><span class="label-text">Tag</span></div>
@@ -49,6 +49,11 @@
             <div class="label"><span class="label-text">Priority</span></div>
             <input name="priority" type="number" value="0" min="0" max="9999"
                    class="input input-bordered input-sm" />
+          </label>
+          <label class="form-control">
+            <div class="label"><span class="label-text">Color</span></div>
+            <input name="color" type="color" value="#6366f1"
+                   class="input input-bordered input-sm h-10 p-1 w-full cursor-pointer" title="Tag chip color" />
           </label>
           <div class="md:col-span-4 flex justify-end">
             <button type="submit" class="btn btn-primary btn-sm">+ Create tag</button>
@@ -67,8 +72,15 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {% for utag in unique_tags %}
           <div class="rounded-lg border border-base-300 bg-base-200/50 p-3 flex flex-col gap-2">
-            <div class="flex items-center gap-2">
-              <a href="/tagged/{{ escape(utag) }}" class="file-tag-chip">{{ escape(utag) }}</a>
+            <div class="flex items-center gap-2 flex-wrap">
+              {% set _chip_color = tag_colors.get(utag) %}
+              <a href="/tagged/{{ escape(utag) }}" class="file-tag-chip"{% if _chip_color %} style="{{ tag_chip_style(_chip_color) }}"{% end %}>{{ escape(utag) }}</a>
+              <label class="flex items-center gap-1 text-xs text-base-content/70" title="Tag color">
+                <span class="sr-only">Color for {{ escape(utag) }}</span>
+                <input type="color" class="tag-color-input w-8 h-8 p-0 border border-base-300 rounded cursor-pointer"
+                       data-tag="{{ escape(utag) }}"
+                       value="{{ tag_colors.get(utag, '#6366f1') }}" />
+              </label>
               <span class="text-xs text-base-content/50">{{ len([t for t in tags if t['tag'] == utag]) }} pattern(s)</span>
             </div>
             <div class="flex gap-2 flex-wrap">
@@ -113,7 +125,7 @@
               <tr data-tag-id="{{ t['id'] }}">
                 <td><input type="checkbox" class="checkbox checkbox-sm row-checkbox" value="{{ t['id'] }}" aria-label="Select tag rule #{{ t['id'] }}" /></td>
                 <td class="text-xs text-base-content/50 font-mono">#{{ t['id'] }}</td>
-                <td><a href="/tagged/{{ escape(t['tag']) }}" class="file-tag-chip">{{ escape(t['tag']) }}</a></td>
+                <td><a href="/tagged/{{ escape(t['tag']) }}" class="file-tag-chip"{% set _tc = tag_colors.get(t['tag']) %}{% if _tc %} style="{{ tag_chip_style(_tc) }}"{% end %}>{{ escape(t['tag']) }}</a></td>
                 <td class="font-mono text-sm">{{ escape(t['glob_pattern']) }}</td>
                 <td class="text-sm">{{ t['priority'] }}</td>
                 <td class="text-xs text-base-content/60 font-mono">{{ escape(t['created_at'][:19] if t['created_at'] else '') }}</td>
@@ -204,6 +216,37 @@
       });
     }
 
+    function colorApi(tag, color) {
+      return fetch('/admin/api/abac/tag-colors', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-XSRFToken': xsrfToken },
+        body: JSON.stringify({ tag, color }),
+      });
+    }
+
+    document.querySelectorAll('.tag-color-input').forEach(function (input) {
+      input.addEventListener('change', async function () {
+        const tag = input.dataset.tag;
+        const color = input.value;
+        try {
+          const res = await colorApi(tag, color);
+          if (!res.ok) {
+            const b = await res.json().catch(() => ({}));
+            throw new Error(b.error || 'HTTP ' + res.status);
+          }
+          const chip = input.closest('.flex')?.querySelector('.file-tag-chip');
+          if (chip) {
+            chip.style.cssText = '';
+            chip.style.background = color;
+            chip.style.borderColor = color;
+            chip.style.color = '#111827';
+          }
+        } catch (err) {
+          globalThis.alert('Failed to save tag color: ' + (err.message || err));
+        }
+      });
+    });
+
     // ── Create ────────────────────────────────────────────────────────────────
     const createErrorEl = document.getElementById('tag-create-error');
     function showCreateError(msg) {
@@ -219,6 +262,7 @@
         tag: f.tag.value.trim(),
         glob_pattern: f.glob_pattern.value.trim(),
         priority: Number(f.priority.value || 0),
+        color: f.color.value,
       };
       try {
         const res = await api('POST', data);

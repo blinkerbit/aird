@@ -169,6 +169,7 @@
   }
 
   function _ttRowDetail(it) {
+    if (it.detail) return it.detail;
     if (it.status === 'browser') {
       return 'Downloading in your browser — safe to close this tab';
     }
@@ -404,7 +405,7 @@
     if (!it) return;
     it.loaded = it.total;
     it.status = 'done';
-    _stopAnimLoop();
+    if (!_hasActiveTransfers()) _stopAnimLoop();
     _render();
     setTimeout(function () {
       _items.delete(id);
@@ -417,7 +418,7 @@
     if (!it) return;
     it.status = 'error';
     it.errorMsg = msg || 'Failed';
-    _stopAnimLoop();
+    if (!_hasActiveTransfers()) _stopAnimLoop();
     _render();
     setTimeout(function () {
       _items.delete(id);

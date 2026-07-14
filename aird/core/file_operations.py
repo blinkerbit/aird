@@ -325,10 +325,15 @@ def download_cloud_item(share_id: str, item: dict) -> str:
 def download_cloud_items(share_id: str, items: list[dict]) -> list[str]:
     """Download multiple cloud items and return list of relative paths"""
     relative_paths = []
+    errors: list[str] = []
     for item in items:
         try:
             rel_path = download_cloud_item(share_id, item)
             relative_paths.append(rel_path)
         except CloudProviderError as e:
-            print(f"Failed to download cloud item: {e}")
+            error_message = str(e)
+            print(f"Failed to download cloud item: {error_message}")
+            errors.append(error_message)
+    if errors:
+        raise CloudProviderError("; ".join(errors))
     return relative_paths

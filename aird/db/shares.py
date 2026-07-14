@@ -3,6 +3,7 @@
 import functools
 import json
 import logging
+import posixpath
 import secrets
 import sqlite3
 from datetime import datetime, timezone
@@ -181,8 +182,7 @@ def update_share(
         with conn:
             cursor = conn.execute(query, values)
             logging.debug(f"Update executed, rows affected: {cursor.rowcount}")
-
-        return True
+            return cursor.rowcount > 0
     except Exception:
         logging.exception("Failed to update share %s", sid)
         return False
@@ -332,7 +332,13 @@ def list_shares_accessible_to_user(conn: sqlite3.Connection, username: str) -> l
 
 
 def _normalized_share_path(p: str) -> str:
-    return str(p).replace("\\", "/")
+    s = str(p).replace("\\", "/").strip().lstrip("/")
+    if not s:
+        return ""
+    norm = posixpath.normpath(s)
+    if norm in ("", ".") or norm.startswith(".."):
+        return ""
+    return norm
 
 
 @functools.lru_cache(maxsize=256)
@@ -340,6 +346,11 @@ def _cached_tag_raw_files(root_dir: str, patterns_key: str) -> tuple[str, ...]:
     """Memoize tag glob expansion per (filesystem root, sorted patterns json)."""
     patterns = json.loads(patterns_key)
     return tuple(get_files_by_tag_patterns(patterns, root_dir))
+
+
+def clear_tag_file_cache() -> None:
+    """Drop memoized tag glob expansions (call when ABAC tag rules change)."""
+    _cached_tag_raw_files.cache_clear()
 
 
 def _tag_patterns_key_from_conn(conn: sqlite3.Connection | None, tag_name: str) -> str | None:
@@ -398,6 +409,20 @@ def _share_covers_dynamic_path(share: dict, rel_path: str, root_dir: str) -> boo
     return False
 
 
+def _share_covers_static_path(share: dict, rel_path: str) -> bool:
+    """Static share: apply allow/avoid to the target path, not only listed roots."""
+    allow_list = share.get("allow_list", [])
+    avoid_list = share.get("avoid_list", [])
+    paths = share.get("paths") or []
+    if not filter_files_by_patterns([rel_path], allow_list, avoid_list):
+        return False
+    effective_paths = filter_files_by_patterns(paths, allow_list, avoid_list)
+    norm = _normalized_share_path(rel_path)
+    if norm in {_normalized_share_path(p) for p in effective_paths}:
+        return True
+    return share_paths_cover_target(effective_paths, rel_path)
+
+
 def share_covers_relative_path(
     conn: sqlite3.Connection | None,
     share: dict,
@@ -425,10 +450,7 @@ def share_covers_relative_path(
     if share_type == "dynamic":
         return _share_covers_dynamic_path(share, rel_path, root_dir)
 
-    effective_paths = filter_files_by_patterns(
-        share.get("paths") or [], allow_list, avoid_list
-    )
-    return share_paths_cover_target(effective_paths, rel_path) or rel_path in effective_paths
+    return _share_covers_static_path(share, rel_path)
 
 
 def share_paths_cover_target(paths: list, target_path: str) -> bool:

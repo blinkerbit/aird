@@ -14,14 +14,14 @@
 
   function engineConfig() {
     const c = config();
-    const concurrency = c.rangeUploadConcurrency || 12;
+    const concurrency = c.rangeUploadConcurrency || 16;
     return {
-      chunkBytes: c.rangeChunkBytes || (16 * 1024 * 1024),
+      chunkBytes: c.rangeChunkBytes || (90 * 1024 * 1024),
       concurrency,
       minConcurrency: Math.max(4, Math.floor(concurrency / 2)),
-      maxConcurrency: Math.min(16, concurrency + 4),
+      maxConcurrency: Math.min(64, concurrency + 4),
       pipelineDepth: c.rangePipelineDepth || 2,
-      largeThreshold: c.largeFileThreshold || (100 * 1024 * 1024),
+      largeThreshold: c.largeFileThreshold || (500 * 1024 * 1024),
     };
   }
 
@@ -34,6 +34,11 @@
   function getWorker() {
     if (worker) return worker;
     worker = new Worker('/static/js/transfer-engine/worker.js');
+    const BG = global.AirdTransferBackground;
+    worker.postMessage({
+      type: 'visibility',
+      visible: !(BG && BG.isBackgroundPaused()),
+    });
     worker.onmessage = (ev) => {
       const msg = ev.data || {};
       const h = handlers.get(msg.jobId);
@@ -45,7 +50,21 @@
           h.onProgress(pct, msg.loaded, msg.total);
         }
         if (h.ttId && global.AirdTransferTracker) {
-          global.AirdTransferTracker.updateProgress(h.ttId, msg.loaded, msg.total);
+          if (msg.paused) {
+            h.uiPaused = true;
+            global.AirdTransferTracker.setTransferStatus(
+              h.ttId,
+              'preparing',
+              (global.AirdTransferBackground && global.AirdTransferBackground.pauseReason())
+                || 'Paused — return to this tab to continue'
+            );
+          } else {
+            if (h.uiPaused) {
+              h.uiPaused = false;
+              global.AirdTransferTracker.setTransferStatus(h.ttId, 'active', '');
+            }
+            global.AirdTransferTracker.updateProgress(h.ttId, msg.loaded, msg.total);
+          }
         }
       }
 
@@ -112,15 +131,19 @@
         reject,
         onProgress: options.onProgress,
         ttId: options.ttId || null,
+        uiPaused: false,
       };
       handlers.set(jobId, entry);
 
-      if (options.cancelScope && typeof options.cancelScope.abort === 'function') {
-        const cancelScope = options.cancelScope;
-        const origAbort = cancelScope.abort.bind(cancelScope);
+      const cancelScope = options.cancelScope || options.signal || null;
+      if (cancelScope) {
+        const prevAbort = typeof cancelScope.abort === 'function'
+          ? cancelScope.abort.bind(cancelScope)
+          : null;
         cancelScope.abort = () => {
           w.postMessage({ type: 'cancel', jobId });
-          origAbort();
+          cancelScope.aborted = true;
+          if (prevAbort) prevAbort();
         };
       }
 
@@ -153,18 +176,24 @@
     }
 
     const resume = options.resume || null;
-    const result = await runJob('upload', {
-      file,
-      uploadDir: options.uploadDir ?? '',
-      filename,
-      resume,
-    }, {
-      onProgress: options.onProgress,
-      ttId,
-      cancelScope: options.signal,
-    });
+    const BG = global.AirdTransferBackground;
+    if (BG) await BG.acquireWakeLock();
+    try {
+      const result = await runJob('upload', {
+        file,
+        uploadDir: options.uploadDir ?? '',
+        filename,
+        resume,
+      }, {
+        onProgress: options.onProgress,
+        ttId,
+        cancelScope: options.signal,
+      });
 
-    return { message: result.message || 'Upload successful' };
+      return { message: result.message || 'Upload successful' };
+    } finally {
+      if (BG) BG.releaseWakeLock();
+    }
   }
 
   async function downloadFile(path, options) {
@@ -228,6 +257,24 @@
 
   function boot() {
     registerServiceWorker().catch(() => {});
+    const BG = global.AirdTransferBackground;
+    if (BG?.onChange) {
+      BG.onChange((ev) => {
+        if (!worker) return;
+        worker.postMessage({
+          type: 'visibility',
+          visible: !BG.isBackgroundPaused(),
+        });
+      });
+    } else {
+      document.addEventListener('visibilitychange', () => {
+        if (!worker) return;
+        worker.postMessage({
+          type: 'visibility',
+          visible: document.visibilityState === 'visible',
+        });
+      });
+    }
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.addEventListener('message', (ev) => {
         if (ev.data?.type === 'aird-transfer-retry') {

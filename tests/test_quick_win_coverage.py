@@ -537,7 +537,8 @@ class TestEventLoop:
           with patch("builtins.__import__", side_effect=ImportError("no uvloop")):
               assert install_uvloop_if_linux() is False
       el._uvloop_installed = False
-      with patch("aird.event_loop.sys.platform", "linux"), patch(
+      with patch("aird.event_loop.sys.platform", "linux"), patch.dict(
+          "sys.modules", {"uvloop": MagicMock()}), patch(
           "uvloop.EventLoopPolicy"
       ), patch("asyncio.set_event_loop_policy") as set_policy:
           assert install_uvloop_if_linux() is True

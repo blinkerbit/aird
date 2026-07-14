@@ -346,7 +346,9 @@ class TestMultiUserConfigFlag:
         """MULTI_USER is True when -mu is passed."""
         from aird import config
 
-        with patch("sys.argv", ["test", "-mu"]):
+        with patch("sys.argv", ["test", "-mu"]), patch.dict(
+            "os.environ", {"AIRD_ACCESS_TOKEN": "token"}
+        ):
             config.MULTI_USER = False
             config.init_config()
             assert config.MULTI_USER is True
@@ -356,7 +358,9 @@ class TestMultiUserConfigFlag:
         """MULTI_USER is True when --multi-user is passed."""
         from aird import config
 
-        with patch("sys.argv", ["test", "--multi-user"]):
+        with patch("sys.argv", ["test", "--multi-user"]), patch.dict(
+            "os.environ", {"AIRD_ACCESS_TOKEN": "token"}
+        ):
             config.MULTI_USER = False
             config.init_config()
             assert config.MULTI_USER is True
@@ -376,7 +380,9 @@ class TestMultiUserConfigFlag:
             config_file = f.name
 
         try:
-            with patch("sys.argv", ["test", "--config", config_file]):
+            with patch("sys.argv", ["test", "--config", config_file]), patch.dict(
+                "os.environ", {"AIRD_ACCESS_TOKEN": "token"}
+            ):
                 config.MULTI_USER = False
                 config.init_config()
                 assert config.MULTI_USER is True

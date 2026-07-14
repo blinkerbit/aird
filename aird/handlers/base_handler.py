@@ -1,5 +1,6 @@
 import base64
 import functools
+import hmac
 import ipaddress
 import json
 import logging
@@ -13,6 +14,7 @@ import tornado.web
 import tornado.websocket
 
 import aird.config as config_module
+from aird.core.auth_secrets import verify_auth_secret
 import aird.constants as constants_module
 from aird.core.security import legacy_folder_name, sanitize_username_for_folder
 from aird.db import get_user_attributes, get_user_by_username
@@ -295,22 +297,21 @@ class XSRFTokenMixin:
     """Mixin for handlers that need X-XSRFToken header support for JSON requests."""
 
     def check_xsrf_cookie(self):
-        """Override CSRF check to support X-XSRFToken header for JSON requests"""
-        # Get token from cookie (expected value)
-        cookie_token = self.get_cookie("_xsrf")
-        if not cookie_token:
-            raise tornado.web.HTTPError(403, "'_xsrf' argument missing from POST")
-
-        # Get token from header or POST data
+        """Validate XSRF token from header or form field (Tornado v2 mask-safe)."""
         provided_token = self.request.headers.get("X-XSRFToken")
         if not provided_token:
-            # Fallback to POST argument for form submissions
             provided_token = self.get_argument("_xsrf", None)
         if not provided_token:
             raise tornado.web.HTTPError(403, "'_xsrf' argument missing from POST")
 
-        # Compare tokens using constant-time comparison
-        if not secrets.compare_digest(provided_token, cookie_token):
+        _, token, _ = self._decode_xsrf_token(provided_token)
+        _, expected_token, _ = self._get_raw_xsrf_token()
+        if not token or not expected_token:
+            raise tornado.web.HTTPError(403, "'_xsrf' argument has invalid format")
+        if not hmac.compare_digest(
+            tornado.escape.utf8(token),
+            tornado.escape.utf8(expected_token),
+        ):
             raise tornado.web.HTTPError(403, "XSRF cookie does not match POST argument")
 
 
@@ -392,9 +393,7 @@ class BearerAuthStrategy:
         current_access_token = config_module.ACCESS_TOKEN
         if not isinstance(current_access_token, str) or not current_access_token:
             return None
-        normalized_token = token.strip()
-        normalized_access_token = current_access_token.strip()
-        if secrets.compare_digest(normalized_token, normalized_access_token):
+        if verify_auth_secret(token, current_access_token):
             return {"username": "token_user", "role": "user"}
         return None
 
@@ -775,6 +774,22 @@ class BaseHandler(tornado.web.RequestHandler):
             logging.exception(log_msg)
             self.set_status(500)
             self.write({"error": client_err_msg})
+
+    def clear_auth_cookies(self) -> None:
+        """Remove authentication cookies from the response."""
+        self.clear_cookie("user")
+        self.clear_cookie("user_role")
+        self.clear_cookie("admin")
+
+    def regenerate_session(self) -> None:
+        """Invalidate prior session state before establishing an authenticated session."""
+        self.clear_auth_cookies()
+        self.clear_cookie("_xsrf")
+        for attr in ("_xsrf_token", "_raw_xsrf_token"):
+            if hasattr(self, attr):
+                delattr(self, attr)
+        if self.settings.get("xsrf_cookies"):
+            _ = self.xsrf_token
 
     def session_cookie_opts(self, expires_days=1) -> dict:
         """Return common kwargs for secure session cookies (httponly, secure, samesite, expires_days)."""

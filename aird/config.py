@@ -4,13 +4,9 @@ import json
 import secrets
 import socket
 import logging
-from aird.cloud import (
-    CloudManager,
-    CloudProviderError,
-    GoogleDriveProvider,
-    OneDriveProvider,
-)
+from aird.cloud import CloudProviderError, GoogleDriveProvider, OneDriveProvider
 from aird.constants import (
+    CLOUD_MANAGER,
     MAX_FILE_SIZE as _MAX_FILE_SIZE,
     MAX_READABLE_FILE_SIZE as _MAX_READABLE_FILE_SIZE,
     ALLOWED_UPLOAD_EXTENSIONS as _ALLOWED_UPLOAD_EXTENSIONS,
@@ -37,7 +33,6 @@ SSL_CERT = None
 SSL_KEY = None
 ADMIN_USERS = []
 FEATURE_FLAGS = {}
-CLOUD_MANAGER = CloudManager()
 WEBSOCKET_CONFIG = {}
 MULTI_USER = False
 WORKERS = None
@@ -183,6 +178,8 @@ def _parse_ldap_settings(args, config: dict) -> dict:
 def _apply_feature_flags_from_config(config: dict) -> None:
     if "features" in config:
         features_config = config["features"]
+        if not isinstance(features_config, dict):
+            return
         for feature_name, feature_value in features_config.items():
             FEATURE_FLAGS[feature_name] = bool(feature_value)
 
@@ -212,23 +209,45 @@ def _apply_access_tokens(args, config: dict) -> tuple[bool, bool]:
     """Apply ACCESS_TOKEN and ADMIN_TOKEN; return (access_explicit, admin_explicit)."""
     global ACCESS_TOKEN, ADMIN_TOKEN
 
-    token_provided_explicitly = bool(
-        args.token or config.get("token") or os.environ.get("AIRD_ACCESS_TOKEN")
+    from aird.core.auth_secrets import resolve_auth_secret, secrets_dir_for_root
+
+    root_dir = args.root or config.get("root") or os.getcwd()
+    multi_user = args.multi_user or config.get("multi_user", False)
+    secrets_dir = secrets_dir_for_root(root_dir)
+
+    access_cli = args.token
+    access_env = os.environ.get("AIRD_ACCESS_TOKEN", "").strip() or None
+    access_config = config.get("token") or config.get("access_token")
+
+    admin_cli = args.admin_token
+    admin_env = os.environ.get("AIRD_ADMIN_TOKEN", "").strip() or None
+    admin_config = config.get("admin_token")
+
+    allow_auto_access = not multi_user
+    ACCESS_TOKEN, access_explicit = resolve_auth_secret(
+        cli_value=access_cli,
+        config_value=access_config,
+        env_value=access_env,
+        secrets_dir=secrets_dir,
+        secret_filename="access_token",
+        allow_auto_generate=allow_auto_access,
     )
-    admin_token_provided_explicitly = bool(
-        args.admin_token or config.get("admin_token")
+    if ACCESS_TOKEN is None:
+        raise SystemExit(
+            "Multi-user mode requires an explicit access token. "
+            "Set AIRD_ACCESS_TOKEN, --token, or token in config."
+        )
+
+    ADMIN_TOKEN, admin_explicit = resolve_auth_secret(
+        cli_value=admin_cli,
+        config_value=admin_config,
+        env_value=admin_env,
+        secrets_dir=secrets_dir,
+        secret_filename="admin_token",
+        allow_auto_generate=True,
     )
 
-    ACCESS_TOKEN = (
-        args.token
-        or config.get("token")
-        or os.environ.get("AIRD_ACCESS_TOKEN")
-        or secrets.token_urlsafe(64)
-    )
-    ADMIN_TOKEN = (
-        args.admin_token or config.get("admin_token") or secrets.token_urlsafe(64)
-    )
-    return token_provided_explicitly, admin_token_provided_explicitly
+    return access_explicit, admin_explicit
 
 
 def _apply_server_settings(args, config: dict) -> None:
@@ -261,18 +280,23 @@ def _apply_ldap_globals(ldap_settings: dict) -> None:
 def _print_generated_tokens(
     token_provided_explicitly: bool, admin_token_provided_explicitly: bool
 ) -> None:
+    from aird.core.auth_secrets import describe_ephemeral_secret, secrets_dir_for_root
+
+    secrets_dir = secrets_dir_for_root(ROOT_DIR)
     if not token_provided_explicitly:
-        print(f"\n{'='*60}")
-        print(f"Access token (generated): {ACCESS_TOKEN}")
-        print(f"{'='*60}")
-        print("Note: Copy the token above exactly as shown .")
-        print("WARNING: Store this token securely. It grants access to your files.")
-        print(f"{'='*60}\n")
+        logging.warning(
+            "%s",
+            describe_ephemeral_secret(
+                "Access token", secrets_dir, "access_token", created=True
+            ),
+        )
     if not admin_token_provided_explicitly:
-        print(f"\n{'='*60}")
-        print(f"Admin token (generated): {ADMIN_TOKEN}")
-        print("WARNING: Store this token securely. It grants admin access.")
-        print(f"{'='*60}\n")
+        logging.warning(
+            "%s",
+            describe_ephemeral_secret(
+                "Admin token", secrets_dir, "admin_token", created=True
+            ),
+        )
 
 
 def init_config():

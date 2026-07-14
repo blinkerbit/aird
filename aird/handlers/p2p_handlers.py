@@ -257,30 +257,7 @@ class P2PSignalingHandler(tornado.websocket.WebSocketHandler):
 
     def get_current_user(self):
         """Authenticate user for WebSocket connection."""
-        user = authenticate_handler(self)
-        if user:
-            return user
-        user_cookie = self.get_secure_cookie("user")
-        if not user_cookie:
-            return None
-        # Keep legacy websocket fallback: plain cookie username is treated as user.
-        try:
-            user_data = json.loads(user_cookie.decode("utf-8"))
-            if isinstance(user_data, dict):
-                return user_data
-            return {"username": str(user_data), "role": "user"}
-        except Exception:
-            try:
-                if isinstance(user_cookie, bytes):
-                    username = user_cookie.decode("utf-8")
-                elif isinstance(user_cookie, str):
-                    username = user_cookie
-                else:
-                    return None
-                return {"username": username, "role": "user"}
-            except Exception:
-                logger.exception("Error parsing user cookie")
-                return None
+        return authenticate_handler(self)
 
     def open(self):
         logger.info("P2P WebSocket connection attempt")

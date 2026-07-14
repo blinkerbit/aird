@@ -143,7 +143,7 @@
               {% set _max_show = 1 %}
               <span class="file-tag-list{% if len(_file_tags) > _max_show %} file-tag-list--overflow{% end %}">
                 <a href="/tagged/{{ escape(_file_tags[0]) }}"
-                   class="file-tag-chip" onclick="event.stopPropagation()">{{ escape(_file_tags[0]) }}</a>
+                   class="file-tag-chip" onclick="event.stopPropagation()"{% set _tc0 = tag_colors.get(_file_tags[0]) %}{% if _tc0 %} style="{{ tag_chip_style(_tc0) }}"{% end %}>{{ escape(_file_tags[0]) }}</a>
                 {% if len(_file_tags) > 1 %}
                 <button type="button" class="file-tag-more file-tag-more-trigger"
                   title="Show all tags">+{{ len(_file_tags) - 1 }}<span class="sr-only"> more tags</span></button>
@@ -363,7 +363,7 @@
   </dialog>
 
   <input type="hidden" id="currentPath" value="{{ current_path or '' }}" />
-  <script src="/static/js/aird-core.js?v={{ static_version }}"></script>
+  <script src="/static/js/transfer-background.js?v={{ static_version }}"></script>
   <script src="/static/js/transfer-engine/resume-store.js?v={{ static_version }}"></script>
   <script src="/static/js/transfer-engine/engine.js?v={{ static_version }}"></script>
   <script src="/static/js/file-transfer-ws.js?v={{ static_version }}"></script>
@@ -379,10 +379,27 @@
       rangeDownloadConcurrency: {{ range_download_concurrency }},
       rangePipelineDepth: {{ range_pipeline_depth }},
       wsChunkBytes: {{ ws_chunk_bytes }},
-      canTag: {{ 'true' if current_user and current_user.get('role') == 'admin' else 'false' }}
+      canTag: {{ 'true' if current_user and current_user.get('role') == 'admin' else 'false' }},
+      tagColors: {{ json_encode(tag_colors) }}
     };
   </script>
-  <script src="/static/js/browse/app.js?v={{ static_version }}"></script>
+  <script type="importmap" nonce="{{ csp_nonce }}">
+  {
+    "imports": {
+      "/static/js/browse/util.js": "/static/js/browse/util.js?v={{ static_version }}",
+      "/static/js/browse/selection-store.js": "/static/js/browse/selection-store.js?v={{ static_version }}",
+      "/static/js/browse/upload.js": "/static/js/browse/upload.js?v={{ static_version }}",
+      "/static/js/browse/selection-ui.js": "/static/js/browse/selection-ui.js?v={{ static_version }}",
+      "/static/js/browse/bulk-actions.js": "/static/js/browse/bulk-actions.js?v={{ static_version }}",
+      "/static/js/browse/tags.js": "/static/js/browse/tags.js?v={{ static_version }}",
+      "/static/js/browse/tag-api.js": "/static/js/browse/tag-api.js?v={{ static_version }}",
+      "/static/js/browse/shares.js": "/static/js/browse/shares.js?v={{ static_version }}",
+      "/static/js/browse/table-ui.js": "/static/js/browse/table-ui.js?v={{ static_version }}",
+      "/static/js/browse/app.js": "/static/js/browse/app.js?v={{ static_version }}"
+    }
+  }
+  </script>
+  <script type="module" src="/static/js/browse/app.js?v={{ static_version }}"></script>
   <script src="/static/js/folder-size-scan.js?v={{ static_version }}"></script>
 
   <!-- Hover popup: all tags for a row (overflow) -->

@@ -13,6 +13,7 @@ from aird.handlers.base_handler import (
     get_user_root,
     require_action,
 )
+from aird.utils.tag_display import tag_chip_inline_style
 from aird.utils.util import (
     get_files_in_directory,
     get_file_icon,
@@ -46,6 +47,7 @@ from aird.core.compression import negotiate_encoding, should_compress, compress_
 from aird.core.file_send import sendfile_available, sendfile_to_socket
 from aird.core.rate_limit import TransferRateLimiter
 from aird.db.resource_tags import list_resource_tags
+from aird.db.tag_colors import get_tag_colors_map
 
 # ---------------------------------------------------------------------------
 # Helpers for MainHandler.serve_file (reduce cognitive complexity)
@@ -315,6 +317,7 @@ class MainHandler(BaseHandler):
                     )
                 )
         tag_rules = list_resource_tags(db_conn) if db_conn else []
+        tag_colors = get_tag_colors_map(db_conn) if db_conn else {}
         file_tags_map: dict[str, list[str]] = {}
         for f in files:
             rel = join_path(path, f["name"]) if path else f["name"]
@@ -339,6 +342,8 @@ class MainHandler(BaseHandler):
             ws_chunk_bytes=constants_module.WS_CHUNK_BYTES,
             user_favorites=user_favorites,
             file_tags_map=file_tags_map,
+            tag_colors=tag_colors,
+            tag_chip_style=tag_chip_inline_style,
         )
 
     async def _handle_file_path(self, path: str) -> None:
@@ -637,6 +642,7 @@ class TaggedFilesHandler(BaseHandler):
                     name = path
                 entries.append({"path": path, "name": name, "is_dir": is_dir})
 
+        tag_colors = get_tag_colors_map(db_conn) if db_conn else {}
         self.render(
             "tagged_files.html",
             tag_name=tag_name,
@@ -645,6 +651,8 @@ class TaggedFilesHandler(BaseHandler):
             file_count=file_count,
             folder_count=folder_count,
             all_tags=all_tags,
+            tag_colors=tag_colors,
+            tag_chip_style=tag_chip_inline_style,
             user=self.current_user,
             get_file_icon=get_file_icon,
         )

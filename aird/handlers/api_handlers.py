@@ -874,7 +874,7 @@ class UserSearchAPIHandler(BaseHandler):
         """Search users by username (for share access control)"""
 
         query = self.get_argument("q", "").strip()
-        if len(query) < 1:
+        if len(query) < 2:
             self.write({"users": []})
             return
         if len(query) > USER_SEARCH_QUERY_MAX_LEN:
@@ -883,7 +883,7 @@ class UserSearchAPIHandler(BaseHandler):
 
         def action():
             users = self.get_service("user_service").search_users(self.db_conn, query)
-            return {"users": users}
+            return {"users": [{"username": u["username"]} for u in users]}
 
         self.run_json_action(action, on_error_message="Search failed")
 
@@ -891,6 +891,7 @@ class UserSearchAPIHandler(BaseHandler):
 def _redact_share_secret_token(share: dict) -> dict:
     """Copy share dict suitable for non-owner API consumers (no raw token)."""
     out = dict(share)
+    out["has_token"] = share.get("secret_token") is not None
     out["secret_token"] = None
     return out
 
@@ -1063,11 +1064,6 @@ def _classify_share_for_user(
     if not creator and is_admin:
         return True, False
     if current_user and current_user in mod_list:
-        return False, True
-    if not creator and current_user and (
-        allowed_raw is None
-        or (isinstance(allowed_raw, list) and current_user in allowed_list)
-    ):
         return False, True
     if current_user and isinstance(allowed_raw, list) and current_user in allowed_list:
         return False, True

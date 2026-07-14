@@ -440,9 +440,22 @@ class TestAuthentication:
 class TestXSRFProtection:
     """Test XSRF token validation."""
 
-    def _make_mixin(self, cookie_token, header_token=None, post_token=None):
+    def _make_mixin(self, raw_token, header_token=None, post_token=None, *, decode_as=None):
         mixin = XSRFTokenMixin()
-        mixin.get_cookie = MagicMock(return_value=cookie_token)
+        if raw_token is None:
+            raw = None
+        else:
+            raw = raw_token if isinstance(raw_token, bytes) else raw_token.encode()
+        provided = header_token if header_token is not None else post_token
+        decoded = decode_as
+        if decoded is None and provided is not None and raw is not None:
+            decoded = raw
+        mixin._decode_xsrf_token = MagicMock(
+            return_value=(2, decoded, 0.0) if decoded else (None, None, None)
+        )
+        mixin._get_raw_xsrf_token = MagicMock(
+            return_value=(2, raw, 0.0) if raw is not None else (None, None, 0.0)
+        )
         headers = {}
         if header_token is not None:
             headers["X-XSRFToken"] = header_token
@@ -455,16 +468,16 @@ class TestXSRFProtection:
         return mixin
 
     def test_valid_header_token(self):
-        mixin = self._make_mixin("token123", header_token="token123")
+        mixin = self._make_mixin("token123", header_token="masked_header")
         # Should not raise
         mixin.check_xsrf_cookie()
 
     def test_valid_post_token(self):
-        mixin = self._make_mixin("token123", post_token="token123")
+        mixin = self._make_mixin("token123", post_token="masked_post")
         mixin.check_xsrf_cookie()
 
     def test_missing_cookie_raises(self):
-        mixin = self._make_mixin(None, header_token="token123")
+        mixin = self._make_mixin(None, header_token="token123", decode_as=b"token123")
         with pytest.raises(tornado.web.HTTPError) as exc_info:
             mixin.check_xsrf_cookie()
         assert exc_info.value.status_code == 403
@@ -475,7 +488,11 @@ class TestXSRFProtection:
             mixin.check_xsrf_cookie()
 
     def test_mismatched_token_raises(self):
-        mixin = self._make_mixin("correct_token", header_token="wrong_token")
+        mixin = self._make_mixin(
+            b"correct_token",
+            header_token="wrong_masked",
+            decode_as=b"wrong_token",
+        )
         with pytest.raises(tornado.web.HTTPError) as exc_info:
             mixin.check_xsrf_cookie()
         assert exc_info.value.status_code == 403
@@ -853,7 +870,7 @@ class TestShareAccessControl:
     def test_empty_allowed_users(self):
         share = {"allowed_users": []}
         allowed, _, _ = _check_share_access(share, "s", MagicMock(), MagicMock(), MagicMock(return_value=None))
-        assert allowed is True
+        assert allowed is False
 
     def test_allowed_user_passes(self):
         share = {"secret_token": "abc", "allowed_users": ["alice", "bob"]}

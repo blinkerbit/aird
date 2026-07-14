@@ -3,12 +3,13 @@ import tornado.escape
 import logging
 import threading
 import time
-from aird.handlers.base_handler import BaseHandler
+from aird.handlers.base_handler import BaseHandler, XSRFTokenMixin
 from datetime import datetime
 import secrets
 from ldap3 import Server, Connection
 from ldap3.utils.dn import escape_rdn
 from ldap3.utils.conv import escape_filter_chars
+from aird.core.auth_secrets import verify_auth_secret
 from aird.core.security import validate_password
 from aird.core.events import UserAuthenticatedEvent, now_ts
 from aird.domain.contracts import AuthRequest
@@ -97,12 +98,14 @@ def _ldap_authorized(conn, ldap_attribute_map):
     """Check LDAP attribute maps for authorization. Return True if authorized."""
     if not ldap_attribute_map:
         return True
+    if not getattr(conn, "entries", None):
+        return False
     for attribute_element in ldap_attribute_map:
         for key, value in attribute_element.items():
             try:
                 if value in conn.entries[0][key]:
                     return True
-            except KeyError:
+            except (KeyError, IndexError, TypeError):
                 continue
     return False
 
@@ -154,6 +157,7 @@ def _ldap_sync_user(db_conn, username, admin_users, user_service):
 
 def _apply_session_cookies(handler, username: str, user_role: str) -> None:
     """Set auth cookies, publish event, audit login (without redirect)."""
+    handler.regenerate_session()
     opts = handler.session_cookie_opts()
     handler.set_secure_cookie("user", username, **opts)
     handler.set_secure_cookie("user_role", user_role, **opts)
@@ -234,9 +238,8 @@ def _try_token_login(handler, token, next_url):
             next_url=next_url,
         )
         return True
-    norm_token = token.strip()
-    norm_access = current.strip()
-    if secrets.compare_digest(norm_token, norm_access):
+    if verify_auth_secret(token, current):
+        handler.regenerate_session()
         handler.get_service("audit_service").log(
             handler.db_conn,
             "login",
@@ -276,6 +279,7 @@ def _try_admin_username_password_login(handler, username, password):
             db_conn, username, password
         )
         if user and user["role"] == "admin":
+            handler.regenerate_session()
             handler.get_service("audit_service").log(
                 db_conn,
                 "admin_login",
@@ -323,9 +327,8 @@ def _try_admin_token_login(handler, token):
             error="Admin token authentication is not configured.",
         )
         return True
-    norm_token = token.strip()
-    norm_admin = current.strip()
-    if secrets.compare_digest(norm_token, norm_admin):
+    if verify_auth_secret(token, current):
+        handler.regenerate_session()
         handler.get_service("audit_service").log(
             handler.db_conn,
             "admin_login",
@@ -672,24 +675,23 @@ class AdminLoginHandler(BaseHandler):
         password = auth_req.password
         token = auth_req.token
 
+        # Token takes priority: if a token is submitted, never fall through to
+        # username/password (prevents autofill from shadowing an explicit token).
+        if token and _try_admin_token_login(self, token):
+            return
         if (
             username
             and password
             and _try_admin_username_password_login(self, username, password)
         ):
             return
-        if token and _try_admin_token_login(self, token):
-            return
-        if not token:
-            if username or password:
-                self.render(
-                    ADMIN_LOGIN_TEMPLATE, error=INVALID_CREDENTIALS_MSG
-                )
-            else:
-                self.render(
-                    ADMIN_LOGIN_TEMPLATE,
-                    error="Username/password or token is required.",
-                )
+        if username or password or token:
+            self.render(ADMIN_LOGIN_TEMPLATE, error=INVALID_CREDENTIALS_MSG)
+        else:
+            self.render(
+                ADMIN_LOGIN_TEMPLATE,
+                error="Username/password or token is required.",
+            )
 
 
 def _mandatory_password_safe_next(next_arg: str) -> str:
@@ -800,13 +802,16 @@ class MandatoryPasswordHandler(BaseHandler):
         self.redirect(next_url)
 
 
-class LogoutHandler(BaseHandler):
+class LogoutHandler(XSRFTokenMixin, BaseHandler):
+    def post(self):
+        self.clear_auth_cookies()
+        self.redirect("/login")
+
     def get(self):
-        # Clear all auth cookies
-        self.clear_cookie("user")
-        self.clear_cookie("user_role")
-        self.clear_cookie("admin")
-        # Redirect to login page
+        logging.warning(
+            "Deprecated GET /logout from %s; use POST with XSRF",
+            getattr(self.request, "remote_ip", ""),
+        )
         self.redirect("/login")
 
 

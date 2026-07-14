@@ -2064,6 +2064,52 @@ class TestBulkHandler:
             result = mock_write.call_args[0][0]
             assert result["results"][0]["ok"] is True
 
+    def test_bulk_add_to_share_rejects_tag_share(self):
+        handler = prepare_handler(BulkHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role="user")
+        handler.request.body = json.dumps(
+            {"action": "add_to_share", "paths": ["file.txt"], "share_id": "tag-share"}
+        ).encode()
+
+        mock_share = {"share_type": "tag", "tag_name": "docs", "paths": []}
+        self.mock_app.settings["db_conn"] = MagicMock()
+        with patch(
+            "aird.handlers.file_op_handlers.is_within_root", return_value=True
+        ), patch("os.path.abspath", side_effect=lambda p: p), patch(
+            "os.path.exists", return_value=True
+        ), patch(
+            "aird.services.share_service.get_share_by_id", return_value=mock_share
+        ), patch.object(
+            handler, "write"
+        ) as mock_write:
+            handler.post()
+            result = mock_write.call_args[0][0]
+            assert "tag-based share" in result["results"][0]["error"]
+
+    def test_bulk_add_to_share_rejects_dynamic_file(self):
+        handler = prepare_handler(BulkHandler(self.mock_app, self.mock_request))
+        authenticate(handler, role="user")
+        handler.request.body = json.dumps(
+            {"action": "add_to_share", "paths": ["file.txt"], "share_id": "dyn-share"}
+        ).encode()
+
+        mock_share = {"share_type": "dynamic", "paths": ["docs"]}
+        self.mock_app.settings["db_conn"] = MagicMock()
+        with patch(
+            "aird.handlers.file_op_handlers.is_within_root", return_value=True
+        ), patch("os.path.abspath", side_effect=lambda p: p), patch(
+            "os.path.isfile", return_value=True
+        ), patch(
+            "os.path.exists", return_value=True
+        ), patch(
+            "aird.services.share_service.get_share_by_id", return_value=mock_share
+        ), patch.object(
+            handler, "write"
+        ) as mock_write:
+            handler.post()
+            result = mock_write.call_args[0][0]
+            assert "dynamic share" in result["results"][0]["error"]
+
     def test_bulk_add_to_share_missing_id(self):
         handler = prepare_handler(BulkHandler(self.mock_app, self.mock_request))
         authenticate(handler, role="user")

@@ -81,13 +81,22 @@ class TestLogoutHandler:
         self.mock_request = MagicMock()
         self.mock_app.settings = {"cookie_secret": "test_secret", "services": _default_services()}
 
-    def test_logout(self):
+    def test_logout_post(self):
+        handler = prepare_handler(LogoutHandler(self.mock_app, self.mock_request))
+        with patch.object(handler, "clear_cookie") as mock_clear, patch.object(
+            handler, "redirect"
+        ) as mock_redirect:
+            handler.post()
+            assert mock_clear.call_count == 3  # user, user_role, and admin
+            mock_redirect.assert_called_with("/login")
+
+    def test_logout_get_deprecated(self):
         handler = prepare_handler(LogoutHandler(self.mock_app, self.mock_request))
         with patch.object(handler, "clear_cookie") as mock_clear, patch.object(
             handler, "redirect"
         ) as mock_redirect:
             handler.get()
-            assert mock_clear.call_count == 3  # user, user_role, and admin
+            mock_clear.assert_not_called()
             mock_redirect.assert_called_with("/login")
 
 
@@ -214,6 +223,20 @@ class TestLDAPLoginHandler:
             "services": _default_services(),
         }
         self.mock_request.protocol = "http"
+
+    def test_ldap_authorization_fails_with_empty_entries(self):
+        from aird.handlers.auth_handlers import _ldap_authorized
+
+        mock_conn = MagicMock(entries=[])
+        assert _ldap_authorized(mock_conn, [{"memberOf": "admins"}]) is False
+
+    def test_ldap_authorization_handles_invalid_attribute_values(self):
+        from aird.handlers.auth_handlers import _ldap_authorized
+
+        mock_entry = MagicMock()
+        mock_entry.__getitem__.side_effect = KeyError
+        mock_conn = MagicMock(entries=[mock_entry])
+        assert _ldap_authorized(mock_conn, [{"memberOf": "admins"}]) is False
 
     def test_get_ldap_login(self):
         handler = prepare_handler(LDAPLoginHandler(self.mock_app, self.mock_request))

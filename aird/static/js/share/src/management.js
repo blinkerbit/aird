@@ -163,6 +163,7 @@ async function updateShare() {
         expiry_date: expiryDate,
         allowed_users: shareVars.currentShareData.allowed_users || [],
         modify_users: shareVars.currentShareData.modify_users || [],
+        paths: shareVars.currentShareData.paths || [],
         rotate_token: Boolean(document.getElementById('rotateTokenEdit')?.checked)
       })
     });

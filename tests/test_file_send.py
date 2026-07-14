@@ -40,7 +40,7 @@ async def test_sendfile_success(tmp_path):
 
 def test_sendfile_sync_partial():
     out_fd, in_fd = 1, 2
-    with patch("os.sendfile", side_effect=[3, 0]) as sf:
+    with patch("os.sendfile", side_effect=[3, 0], create=True) as sf:
         sent = _sendfile_sync(out_fd, in_fd, 0, 10)
     assert sent == 3
     assert sf.call_count == 2
