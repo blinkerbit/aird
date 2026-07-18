@@ -18,7 +18,7 @@ extras_require = {
 
 setup(
     name="aird",
-    version="0.4.25.dev4",
+    version="0.4.25.dev6",
     packages=find_packages(),
     include_package_data=True,
     package_data={"aird": [

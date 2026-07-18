@@ -33,11 +33,10 @@
 
   function getWorker() {
     if (worker) return worker;
-    worker = new Worker('/static/js/transfer-engine/worker.js');
-    const BG = global.AirdTransferBackground;
+    worker = new Worker('/static/js/transfer-engine/worker.js?v=20260718b');
     worker.postMessage({
       type: 'visibility',
-      visible: !(BG && BG.isBackgroundPaused()),
+      visible: document.visibilityState === 'visible',
     });
     worker.onmessage = (ev) => {
       const msg = ev.data || {};
@@ -105,6 +104,30 @@
         handlers.delete(msg.jobId);
         h.reject(new Error(msg.message || 'Transfer failed'));
       }
+    };
+    worker.onerror = (event) => {
+      const message = event?.message || 'Transfer worker failed to start';
+      handlers.forEach((h) => {
+        if (h.ttId && global.AirdTransferTracker) {
+          global.AirdTransferTracker.failTransfer(h.ttId, message);
+        }
+        h.reject(new Error(message));
+      });
+      handlers.clear();
+      worker?.terminate();
+      worker = null;
+    };
+    worker.onmessageerror = () => {
+      const message = 'Transfer worker could not read the upload';
+      handlers.forEach((h) => {
+        if (h.ttId && global.AirdTransferTracker) {
+          global.AirdTransferTracker.failTransfer(h.ttId, message);
+        }
+        h.reject(new Error(message));
+      });
+      handlers.clear();
+      worker?.terminate();
+      worker = null;
     };
     return worker;
   }
@@ -177,8 +200,15 @@
 
     const resume = options.resume || null;
     const BG = global.AirdTransferBackground;
+    if (BG?.syncFromDocument) BG.syncFromDocument();
     if (BG) await BG.acquireWakeLock();
     try {
+      const w = getWorker();
+      // Use live document visibility — ignore sticky BG.hidden from pagehide/file-picker.
+      w.postMessage({
+        type: 'visibility',
+        visible: document.visibilityState === 'visible',
+      });
       const result = await runJob('upload', {
         file,
         uploadDir: options.uploadDir ?? '',
@@ -258,22 +288,18 @@
   function boot() {
     registerServiceWorker().catch(() => {});
     const BG = global.AirdTransferBackground;
+    function postVisibility() {
+      if (!worker) return;
+      const visible = document.visibilityState === 'visible'
+        && !(typeof navigator.onLine === 'boolean' && !navigator.onLine);
+      worker.postMessage({ type: 'visibility', visible });
+    }
     if (BG?.onChange) {
-      BG.onChange((ev) => {
-        if (!worker) return;
-        worker.postMessage({
-          type: 'visibility',
-          visible: !BG.isBackgroundPaused(),
-        });
-      });
+      BG.onChange(() => { postVisibility(); });
     } else {
-      document.addEventListener('visibilitychange', () => {
-        if (!worker) return;
-        worker.postMessage({
-          type: 'visibility',
-          visible: document.visibilityState === 'visible',
-        });
-      });
+      document.addEventListener('visibilitychange', postVisibility);
+      window.addEventListener('online', postVisibility);
+      window.addEventListener('offline', postVisibility);
     }
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.addEventListener('message', (ev) => {

@@ -112,17 +112,41 @@
     });
   }
 
+  /** Re-read visibility/online — clears stale pause after file picker / bfcache. */
+  function syncFromDocument() {
+    const nextHidden = document.visibilityState === 'hidden';
+    const nextOffline = typeof navigator.onLine === 'boolean' ? !navigator.onLine : false;
+    const wasPaused = isBackgroundPaused();
+    hidden = nextHidden;
+    offline = nextOffline;
+    const nowPaused = isBackgroundPaused();
+    if (wasPaused === nowPaused) {
+      if (!hidden && wakeHolders > 0) requestWakeLock();
+      return isBackgroundPaused();
+    }
+    emit({
+      type: nowPaused ? 'pause' : 'resume',
+      reason: pauseReason(),
+      hidden,
+      offline,
+    });
+    if (!nowPaused && wakeHolders > 0) requestWakeLock();
+    return isBackgroundPaused();
+  }
+
   document.addEventListener('visibilitychange', () => {
     setHidden(document.visibilityState === 'hidden');
   });
 
-  // iOS Safari / bfcache
+  // bfcache / mobile file-picker: always re-sync from real visibility (do not
+  // leave pagehide's hidden=true stuck if the tab is actually visible again).
   window.addEventListener('pagehide', () => setHidden(true));
-  window.addEventListener('pageshow', () => setHidden(document.visibilityState === 'hidden'));
+  window.addEventListener('pageshow', () => { syncFromDocument(); });
+  window.addEventListener('focus', () => { syncFromDocument(); });
 
   if (typeof document.onfreeze !== 'undefined' || 'onfreeze' in document) {
     document.addEventListener('freeze', () => setHidden(true));
-    document.addEventListener('resume', () => setHidden(document.visibilityState === 'hidden'));
+    document.addEventListener('resume', () => { syncFromDocument(); });
   }
 
   window.addEventListener('offline', () => setOffline(true));
@@ -137,5 +161,6 @@
     onResume,
     isRetryableError,
     isPauseError,
+    syncFromDocument,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

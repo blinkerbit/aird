@@ -179,6 +179,10 @@ def make_app(
     settings["template_path"] = os.path.join(os.path.dirname(__file__), "templates")
     settings["static_path"] = os.path.join(os.path.dirname(__file__), "static")
     settings.setdefault("static_url_prefix", "/static/")
+    # Tornado prepends its automatic static route when static_path is set.
+    # Configure that route directly; the explicit /static route below is not
+    # necessarily the first match.
+    settings["static_handler_class"] = NoCacheStaticFileHandler
     # Limit request size to avoid Tornado rejecting large uploads with
     # "Content-Length too long" before our handler can respond.
     settings.setdefault("max_body_size", constants.UPLOAD_REQUEST_MAX_BODY_SIZE)

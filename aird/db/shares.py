@@ -46,28 +46,24 @@ _SHARE_OPTIONAL_COLS = [
 ]
 _SHARE_SELECT_COLS_ALLOWED = frozenset(_SHARE_BASE_COLS + _SHARE_OPTIONAL_COLS)
 
-# Cached after first PRAGMA table_info(shares); schema only changes via init_db migrations.
-_share_col_names_cache: list | None = None
-
 # tag_name -> JSON key of sorted glob patterns (cleared with clear_tag_file_cache).
 _tag_patterns_key_cache: dict[str, str | None] = {}
 
 
 def _cached_share_col_names(conn: sqlite3.Connection) -> list:
-    """Return share SELECT columns, caching PRAGMA table_info after first use."""
-    global _share_col_names_cache
-    if _share_col_names_cache is not None:
-        return _share_col_names_cache
+    """Return columns supported by this connection's shares schema.
+
+    Connections can point at databases on different migration levels (and tests
+    deliberately do so), therefore a process-global column cache is unsafe.
+    PRAGMA table_info is local and inexpensive compared with the share query.
+    """
     cursor = conn.execute(PRAGMA_TABLE_INFO)
     available = [row[1] for row in cursor.fetchall()]
-    _share_col_names_cache = _get_share_col_names(available)
-    return _share_col_names_cache
+    return _get_share_col_names(available)
 
 
 def clear_share_schema_cache() -> None:
-    """Drop cached share column names (for tests / after migrations)."""
-    global _share_col_names_cache
-    _share_col_names_cache = None
+    """Backward-compatible no-op; column discovery is now connection-local."""
 
 
 def insert_share(

@@ -2,8 +2,8 @@
  * Web Worker entry for Aird transfer engine.
  */
 importScripts(
-  '/static/js/transfer-engine/hasher.js',
-  '/static/js/transfer-engine/worker-lib.js'
+  '/static/js/transfer-engine/hasher.js?v=20260718b',
+  '/static/js/transfer-engine/worker-lib.js?v=20260718b'
 );
 
 globalThis.onmessage = (ev) => {

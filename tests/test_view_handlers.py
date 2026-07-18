@@ -971,3 +971,10 @@ class TestNoCacheStaticFileHandler:
             )
             handler.set_header.assert_any_call("Pragma", "no-cache")
             handler.set_header.assert_any_call("Expires", "0")
+            handler.set_header.assert_any_call(
+                "Cross-Origin-Embedder-Policy", "credentialless"
+            )
+            handler.set_header.assert_any_call(
+                "Cross-Origin-Resource-Policy", "same-origin"
+            )
+            handler.set_header.assert_any_call("X-Content-Type-Options", "nosniff")

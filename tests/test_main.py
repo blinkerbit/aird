@@ -48,6 +48,7 @@ from aird.handlers.api_handlers import (
     FavoriteToggleAPIHandler,
     FavoritesListAPIHandler,
 )
+from aird.handlers.view_handlers import NoCacheStaticFileHandler
 from aird.main import (
     _auto_start_network_shares,
     _create_emergency_db_connection,
@@ -932,6 +933,7 @@ class TestMakeApp:
     def test_sets_max_body_and_buffer_limits(self):
         settings = {"cookie_secret": "test"}
         make_app(settings)
+        assert settings["static_handler_class"] is NoCacheStaticFileHandler
         assert (
             settings["max_body_size"]
             == constants_module.UPLOAD_REQUEST_MAX_BODY_SIZE

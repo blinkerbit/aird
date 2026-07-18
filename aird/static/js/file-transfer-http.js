@@ -436,6 +436,7 @@
     ttPreparing(TT, ttId);
 
     return (async () => {
+      if (BG?.syncFromDocument) BG.syncFromDocument();
       if (BG) await BG.acquireWakeLock();
       try {
         return await new Promise((resolve, reject) => {
@@ -503,6 +504,7 @@
     const BG = global.AirdTransferBackground;
     const { TT, ttId } = trackUpload(filename, totalSize, options);
     ttPreparing(TT, ttId);
+    if (BG?.syncFromDocument) BG.syncFromDocument();
     if (BG) await BG.acquireWakeLock();
 
     let unsub = null;
@@ -739,6 +741,7 @@
           return;
         }
         if (resumeSync) return;
+        setPaused(false);
         resumeSync = syncFromServer()
           .then((done) => {
             if (done || finished || failure || cancelScope.aborted) return;
@@ -750,11 +753,9 @@
           .finally(() => { resumeSync = null; });
       });
 
-      if (BG?.isBackgroundPaused()) {
-        setPaused(true, BG.pauseReason());
-      } else {
-        startNext();
-      }
+      // Always start chunks. Stale background-pause must not block the first byte.
+      if (BG?.syncFromDocument) BG.syncFromDocument();
+      startNext();
 
       await settled;
 

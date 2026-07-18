@@ -663,3 +663,9 @@ class NoCacheStaticFileHandler(tornado.web.StaticFileHandler):
         self.set_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.set_header("Pragma", "no-cache")
         self.set_header("Expires", "0")
+        # The document is cross-origin isolated. Dedicated workers must return
+        # compatible isolation/resource headers too, otherwise Chromium blocks
+        # the worker before any upload request is sent.
+        self.set_header("Cross-Origin-Embedder-Policy", "credentialless")
+        self.set_header("Cross-Origin-Resource-Policy", "same-origin")
+        self.set_header("X-Content-Type-Options", "nosniff")

@@ -194,8 +194,27 @@ export function initUploadUi() {
     if (lower.includes("network") || lower.includes("websocket")) {
       return "Upload interrupted. Check your connection and try again.";
     }
+    // Prefer ABAC / server JSON reason when present
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed?.reason) {
+        return `Upload denied: ${parsed.reason}`;
+      }
+      if (parsed?.error && parsed.error !== "Access denied") {
+        return parsed.error;
+      }
+      if (parsed?.error === "Access denied" && parsed?.reason) {
+        return `Upload denied: ${parsed.reason}`;
+      }
+      if (parsed?.error === "Access denied") {
+        return "Upload denied by access policy. Ask an admin to permit file.write for your account (Admin → Policies).";
+      }
+    } catch (_) { /* not JSON */ }
+    if (lower.includes("no matching permit") || lower.includes("default deny")) {
+      return "Upload denied by access policy. Ask an admin to permit file.write for your account (Admin → Policies).";
+    }
     if (lower.includes("403") || lower.includes("access denied")) {
-      return "Upload not allowed. Refresh the page and try again.";
+      return "Upload denied by access policy. Ask an admin to permit file.write for your account (Admin → Policies).";
     }
     if (lower.includes("413") || lower.includes("too large")) {
       if (lower.includes("chunk too large")) {
@@ -227,6 +246,8 @@ export function initUploadUi() {
     if (!FTH?.uploadFile) {
       throw new Error("HTTP upload unavailable. Hard-refresh the page.");
     }
+    // Clear sticky pause left by file picker / pagehide before starting.
+    globalThis.AirdTransferBackground?.syncFromDocument?.();
     const dir = item.uploadDir ?? document.getElementById('currentPath')?.value ?? '';
     const fname = item.uploadName ?? item.file.name;
     item.uploadSignal = { aborted: false };

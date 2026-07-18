@@ -954,10 +954,14 @@ class TestConstantsModule:
   def test_read_app_version_fallback(self):
       import aird.constants as constants
 
-      with patch("importlib.metadata.version", side_effect=Exception("no pkg")):
+      with patch("importlib.metadata.version", side_effect=Exception("no pkg")), patch.object(
+          constants.Path,
+          "read_text",
+          return_value='setup(name="aird", version="9.8.7")',
+      ):
           from aird.constants import _read_app_version
 
-          assert _read_app_version() in (constants.APP_VERSION, "0.4.24", "0.4.25.dev3", "dev")
+          assert _read_app_version() == "9.8.7"
 
   def test_get_static_version(self):
       from aird.constants import get_static_version

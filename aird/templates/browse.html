@@ -370,11 +370,11 @@
   </dialog>
 
   <input type="hidden" id="currentPath" value="{{ current_path or '' }}" />
-  <script src="/static/js/transfer-background.js"></script>
-  <script src="/static/js/transfer-engine/resume-store.js"></script>
-  <script src="/static/js/transfer-engine/engine.js"></script>
-  <script src="/static/js/file-transfer-ws.js"></script>
-  <script src="/static/js/file-transfer-http.js"></script>
+  <script src="/static/js/transfer-background.js?v=20260718b"></script>
+  <script src="/static/js/transfer-engine/resume-store.js?v=20260718b"></script>
+  <script src="/static/js/transfer-engine/engine.js?v=20260718b"></script>
+  <script src="/static/js/file-transfer-ws.js?v=20260718b"></script>
+  <script src="/static/js/file-transfer-http.js?v=20260718b"></script>
   <script src="/static/js/download-manager.js"></script>
   <script src="/static/js/components/folder-picker.js"></script>
   <script nonce="{{ csp_nonce }}">
@@ -390,7 +390,7 @@
       tagColors: {{ json_encode(tag_colors) }}
     };
   </script>
-  <script type="module" src="/static/js/browse/app.js"></script>
+  <script type="module" src="/static/js/browse/app.js?v=20260718b"></script>
   <script src="/static/js/folder-size-scan.js"></script>
 
   <!-- Hover popup: all tags for a row (overflow) -->

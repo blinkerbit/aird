@@ -450,7 +450,10 @@
         return resumeSync;
       };
 
-      if (!backgroundPaused) startNext();
+      // Always kick off chunks. Mid-flight pause still works via setBackgroundPaused;
+      // starting paused left uploads stuck at 0% forever (file picker / pagehide).
+      backgroundPaused = false;
+      startNext();
 
       await settled;
       if (progressTimer) clearTimeout(progressTimer);

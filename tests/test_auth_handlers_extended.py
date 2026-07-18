@@ -346,12 +346,16 @@ class TestAdminLoginHandlerExtended:
     def test_post_username_password_success(self):
         handler = AdminLoginHandler(self.mock_app, self.mock_request)
         handler.get_argument = MagicMock(
-            side_effect=lambda k, d=None: "admin" if k == "username" else "pass"
+            side_effect=lambda k, d=None: (
+                "admin" if k == "username" else "pass" if k == "password" else ""
+            )
         )
 
         self.mock_app.settings["db_conn"] = MagicMock()
-        with patch(
-            "aird.services.user_service.authenticate_user",
+        user_service = self.mock_app.settings["services"]["user_service"]
+        with patch.object(
+            user_service,
+            "authenticate",
             return_value={"role": "admin"},
         ), patch.object(handler, "set_secure_cookie"), patch.object(
             handler, "redirect"
@@ -363,12 +367,16 @@ class TestAdminLoginHandlerExtended:
     def test_post_username_password_not_admin(self):
         handler = AdminLoginHandler(self.mock_app, self.mock_request)
         handler.get_argument = MagicMock(
-            side_effect=lambda k, d=None: "user" if k == "username" else "pass"
+            side_effect=lambda k, d=None: (
+                "user" if k == "username" else "pass" if k == "password" else ""
+            )
         )
 
         self.mock_app.settings["db_conn"] = MagicMock()
-        with patch(
-            "aird.services.user_service.authenticate_user",
+        user_service = self.mock_app.settings["services"]["user_service"]
+        with patch.object(
+            user_service,
+            "authenticate",
             return_value={"role": "user"},
         ), patch.object(handler, "render") as mock_render:
 
