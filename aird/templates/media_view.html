@@ -5,10 +5,10 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}" />
+  <link rel="stylesheet" href="/static/css/app.css" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>{{ filename }} · Aird</title>
-  <script src="/static/js/aird-core.js?v={{ static_version }}"></script>
+  <script src="/static/js/aird-core.js"></script>
   <style nonce="{{ csp_nonce }}">
   .media-viewer {
     display: flex;
@@ -65,7 +65,7 @@
 </head>
 
 <body class="min-h-screen bg-base-200" data-media-kind="{{ media_kind }}" data-media-src="{{ media_src }}">
-  <div class="container mx-auto p-4">
+  <div class="aird-shell aird-shell--wide">
     {% set nav_title = "Aird" %}
     {% set nav_search_path = "" %}
     {% set show_admin_link = False %}
@@ -75,7 +75,7 @@
       <div class="text-sm text-base-content/60 flex items-center gap-2 mb-2">
         <a href="/files/">🏠 Home</a>
       </div>
-      <h2 class="text-xl font-semibold mb-2">{{ filename }}</h2>
+      <h2 class="aird-page-title aird-page-title--sm mb-2">{{ filename }}</h2>
       <p class="media-viewer__meta mb-4">{{ file_size }} bytes</p>
 
       <div class="media-viewer">
@@ -101,8 +101,8 @@
     </main>
   </div>
 
-  <script src="/static/js/media-view.js?v={{ static_version }}" defer></script>
-  <script src="/static/js/theme.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/media-view.js" defer></script>
+  <script src="/static/js/theme.js" defer></script>
 </body>
 
 </html>

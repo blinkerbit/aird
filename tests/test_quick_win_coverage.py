@@ -788,7 +788,7 @@ class TestFileOperationsScan:
   def test_get_all_files_os_error(self):
       from aird.core.file_operations import get_all_files_recursive
 
-      with patch("os.listdir", side_effect=OSError("nope")):
+      with patch("os.walk", side_effect=OSError("nope")):
           assert get_all_files_recursive("/bad/path") == []
 
 

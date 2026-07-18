@@ -4,96 +4,98 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}" />
+  <link rel="stylesheet" href="/static/css/app.css" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Admin · Aird</title>
 </head>
-<body class="bg-base-200 min-h-screen">
-  <!-- Topbar -->
-  <div class="container mx-auto p-4">
+<body class="min-h-screen">
+  <div class="aird-shell aird-shell--wide">
     {% set nav_title = "⚙ Admin Panel" %}
     {% set show_admin_link = False %}
     {% include '_app_nav_header.html' %}
-  </div>
-
-  {% set admin_active_tab = "overview" %}
+      {% set admin_active_tab = "overview" %}
   {% include '_admin_tabs.html' %}
 
-  <!-- Page -->
-  <main class="max-w-5xl mx-auto p-4 space-y-6 mt-6">
+      <main class="aird-page">
+    <header class="aird-page-header">
+      <div>
+        <h1 class="aird-page-title">Admin overview</h1>
+        <p class="aird-page-lead">Feature flags, security, and server defaults for this Aird instance.</p>
+      </div>
+    </header>
     <form method="POST" class="space-y-6">
       {% raw xsrf_form_html() %}
 
       <!-- Feature flags -->
-      <div class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="card bg-base-100 shadow-sm border border-base-300 aird-admin-card">
         <div class="card-body">
           <h2 class="card-title text-base">Feature flags</h2>
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-2">
-            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
               <input type="checkbox" name="file_upload" class="toggle toggle-primary toggle-sm" {% if features.get('file_upload') %}checked{% end %}>
               <span class="label-text">File upload</span>
             </label>
-            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
               <input type="checkbox" name="file_download" class="toggle toggle-primary toggle-sm" {% if features.get('file_download') %}checked{% end %}>
               <span class="label-text">File download</span>
             </label>
-            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
               <input type="checkbox" name="file_edit" class="toggle toggle-primary toggle-sm" {% if features.get('file_edit') %}checked{% end %}>
               <span class="label-text">File edit</span>
             </label>
-            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
               <input type="checkbox" name="file_rename" class="toggle toggle-primary toggle-sm" {% if features.get('file_rename') %}checked{% end %}>
               <span class="label-text">File rename</span>
             </label>
-            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
               <input type="checkbox" name="file_delete" class="toggle toggle-primary toggle-sm" {% if features.get('file_delete') %}checked{% end %}>
               <span class="label-text">File delete</span>
             </label>
-            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
               <input type="checkbox" name="file_share" class="toggle toggle-primary toggle-sm" {% if features.get('file_share') %}checked{% end %}>
               <span class="label-text">File share</span>
             </label>
-            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
               <input type="checkbox" name="folder_create" class="toggle toggle-primary toggle-sm" {% if features.get('folder_create') %}checked{% end %}>
               <span class="label-text">Create folder</span>
             </label>
-            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
               <input type="checkbox" name="folder_delete" class="toggle toggle-primary toggle-sm" {% if features.get('folder_delete') %}checked{% end %}>
               <span class="label-text">Delete folder</span>
             </label>
-            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
               <input type="checkbox" name="super_search" class="toggle toggle-primary toggle-sm" {% if features.get('super_search') %}checked{% end %}>
               <span class="label-text">Super search</span>
             </label>
-            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
               <input type="checkbox" name="p2p_transfer" class="toggle toggle-primary toggle-sm" {% if features.get('p2p_transfer') %}checked{% end %}>
               <span class="label-text">P2P transfer</span>
             </label>
-            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
               <input type="checkbox" name="compression" class="toggle toggle-primary toggle-sm" {% if features.get('compression') %}checked{% end %}>
               <span class="label-text">Gzip compression</span>
             </label>
-            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
               <input type="checkbox" name="allow_simple_passwords" class="toggle toggle-primary toggle-sm" {% if features.get('allow_simple_passwords') %}checked{% end %}>
               <span class="label-text">Allow simple passwords</span>
             </label>
-            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
               <input type="checkbox" name="abac_engine" class="toggle toggle-primary toggle-sm" {% if features.get('abac_engine') %}checked{% end %}>
               <span class="label-text">ABAC engine</span>
             </label>
-            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
               <input type="checkbox" name="abac_audit_decisions" class="toggle toggle-primary toggle-sm" {% if features.get('abac_audit_decisions') %}checked{% end %}>
               <span class="label-text">ABAC decision audit</span>
             </label>
-            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors">
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
               <input type="checkbox" name="webauthn" class="toggle toggle-primary toggle-sm" {% if features.get('webauthn') %}checked{% end %}>
               <span class="label-text">WebAuthn passkeys (optional login)</span>
             </label>
-            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors{% if not webdav_library_available %} opacity-60{% end %}">
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive{% if not webdav_library_available %} opacity-60{% end %}">
               <input type="checkbox" name="webdav_server" class="toggle toggle-primary toggle-sm" {% if features.get('webdav_server') %}checked{% end %}{% if not webdav_library_available %} disabled{% end %}>
               <span class="label-text">WebDAV network shares{% if not webdav_library_available %} <span class="text-xs text-base-content/50">(install wsgidav, cheroot)</span>{% end %}</span>
             </label>
-            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 hover:bg-base-200 transition-colors{% if not smb_library_available %} opacity-60{% end %}">
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive{% if not smb_library_available %} opacity-60{% end %}">
               <input type="checkbox" name="smb_server" class="toggle toggle-primary toggle-sm" {% if features.get('smb_server') %}checked{% end %}{% if not smb_library_available %} disabled{% end %}>
               <span class="label-text">SMB network shares{% if not smb_library_available %} <span class="text-xs text-base-content/50">(install pysmbserver)</span>{% end %}</span>
             </label>
@@ -102,7 +104,7 @@
       </div>
 
       <!-- User management (shortcut) -->
-      <div class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="card bg-base-100 shadow-sm border border-base-300 aird-admin-card">
         <div class="card-body">
           <h2 class="card-title text-base">User management</h2>
           <p class="text-sm text-base-content/70 mt-1">
@@ -113,7 +115,7 @@
       </div>
 
       <!-- Upload settings -->
-      <div class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="card bg-base-100 shadow-sm border border-base-300 aird-admin-card">
         <div class="card-body space-y-4">
           <h2 class="card-title text-base">Upload settings</h2>
           <div class="flex flex-wrap items-center gap-3">
@@ -170,7 +172,7 @@
       </div>
 
       <!-- WebSocket connections -->
-      <div class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="card bg-base-100 shadow-sm border border-base-300 aird-admin-card">
         <div class="card-body space-y-4">
           <h2 class="card-title text-base">WebSocket connections</h2>
 
@@ -229,6 +231,7 @@
       </div>
     </form>
   </main>
+  </div>
 
   <script nonce="{{ csp_nonce }}">
     (function() {
@@ -241,6 +244,6 @@
       }
     })();
   </script>
-  <script src="/static/js/theme.js?v={{ static_version }}"></script>
+  <script src="/static/js/theme.js"></script>
 </body>
 </html>

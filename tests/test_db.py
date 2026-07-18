@@ -337,16 +337,19 @@ class TestUploadConfig:
         assert result["max_file_size_mb"] == 256
         assert result["other_key"] == 100
 
-    def test_load_upload_config_creates_table(self):
-        """Test that load_upload_config creates the table if it doesn't exist"""
+    def test_load_upload_config_missing_table_returns_empty(self):
+        """Missing table returns {} (schema is created by init_db, not on load)."""
         conn = sqlite3.connect(":memory:")
         result = load_upload_config(conn)
         assert result == {}
         conn.close()
 
-    def test_save_upload_config_creates_table(self):
-        """Test that save_upload_config creates the table if it doesn't exist"""
+    def test_save_and_load_upload_config_via_init_db(self):
+        """save/load work when tables come from init_db."""
+        from aird.db.schema import init_db
+
         conn = sqlite3.connect(":memory:")
+        init_db(conn)
         save_upload_config(conn, {"max_file_size_mb": 512})
         result = load_upload_config(conn)
         assert result["max_file_size_mb"] == 512

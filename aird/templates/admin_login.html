@@ -4,7 +4,7 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}" />
+  <link rel="stylesheet" href="/static/css/app.css" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Admin Login · Aird</title>
   <style nonce="{{ csp_nonce }}">
@@ -70,8 +70,8 @@
               </svg>
             </div>
             <div class="a-title text-left">
-              <h1 class="text-2xl font-extrabold tracking-wide leading-tight">Admin</h1>
-              <p class="text-xs font-semibold text-base-content/50 uppercase tracking-widest">Control Panel</p>
+              <h1 class="aird-page-title aird-page-title--sm">Admin</h1>
+              <p class="aird-page-lead" style="margin-top:0.15rem;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;">Control Panel</p>
             </div>
           </div>
           <p class="a-sub text-xs text-base-content/40 font-medium">Restricted — authorized personnel only</p>
@@ -167,8 +167,8 @@
     <p class="text-center text-xs text-base-content/40 mt-4">Aird · secure, lightweight file access</p>
   </div>
 
-  <script src="/static/js/theme.js?v={{ static_version }}" defer></script>
-  <script src="/static/js/login-ui.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/theme.js" defer></script>
+  <script src="/static/js/login-ui.js" defer></script>
   <script nonce="{{ csp_nonce }}">
   globalThis.addEventListener('load', function () {
     if (globalThis.AirdLoginUI) {

@@ -1,0 +1,281 @@
+/* Super Search page — spacing, results, idle state (DaisyUI-aligned) */
+
+.ss-page .ss-header,
+.ss-header {
+  margin-bottom: 1.25rem;
+}
+
+.ss-header h1 {
+  margin-bottom: 0.35rem;
+  letter-spacing: -0.02em;
+}
+
+.ss-header .ss-lead {
+  max-width: 36rem;
+  line-height: 1.45;
+  color: color-mix(in oklch, var(--color-base-content) 62%, transparent);
+  font-size: 0.9375rem;
+}
+
+.ss-breadcrumb {
+  margin-bottom: 1.5rem;
+}
+
+.ss-panel {
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 12%, transparent);
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in oklch, var(--color-primary) 5%, transparent),
+      transparent 42%
+    ),
+    color-mix(in oklch, var(--color-base-200) 35%, var(--color-base-100));
+  border-radius: 0.95rem;
+  padding: 1.25rem 1.35rem 1.35rem;
+  box-shadow: 0 8px 24px color-mix(in oklch, var(--color-base-content) 7%, transparent);
+  transition: box-shadow 0.22s ease, border-color 0.22s ease;
+}
+
+.ss-panel:focus-within {
+  border-color: color-mix(in oklch, var(--color-primary) 35%, transparent);
+  box-shadow:
+    0 10px 28px color-mix(in oklch, var(--color-base-content) 9%, transparent),
+    0 0 0 3px color-mix(in oklch, var(--color-primary) 14%, transparent);
+}
+
+.ss-section-label {
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  margin-bottom: 0.45rem;
+}
+
+.ss-help {
+  margin-top: 0.65rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 8%, transparent);
+  background: color-mix(in oklch, var(--color-base-300) 25%, transparent);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.ss-help code {
+  font-size: 0.72rem;
+  padding: 0.05rem 0.28rem;
+  border-radius: 0.25rem;
+  background: color-mix(in oklch, var(--color-base-content) 8%, transparent);
+}
+
+.ss-pattern-hint {
+  margin-top: 0.45rem;
+  min-height: 1.25rem;
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.ss-pattern-hint.is-ok {
+  opacity: 0.85;
+  color: var(--color-success);
+}
+
+.ss-pattern-hint.is-warn {
+  opacity: 0.9;
+  color: var(--color-warning);
+}
+
+.ss-pattern-hint.is-err {
+  opacity: 0.95;
+  color: var(--color-error);
+}
+
+.ss-mode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  padding: 0.3rem;
+  border-radius: 0.65rem;
+  background: color-mix(in oklch, var(--color-base-300) 40%, transparent);
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 8%, transparent);
+}
+
+.ss-mode label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.ss-mode label:has(input:checked) {
+  background: var(--color-base-100);
+  color: var(--color-primary);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-primary) 25%, transparent);
+}
+
+.ss-mode input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ss-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  padding-top: 1rem;
+  margin-top: 0.35rem;
+  border-top: 1px solid color-mix(in oklch, var(--color-base-content) 10%, transparent);
+}
+
+.ss-progress {
+  margin-top: 1.25rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 10%, transparent);
+  background: color-mix(in oklch, var(--color-base-200) 40%, transparent);
+}
+
+.ss-progress .progress {
+  height: 0.45rem;
+}
+
+.ss-results {
+  margin-top: 1.5rem;
+}
+
+.ss-results-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.ss-results-head h2 {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.ss-stats {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.65;
+}
+
+.ss-file {
+  margin-bottom: 0.65rem;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 12%, transparent);
+  background: color-mix(in oklch, var(--color-base-200) 28%, var(--color-base-100));
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.ss-file:hover {
+  border-color: color-mix(in oklch, var(--color-primary) 28%, transparent);
+  box-shadow: 0 6px 18px color-mix(in oklch, var(--color-base-content) 8%, transparent);
+}
+
+.ss-file-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.85rem;
+  background: color-mix(in oklch, var(--color-base-300) 45%, transparent);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.ss-file-header:hover {
+  background: color-mix(in oklch, var(--color-base-300) 70%, transparent);
+}
+
+.ss-match-list {
+  background: var(--color-base-100);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.ss-match {
+  display: flex;
+  gap: 0;
+  padding: 0.35rem 0.85rem;
+  border-bottom: 1px solid color-mix(in oklch, var(--color-base-content) 6%, transparent);
+  border-left: 3px solid transparent;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.ss-match:last-child {
+  border-bottom: none;
+}
+
+.ss-match:hover {
+  background: color-mix(in oklch, var(--color-base-200) 55%, transparent);
+  border-left-color: var(--color-primary);
+}
+
+.ss-match-line {
+  width: 2.75rem;
+  flex-shrink: 0;
+  text-align: right;
+  margin-right: 0.85rem;
+  font-size: 0.7rem;
+  opacity: 0.4;
+  user-select: none;
+  padding-top: 0.1rem;
+}
+
+.ss-match-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  opacity: 0.88;
+}
+
+.ss-hit {
+  background: color-mix(in oklch, var(--color-primary) 22%, transparent);
+  color: var(--color-primary);
+  border-radius: 0.2rem;
+  padding: 0 0.18rem;
+  font-weight: 700;
+}
+
+.ss-idle {
+  margin-top: 2rem;
+  padding: 1.75rem 1.25rem;
+  text-align: center;
+  border-radius: 0.85rem;
+  border: 1px dashed color-mix(in oklch, var(--color-base-content) 16%, transparent);
+  background: color-mix(in oklch, var(--color-base-200) 25%, transparent);
+  color: color-mix(in oklch, var(--color-base-content) 58%, transparent);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.ss-idle kbd {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 18%, transparent);
+  background: var(--color-base-100);
+}
+
+@media (max-width: 640px) {
+  .ss-mode {
+    grid-template-columns: 1fr;
+  }
+
+  .ss-panel {
+    padding: 1rem;
+  }
+}

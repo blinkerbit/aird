@@ -4,7 +4,7 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}" />
+  <link rel="stylesheet" href="/static/css/app.css" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Error {{ status_code }} · Aird</title>
 </head>
@@ -12,8 +12,10 @@
   <div class="w-full max-w-lg animate-fade-in-up">
     <div class="card bg-base-100 shadow-2xl border border-base-300 text-center">
       <div class="card-body items-center">
-        <img src="/static/img/logo-icon.png" alt="Aird" class="h-10 w-auto mx-auto mb-2 opacity-60">
-        <h1 class="text-7xl font-extrabold leading-none">{{ status_code }}</h1>
+        {% set logo_uid = 'err' %}
+        {% set logo_height = 'h-10 mb-2 opacity-60 mx-auto' %}
+        {% include '_logo_mark.html' %}
+        <h1 class="aird-page-title aird-page-title--lg">{{ status_code }}</h1>
         <p class="text-xl font-semibold mt-2">{{ escape(error_message or "") }}</p>
         <p class="text-base-content/60 mb-4">Something went wrong. Please try again or contact your administrator.</p>
         <div class="flex gap-2">
@@ -23,6 +25,6 @@
       </div>
     </div>
   </div>
-  <script src="/static/js/theme.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/theme.js" defer></script>
 </body>
 </html>

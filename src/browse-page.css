@@ -1,14 +1,25 @@
-    /* Modern styles are now handled by Tailwind and DaisyUI. */
-    .ico {
-      fill: none;
-      stroke: currentColor;
-      stroke-width: 2;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-      vertical-align: -3px;
-      flex-shrink: 0;
-    }
-    .ico--lg { width: 24px; height: 24px; }
+    .browse-listing-panel {
+  animation: aird-rise 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.browse-toolbar .btn {
+  transition: transform 0.14s ease, box-shadow 0.14s ease;
+}
+
+.browse-toolbar .btn-primary:hover {
+  transform: translateY(-1px);
+}
+
+.ico {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: -3px;
+  flex-shrink: 0;
+}
+.ico--lg { width: 24px; height: 24px; }
 
     /* Enhance table divider visibility */
     .table :where(thead tr :is(td,th),tbody tr:not(:last-child) :is(td,th)) {
@@ -251,7 +262,7 @@
 
     .size-cell {
       text-align: left;
-      font-family: var(--font-mono, "Fira Code", monospace);
+      font-family: var(--font-mono);
       font-size: var(--ds-fs-xs);
       color: var(--ds-text-muted);
     }
@@ -304,7 +315,7 @@
     }
 
     .modified-cell {
-      font-family: var(--font-mono, "Fira Code", monospace);
+      font-family: var(--font-mono);
       font-size: var(--ds-fs-xs);
       color: var(--ds-text-muted);
     }

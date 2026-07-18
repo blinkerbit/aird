@@ -4,23 +4,23 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}" />
+  <link rel="stylesheet" href="/static/css/app.css" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Profile · Aird</title>
 </head>
 <body class="bg-base-200 min-h-screen">
-  <div class="container mx-auto p-4">
+  <div class="aird-shell">
     {% set nav_title = "Aird" %}
     {% set nav_search_path = "" %}
     {% set show_admin_link = True %}
     {% include '_app_nav_header.html' %}
 
-    <div class="max-w-3xl mx-auto">
+    <div class="aird-page">
     <header class="flex items-baseline justify-between flex-wrap gap-3 pb-3 mb-6 border-b border-base-300">
       <div>
-        <h1 class="text-2xl font-bold">Profile settings</h1>
+        <h1 class="aird-page-title">Profile settings</h1>
         {% if user %}
-        <p class="text-sm text-base-content/60">{{ escape(user['username']) }} · {{ escape(user['role']) }}</p>
+        <p class="aird-page-lead">{{ escape(user['username']) }} · {{ escape(user['role']) }}</p>
         {% end %}
       </div>
       <a href="/files/" class="btn btn-ghost btn-sm">← Back to browse</a>
@@ -211,8 +211,8 @@
     </div>
     </div>
   </div>
-  <script src="/static/js/theme.js?v={{ static_version }}" defer></script>
-  <script src="/static/js/webauthn.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/theme.js" defer></script>
+  <script src="/static/js/webauthn.js" defer></script>
   <script nonce="{{ csp_nonce }}">
   globalThis.addEventListener('load', function () {
     const WA = globalThis.AirdWebAuthn;

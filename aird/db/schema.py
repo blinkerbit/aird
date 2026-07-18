@@ -227,6 +227,23 @@ def init_db(conn: sqlite3.Connection) -> None:
         )
         """)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS upload_config (
+            key TEXT PRIMARY KEY,
+            value INTEGER
+        )
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS upload_allowed_extensions (
+            ext TEXT PRIMARY KEY
+        )
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS websocket_config (
+            key TEXT PRIMARY KEY,
+            value INTEGER
+        )
+        """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS webauthn_credentials (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL,

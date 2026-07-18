@@ -13,7 +13,9 @@ class TestGetCurrentWebsocketConfig:
     def test_returns_config_from_database(self):
         """Should return config when database connection exists"""
         from aird.core.websocket_manager import get_current_websocket_config
+        from aird.utils.util import invalidate_websocket_config_cache
 
+        invalidate_websocket_config_cache()
         mock_conn = MagicMock()
         expected_config = {"preview_max_connections": 50, "preview_idle_timeout": 120}
 
@@ -24,15 +26,19 @@ class TestGetCurrentWebsocketConfig:
             result = get_current_websocket_config()
             assert result["preview_max_connections"] == 50
             assert result["preview_idle_timeout"] == 120
+        invalidate_websocket_config_cache()
 
     def test_returns_empty_dict_when_no_connection(self):
         """Should return default config when no database connection"""
         from aird.core.websocket_manager import get_current_websocket_config
         from aird.constants import WEBSOCKET_CONFIG
+        from aird.utils.util import invalidate_websocket_config_cache
 
+        invalidate_websocket_config_cache()
         with patch("aird.utils.util.DB_CONN", None):
             result = get_current_websocket_config()
             assert result == WEBSOCKET_CONFIG.copy()
+        invalidate_websocket_config_cache()
 
 
 class TestWebSocketConnectionManager:

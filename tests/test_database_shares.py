@@ -21,6 +21,10 @@ from aird.db.shares import (
 @pytest.fixture
 def db_conn():
     """Create an in-memory SQLite database for testing"""
+    from aird.db.shares import clear_share_schema_cache, clear_tag_file_cache
+
+    clear_share_schema_cache()
+    clear_tag_file_cache()
     conn = sqlite3.connect(":memory:")
     conn.execute("""
         CREATE TABLE shares (
@@ -40,6 +44,8 @@ def db_conn():
     """)
     conn.commit()
     yield conn
+    clear_share_schema_cache()
+    clear_tag_file_cache()
     conn.close()
 
 

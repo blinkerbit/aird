@@ -4,7 +4,7 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}" />
+  <link rel="stylesheet" href="/static/css/app.css" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Shared files · Aird</title>
     <style>
@@ -17,11 +17,13 @@
   </style>
 </head>
 <body class="bg-base-200 min-h-screen">
-  <div class="max-w-4xl mx-auto p-4">
+  <div class="aird-shell">
     <header class="flex items-center justify-between gap-3 mb-4 pb-3 border-b border-base-300">
       <div class="flex items-center gap-2">
-        <img src="/static/img/logo-icon.png" alt="" class="h-7 w-auto shrink-0">
-        <h1 class="text-xl font-bold">Shared files</h1>
+        {% set logo_uid = 'share' %}
+        {% set logo_height = 'h-7' %}
+        {% include '_logo_mark.html' %}
+        <h1 class="aird-page-title aird-page-title--sm">Shared files</h1>
       </div>
       <span class="flex items-center gap-2 text-sm text-base-content/60">
         Access:
@@ -337,7 +339,7 @@
       }
     });
   </script>
-  <script src="/static/js/download-manager.js?v={{ static_version }}"></script>
-  <script src="/static/js/theme.js?v={{ static_version }}"></script>
+  <script src="/static/js/download-manager.js"></script>
+  <script src="/static/js/theme.js"></script>
 </body>
 </html>

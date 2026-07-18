@@ -117,17 +117,11 @@ class TestLoadWebsocketConfig:
         result = load_websocket_config(db_conn)
         assert result == {"max_connections": 100, "timeout": 30}
 
-    def test_load_config_creates_table_if_missing(self):
-        """Test that load creates table if it doesn't exist"""
+    def test_load_config_missing_table_returns_empty(self):
+        """Missing table returns {} (schema is created by init_db, not on load)."""
         conn = sqlite3.connect(":memory:")
         result = load_websocket_config(conn)
         assert result == {}
-
-        # Verify table was created
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='websocket_config'"
-        )
-        assert cursor.fetchone() is not None
         conn.close()
 
     def test_load_config_exception_returns_empty(self):
@@ -162,12 +156,13 @@ class TestSaveWebsocketConfig:
         result = load_websocket_config(db_conn)
         assert result["timeout"] == 60
 
-    def test_save_config_creates_table_if_missing(self):
-        """Test that save creates table if it doesn't exist"""
-        conn = sqlite3.connect(":memory:")
-        save_websocket_config(conn, {"key1": 100})
+    def test_save_config_via_init_db(self):
+        """save works when tables come from init_db."""
+        from aird.db.schema import init_db
 
-        # Verify table was created and data was saved
+        conn = sqlite3.connect(":memory:")
+        init_db(conn)
+        save_websocket_config(conn, {"key1": 100})
         cursor = conn.execute("SELECT value FROM websocket_config WHERE key = 'key1'")
         assert cursor.fetchone()[0] == 100
         conn.close()

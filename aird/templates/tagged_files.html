@@ -4,22 +4,25 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}" />
+  <link rel="stylesheet" href="/static/css/app.css" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Tag: {{ escape(tag_name) }} · Aird</title>
 </head>
 <body class="bg-base-200 min-h-screen">
-  <div class="container mx-auto p-4">
+  <div class="aird-shell">
     {% set nav_title = "Aird" %}
     {% set nav_search_path = "" %}
     {% set show_admin_link = True %}
     {% include '_app_nav_header.html' %}
 
-    <div class="max-w-5xl mx-auto mt-4 space-y-4">
+    <div class="aird-page">
 
       <header class="flex flex-wrap items-center justify-between gap-3 pb-3 mb-4 border-b border-base-300">
         <div>
-          <h1 class="text-2xl font-bold">Tag: <a href="/tagged/{{ escape(tag_name) }}" class="file-tag-chip"{% set _htc = tag_colors.get(tag_name) %}{% if _htc %} style="{{ tag_chip_style(_htc) }}"{% end %}>{{ escape(tag_name) }}</a></h1>
+          <h1 class="flex flex-wrap items-center gap-2 m-0">
+            <span class="aird-page-title">Tag</span>
+            <a href="/tagged/{{ escape(tag_name) }}" class="file-tag-chip"{% set _htc = tag_colors.get(tag_name) %}{% if _htc %} style="{{ tag_chip_style(_htc) }}"{% end %}>{{ escape(tag_name) }}</a>
+          </h1>
           <p class="text-sm text-base-content/60 mt-1">
             {% if patterns %}
               {% if file_count and folder_count %}
@@ -116,6 +119,6 @@
 
     </div>
   </div>
-  <script src="/static/js/theme.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/theme.js" defer></script>
 </body>
 </html>

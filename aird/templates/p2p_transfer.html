@@ -5,7 +5,7 @@
   {% include '_theme_early.html' %}
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}" />
+  <link rel="stylesheet" href="/static/css/app.css" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
     <title>P2P · Aird</title>
     <style>
@@ -73,25 +73,26 @@
     </style>
 </head>
 
-<body class="min-h-screen bg-base-100 text-base-content font-sans bg-[radial-gradient(var(--fallback-b3,oklch(var(--b3)/0.5))_1px,transparent_1px)] [background-size:22px_22px]"
+<body class="min-h-screen bg-base-100 text-base-content font-sans"
     data-is-anonymous="{% if is_anonymous %}true{% else %}false{% end %}"
     data-pending-room-id="{% if room_id and not room_join_error %}{{ room_id }}{% end %}"
     data-room-join-error="{{ room_join_error or '' }}"
 >
-    <div class="container mx-auto p-4">
+    <div class="aird-shell">
         {% set nav_title = "Aird" %}
         {% set nav_search_path = "" %}
         {% set show_admin_link = False %}
         {% include '_app_nav_header.html' %}
 
-        <div class="max-w-4xl mx-auto">
-        <h2 class="text-3xl font-extrabold tracking-tight text-gradient-brand mb-2">P2P FILE TRANSFER</h2>
-        <div class="breadcrumbs text-sm mb-6 font-semibold">
-  <ul>
+        <div class="aird-page">
+        <h2 class="aird-page-title mb-2">P2P File Transfer</h2>
+        <nav class="aird-pathbar breadcrumbs text-sm mb-6 font-semibold" aria-label="Breadcrumb">
+  <ul class="flex flex-wrap items-center gap-x-1">
     <li><a href="/files/">Home</a></li>
-    <li>P2P Transfer</li>
+    <li class="opacity-40 px-1" aria-hidden="true">/</li>
+    <li class="text-primary font-bold">P2P Transfer</li>
   </ul>
-</div>
+</nav>
 
         <!-- Session Warning Banner -->
         <div class="alert alert-warning mb-6 shadow-sm font-semibold text-sm hidden" id="session-warning">
@@ -102,7 +103,7 @@
 
         <!-- Mode Selection -->
         <div class="card bg-base-200/50 shadow-xl border border-base-300 mb-8 p-6 animate-fade-in-up" id="mode-section">
-            <h2 class="text-xl font-bold mb-5 pb-3 border-b border-base-300/50">Select Transfer Mode</h2>
+            <h2 class="aird-section-title mb-5 pb-3 border-b border-base-300/50">Select Transfer Mode</h2>
             {% if is_anonymous %}
             <div class="alert alert-info border-dashed mb-5 font-semibold text-sm">
                 [!] You are browsing as a guest. You can share and receive files without logging in.
@@ -147,7 +148,7 @@
 
         <!-- Send Mode Section -->
         <div class="card bg-base-200/50 shadow-xl border border-base-300 mb-8 p-6 animate-fade-in-up hidden" id="send-section">
-            <h2 class="text-xl font-bold mb-5 pb-3 border-b border-base-300/50">📤 Send File</h2>
+            <h2 class="aird-section-title mb-5 pb-3 border-b border-base-300/50">Send File</h2>
 
             <div id="send-status" class="status-indicator waiting alert alert-neutral shadow-sm mb-6 flex items-center gap-3 p-3 font-bold text-sm tracking-wide uppercase border-base-300">
                 <div class="status-dot w-2 h-2 rounded-full animate-pulse bg-current opacity-70"></div>
@@ -240,7 +241,7 @@
 
         <!-- Receive Mode Section -->
         <div class="card bg-base-200/50 shadow-xl border border-base-300 mb-8 p-6 animate-fade-in-up hidden" id="receive-section">
-            <h2 class="text-xl font-bold mb-5 pb-3 border-b border-base-300/50">RECEIVE FILE</h2>
+            <h2 class="aird-section-title mb-5 pb-3 border-b border-base-300/50">Receive File</h2>
 
             <div id="receive-status" class="status-indicator waiting alert alert-neutral shadow-sm mb-6 flex items-center gap-3 p-3 font-bold text-sm tracking-wide uppercase border-base-300">
                 <div class="status-dot w-2 h-2 rounded-full animate-pulse bg-current opacity-70"></div>
@@ -356,24 +357,24 @@
 
         <!-- Connection Log -->
         <div class="card bg-base-200/50 shadow-xl border border-base-300 mb-8 p-6 animate-fade-in-up">
-            <h2 class="text-xl font-bold mb-5 pb-3 border-b border-base-300/50">CONNECTION LOG</h2>
+            <h2 class="aird-section-title mb-5 pb-3 border-b border-base-300/50">Connection Log</h2>
             <div class="mockup-code bg-base-300 text-base-content w-full max-h-[250px] overflow-y-auto mt-4 text-xs font-mono rounded-box shadow-inner p-4" id="log-container">
                 <div class="log-entry info text-base-content/60 py-1 border-b border-base-200/50">Ready to start P2P transfer...</div>
             </div>
         </div>
     </div>
 
-    <script src="/static/js/aird-core.js?v={{ static_version }}"></script>
-    <script src="/static/js/p2p/state-machine.js?v={{ static_version }}"></script>
-    <script src="/static/js/p2p/mediator.js?v={{ static_version }}"></script>
-    <script src="/static/js/p2p/signaling-service.js?v={{ static_version }}"></script>
-    <script src="/static/js/p2p/transfer-service.js?v={{ static_version }}"></script>
-    <script src="/static/js/p2p/qr-adapter.js?v={{ static_version }}"></script>
-    <script src="/static/js/p2p/app.js?v={{ static_version }}"></script>
-    <script src="/static/js/vendor/qrcode-browser.js?v={{ static_version }}"></script>
-    <script src="/static/js/pages/p2p-page.js?v={{ static_version }}"></script>
+    <script src="/static/js/aird-core.js"></script>
+    <script src="/static/js/p2p/state-machine.js"></script>
+    <script src="/static/js/p2p/mediator.js"></script>
+    <script src="/static/js/p2p/signaling-service.js"></script>
+    <script src="/static/js/p2p/transfer-service.js"></script>
+    <script src="/static/js/p2p/qr-adapter.js"></script>
+    <script src="/static/js/p2p/app.js"></script>
+    <script src="/static/js/vendor/qrcode-browser.js"></script>
+    <script src="/static/js/pages/p2p-page.js"></script>
 
-    <script src="/static/js/theme.js?v={{ static_version }}" defer></script>
+    <script src="/static/js/theme.js" defer></script>
 </body>
 
 </html>

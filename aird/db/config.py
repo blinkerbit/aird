@@ -29,9 +29,6 @@ def save_feature_flags(conn: sqlite3.Connection, flags: dict) -> None:
 def load_upload_config(conn: sqlite3.Connection) -> dict:
     """Load upload configuration from SQLite database."""
     try:
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS upload_config (key TEXT PRIMARY KEY, value INTEGER)"
-        )
         rows = conn.execute("SELECT key, value FROM upload_config").fetchall()
         return {k: int(v) for (k, v) in rows}
     except Exception:
@@ -41,9 +38,6 @@ def load_upload_config(conn: sqlite3.Connection) -> dict:
 def save_upload_config(conn: sqlite3.Connection, config: dict) -> None:
     """Save upload configuration to SQLite database."""
     try:
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS upload_config (key TEXT PRIMARY KEY, value INTEGER)"
-        )
         with conn:
             for key, value in config.items():
                 conn.execute(
@@ -57,9 +51,6 @@ def save_upload_config(conn: sqlite3.Connection, config: dict) -> None:
 def load_allowed_extensions(conn: sqlite3.Connection) -> set:
     """Load allowed upload extensions from database."""
     try:
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS upload_allowed_extensions (ext TEXT PRIMARY KEY)"
-        )
         rows = conn.execute("SELECT ext FROM upload_allowed_extensions").fetchall()
         return {row[0] for row in rows}
     except Exception:
@@ -69,9 +60,6 @@ def load_allowed_extensions(conn: sqlite3.Connection) -> set:
 def save_allowed_extensions(conn: sqlite3.Connection, extensions: set) -> None:
     """Replace stored allowed extensions with the given set."""
     try:
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS upload_allowed_extensions (ext TEXT PRIMARY KEY)"
-        )
         with conn:
             conn.execute("DELETE FROM upload_allowed_extensions")
             for ext in extensions:
@@ -86,9 +74,6 @@ def save_allowed_extensions(conn: sqlite3.Connection, extensions: set) -> None:
 def load_websocket_config(conn: sqlite3.Connection) -> dict:
     """Load WebSocket configuration from SQLite database."""
     try:
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS websocket_config (key TEXT PRIMARY KEY, value INTEGER)"
-        )
         rows = conn.execute("SELECT key, value FROM websocket_config").fetchall()
         return {k: int(v) for (k, v) in rows}
     except Exception:
@@ -98,9 +83,6 @@ def load_websocket_config(conn: sqlite3.Connection) -> dict:
 def save_websocket_config(conn: sqlite3.Connection, config: dict) -> None:
     """Save WebSocket configuration to SQLite database."""
     try:
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS websocket_config (key TEXT PRIMARY KEY, value INTEGER)"
-        )
         with conn:
             for key, value in config.items():
                 conn.execute(

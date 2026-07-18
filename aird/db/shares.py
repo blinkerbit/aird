@@ -21,6 +21,7 @@ from aird.constants import ROOT_DIR
 from aird.core.file_operations import (
     filter_files_by_patterns,
     get_files_by_tag_patterns,
+    matches_glob_patterns,
     remove_share_cloud_dir,
 )
 from aird.core.security import is_within_root
@@ -44,6 +45,29 @@ _SHARE_OPTIONAL_COLS = [
     "created_by",
 ]
 _SHARE_SELECT_COLS_ALLOWED = frozenset(_SHARE_BASE_COLS + _SHARE_OPTIONAL_COLS)
+
+# Cached after first PRAGMA table_info(shares); schema only changes via init_db migrations.
+_share_col_names_cache: list | None = None
+
+# tag_name -> JSON key of sorted glob patterns (cleared with clear_tag_file_cache).
+_tag_patterns_key_cache: dict[str, str | None] = {}
+
+
+def _cached_share_col_names(conn: sqlite3.Connection) -> list:
+    """Return share SELECT columns, caching PRAGMA table_info after first use."""
+    global _share_col_names_cache
+    if _share_col_names_cache is not None:
+        return _share_col_names_cache
+    cursor = conn.execute(PRAGMA_TABLE_INFO)
+    available = [row[1] for row in cursor.fetchall()]
+    _share_col_names_cache = _get_share_col_names(available)
+    return _share_col_names_cache
+
+
+def clear_share_schema_cache() -> None:
+    """Drop cached share column names (for tests / after migrations)."""
+    global _share_col_names_cache
+    _share_col_names_cache = None
 
 
 def insert_share(
@@ -269,20 +293,12 @@ def _row_to_share_dict(row: tuple, col_names: list) -> dict:
 def get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict | None:
     """Get a single share by ID from database"""
     try:
-        logging.debug(f"get_share_by_id called with sid='{sid}'")
-        logging.debug(f"conn is {'None' if conn is None else 'available'}")
-        cursor = conn.execute(PRAGMA_TABLE_INFO)
-        available = [row[1] for row in cursor.fetchall()]
-        logging.debug(f"Table columns: {available}")
-        col_names = _get_share_col_names(available)
+        col_names = _cached_share_col_names(conn)
         cols = format_select_columns(col_names, _SHARE_SELECT_COLS_ALLOWED)
         cursor = conn.execute(format_shares_select_by_id_sql(cols), (sid,))
         row = cursor.fetchone()
         if row:
-            result = _row_to_share_dict(row, col_names)
-            logging.debug(f"Returning share data: {result}")
-            return result
-        logging.debug(f"No share found for sid='{sid}'")
+            return _row_to_share_dict(row, col_names)
         return None
     except Exception:
         logging.exception("Error getting share %s", sid)
@@ -292,14 +308,12 @@ def get_share_by_id(conn: sqlite3.Connection, sid: str) -> dict | None:
 def get_all_shares(conn: sqlite3.Connection) -> dict:
     """Get all shares from database"""
     try:
-        cursor = conn.execute(PRAGMA_TABLE_INFO)
-        available = [row[1] for row in cursor.fetchall()]
-        col_names = _get_share_col_names(available)
+        col_names = _cached_share_col_names(conn)
         cols = format_select_columns(col_names, _SHARE_SELECT_COLS_ALLOWED)
         cursor = conn.execute(format_shares_select_sql(cols))
         return {row[0]: _row_to_share_dict(row, col_names) for row in cursor}
-    except Exception as e:
-        print(f"Error getting all shares: {e}")
+    except Exception:
+        logger.exception("Error getting all shares")
         return {}
 
 
@@ -308,9 +322,7 @@ def list_shares_accessible_to_user(conn: sqlite3.Connection, username: str) -> l
     if conn is None or not username:
         return []
     try:
-        cursor = conn.execute(PRAGMA_TABLE_INFO)
-        available = [row[1] for row in cursor.fetchall()]
-        col_names = _get_share_col_names(available)
+        col_names = _cached_share_col_names(conn)
         cols = format_select_columns(col_names, _SHARE_SELECT_COLS_ALLOWED)
         cursor = conn.execute(format_shares_select_sql(cols))
         result = []
@@ -351,20 +363,26 @@ def _cached_tag_raw_files(root_dir: str, patterns_key: str) -> tuple[str, ...]:
 def clear_tag_file_cache() -> None:
     """Drop memoized tag glob expansions (call when ABAC tag rules change)."""
     _cached_tag_raw_files.cache_clear()
+    _tag_patterns_key_cache.clear()
 
 
 def _tag_patterns_key_from_conn(conn: sqlite3.Connection | None, tag_name: str) -> str | None:
     """JSON key of sorted glob patterns for *tag_name*, or None if unavailable."""
     if conn is None or not tag_name:
         return None
+    if tag_name in _tag_patterns_key_cache:
+        return _tag_patterns_key_cache[tag_name]
     try:
         rules = list_resource_tags(conn)
         patterns = sorted(
             [r["glob_pattern"] for r in rules if r.get("tag") == tag_name]
         )
-        return json.dumps(patterns)
+        key = json.dumps(patterns)
+        _tag_patterns_key_cache[tag_name] = key
+        return key
     except Exception:
         logger.debug("tag patterns key failed for %r", tag_name, exc_info=True)
+        _tag_patterns_key_cache[tag_name] = None
         return None
 
 
@@ -440,9 +458,17 @@ def share_covers_relative_path(
         if not key:
             return False
         try:
-            matched = list(_cached_tag_raw_files(root_dir, key))
-            filtered = filter_files_by_patterns(matched, allow_list, avoid_list)
-            return rel_path in filtered
+            # Match the single path against tag globs instead of expanding the
+            # whole tree (O(1) vs O(tree) per cover check). Still require the
+            # path to exist under root_dir to match prior walk-based semantics.
+            patterns = [p.lstrip("/") for p in json.loads(key)]
+            norm = rel_path.replace("\\", "/").lstrip("/")
+            if not matches_glob_patterns(norm, patterns):
+                return False
+            if not filter_files_by_patterns([norm], allow_list, avoid_list):
+                return False
+            full = os.path.join(root_dir, *norm.split("/")) if norm else root_dir
+            return os.path.lexists(full)
         except Exception:
             logger.debug("share_covers_relative_path tag failed", exc_info=True)
             return False
@@ -478,9 +504,7 @@ def get_shares_for_path(
     """
     _ = root_dir  # legacy keyword; not used for matching
     try:
-        cursor = conn.execute(PRAGMA_TABLE_INFO)
-        available = [row[1] for row in cursor.fetchall()]
-        col_names = _get_share_col_names(available)
+        col_names = _cached_share_col_names(conn)
         cols = format_select_columns(col_names, _SHARE_SELECT_COLS_ALLOWED)
         cursor = conn.execute(format_shares_select_sql(cols))
         matching = []
@@ -491,8 +515,8 @@ def get_shares_for_path(
             ):
                 matching.append(share)
         return matching
-    except Exception as e:
-        print(f"Error getting shares for path {file_path}: {e}")
+    except Exception:
+        logger.exception("Error getting shares for path %s", file_path)
         return []
 
 

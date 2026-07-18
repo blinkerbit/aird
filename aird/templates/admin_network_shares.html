@@ -4,7 +4,7 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}" />
+  <link rel="stylesheet" href="/static/css/app.css" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Network shares · Aird</title>
   <style>
@@ -34,19 +34,17 @@
 </style>
 </head>
 <body class="bg-base-200 min-h-screen">
-  <div class="container mx-auto p-4">
+  <div class="aird-shell aird-shell--wide">
     {% set nav_title = "⚙ Admin Panel" %}
     {% set show_admin_link = False %}
     {% include '_app_nav_header.html' %}
-  </div>
-
-  {% set admin_active_tab = "network-shares" %}
+      {% set admin_active_tab = "network-shares" %}
   {% include '_admin_tabs.html' %}
 
-  <main class="max-w-6xl mx-auto p-4 space-y-6">
-    <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
-      <h1 class="text-2xl font-bold m-0">Network shares <span class="text-base-content/50 text-base font-normal">(SMB / WebDAV)</span></h1>
-    </div>
+      <main class="aird-page">
+    <header class="aird-page-header">
+      <h1 class="aird-page-title">Network shares <span class="aird-page-title__meta">(SMB / WebDAV)</span></h1>
+    </header>
 
     {% if error %}
     <div class="alert alert-error shadow-sm mb-4" role="alert">
@@ -56,7 +54,7 @@
 
     <section class="card bg-base-100 shadow-sm border border-base-300 overflow-visible">
       <div class="px-5 py-3 border-b border-base-300 bg-base-200/50">
-        <h2 class="font-semibold m-0 text-base">Active shares</h2>
+        <h2 class="aird-section-title m-0">Active shares</h2>
       </div>
       {% if shares %}
       <table class="table table-zebra overflow-visible">
@@ -191,6 +189,7 @@
       </div>
     </section>
   </main>
+  </div>
 
   <script nonce="{{ csp_nonce }}">
     (function() {
@@ -336,6 +335,6 @@
       });
     })();
   </script>
-  <script src="/static/js/theme.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/theme.js" defer></script>
 </body>
 </html>

@@ -30,7 +30,7 @@ from aird.constants import (
     WEBSOCKET_CONFIG,
     UPLOAD_CONFIG,
 )
-from aird.utils.util import invalidate_feature_flags_cache
+from aird.utils.util import invalidate_feature_flags_cache, invalidate_websocket_config_cache
 from aird.network_share_manager import (
     is_smb_server_available,
     is_webdav_server_available,
@@ -262,6 +262,7 @@ class AdminHandler(BaseHandler):
                 self.get_service("config_service").save_websocket_config(
                     db_conn, WEBSOCKET_CONFIG
                 )
+                invalidate_websocket_config_cache()
                 self.get_service("config_service").save_upload_config(
                     db_conn, UPLOAD_CONFIG
                 )

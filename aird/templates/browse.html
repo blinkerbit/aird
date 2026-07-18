@@ -5,21 +5,28 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}" />
+  <link rel="stylesheet" href="/static/css/app.css" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Browse · Aird</title>
 </head>
 
 <body>
-  <div class="container mx-auto p-4">
+  <div class="aird-shell aird-shell--wide">
     {% set nav_title = "Aird" %}
 {% set nav_search_path = current_path or "" %}
 {% set show_admin_link = False %}
 {% include '_app_nav_header.html' %}
 
+    <header class="aird-page-header mb-0">
+      <div>
+        <h1 class="aird-page-title">Browse</h1>
+        <p class="aird-page-lead">Upload, organize, and open files in your workspace.</p>
+      </div>
+    </header>
+
     <!-- Upload Zone -->
     {% if features['file_upload'] %}
-    <div class="alert alert-neutral border-2 border-dashed flex flex-col items-center justify-center p-8 cursor-pointer hover:border-primary transition-all mb-6 group" id="uploadZone">
+    <div class="alert alert-neutral aird-dropzone flex flex-col items-center justify-center p-8 cursor-pointer mb-6 group" id="uploadZone">
       <p class="inline-flex items-center gap-3 mb-1 text-lg font-bold group-hover:text-primary transition-colors">
         <svg class="ico ico--lg" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4v12"/><polyline points="7 9 12 4 17 9"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
         <span>Drop files here to upload</span>
@@ -50,7 +57,7 @@
       </button>
     </div>
 
-    <div class="flex flex-wrap items-center gap-x-1 gap-y-1 bg-base-200/50 p-2 px-4 rounded-lg mb-4 text-sm" aria-label="Path from file root — Home is your workspace root, not your computer account home folder">
+    <div class="aird-pathbar text-sm" aria-label="Path from file root — Home is your workspace root, not your computer account home folder">
       <a href="/files/" class="flex items-center gap-1 hover:text-primary transition-colors shrink-0" title="File root — your Aird workspace for this login (not your operating system user home folder)"><svg class="ico w-4 h-4" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>Home</a>
       {% if current_user and current_path and current_path != "/" %} {% set path_parts = current_path.strip('/').split('/') %}
       {% for i, part in enumerate(path_parts) %}
@@ -74,9 +81,9 @@
     </div>
 
     <!-- File Listing Table -->
-    <div class="overflow-x-auto bg-base-100 rounded-box border border-base-300 shadow-sm">
+    <div class="overflow-x-auto aird-table-wrap aird-panel--static">
     <table class="table table-zebra w-full file-table" id="fileTable">
-      <thead class="bg-base-200">
+      <thead>
         <tr>
           <th class="sort-header hover:bg-base-300 transition-colors" data-sort-column="0" aria-sort="none">
             <div class="flex items-center gap-2">
@@ -363,13 +370,13 @@
   </dialog>
 
   <input type="hidden" id="currentPath" value="{{ current_path or '' }}" />
-  <script src="/static/js/transfer-background.js?v={{ static_version }}"></script>
-  <script src="/static/js/transfer-engine/resume-store.js?v={{ static_version }}"></script>
-  <script src="/static/js/transfer-engine/engine.js?v={{ static_version }}"></script>
-  <script src="/static/js/file-transfer-ws.js?v={{ static_version }}"></script>
-  <script src="/static/js/file-transfer-http.js?v={{ static_version }}"></script>
-  <script src="/static/js/download-manager.js?v={{ static_version }}"></script>
-  <script src="/static/js/components/folder-picker.js?v={{ static_version }}"></script>
+  <script src="/static/js/transfer-background.js"></script>
+  <script src="/static/js/transfer-engine/resume-store.js"></script>
+  <script src="/static/js/transfer-engine/engine.js"></script>
+  <script src="/static/js/file-transfer-ws.js"></script>
+  <script src="/static/js/file-transfer-http.js"></script>
+  <script src="/static/js/download-manager.js"></script>
+  <script src="/static/js/components/folder-picker.js"></script>
   <script nonce="{{ csp_nonce }}">
     globalThis.__BROWSE_CONFIG = {
       maxFileSize: {{ max_file_size }},
@@ -383,24 +390,8 @@
       tagColors: {{ json_encode(tag_colors) }}
     };
   </script>
-  <script type="importmap" nonce="{{ csp_nonce }}">
-  {
-    "imports": {
-      "/static/js/browse/util.js": "/static/js/browse/util.js?v={{ static_version }}",
-      "/static/js/browse/selection-store.js": "/static/js/browse/selection-store.js?v={{ static_version }}",
-      "/static/js/browse/upload.js": "/static/js/browse/upload.js?v={{ static_version }}",
-      "/static/js/browse/selection-ui.js": "/static/js/browse/selection-ui.js?v={{ static_version }}",
-      "/static/js/browse/bulk-actions.js": "/static/js/browse/bulk-actions.js?v={{ static_version }}",
-      "/static/js/browse/tags.js": "/static/js/browse/tags.js?v={{ static_version }}",
-      "/static/js/browse/tag-api.js": "/static/js/browse/tag-api.js?v={{ static_version }}",
-      "/static/js/browse/shares.js": "/static/js/browse/shares.js?v={{ static_version }}",
-      "/static/js/browse/table-ui.js": "/static/js/browse/table-ui.js?v={{ static_version }}",
-      "/static/js/browse/app.js": "/static/js/browse/app.js?v={{ static_version }}"
-    }
-  }
-  </script>
-  <script type="module" src="/static/js/browse/app.js?v={{ static_version }}"></script>
-  <script src="/static/js/folder-size-scan.js?v={{ static_version }}"></script>
+  <script type="module" src="/static/js/browse/app.js"></script>
+  <script src="/static/js/folder-size-scan.js"></script>
 
   <!-- Hover popup: all tags for a row (overflow) -->
   <div id="fileTagsHoverPopover" class="file-tags-hover-popover" role="tooltip" hidden>
@@ -486,7 +477,7 @@
     </div>
     <form method="dialog" class="modal-backdrop"><button type="submit">close</button></form>
   </dialog>
-  <script src="/static/js/theme.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/theme.js" defer></script>
 </body>
 
 </html>

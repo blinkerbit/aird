@@ -1,15 +1,55 @@
 @import "tailwindcss";
 @import "./browse-page.css";
 @import "./share-page.css";
+@import "./super-search-page.css";
+@import "./ui-atmosphere.css";
 @plugin "daisyui" {
   themes: light --default, dark --prefersdark, nord, dracula, cyberpunk, retro, autumn;
 }
 
+/* Self-hosted mono — CSP font-src 'self'. UI uses system sans (Segoe / SF Pro). */
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/static/fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/static/fonts/ibm-plex-mono-latin-500-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/static/fonts/ibm-plex-mono-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/static/fonts/ibm-plex-mono-latin-700-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Nunito";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/static/fonts/nunito-latin-700-normal.woff2") format("woff2");
+}
+
 @theme {
   --font-sans:
-    ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+    "Segoe UI Variable", "Segoe UI", "SF Pro Text", "Helvetica Neue",
+    ui-sans-serif, system-ui, sans-serif;
   --font-mono:
-    ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
+    "IBM Plex Mono", ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
 }
 
 /* ================================================================
@@ -50,6 +90,13 @@ body {
   background-color: var(--color-base-100);
   color: var(--color-base-content);
   min-height: 100vh;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code, kbd, pre, samp {
+  font-family: var(--font-mono);
 }
 
 /* Super Search — common pattern chips (WCAG AA: base-content on base-200/300) */
@@ -120,6 +167,8 @@ body {
   --ds-bg-sunken: var(--color-base-300);
 
   /* Typography */
+  --ds-font-sans: var(--font-sans);
+  --ds-font-mono: var(--font-mono);
   --ds-text: var(--color-base-content);
   --ds-text-muted: oklch(from var(--color-base-content) l c h / 0.6);
   --ds-text-subtle: oklch(from var(--color-base-content) l c h / 0.4);

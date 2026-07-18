@@ -449,6 +449,9 @@ class TestGetCurrentWebsocketConfig:
 
     def test_get_current_websocket_config_from_constants(self):
         """Test getting websocket config from constants when DB is None"""
+        from aird.utils.util import invalidate_websocket_config_cache
+
+        invalidate_websocket_config_cache()
         with patch("aird.utils.util.WEBSOCKET_CONFIG", {"max_connections": 50}), patch(
             "aird.utils.util.DB_CONN", None
         ):
@@ -457,6 +460,9 @@ class TestGetCurrentWebsocketConfig:
 
     def test_get_current_websocket_config_from_db(self):
         """Test getting websocket config from database"""
+        from aird.utils.util import invalidate_websocket_config_cache
+
+        invalidate_websocket_config_cache()
         conn = sqlite3.connect(":memory:")
         conn.execute(
             "CREATE TABLE websocket_config (key TEXT PRIMARY KEY, value INTEGER)"
@@ -478,6 +484,7 @@ class TestGetCurrentWebsocketConfig:
                 assert result["timeout"] == 30
         finally:
             conn.close()
+            invalidate_websocket_config_cache()
 
 
 class TestIsFeatureEnabled:
@@ -1160,7 +1167,7 @@ class TestWebSocketConnectionManagerExtended:
 
 class TestGetAllFilesRecursiveEdgeCases:
     def test_permission_error(self):
-        with patch("os.listdir", side_effect=PermissionError("no access")):
+        with patch("os.walk", side_effect=PermissionError("no access")):
             result = get_all_files_recursive("/forbidden")
             assert result == []
 

@@ -4,7 +4,7 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}" />
+  <link rel="stylesheet" href="/static/css/app.css" />
   <title>Secure share access · Aird</title>
 </head>
 <body class="min-h-screen flex items-center justify-center p-6 bg-base-200">
@@ -13,8 +13,8 @@
       <div class="card-body">
         <div class="text-center mb-4">
           <div class="inline-flex items-center justify-center w-14 h-14 rounded-full bg-primary/10 text-primary text-2xl mb-3">🔒</div>
-          <h1 class="text-xl font-bold">Secure share access</h1>
-          <p class="text-sm text-base-content/60 mt-1">Enter the secret token to access this shared content</p>
+          <h1 class="aird-page-title aird-page-title--sm">Secure share access</h1>
+          <p class="aird-page-lead">Enter the secret token to access this shared content</p>
         </div>
 
         <!-- Outer wrappers stay plain + hidden so DaisyUI .alert never fights Tailwind .hidden (empty colored bars). -->
@@ -134,6 +134,6 @@
     const existingToken = sessionStorage.getItem(`share_token_${shareId}`);
     if (existingToken) { showInfo('You already have access to this share. Redirecting…'); setTimeout(() => accessShareWithToken(shareId, existingToken), 800); }
   </script>
-  <script src="/static/js/theme.js?v={{ static_version }}"></script>
+  <script src="/static/js/theme.js"></script>
 </body>
 </html>

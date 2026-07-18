@@ -955,7 +955,6 @@ class BaseHandler(tornado.web.RequestHandler):
         namespace.setdefault("nav_title", "")
         namespace.setdefault("show_admin_link", False)
         namespace.setdefault("ldap_enabled", self.settings.get("ldap_server") is not None)
-        namespace.setdefault("static_version", constants_module.get_static_version())
         return namespace
 
     def get_current_user(self):

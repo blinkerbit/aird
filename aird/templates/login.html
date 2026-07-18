@@ -4,7 +4,7 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}" />
+  <link rel="stylesheet" href="/static/css/app.css" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Login · Aird</title>
   <style nonce="{{ csp_nonce }}">
@@ -98,8 +98,10 @@
 
         <!-- Brand -->
         <div class="text-center mb-4">
-          <div class="b-icon flex items-center justify-center mb-3">
-            <img src="/static/img/logo.png" alt="Aird" class="h-14 w-auto object-contain" style="max-width:240px;">
+          <div class="b-icon flex items-center justify-center mb-3 text-base-content">
+            {% set logo_uid = 'login' %}
+            {% set logo_height = 'h-14' %}
+            {% include '_logo_full.html' %}
           </div>
           <div class="login-brand-badges">
             <span class="b-badge1 badge badge-outline text-xs font-semibold gap-1">🔒 Secure</span>
@@ -259,9 +261,9 @@
     <p class="text-center text-xs text-base-content/40 mt-4">Aird · secure, lightweight file access</p>
   </div>
 
-  <script src="/static/js/theme.js?v={{ static_version }}" defer></script>
-  <script src="/static/js/login-ui.js?v={{ static_version }}" defer></script>
-  <script src="/static/js/webauthn.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/theme.js" defer></script>
+  <script src="/static/js/login-ui.js" defer></script>
+  <script src="/static/js/webauthn.js" defer></script>
   <script nonce="{{ csp_nonce }}">
   globalThis.addEventListener('load', function () {
     if (globalThis.AirdLoginUI) {

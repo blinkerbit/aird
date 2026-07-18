@@ -1,5 +1,6 @@
 """File operation utilities for scanning, filtering, and cloud file management."""
 
+import functools
 import logging
 import os
 import re
@@ -13,26 +14,32 @@ logger = logging.getLogger(__name__)
 
 
 def get_all_files_recursive(root_path: str, base_path: str = "") -> list:
-    """Recursively get all files in a directory"""
+    """Recursively get all files in a directory via os.walk."""
     all_files = []
     try:
-        for item in os.listdir(root_path):
-            item_path = os.path.join(root_path, item)
-            relative_path = os.path.join(base_path, item) if base_path else item
-
-            if os.path.isfile(item_path):
-                # It's a file, add it to the list
-                all_files.append(relative_path)
-            elif os.path.isdir(item_path):
-                # It's a directory, recursively scan it
-                sub_files = get_all_files_recursive(item_path, relative_path)
-                all_files.extend(sub_files)
+        for dirpath, _dirnames, filenames in os.walk(root_path):
+            rel_dir = os.path.relpath(dirpath, root_path)
+            if rel_dir in (".", ""):
+                rel_dir = ""
+            for name in filenames:
+                if rel_dir:
+                    relative = (
+                        os.path.join(base_path, rel_dir, name)
+                        if base_path
+                        else os.path.join(rel_dir, name)
+                    )
+                else:
+                    relative = (
+                        os.path.join(base_path, name) if base_path else name
+                    )
+                all_files.append(relative)
     except OSError as e:
-        print(f"Error scanning directory {root_path}: {e}")
+        logger.warning("Error scanning directory %s: %s", root_path, e)
 
     return all_files
 
 
+@functools.lru_cache(maxsize=512)
 def _glob_pattern_to_regex(pattern: str) -> re.Pattern:
     """Convert a glob pattern with ``**`` support into a compiled regex.
 
@@ -332,7 +339,7 @@ def download_cloud_items(share_id: str, items: list[dict]) -> list[str]:
             relative_paths.append(rel_path)
         except CloudProviderError as e:
             error_message = str(e)
-            print(f"Failed to download cloud item: {error_message}")
+            logger.warning("Failed to download cloud item: %s", error_message)
             errors.append(error_message)
     if errors:
         raise CloudProviderError("; ".join(errors))

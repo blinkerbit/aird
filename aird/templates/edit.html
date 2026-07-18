@@ -5,10 +5,10 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}" />
+  <link rel="stylesheet" href="/static/css/app.css" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Edit {{ filename }} · Aird</title>
-  <script src="/static/js/aird-core.js?v={{ static_version }}"></script>
+  <script src="/static/js/aird-core.js"></script>
   <style>
     body { background: var(--ds-bg); margin: 0; }
 
@@ -26,7 +26,9 @@
     .edit-title { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
     .edit-title .crumbs { font-size: var(--ds-fs-xs); color: var(--ds-text-muted); }
     .edit-title .crumbs a { color: var(--ds-text); }
-    .edit-title .file { font-weight: 700; font-size: var(--ds-fs-md); }
+    .edit-title .file { font-weight: 800; font-size: 1.25rem; letter-spacing: -0.025em;
+      background: linear-gradient(135deg, oklch(0.45 0.2 270) 0%, oklch(0.55 0.25 270) 55%, oklch(0.6 0.22 280) 100%);
+      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
     .edit-title .path { font-size: var(--ds-fs-xs); color: var(--ds-text-subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 540px; }
 
     .edit-actions { display: flex; gap: var(--ds-space-2); align-items: center; flex-wrap: wrap; }
@@ -206,7 +208,7 @@
     document.getElementById('backBtn').addEventListener('click', function () { history.back(); });
 
   </script>
-  <script src="/static/js/theme.js?v={{ static_version }}" defer></script>
+  <script src="/static/js/theme.js" defer></script>
 </body>
 
 </html>

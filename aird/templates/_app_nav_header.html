@@ -2,11 +2,12 @@
    Optional overrides: nav_title, nav_search_path, show_admin_link (BaseHandler defaults).
    Layout: place this include inside the same outer wrapper as page content, e.g.
    <div class="container mx-auto p-4"> …header… …content… </div> (same as browse/share/search). #}
-<div class="navbar bg-base-200 shadow-sm rounded-box mb-4 flex-wrap gap-2">
+<div class="navbar aird-nav bg-base-200 shadow-sm rounded-box mb-4 flex-wrap gap-2">
   <div class="flex-1">
-    <a href="/files/" class="btn btn-ghost text-xl font-extrabold tracking-wide gap-1 px-2" aria-label="Aird Home">
+    <a href="/files/" class="btn btn-ghost text-xl font-extrabold tracking-wide gap-1.5 px-2 text-base-content" aria-label="Aird Home">
       <img src="/static/img/logo-icon.png" alt="" aria-hidden="true" class="h-8 w-auto shrink-0">
-      <img src="/static/img/logo-text.png" alt="Aird" class="h-5 w-auto shrink-0">
+      {% set logo_height = 'h-6' %}
+      {% include '_logo_text.html' %}
     </a>
   </div>
   <div class="flex items-center gap-1 flex-wrap">
@@ -110,11 +111,11 @@
   <button type="button" data-set-theme="autumn" role="menuitem" class="aird-app-theme-menu-item">🍂 Autumn</button>
 </div>
 
-<script src="/static/js/aird-core.js?v={{ static_version }}"></script>
-<script src="/static/js/transfer-tracker.js?v={{ static_version }}"></script>
-<script src="/static/js/common/command-palette.js?v={{ static_version }}" defer></script>
+<script src="/static/js/aird-core.js"></script>
+<script src="/static/js/transfer-tracker.js"></script>
+<script src="/static/js/common/command-palette.js" defer></script>
 {% if current_user %}
-<script nonce="{{ csp_nonce }}" src="/static/js/feature-flags-live.js?v={{ static_version }}" defer></script>
+<script nonce="{{ csp_nonce }}" src="/static/js/feature-flags-live.js" defer></script>
 {% end %}
 
 <!-- Transfer tracker sidebar -->

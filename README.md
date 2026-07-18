@@ -1,7 +1,7 @@
 # Aird
 
 <p align="center">
-  <img src="aird/static/img/logo.png" alt="Aird" width="280">
+  <img src="aird/static/img/logo-full.svg" alt="Aird" width="280">
 </p>
 
 ![Aird demo](./demo.webp)

@@ -1,15 +1,28 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 110" fill="none" aria-hidden="true">
   <defs>
-    <linearGradient id="doc" x1="4" y1="4" x2="30" y2="36" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#818cf8"/>
-      <stop offset="100%" stop-color="#6366f1"/>
+    <linearGradient id="airdDoc" x1="20" y1="8" x2="80" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#9b9df8"/>
+      <stop offset="50%" stop-color="#6d70f2"/>
+      <stop offset="100%" stop-color="#585bea"/>
     </linearGradient>
   </defs>
-  <!-- Document body with rounded corners -->
-  <path d="M6 8a4 4 0 0 1 4-4h14l10 10v18a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4V8z" fill="url(#doc)"/>
-  <!-- Folded corner -->
-  <path d="M24 4v10h10" fill="#a5b4fc" fill-opacity="0.5"/>
-  <!-- Upward swoosh arrow -->
-  <path d="M13 30 Q10 26 12 22 Q14 18 18 16" stroke="white" stroke-width="2.5" stroke-linecap="round" fill="none"/>
-  <path d="M15 13l3 3 3-3" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none" transform="translate(0.5,-0.5)"/>
+  <!-- Match production logo-icon.png silhouette -->
+  <path fill="url(#airdDoc)" d="
+    M22 28
+    C22 14 34 8 48 8
+    H62
+    L88 34
+    V78
+    C88 94 74 102 58 102
+    H42
+    C28 102 18 90 18 76
+    C14 82 12 88 16 96
+    C10 88 10 74 16 62
+    C18 48 20 36 22 28
+    Z"/>
+  <path d="M62 8 L88 34 H72 C67 34 62 29 62 24 Z" fill="#3f42c4" opacity="0.28"/>
+  <path d="M62 8 V28 C62 31.3 64.7 34 68 34 H88 L62 8 Z" fill="#d2d0fc"/>
+  <path d="M24 84 C20 70 28 54 42 42 C52 34 64 30 74 28"
+        stroke="#fff" stroke-width="13" stroke-linecap="round" fill="none"/>
+  <path fill="#fff" d="M64 18 L86 22 L74 42 Z"/>
 </svg>

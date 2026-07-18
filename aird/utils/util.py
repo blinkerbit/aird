@@ -2,7 +2,6 @@ import logging
 import os
 import json
 import sqlite3
-import traceback
 from datetime import datetime
 import weakref
 import threading
@@ -96,9 +95,8 @@ def _load_shares(conn: sqlite3.Connection) -> dict:
         for row in rows:
             d = dict(zip(col_names, row))
             loaded[d["id"]] = _share_row_to_dict(row, col_names)
-    except Exception as e:
-        print(f"Error loading shares: {e}")
-        print(f"Traceback: {traceback.format_exc()}")
+    except Exception:
+        logging.getLogger(__name__).exception("Error loading shares")
         return {}
     return loaded
 
@@ -312,12 +310,19 @@ def _format_child_count(count: int) -> str:
 
 def get_files_in_directory(path="."):
     files = []
-    for entry in os.scandir(path):
+    # Materialize once so we can skip per-dir child counts on large listings.
+    entries = list(os.scandir(path))
+    skip_child_counts = len(entries) > 80
+    for entry in entries:
         stat = entry.stat()
         is_dir = entry.is_dir()
         if is_dir:
-            child_count = _count_dir_children(entry.path)
-            size_str = _format_child_count(child_count)
+            if skip_child_counts:
+                child_count = None
+                size_str = ""
+            else:
+                child_count = _count_dir_children(entry.path)
+                size_str = _format_child_count(child_count)
             size_bytes = 0
         else:
             child_count = None
@@ -376,13 +381,26 @@ _feature_flags_cache_ts: float = 0.0
 _FEATURE_FLAGS_TTL = 5.0  # seconds
 _feature_flags_lock = threading.Lock()
 
+_websocket_config_cache: dict | None = None
+_websocket_config_cache_ts: float = 0.0
+_WEBSOCKET_CONFIG_TTL = 5.0  # seconds
+_websocket_config_lock = threading.Lock()
+
 
 def invalidate_feature_flags_cache() -> None:
-    """Call after updating feature flags to force a fresh read on next access."""
+    """Force the next get_current_feature_flags() call to re-read from DB."""
     global _feature_flags_cache, _feature_flags_cache_ts
     with _feature_flags_lock:
         _feature_flags_cache = None
         _feature_flags_cache_ts = 0.0
+
+
+def invalidate_websocket_config_cache() -> None:
+    """Force the next get_current_websocket_config() call to re-read from DB."""
+    global _websocket_config_cache, _websocket_config_cache_ts
+    with _websocket_config_lock:
+        _websocket_config_cache = None
+        _websocket_config_cache_ts = 0.0
 
 
 def _merge_flags(current: dict, persisted: dict) -> dict:
@@ -433,21 +451,36 @@ def get_current_feature_flags() -> dict:
 
 def get_current_websocket_config() -> dict:
     """Return current WebSocket configuration with SQLite values taking precedence.
-    Falls back to in-memory defaults if DB is unavailable.
+
+    Results are cached briefly (same TTL pattern as feature flags) to avoid a
+    DB round-trip on every WebSocket accept / status check.
     """
+    global _websocket_config_cache, _websocket_config_cache_ts
+
+    now = time.time()
+    with _websocket_config_lock:
+        if (
+            _websocket_config_cache is not None
+            and (now - _websocket_config_cache_ts) < _WEBSOCKET_CONFIG_TTL
+        ):
+            return _websocket_config_cache.copy()
+
     current = WEBSOCKET_CONFIG.copy()
     if DB_CONN is not None:
         try:
             persisted = load_websocket_config(DB_CONN)
             if persisted:
-                # Persisted values override runtime defaults
                 for k, v in persisted.items():
                     current[k] = int(v)
         except Exception:
             logging.getLogger(__name__).debug(
                 "load_websocket_config failed; using defaults", exc_info=True
             )
-    return current
+
+    with _websocket_config_lock:
+        _websocket_config_cache = current
+        _websocket_config_cache_ts = now
+        return current.copy()
 
 
 def is_feature_enabled(key: str, default: bool = False) -> bool:
@@ -551,22 +584,28 @@ def augment_with_shared_status(
 
     base = root_dir if root_dir is not None else ROOT_DIR
 
-    for file_info in files:
-        full_path = os.path.join(current_path, file_info["name"]).replace("\\", "/")
-        if db_conn is not None:
-            file_info["is_shared"] = any(
-                share_relevant_for_viewers_file_tree(
-                    share,
-                    viewer_username=viewer_username,
-                    viewer_is_admin=viewer_is_admin,
-                    viewer_root=base,
-                )
-                and share_covers_relative_path(
-                    db_conn, share, full_path, filesystem_root_for_share(share)
-                )
-                for share in all_shares.values()
-            )
-        else:
+    if db_conn is None:
+        for file_info in files:
+            full_path = os.path.join(current_path, file_info["name"]).replace("\\", "/")
             file_info["is_shared"] = _is_path_in_fallback_shares(
                 full_path, all_shares, viewer_username, viewer_is_admin, base
             )
+        return
+
+    # Pre-filter once; reuse per-share filesystem roots across all files.
+    relevant: list[tuple[dict, str]] = []
+    for share in all_shares.values():
+        if share_relevant_for_viewers_file_tree(
+            share,
+            viewer_username=viewer_username,
+            viewer_is_admin=viewer_is_admin,
+            viewer_root=base,
+        ):
+            relevant.append((share, filesystem_root_for_share(share)))
+
+    for file_info in files:
+        full_path = os.path.join(current_path, file_info["name"]).replace("\\", "/")
+        file_info["is_shared"] = any(
+            share_covers_relative_path(db_conn, share, full_path, share_root)
+            for share, share_root in relevant
+        )

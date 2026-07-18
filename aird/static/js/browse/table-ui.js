@@ -95,7 +95,7 @@ function showBrowseShortcutsHelp() {
   _shortcutsOverlay = document.createElement('div');
   _shortcutsOverlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
   const card = document.createElement('div');
-  card.style.cssText = 'background:var(--ds-surface);border:2px solid var(--ds-border-strong);border-radius:8px;padding:24px 32px;max-width:420px;width:90%;font-family:monospace;font-size:13px;color:var(--ds-text);';
+  card.style.cssText = 'background:var(--ds-surface);border:2px solid var(--ds-border-strong);border-radius:8px;padding:24px 32px;max-width:420px;width:90%;font-family:var(--font-mono);font-size:13px;color:var(--ds-text);';
   card.innerHTML = '<h3 style="margin:0 0 16px 0;">Keyboard Shortcuts</h3>' +
     '<table style="width:100%;border-collapse:collapse;">' +
     '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">?</td><td>Show this help</td></tr>' +

@@ -37,49 +37,21 @@ class TestFileOperations:
             # Better approach: mock os.walk-like behavior or just listdir/isfile/isdir
             pass
 
-    def test_get_all_files_recursive_logic(self):
-        # Mock file system structure:
-        # root/
-        #   file1.txt
-        #   dir1/
-        #     file2.txt
+    def test_get_all_files_recursive_logic(self, tmp_path):
+        (tmp_path / "file1.txt").write_text("a", encoding="utf-8")
+        sub = tmp_path / "dir1"
+        sub.mkdir()
+        (sub / "file2.txt").write_text("b", encoding="utf-8")
 
-        def normalize(path):
-            return path.replace("\\", "/")
-
-        def mock_listdir(path):
-            normalized = normalize(path)
-            if normalized == "/root":
-                return ["file1.txt", "dir1"]
-            if normalized == "/root/dir1":
-                return ["file2.txt"]
-            return []
-
-        def mock_isfile(path):
-            return path.endswith(".txt")
-
-        def mock_isdir(path):
-            return "dir1" in path and not path.endswith(".txt")
-
-        with patch("os.listdir", side_effect=mock_listdir), patch(
-            "os.path.isfile", side_effect=mock_isfile
-        ), patch("os.path.isdir", side_effect=mock_isdir), patch(
-            "os.path.join", side_effect=os.path.join
-        ):
-
-            files = get_all_files_recursive("/root")
-            assert "file1.txt" in files
-            # Note: os.path.join might produce backslashes on Windows, normalize for check
-            normalized_files = [f.replace("\\", "/") for f in files]
-            assert "dir1/file2.txt" in normalized_files
+        files = get_all_files_recursive(str(tmp_path))
+        normalized = [f.replace("\\", "/") for f in files]
+        assert "file1.txt" in normalized
+        assert "dir1/file2.txt" in normalized
 
     def test_get_all_files_recursive_error(self):
-        with patch("os.listdir", side_effect=PermissionError("Access denied")), patch(
-            "builtins.print"
-        ) as mock_print:
+        with patch("os.walk", side_effect=PermissionError("Access denied")):
             files = get_all_files_recursive("/root")
             assert files == []
-            mock_print.assert_called()
 
     # --- matches_glob_patterns ---
     def test_matches_glob_patterns(self):
@@ -251,7 +223,6 @@ class TestFileOperations:
         with patch(
             "aird.core.file_operations.download_cloud_item",
             side_effect=["path1", CloudProviderError("fail")],
-        ), patch("builtins.print") as mock_print:
+        ):
             with pytest.raises(CloudProviderError, match="fail"):
                 download_cloud_items("share1", [{}, {}])
-            mock_print.assert_called()

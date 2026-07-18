@@ -1,0 +1,560 @@
+/* ================================================================
+   Aird UI atmosphere — hierarchy, depth, motion (theme-token based).
+   Keeps DaisyUI structure; strengthens presence without new palettes.
+   ================================================================ */
+
+@layer base {
+  :root,
+  [data-theme] {
+    --aird-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --aird-ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+    --aird-dur-fast: 140ms;
+    --aird-dur: 240ms;
+    --aird-dur-slow: 420ms;
+    --aird-lift: 0 10px 28px color-mix(in oklch, var(--color-base-content) 10%, transparent);
+    --aird-lift-sm: 0 4px 14px color-mix(in oklch, var(--color-base-content) 8%, transparent);
+    --aird-hairline: color-mix(in oklch, var(--color-base-content) 12%, transparent);
+    --aird-glow: color-mix(in oklch, var(--color-primary) 18%, transparent);
+  }
+
+  html {
+    background-color: var(--color-base-100);
+  }
+
+  body {
+    position: relative;
+    isolation: isolate;
+    min-height: 100vh;
+    font-family: var(--font-sans);
+    background-color: transparent;
+    background-image:
+      radial-gradient(
+        1200px 700px at 8% -10%,
+        color-mix(in oklch, var(--color-primary) 14%, transparent),
+        transparent 58%
+      ),
+      radial-gradient(
+        900px 560px at 92% 0%,
+        color-mix(in oklch, var(--color-secondary, var(--color-primary)) 10%, transparent),
+        transparent 55%
+      ),
+      radial-gradient(
+        800px 500px at 50% 110%,
+        color-mix(in oklch, var(--color-accent, var(--color-neutral)) 8%, transparent),
+        transparent 50%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in oklch, var(--color-base-200) 55%, var(--color-base-100)),
+        var(--color-base-100) 42%,
+        color-mix(in oklch, var(--color-base-200) 35%, var(--color-base-100))
+      );
+    background-attachment: fixed;
+    color: var(--color-base-content);
+  }
+
+  /* Content shells sit above #bg-canvas; do not force z-index on all body children
+     (that would flatten modals / portaled menus). */
+  .aird-shell {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 72rem; /* readable on ultra-wide; not edge-to-edge forever */
+    margin-inline: auto;
+    padding: 1rem;
+    box-sizing: border-box;
+  }
+
+  @media (min-width: 640px) {
+    .aird-shell {
+      padding: 1.25rem 1.5rem;
+    }
+  }
+
+  @media (min-width: 1600px) {
+    .aird-shell {
+      max-width: 80rem;
+    }
+  }
+
+  /* Browse / large tables — a bit wider, still capped */
+  .aird-shell--wide {
+    max-width: 90rem;
+  }
+
+  @media (min-width: 1600px) {
+    .aird-shell--wide {
+      max-width: 100rem;
+    }
+  }
+
+  /* Create/edit forms */
+  .aird-shell--form {
+    max-width: 42rem;
+  }
+
+  /* Legacy: keep bare .container from exploding on ultrawide */
+  body > .container,
+  .container.mx-auto {
+    width: 100%;
+    max-width: 72rem;
+    margin-inline: auto;
+    box-sizing: border-box;
+  }
+
+  @media (min-width: 1600px) {
+    body > .container,
+    .container.mx-auto {
+      max-width: 80rem;
+    }
+  }
+
+  #bg-canvas {
+    z-index: 0 !important;
+    opacity: 0.55;
+  }
+}
+
+@layer components {
+  /* Page shell: entrance + consistent rhythm */
+  .aird-shell {
+    animation: aird-shell-in var(--aird-dur-slow) var(--aird-ease-out) both;
+  }
+
+  .aird-shell > *:not(.aird-nav):not(script):not(style):not(.aird-admin-tabs) {
+    animation: aird-rise var(--aird-dur) var(--aird-ease-out) both;
+  }
+
+  .aird-shell > *:nth-child(2) { animation-delay: 30ms; }
+  .aird-shell > *:nth-child(3) { animation-delay: 55ms; }
+  .aird-shell > *:nth-child(4) { animation-delay: 80ms; }
+  .aird-shell > *:nth-child(5) { animation-delay: 100ms; }
+  .aird-shell > *:nth-child(6) { animation-delay: 120ms; }
+
+  .aird-page {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    margin-top: 0.25rem;
+  }
+
+  .aird-page-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem 1rem;
+  }
+
+  .aird-page-header__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  @media (max-width: 639px) {
+    .aird-page-title {
+      font-size: 1.5rem;
+    }
+
+    .aird-page-title--lg {
+      font-size: 3rem;
+    }
+
+    .aird-page-header__actions {
+      width: 100%;
+    }
+
+    .aird-page-header__actions .btn {
+      flex: 1 1 auto;
+      justify-content: center;
+    }
+  }
+
+  /* Navbar — glass bar with clearer brand weight */
+  .aird-nav.navbar {
+    position: sticky;
+    top: 0.65rem;
+    z-index: 40;
+    backdrop-filter: blur(14px) saturate(1.15);
+    -webkit-backdrop-filter: blur(14px) saturate(1.15);
+    background: color-mix(in oklch, var(--color-base-200) 72%, transparent) !important;
+    border: 1px solid var(--aird-hairline);
+    box-shadow: var(--aird-lift-sm);
+    transition:
+      box-shadow var(--aird-dur) var(--aird-ease-soft),
+      border-color var(--aird-dur) var(--aird-ease-soft),
+      background var(--aird-dur) var(--aird-ease-soft);
+  }
+
+  .aird-nav .btn-ghost {
+    transition:
+      background var(--aird-dur-fast) var(--aird-ease-soft),
+      color var(--aird-dur-fast) var(--aird-ease-soft),
+      transform var(--aird-dur-fast) var(--aird-ease-soft);
+  }
+
+  .aird-nav .btn-ghost:hover {
+    background: color-mix(in oklch, var(--color-base-content) 8%, transparent);
+  }
+
+  .aird-nav .btn-ghost:active {
+    transform: scale(0.97);
+  }
+
+  .aird-nav a[href="/files/"].btn-ghost.text-xl {
+    letter-spacing: -0.02em;
+  }
+
+  .aird-nav a[href="/files/"].btn-ghost.text-xl img:last-child {
+    filter: drop-shadow(0 1px 0 color-mix(in oklch, var(--color-base-content) 12%, transparent));
+  }
+
+  /* Elevated surfaces used by listings / forms */
+  .aird-panel {
+    border: 1px solid var(--aird-hairline);
+    border-radius: var(--radius-box, 0.85rem);
+    background: color-mix(in oklch, var(--color-base-100) 88%, var(--color-base-200));
+    box-shadow: var(--aird-lift-sm);
+    transition:
+      box-shadow var(--aird-dur) var(--aird-ease-soft),
+      border-color var(--aird-dur) var(--aird-ease-soft),
+      transform var(--aird-dur) var(--aird-ease-soft);
+  }
+
+  .aird-panel:hover {
+    border-color: color-mix(in oklch, var(--color-primary) 22%, var(--aird-hairline));
+    box-shadow: var(--aird-lift);
+  }
+
+  .aird-panel--static:hover {
+    transform: none;
+  }
+
+  /* Page hero titles — same brand treatment everywhere */
+  .aird-page-title {
+    margin: 0;
+    font-size: 1.875rem;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    line-height: 1.2;
+    background: linear-gradient(
+      135deg,
+      oklch(0.45 0.2 270) 0%,
+      oklch(0.55 0.25 270) 55%,
+      oklch(0.6 0.22 280) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .aird-page-title--sm {
+    font-size: 1.5rem;
+  }
+
+  .aird-page-title--lg {
+    font-size: 4.5rem;
+    line-height: 1;
+  }
+
+  .aird-page-title .count,
+  .aird-page-title .aird-page-title__meta {
+    -webkit-text-fill-color: color-mix(in oklch, var(--color-base-content) 50%, transparent);
+    background: none;
+    font-weight: 650;
+    font-size: 0.95rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .aird-page-lead {
+    margin: 0.4rem 0 0;
+    max-width: 40rem;
+    font-size: 0.95rem;
+    line-height: 1.45;
+    color: color-mix(in oklch, var(--color-base-content) 58%, transparent);
+  }
+
+  /* In-page section headings (below the page hero) */
+  .aird-section-title {
+    font-size: 1.125rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.25;
+    color: var(--color-base-content);
+  }
+
+  .aird-section-title .count,
+  .aird-section-title span[id] {
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    color: color-mix(in oklch, var(--color-base-content) 55%, transparent);
+  }
+
+  /* Path / breadcrumb strip */
+  .aird-pathbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.2rem 0.35rem;
+    padding: 0.55rem 0.9rem;
+    margin-bottom: 1rem;
+    font-size: 0.8125rem;
+    border-radius: 0.65rem;
+    border: 1px solid var(--aird-hairline);
+    background:
+      linear-gradient(
+        90deg,
+        color-mix(in oklch, var(--color-primary) 6%, transparent),
+        transparent 42%
+      ),
+      color-mix(in oklch, var(--color-base-200) 65%, transparent);
+    backdrop-filter: blur(8px);
+  }
+
+  .aird-pathbar a {
+    border-radius: 0.35rem;
+    padding: 0.1rem 0.25rem;
+    transition: color var(--aird-dur-fast) ease, background var(--aird-dur-fast) ease;
+  }
+
+  .aird-pathbar a:hover {
+    color: var(--color-primary);
+    background: color-mix(in oklch, var(--color-primary) 10%, transparent);
+  }
+
+  /* Upload / drop affordance */
+  .aird-dropzone {
+    position: relative;
+    overflow: hidden;
+    border-radius: 1rem;
+    border: 1.5px dashed color-mix(in oklch, var(--color-base-content) 22%, transparent);
+    background:
+      radial-gradient(
+        480px 180px at 50% 0%,
+        var(--aird-glow),
+        transparent 70%
+      ),
+      color-mix(in oklch, var(--color-base-200) 40%, transparent);
+    transition:
+      border-color var(--aird-dur) var(--aird-ease-soft),
+      background var(--aird-dur) var(--aird-ease-soft),
+      box-shadow var(--aird-dur) var(--aird-ease-soft),
+      transform var(--aird-dur-fast) var(--aird-ease-soft);
+  }
+
+  .aird-dropzone:hover,
+  .aird-dropzone:focus-within {
+    border-color: color-mix(in oklch, var(--color-primary) 55%, transparent);
+    box-shadow: 0 0 0 4px var(--aird-glow);
+  }
+
+  .aird-dropzone.dragover,
+  .aird-dropzone.drag-over {
+    border-color: var(--color-primary);
+    transform: scale(1.008);
+    box-shadow: 0 0 0 6px var(--aird-glow);
+  }
+
+  /* Admin / settings cards */
+  .aird-admin-card.card,
+  main .card.bg-base-100 {
+    border: 1px solid var(--aird-hairline);
+    background: color-mix(in oklch, var(--color-base-100) 92%, var(--color-base-200));
+    box-shadow: var(--aird-lift-sm);
+    transition:
+      box-shadow var(--aird-dur) var(--aird-ease-soft),
+      border-color var(--aird-dur) var(--aird-ease-soft),
+      transform var(--aird-dur) var(--aird-ease-soft);
+  }
+
+  .aird-admin-card.card:hover,
+  main .card.bg-base-100:hover {
+    border-color: color-mix(in oklch, var(--color-primary) 18%, var(--aird-hairline));
+    box-shadow: var(--aird-lift);
+  }
+
+  main .card .card-title {
+    letter-spacing: -0.02em;
+  }
+
+  /* Admin section tabs — readable inactive; clear active */
+  .aird-admin-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.4rem;
+    margin-bottom: 0.25rem;
+    border: 1px solid var(--aird-hairline);
+    border-radius: 0.75rem;
+    background: var(--color-base-100);
+    box-shadow: var(--aird-lift-sm);
+  }
+
+  .aird-admin-tabs a.aird-admin-tab {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.55rem 0.95rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.2;
+    text-decoration: none;
+    /* Force readable contrast — DaisyUI links otherwise look disabled */
+    color: var(--color-base-content) !important;
+    opacity: 1 !important;
+    -webkit-text-fill-color: var(--color-base-content);
+    background: transparent;
+    border: 1px solid transparent;
+    transition:
+      background var(--aird-dur-fast) var(--aird-ease-soft),
+      color var(--aird-dur-fast) var(--aird-ease-soft),
+      border-color var(--aird-dur-fast) var(--aird-ease-soft);
+  }
+
+  .aird-admin-tabs a.aird-admin-tab:hover {
+    background: color-mix(in oklch, var(--color-base-200) 90%, var(--color-primary));
+    color: var(--color-base-content) !important;
+    -webkit-text-fill-color: var(--color-base-content);
+  }
+
+  .aird-admin-tabs a.aird-admin-tab--active {
+    background: color-mix(in oklch, var(--color-primary) 14%, var(--color-base-100));
+    border-color: color-mix(in oklch, var(--color-primary) 40%, transparent);
+    color: var(--color-primary) !important;
+    -webkit-text-fill-color: var(--color-primary);
+    font-weight: 700;
+  }
+
+  .aird-admin-tabs a.aird-admin-tab--active:hover {
+    background: color-mix(in oklch, var(--color-primary) 18%, var(--color-base-100));
+    color: var(--color-primary) !important;
+    -webkit-text-fill-color: var(--color-primary);
+  }
+
+  @media (max-width: 639px) {
+    .aird-admin-tabs {
+      gap: 0.25rem;
+      padding: 0.3rem;
+    }
+
+    .aird-admin-tabs a.aird-admin-tab {
+      padding: 0.45rem 0.7rem;
+      font-size: 0.8125rem;
+    }
+  }
+
+  /* Soft interactive row (feature toggles, list rows) */
+  .aird-row-interactive {
+    transition:
+      background var(--aird-dur-fast) var(--aird-ease-soft),
+      border-color var(--aird-dur-fast) var(--aird-ease-soft),
+      transform var(--aird-dur-fast) var(--aird-ease-soft);
+  }
+
+  .aird-row-interactive:hover {
+    background: color-mix(in oklch, var(--color-base-200) 80%, transparent);
+  }
+
+  /* Primary CTA presence */
+  .btn.btn-primary {
+    box-shadow: 0 6px 16px color-mix(in oklch, var(--color-primary) 28%, transparent);
+    transition:
+      filter var(--aird-dur-fast) ease,
+      transform var(--aird-dur-fast) var(--aird-ease-soft),
+      box-shadow var(--aird-dur-fast) ease;
+  }
+
+  .btn.btn-primary:hover {
+    filter: brightness(1.05);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px color-mix(in oklch, var(--color-primary) 34%, transparent);
+  }
+
+  .btn.btn-primary:active {
+    transform: translateY(0) scale(0.98);
+  }
+
+  /* Table listings — quieter zebra, stronger hover */
+  .aird-table-wrap {
+    overflow: hidden;
+    border-radius: var(--radius-box, 0.85rem);
+    border: 1px solid var(--aird-hairline);
+    background: color-mix(in oklch, var(--color-base-100) 94%, transparent);
+    box-shadow: var(--aird-lift-sm);
+  }
+
+  .aird-table-wrap .table tbody tr {
+    transition: background var(--aird-dur-fast) ease;
+  }
+
+  .aird-table-wrap .table tbody tr:hover {
+    background: color-mix(in oklch, var(--color-primary) 7%, var(--color-base-100)) !important;
+  }
+
+  .aird-table-wrap .table thead {
+    background: color-mix(in oklch, var(--color-base-200) 80%, transparent);
+  }
+
+  .aird-table-wrap .table thead th {
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: color-mix(in oklch, var(--color-base-content) 62%, transparent);
+  }
+}
+
+@layer utilities {
+  .animate-aird-rise {
+    animation: aird-rise var(--aird-dur) var(--aird-ease-out) both;
+  }
+
+  .animate-aird-fade {
+    animation: aird-fade var(--aird-dur) var(--aird-ease-soft) both;
+  }
+}
+
+@keyframes aird-shell-in {
+  from { opacity: 0.001; }
+  to { opacity: 1; }
+}
+
+@keyframes aird-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes aird-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aird-shell,
+  .aird-shell > *:not(.aird-nav):not(script):not(style),
+  .animate-aird-rise,
+  .animate-aird-fade,
+  .animate-fade-in-up {
+    animation: none !important;
+  }
+
+  .btn.btn-primary:hover,
+  .aird-dropzone.dragover,
+  .aird-dropzone.drag-over,
+  .aird-nav .btn-ghost:active {
+    transform: none !important;
+  }
+
+  body {
+    background-attachment: scroll;
+  }
+}

@@ -29,6 +29,9 @@ class SuperSearch {
         this.resultsContent = document.getElementById('resultsContent');
         this.statsDiv = document.getElementById('stats');
 
+        this.patternHint = document.getElementById('patternHint');
+        this.patternHelp = document.getElementById('patternHelp');
+
         // Search mode elements
         this.searchModeRadios = document.querySelectorAll('input[name="searchMode"]');
         this.searchTextLabel = document.getElementById('searchTextLabel');
@@ -37,6 +40,13 @@ class SuperSearch {
 
         // Set platform-specific defaults
         this.setupPlatformDefaults();
+      }
+
+      setVisible(el, visible) {
+        if (!el) return;
+        el.classList.toggle('hidden', !visible);
+        if (visible) el.style.display = '';
+        else if (el.style) el.style.display = '';
       }
 
       setupPlatformDefaults() {
@@ -53,11 +63,9 @@ class SuperSearch {
         // Build default pattern based on current path
         let defaultPattern;
         if (currentPath && currentPath.trim() !== '') {
-          // Use current path as base for pattern
           const normalizedPath = currentPath.replaceAll(/[/\\]/g, separator);
           defaultPattern = `${normalizedPath}${separator}**${separator}*.txt`;
         } else {
-          // Default to root search if no current path
           defaultPattern = isWindows ? String.raw`**\*.txt` : '**/*.txt';
         }
 
@@ -68,11 +76,14 @@ class SuperSearch {
         }
 
         this.patternInput.value = defaultPattern;
-
-        // Update help text
-        const helpText = this.patternInput.parentElement.querySelector('.help-text');
-        const sep = this.escapeHtml(separator);
-        helpText.innerHTML = `Use * for wildcards, ** for recursive matching, ? for single character. Use "<code>${sep}</code>" as path separator. Searches from root directory only.`;
+        if (this.patternHelp) {
+          const sep = this.escapeHtml(separator);
+          const note = this.patternHelp.querySelector('.ss-sep-note');
+          if (note) {
+            note.innerHTML = `Path separator: <code>${sep}</code>. Searches from your root directory.`;
+          }
+        }
+        this.validatePattern();
       }
 
       bindEvents() {
@@ -127,32 +138,30 @@ class SuperSearch {
 
       validatePattern() {
         const pattern = this.patternInput.value.trim();
-        const helpText = this.patternInput.parentElement.querySelector('.help-text');
+        const hint = this.patternHint;
+        if (!hint) return;
+
+        hint.classList.remove('is-ok', 'is-warn', 'is-err');
 
         if (!pattern) {
-          helpText.innerHTML = `<strong>Wildcard patterns:</strong><br>
-            • <code>*</code> - matches any characters (except /)<br>
-            • <code>**</code> - matches any characters including subdirectories<br>
-            • <code>?</code> - matches single character<br>
-            • <code>[abc]</code> - matches any character in brackets<br>
-            • <code>[a-z]</code> - matches character range<br>
-            <strong>Examples:</strong> <code>*.py</code>, <code>**/*.js</code>, <code>test_*.txt</code>, <code>*.{py,js,html}</code>`;
+          hint.textContent = 'Enter a glob pattern to match files.';
           return;
         }
 
-        // Basic pattern validation
         const hasWildcard = pattern.includes('*') || pattern.includes('?') || pattern.includes('[');
         const isValid = pattern.length > 0 && !pattern.includes('//');
 
         if (isValid) {
-          const safe = this.escapeHtml(pattern);
           if (hasWildcard) {
-            helpText.innerHTML = `✅ Valid wildcard pattern. This will search for files matching: <code>${safe}</code>`;
+            hint.classList.add('is-ok');
+            hint.textContent = 'Wildcard pattern ready.';
           } else {
-            helpText.innerHTML = `ℹ️ Literal pattern. This will search for files named exactly: <code>${safe}</code>`;
+            hint.classList.add('is-warn');
+            hint.textContent = 'Literal name match (no wildcards).';
           }
         } else {
-          helpText.innerHTML = `❌ Invalid pattern. Check for double slashes or empty pattern.`;
+          hint.classList.add('is-err');
+          hint.textContent = 'Invalid pattern — check for empty segments or double slashes.';
         }
       }
 
@@ -241,7 +250,7 @@ class SuperSearch {
             this.showStatus('Authentication required. Redirecting to login...', 'error');
             this.isSearching = false;
             this.updateButtons();
-            this.progressContainer.style.display = 'none';
+            this.setVisible(this.progressContainer, false);
             // Redirect to login page with next parameter
             const redirectUrl = data.redirect || '/login?next=' + encodeURIComponent(globalThis.location.pathname);
             setTimeout(() => {
@@ -256,13 +265,13 @@ class SuperSearch {
             } else {
               this.showStatus(`Searching for "${data.search_text}" in files matching "${data.pattern}"...`, 'searching');
             }
-            this.progressContainer.style.display = 'block';
+            this.setVisible(this.progressContainer, true);
             this.scanningTicker.textContent = '';
             break;
 
           case 'scanning':
             this.processedFiles = data.files_searched;
-            this.scanningTicker.textContent = '\u25B6 ' + data.file_path;
+            this.scanningTicker.textContent = data.file_path;
             this.progressText.textContent = `${data.files_searched} files scanned`;
             break;
 
@@ -271,19 +280,19 @@ class SuperSearch {
             break;
 
           case 'search_complete':
-            this.showStatus(`✅ Search completed! Found ${this.totalMatches} matches across ${this.results.size} files.`, 'success');
+            this.showStatus(`Search completed — ${this.totalMatches} matches in ${this.results.size} files.`, 'success');
             this.progressFill.value = 100;
-            this.progressText.textContent = '100% - Finished';
+            this.progressText.textContent = 'Done';
             this.progressFill.classList.remove('progress-primary');
             this.progressFill.classList.add('progress-success');
-            this.scanningTicker.textContent = 'Ready for next search';
+            this.scanningTicker.textContent = '';
             this.isSearching = false;
             this.updateButtons();
             break;
 
           case 'no_files':
             this.showStatus(data.message || `No matches found (${data.files_searched} files scanned).`, 'success');
-            this.progressContainer.style.display = 'none';
+            this.setVisible(this.progressContainer, false);
             this.scanningTicker.textContent = '';
             this.isSearching = false;
             this.updateButtons();
@@ -291,7 +300,7 @@ class SuperSearch {
 
           case 'cancelled':
             this.showStatus('Search cancelled.', 'error');
-            this.progressContainer.style.display = 'none';
+            this.setVisible(this.progressContainer, false);
             this.scanningTicker.textContent = '';
             this.isSearching = false;
             this.updateButtons();
@@ -303,7 +312,7 @@ class SuperSearch {
             if (data.type === 'error') {
               this.isSearching = false;
               this.updateButtons();
-              this.progressContainer.style.display = 'none';
+              this.setVisible(this.progressContainer, false);
             }
             break;
         }
@@ -327,69 +336,68 @@ class SuperSearch {
 
       createFileSection(filePath) {
         const section = document.createElement('div');
-        section.className = 'mb-3 rounded-xl overflow-hidden border border-base-300 bg-base-200/30';
+        section.className = 'ss-file';
         section.id = `file-${this.escapeId(filePath)}`;
 
         const header = document.createElement('div');
-        header.className = 'flex items-center justify-between py-2 px-4 bg-base-300/50 cursor-pointer hover:bg-base-300 transition-colors';
-        
+        header.className = 'ss-file-header';
+
         const pathSegments = filePath.split(/[/\\]/);
         const fileName = pathSegments[pathSegments.length - 1];
         const dirName = pathSegments.slice(0, -1).join('/') || '/';
-        
+
         const dirHref = '/files/' + encodeURIComponent(dirName.replace(/^\/+/, ''));
         const fileHref = '/files/' + filePath.replace(/^\/+/, '');
         header.innerHTML = `
-            <div class="file-path flex items-center gap-1 text-base-content font-semibold text-sm flex-1 min-w-0 overflow-hidden">
-              <svg class="w-4 h-4 opacity-50 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+            <div class="file-path flex items-center gap-1.5 text-base-content font-semibold text-sm flex-1 min-w-0 overflow-hidden">
+              <svg class="w-4 h-4 opacity-45 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
               <a href="${dirHref}" target="_blank" rel="noopener noreferrer"
-                 class="opacity-50 truncate hidden sm:inline hover:opacity-100 hover:text-primary transition-opacity no-underline hover:underline shrink min-w-0"
-                 title="Open folder in new tab">${this.escapeHtml(dirName)}/</a><a href="${fileHref}" target="_blank" rel="noopener noreferrer"
+                 class="opacity-45 truncate hidden sm:inline hover:opacity-100 hover:text-primary transition-opacity no-underline hover:underline shrink min-w-0"
+                 title="Open folder">${this.escapeHtml(dirName)}/</a><a href="${fileHref}" target="_blank" rel="noopener noreferrer"
                  class="font-bold text-primary hover:underline shrink-0 no-underline"
-                 title="Open file in new tab">${this.escapeHtml(fileName)}</a>
+                 title="Open file">${this.escapeHtml(fileName)}</a>
             </div>
-            <button type="button" class="file-toggle btn btn-xs btn-outline btn-circle border-base-content/20 shrink-0 ml-2 transition-transform duration-200 opacity-60" title="Hide/Show results in this file">
-              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+            <button type="button" class="file-toggle btn btn-xs btn-ghost btn-circle shrink-0 opacity-55" title="Collapse file results" aria-label="Collapse">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
             </button>
           `;
-          
+
         header.addEventListener('click', (e) => {
-          if (e.target.closest('a')) { return; } // Let dir/file links open normally
+          if (e.target.closest('a')) { return; }
           this.toggleFileSection(filePath);
         });
 
         const matchList = document.createElement('div');
-        matchList.className = 'bg-base-100 font-mono text-[13px]';
+        matchList.className = 'ss-match-list';
         matchList.id = `matches-${this.escapeId(filePath)}`;
 
         section.appendChild(header);
         section.appendChild(matchList);
 
         this.resultsContent.appendChild(section);
-        this.resultsDiv.style.display = 'block';
+        this.setVisible(this.resultsDiv, true);
         const hint = document.getElementById('idleHint');
-        if (hint) hint.style.display = 'none';
+        this.setVisible(hint, false);
       }
 
       addMatchToDOM(filePath, matchData) {
         const matchList = document.getElementById(`matches-${this.escapeId(filePath)}`);
         const matchItem = document.createElement('div');
-        matchItem.className = 'flex py-1 px-4 border-b border-base-200/50 border-l-[3px] border-l-transparent transition-colors hover:bg-base-200/30 hover:border-l-primary';
+        matchItem.className = 'ss-match';
 
         const highlightedContent = this.highlightMatches(matchData.line_content, matchData.search_text, matchData.match_positions);
 
-        // Handle filename search results differently
         if (matchData.line_number === 0) {
           matchItem.innerHTML = `
-              <span class="w-12 shrink-0 text-base-content/40 text-right mr-5 text-xs select-none">📁</span>
-              <span class="whitespace-pre-wrap break-all text-base-content/80 font-semibold text-primary">${highlightedContent}</span>
+              <span class="ss-match-line">file</span>
+              <span class="ss-match-text text-primary font-semibold">${highlightedContent}</span>
             `;
         } else {
           const lineNum = Number(matchData.line_number);
           const lineLabel = Number.isFinite(lineNum) ? String(lineNum) : this.escapeHtml(String(matchData.line_number ?? ''));
           matchItem.innerHTML = `
-              <span class="w-12 shrink-0 text-base-content/40 text-right mr-5 text-xs select-none">${lineLabel}:</span>
-              <span class="whitespace-pre-wrap break-all text-base-content/80">${highlightedContent}</span>
+              <span class="ss-match-line">${lineLabel}</span>
+              <span class="ss-match-text">${highlightedContent}</span>
             `;
         }
 
@@ -405,14 +413,11 @@ class SuperSearch {
         let lastIndex = 0;
 
         positions.forEach(pos => {
-          // Add text before match
           result += this.escapeHtml(content.substring(lastIndex, pos));
-          // Add highlighted match
-          result += `<span class="bg-primary/20 text-primary rounded-[0.2rem] px-[0.2rem] font-bold">${this.escapeHtml(content.substring(pos, pos + searchText.length))}</span>`;
+          result += `<span class="ss-hit">${this.escapeHtml(content.substring(pos, pos + searchText.length))}</span>`;
           lastIndex = pos + searchText.length;
         });
 
-        // Add remaining text
         result += this.escapeHtml(content.substring(lastIndex));
         return result;
       }
@@ -438,9 +443,8 @@ class SuperSearch {
       }
 
       updateStats() {
-        this.statsDiv.innerHTML = `
-            📊 Results: ${this.totalMatches} matches across ${this.results.size} files
-          `;
+        this.statsDiv.textContent =
+          `${this.totalMatches} match${this.totalMatches === 1 ? '' : 'es'} · ${this.results.size} file${this.results.size === 1 ? '' : 's'}`;
       }
 
       cancelSearch() {
@@ -451,7 +455,7 @@ class SuperSearch {
         this.isSearching = false;
         this.updateButtons();
         this.showStatus('Search cancelled.', 'error');
-        this.progressContainer.style.display = 'none';
+        this.setVisible(this.progressContainer, false);
         this.scanningTicker.textContent = '';
       }
 
@@ -461,13 +465,15 @@ class SuperSearch {
         this.totalFiles = 0;
         this.processedFiles = 0;
         this.resultsContent.innerHTML = '';
-        this.statsDiv.innerHTML = '';
-        this.resultsDiv.style.display = 'none';
-        this.progressContainer.style.display = 'none';
-        this.progressFill.style.width = '0%';
+        this.statsDiv.textContent = '';
+        this.setVisible(this.resultsDiv, false);
+        this.setVisible(this.progressContainer, false);
+        this.progressFill.value = 0;
+        this.progressFill.classList.remove('progress-success');
+        this.progressFill.classList.add('progress-primary');
         this.scanningTicker.textContent = '';
         const hint = document.getElementById('idleHint');
-        if (hint) hint.style.display = '';
+        this.setVisible(hint, true);
       }
 
       updateButtons() {
@@ -487,7 +493,7 @@ class SuperSearch {
         this.statusText.textContent = message;
 
         // Reset classes
-        this.statusDiv.className = 'alert mt-6';
+        this.statusDiv.className = 'alert mt-5';
 
         // Map status types to DaisyUI alert classes
         const typeMap = {

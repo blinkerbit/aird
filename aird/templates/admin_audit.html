@@ -4,26 +4,26 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}" />
+  <link rel="stylesheet" href="/static/css/app.css" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Audit log · Aird</title>
 </head>
 <body class="bg-base-200 min-h-screen">
-  <div class="container mx-auto p-4">
+  <div class="aird-shell aird-shell--wide">
     {% set nav_title = "⚙ Admin Panel" %}
     {% set show_admin_link = False %}
     {% include '_app_nav_header.html' %}
-  </div>
-
-  {% set admin_active_tab = "audit" %}
+      {% set admin_active_tab = "audit" %}
   {% include '_admin_tabs.html' %}
 
-  <main class="max-w-6xl mx-auto p-4 space-y-4">
+      <main class="aird-page">
 
-    <div class="flex items-center justify-between flex-wrap gap-3">
-      <h1 class="text-2xl font-bold">Audit log</h1>
-      <a href="/admin/audit?format=csv" class="btn btn-ghost btn-sm gap-1 border border-base-300">⬇ Export CSV</a>
-    </div>
+    <header class="aird-page-header">
+      <h1 class="aird-page-title">Audit log</h1>
+      <div class="aird-page-header__actions">
+        <a href="/admin/audit?format=csv" class="btn btn-ghost btn-sm gap-1 border border-base-300">⬇ Export CSV</a>
+      </div>
+    </header>
 
     <div role="tablist" class="tabs tabs-bordered" aria-label="Audit views">
       <button type="button" role="tab" class="tab tab-active font-bold" data-tab="user">User actions</button>
@@ -100,8 +100,9 @@
       </div>
     </section>
   </main>
-  <script src="/static/js/theme.js?v={{ static_version }}"></script>
-  <script src="/static/js/aird-core.js?v={{ static_version }}"></script>
+  </div>
+  <script src="/static/js/theme.js"></script>
+  <script src="/static/js/aird-core.js"></script>
   <script nonce="{{ csp_nonce }}">
     (function () {
       const tabs = document.querySelectorAll("[data-tab]");
