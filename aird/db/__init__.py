@@ -44,6 +44,8 @@ from aird.db.config import (  # noqa: F401
     save_feature_flags,
     load_upload_config,
     save_upload_config,
+    load_server_config,
+    save_server_config,
     load_allowed_extensions,
     save_allowed_extensions,
     load_websocket_config,

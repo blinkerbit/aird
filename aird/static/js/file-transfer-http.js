@@ -12,21 +12,32 @@
     return global.__BROWSE_CONFIG || {};
   }
 
-  function largeThreshold() {
-    return config().largeFileThreshold || DEFAULT_LARGE_THRESHOLD;
+  function transferStrategy(options) {
+    return options?.strategy || global.AirdRuntimeConfig?.getTransferStrategy?.()
+      || config().transferStrategy || {};
   }
 
-  function rangeChunkBytes() {
-    return config().rangeChunkBytes || DEFAULT_RANGE_CHUNK;
+  function largeThreshold(strategy) {
+    return strategy?.directUploadMaxBytes
+      || config().largeFileThreshold
+      || DEFAULT_LARGE_THRESHOLD;
   }
 
-  function rangeUploadConcurrency() {
-    const n = config().rangeUploadConcurrency || DEFAULT_RANGE_CONCURRENCY;
+  function rangeChunkBytes(strategy) {
+    return strategy?.rangeChunkBytes || config().rangeChunkBytes || DEFAULT_RANGE_CHUNK;
+  }
+
+  function rangeUploadConcurrency(strategy) {
+    const n = strategy?.rangeUploadConcurrency
+      || config().rangeUploadConcurrency
+      || DEFAULT_RANGE_CONCURRENCY;
     return Math.max(1, Math.min(64, Number(n) || DEFAULT_RANGE_CONCURRENCY));
   }
 
-  function rangeDownloadConcurrency() {
-    const n = config().rangeDownloadConcurrency || DEFAULT_RANGE_CONCURRENCY;
+  function rangeDownloadConcurrency(strategy) {
+    const n = strategy?.rangeDownloadConcurrency
+      || config().rangeDownloadConcurrency
+      || DEFAULT_RANGE_CONCURRENCY;
     return Math.max(1, Math.min(64, Number(n) || DEFAULT_RANGE_CONCURRENCY));
   }
 
@@ -194,6 +205,7 @@
         await abortableSleep(Math.min(2000 * 2 ** attempt, 16000), cancelScope);
         continue;
       }
+      if (lastRes.status === 507) return lastRes;
       if (lastRes.status >= 500) {
         await abortableSleep(Math.min(1000 * 2 ** attempt, 8000), cancelScope);
         continue;
@@ -495,6 +507,7 @@
 
   async function rangedUpload(file, options) {
     options = wrapCancelOptions(options);
+    const strategy = transferStrategy(options);
     const uploadDir = options.uploadDir ?? '';
     const filename = options.filename ?? (file.name || 'upload');
     const onProgress = options.onProgress || function () {};
@@ -514,7 +527,7 @@
       );
       const uploadId = session.uploadId;
       const chunkSize = session.chunkBytes;
-      const maxConcurrency = rangeUploadConcurrency();
+      const maxConcurrency = rangeUploadConcurrency(strategy);
       const totalChunks = Math.ceil(totalSize / chunkSize);
 
       const chunkDone = new Uint8Array(totalChunks);
@@ -791,7 +804,11 @@
 
   async function uploadFile(file, options) {
     options = wrapCancelOptions(options || {});
-    if (file.size >= largeThreshold()) {
+    const strategy = transferStrategy(options);
+    if (strategy.uploadTransport === 'stream') {
+      return smallUpload(file, options);
+    }
+    if (file.size >= largeThreshold(strategy)) {
       // Parallel HTTP range PUT — fastest path (multiple concurrent TCP streams).
       return rangedUpload(file, options);
     }
@@ -829,8 +846,39 @@
     const reader = res.body?.getReader();
     if (!reader) {
       const blob = await res.blob();
+      if (options.writable) {
+        await options.writable.write(blob);
+        await options.writable.close();
+        if (TT && ttId) TT.completeTransfer(ttId);
+        return { saved: true, filename: fname, path, size: blob.size };
+      }
       if (TT && ttId) TT.completeTransfer(ttId);
       return { blob, filename: fname, path, size: blob.size };
+    }
+
+    if (options.writable) {
+      let loaded = 0;
+      try {
+        while (true) {
+          cancelScope.throwIfAborted();
+          const { done, value } = await reader.read();
+          if (done) break;
+          await options.writable.write(value);
+          loaded += value.byteLength;
+          ttUpdate(TT, ttId, loaded, total || loaded);
+          if (options.onProgress) options.onProgress(loaded, total || loaded);
+        }
+        await options.writable.close();
+        ttComplete(TT, ttId);
+        return { saved: true, filename: fname, path, size: loaded };
+      } catch (err) {
+        try {
+          await options.writable.abort();
+        } catch (abortErr) {
+          console.debug('Writable abort ignored', abortErr);
+        }
+        throw err;
+      }
     }
 
     const blob = await readStreamToBlob(reader, total, ttId, options.onProgress, cancelScope);
@@ -840,21 +888,25 @@
 
   async function rangedDownload(path, options) {
     options = wrapCancelOptions(options);
+    const strategy = transferStrategy(options);
     const url = filesUrl(path);
     const cancelScope = options.signal;
-    const chunkSize = rangeChunkBytes();
-    const concurrency = rangeDownloadConcurrency();
+    const chunkSize = rangeChunkBytes(strategy);
+    const concurrency = rangeDownloadConcurrency(strategy);
     const fname = path.split('/').pop() || path;
     const { TT, ttId } = trackDownload(fname, options);
 
     const total = await fetchFileSize(url, cancelScope);
     if (TT && ttId) TT.updateProgress(ttId, 0, total);
 
-    const parts = new Array(Math.ceil(total / chunkSize));
-    const totalChunks = parts.length;
+    const parts = options.writable ? null : new Array(Math.ceil(total / chunkSize));
+    const totalChunks = Math.ceil(total / chunkSize);
     let nextChunkIndex = 0;
     let loaded = 0;
     let failure = null;
+    let writeChain = Promise.resolve();
+
+    if (options.writable) await options.writable.truncate(total);
 
     function reportDlProgress() {
       ttUpdate(TT, ttId, loaded, total);
@@ -871,9 +923,21 @@
         if (idx >= totalChunks) return;
         const start = idx * chunkSize;
         try {
-          loaded += await downloadRangeChunk(
-            url, start, chunkSize, total, cancelScope, parts, TT, ttId
-          );
+          const end = Math.min(start + chunkSize - 1, total - 1);
+          if (options.writable) {
+            const buf = await fetchRangePartWithRetry(url, start, end, cancelScope);
+            writeChain = writeChain.then(() => options.writable.write({
+              type: 'write',
+              position: start,
+              data: new Uint8Array(buf),
+            }));
+            await writeChain;
+            loaded += buf.byteLength;
+          } else {
+            loaded += await downloadRangeChunk(
+              url, start, chunkSize, total, cancelScope, parts, TT, ttId
+            );
+          }
           reportDlProgress();
         } catch (err) {
           failure = err;
@@ -884,8 +948,22 @@
 
     await Promise.all(Array.from({ length: concurrency }, () => worker()));
     if (failure) {
+      if (options.writable) {
+        try {
+          await options.writable.abort();
+        } catch (abortErr) {
+          console.debug('Writable abort ignored', abortErr);
+        }
+      }
       if (failure.message === 'cancelled') ttFail(TT, ttId, 'Cancelled');
       throw failure;
+    }
+
+    if (options.writable) {
+      await writeChain;
+      await options.writable.close();
+      ttComplete(TT, ttId);
+      return { saved: true, filename: fname, path, size: total };
     }
 
     const blob = new Blob(parts);
@@ -896,13 +974,30 @@
   async function downloadFile(path, options) {
     options = wrapCancelOptions(options || {});
     const url = filesUrl(path);
+    const strategy = transferStrategy(options);
+    const fname = path.split('/').pop() || path;
+    if (strategy.downloadTransport === 'stream') {
+      return { native: true, url, filename: fname, path };
+    }
+    if (
+      options.directToDisk
+      && !options.writable
+      && typeof window.showSaveFilePicker === 'function'
+    ) {
+      try {
+        const handle = await window.showSaveFilePicker({ suggestedName: fname });
+        options.writable = await handle.createWritable();
+      } catch (err) {
+        if (err?.name === 'AbortError') throw new Error('cancelled');
+      }
+    }
     let total = 0;
     try {
       total = await fetchFileSize(url, options.signal);
     } catch {
       return smallDownload(path, options);
     }
-    if (total >= largeThreshold()) {
+    if (total >= largeThreshold(strategy)) {
       return rangedDownload(path, options);
     }
     return smallDownload(path, options);
@@ -948,5 +1043,6 @@
     rangeChunkBytes,
     rangeUploadConcurrency,
     rangeDownloadConcurrency,
+    createCancelScope,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

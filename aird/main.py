@@ -5,6 +5,7 @@ import socket
 import sqlite3
 import sys
 import ssl
+from datetime import datetime, timedelta, timezone
 
 import tornado.httpserver
 import tornado.ioloop
@@ -56,6 +57,7 @@ from aird.services import (
 )
 
 from aird.database.db import get_data_dir
+from aird.db.ranged_uploads import delete_session, list_stale_sessions
 from aird.network_share_manager import NetworkShareManager
 from aird.handlers.abac_handlers import (
     AdminPoliciesHandler,
@@ -91,6 +93,8 @@ from aird.handlers.api_handlers import (
     FavoritesListAPIHandler,
     FeatureFlagAPIHandler,
     FeatureFlagSocketHandler,
+    RuntimeConfigAPIHandler,
+    RuntimeConfigSocketHandler,
     FileListAPIHandler,
     FolderSizeAPIHandler,
     FileStreamHandler,
@@ -268,6 +272,8 @@ def make_app(
         (r"/api/folder-size", FolderSizeAPIHandler),
         (r"/features", FeatureFlagSocketHandler),
         (r"/api/features", FeatureFlagAPIHandler),
+        (r"/runtime-config", RuntimeConfigSocketHandler),
+        (r"/api/runtime-config", RuntimeConfigAPIHandler),
         (r"/upload", UploadHandler),
         (r"/api/upload/range/session", RangedUploadSessionHandler),
         (r"/api/upload/range/([^/]+)/status", RangedUploadStatusHandler),
@@ -412,6 +418,7 @@ def _load_and_merge_configs(db_conn) -> None:
             logger.debug("Feature flag '%s' set to %s from database", key, bool(value))
 
     config_service.sync_upload_config_from_db(db_conn)
+    config_service.sync_transfer_profile_from_db(db_conn)
 
     constants.UPLOAD_ALLOWED_EXTENSIONS = load_allowed_extensions(db_conn)
     if not constants.UPLOAD_ALLOWED_EXTENSIONS:
@@ -426,6 +433,7 @@ def _load_and_merge_configs(db_conn) -> None:
         "Max upload file size: %s MB",
         constants.UPLOAD_CONFIG["max_file_size_mb"],
     )
+    logger.info("Transfer profile: %s", constants.TRANSFER_PROFILE)
 
     from aird.core.rate_limit import TransferRateLimiter
 
@@ -493,6 +501,18 @@ def _run_cleanup_expired_shares():
         deleted = cleanup_expired_shares(constants.DB_CONN)
         if deleted > 0:
             logger.info(f"Cleaned up {deleted} expired share(s)")
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        stale_uploads = list_stale_sessions(constants.DB_CONN, cutoff)
+        for session in stale_uploads:
+            try:
+                if os.path.exists(session["temp_path"]):
+                    os.remove(session["temp_path"])
+            except OSError:
+                logger.debug("Failed to remove stale upload temp", exc_info=True)
+                continue
+            delete_session(constants.DB_CONN, session["id"])
+        if stale_uploads:
+            logger.info("Cleaned up %d stale ranged upload(s)", len(stale_uploads))
     tornado.ioloop.IOLoop.current().call_later(3600, _run_cleanup_expired_shares)
 
 

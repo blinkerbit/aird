@@ -105,7 +105,11 @@ export async function downloadFileViaHttp(filePath) {
   if (!Dl?.DownloadBatch) {
     try {
       const result = await FTH.downloadFile(filePath);
-      FTH.saveBlob(result.blob, result.filename);
+      if (result.native) {
+        globalThis.location.href = result.url;
+      } else {
+        FTH.saveBlob(result.blob, result.filename);
+      }
     } catch (err) {
       showDialog('Download failed: ' + (err?.message || err), 'Download');
     }

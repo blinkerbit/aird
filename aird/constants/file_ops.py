@@ -34,6 +34,7 @@ UNSUPPORTED_FILE_TYPE = (
     "Unsupported file type: This file type is not allowed for upload"
 )
 UPLOAD_SAVE_FAILED = "Failed to save upload. Please try again."
+UPLOAD_DISK_FULL = "Not enough disk space to complete this upload."
 UPLOAD_SUCCESSFUL = "Upload successful"
 MISSING_UPLOAD_CHUNK_HEADERS = "Missing chunked upload headers"
 INVALID_UPLOAD_CHUNK_HEADERS = "Invalid chunked upload headers"

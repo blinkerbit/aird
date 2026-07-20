@@ -114,6 +114,34 @@
         </div>
       </div>
 
+      <!-- Hosting / transfer profile -->
+      <div class="card bg-base-100 shadow-sm border border-base-300 aird-admin-card">
+        <div class="card-body space-y-3">
+          <h2 class="card-title text-base">Hosting profile</h2>
+          <div class="flex flex-wrap items-center gap-3">
+            <label for="transfer_profile" class="text-sm font-semibold w-48">Transfer optimization</label>
+            <select id="transfer_profile" name="transfer_profile" class="select select-bordered select-sm w-48"
+                    {% if runtime_config.get('environmentOverride') %}disabled{% end %}>
+              {% for profile in transfer_profile_names %}
+              <option value="{{ profile }}" {% if runtime_config.get('configuredProfile') == profile %}selected{% end %}>
+                {{ profile.title() }}
+              </option>
+              {% end %}
+            </select>
+            {% if runtime_config.get('environmentOverride') %}
+            <input type="hidden" name="transfer_profile" value="{{ runtime_config.get('configuredProfile', 'open') }}">
+            <span class="text-xs text-warning">Locked by AIRD_TRANSFER_PROFILE={{ runtime_config.get('profile') }}</span>
+            {% else %}
+            <span class="text-xs text-base-content/50">Changes apply live to new transfers.</span>
+            {% end %}
+          </div>
+          <p class="text-xs text-base-content/60">
+            Effective: <strong>{{ runtime_config.get('profile', 'open') }}</strong>.
+            Cloudflare uses proxy-safe 90 MiB ranges; WireGuard streams directly; Open uses resumable public-WAN transfers.
+          </p>
+        </div>
+      </div>
+
       <!-- Upload settings -->
       <div class="card bg-base-100 shadow-sm border border-base-300 aird-admin-card">
         <div class="card-body space-y-4">
@@ -127,20 +155,20 @@
           <div class="flex flex-wrap items-center gap-3">
             <label for="single_request_max_mb" class="text-sm font-semibold w-48">Single-request max (MB)</label>
             <input type="number" id="single_request_max_mb" name="single_request_max_mb" class="input input-bordered input-sm w-28"
-                   value="{{ upload_config.get('single_request_max_mb', 100) }}" min="0" step="1">
-            <span class="text-xs text-base-content/50">Files larger than this use parallel HTTP range uploads. Set 0 for default (100 MB). Default 100 (proxy-safe).</span>
+                   value="{{ upload_config.get('single_request_max_mb', 64) }}" min="0" step="1">
+            <span class="text-xs text-base-content/50">Advanced override for Open. Cloudflare caps this at 90 MiB; WireGuard streams directly.</span>
           </div>
           <div class="flex flex-wrap items-center gap-3">
             <label for="range_chunk_mb" class="text-sm font-semibold w-48">HTTP chunk (MB)</label>
             <input type="number" id="range_chunk_mb" name="range_chunk_mb" class="input input-bordered input-sm w-28"
-                   value="{{ upload_config.get('range_chunk_mb', 90) }}" min="4" max="200" step="1">
-            <span class="text-xs text-base-content/50">Bytes per HTTP range PUT. Default 90. Does not cap line speed — only bounds RAM per stream (~chunk × parallelism).</span>
+                   value="{{ upload_config.get('range_chunk_mb', 32) }}" min="4" max="200" step="1">
+            <span class="text-xs text-base-content/50">Open-profile range size. Cloudflare is capped at 90 MiB.</span>
           </div>
           <div class="flex flex-wrap items-center gap-3">
             <label for="range_upload_concurrency" class="text-sm font-semibold w-48">HTTP parallelism</label>
             <input type="number" id="range_upload_concurrency" name="range_upload_concurrency" class="input input-bordered input-sm w-28"
-                   value="{{ upload_config.get('range_upload_concurrency', 16) }}" min="1" max="64" step="1">
-            <span class="text-xs text-base-content/50">Concurrent upload streams (1 Gbps: try 16–32). Default 16.</span>
+                   value="{{ upload_config.get('range_upload_concurrency', 8) }}" min="1" max="64" step="1">
+            <span class="text-xs text-base-content/50">Open-profile maximum. Cloudflare is capped at 8; WireGuard uses one stream.</span>
           </div>
           <div class="flex flex-wrap items-center gap-3">
             <label for="ws_chunk_mb" class="text-sm font-semibold w-48">WS chunk (MB)</label>

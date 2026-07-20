@@ -60,12 +60,13 @@ from aird.config import (
     MAX_READABLE_FILE_SIZE,
 )
 from aird.core.mmap_handler import MMapFileHandler
+import aird.constants as constants_module
 
 
 class FeatureFlagSocketHandler(
     ManagedWebSocketMixin, tornado.websocket.WebSocketHandler
 ):
-    """Legacy WebSocket kept for backward compatibility; new clients use GET /api/features."""
+    """Push live feature-flag changes to authenticated browser sessions."""
 
     connection_manager = WebSocketConnectionManager(
         "feature_flags", default_max_connections=50, default_idle_timeout=600
@@ -101,6 +102,56 @@ class FeatureFlagAPIHandler(BaseHandler):
     def get(self):
         self.set_header("Content-Type", CONTENT_TYPE_JSON)
         self.write(json.dumps(get_current_feature_flags()))
+
+
+def _runtime_config_from_settings(settings) -> dict:
+    app_context = settings.get("app_context")
+    service = app_context.config_service if app_context is not None else None
+    conn = app_context.db_conn if app_context is not None else constants_module.DB_CONN
+    if service is None:
+        from aird.services.config_service import ConfigService
+
+        service = ConfigService()
+    return service.get_runtime_config(conn)
+
+
+class RuntimeConfigSocketHandler(
+    ManagedWebSocketMixin, tornado.websocket.WebSocketHandler
+):
+    """Push live hosting-profile changes to authenticated browser sessions."""
+
+    connection_manager = WebSocketConnectionManager(
+        "runtime_config", default_max_connections=200, default_idle_timeout=600
+    )
+
+    def open(self):
+        if not self.get_current_user():
+            self.close(code=1008, reason=AUTH_REQUIRED)
+            return
+        if not self.register_connection():
+            return
+        self.write_message(json.dumps(_runtime_config_from_settings(self.settings)))
+
+    def check_origin(self, origin):
+        return is_valid_websocket_origin(self, origin)
+
+    @classmethod
+    def send_updates(cls, runtime_config: dict | None = None):
+        payload = runtime_config or constants_module.get_effective_transfer_strategy()
+        cls.connection_manager.broadcast_message(json.dumps(payload))
+
+
+class RuntimeConfigAPIHandler(BaseHandler):
+    """Return the latest DB-backed transfer profile (HTTP fallback on reconnect)."""
+
+    @tornado.web.authenticated
+    def get(self):
+        runtime_config = self.get_service("config_service").get_runtime_config(
+            self.db_conn
+        )
+        self.set_header("Content-Type", CONTENT_TYPE_JSON)
+        self.set_header("Cache-Control", "no-store")
+        self.write(json.dumps(runtime_config))
 
 
 class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandler):

@@ -365,6 +365,12 @@ class UploadHandler(BaseHandler):
     async def prepare(self):
         BaseHandler.prepare(self)
         self.sync_upload_config_from_db()
+        try:
+            self.request.connection.set_max_body_size(
+                constants_module.MAX_FILE_SIZE + (1024 * 1024)
+            )
+        except (AttributeError, RuntimeError):
+            pass
         self.check_xsrf_cookie()
         if not self.get_current_user():
             raise tornado.web.HTTPError(403, "Authentication required")
@@ -372,6 +378,7 @@ class UploadHandler(BaseHandler):
             raise tornado.web.HTTPError(403, ACCESS_DENIED)
 
         self._reject: bool = False
+        self._reject_status: int = 400
         self._reject_reason: str | None = None
         self._temp_path: str | None = None
         self._aiofile = None
@@ -381,6 +388,25 @@ class UploadHandler(BaseHandler):
         self._moved: bool = False
         self._bytes_received: int = 0
         self._too_large: bool = False
+        self._direct_limit_exceeded: bool = False
+        self._strategy = constants_module.get_effective_transfer_strategy()
+
+        content_length = self.request.headers.get("Content-Length")
+        try:
+            content_length_value = int(content_length) if content_length else 0
+        except ValueError:
+            content_length_value = 0
+        if (
+            self._strategy["uploadTransport"] != "stream"
+            and content_length_value > int(self._strategy["directUploadMaxBytes"])
+        ):
+            self._reject = True
+            self._reject_status = 413
+            self._reject_reason = (
+                "Direct upload exceeds this hosting profile's limit; "
+                "use a resumable ranged upload"
+            )
+            return
 
         if not is_feature_enabled("file_upload", True):
             self._reject = True
@@ -415,6 +441,17 @@ class UploadHandler(BaseHandler):
         self._bytes_received += len(chunk)
         if self._bytes_received > constants_module.MAX_FILE_SIZE:
             self._too_large = True
+            return
+        strategy = getattr(
+            self,
+            "_strategy",
+            constants_module.get_effective_transfer_strategy(),
+        )
+        if (
+            strategy["uploadTransport"] != "stream"
+            and self._bytes_received > int(strategy["directUploadMaxBytes"])
+        ):
+            self._direct_limit_exceeded = True
             return
         self._buffer.append(chunk)
         if not self._writing:
@@ -452,11 +489,19 @@ class UploadHandler(BaseHandler):
             return
 
         if self._reject:
-            self.set_status(400)
+            self.set_status(getattr(self, "_reject_status", 400))
             self.write(self._reject_reason or BAD_REQUEST)
             return
 
         await self._finalize_stream()
+
+        if getattr(self, "_direct_limit_exceeded", False):
+            self.set_status(413)
+            self.write(
+                "Direct upload exceeds this hosting profile's limit; "
+                "use a resumable ranged upload"
+            )
+            return
 
         if self._too_large:
             limit_mb = constants_module.UPLOAD_CONFIG.get("max_file_size_mb", 512)

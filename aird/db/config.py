@@ -48,6 +48,46 @@ def save_upload_config(conn: sqlite3.Connection, config: dict) -> None:
         logger.warning("save_upload_config failed", exc_info=True)
 
 
+def load_server_config(conn: sqlite3.Connection) -> dict[str, str]:
+    """Load string-valued runtime server configuration."""
+    try:
+        rows = conn.execute("SELECT key, value FROM server_config").fetchall()
+        return {str(key): str(value) for key, value in rows}
+    except Exception:
+        return {}
+
+
+def save_server_config(
+    conn: sqlite3.Connection,
+    config: dict[str, object],
+    *,
+    bump_revision: bool = False,
+) -> int:
+    """Persist runtime config and return its monotonic revision."""
+    try:
+        with conn:
+            for key, value in config.items():
+                conn.execute(
+                    "INSERT OR REPLACE INTO server_config (key, value) VALUES (?, ?)",
+                    (str(key), str(value)),
+                )
+            row = conn.execute(
+                "SELECT value FROM server_config WHERE key = 'revision'"
+            ).fetchone()
+            revision = int(row[0]) if row else 0
+            if bump_revision:
+                revision += 1
+                conn.execute(
+                    "INSERT OR REPLACE INTO server_config (key, value) "
+                    "VALUES ('revision', ?)",
+                    (str(revision),),
+                )
+            return revision
+    except Exception:
+        logger.warning("save_server_config failed", exc_info=True)
+        return 0
+
+
 def load_allowed_extensions(conn: sqlite3.Connection) -> set:
     """Load allowed upload extensions from database."""
     try:

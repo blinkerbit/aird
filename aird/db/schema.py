@@ -226,10 +226,32 @@ def init_db(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL
         )
         """)
+    ranged_cols = {
+        row[1]
+        for row in conn.execute(
+            "PRAGMA table_info(ranged_upload_sessions)"
+        ).fetchall()
+    }
+    if "transfer_profile" not in ranged_cols:
+        conn.execute(
+            "ALTER TABLE ranged_upload_sessions "
+            "ADD COLUMN transfer_profile TEXT NOT NULL DEFAULT 'open'"
+        )
+    if "chunk_bytes" not in ranged_cols:
+        conn.execute(
+            "ALTER TABLE ranged_upload_sessions "
+            "ADD COLUMN chunk_bytes INTEGER NOT NULL DEFAULT 94371840"
+        )
     conn.execute("""
         CREATE TABLE IF NOT EXISTS upload_config (
             key TEXT PRIMARY KEY,
             value INTEGER
+        )
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS server_config (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
         )
         """)
     conn.execute("""

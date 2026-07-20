@@ -103,8 +103,7 @@
     if (!res.ok) {
       throw new Error(await res.text() || `Session failed (${res.status})`);
     }
-    const data = await res.json();
-    return data.upload_id;
+    return res.json();
   }
 
   function putChunkXHR(cfg, uploadId, file, start, end, totalSize, job, onProgress) {
@@ -157,6 +156,9 @@
       if (job.cancelled) throw new Error('cancelled');
       lastRes = await putChunkXHR(cfg, uploadId, file, start, end, totalSize, job, onProgress);
       if (lastRes.status === 201 || lastRes.status === 200) return lastRes;
+      if (lastRes.status === 507) {
+        throw new Error(lastRes.text || 'Not enough disk space to complete this upload.');
+      }
       if (lastRes.status === 429 || lastRes.status >= 500) {
         await abortableSleep(Math.min(1000 * 2 ** attempt, 8000), job);
         continue;
@@ -216,7 +218,7 @@
     jobs.set(jobId, job);
 
     const totalSize = file.size;
-    const chunkSize = cfg.chunkBytes;
+    let chunkSize = resume?.chunkSize || cfg.chunkBytes;
     const pipelineDepth = cfg.pipelineDepth || 2;
     const minConcurrency = cfg.minConcurrency || cfg.concurrency;
     const maxConcurrency = cfg.maxConcurrency || cfg.concurrency;
@@ -227,7 +229,11 @@
 
     try {
       if (!uploadId) {
-        uploadId = await createSession(cfg, { uploadDir, filename, totalSize });
+        const session = await createSession(
+          cfg, { uploadDir, filename, totalSize }
+        );
+        uploadId = session.upload_id;
+        chunkSize = Number(session.chunk_bytes) || chunkSize;
         post(jobId, {
           type: 'resume',
           resume: { uploadId, uploadDir, filename, totalSize, chunkSize, doneChunks: [] },
@@ -585,5 +591,8 @@
     runDownload,
     cancelJob,
     setBackgroundPaused,
+    isRetryableError,
+    chunkRangeCovered,
+    AdaptiveScheduler,
   };
 })();

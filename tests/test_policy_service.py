@@ -7,7 +7,8 @@ import pytest
 
 from aird.core.events import EventBus, PolicyDecisionEvent
 from aird.db import init_db
-from aird.db.policies import insert_policy, list_policies
+from aird.db.policies import get_policy_by_name, insert_policy, list_policies
+from aird.db.policy_seeds import DEFAULT_POLICIES
 from aird.domain.models import (
     AccessRequest,
     EnvironmentContext,
@@ -20,6 +21,14 @@ from aird.services.policy_service import (
     build_request,
 )
 from aird.services.tag_service import TagService
+
+# Actions that must remain on default-user-permit so signed-in users can upload.
+_USER_WRITE_ACTIONS = (
+    "file.write",
+    "file.delete",
+    "file.rename",
+    "share.create",
+)
 
 
 def _make_request(
@@ -221,6 +230,78 @@ def test_seeded_admin_permit_runs_after_init(tmp_path):
     assert "default-admin-permit" in names
     assert "default-user-permit" in names
     assert "time-gated-pii" in names
+
+
+def test_default_user_permit_seed_includes_write_actions():
+    """Regression: stripping write actions from the seed blocks uploads (403)."""
+    seed = next(p for p in DEFAULT_POLICIES if p["name"] == "default-user-permit")
+    actions = set(seed["target_actions"])
+    for action in _USER_WRITE_ACTIONS:
+        assert action in actions, f"{action} missing from default-user-permit seed"
+
+
+def test_seeded_default_user_permit_allows_file_write(services):
+    """Fresh DB: role=user must be permitted for file.write (uploads)."""
+    policy_service, _, _ = services
+    c = sqlite3.connect(":memory:")
+    init_db(c)
+    decision = policy_service.evaluate(
+        c, _make_request(role="user", action="file.write"), audit=False
+    )
+    assert decision.is_permit
+    assert decision.matched_policy_name == "default-user-permit"
+    c.close()
+
+
+@pytest.mark.parametrize("action", _USER_WRITE_ACTIONS)
+def test_seeded_default_user_permit_allows_mutation_actions(services, action):
+    policy_service, _, _ = services
+    c = sqlite3.connect(":memory:")
+    init_db(c)
+    decision = policy_service.evaluate(
+        c, _make_request(role="user", action=action), audit=False
+    )
+    assert decision.is_permit, f"{action} denied under seeded policies"
+    c.close()
+
+
+def test_stripped_user_permit_denies_file_write(conn, services):
+    """Documents the failure mode: read-only target_actions => upload deny."""
+    policy_service, _, _ = services
+    insert_policy(
+        conn,
+        name="default-user-permit",
+        effect="permit",
+        target_actions=[
+            "file.read",
+            "file.list",
+            "share.view",
+            "favorites.toggle",
+        ],
+        condition={
+            "in": {
+                "value": {"attr": "subject.role"},
+                "list": ["user", "admin"],
+            }
+        },
+        priority=500,
+    )
+    decision = policy_service.evaluate(
+        conn, _make_request(role="user", action="file.write"), audit=False
+    )
+    assert decision.is_deny
+    assert "No matching permit" in (decision.reason or "")
+
+
+def test_seeded_user_permit_row_persists_write_actions():
+    c = sqlite3.connect(":memory:")
+    init_db(c)
+    row = get_policy_by_name(c, "default-user-permit")
+    assert row is not None
+    actions = set(row["target_actions"])
+    for action in _USER_WRITE_ACTIONS:
+        assert action in actions
+    c.close()
 
 
 # ---------------------------------------------------------------------------

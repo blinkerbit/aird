@@ -12,16 +12,20 @@
     return global.__BROWSE_CONFIG || {};
   }
 
-  function engineConfig() {
+  function engineConfig(strategy) {
     const c = config();
-    const concurrency = c.rangeUploadConcurrency || 16;
+    const live = strategy || global.AirdRuntimeConfig?.getTransferStrategy?.()
+      || c.transferStrategy || {};
+    const concurrency = live.rangeUploadConcurrency || c.rangeUploadConcurrency || 8;
     return {
-      chunkBytes: c.rangeChunkBytes || (90 * 1024 * 1024),
+      chunkBytes: live.rangeChunkBytes || c.rangeChunkBytes || (32 * 1024 * 1024),
       concurrency,
       minConcurrency: Math.max(4, Math.floor(concurrency / 2)),
       maxConcurrency: Math.min(64, concurrency + 4),
-      pipelineDepth: c.rangePipelineDepth || 2,
-      largeThreshold: c.largeFileThreshold || (500 * 1024 * 1024),
+      pipelineDepth: live.rangePipelineDepth || c.rangePipelineDepth || 2,
+      largeThreshold: live.directUploadMaxBytes || c.largeFileThreshold
+        || (64 * 1024 * 1024),
+      profile: live.profile || 'open',
     };
   }
 
@@ -33,7 +37,7 @@
 
   function getWorker() {
     if (worker) return worker;
-    worker = new Worker('/static/js/transfer-engine/worker.js?v=20260718b');
+    worker = new Worker('/static/js/transfer-engine/worker.js?v=20260719a');
     worker.postMessage({
       type: 'visibility',
       visible: document.visibilityState === 'visible',
@@ -145,7 +149,7 @@
   function runJob(type, payload, options) {
     options = options || {};
     const jobId = String(nextJobId++);
-    const cfg = engineConfig();
+    const cfg = engineConfig(options.strategy);
     const w = getWorker();
 
     return new Promise((resolve, reject) => {
@@ -184,7 +188,10 @@
 
   async function uploadFile(file, options) {
     options = options || {};
-    const ec = engineConfig();
+    const strategy = options.strategy || global.AirdRuntimeConfig?.getTransferStrategy?.()
+      || config().transferStrategy || {};
+    if (strategy.uploadTransport === 'stream') return null;
+    const ec = engineConfig(strategy);
     if (file.size < ec.largeThreshold) {
       return null;
     }
@@ -218,6 +225,7 @@
         onProgress: options.onProgress,
         ttId,
         cancelScope: options.signal,
+        strategy,
       });
 
       return { message: result.message || 'Upload successful' };
@@ -228,11 +236,14 @@
 
   async function downloadFile(path, options) {
     options = options || {};
+    const strategy = options.strategy || global.AirdRuntimeConfig?.getTransferStrategy?.()
+      || config().transferStrategy || {};
+    if (strategy.downloadTransport === 'stream') return null;
     const url = filesUrl(path);
     const head = await fetch(url, { method: 'HEAD', credentials: 'same-origin' });
     if (!head.ok) return null;
     const total = parseInt(head.headers.get('Content-Length') || '0', 10);
-    if (total < engineConfig().largeThreshold) return null;
+    if (total < engineConfig(strategy).largeThreshold) return null;
 
     const TT = global.AirdTransferTracker;
     const fname = path.split('/').pop() || path;
@@ -248,6 +259,7 @@
       onProgress: options.onProgress,
       ttId,
       cancelScope: options.signal,
+      strategy,
     });
   }
 

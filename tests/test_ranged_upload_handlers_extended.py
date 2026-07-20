@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from unittest.mock import MagicMock, patch
+from collections import deque
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -253,3 +254,49 @@ async def test_status_no_db():
     with patch_db_conn(None):
         await handler.get("x")
     handler.set_status.assert_called_with(500)
+
+
+@pytest.mark.asyncio
+async def test_drain_request_buffer_does_not_retry_on_disk_full():
+    handler = _make_handler(RangedUploadChunkHandler)
+    handler._request_buffer = deque([b"chunk"])
+    handler._request_writing = False
+    handler._request_write_error = None
+    mock_file = AsyncMock()
+    mock_file.write = AsyncMock(side_effect=OSError(28, "No space left on device"))
+    handler._request_file = mock_file
+
+    await handler._drain_request_buffer()
+
+    assert handler._request_write_error is not None
+    assert handler._request_writing is False
+    assert getattr(handler, "_request_writer_task", None) is None
+
+
+@pytest.mark.asyncio
+async def test_chunk_put_disk_full_returns_507(db_conn, temp_dir):
+    temp_path = os.path.join(temp_dir, "full-disk.bin")
+    open(temp_path, "wb").close()
+    create_session(
+        db_conn,
+        session_id="up-disk",
+        username="alice",
+        upload_dir="",
+        filename="big.bin",
+        temp_path=temp_path,
+        total_size=10,
+    )
+    handler = _make_handler(
+        RangedUploadChunkHandler,
+        body=b"x" * 10,
+        headers={"Content-Range": "bytes 0-9/10", "X-XSRFToken": "xsrf"},
+    )
+    with patch_db_conn(db_conn), patch.object(
+        handler, "require_feature", return_value=True
+    ), patch(
+        "aird.handlers.ranged_upload_handlers._write_range_sync",
+        side_effect=OSError(28, "No space left on device"),
+    ):
+        await handler.put("up-disk")
+    handler.set_status.assert_called_with(507)
+    assert "disk space" in handler.write.call_args[0][0]["error"].lower()

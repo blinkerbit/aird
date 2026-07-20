@@ -323,7 +323,9 @@ class MainHandler(BaseHandler):
             rel = join_path(path, f["name"]) if path else f["name"]
             file_tags_map[f["name"]] = get_tags_for_path(tag_rules, rel)
 
-        self.sync_upload_config_from_db()
+        runtime_config = self.get_service("config_service").get_runtime_config(
+            self.db_conn
+        )
 
         self.render(
             "browse.html",
@@ -340,6 +342,7 @@ class MainHandler(BaseHandler):
             range_download_concurrency=constants_module.RANGE_DOWNLOAD_CONCURRENCY,
             range_pipeline_depth=constants_module.RANGE_PIPELINE_DEPTH,
             ws_chunk_bytes=constants_module.WS_CHUNK_BYTES,
+            transfer_strategy=runtime_config,
             user_favorites=user_favorites,
             file_tags_map=file_tags_map,
             tag_colors=tag_colors,

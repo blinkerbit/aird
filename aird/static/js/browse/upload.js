@@ -5,6 +5,7 @@ import {
   RELOAD_DELAY_MS,
   showDialog,
 } from '/static/js/browse/util.js';
+import { friendlyUploadErrorMessage } from '/static/js/browse/upload-errors.js';
 
 export function initUploadUi() {
   const uploadZone = document.getElementById("uploadZone");
@@ -186,60 +187,6 @@ export function initUploadUi() {
     }
   }
 
-  /** Plain-language message for the upload row (not console-only). */
-  function friendlyUploadErrorMessage(err) {
-    const raw = err?.message ? String(err.message).trim() : "";
-    if (!raw || raw === "cancelled") return raw;
-    const lower = raw.toLowerCase();
-    if (lower.includes("network") || lower.includes("websocket")) {
-      return "Upload interrupted. Check your connection and try again.";
-    }
-    // Prefer ABAC / server JSON reason when present
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed?.reason) {
-        return `Upload denied: ${parsed.reason}`;
-      }
-      if (parsed?.error && parsed.error !== "Access denied") {
-        return parsed.error;
-      }
-      if (parsed?.error === "Access denied" && parsed?.reason) {
-        return `Upload denied: ${parsed.reason}`;
-      }
-      if (parsed?.error === "Access denied") {
-        return "Upload denied by access policy. Ask an admin to permit file.write for your account (Admin → Policies).";
-      }
-    } catch (_) { /* not JSON */ }
-    if (lower.includes("no matching permit") || lower.includes("default deny")) {
-      return "Upload denied by access policy. Ask an admin to permit file.write for your account (Admin → Policies).";
-    }
-    if (lower.includes("403") || lower.includes("access denied")) {
-      return "Upload denied by access policy. Ask an admin to permit file.write for your account (Admin → Policies).";
-    }
-    if (lower.includes("413") || lower.includes("too large")) {
-      if (lower.includes("chunk too large")) {
-        return raw;
-      }
-      const m = /^(\d+)\s*MB/i.exec(raw.trim());
-      if (m) {
-        return `This file exceeds the server limit (${m[1]} MB). Admin → Upload settings → raise Max file size, then refresh this page.`;
-      }
-      if (lower.includes("entity too large") || lower.includes("request entity")) {
-        return (
-          'Upload blocked by the reverse proxy (body size limit). ' +
-          'Set Admin → Single-request max to 100 MB or lower so large files use parallel HTTP chunks, ' +
-          'and raise client_max_body_size in nginx to at least your HTTP chunk size.'
-        );
-      }
-      const limitGB = (getMaxFileSize() / (1024 * 1024 * 1024)).toFixed(2);
-      return `This file exceeds the server limit (${limitGB} GB). Admin → Upload settings → raise Max file size, then refresh this page.`;
-    }
-    if (raw.length > 0 && raw.length < 500) {
-      return raw;
-    }
-    return "Upload could not be completed. Please try again.";
-  }
-
   async function uploadFile(item) {
     const FTH = globalThis.AirdFileTransferHttp;
     const TE = globalThis.AirdTransferEngine;
@@ -248,6 +195,8 @@ export function initUploadUi() {
     }
     // Clear sticky pause left by file picker / pagehide before starting.
     globalThis.AirdTransferBackground?.syncFromDocument?.();
+    const strategy = globalThis.AirdRuntimeConfig?.getTransferStrategy?.()
+      || Object.freeze({ ...(globalThis.__BROWSE_CONFIG?.transferStrategy || {}) });
     const dir = item.uploadDir ?? document.getElementById('currentPath')?.value ?? '';
     const fname = item.uploadName ?? item.file.name;
     item.uploadSignal = { aborted: false };
@@ -257,6 +206,7 @@ export function initUploadUi() {
       filename: fname,
       signal: item.uploadSignal,
       onCancel: cancelFn,
+      strategy,
     };
     // Prefer worker engine for large files (IndexedDB resume). Only fall back
     // when the engine declines (below its threshold / unavailable) — not on mid-upload failure.

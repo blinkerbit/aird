@@ -370,13 +370,6 @@
   </dialog>
 
   <input type="hidden" id="currentPath" value="{{ current_path or '' }}" />
-  <script src="/static/js/transfer-background.js?v=20260718b"></script>
-  <script src="/static/js/transfer-engine/resume-store.js?v=20260718b"></script>
-  <script src="/static/js/transfer-engine/engine.js?v=20260718b"></script>
-  <script src="/static/js/file-transfer-ws.js?v=20260718b"></script>
-  <script src="/static/js/file-transfer-http.js?v=20260718b"></script>
-  <script src="/static/js/download-manager.js"></script>
-  <script src="/static/js/components/folder-picker.js"></script>
   <script nonce="{{ csp_nonce }}">
     globalThis.__BROWSE_CONFIG = {
       maxFileSize: {{ max_file_size }},
@@ -386,11 +379,20 @@
       rangeDownloadConcurrency: {{ range_download_concurrency }},
       rangePipelineDepth: {{ range_pipeline_depth }},
       wsChunkBytes: {{ ws_chunk_bytes }},
+      transferStrategy: {{ json_encode(transfer_strategy) }},
       canTag: {{ 'true' if current_user and current_user.get('role') == 'admin' else 'false' }},
       tagColors: {{ json_encode(tag_colors) }}
     };
   </script>
-  <script type="module" src="/static/js/browse/app.js?v=20260718b"></script>
+  <script src="/static/js/runtime-config.js?v=20260719a"></script>
+  <script src="/static/js/transfer-background.js?v=20260719a"></script>
+  <script src="/static/js/transfer-engine/resume-store.js?v=20260719a"></script>
+  <script src="/static/js/transfer-engine/engine.js?v=20260719a"></script>
+  <script src="/static/js/file-transfer-ws.js?v=20260719a"></script>
+  <script src="/static/js/file-transfer-http.js?v=20260719a"></script>
+  <script src="/static/js/download-manager.js?v=20260719a"></script>
+  <script src="/static/js/components/folder-picker.js"></script>
+  <script type="module" src="/static/js/browse/app.js?v=20260719a"></script>
   <script src="/static/js/folder-size-scan.js"></script>
 
   <!-- Hover popup: all tags for a row (overflow) -->

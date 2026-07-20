@@ -19,12 +19,15 @@ def create_session(
     filename: str,
     temp_path: str,
     total_size: int,
+    transfer_profile: str = "open",
+    chunk_bytes: int = 32 * 1024 * 1024,
 ) -> None:
     conn.execute(
         """
         INSERT INTO ranged_upload_sessions
-            (id, username, upload_dir, filename, temp_path, total_size, ranges_json, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, '[]', ?)
+            (id, username, upload_dir, filename, temp_path, total_size, ranges_json,
+             created_at, transfer_profile, chunk_bytes)
+        VALUES (?, ?, ?, ?, ?, ?, '[]', ?, ?, ?)
         """,
         (
             session_id,
@@ -34,6 +37,8 @@ def create_session(
             temp_path,
             total_size,
             datetime.now(timezone.utc).isoformat(),
+            transfer_profile,
+            int(chunk_bytes),
         ),
     )
     conn.commit()
@@ -41,7 +46,8 @@ def create_session(
 
 def get_session(conn: sqlite3.Connection, session_id: str) -> dict[str, Any] | None:
     row = conn.execute(
-        "SELECT id, username, upload_dir, filename, temp_path, total_size, ranges_json "
+        "SELECT id, username, upload_dir, filename, temp_path, total_size, ranges_json, "
+        "transfer_profile, chunk_bytes "
         "FROM ranged_upload_sessions WHERE id = ?",
         (session_id,),
     ).fetchone()
@@ -55,6 +61,8 @@ def get_session(conn: sqlite3.Connection, session_id: str) -> dict[str, Any] | N
         "temp_path": row[4],
         "total_size": row[5],
         "ranges": ranges_from_json(json.loads(row[6] or "[]")),
+        "transfer_profile": row[7] or "open",
+        "chunk_bytes": int(row[8] or (32 * 1024 * 1024)),
     }
 
 
@@ -71,3 +79,21 @@ def update_ranges(
 def delete_session(conn: sqlite3.Connection, session_id: str) -> None:
     conn.execute("DELETE FROM ranged_upload_sessions WHERE id = ?", (session_id,))
     conn.commit()
+
+
+def count_active_sessions(conn: sqlite3.Connection, username: str) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) FROM ranged_upload_sessions WHERE username = ?",
+        (username,),
+    ).fetchone()
+    return int(row[0] if row else 0)
+
+
+def list_stale_sessions(
+    conn: sqlite3.Connection, created_before: str
+) -> list[dict[str, str]]:
+    rows = conn.execute(
+        "SELECT id, temp_path FROM ranged_upload_sessions WHERE created_at < ?",
+        (created_before,),
+    ).fetchall()
+    return [{"id": str(row[0]), "temp_path": str(row[1])} for row in rows]

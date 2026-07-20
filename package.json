@@ -7,6 +7,8 @@
     "css:build": "npx @tailwindcss/cli -i ./src/input.css -o ./aird/static/css/app.css --minify",
     "css:watch": "npx @tailwindcss/cli -i ./src/input.css -o ./aird/static/css/app.css --watch",
     "lint:js": "eslint aird/static/js",
+    "test:js": "vitest run",
+    "test:js:watch": "vitest",
     "js:share": "esbuild aird/static/js/share/src/main.js --bundle --platform=browser --format=iife --outfile=aird/static/js/share/app.js",
     "js:share:watch": "esbuild aird/static/js/share/src/main.js --bundle --platform=browser --format=iife --outfile=aird/static/js/share/app.js --watch",
     "vendor:qrcode": "esbuild node_modules/qrcode/lib/browser.js --bundle --platform=browser --format=iife --global-name=AirdQRCode --outfile=aird/static/js/vendor/qrcode-browser.js",
@@ -15,15 +17,17 @@
   },
   "devDependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
-    "playwright": "^1.52.0",
-    "fflate": "^0.8.2",
     "@tailwindcss/cli": "^4",
     "daisyui": "^5",
+    "esbuild": "^0.25.12",
     "eslint": "^9",
     "eslint-plugin-sonarjs": "^4.0.3",
+    "fflate": "^0.8.2",
     "globals": "^15",
+    "happy-dom": "^18.0.1",
+    "playwright": "^1.52.0",
     "qrcode": "^1.5.4",
     "tailwindcss": "^4",
-    "esbuild": "^0.25.12"
+    "vitest": "^3.2.7"
   }
 }

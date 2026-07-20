@@ -64,7 +64,7 @@ WEBSOCKET_CONFIG = {
 UPLOAD_CONFIG = {
     "max_file_size_mb": 10240,  # Default max upload file size in MB (10 GB)
     "allow_all_file_types": 0,  # 0 = use whitelist below, 1 = allow any extension
-    # Files >= this use parallel Range PUT. 0 = default 100 MB (proxy-safe).
+    # Existing Open-profile defaults; profile resolution applies stricter caps.
     "single_request_max_mb": 100,
     # HTTP parallel upload: chunk size (MB) and concurrent streams.
     # Peak server RAM per active upload ≈ range_chunk_mb × range_upload_concurrency.
@@ -73,6 +73,127 @@ UPLOAD_CONFIG = {
     # WebSocket upload chunk size (MB). Optional fallback path.
     "ws_chunk_mb": 90,
 }
+
+# Mutually-exclusive deployment profile. This is not a feature-flag: only one
+# transport strategy can be active at a time.
+TRANSFER_PROFILE_NAMES = ("cloudflare", "wireguard", "open")
+TRANSFER_PROFILE_PRESETS = {
+    "cloudflare": {
+        "upload_transport": "ranged",
+        "download_transport": "ranged",
+        "single_request_max_mb": 90,
+        "range_chunk_mb": 90,
+        "range_upload_concurrency": 8,
+        "range_download_concurrency": 8,
+        "range_pipeline_depth": 1,
+    },
+    "wireguard": {
+        "upload_transport": "stream",
+        "download_transport": "stream",
+        "single_request_max_mb": None,  # resolved to max_file_size_mb
+        "range_chunk_mb": 90,
+        "range_upload_concurrency": 1,
+        "range_download_concurrency": 1,
+        "range_pipeline_depth": 1,
+    },
+    "open": {
+        "upload_transport": "adaptive",
+        "download_transport": "adaptive",
+        "single_request_max_mb": 64,
+        "range_chunk_mb": 32,
+        "range_upload_concurrency": 8,
+        "range_download_concurrency": 8,
+        "range_pipeline_depth": 2,
+    },
+}
+TRANSFER_PROFILE = "open"
+TRANSFER_CONFIG_REVISION = 0
+
+
+def normalize_transfer_profile(value: object, default: str = "open") -> str:
+    profile = str(value or "").strip().lower()
+    return profile if profile in TRANSFER_PROFILE_NAMES else default
+
+
+def transfer_profile_env_override() -> str | None:
+    raw = os.environ.get("AIRD_TRANSFER_PROFILE", "").strip().lower()
+    return raw if raw in TRANSFER_PROFILE_NAMES else None
+
+
+def set_transfer_profile(profile: object, revision: int | None = None) -> str:
+    """Apply the effective profile; a valid environment override always wins."""
+    global TRANSFER_PROFILE, TRANSFER_CONFIG_REVISION
+    TRANSFER_PROFILE = transfer_profile_env_override() or normalize_transfer_profile(profile)
+    if revision is not None:
+        TRANSFER_CONFIG_REVISION = max(0, int(revision))
+    refresh = globals().get("refresh_upload_derived_constants")
+    if callable(refresh):
+        refresh()
+    return TRANSFER_PROFILE
+
+
+def apply_transfer_profile_defaults(profile: object) -> str:
+    """Reset transport tuning to the selected profile's safe defaults."""
+    normalized = normalize_transfer_profile(profile)
+    preset = TRANSFER_PROFILE_PRESETS[normalized]
+    max_mb = max(1, int(UPLOAD_CONFIG.get("max_file_size_mb", 10240)))
+    direct_mb = preset["single_request_max_mb"]
+    UPLOAD_CONFIG["single_request_max_mb"] = (
+        max_mb if direct_mb is None else min(max_mb, int(direct_mb))
+    )
+    UPLOAD_CONFIG["range_chunk_mb"] = int(preset["range_chunk_mb"])
+    UPLOAD_CONFIG["range_upload_concurrency"] = int(
+        preset["range_upload_concurrency"]
+    )
+    return normalized
+
+
+def get_effective_transfer_strategy() -> dict:
+    """Return a fresh browser/server strategy snapshot for new transfers."""
+    profile = TRANSFER_PROFILE
+    preset = TRANSFER_PROFILE_PRESETS[profile]
+    max_mb = max(1, int(UPLOAD_CONFIG.get("max_file_size_mb", 10240)))
+    if profile == "wireguard":
+        direct_mb = max_mb
+    elif profile == "cloudflare":
+        direct_mb = min(max_mb, 90)
+    else:
+        configured_direct_mb = int(
+            UPLOAD_CONFIG.get("single_request_max_mb", 0) or 0
+        )
+        direct_mb = min(
+            max_mb,
+            configured_direct_mb
+            if configured_direct_mb > 0
+            else _DEFAULT_PARALLEL_THRESHOLD_MB,
+        )
+
+    if profile == "cloudflare":
+        chunk_mb = min(90, max(4, int(UPLOAD_CONFIG.get("range_chunk_mb", 90) or 90)))
+        upload_concurrency = min(
+            8, max(1, int(UPLOAD_CONFIG.get("range_upload_concurrency", 8) or 8))
+        )
+    elif profile == "open":
+        chunk_mb = max(4, min(200, int(UPLOAD_CONFIG.get("range_chunk_mb", 32) or 32)))
+        upload_concurrency = max(
+            1, min(16, int(UPLOAD_CONFIG.get("range_upload_concurrency", 8) or 8))
+        )
+    else:
+        chunk_mb = int(preset["range_chunk_mb"])
+        upload_concurrency = 1
+
+    return {
+        "profile": profile,
+        "revision": TRANSFER_CONFIG_REVISION,
+        "uploadTransport": preset["upload_transport"],
+        "downloadTransport": preset["download_transport"],
+        "maxFileSize": max_mb * 1024 * 1024,
+        "directUploadMaxBytes": direct_mb * 1024 * 1024,
+        "rangeChunkBytes": chunk_mb * 1024 * 1024,
+        "rangeUploadConcurrency": upload_concurrency,
+        "rangeDownloadConcurrency": int(preset["range_download_concurrency"]),
+        "rangePipelineDepth": int(preset["range_pipeline_depth"]),
+    }
 
 # File operation constants (derived from UPLOAD_CONFIG; call refresh_upload_derived_constants after changes)
 MAX_FILE_SIZE = UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
@@ -110,21 +231,19 @@ _DEFAULT_PARALLEL_THRESHOLD_MB = 100
 def _refresh_upload_derived_constants_impl() -> None:
     global MAX_FILE_SIZE, UPLOAD_REQUEST_MAX_BODY_SIZE, LARGE_FILE_THRESHOLD_BYTES
     global WS_CHUNK_BYTES, RANGE_CHUNK_BYTES, RANGE_UPLOAD_CONCURRENCY
+    global RANGE_DOWNLOAD_CONCURRENCY, RANGE_PIPELINE_DEPTH
     MAX_FILE_SIZE = UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
-    single_mb_cfg = int(UPLOAD_CONFIG.get("single_request_max_mb", 0) or 0)
-    if single_mb_cfg <= 0:
-        # 0 means "use default parallel threshold", not "one POST up to max file size".
-        parallel_mb = min(_DEFAULT_PARALLEL_THRESHOLD_MB, UPLOAD_CONFIG["max_file_size_mb"])
-    else:
-        parallel_mb = min(single_mb_cfg, UPLOAD_CONFIG["max_file_size_mb"])
-    LARGE_FILE_THRESHOLD_BYTES = parallel_mb * 1024 * 1024
-    single_request_bytes = LARGE_FILE_THRESHOLD_BYTES
-    range_mb = int(UPLOAD_CONFIG.get("range_chunk_mb", 90) or 90)
-    range_mb = max(4, min(range_mb, 200))
-    RANGE_CHUNK_BYTES = range_mb * 1024 * 1024
-    RANGE_UPLOAD_CONCURRENCY = max(
-        1, min(64, int(UPLOAD_CONFIG.get("range_upload_concurrency", 16) or 16))
-    )
+    strategy = get_effective_transfer_strategy()
+    LARGE_FILE_THRESHOLD_BYTES = int(strategy["directUploadMaxBytes"])
+    # WireGuard streams files equal to the max size too; client routing also
+    # checks uploadTransport explicitly.
+    if strategy["uploadTransport"] == "stream":
+        LARGE_FILE_THRESHOLD_BYTES = MAX_FILE_SIZE + 1
+    single_request_bytes = min(MAX_FILE_SIZE, int(strategy["directUploadMaxBytes"]))
+    RANGE_CHUNK_BYTES = int(strategy["rangeChunkBytes"])
+    RANGE_UPLOAD_CONCURRENCY = int(strategy["rangeUploadConcurrency"])
+    RANGE_DOWNLOAD_CONCURRENCY = int(strategy["rangeDownloadConcurrency"])
+    RANGE_PIPELINE_DEPTH = int(strategy["rangePipelineDepth"])
     ws_mb = int(UPLOAD_CONFIG.get("ws_chunk_mb", 90) or 90)
     ws_mb = max(1, min(ws_mb, 200))
     WS_CHUNK_BYTES = ws_mb * 1024 * 1024

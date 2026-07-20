@@ -82,6 +82,8 @@
 
     async _runHttpItem(item) {
       const FTH = global.AirdFileTransferHttp;
+      const strategy = global.AirdRuntimeConfig?.getTransferStrategy?.()
+        || Object.freeze({ ...(global.__BROWSE_CONFIG?.transferStrategy || {}) });
       item.status = 'downloading';
       const onCancel = () => {
         item.cancelSignal.aborted = true;
@@ -91,9 +93,16 @@
         const result = await FTH.downloadFile(item.path, {
           signal: item.cancelSignal,
           onCancel: onCancel,
+          strategy,
+          directToDisk: this.items.length === 1,
         });
         if (item.cancelSignal?.aborted || this.cancelled) {
           item.status = 'cancelled';
+        } else if (result.saved) {
+          item.status = 'done';
+        } else if (result.native) {
+          triggerNativeDownload(result.url, result.filename);
+          item.status = 'browser';
         } else {
           FTH.saveBlob(result.blob, result.filename);
           item.status = 'done';
