@@ -14,11 +14,12 @@ install_requires = [
 
 extras_require = {
     "compress": ["zstandard>=0.22.0"],
+    "native": ["maturin>=1.4,<2"],
 }
 
 setup(
     name="aird",
-    version="0.4.25.dev8",
+    version="0.4.25.dev11",
     packages=find_packages(),
     include_package_data=True,
     package_data={"aird": [

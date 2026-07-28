@@ -255,6 +255,27 @@ def init_db(conn: sqlite3.Connection) -> None:
         )
         """)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_sessions (
+            id TEXT PRIMARY KEY,
+            username TEXT NOT NULL,
+            user_role TEXT NOT NULL,
+            is_admin INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            last_active_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            ip_address TEXT,
+            user_agent TEXT
+        )
+        """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_user_sessions_username "
+        "ON user_sessions(username)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_user_sessions_last_active "
+        "ON user_sessions(last_active_at)"
+    )
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS upload_allowed_extensions (
             ext TEXT PRIMARY KEY
         )

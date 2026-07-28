@@ -67,7 +67,8 @@ UPLOAD_CONFIG = {
     # Existing Open-profile defaults; profile resolution applies stricter caps.
     "single_request_max_mb": 100,
     # HTTP parallel upload: chunk size (MB) and concurrent streams.
-    # Peak server RAM per active upload ≈ range_chunk_mb × range_upload_concurrency.
+    # Peak server RAM for ranged profiles ≈ range_chunk_mb × range_upload_concurrency.
+# WireGuard uses single-stream POST and does not allocate per-chunk buffers.
     "range_chunk_mb": 90,
     "range_upload_concurrency": 16,
     # WebSocket upload chunk size (MB). Optional fallback path.
@@ -87,11 +88,14 @@ TRANSFER_PROFILE_PRESETS = {
         "range_download_concurrency": 8,
         "range_pipeline_depth": 1,
     },
+    # Trusted LAN / WireGuard: single-stream HTTP POST/GET, no WebSocket —
+    # simplest and most reliable path for near-wire speeds on a trusted link.
     "wireguard": {
         "upload_transport": "stream",
         "download_transport": "stream",
-        "single_request_max_mb": None,  # resolved to max_file_size_mb
-        "range_chunk_mb": 90,
+        "upload_concurrency": 2,
+        "single_request_max_mb": None,
+        "range_chunk_mb": 32,
         "range_upload_concurrency": 1,
         "range_download_concurrency": 1,
         "range_pipeline_depth": 1,
@@ -173,6 +177,9 @@ def get_effective_transfer_strategy() -> dict:
         upload_concurrency = min(
             8, max(1, int(UPLOAD_CONFIG.get("range_upload_concurrency", 8) or 8))
         )
+    elif profile == "wireguard":
+        chunk_mb = int(preset["range_chunk_mb"])
+        upload_concurrency = int(preset["range_upload_concurrency"])
     elif profile == "open":
         chunk_mb = max(4, min(200, int(UPLOAD_CONFIG.get("range_chunk_mb", 32) or 32)))
         upload_concurrency = max(
@@ -180,9 +187,9 @@ def get_effective_transfer_strategy() -> dict:
         )
     else:
         chunk_mb = int(preset["range_chunk_mb"])
-        upload_concurrency = 1
+        upload_concurrency = int(preset["range_upload_concurrency"])
 
-    return {
+    strategy = {
         "profile": profile,
         "revision": TRANSFER_CONFIG_REVISION,
         "uploadTransport": preset["upload_transport"],
@@ -193,7 +200,13 @@ def get_effective_transfer_strategy() -> dict:
         "rangeUploadConcurrency": upload_concurrency,
         "rangeDownloadConcurrency": int(preset["range_download_concurrency"]),
         "rangePipelineDepth": int(preset["range_pipeline_depth"]),
+        "bulkWsPath": "/ws/bulk",
+        "bulkTcpPort": int(os.environ.get("AIRD_BULK_PORT", "0") or "0"),
+        "uploadConcurrency": int(
+            preset.get("upload_concurrency", 1) or 1
+        ),
     }
+    return strategy
 
 # File operation constants (derived from UPLOAD_CONFIG; call refresh_upload_derived_constants after changes)
 MAX_FILE_SIZE = UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
@@ -235,8 +248,7 @@ def _refresh_upload_derived_constants_impl() -> None:
     MAX_FILE_SIZE = UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
     strategy = get_effective_transfer_strategy()
     LARGE_FILE_THRESHOLD_BYTES = int(strategy["directUploadMaxBytes"])
-    # WireGuard streams files equal to the max size too; client routing also
-    # checks uploadTransport explicitly.
+    # Single-stream transport forces single-request for all sizes.
     if strategy["uploadTransport"] == "stream":
         LARGE_FILE_THRESHOLD_BYTES = MAX_FILE_SIZE + 1
     single_request_bytes = min(MAX_FILE_SIZE, int(strategy["directUploadMaxBytes"]))
@@ -324,6 +336,11 @@ NETWORK_SHARE_MANAGER = None
 # Rate limiting
 LOGIN_RATE_LIMIT_ATTEMPTS = 5
 LOGIN_RATE_LIMIT_WINDOW = 300  # 5 minutes
+
+# Server-side login sessions
+SESSION_IDLE_TIMEOUT_SECONDS = 3 * 60 * 60  # 3 hours
+SESSION_MAX_AGE_SECONDS = 24 * 60 * 60  # 1 day absolute cap
+SESSION_TOUCH_INTERVAL_SECONDS = 60
 
 # ABAC environment: comma-separated CIDR blocks treated as "corporate" IPs.
 # Admins can override this via the AIRD_CORPORATE_IP_CIDRS env var at startup.

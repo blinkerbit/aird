@@ -1,4 +1,8 @@
 from unittest.mock import patch, MagicMock, ANY
+import sqlite3
+import pytest
+
+from aird.db import init_db
 from aird.handlers.auth_handlers import (
     LDAPLoginHandler,
     LoginHandler,
@@ -8,6 +12,14 @@ from aird.handlers.auth_handlers import (
 )
 from aird.handlers.base_handler import BaseHandler
 from tests.handler_helpers import _default_services
+
+
+@pytest.fixture
+def db():
+    conn = sqlite3.connect(":memory:")
+    init_db(conn)
+    yield conn
+    conn.close()
 
 
 class TestLDAPLoginHandlerExtended:
@@ -496,23 +508,32 @@ class TestBaseHandlerExtended:
 
     def test_get_current_user_json_error(self):
         handler = BaseHandler(self.mock_app, self.mock_request)
-        # Return invalid JSON
-        handler.get_secure_cookie = MagicMock(return_value=b"{invalid_json}")
+        handler.get_secure_cookie = MagicMock(return_value=None)
 
         user = handler.get_current_user()
         assert user is None
 
-    def test_get_current_user_token_authenticated_bytes(self):
-        handler = BaseHandler(self.mock_app, self.mock_request)
-        handler.get_secure_cookie = MagicMock(return_value=b"token_authenticated")
-        self.mock_app.settings["db_conn"] = MagicMock()
+    def test_get_current_user_token_authenticated_bytes(self, db):
+        from aird.db.sessions import SESSION_COOKIE_NAME, create_session
+        from tests.handler_helpers import prepare_handler
 
-        with patch(
-            "aird.handlers.base_handler.get_user_by_username",
-            side_effect=Exception("DB Error"),
-        ):
-            user = handler.get_current_user()
-            assert user == {"username": "token_user", "role": "user"}
+        session_id = create_session(
+            db, username="token_authenticated", user_role="user"
+        )
+        handler = prepare_handler(BaseHandler(self.mock_app, self.mock_request))
+        handler.get_secure_cookie = MagicMock(
+            side_effect=lambda name: session_id.encode()
+            if name == SESSION_COOKIE_NAME
+            else None
+        )
+        self.mock_app.settings["db_conn"] = db
+
+        user = handler.get_current_user()
+        assert user == {
+            "username": "token_user",
+            "role": "user",
+            "_session_id": session_id,
+        }
 
     def test_write_error_exception(self):
         handler = BaseHandler(self.mock_app, self.mock_request)

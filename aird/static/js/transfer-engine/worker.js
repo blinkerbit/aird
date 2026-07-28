@@ -2,8 +2,8 @@
  * Web Worker entry for Aird transfer engine.
  */
 importScripts(
-  '/static/js/transfer-engine/hasher.js?v=20260719a',
-  '/static/js/transfer-engine/worker-lib.js?v=20260719a'
+  '/static/js/transfer-engine/hasher.js?v=20260724a',
+  '/static/js/transfer-engine/worker-lib.js?v=20260725c'
 );
 
 globalThis.onmessage = (ev) => {
@@ -17,7 +17,9 @@ globalThis.onmessage = (ev) => {
   if (!jobId) return;
 
   if (type === 'cancel') {
-    globalThis.AirdWorkerLib.cancelJob(jobId);
+    globalThis.AirdWorkerLib.cancelJob(jobId, {
+      discardServer: !!data.discardServer,
+    });
     return;
   }
   if (type === 'upload') {

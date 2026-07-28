@@ -300,3 +300,84 @@ async def test_chunk_put_disk_full_returns_507(db_conn, temp_dir):
         await handler.put("up-disk")
     handler.set_status.assert_called_with(507)
     assert "disk space" in handler.write.call_args[0][0]["error"].lower()
+
+
+def test_session_reuses_matching_incomplete(db_conn, tmp_path, monkeypatch):
+    import aird.constants as constants
+    from aird.handlers.ranged_upload_handlers import RangedUploadSessionHandler
+
+    constants.UPLOAD_CONFIG["allow_all_file_types"] = 1
+    total = constants.LARGE_FILE_THRESHOLD_BYTES + 1000
+    temp = tmp_path / "old.tmp"
+    temp.write_bytes(b"")
+    create_session(
+        db_conn,
+        session_id="existing-up",
+        username="alice",
+        upload_dir="",
+        filename="big.bin",
+        temp_path=str(temp),
+        total_size=total,
+    )
+    body = json.dumps(
+        {"filename": "big.bin", "total_size": total, "upload_dir": ""}
+    ).encode()
+    handler = _make_handler(RangedUploadSessionHandler, body=body)
+    with patch_db_conn(db_conn), patch.object(
+        handler, "require_feature", return_value=True
+    ), patch(
+        "aird.handlers.ranged_upload_handlers.is_feature_enabled", return_value=True
+    ), patch(
+        "aird.handlers.ranged_upload_handlers.get_user_root", return_value=str(tmp_path)
+    ):
+        asyncio.run(handler.post())
+    handler.set_status.assert_called_with(200)
+    payload = handler.write.call_args[0][0]
+    assert payload["upload_id"] == "existing-up"
+    assert payload.get("resumed") is True
+
+
+def test_session_reclaims_empty_when_at_cap(db_conn, tmp_path, monkeypatch):
+    import aird.constants as constants
+    import aird.handlers.ranged_upload_handlers as ruh
+    from aird.db.ranged_uploads import count_active_sessions
+    from aird.handlers.ranged_upload_handlers import RangedUploadSessionHandler
+
+    monkeypatch.setattr(ruh, "_MAX_ACTIVE_SESSIONS_PER_USER", 2)
+    constants.UPLOAD_CONFIG["allow_all_file_types"] = 1
+    total = constants.LARGE_FILE_THRESHOLD_BYTES + 1000
+    for i in range(2):
+        p = tmp_path / f"empty-{i}.tmp"
+        p.write_bytes(b"")
+        create_session(
+            db_conn,
+            session_id=f"empty-{i}",
+            username="alice",
+            upload_dir="",
+            filename=f"other-{i}.bin",
+            temp_path=str(p),
+            total_size=total,
+        )
+    assert count_active_sessions(db_conn, "alice") == 2
+    body = json.dumps(
+        {"filename": "fresh.bin", "total_size": total, "upload_dir": ""}
+    ).encode()
+    handler = _make_handler(RangedUploadSessionHandler, body=body)
+    with patch_db_conn(db_conn), patch.object(
+        handler, "require_feature", return_value=True
+    ), patch(
+        "aird.handlers.ranged_upload_handlers.is_feature_enabled", return_value=True
+    ), patch(
+        "aird.handlers.ranged_upload_handlers.get_user_root", return_value=str(tmp_path)
+    ):
+        asyncio.run(handler.post())
+    handler.set_status.assert_called_with(201)
+    assert count_active_sessions(db_conn, "alice") == 2
+    ids = {
+        row[0]
+        for row in db_conn.execute(
+            "SELECT id FROM ranged_upload_sessions WHERE username = ?", ("alice",)
+        )
+    }
+    assert "empty-0" not in ids  # oldest empty session reclaimed
+    assert "empty-1" in ids

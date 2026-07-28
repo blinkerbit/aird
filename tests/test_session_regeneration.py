@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, PropertyMock, patch
 
+from aird.db.sessions import SESSION_COOKIE_NAME, create_session
 from aird.handlers.auth_handlers import _apply_session_cookies
 from aird.handlers.base_handler import BaseHandler
 
@@ -29,7 +30,7 @@ class TestRegenerateSession:
             handler.regenerate_session()
 
         cleared = [c[0][0] for c in mock_clear.call_args_list]
-        assert cleared == ["user", "user_role", "admin", "_xsrf"]
+        assert cleared == [SESSION_COOKIE_NAME, "user", "user_role", "admin", "_xsrf"]
         assert not hasattr(handler, "_xsrf_token")
         assert not hasattr(handler, "_raw_xsrf_token")
         mock_xsrf.assert_called_once()
@@ -48,6 +49,8 @@ class TestRegenerateSession:
             handler, "set_secure_cookie", side_effect=track_set
         ), patch.object(handler, "get_service", return_value=MagicMock()), patch.object(
             handler, "publish_event"
+        ), patch.object(
+            BaseHandler, "db_conn", new_callable=PropertyMock, return_value=None
         ):
             _apply_session_cookies(handler, "alice", "user")
 

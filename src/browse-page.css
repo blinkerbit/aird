@@ -358,6 +358,13 @@
     }
 
     .file-row:hover .file-icon { transform: scale(1.15) rotate(-4deg); }
+    .file-row--just-uploaded {
+      animation: aird-upload-row-in 0.85s var(--ds-ease, ease) 1;
+    }
+    @keyframes aird-upload-row-in {
+      from { background-color: color-mix(in oklab, var(--ds-primary, #3b82f6) 22%, transparent); }
+      to { background-color: transparent; }
+    }
     .parent-folder-link:hover .file-icon { transform: translateX(-2px) rotate(-6deg); }
     .parent-folder-link .parent-up-label {
       display: inline-block;

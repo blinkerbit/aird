@@ -166,11 +166,11 @@ export function initBrowseSelectionUi() {
       updateBulkToolbar();
     });
   }
-  document.querySelectorAll('.row-checkbox').forEach(function (cb) {
-    cb.addEventListener('change', function () {
-      syncCheckboxToStore(cb);
-      updateBulkToolbar();
-    });
+  document.getElementById('fileTable')?.addEventListener('change', function (e) {
+    const cb = e.target.closest('.row-checkbox');
+    if (!cb || !cb.closest('#fileTable')) return;
+    syncCheckboxToStore(cb);
+    updateBulkToolbar();
   });
 
   wireBrowseButton('clearSelectionBtn', function () {

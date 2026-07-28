@@ -35,6 +35,7 @@ from aird.db.users import (
     delete_user,
     search_users,
 )
+from aird.db.sessions import SESSION_COOKIE_NAME, create_session
 from aird.handlers.auth_handlers import (
     LoginHandler,
     check_login_rate_limit,
@@ -67,26 +68,10 @@ def _clear_rate_limits():
 @pytest.fixture
 def db():
     """In-memory SQLite database with schema initialised."""
+    from aird.db import init_db
+
     conn = sqlite3.connect(":memory:")
-    conn.execute("""CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'user',
-            created_at TEXT NOT NULL,
-            active INTEGER NOT NULL DEFAULT 1,
-            last_login TEXT,
-            must_change_password INTEGER NOT NULL DEFAULT 0
-        )""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            created_at TEXT NOT NULL,
-            username TEXT,
-            action TEXT NOT NULL,
-            details TEXT,
-            ip TEXT
-        )""")
-    conn.commit()
+    init_db(conn)
     yield conn
     conn.close()
 
@@ -391,10 +376,15 @@ class TestAuthentication:
                 _try_bearer_auth(handler)
                 mock_cd.assert_called_once()
 
-    def test_cookie_auth_token_authenticated(self):
+    def test_cookie_auth_token_authenticated(self, db):
+        session_id = create_session(
+            db, username="token_authenticated", user_role="user"
+        )
         handler = MagicMock()
-        handler.get_secure_cookie.return_value = b"token_authenticated"
-        handler.settings = {"db_conn": None}
+        handler.get_secure_cookie.side_effect = (
+            lambda name: session_id.encode() if name == SESSION_COOKIE_NAME else None
+        )
+        handler.settings = {"db_conn": db}
         handler.request.headers = {}
         user = _try_cookie_auth(handler)
         assert user is not None
@@ -403,10 +393,11 @@ class TestAuthentication:
 
     def test_cookie_auth_with_db_user(self, db):
         create_user(db, "alice", "Str0ng!Pass#1", role="user")
+        session_id = create_session(db, username="alice", user_role="user")
         handler = MagicMock()
-        handler.get_secure_cookie.return_value = json.dumps(
-            {"username": "alice"}
-        ).encode()
+        handler.get_secure_cookie.side_effect = (
+            lambda name: session_id.encode() if name == SESSION_COOKIE_NAME else None
+        )
         handler.settings = {"db_conn": db}
         handler.request.headers = {}
         user = _try_cookie_auth(handler)
@@ -414,10 +405,11 @@ class TestAuthentication:
         assert user["username"] == "alice"
 
     def test_cookie_auth_nonexistent_user(self, db):
+        session_id = create_session(db, username="ghost", user_role="user")
         handler = MagicMock()
-        handler.get_secure_cookie.return_value = json.dumps(
-            {"username": "ghost"}
-        ).encode()
+        handler.get_secure_cookie.side_effect = (
+            lambda name: session_id.encode() if name == SESSION_COOKIE_NAME else None
+        )
         handler.settings = {"db_conn": db}
         handler.request.headers = {}
         user = _try_cookie_auth(handler)

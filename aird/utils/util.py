@@ -308,12 +308,25 @@ def _format_child_count(count: int) -> str:
     return f"{count} item" if count == 1 else f"{count} items"
 
 
+def is_upload_staging_filename(name: str) -> bool:
+    """Temp files created during in-progress uploads — never show in browse."""
+    return (
+        name.startswith(".aird_up_")
+        or name.startswith(".aird_range_")
+        or name.startswith(".aird_bulk_")
+        or name.startswith("aird_range_request_")
+        or name.startswith("aird_ws_upload_")
+    )
+
+
 def get_files_in_directory(path="."):
     files = []
     # Materialize once so we can skip per-dir child counts on large listings.
     entries = list(os.scandir(path))
     skip_child_counts = len(entries) > 80
     for entry in entries:
+        if is_upload_staging_filename(entry.name):
+            continue
         stat = entry.stat()
         is_dir = entry.is_dir()
         if is_dir:

@@ -323,6 +323,17 @@ class TestGetFilesInDirectory:
             assert dir_info["child_count"] == 0
             assert dir_info["size_str"] == "0 items"
 
+    def test_get_files_hides_upload_staging(self):
+        """Staging temp files from uploads must not appear in browse listings."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with open(os.path.join(temp_dir, "real.txt"), "w") as f:
+                f.write("ok")
+            with open(os.path.join(temp_dir, ".aird_up_abc123"), "wb") as f:
+                f.write(b"partial")
+            files = get_files_in_directory(temp_dir)
+            assert len(files) == 1
+            assert files[0]["name"] == "real.txt"
+
     def test_get_files_empty_directory(self):
         """Test getting files in empty directory"""
         with tempfile.TemporaryDirectory() as temp_dir:

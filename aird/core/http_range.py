@@ -101,6 +101,11 @@ def ranges_cover_file(ranges: list[ByteRange], total_size: int) -> bool:
     return covered >= total_size
 
 
+def range_fully_covered(ranges: list[ByteRange], start: int, end: int) -> bool:
+    """True when [start, end] is already present in *ranges*."""
+    return any(r.start <= start and r.end >= end for r in ranges)
+
+
 def ranges_to_json(ranges: list[ByteRange]) -> list[list[int]]:
     return [[r.start, r.end] for r in merge_ranges(ranges)]
 

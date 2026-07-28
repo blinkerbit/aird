@@ -12,7 +12,18 @@
     s.id = 'tt-styles';
     s.textContent =
       '@keyframes tt-indeterminate-pulse{0%,100%{opacity:.35}50%{opacity:1}}' +
-      'progress.tt-indeterminate{animation:tt-indeterminate-pulse 1.2s ease-in-out infinite}';
+      'progress.tt-indeterminate{animation:tt-indeterminate-pulse 1.2s ease-in-out infinite}' +
+      '.tt-row-header{display:flex;align-items:center;gap:.35rem}' +
+      '.tt-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.tt-row-close{flex-shrink:0;min-height:1.5rem;min-width:1.5rem;padding:0;line-height:1}' +
+      '.tt-icon.tt-queued{opacity:.55}' +
+      '.tt-icon.tt-cancelled{opacity:.5;color:var(--color-warning)}' +
+      '.tt-pct{flex-shrink:0;font-size:.75rem;opacity:.8;min-width:3.25rem;text-align:right}' +
+      '.tt-stop-btn{font-size:.7rem;min-height:1.65rem;height:1.65rem;padding:0 .55rem}' +
+      '.tt-status-pill{font-size:.6rem;font-weight:700;padding:.1rem .45rem;border-radius:999px;line-height:1.4}' +
+      '.tt-status-pill--queued{background:color-mix(in oklch,var(--color-base-content) 8%,transparent)}' +
+      '.tt-status-pill--active{background:color-mix(in oklch,var(--color-primary) 18%,transparent);color:var(--color-primary)}' +
+      '.tt-status-pill--cancelled{background:color-mix(in oklch,var(--color-warning) 18%,transparent);color:var(--color-warning)}';
     document.head.appendChild(s);
   })();
 
@@ -44,6 +55,21 @@
     return loaded / (elapsed || 1);
   }
 
+  /** Recent throughput over ~2s (avoids average-since-start looking like a stall). */
+  function _recentSpeed(it) {
+    var samples = it._speedSamples;
+    if (!samples || samples.length < 2) {
+      return _speed(it.loaded, it.startedAt);
+    }
+    var a = samples[0];
+    var b = samples[samples.length - 1];
+    var dt = (b.t - a.t) / 1000;
+    if (dt < 0.25) return _speed(it.loaded, it.startedAt);
+    var bytes = b.b - a.b;
+    if (bytes <= 0) return 0;
+    return bytes / dt;
+  }
+
   /* Eased display value: ramps toward the real byte count so parallel
      socket-buffer bursts show as smooth motion instead of sudden jumps. */
   function _dispLoaded(it) {
@@ -59,7 +85,10 @@
     var target = it.total ? Math.min(it.loaded, it.total) : it.loaded;
     if (target <= it.displayLoaded) return;
     var gap = target - it.displayLoaded;
-    var step = Math.max(gap * 0.12, 1);
+    // Catch up quickly on large files so UI does not sit at 0.00% for seconds.
+    var step = gap > (8 * 1024 * 1024)
+      ? gap
+      : Math.max(gap * 0.35, 64 * 1024);
     it.displayLoaded = Math.min(target, it.displayLoaded + step);
   }
 
@@ -77,6 +106,13 @@
     _sidebar   = _el('transferTrackerSidebar');
     _sidebarList = _el('transferTrackerList');
     _backdrop  = _el('transferTrackerBackdrop');
+    // Escape .aird-shell stacking context so browse overlays cannot block Stop clicks.
+    if (_backdrop && _backdrop.parentNode !== document.body) {
+      document.body.appendChild(_backdrop);
+    }
+    if (_sidebar && _sidebar.parentNode !== document.body) {
+      document.body.appendChild(_sidebar);
+    }
     if (_btn) {
       _btn.addEventListener('click', _toggleSidebar);
       _btn.addEventListener('mouseenter', function () {
@@ -91,16 +127,27 @@
 
   /* ── Aggregate ──────────────────────────────────────────────────── */
   function _aggregate() {
-    let totalBytes = 0, loadedBytes = 0, active = 0, done = 0, failed = 0, browser = 0;
+    let totalBytes = 0, loadedBytes = 0, active = 0, done = 0, failed = 0, browser = 0, queued = 0;
     _items.forEach(function (it) {
       totalBytes += it.total || 0;
       loadedBytes += _dispLoaded(it) || 0;
       if (it.status === 'active' || it.status === 'preparing') active++;
+      else if (it.status === 'queued') queued++;
       else if (it.status === 'browser') browser++;
       else if (it.status === 'done') done++;
       else if (it.status === 'error') failed++;
+      else if (it.status === 'cancelled') { /* counted in count only */ }
     });
-    return { totalBytes: totalBytes, loadedBytes: loadedBytes, active: active, browser: browser, done: done, failed: failed, count: _items.size };
+    return {
+      totalBytes: totalBytes,
+      loadedBytes: loadedBytes,
+      active: active,
+      queued: queued,
+      browser: browser,
+      done: done,
+      failed: failed,
+      count: _items.size,
+    };
   }
 
   /* ── Render ─────────────────────────────────────────────────────── */
@@ -108,10 +155,21 @@
   let _renderPending = false;
   let _animFrame = null;
 
+  function _isCancellable(status) {
+    return status === 'active' || status === 'preparing' || status === 'queued';
+  }
+
   function _hasActiveTransfers() {
     let active = false;
     _items.forEach(function (it) {
-      if (it.status === 'active' || it.status === 'browser' || it.status === 'preparing') active = true;
+      if (
+        it.status === 'active'
+        || it.status === 'browser'
+        || it.status === 'preparing'
+        || it.status === 'queued'
+      ) {
+        active = true;
+      }
     });
     return active;
   }
@@ -123,7 +181,7 @@
         _animFrame = null;
         return;
       }
-      _render();
+      _render({ animOnly: true });
       _animFrame = requestAnimationFrame(tick);
     }
     _animFrame = requestAnimationFrame(tick);
@@ -148,7 +206,9 @@
   function _ttStatusCls(status) {
     if (status === 'done') return 'tt-done';
     if (status === 'error') return 'tt-error';
+    if (status === 'cancelled') return 'tt-cancelled';
     if (status === 'browser') return 'tt-browser';
+    if (status === 'queued') return 'tt-queued';
     if (status === 'preparing') return 'tt-preparing';
     return 'tt-active';
   }
@@ -156,47 +216,71 @@
   function _ttPctLabel(it) {
     if (it.status === 'done') return '✓';
     if (it.status === 'error') return '✗';
+    if (it.status === 'cancelled') return '—';
     if (it.status === 'browser') return '…';
-    if (it.status === 'preparing') return '0%';
+    if (it.status === 'queued') return it.total > 0 ? _fmt(it.total) : '—';
+    if (it.status === 'preparing') return '…';
     return _pctLabel(_dispLoaded(it), it.total) + '%';
   }
 
   function _ttProgressCls(status) {
     if (status === 'error') return 'progress-error';
+    if (status === 'cancelled') return 'progress-warning';
     if (status === 'browser') return 'progress-success';
+    if (status === 'queued') return 'progress-ghost';
     if (status === 'preparing') return 'progress-primary';
     return 'progress-primary';
   }
 
+  function _statusPillLabel(status) {
+    if (status === 'queued') return 'Queued';
+    if (status === 'preparing') return 'Starting';
+    if (status === 'active') return 'Active';
+    if (status === 'cancelled') return 'Stopped';
+    if (status === 'done') return 'Done';
+    if (status === 'error') return 'Failed';
+    if (status === 'browser') return 'Browser';
+    return '';
+  }
+
   function _ttRowDetail(it) {
-    if (it.detail) return it.detail;
+    if (it.status === 'cancelled') return 'Upload stopped';
+    if (it.status === 'queued') {
+      return it.total > 0
+        ? ('Waiting · ' + _fmt(it.total))
+        : 'Waiting for a free upload slot';
+    }
     if (it.status === 'browser') {
       return 'Downloading in your browser — safe to close this tab';
     }
-    if (it.total <= 0) return '';
-    var disp = _dispLoaded(it);
-    let detail = _fmt(disp) + ' / ' + _fmt(it.total);
-    if (it.status === 'active' && it.loaded > 0) {
-      detail += ' @ ' + _fmt(_speed(it.loaded, it.startedAt)) + '/s';
+    if ((it.status === 'active' || it.status === 'preparing') && it.total > 0) {
+      var disp = _dispLoaded(it);
+      let detail = _fmt(disp) + ' / ' + _fmt(it.total);
+      if (it.loaded > 0) detail += ' @ ' + _fmt(_recentSpeed(it)) + '/s';
+      return detail;
     }
-    return detail;
+    if (it.detail) return it.detail;
+    if (it.total <= 0) return '';
+    var dispFallback = _dispLoaded(it);
+    return _fmt(dispFallback) + ' / ' + _fmt(it.total);
   }
 
   function _ttActiveSpeedLabel(agg) {
     if (!agg.active || agg.loadedBytes <= 0) return null;
-    let earliest = null;
+    let best = 0;
     _items.forEach(function (it) {
-      if (it.status === 'active' && it.startedAt) {
-        if (earliest === null || it.startedAt < earliest) earliest = it.startedAt;
+      if (it.status === 'active' && it.loaded > 0) {
+        best += _recentSpeed(it);
       }
     });
-    if (earliest === null) return null;
-    return _fmt(_speed(agg.loadedBytes, earliest)) + '/s';
+    if (best <= 0) return null;
+    return _fmt(best) + '/s';
   }
 
   function _ttTooltipParts(agg) {
     const parts = [];
     if (agg.active) parts.push(agg.active + ' transferring');
+    if (agg.queued) parts.push(agg.queued + ' queued');
     if (agg.browser) parts.push(agg.browser + ' in browser');
     const speed = _ttActiveSpeedLabel(agg);
     if (speed) parts.push(speed);
@@ -205,13 +289,14 @@
     return parts;
   }
 
-  function _render() {
+  function _render(opts) {
+    opts = opts || {};
     _refs();
     if (!_btn) return;
 
     _items.forEach(_easeDisplay);
     var agg = _aggregate();
-    var hasWork = agg.active > 0 || agg.browser > 0;
+    var hasWork = agg.active > 0 || agg.browser > 0 || agg.queued > 0;
 
     _btn.classList.toggle('transfer-tracker-hidden', agg.count === 0);
     _btn.classList.toggle('transfer-tracker-active', hasWork);
@@ -235,54 +320,136 @@
       _tooltip.textContent = parts.join(' · ') || 'No transfers';
     }
 
-    _renderSidebarList();
+    if (!opts.animOnly) {
+      _renderSidebarList();
+    } else if (_sidebarOpen) {
+      _syncSidebarProgress();
+    }
+  }
+
+  /** Update row progress during the rAF loop without rebuilding the sidebar DOM. */
+  function _syncSidebarProgress() {
+    _items.forEach(function (it, id) {
+      if (it._ui) _syncRowUi(it, id);
+    });
+    var summaryEl = _el('transferTrackerSummary');
+    if (summaryEl) {
+      var agg = _aggregate();
+      var parts = [];
+      if (agg.active) parts.push(agg.active + ' active');
+      if (agg.queued) parts.push(agg.queued + ' queued');
+      if (agg.browser) parts.push(agg.browser + ' in browser');
+      summaryEl.textContent = parts.length ? parts.join(' · ') : (_items.size ? 'Tap Stop to cancel' : '');
+    }
+  }
+
+  function _removeTransferRow(id, it) {
+    if (!it) it = _items.get(id);
+    if (!it) return;
+    it.onCancel = null;
+    _items.delete(id);
+    if (it._ui) {
+      it._ui.row.remove();
+      it._ui = null;
+    }
+    if (!_hasActiveTransfers()) _stopAnimLoop();
+    _render();
+  }
+
+  function _cancelTransfer(id) {
+    var it = _items.get(id);
+    if (!it) return;
+    var cancelFn = it.onCancel;
+    var cancelled = false;
+    if (typeof cancelFn === 'function') {
+      try {
+        cancelFn();
+        cancelled = true;
+      } catch (err) {
+        console.debug('transfer cancel ignored', err);
+      }
+    }
+    var TM = global.AirdTransferManager;
+    if (TM?.cancelByTtId) {
+      try { TM.cancelByTtId(id); cancelled = true; } catch (err) {
+        console.debug('transfer manager cancel ignored', err);
+      }
+    }
+    if (!cancelled) console.warn('transfer cancel had no handler for id', id);
+    _removeTransferRow(id, it);
   }
 
   function _syncRowUi(it, id) {
     if (!it._ui) return;
     var pct = _pct(_dispLoaded(it), it.total);
     var progressVal = it.status === 'browser' ? 100 : pct;
-    var preparing = it.status === 'preparing';
+    var preparing = it.status === 'preparing' || it.status === 'queued';
+    if (it._ui.iconEl) {
+      it._ui.iconEl.className = 'tt-icon ' + _ttStatusCls(it.status);
+    }
+    it._ui.progress.className = 'progress progress-sm w-full ' + _ttProgressCls(it.status);
     it._ui.progress.classList.toggle('tt-indeterminate', preparing);
     it._ui.progress.value = preparing ? 0 : progressVal;
     it._ui.pctEl.textContent = _ttPctLabel(it);
     it._ui.detailEl.textContent = _ttRowDetail(it);
-    var showCancel = (it.status === 'active' || it.status === 'preparing') && it.onCancel;
-    it._ui.cancelBtn.style.display = showCancel ? '' : 'none';
+    if (it._ui.pillEl) {
+      var pill = _statusPillLabel(it.status);
+      it._ui.pillEl.textContent = pill;
+      it._ui.pillEl.className = 'tt-status-pill tt-status-pill--' + it.status;
+      it._ui.pillEl.style.display = pill ? '' : 'none';
+    }
+    var canCancel = _isCancellable(it.status);
+    it._ui.closeBtn.style.display = '';
+    it._ui.closeBtn.disabled = false;
+    it._ui.closeBtn.setAttribute(
+      'aria-label',
+      canCancel ? 'Stop transfer' : 'Dismiss'
+    );
+    it._ui.stopBtn.style.display = canCancel ? '' : 'none';
+    it._ui.stopBtn.disabled = !canCancel;
   }
 
   function _ensureRowUi(it, id) {
     if (it._ui) return;
     var row = document.createElement('div');
     row.className = 'tt-row';
+    row.dataset.ttId = String(id);
     var icon = it.direction === 'upload' ? '↑' : '↓';
     var statusCls = _ttStatusCls(it.status);
     row.innerHTML =
       '<div class="tt-row-header">' +
         '<span class="tt-icon ' + statusCls + '">' + icon + '</span>' +
         '<span class="tt-name" title="' + _escAttr(it.name) + '">' + _escHtml(it.name) + '</span>' +
+        '<span class="tt-status-pill tt-status-pill--' + it.status + '"></span>' +
         '<span class="tt-pct"></span>' +
+        '<button type="button" class="btn btn-ghost btn-xs btn-circle tt-row-close" aria-label="Stop transfer">&times;</button>' +
       '</div>' +
       '<progress class="progress progress-sm w-full ' + _ttProgressCls(it.status) + '" max="100"></progress>' +
+      '<div class="tt-row-actions">' +
+        '<button type="button" class="btn btn-outline btn-error btn-xs tt-stop-btn">Stop</button>' +
+      '</div>' +
       '<div class="tt-detail"></div>';
-    var cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.className = 'btn btn-ghost btn-xs mt-1';
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.addEventListener('click', function () {
-      if (it.status !== 'active' && it.status !== 'preparing') return;
-      var cancelFn = it.onCancel;
-      it.onCancel = null;
-      if (typeof cancelFn === 'function') cancelFn();
-      failTransfer(id, 'Cancelled');
+    var closeBtn = row.querySelector('.tt-row-close');
+    closeBtn.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      _cancelTransfer(id);
     });
-    row.appendChild(cancelBtn);
+    var stopBtn = row.querySelector('.tt-stop-btn');
+    stopBtn.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      _cancelTransfer(id);
+    });
     it._ui = {
       row: row,
+      iconEl: row.querySelector('.tt-icon'),
+      pillEl: row.querySelector('.tt-status-pill'),
       pctEl: row.querySelector('.tt-pct'),
       progress: row.querySelector('progress'),
       detailEl: row.querySelector('.tt-detail'),
-      cancelBtn: cancelBtn,
+      closeBtn: closeBtn,
+      stopBtn: stopBtn,
     };
     _sidebarList.appendChild(row);
   }
@@ -290,25 +457,33 @@
   function _renderSidebarList() {
     if (!_sidebarList) return;
     if (_items.size === 0) {
-      _sidebarList.innerHTML = '<p class="text-sm text-base-content/50 p-4 text-center">No transfers</p>';
+      _sidebarList.innerHTML =
+        '<div class="tt-empty">' +
+          '<p class="tt-empty-title">No transfers</p>' +
+          '<p class="tt-empty-hint">Upload or download files to see progress here. Use <strong>Stop</strong> to cancel anytime.</p>' +
+        '</div>';
       return;
     }
-    if (_sidebarList.firstElementChild && _sidebarList.firstElementChild.tagName === 'P') {
-      _sidebarList.innerHTML = '';
-    }
+    _sidebarList.querySelectorAll(':scope > .tt-empty, :scope > p').forEach(function (el) { el.remove(); });
     const liveIds = new Set();
     _items.forEach(function (it, id) {
-      liveIds.add(id);
+      liveIds.add(String(id));
       _ensureRowUi(it, id);
       _syncRowUi(it, id);
     });
-    _items.forEach(function (it, id) {
-      if (liveIds.has(id)) return;
-      if (it._ui) {
-        it._ui.row.remove();
-        it._ui = null;
-      }
+    // Remove stale rows only — avoid re-appending every frame (blocks click handling).
+    _sidebarList.querySelectorAll(':scope > .tt-row').forEach(function (row) {
+      if (!liveIds.has(row.dataset.ttId)) row.remove();
     });
+    var summaryEl = _el('transferTrackerSummary');
+    if (summaryEl) {
+      var agg = _aggregate();
+      var parts = [];
+      if (agg.active) parts.push(agg.active + ' active');
+      if (agg.queued) parts.push(agg.queued + ' queued');
+      if (agg.browser) parts.push(agg.browser + ' in browser');
+      summaryEl.textContent = parts.length ? parts.join(' · ') : (_items.size ? 'Tap Stop to cancel' : '');
+    }
   }
 
   function _escHtml(s) {
@@ -378,9 +553,12 @@
     if (!it) return;
     it.status = status;
     if (detail !== undefined) it.detail = detail;
+    else if (status === 'active') it.detail = '';
     if (it._ui) _syncRowUi(it, id);
     _scheduleRender();
-    if (status === 'preparing' || status === 'active') _startAnimLoop();
+    if (status === 'preparing' || status === 'active' || status === 'queued') {
+      _startAnimLoop();
+    }
   }
 
   function setCancelHandler(id, fn) {
@@ -395,6 +573,17 @@
     if (!it) return;
     it.loaded = loaded;
     if (total !== undefined) it.total = total;
+    if (loaded > 0 && (it.status === 'preparing' || it.status === 'active')) {
+      it.status = 'active';
+      if (!it.detail || it.detail === 'Starting…') it.detail = '';
+    }
+    var now = Date.now();
+    if (!it._speedSamples) it._speedSamples = [];
+    it._speedSamples.push({ t: now, b: loaded });
+    var cutoff = now - 2000;
+    while (it._speedSamples.length > 2 && it._speedSamples[0].t < cutoff) {
+      it._speedSamples.shift();
+    }
     if (it._ui) _syncRowUi(it, id);
     _scheduleRender();
     _startAnimLoop();
@@ -405,6 +594,7 @@
     if (!it) return;
     it.loaded = it.total;
     it.status = 'done';
+    it.onCancel = null;
     if (!_hasActiveTransfers()) _stopAnimLoop();
     _render();
     setTimeout(function () {
@@ -418,6 +608,7 @@
     if (!it) return;
     it.status = 'error';
     it.errorMsg = msg || 'Failed';
+    it.onCancel = null;
     if (!_hasActiveTransfers()) _stopAnimLoop();
     _render();
     setTimeout(function () {
@@ -459,6 +650,7 @@
     setCancelHandler: setCancelHandler,
     completeTransfer: completeTransfer,
     failTransfer: failTransfer,
+    cancelTransfer: _cancelTransfer,
     removeTransfer: removeTransfer,
     completeByExternalId: completeByExternalId,
     failByExternalId: failByExternalId,

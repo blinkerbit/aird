@@ -1,6 +1,7 @@
 import tornado.web
 import os
 import shutil
+import socket
 import tempfile
 import json
 import logging
@@ -20,6 +21,8 @@ from aird.handlers.base_handler import (
     require_modify_access,
     get_user_root,
 )
+from aird.core.transfer_native import try_start_native_socket_upload
+from aird.core.fast_upload import FastUploadWriter
 from aird.core.mmap_handler import MMapFileHandler
 from aird.core.zip_download import ZipDownloadError, build_zip_file, collect_zip_entries
 from aird.utils.util import sanitize_cloud_filename, is_feature_enabled, get_file_size_safe
@@ -163,6 +166,15 @@ def finalize_upload_to_disk(
     if upload_err is not None:
         return (False, upload_err[0], upload_err[1])
 
+    try:
+        actual_bytes = os.path.getsize(temp_path)
+    except OSError:
+        logging.exception("Upload temp file missing before finalize")
+        return (False, 500, UPLOAD_SAVE_FAILED)
+    if actual_bytes != upload_bytes:
+        _remove_staged_upload_temp(temp_path)
+        return (False, 499, "Upload incomplete")
+
     os.makedirs(os.path.dirname(final_path_abs), exist_ok=True)
     try:
         shutil.move(temp_path, final_path_abs)
@@ -182,6 +194,17 @@ def finalize_upload_to_disk(
             ip=remote_ip,
         )
     return (True, 200, UPLOAD_SUCCESSFUL)
+
+
+def _remove_staged_upload_temp(temp_path: str | None) -> None:
+    """Delete a staged upload temp file if it still exists."""
+    if not temp_path:
+        return
+    try:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+    except OSError:
+        logging.debug("staged upload temp remove failed", exc_info=True)
 
 
 def _query_arg(query_args: dict, name: str) -> str | None:
@@ -347,9 +370,23 @@ def _process_bulk_action(
     return UNSUPPORTED_ACTION
 
 
+def _tune_request_socket(handler: BaseHandler, *, rcvbuf: int = 16 * 1024 * 1024) -> None:
+    """Enlarge the accepted-connection receive buffer (listen-socket opts do not always inherit)."""
+    try:
+        stream = getattr(getattr(handler, "request", None), "connection", None)
+        stream = getattr(stream, "stream", None) or stream
+        sock = getattr(stream, "socket", None)
+        if sock is None:
+            return
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, rcvbuf)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, rcvbuf)
+    except OSError:
+        pass
+
+
 @tornado.web.stream_request_body
 class UploadHandler(BaseHandler):
-    """Single-request HTTP upload for files under the large-file threshold."""
+    """Single-request HTTP upload (WireGuard/LAN stream + small Open/CF files)."""
 
     def check_xsrf_cookie(self) -> None:
         """Streamed uploads send raw body; accept X-XSRFToken header or ?_xsrf= query param."""
@@ -371,6 +408,7 @@ class UploadHandler(BaseHandler):
             )
         except (AttributeError, RuntimeError):
             pass
+        _tune_request_socket(self)
         self.check_xsrf_cookie()
         if not self.get_current_user():
             raise tornado.web.HTTPError(403, "Authentication required")
@@ -382,13 +420,22 @@ class UploadHandler(BaseHandler):
         self._reject_reason: str | None = None
         self._temp_path: str | None = None
         self._aiofile = None
-        self._buffer = deque()
+        self._sync_file = None
+        self._fast_writer: FastUploadWriter | None = None
+        self._writer_error: BaseException | None = None
+        self._buffer = deque()  # legacy/tests fallback
         self._writer_task = None
         self._writing: bool = False
         self._moved: bool = False
         self._bytes_received: int = 0
         self._too_large: bool = False
         self._direct_limit_exceeded: bool = False
+        self._expected_bytes: int = 0
+        self._client_closed: bool = False
+        self._use_native_pump: bool = False
+        self._native_pump = None
+        self._native_cancel = None
+        self._upload_file_fd: int | None = None
         self._strategy = constants_module.get_effective_transfer_strategy()
 
         content_length = self.request.headers.get("Content-Length")
@@ -396,6 +443,7 @@ class UploadHandler(BaseHandler):
             content_length_value = int(content_length) if content_length else 0
         except ValueError:
             content_length_value = 0
+        self._expected_bytes = max(0, content_length_value)
         if (
             self._strategy["uploadTransport"] != "stream"
             and content_length_value > int(self._strategy["directUploadMaxBytes"])
@@ -431,12 +479,49 @@ class UploadHandler(BaseHandler):
             self._reject_reason = MISSING_UPLOAD_FILENAME_HEADER
             return
 
-        fd, self._temp_path = tempfile.mkstemp(prefix="aird_upload_")
-        os.close(fd)
-        self._aiofile = await aiofiles.open(self._temp_path, "wb")
+        user_root = get_user_root(self)
+        final_path_abs, upload_err = _validate_upload_destination(
+            self.upload_dir, self.filename, user_root
+        )
+        if upload_err is not None:
+            self._reject = True
+            self._reject_status, self._reject_reason = upload_err
+            return
+
+        dest_dir = os.path.dirname(final_path_abs) or user_root
+        os.makedirs(dest_dir, exist_ok=True)
+        # Stage outside the user's tree so partial uploads never appear in browse.
+        fd, self._temp_path = tempfile.mkstemp(prefix=".aird_up_")
+        self._upload_file_fd = fd
+        use_fast_path = (
+            self._strategy.get("uploadTransport") == "stream"
+            or content_length_value >= (4 * 1024 * 1024)
+        )
+        if use_fast_path:
+            if (
+                self._strategy.get("uploadTransport") == "stream"
+                and content_length_value >= (4 * 1024 * 1024)
+                and try_start_native_socket_upload(self, fd, content_length_value)
+            ):
+                self._use_native_pump = True
+                self._fast_writer = None
+                self._sync_file = None
+                self._aiofile = None
+            else:
+                self._fast_writer = FastUploadWriter(fd)
+                self._upload_file_fd = None
+                self._sync_file = None
+                self._aiofile = None
+        else:
+            self._fast_writer = None
+            self._sync_file = os.fdopen(fd, "wb", buffering=8 * 1024 * 1024)
+            self._upload_file_fd = None
+            self._aiofile = None
 
     def data_received(self, chunk: bytes) -> None:
-        if self._reject:
+        if self._reject or getattr(self, "_client_closed", False):
+            return
+        if getattr(self, "_use_native_pump", False):
             return
         self._bytes_received += len(chunk)
         if self._bytes_received > constants_module.MAX_FILE_SIZE:
@@ -453,6 +538,22 @@ class UploadHandler(BaseHandler):
         ):
             self._direct_limit_exceeded = True
             return
+        writer = getattr(self, "_fast_writer", None)
+        if writer is not None:
+            try:
+                writer.feed(chunk)
+            except Exception as exc:
+                self._writer_error = exc
+                logging.warning("Upload feed failed: %s", exc)
+            return
+        sync_file = getattr(self, "_sync_file", None)
+        if sync_file is not None:
+            try:
+                sync_file.write(chunk)
+            except OSError as exc:
+                self._writer_error = exc
+                logging.warning("Upload write failed: %s", exc)
+            return
         self._buffer.append(chunk)
         if not self._writing:
             self._writing = True
@@ -462,22 +563,61 @@ class UploadHandler(BaseHandler):
         try:
             while self._buffer:
                 data = self._buffer.popleft()
-                await self._aiofile.write(data)
+                if self._aiofile is not None:
+                    await self._aiofile.write(data)
         finally:
             self._writing = False
+            if self._buffer and not self._reject:
+                self._writing = True
+                self._writer_task = asyncio.create_task(self._drain_buffer())
 
     async def _finalize_stream(self):
-        if self._writer_task is not None:
+        pump = getattr(self, "_native_pump", None)
+        if pump is not None:
+            await asyncio.to_thread(pump.wait)
+            self._bytes_received = pump.bytes_written
+            if pump.error is not None:
+                self._writer_error = pump.error
+            self._native_pump = None
+            upload_fd = getattr(self, "_upload_file_fd", None)
+            if upload_fd is not None:
+                try:
+                    os.close(upload_fd)
+                except OSError:
+                    logging.debug("native upload fd close failed", exc_info=True)
+                self._upload_file_fd = None
+            return
+
+        writer = getattr(self, "_fast_writer", None)
+        if writer is not None:
+            await asyncio.to_thread(writer.finish)
+            if writer.error is not None:
+                self._writer_error = writer.error
+            self._fast_writer = None
+
+        while self._writer_task is not None:
+            task = self._writer_task
+            self._writer_task = None
             try:
-                await self._writer_task
+                await task
             except Exception:
                 logging.debug("upload writer task await failed", exc_info=True)
+
+        sync_file = getattr(self, "_sync_file", None)
+        if sync_file is not None:
+            try:
+                await asyncio.to_thread(sync_file.flush)
+                await asyncio.to_thread(sync_file.close)
+            except Exception:
+                logging.debug("upload sync file close failed", exc_info=True)
+            self._sync_file = None
         if self._aiofile is not None:
             try:
                 await self._aiofile.flush()
                 await self._aiofile.close()
             except Exception:
                 logging.debug("upload aiofile close failed", exc_info=True)
+            self._aiofile = None
 
     @tornado.web.authenticated
     @require_action("file.write")
@@ -495,6 +635,14 @@ class UploadHandler(BaseHandler):
 
         await self._finalize_stream()
 
+        if getattr(self, "_client_closed", False):
+            return
+
+        if getattr(self, "_writer_error", None) is not None:
+            self.set_status(500)
+            self.write(UPLOAD_SAVE_FAILED)
+            return
+
         if getattr(self, "_direct_limit_exceeded", False):
             self.set_status(413)
             self.write(
@@ -507,6 +655,13 @@ class UploadHandler(BaseHandler):
             limit_mb = constants_module.UPLOAD_CONFIG.get("max_file_size_mb", 512)
             self.set_status(413)
             self.write(FILE_TOO_LARGE_TEMPLATE.format(limit_mb=limit_mb))
+            return
+
+        expected = getattr(self, "_expected_bytes", 0) or 0
+        if expected > 0 and self._bytes_received != expected:
+            _remove_staged_upload_temp(self._temp_path)
+            self.set_status(499)
+            self.write("Upload incomplete")
             return
 
         upload_bytes = self._bytes_received
@@ -528,16 +683,44 @@ class UploadHandler(BaseHandler):
         self.set_status(status)
         self.write(message)
 
+    def _abort_upload_staging(self) -> None:
+        cancel = getattr(self, "_native_cancel", None)
+        if cancel is not None:
+            try:
+                cancel.cancel()
+            except Exception:
+                logging.debug("native upload cancel failed", exc_info=True)
+        pump = getattr(self, "_native_pump", None)
+        if pump is not None:
+            pump.abort()
+            self._native_pump = None
+        writer = getattr(self, "_fast_writer", None)
+        if writer is not None:
+            writer.abort()
+            self._fast_writer = None
+        sync_file = getattr(self, "_sync_file", None)
+        if sync_file is not None:
+            try:
+                sync_file.close()
+            except Exception:
+                logging.debug("upload sync file close failed", exc_info=True)
+            self._sync_file = None
+        if getattr(self, "_temp_path", None) and not getattr(self, "_moved", False):
+            _remove_staged_upload_temp(self._temp_path)
+        upload_fd = getattr(self, "_upload_file_fd", None)
+        if upload_fd is not None:
+            try:
+                os.close(upload_fd)
+            except OSError:
+                logging.debug("upload file fd close on abort failed", exc_info=True)
+            self._upload_file_fd = None
+
+    def on_connection_close(self) -> None:
+        self._client_closed = True
+        self._abort_upload_staging()
+
     def on_finish(self) -> None:
-        try:
-            if getattr(self, "_temp_path", None) and not getattr(self, "_moved", False):
-                if os.path.exists(self._temp_path):
-                    try:
-                        os.remove(self._temp_path)
-                    except Exception:
-                        logging.debug("temp upload file remove failed", exc_info=True)
-        except Exception:
-            logging.debug("upload on_finish cleanup failed", exc_info=True)
+        self._abort_upload_staging()
 
 
 class CreateFolderHandler(BaseHandler):

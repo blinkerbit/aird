@@ -38,6 +38,21 @@ logger = logging.getLogger(__name__)
 DISPLAY_ADMIN_TOKEN = "Admin (Token)"  # nosec B105
 DISPLAY_ACCESS_TOKEN = "Access (Token)"  # nosec B105
 
+
+def json_encode_for_script(value: Any) -> str:
+    """JSON-encode a value for embedding directly (via ``{% raw %}``) inside an
+    inline ``<script>`` block.
+
+    Templates must not run ``json_encode`` through the default ``{{ }}``
+    interpolation — Tornado's autoescaping HTML-escapes the quotes (turning
+    them into ``&quot;``) and produces invalid JavaScript. Using ``{% raw %}``
+    with plain ``json.dumps`` avoids that, but risks a script-tag breakout if
+    an embedded string (e.g. a user-defined tag name) contains ``</script>``.
+    This encodes with ``json.dumps`` and escapes ``</`` so the JSON stays
+    intact and cannot terminate the enclosing script tag early.
+    """
+    return json.dumps(value).replace("</", "<\\/")
+
 _PARSE_JSON_MAX_UNSET = object()
 
 
@@ -339,8 +354,19 @@ class AuthStrategy(Protocol):
     def authenticate(self, handler: Any) -> dict[str, Any] | None: ...
 
 
+def _handler_db_conn(handler: Any):
+    """Resolve DB connection from app context or settings (HTTP and WebSocket)."""
+    settings = getattr(handler, "settings", None)
+    if not isinstance(settings, dict):
+        return None
+    ctx = settings.get("app_context")
+    if ctx is not None and getattr(ctx, "db_conn", None) is not None:
+        return ctx.db_conn
+    return settings.get("db_conn")
+
+
 class CookieAuthStrategy:
-    """Authenticate a user from signed cookie state."""
+    """Authenticate a user from a server-side session referenced by cookie."""
 
     @staticmethod
     def _token_user_from_username(handler: Any, username: str) -> dict[str, Any] | None:
@@ -352,34 +378,38 @@ class CookieAuthStrategy:
             return None
         return None
 
-    @classmethod
-    def _token_user_from_cookie_bytes(
-        cls, handler: Any, user_json: Any
-    ) -> dict[str, Any] | None:
-        if not isinstance(user_json, bytes):
-            return None
-        user_str = user_json.decode("utf-8", errors="ignore")
-        return cls._token_user_from_username(handler, user_str)
-
     def authenticate(self, handler: Any) -> dict[str, Any] | None:
-        user_json = handler.get_secure_cookie("user")
-        if not user_json:
+        from aird.db.sessions import SESSION_COOKIE_NAME, get_session, touch_session
+
+        db_conn = _handler_db_conn(handler)
+        session_cookie = handler.get_secure_cookie(SESSION_COOKIE_NAME)
+        if not session_cookie or db_conn is None:
             return None
+        session_id = (
+            session_cookie.decode("utf-8")
+            if isinstance(session_cookie, bytes)
+            else str(session_cookie)
+        )
+        stored = get_session(db_conn, session_id)
+        if stored is None:
+            return None
+        touch_session(db_conn, session_id)
+
+        username = stored["username"]
+        token_user = self._token_user_from_username(handler, username)
+        if token_user is not None:
+            token_user = dict(token_user)
+            token_user["_session_id"] = session_id
+            return token_user
         try:
-            username, _ = _parse_username_from_cookie(user_json)
-            db_conn = handler.settings.get("db_conn")
-            if db_conn:
-                try:
-                    user = get_user_by_username(db_conn, username)
-                    if user:
-                        user.pop("password_hash", None)
-                        return user
-                except Exception:
-                    logger.debug("CookieAuthStrategy: db lookup failed", exc_info=True)
-            return self._token_user_from_username(handler, username)
-        except (TypeError, ValueError, KeyError):
-            logger.debug("CookieAuthStrategy: cookie parse error", exc_info=True)
-            return self._token_user_from_cookie_bytes(handler, user_json)
+            user = get_user_by_username(db_conn, username)
+            if user:
+                user.pop("password_hash", None)
+                user["_session_id"] = session_id
+                return user
+        except Exception:
+            logger.debug("CookieAuthStrategy: db lookup failed", exc_info=True)
+        return None
 
 
 class BearerAuthStrategy:
@@ -778,6 +808,9 @@ class BaseHandler(tornado.web.RequestHandler):
 
     def clear_auth_cookies(self) -> None:
         """Remove authentication cookies from the response."""
+        from aird.db.sessions import SESSION_COOKIE_NAME
+
+        self.clear_cookie(SESSION_COOKIE_NAME)
         self.clear_cookie("user")
         self.clear_cookie("user_role")
         self.clear_cookie("admin")
@@ -791,6 +824,18 @@ class BaseHandler(tornado.web.RequestHandler):
                 delattr(self, attr)
         if self.settings.get("xsrf_cookies"):
             _ = self.xsrf_token
+
+    def get_session_id(self) -> str | None:
+        """Return the current server-side session id, if any."""
+        from aird.db.sessions import SESSION_COOKIE_NAME
+
+        user = self.current_user if hasattr(self, "current_user") else None
+        if isinstance(user, dict) and user.get("_session_id"):
+            return str(user["_session_id"])
+        cookie = self.get_secure_cookie(SESSION_COOKIE_NAME)
+        if not cookie:
+            return None
+        return cookie.decode("utf-8") if isinstance(cookie, bytes) else str(cookie)
 
     def session_cookie_opts(self, expires_days=1) -> dict:
         """Return common kwargs for secure session cookies (httponly, secure, samesite, expires_days)."""
@@ -951,6 +996,7 @@ class BaseHandler(tornado.web.RequestHandler):
         namespace = super().get_template_namespace()
         namespace["csp_nonce"] = self.get_csp_nonce()
         namespace["is_feature_enabled"] = is_feature_enabled
+        namespace["json_encode_for_script"] = json_encode_for_script
         # _app_nav_header.html expects these; missing keys raise when Super Search link renders.
         namespace.setdefault("nav_search_path", "")
         namespace.setdefault("nav_title", "")

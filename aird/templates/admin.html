@@ -137,7 +137,7 @@
           </div>
           <p class="text-xs text-base-content/60">
             Effective: <strong>{{ runtime_config.get('profile', 'open') }}</strong>.
-            Cloudflare uses proxy-safe 90 MiB ranges; WireGuard streams directly; Open uses resumable public-WAN transfers.
+            Cloudflare uses proxy-safe 90 MiB ranges; WireGuard uses one continuous full-file POST (smooth LAN speed); Open uses resumable public-WAN transfers.
           </p>
         </div>
       </div>
@@ -156,7 +156,7 @@
             <label for="single_request_max_mb" class="text-sm font-semibold w-48">Single-request max (MB)</label>
             <input type="number" id="single_request_max_mb" name="single_request_max_mb" class="input input-bordered input-sm w-28"
                    value="{{ upload_config.get('single_request_max_mb', 64) }}" min="0" step="1">
-            <span class="text-xs text-base-content/50">Advanced override for Open. Cloudflare caps this at 90 MiB; WireGuard streams directly.</span>
+            <span class="text-xs text-base-content/50">Advanced override for Open. Cloudflare caps this at 90 MiB; WireGuard streams the full file in one request.</span>
           </div>
           <div class="flex flex-wrap items-center gap-3">
             <label for="range_chunk_mb" class="text-sm font-semibold w-48">HTTP chunk (MB)</label>
@@ -168,7 +168,7 @@
             <label for="range_upload_concurrency" class="text-sm font-semibold w-48">HTTP parallelism</label>
             <input type="number" id="range_upload_concurrency" name="range_upload_concurrency" class="input input-bordered input-sm w-28"
                    value="{{ upload_config.get('range_upload_concurrency', 8) }}" min="1" max="64" step="1">
-            <span class="text-xs text-base-content/50">Open-profile maximum. Cloudflare is capped at 8; WireGuard uses one stream.</span>
+            <span class="text-xs text-base-content/50">Open-profile maximum. Cloudflare is capped at 8; WireGuard uses a single stream (concurrency unused).</span>
           </div>
           <div class="flex flex-wrap items-center gap-3">
             <label for="ws_chunk_mb" class="text-sm font-semibold w-48">WS chunk (MB)</label>

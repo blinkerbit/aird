@@ -17,6 +17,7 @@ from aird.cli.config import (
     load_config,
     save_config,
 )
+from aird.cli.bulk_transfer import bulk_get_file, bulk_put_file
 from aird.cli.session import AirdAPIError, AirdAuthError, AirdClient
 
 log = logging.getLogger(__name__)
@@ -365,6 +366,46 @@ def cmd_shares_download_all(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_bulk_put(args: argparse.Namespace) -> int:
+    try:
+        client = AirdClient()
+        client.check_auth()
+        server = get_server_url()
+        if not server:
+            print("No server configured. Run: aird-cli login --server URL", file=sys.stderr)
+            return 1
+        local = Path(args.local)
+        bulk_put_file(
+            client.http,
+            server,
+            local,
+            args.remote,
+            filename=args.name,
+        )
+        print(f"Uploaded {local} → {args.remote or '/'}{args.name or local.name}")
+        return 0
+    except (AirdAuthError, AirdAPIError, OSError, RuntimeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+
+def cmd_bulk_get(args: argparse.Namespace) -> int:
+    try:
+        client = AirdClient()
+        client.check_auth()
+        server = get_server_url()
+        if not server:
+            print("No server configured. Run: aird-cli login --server URL", file=sys.stderr)
+            return 1
+        out = Path(args.output)
+        n = bulk_get_file(client.http, server, args.remote, out)
+        print(f"Downloaded {args.remote} ({n} bytes) → {out}")
+        return 0
+    except (AirdAuthError, AirdAPIError, OSError, RuntimeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="aird-cli",
@@ -421,6 +462,18 @@ def build_parser() -> argparse.ArgumentParser:
     up.add_argument("remote", nargs="?", default="", help="Remote destination directory")
     up.add_argument("-j", "--jobs", type=int, default=None, help="Parallel file uploads (default from config)")
     up.set_defaults(func=cmd_upload)
+
+    bulk = sub.add_parser("bulk", help="Fast bulk transfers on the main server port (LAN/WireGuard)")
+    bulk_sub = bulk.add_subparsers(dest="bulk_cmd", required=True)
+    bulk_put = bulk_sub.add_parser("put", help="Upload a file via bulk WebSocket (same port as UI)")
+    bulk_put.add_argument("local", help="Local file path")
+    bulk_put.add_argument("remote", nargs="?", default="", help="Remote directory")
+    bulk_put.add_argument("-n", "--name", help="Remote filename override")
+    bulk_put.set_defaults(func=cmd_bulk_put)
+    bulk_get = bulk_sub.add_parser("get", help="Download a file via HTTP on the main server port")
+    bulk_get.add_argument("remote", help="Remote file path")
+    bulk_get.add_argument("-o", "--output", required=True, help="Local output path")
+    bulk_get.set_defaults(func=cmd_bulk_get)
 
     shares = sub.add_parser("shares", help="Share operations")
     sh_sub = shares.add_subparsers(dest="shares_cmd", required=True)

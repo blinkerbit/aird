@@ -5,6 +5,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from tests.handler_helpers import _default_services
 from aird.handlers.api_handlers import SuperSearchWebSocketHandler
 from aird.core.input_validation import validate_super_search_glob
+from aird.db.sessions import SESSION_COOKIE_NAME
 
 
 class TestSuperSearchWebSocketHandler:
@@ -21,21 +22,23 @@ class TestSuperSearchWebSocketHandler:
     @pytest.mark.asyncio
     async def test_auth_success_cookie(self):
         handler = SuperSearchWebSocketHandler(self.mock_app, self.mock_request)
-
-        # Mock get_secure_cookie
-        handler.get_secure_cookie = MagicMock(
-            return_value=json.dumps({"username": "user"}).encode()
-        )
-
-        # Mock DB user check
+        session_id = "test-session-id"
         self.mock_app.settings["db_conn"] = MagicMock()
+        handler.get_secure_cookie = MagicMock(
+            side_effect=lambda name: (
+                session_id.encode() if name == SESSION_COOKIE_NAME else None
+            )
+        )
         with patch(
             "aird.handlers.base_handler.get_user_by_username",
             return_value={"username": "user"},
-        ):
-
+        ), patch(
+            "aird.db.sessions.get_session",
+            return_value={"username": "user", "id": session_id},
+        ), patch("aird.db.sessions.touch_session"):
             user = handler.get_current_user()
             assert user["username"] == "user"
+            assert user["_session_id"] == session_id
 
     @pytest.mark.asyncio
     async def test_auth_success_token(self):

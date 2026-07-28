@@ -40,6 +40,7 @@ from aird.constants.input_limits import (
     SHARE_ID_MAX_LEN,
     USER_SEARCH_QUERY_MAX_LEN,
 )
+from aird.core.file_operations import _glob_match
 from aird.core.input_validation import validate_super_search_glob, validate_ws_search
 
 from aird.utils.util import (
@@ -655,7 +656,7 @@ class SuperSearchWebSocketHandler(
         rel_path_str: str, filename: str, normalized_pattern: str
     ) -> bool:
         """Return True if the file path or filename matches the glob pattern."""
-        return fnmatch.fnmatch(rel_path_str, normalized_pattern) or fnmatch.fnmatch(
+        return _glob_match(rel_path_str, normalized_pattern) or _glob_match(
             filename, normalized_pattern
         )
 

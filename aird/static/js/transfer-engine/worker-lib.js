@@ -31,7 +31,11 @@
       `/api/upload/range/${encodeURIComponent(uploadId)}/status`,
       { credentials: 'same-origin', headers: { 'X-XSRFToken': cfg.xsrf } }
     );
-    if (!res.ok) throw new Error(await res.text() || `Status failed (${res.status})`);
+    if (!res.ok) {
+      const err = new Error(await res.text() || `Status failed (${res.status})`);
+      err.status = res.status;
+      throw err;
+    }
     return res.json();
   }
 
@@ -151,20 +155,36 @@
   async function putChunkWithRetry(cfg, uploadId, file, idx, chunkSize, totalSize, job, onProgress) {
     const start = idx * chunkSize;
     const end = Math.min(start + chunkSize - 1, totalSize - 1);
+    const lanFast = cfg.profile === 'wireguard';
+    const maxAttempts = lanFast ? 8 : 4;
     let lastRes = null;
-    for (let attempt = 0; attempt < 4; attempt++) {
+    let lastErr = null;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (job.cancelled) throw new Error('cancelled');
-      lastRes = await putChunkXHR(cfg, uploadId, file, start, end, totalSize, job, onProgress);
+      try {
+        lastRes = await putChunkXHR(cfg, uploadId, file, start, end, totalSize, job, onProgress);
+      } catch (err) {
+        if (job.cancelled || err?.message === 'cancelled') throw new Error('cancelled');
+        if (err?.message === 'paused') throw err;
+        lastErr = err;
+        if (!isRetryableError(err) && attempt >= 1) throw err;
+        await abortableSleep(Math.min(1000 * 2 ** attempt, lanFast ? 15000 : 8000), job);
+        continue;
+      }
       if (lastRes.status === 201 || lastRes.status === 200) return lastRes;
       if (lastRes.status === 507) {
         throw new Error(lastRes.text || 'Not enough disk space to complete this upload.');
       }
+      if (lastRes.status === 404) {
+        throw new Error(lastRes.text || 'Upload session expired');
+      }
       if (lastRes.status === 429 || lastRes.status >= 500) {
-        await abortableSleep(Math.min(1000 * 2 ** attempt, 8000), job);
+        await abortableSleep(Math.min(1000 * 2 ** attempt, lanFast ? 15000 : 8000), job);
         continue;
       }
       throw new Error(lastRes.text || `Chunk failed (${lastRes.status})`);
     }
+    if (lastErr) throw lastErr;
     throw new Error(lastRes?.text || 'Chunk upload failed after retries');
   }
 
@@ -186,10 +206,9 @@
       this.windowBytes = 0;
       this.windowStart = Date.now();
       const prev = this.current;
-      if (mbps < 5 && this.current < this.max) {
+      // Ramp up while below target; never throttle a fast link (that capped LAN ~60 MB/s).
+      if (mbps < 200 && this.current < this.max) {
         this.current = Math.min(this.max, this.current + 2);
-      } else if (mbps > 80 && this.current > this.min) {
-        this.current = Math.max(this.min, this.current - 1);
       }
       if (this.current !== prev && typeof this.onChange === 'function') {
         this.onChange(this.current);
@@ -214,18 +233,20 @@
       cancelled: false,
       softAborting: false,
       xhrs: new Set(),
+      uploadId: null,
+      xsrf: cfg.xsrf,
     };
     jobs.set(jobId, job);
 
     const totalSize = file.size;
     let chunkSize = resume?.chunkSize || cfg.chunkBytes;
-    const pipelineDepth = cfg.pipelineDepth || 2;
     const minConcurrency = cfg.minConcurrency || cfg.concurrency;
     const maxConcurrency = cfg.maxConcurrency || cfg.concurrency;
     const scheduler = new AdaptiveScheduler(minConcurrency, maxConcurrency);
 
     let uploadId = resume?.uploadId || null;
     const doneChunks = new Set(resume?.doneChunks || []);
+    job.uploadId = uploadId;
 
     try {
       if (!uploadId) {
@@ -233,11 +254,60 @@
           cfg, { uploadDir, filename, totalSize }
         );
         uploadId = session.upload_id;
+        job.uploadId = uploadId;
         chunkSize = Number(session.chunk_bytes) || chunkSize;
         post(jobId, {
           type: 'resume',
           resume: { uploadId, uploadDir, filename, totalSize, chunkSize, doneChunks: [] },
         });
+      } else {
+        // Resume: server ranges are source of truth after disconnect.
+        try {
+          const status = await fetchUploadStatus(cfg, uploadId);
+          if (status.complete) {
+            post(jobId, { type: 'complete', message: 'Upload successful' });
+            return;
+          }
+          if (Number(status.chunk_bytes) > 0) {
+            chunkSize = Number(status.chunk_bytes);
+          }
+          const ranges = status.ranges || [];
+          doneChunks.clear();
+          const totalChunksEarly = Math.ceil(totalSize / chunkSize);
+          for (let i = 0; i < totalChunksEarly; i++) {
+            if (chunkRangeCovered(i, chunkSize, totalSize, ranges)) doneChunks.add(i);
+          }
+          post(jobId, {
+            type: 'resume',
+            resume: {
+              uploadId,
+              uploadDir,
+              filename,
+              totalSize,
+              chunkSize,
+              doneChunks: Array.from(doneChunks),
+            },
+          });
+        } catch (err) {
+          // Only start fresh when the server session is gone; network blips
+          // must not orphan the existing upload_id and burn session slots.
+          const gone = err?.status === 404
+            || /not found|404/i.test(String(err?.message || ''));
+          if (!gone) throw err;
+          uploadId = null;
+          job.uploadId = null;
+          doneChunks.clear();
+          const session = await createSession(
+            cfg, { uploadDir, filename, totalSize }
+          );
+          uploadId = session.upload_id;
+          job.uploadId = uploadId;
+          chunkSize = Number(session.chunk_bytes) || chunkSize;
+          post(jobId, {
+            type: 'resume',
+            resume: { uploadId, uploadDir, filename, totalSize, chunkSize, doneChunks: [] },
+          });
+        }
       }
 
       const totalChunks = Math.ceil(totalSize / chunkSize);
@@ -356,7 +426,9 @@
       reportProgress(true);
 
       function maxInFlight() {
-        return scheduler.limit() * pipelineDepth;
+        // Cap at scheduler concurrency. Multiplying by pipelineDepth oversubscribed
+        // the server (429) and collapsed LAN throughput.
+        return scheduler.limit();
       }
 
       function startNext() {
@@ -575,7 +647,7 @@
     }
   }
 
-  function cancelJob(jobId) {
+  function cancelJob(jobId, options) {
     const job = jobs.get(jobId);
     if (!job) return;
     job.cancelled = true;
@@ -584,6 +656,15 @@
     job.xhrs?.forEach((x) => { try { x.abort(); } catch (_) { /* ignore */ } });
     job.controllers?.forEach((c) => { try { c.abort(); } catch (_) { /* ignore */ } });
     if (typeof job.forceSettle === 'function') job.forceSettle();
+    if (options?.discardServer && job.uploadId && job.xsrf) {
+      const uploadId = job.uploadId;
+      const xsrf = job.xsrf;
+      fetch(`/api/upload/range/${encodeURIComponent(uploadId)}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: { 'X-XSRFToken': xsrf },
+      }).catch(() => {});
+    }
   }
 
   globalThis.AirdWorkerLib = {

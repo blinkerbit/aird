@@ -17,11 +17,15 @@
     const live = strategy || global.AirdRuntimeConfig?.getTransferStrategy?.()
       || c.transferStrategy || {};
     const concurrency = live.rangeUploadConcurrency || c.rangeUploadConcurrency || 8;
+    const lanFast = live.profile === 'wireguard';
     return {
       chunkBytes: live.rangeChunkBytes || c.rangeChunkBytes || (32 * 1024 * 1024),
       concurrency,
-      minConcurrency: Math.max(4, Math.floor(concurrency / 2)),
-      maxConcurrency: Math.min(64, concurrency + 4),
+      // WireGuard/LAN: start at full parallelism immediately.
+      minConcurrency: lanFast ? concurrency : Math.max(4, Math.floor(concurrency / 2)),
+      maxConcurrency: lanFast
+        ? Math.min(64, concurrency)
+        : Math.min(64, concurrency + 4),
       pipelineDepth: live.rangePipelineDepth || c.rangePipelineDepth || 2,
       largeThreshold: live.directUploadMaxBytes || c.largeFileThreshold
         || (64 * 1024 * 1024),
@@ -37,7 +41,7 @@
 
   function getWorker() {
     if (worker) return worker;
-    worker = new Worker('/static/js/transfer-engine/worker.js?v=20260719a');
+    worker = new Worker('/static/js/transfer-engine/worker.js?v=20260725c');
     worker.postMessage({
       type: 'visibility',
       visible: document.visibilityState === 'visible',
@@ -93,12 +97,16 @@
 
       if (msg.type === 'error') {
         if (global.AirdResumeStore && msg.message !== 'cancelled') {
-          global.AirdResumeStore.saveJob({
-            jobId: msg.jobId,
-            status: 'error',
-            updatedAt: Date.now(),
-            error: msg.message,
-          }).catch(() => {});
+          // Preserve uploadId / doneChunks so the same file can resume later.
+          Promise.resolve(global.AirdResumeStore.getJob(msg.jobId))
+            .then((existing) => global.AirdResumeStore.saveJob({
+              ...(existing || {}),
+              jobId: msg.jobId,
+              status: 'error',
+              updatedAt: Date.now(),
+              error: msg.message,
+            }))
+            .catch(() => {});
         } else if (msg.message === 'cancelled' && global.AirdResumeStore) {
           global.AirdResumeStore.deleteJob(msg.jobId).catch(() => {});
         }
@@ -153,9 +161,22 @@
     const w = getWorker();
 
     return new Promise((resolve, reject) => {
+      let settleTimer = null;
+      const clearSettleTimer = () => {
+        if (settleTimer) {
+          clearTimeout(settleTimer);
+          settleTimer = null;
+        }
+      };
       const entry = {
-        resolve,
-        reject,
+        resolve: (value) => {
+          clearSettleTimer();
+          resolve(value);
+        },
+        reject: (err) => {
+          clearSettleTimer();
+          reject(err);
+        },
         onProgress: options.onProgress,
         ttId: options.ttId || null,
         uiPaused: false,
@@ -168,9 +189,21 @@
           ? cancelScope.abort.bind(cancelScope)
           : null;
         cancelScope.abort = () => {
-          w.postMessage({ type: 'cancel', jobId });
+          try {
+            w.postMessage({ type: 'cancel', jobId, discardServer: true });
+          } catch (_) { /* worker gone */ }
           cancelScope.aborted = true;
-          if (prevAbort) prevAbort();
+          if (prevAbort) {
+            try { prevAbort(); } catch (_) { /* ignore */ }
+          }
+          // If the worker never answers, free the upload slot anyway.
+          clearSettleTimer();
+          settleTimer = setTimeout(() => {
+            const h = handlers.get(jobId);
+            if (!h) return;
+            handlers.delete(jobId);
+            h.reject(new Error('cancelled'));
+          }, 2500);
         };
       }
 
@@ -198,10 +231,14 @@
 
     const TT = global.AirdTransferTracker;
     const filename = options.filename ?? (file.name || 'upload');
-    const ttId = TT
-      ? TT.addTransfer(filename, file.size, 'upload', { onCancel: options.onCancel })
-      : null;
-    if (TT && ttId && options.onCancel) {
+    let ttId = options.ttId != null ? options.ttId : null;
+    if (ttId == null && TT) {
+      ttId = TT.addTransfer(filename, file.size, 'upload', { onCancel: options.onCancel });
+    } else if (TT && ttId != null) {
+      TT.updateProgress(ttId, 0, file.size);
+      TT.setTransferStatus(ttId, 'preparing', 'Starting…');
+    }
+    if (TT && ttId != null && options.onCancel) {
       TT.setCancelHandler(ttId, options.onCancel);
     }
 
@@ -285,7 +322,48 @@
   async function listResumableUploads() {
     if (!global.AirdResumeStore) return [];
     const jobs = await global.AirdResumeStore.listJobs();
-    return jobs.filter((j) => j.status === 'active' && j.uploadId);
+    return jobs.filter(
+      (j) => j.uploadId && (j.status === 'active' || j.status === 'error')
+    );
+  }
+
+  async function findResumeForFile(file, uploadDir, filename) {
+    const name = filename || file?.name || '';
+    const size = file?.size;
+    const dir = uploadDir ?? '';
+    if (!name || size == null) return null;
+    const jobs = await listResumableUploads();
+    const match = jobs.find(
+      (j) => j.filename === name
+        && j.totalSize === size
+        && (j.uploadDir || '') === dir
+    );
+    if (!match) return null;
+    return {
+      uploadId: match.uploadId,
+      uploadDir: match.uploadDir || '',
+      filename: match.filename,
+      totalSize: match.totalSize,
+      chunkSize: match.chunkSize,
+      doneChunks: match.doneChunks || [],
+      jobId: match.jobId,
+    };
+  }
+
+  async function discardResume(resume) {
+    if (!resume) return;
+    if (resume.jobId && global.AirdResumeStore) {
+      await global.AirdResumeStore.deleteJob(resume.jobId).catch(() => {});
+    }
+    if (resume.uploadId) {
+      try {
+        await fetch(`/api/upload/range/${encodeURIComponent(resume.uploadId)}`, {
+          method: 'DELETE',
+          credentials: 'same-origin',
+          headers: { 'X-XSRFToken': getXSRFToken() },
+        });
+      } catch (_) { /* best-effort */ }
+    }
   }
 
   global.AirdTransferEngine = {
@@ -293,6 +371,8 @@
     downloadFile,
     registerServiceWorker,
     listResumableUploads,
+    findResumeForFile,
+    discardResume,
     engineConfig,
     filesUrl,
   };

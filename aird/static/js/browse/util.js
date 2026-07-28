@@ -1,7 +1,5 @@
 "use strict";
 
-export const RELOAD_DELAY_MS = 500;
-
 function browseConfig() {
   return globalThis.__BROWSE_CONFIG || {};
 }

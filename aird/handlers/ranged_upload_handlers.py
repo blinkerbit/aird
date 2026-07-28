@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import secrets
+import socket
 import tempfile
 import asyncio
 import threading
@@ -29,6 +30,7 @@ from aird.core.http_range import (
     ByteRange,
     merge_ranges,
     parse_content_range,
+    range_fully_covered,
     ranges_cover_file,
     ranges_to_json,
 )
@@ -36,7 +38,9 @@ from aird.db.ranged_uploads import (
     count_active_sessions,
     create_session,
     delete_session,
+    find_matching_session,
     get_session,
+    list_reclaimable_sessions,
     update_ranges,
 )
 from aird.handlers.base_handler import (
@@ -46,14 +50,48 @@ from aird.handlers.base_handler import (
     require_modify_access,
 )
 from aird.handlers.constants import DB_UNAVAILABLE_SHORT
-from aird.handlers.file_op_handlers import finalize_upload_to_disk, _query_arg
+from aird.handlers.file_op_handlers import (
+    _validate_upload_destination,
+    finalize_upload_to_disk,
+    _query_arg,
+)
 from aird.utils.util import is_feature_enabled
 from aird.core.rate_limit import TransferRateLimiter
 
 logger = logging.getLogger(__name__)
 
 _SESSION_NOT_FOUND = "Upload session not found"
-_MAX_ACTIVE_SESSIONS_PER_USER = 5
+# WireGuard/LAN can leave incomplete sessions after disconnects; allow enough
+# headroom for resume + a multi-file queue without failing the first upload.
+_MAX_ACTIVE_SESSIONS_PER_USER = 32
+
+
+def _remove_session_temp(temp_path: str | None) -> None:
+    if not temp_path:
+        return
+    try:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+    except OSError:
+        logger.debug("Upload session temp cleanup failed", exc_info=True)
+
+
+def _reclaim_sessions_for_user(conn, username: str, need: int = 1) -> int:
+    """Free empty (or oldest) incomplete sessions so a new upload can start."""
+    reclaimed = 0
+    for empty_only in (True, False):
+        if reclaimed >= need:
+            break
+        for session in list_reclaimable_sessions(conn, username, empty_only=empty_only):
+            if reclaimed >= need:
+                break
+            _remove_session_temp(session.get("temp_path"))
+            delete_session(conn, session["id"])
+            _release_session_lock(session["id"])
+            reclaimed += 1
+    return reclaimed
+
+
 _session_locks: dict[str, asyncio.Lock] = {}
 _session_registry_lock = threading.Lock()
 _active_chunk_streams: dict[str, int] = {}
@@ -290,7 +328,7 @@ class RangedUploadSessionHandler(BaseHandler):
             self.write(
                 {
                     "error": (
-                        "Ranged uploads are disabled for the WireGuard profile; "
+                        "Ranged uploads are disabled for this hosting profile; "
                         "use POST /upload"
                     )
                 }
@@ -333,6 +371,35 @@ class RangedUploadSessionHandler(BaseHandler):
             self.write({"error": DB_UNAVAILABLE_SHORT})
             return
         username = self.get_display_username()
+
+        # Reuse an existing incomplete session for the same file (resume / retry).
+        existing = find_matching_session(
+            self.db_conn,
+            username=username,
+            upload_dir=upload_dir,
+            filename=filename,
+            total_size=total_size,
+        )
+        if existing is not None:
+            self.set_status(200)
+            self.write(
+                {
+                    "upload_id": existing["id"],
+                    "total_size": existing["total_size"],
+                    "chunk_bytes": int(existing["chunk_bytes"]),
+                    "transfer_profile": existing["transfer_profile"],
+                    "resumed": True,
+                }
+            )
+            return
+
+        active = count_active_sessions(self.db_conn, username)
+        if active >= _MAX_ACTIVE_SESSIONS_PER_USER:
+            _reclaim_sessions_for_user(
+                self.db_conn,
+                username,
+                need=active - _MAX_ACTIVE_SESSIONS_PER_USER + 1,
+            )
         if count_active_sessions(self.db_conn, username) >= _MAX_ACTIVE_SESSIONS_PER_USER:
             self.set_status(429)
             self.set_header("Retry-After", "30")
@@ -340,14 +407,30 @@ class RangedUploadSessionHandler(BaseHandler):
             return
 
         session_id = secrets.token_urlsafe(16)
-        fd, temp_path = tempfile.mkstemp(prefix="aird_range_")
-        os.close(fd)
-        # Empty temp file; ranges extend it on write (no upfront truncate of total_size).
+        user_root = get_user_root(self)
+        final_path_abs, upload_err = _validate_upload_destination(
+            upload_dir, filename, user_root
+        )
+        if upload_err is not None:
+            self.set_status(upload_err[0])
+            self.write({"error": upload_err[1]})
+            return
+        dest_dir = os.path.dirname(final_path_abs) or user_root
+        os.makedirs(dest_dir, exist_ok=True)
+        fd, temp_path = tempfile.mkstemp(prefix=".aird_range_")
+        # Do NOT pre-truncate to total_size on Windows — ftruncate zero-fills and
+        # stalled a 3.8 GiB session create for ~30s before the first byte uploaded.
+        # Linux sparse truncate is fine for parallel seeks; keep it there only.
+        try:
+            if total_size > 0 and os.name != "nt":
+                os.ftruncate(fd, total_size)
+        finally:
+            os.close(fd)
 
         create_session(
             self.db_conn,
             session_id=session_id,
-            username=self.get_display_username(),
+            username=username,
             upload_dir=upload_dir,
             filename=filename,
             temp_path=temp_path,
@@ -380,6 +463,8 @@ class RangedUploadChunkHandler(BaseHandler):
         self._request_writing = False
         self._request_write_error = None
         self._request_bytes = 0
+        self._direct_path = None
+        self._direct_offset = None
         self._chunk_slot_user = None
         if self.request.method != "PUT":
             return
@@ -403,21 +488,40 @@ class RangedUploadChunkHandler(BaseHandler):
             )
         except (AttributeError, RuntimeError):
             pass
+        try:
+            stream = getattr(self.request.connection, "stream", None)
+            sock = getattr(stream, "socket", None) if stream is not None else None
+            if sock is not None:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 * 1024 * 1024)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 8 * 1024 * 1024)
+        except OSError:
+            pass
         if session and session["username"] == username:
             preset = constants_module.TRANSFER_PROFILE_PRESETS.get(
                 session["transfer_profile"],
                 constants_module.TRANSFER_PROFILE_PRESETS["open"],
             )
-            limit = int(preset["range_upload_concurrency"])
+            limit = int(preset["range_upload_concurrency"]) * max(
+                1, int(preset.get("range_pipeline_depth", 1))
+            )
+            # Small headroom so a racing retry does not 429 the whole upload.
+            limit += 2
             if not _try_acquire_chunk_stream(username, limit):
                 self.set_header("Retry-After", "5")
                 raise tornado.web.HTTPError(
                     429, reason="Too many concurrent upload chunks"
                 )
             self._chunk_slot_user = username
-        fd, self._request_temp_path = tempfile.mkstemp(prefix="aird_range_request_")
-        os.close(fd)
-        self._request_file = await aiofiles.open(self._request_temp_path, "wb")
+        # Prefer writing straight into the session file at Content-Range offset
+        # (one disk write). Fall back to a staging temp when range is missing.
+        parsed = parse_content_range(self.request.headers.get("Content-Range"))
+        if session is not None and parsed is not None:
+            self._direct_path = session["temp_path"]
+            self._direct_offset = parsed[0]
+        else:
+            fd, self._request_temp_path = tempfile.mkstemp(prefix="aird_range_request_")
+            os.close(fd)
+            self._request_file = await aiofiles.open(self._request_temp_path, "wb")
 
     def data_received(self, chunk: bytes) -> None:
         if self._request_write_error is not None:
@@ -433,10 +537,27 @@ class RangedUploadChunkHandler(BaseHandler):
     async def _drain_request_buffer(self) -> None:
         try:
             while self._request_buffer:
-                await self._request_file.write(self._request_buffer.popleft())
+                if getattr(self, "_direct_path", None) is not None and getattr(
+                    self, "_direct_offset", None
+                ) is not None:
+                    # Coalesce TCP fragments into larger disk writes (fewer open/seek cycles).
+                    parts: list[bytes] = []
+                    total = 0
+                    while self._request_buffer and total < (8 * 1024 * 1024):
+                        part = self._request_buffer.popleft()
+                        parts.append(part)
+                        total += len(part)
+                    data = parts[0] if len(parts) == 1 else b"".join(parts)
+                    offset = self._direct_offset
+                    self._direct_offset = offset + len(data)
+                    await asyncio.to_thread(
+                        _write_range_sync, self._direct_path, offset, data
+                    )
+                else:
+                    await self._request_file.write(self._request_buffer.popleft())
         except OSError as exc:
             self._request_write_error = exc
-            logger.warning("Ranged upload request staging write failed: %s", exc)
+            logger.warning("Ranged upload request write failed: %s", exc)
         finally:
             self._request_writing = False
             if self._request_buffer and self._request_write_error is None:
@@ -508,13 +629,34 @@ class RangedUploadChunkHandler(BaseHandler):
             return
         start, end = validated
 
+        # Idempotent retry: range already stored after a prior disconnect.
+        if range_fully_covered(session["ranges"], start, end):
+            if await _finalize_ranged_upload_if_complete(
+                self, upload_id, session, session["temp_path"], session["ranges"]
+            ):
+                return
+            self.set_status(200)
+            self.write(
+                {
+                    "status": "chunk_received",
+                    "ranges": ranges_to_json(session["ranges"]),
+                    "total_size": session["total_size"],
+                    "transfer_profile": session["transfer_profile"],
+                    "chunk_bytes": session["chunk_bytes"],
+                }
+            )
+            return
+
         await TransferRateLimiter.wait_for_bytes(
             user_key, body_length, direction="upload"
         )
 
         temp_path = session["temp_path"]
         try:
-            if streamed_request:
+            if streamed_request and getattr(self, "_direct_path", None):
+                # Bytes already written at Content-Range offset during data_received.
+                pass
+            elif streamed_request:
                 await asyncio.to_thread(
                     _copy_range_file_sync,
                     temp_path,
@@ -572,9 +714,38 @@ class RangedUploadChunkHandler(BaseHandler):
             logger.debug("Range request temp cleanup failed", exc_info=True)
         super().on_finish()
 
+    @tornado.web.authenticated
+    @require_action("file.write")
+    async def delete(self, upload_id: str):
+        """Discard an incomplete ranged upload session (explicit cancel)."""
+        if self.db_conn is None:
+            self.set_status(500)
+            self.write({"error": DB_UNAVAILABLE_SHORT})
+            return
+        session = get_session(self.db_conn, upload_id)
+        if not session:
+            self.set_status(404)
+            self.write({"error": _SESSION_NOT_FOUND})
+            return
+        if session["username"] != self.get_display_username():
+            self.set_status(403)
+            self.write({"error": ACCESS_DENIED})
+            return
+        temp_path = session.get("temp_path")
+        delete_session(self.db_conn, upload_id)
+        _release_session_lock(upload_id)
+        if temp_path:
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except OSError:
+                logger.debug("Upload session temp cleanup failed", exc_info=True)
+        self.set_status(200)
+        self.write({"status": "deleted"})
+
 
 class RangedUploadStatusHandler(BaseHandler):
-    """GET upload session status (missing ranges for resume)."""
+    """GET upload session status; DELETE discards an incomplete session."""
 
     @tornado.web.authenticated
     async def get(self, upload_id: str):
@@ -601,3 +772,31 @@ class RangedUploadStatusHandler(BaseHandler):
                 "chunk_bytes": session["chunk_bytes"],
             }
         )
+
+    @tornado.web.authenticated
+    @require_action("file.write")
+    async def delete(self, upload_id: str):
+        if self.db_conn is None:
+            self.set_status(500)
+            self.write({"error": DB_UNAVAILABLE_SHORT})
+            return
+        session = get_session(self.db_conn, upload_id)
+        if not session:
+            self.set_status(404)
+            self.write({"error": _SESSION_NOT_FOUND})
+            return
+        if session["username"] != self.get_display_username():
+            self.set_status(403)
+            self.write({"error": ACCESS_DENIED})
+            return
+        temp_path = session.get("temp_path")
+        delete_session(self.db_conn, upload_id)
+        _release_session_lock(upload_id)
+        if temp_path:
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except OSError:
+                logger.debug("Upload session temp cleanup failed", exc_info=True)
+        self.set_status(200)
+        self.write({"status": "deleted"})

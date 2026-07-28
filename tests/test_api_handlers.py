@@ -1120,6 +1120,12 @@ class TestSuperSearchWebSocketHandlerExtended:
         assert SuperSearchWebSocketHandler._file_matches_pattern(
             "src/a.py", "a.py", "*.py"
         )
+        assert SuperSearchWebSocketHandler._file_matches_pattern(
+            "foo/bar.txt", "bar.txt", "foo/**/*.txt"
+        )
+        assert SuperSearchWebSocketHandler._file_matches_pattern(
+            "bar.txt", "bar.txt", "**/*.txt"
+        )
 
     def test_send_match_swallows_ws_closed(self):
         handler = make_ws_handler(SuperSearchWebSocketHandler)

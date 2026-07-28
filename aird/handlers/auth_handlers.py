@@ -34,6 +34,13 @@ from aird.handlers.constants import (
     DB_NOT_AVAILABLE_MSG,
 )
 from aird.db.shares import list_shares_accessible_to_user
+from aird.db.sessions import (
+    SESSION_COOKIE_NAME,
+    create_session,
+    list_sessions_for_user,
+    revoke_session_by_id,
+    revoke_session_for_user,
+)
 
 # IP -> (attempts, timestamp)
 _LOGIN_ATTEMPTS = {}
@@ -155,12 +162,55 @@ def _ldap_sync_user(db_conn, username, admin_users, user_service):
     return role_row["role"] if role_row else default_role
 
 
-def _apply_session_cookies(handler, username: str, user_role: str) -> None:
-    """Set auth cookies, publish event, audit login (without redirect)."""
+def establish_server_session(
+    handler: BaseHandler,
+    username: str,
+    user_role: str,
+    *,
+    is_admin: bool = False,
+) -> str | None:
+    """Create a DB-backed session and set auth cookies."""
     handler.regenerate_session()
+    session_id = None
+    if handler.db_conn is not None:
+        session_id = create_session(
+            handler.db_conn,
+            username=username,
+            user_role=user_role,
+            is_admin=is_admin,
+            ip_address=handler.request.remote_ip,
+            user_agent=handler.request.headers.get("User-Agent"),
+        )
     opts = handler.session_cookie_opts()
+    if session_id:
+        handler.set_secure_cookie(SESSION_COOKIE_NAME, session_id, **opts)
     handler.set_secure_cookie("user", username, **opts)
     handler.set_secure_cookie("user_role", user_role, **opts)
+    if is_admin:
+        handler.set_secure_cookie("admin", "authenticated", **opts)
+    return session_id
+
+
+def terminate_server_session(handler: BaseHandler) -> None:
+    """Revoke the current server-side session and clear auth cookies."""
+    cookie = handler.get_secure_cookie(SESSION_COOKIE_NAME)
+    if cookie and handler.db_conn is not None:
+        session_id = (
+            cookie.decode("utf-8") if isinstance(cookie, bytes) else str(cookie)
+        )
+        revoke_session_by_id(handler.db_conn, session_id)
+    handler.clear_auth_cookies()
+
+
+def _apply_session_cookies(
+    handler: BaseHandler,
+    username: str,
+    user_role: str,
+    *,
+    is_admin: bool = False,
+) -> None:
+    """Set auth cookies, publish event, audit login (without redirect)."""
+    establish_server_session(handler, username, user_role, is_admin=is_admin)
     _publish_user_authenticated(handler, username=username, role=user_role)
     handler.get_service("audit_service").log(
         handler.db_conn, "login", username=username, ip=handler.request.remote_ip
@@ -239,16 +289,13 @@ def _try_token_login(handler, token, next_url):
         )
         return True
     if verify_auth_secret(token, current):
-        handler.regenerate_session()
         handler.get_service("audit_service").log(
             handler.db_conn,
             "login",
             username="token_authenticated",
             ip=handler.request.remote_ip,
         )
-        opts = handler.session_cookie_opts()
-        handler.set_secure_cookie("user", "token_authenticated", **opts)
-        handler.set_secure_cookie("user_role", "user", **opts)
+        establish_server_session(handler, "token_authenticated", "user")
         _publish_user_authenticated(
             handler, username="token_authenticated", role="user"
         )
@@ -279,17 +326,13 @@ def _try_admin_username_password_login(handler, username, password):
             db_conn, username, password
         )
         if user and user["role"] == "admin":
-            handler.regenerate_session()
             handler.get_service("audit_service").log(
                 db_conn,
                 "admin_login",
                 username=username,
                 ip=handler.request.remote_ip,
             )
-            opts = handler.session_cookie_opts()
-            handler.set_secure_cookie("user", username, **opts)
-            handler.set_secure_cookie("user_role", user["role"], **opts)
-            handler.set_secure_cookie("admin", "authenticated", **opts)
+            establish_server_session(handler, username, user["role"], is_admin=True)
             _publish_user_authenticated(handler, username=username, role=user["role"])
             if user.get("must_change_password"):
                 n = tornado.escape.url_escape(ADMIN_URL)
@@ -328,18 +371,15 @@ def _try_admin_token_login(handler, token):
         )
         return True
     if verify_auth_secret(token, current):
-        handler.regenerate_session()
         handler.get_service("audit_service").log(
             handler.db_conn,
             "admin_login",
             username="admin_token",
             ip=handler.request.remote_ip,
         )
-        opts = handler.session_cookie_opts()
-        # Must set user cookie so @authenticated passes; admin cookie for is_admin_user
-        handler.set_secure_cookie("user", "admin_token_authenticated", **opts)
-        handler.set_secure_cookie("user_role", "admin", **opts)
-        handler.set_secure_cookie("admin", "authenticated", **opts)
+        establish_server_session(
+            handler, "admin_token_authenticated", "admin", is_admin=True
+        )
         _publish_user_authenticated(
             handler, username="admin_token_authenticated", role="admin"
         )
@@ -804,7 +844,7 @@ class MandatoryPasswordHandler(BaseHandler):
 
 class LogoutHandler(XSRFTokenMixin, BaseHandler):
     def post(self):
-        self.clear_auth_cookies()
+        terminate_server_session(self)
         self.redirect("/login")
 
     def get(self):
@@ -813,6 +853,70 @@ class LogoutHandler(XSRFTokenMixin, BaseHandler):
             getattr(self.request, "remote_ip", ""),
         )
         self.redirect("/login")
+
+
+_TOKEN_ONLY_PROFILE_USERNAMES = {"token_user", "admin_token"}
+
+
+def _session_public_view(session: dict, current_session_id: str | None) -> dict:
+    return {
+        "id": session["id"],
+        "created_at": session["created_at"],
+        "last_active_at": session["last_active_at"],
+        "expires_at": session["expires_at"],
+        "ip_address": session.get("ip_address") or "",
+        "user_agent": session.get("user_agent") or "",
+        "current": session["id"] == current_session_id,
+    }
+
+
+class SessionListAPIHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        username = _profile_username(self.current_user)
+        if username in _TOKEN_ONLY_PROFILE_USERNAMES:
+            self.set_status(403)
+            self.write({"error": "Sessions are not available for token logins."})
+            return
+        if self.db_conn is None:
+            self.set_status(500)
+            self.write({"error": DB_NOT_AVAILABLE_MSG})
+            return
+        sessions = list_sessions_for_user(self.db_conn, username)
+        current_id = self.get_session_id()
+        self.set_header("Content-Type", "application/json")
+        self.write(
+            {
+                "sessions": [
+                    _session_public_view(session, current_id) for session in sessions
+                ]
+            }
+        )
+
+
+class SessionRevokeAPIHandler(BaseHandler):
+    @tornado.web.authenticated
+    def post(self, session_id: str):
+        username = _profile_username(self.current_user)
+        if username in _TOKEN_ONLY_PROFILE_USERNAMES:
+            self.set_status(403)
+            self.write({"error": "Sessions are not available for token logins."})
+            return
+        if self.db_conn is None:
+            self.set_status(500)
+            self.write({"error": DB_NOT_AVAILABLE_MSG})
+            return
+        current_id = self.get_session_id()
+        revoked = revoke_session_for_user(self.db_conn, session_id, username)
+        if not revoked:
+            self.set_status(404)
+            self.write({"error": "Session not found"})
+            return
+        logged_out = session_id == current_id
+        if logged_out:
+            terminate_server_session(self)
+        self.set_header("Content-Type", "application/json")
+        self.write({"revoked": True, "logged_out": logged_out})
 
 
 class ProfileHandler(BaseHandler):

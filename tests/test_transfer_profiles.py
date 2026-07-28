@@ -50,15 +50,16 @@ def test_cloudflare_strategy_caps_requests_below_100_mb():
     assert strategy["rangeUploadConcurrency"] == 8
 
 
-def test_wireguard_strategy_is_single_stream():
+def test_wireguard_strategy_is_single_stream_lan():
     constants.set_transfer_profile("wireguard")
+    constants.apply_transfer_profile_defaults("wireguard")
     constants.refresh_upload_derived_constants()
 
     strategy = constants.get_effective_transfer_strategy()
 
     assert strategy["uploadTransport"] == "stream"
     assert strategy["downloadTransport"] == "stream"
-    assert strategy["rangeUploadConcurrency"] == 1
+    assert strategy["directUploadMaxBytes"] == strategy["maxFileSize"]
     assert constants.LARGE_FILE_THRESHOLD_BYTES > constants.MAX_FILE_SIZE
 
 

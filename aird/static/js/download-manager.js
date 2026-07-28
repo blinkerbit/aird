@@ -1,5 +1,5 @@
 /**
- * Queued file downloads over HTTP. Progress in navbar transfer tracker.
+ * Queued downloads via TransferManager (tracker + cancel).
  */
 (function (global) {
   'use strict';
@@ -26,132 +26,61 @@
     constructor(options) {
       options = options || {};
       this.staggerMs = options.staggerMs ?? DEFAULT_STAGGER_MS;
-      this.title = options.title || 'Downloads';
-      this.items = [];
-      this.cancelled = false;
-      this.running = false;
+      this.paths = [];
+      this.urls = [];
     }
 
     addHttpItem(label, path) {
-      const item = {
-        label,
-        path,
-        http: true,
-        status: 'queued',
-        cancelSignal: { aborted: false },
-      };
-      this.items.push(item);
-      return item;
+      this.paths.push({ label, path });
+      return { label, path };
     }
 
-    /** Direct URL (shared links). */
     addItem(label, url) {
-      const item = {
-        label,
-        url,
-        http: false,
-        status: 'queued',
-        cancelSignal: { aborted: false },
-      };
-      this.items.push(item);
-      return item;
-    }
-
-    cancelOne(item) {
-      if (!item) return;
-      if (item.status === 'downloading' || item.status === 'queued') {
-        item.cancelSignal.aborted = true;
-        item.status = 'cancelled';
-      }
+      this.urls.push({ label, url });
+      return { label, url };
     }
 
     cancel() {
-      this.cancelled = true;
-      for (const item of this.items) {
-        if (item.status === 'queued' || item.status === 'downloading') {
-          this.cancelOne(item);
-        }
-      }
+      /* Individual downloads cancel via transfer tracker. */
+    }
+
+    cancelOne() {
+      /* Use transfer sidebar Stop on the active row. */
     }
 
     close() {
-      this.items = [];
-      this.running = false;
-      this.cancelled = false;
-    }
-
-    async _runHttpItem(item) {
-      const FTH = global.AirdFileTransferHttp;
-      const strategy = global.AirdRuntimeConfig?.getTransferStrategy?.()
-        || Object.freeze({ ...(global.__BROWSE_CONFIG?.transferStrategy || {}) });
-      item.status = 'downloading';
-      const onCancel = () => {
-        item.cancelSignal.aborted = true;
-        item.status = 'cancelled';
-      };
-      try {
-        const result = await FTH.downloadFile(item.path, {
-          signal: item.cancelSignal,
-          onCancel: onCancel,
-          strategy,
-          directToDisk: this.items.length === 1,
-        });
-        if (item.cancelSignal?.aborted || this.cancelled) {
-          item.status = 'cancelled';
-        } else if (result.saved) {
-          item.status = 'done';
-        } else if (result.native) {
-          triggerNativeDownload(result.url, result.filename);
-          item.status = 'browser';
-        } else {
-          FTH.saveBlob(result.blob, result.filename);
-          item.status = 'done';
-        }
-      } catch (err) {
-        if (err?.message === 'cancelled' || item.cancelSignal?.aborted) {
-          item.status = 'cancelled';
-        } else {
-          item.status = 'error';
-        }
-      }
-    }
-
-    _runUrlItem(item) {
-      const fname = fileNameFromPath(item.label);
-      const TT = global.AirdTransferTracker;
-      if (TT) {
-        item.ttId = TT.addTransfer(fname, 0, 'download');
-        TT.setTransferStatus(item.ttId, 'browser', 'Starting in browser…');
-      }
-      triggerNativeDownload(item.url, fname);
-      item.status = 'browser';
-      if (TT && item.ttId) {
-        TT.setTransferStatus(item.ttId, 'browser', 'In browser downloads');
-        setTimeout(() => TT.completeTransfer(item.ttId), 4000);
-      }
+      this.paths = [];
+      this.urls = [];
     }
 
     async run() {
-      if (this.running || this.items.length === 0) return;
-      this.running = true;
-      const FTH = global.AirdFileTransferHttp;
+      const TM = global.AirdTransferManager;
+      global.AirdTransferTracker?.openSidebar?.();
 
-      for (const item of this.items) {
-        if (this.cancelled) break;
-        if (item.status !== 'queued') continue;
-
-        if (item.http && FTH?.downloadFile) {
-          await this._runHttpItem(item);
-        } else if (item.url) {
-          this._runUrlItem(item);
+      for (const item of this.paths) {
+        if (TM?.downloadPath) {
+          try {
+            await TM.downloadPath(item.path, item.label);
+          } catch (err) {
+            if (err?.message !== 'cancelled') console.warn('Download failed:', item.path, err);
+          }
         }
-
-        const moreQueued = this.items.some((i) => i.status === 'queued');
-        if (this.cancelled || !moreQueued) break;
         await new Promise((r) => setTimeout(r, this.staggerMs));
       }
 
-      this.running = false;
+      for (const item of this.urls) {
+        const fname = fileNameFromPath(item.label);
+        const TT = global.AirdTransferTracker;
+        const ttId = TT?.addTransfer?.(fname, 0, 'download', {
+          status: 'browser',
+          detail: 'Starting in browser…',
+        });
+        triggerNativeDownload(item.url, fname);
+        if (TT && ttId) {
+          setTimeout(() => TT.completeTransfer(ttId), 4000);
+        }
+        await new Promise((r) => setTimeout(r, this.staggerMs));
+      }
     }
   }
 

@@ -69,13 +69,19 @@
       if (aborted) return;
       aborted = true;
       softAborting = false;
-      if (externalSignal) externalSignal.aborted = true;
       abortTracked();
       abortListeners.forEach((fn) => {
         try { fn(); } catch (listenerErr) {
           console.debug('abort listener ignored', listenerErr);
         }
       });
+    }
+
+    // Parent → child: if the outer scope aborts, fire this scope's listeners
+    // (close WS, reject waiters). Do NOT write to externalSignal.aborted —
+    // that re-entered parent setters and could couple unrelated transfers.
+    if (externalSignal && typeof externalSignal.addEventListener === 'function') {
+      externalSignal.addEventListener('abort', abort);
     }
 
     /** Abort in-flight requests without cancelling the transfer (background pause). */
@@ -178,26 +184,55 @@
 
   function wrapCancelOptions(options) {
     options = options || {};
-    const scope = createCancelScope(options.signal);
     const userOnCancel = options.onCancel;
+    function chainCancel(scope) {
+      return function () {
+        if (typeof userOnCancel === 'function') {
+          try { userOnCancel(); } catch (_) { /* ignore */ }
+        }
+        if (scope && typeof scope.abort === 'function') {
+          try { scope.abort(); } catch (_) { /* ignore */ }
+        }
+      };
+    }
+    // Avoid stacking cancel scopes if this options object was already wrapped.
+    if (options.signal && typeof options.signal.abort === 'function'
+        && typeof options.signal.addEventListener === 'function'
+        && typeof options.signal.throwIfAborted === 'function') {
+      return {
+        ...options,
+        onCancel: chainCancel(options.signal),
+      };
+    }
+    const scope = createCancelScope(options.signal);
     return {
       ...options,
       signal: scope,
-      onCancel: () => {
-        scope.abort();
-        if (typeof userOnCancel === 'function') userOnCancel();
-      },
+      onCancel: chainCancel(scope),
     };
   }
 
   async function putRangeChunkWithRetry(uploadId, start, end, totalSize, body, xsrf, cancelScope, onChunkProgress, concurrencyHints) {
     let lastRes = null;
-    const MAX_ATTEMPTS = 5;
+    let lastErr = null;
+    const strategy = transferStrategy();
+    const lanFast = strategy.profile === 'wireguard';
+    const MAX_ATTEMPTS = lanFast ? 8 : 5;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       cancelScope.throwIfAborted();
-      lastRes = await putRangeChunk(
-        uploadId, start, end, totalSize, body, xsrf, cancelScope, onChunkProgress
-      );
+      try {
+        lastRes = await putRangeChunk(
+          uploadId, start, end, totalSize, body, xsrf, cancelScope, onChunkProgress
+        );
+      } catch (err) {
+        if (isCancelError(err)) throw cancelError();
+        if (isPauseError(err)) throw err;
+        lastErr = err;
+        const BG = global.AirdTransferBackground;
+        if (!(BG?.isRetryableError(err) || isPauseError(err)) && attempt >= 1) throw err;
+        await abortableSleep(Math.min(1000 * 2 ** attempt, lanFast ? 15000 : 8000), cancelScope);
+        continue;
+      }
       if (lastRes.status === 201 || lastRes.status === 200) return lastRes;
       if (lastRes.status === 429) {
         // Server is overloaded — signal caller to reduce concurrency.
@@ -206,12 +241,14 @@
         continue;
       }
       if (lastRes.status === 507) return lastRes;
+      if (lastRes.status === 404) return lastRes;
       if (lastRes.status >= 500) {
-        await abortableSleep(Math.min(1000 * 2 ** attempt, 8000), cancelScope);
+        await abortableSleep(Math.min(1000 * 2 ** attempt, lanFast ? 15000 : 8000), cancelScope);
         continue;
       }
       return lastRes;
     }
+    if (lastErr) throw lastErr;
     return lastRes;
   }
 
@@ -255,8 +292,24 @@
 
   function trackUpload(filename, totalSize, options) {
     const TT = global.AirdTransferTracker;
+    options = options || {};
+    const cancelFn = options.onCancel;
+    const scope = options.signal;
+    const boundCancel = function () {
+      if (typeof cancelFn === 'function') {
+        try { cancelFn(); } catch (_) { /* ignore */ }
+      }
+      if (scope && typeof scope.abort === 'function') {
+        try { scope.abort(); } catch (_) { /* ignore */ }
+      }
+    };
+    if (TT && options.ttId != null) {
+      TT.setCancelHandler(options.ttId, boundCancel);
+      TT.updateProgress(options.ttId, 0, totalSize);
+      return { TT, ttId: options.ttId };
+    }
     const ttId = TT
-      ? TT.addTransfer(filename, totalSize, 'upload', { onCancel: options.onCancel })
+      ? TT.addTransfer(filename, totalSize, 'upload', { onCancel: boundCancel })
       : null;
     return { TT, ttId };
   }
@@ -352,7 +405,7 @@
   }
 
   function ttActivate(TT, ttId) {
-    if (TT && ttId) TT.setTransferStatus(ttId, 'active');
+    if (TT && ttId) TT.setTransferStatus(ttId, 'active', '');
   }
 
   function chunkRangeCovered(idx, chunkSz, total, ranges) {
@@ -505,6 +558,17 @@
     })();
   }
 
+  async function discardRangeUploadSession(uploadId, xsrf) {
+    if (!uploadId) return;
+    try {
+      await fetch(`/api/upload/range/${encodeURIComponent(uploadId)}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: { 'X-XSRFToken': xsrf || getXSRFToken() },
+      });
+    } catch (_) { /* ignore — server may already have dropped the connection */ }
+  }
+
   async function rangedUpload(file, options) {
     options = wrapCancelOptions(options);
     const strategy = transferStrategy(options);
@@ -521,11 +585,13 @@
     if (BG) await BG.acquireWakeLock();
 
     let unsub = null;
+    let uploadId = null;
+    let failure = null;
     try {
       const session = await createRangeUploadSession(
         uploadDir, filename, totalSize, xsrf, TT, ttId
       );
-      const uploadId = session.uploadId;
+      uploadId = session.uploadId;
       const chunkSize = session.chunkBytes;
       const maxConcurrency = rangeUploadConcurrency(strategy);
       const totalChunks = Math.ceil(totalSize / chunkSize);
@@ -538,7 +604,6 @@
       let bytesUploaded = 0;
       let remaining = totalChunks;
       let finished = false;
-      let failure = null;
       let active = 0;
       let transferActive = false;
       let uiPaused = false;
@@ -799,6 +864,9 @@
     } finally {
       if (typeof unsub === 'function') unsub();
       if (BG) BG.releaseWakeLock();
+      if (uploadId && (cancelScope.aborted || failure?.message === 'cancelled')) {
+        void discardRangeUploadSession(uploadId, xsrf);
+      }
     }
   }
 

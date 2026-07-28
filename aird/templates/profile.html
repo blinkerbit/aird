@@ -135,6 +135,17 @@
         </div>
         {% end %}
 
+        <div id="sessions-card" class="card bg-base-100 shadow-sm border border-base-300">
+          <div class="card-body">
+            <h3 class="font-semibold">Active sessions</h3>
+            <p class="text-sm text-base-content/60 mt-1">
+              Signed-in browsers and devices. Sessions expire after 3 hours of inactivity or 1 day.
+            </p>
+            <div id="session-list" class="space-y-2 mt-3"></div>
+            <p id="session-msg" class="text-sm mt-2 hidden"></p>
+          </div>
+        </div>
+
         <!-- Account info -->
         <div class="card bg-base-100 shadow-sm border border-base-300">
           <div class="card-body">
@@ -214,7 +225,91 @@
   <script src="/static/js/theme.js" defer></script>
   <script src="/static/js/webauthn.js" defer></script>
   <script nonce="{{ csp_nonce }}">
+  <script nonce="{{ csp_nonce }}">
+  function getXsrfToken() {
+    const input = document.querySelector('input[name="_xsrf"]');
+    if (input && input.value) return input.value;
+    const match = /(?:^|; )_xsrf=([^;]*)/.exec(document.cookie);
+    return match ? decodeURIComponent(match[1]) : '';
+  }
+
+  async function loadSessions() {
+    const list = document.getElementById('session-list');
+    const msg = document.getElementById('session-msg');
+    if (!list) return;
+    try {
+      const res = await fetch('/api/sessions', { credentials: 'same-origin' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not load sessions');
+      list.innerHTML = '';
+      (data.sessions || []).forEach(function (session) {
+        const row = document.createElement('div');
+        row.className = 'flex items-start justify-between gap-3 rounded-lg border border-base-300 px-3 py-2 text-sm';
+        const when = (session.last_active_at || '').replace('T', ' ').slice(0, 19);
+        const device = session.user_agent || 'Unknown device';
+        const ip = session.ip_address || 'Unknown IP';
+        row.innerHTML = `
+          <div class="min-w-0">
+            <div class="font-medium truncate">${device}</div>
+            <div class="text-xs text-base-content/50">${ip} · last active ${when} UTC</div>
+            ${session.current ? '<span class="badge badge-success badge-xs mt-1">This device</span>' : ''}
+          </div>
+        `;
+        if (!session.current) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'btn btn-ghost btn-xs text-error shrink-0';
+          btn.textContent = 'Revoke';
+          btn.addEventListener('click', function () { revokeSession(session.id, btn); });
+          row.appendChild(btn);
+        }
+        list.appendChild(row);
+      });
+      if (!(data.sessions || []).length) {
+        list.innerHTML = '<p class="text-sm text-base-content/60">No active sessions.</p>';
+      }
+    } catch (err) {
+      if (msg) {
+        msg.textContent = err.message || 'Could not load sessions.';
+        msg.classList.remove('hidden', 'text-success');
+        msg.classList.add('text-error');
+      }
+    }
+  }
+
+  async function revokeSession(sessionId, button) {
+    const msg = document.getElementById('session-msg');
+    button.disabled = true;
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/revoke`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-XSRFToken': getXsrfToken() },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not revoke session');
+      if (data.logged_out) {
+        globalThis.location.href = '/login';
+        return;
+      }
+      if (msg) {
+        msg.textContent = 'Session revoked.';
+        msg.classList.remove('hidden', 'text-error');
+        msg.classList.add('text-success');
+      }
+      await loadSessions();
+    } catch (err) {
+      if (msg) {
+        msg.textContent = err.message || 'Could not revoke session.';
+        msg.classList.remove('hidden', 'text-success');
+        msg.classList.add('text-error');
+      }
+      button.disabled = false;
+    }
+  }
+
   globalThis.addEventListener('load', function () {
+    loadSessions();
     const WA = globalThis.AirdWebAuthn;
     if (!WA) return;
     WA.showIfEnabled('passkey-card');

@@ -112,7 +112,7 @@
 </div>
 
 <script src="/static/js/aird-core.js"></script>
-<script src="/static/js/transfer-tracker.js"></script>
+<script src="/static/js/transfer-tracker.js?v=20260728d"></script>
 <script src="/static/js/common/command-palette.js" defer></script>
 {% if current_user %}
 <script nonce="{{ csp_nonce }}" src="/static/js/feature-flags-live.js" defer></script>
@@ -122,7 +122,10 @@
 <div id="transferTrackerBackdrop" class="tt-backdrop"></div>
 <aside id="transferTrackerSidebar" class="tt-sidebar" aria-label="Transfer details">
   <div class="tt-sidebar-header">
-    <h3 class="text-sm font-bold">Transfers</h3>
+    <div>
+      <h3 class="text-sm font-bold">Transfers</h3>
+      <p class="tt-sidebar-sub text-xs opacity-60 mt-0.5" id="transferTrackerSummary"></p>
+    </div>
     <button type="button" id="transferTrackerClose" class="btn btn-ghost btn-xs btn-circle" aria-label="Close">&times;</button>
   </div>
   <div id="transferTrackerList" class="tt-sidebar-body">

@@ -112,6 +112,8 @@ from aird.handlers.auth_handlers import (
     LogoutHandler,
     MandatoryPasswordHandler,
     ProfileHandler,
+    SessionListAPIHandler,
+    SessionRevokeAPIHandler,
 )
 from aird.handlers.webauthn_handlers import (
     WebAuthnAuthOptionsHandler,
@@ -122,6 +124,7 @@ from aird.handlers.webauthn_handlers import (
     WebAuthnStatusHandler,
 )
 from aird.handlers.transfer_ws_handlers import FileTransferWebSocketHandler
+from aird.handlers.bulk_handlers import BulkTicketHandler, BulkWebSocketHandler
 from aird.handlers.ranged_upload_handlers import (
     RangedUploadChunkHandler,
     RangedUploadSessionHandler,
@@ -238,6 +241,8 @@ def make_app(
         (r"/logout", LogoutHandler),
         (r"/auth/mandatory-password", MandatoryPasswordHandler),
         (r"/profile", ProfileHandler),
+        (r"/api/sessions", SessionListAPIHandler),
+        (r"/api/sessions/([^/]+)/revoke", SessionRevokeAPIHandler),
         (r"/api/webauthn/status", WebAuthnStatusHandler),
         (r"/api/webauthn/register/options", WebAuthnRegisterOptionsHandler),
         (r"/api/webauthn/register/verify", WebAuthnRegisterVerifyHandler),
@@ -269,6 +274,7 @@ def make_app(
         (r"/ws/policy-decisions", PolicyDecisionsWebSocket),
         (r"/stream/(.*)", FileStreamHandler),
         (r"/ws/file-transfer", FileTransferWebSocketHandler),
+        (r"/ws/bulk", BulkWebSocketHandler),
         (r"/api/folder-size", FolderSizeAPIHandler),
         (r"/features", FeatureFlagSocketHandler),
         (r"/api/features", FeatureFlagAPIHandler),
@@ -283,6 +289,7 @@ def make_app(
         (r"/rename", RenameHandler),
         (r"/copy", CopyHandler),
         (r"/move", MoveHandler),
+        (r"/api/bulk/ticket", BulkTicketHandler),
         (r"/api/bulk", BulkHandler),
         (r"/api/download/zip", DownloadZipHandler),
         (r"/edit/(.*)", EditViewHandler),
@@ -513,6 +520,11 @@ def _run_cleanup_expired_shares():
             delete_session(constants.DB_CONN, session["id"])
         if stale_uploads:
             logger.info("Cleaned up %d stale ranged upload(s)", len(stale_uploads))
+        from aird.db.sessions import cleanup_expired_sessions
+
+        expired_sessions = cleanup_expired_sessions(constants.DB_CONN)
+        if expired_sessions > 0:
+            logger.info("Cleaned up %d expired login session(s)", expired_sessions)
     tornado.ioloop.IOLoop.current().call_later(3600, _run_cleanup_expired_shares)
 
 
@@ -596,8 +608,8 @@ def _tune_sockets(sockets: list) -> None:
     for sock in sockets:
         try:
             # Large send/receive buffers — 4 MB each enables high BDP on fast LANs.
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4 * 1024 * 1024)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 16 * 1024 * 1024)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16 * 1024 * 1024)
         except OSError:
             pass
         try:
@@ -627,15 +639,64 @@ def _tune_sockets(sockets: list) -> None:
             pass
 
 
-def _run_http_server(app, ssl_options, sockets) -> None:
+def _maybe_start_bulk_server(app, http_port: int) -> None:
+    """Enable bulk transfers for WireGuard / LAN.
+
+    Browser and CLI use ``/ws/bulk`` on the main HTTP port. A separate raw TCP
+    listener is started only when ``AIRD_BULK_PORT`` is explicitly set.
+    """
+    profile = constants.TRANSFER_PROFILE
+    env_port = os.environ.get("AIRD_BULK_PORT", "").strip()
+    if profile != "wireguard" and not env_port:
+        return
+    task_id = tornado.process.task_id()
+    if task_id not in (0, None):
+        logger.warning(
+            "Bulk engine runs on worker 0 only (this worker=%s)", task_id
+        )
+        return
+    from aird.core.bulk.engine import BulkEngine
+    from aird.core.bulk.tcp_server import BulkTcpServer
+
+    app_ctx = app.settings.get("app_context")
+    secret = app.settings.get("cookie_secret")
+    if not app_ctx or not secret:
+        logger.warning("Bulk transfer disabled: missing app context or cookie secret")
+        return
+    engine = BulkEngine(app_ctx, secret)
+    app.settings["bulk_engine"] = engine
+
+    if not env_port:
+        logger.info(
+            "Bulk transfers on HTTP port %s via /ws/bulk "
+            "(set AIRD_BULK_PORT for optional raw TCP)",
+            http_port,
+        )
+        return
+
+    bulk_port = int(env_port)
+    server = BulkTcpServer(engine, port=bulk_port)
+    server.start()
+    app.settings["bulk_tcp_server"] = server
+
+
+def _run_http_server(app, ssl_options, sockets, http_port: int) -> None:
     from aird.event_loop import apply_io_thread_pool
 
     _tune_sockets(sockets)
+    _maybe_start_bulk_server(app, http_port)
+    # Default Tornado chunk_size is 64 KiB. WireGuard/LAN uses 50 MiB reads so
+    # the IOLoop barely touches each gigabyte transferred.
+    _HTTP_READ_CHUNK = 50 * 1024 * 1024
+    _HTTP_STREAM_BUFFER = 128 * 1024 * 1024
     server = tornado.httpserver.HTTPServer(
         app,
         ssl_options=ssl_options,
+        chunk_size=_HTTP_READ_CHUNK,
         max_body_size=constants.UPLOAD_REQUEST_MAX_BODY_SIZE,
-        max_buffer_size=constants.UPLOAD_REQUEST_MAX_BODY_SIZE,
+        # Must be >= chunk_size; keep headroom for a couple of in-flight reads.
+        max_buffer_size=_HTTP_STREAM_BUFFER,
+        body_timeout=None,
     )
     server.add_sockets(sockets)
     io_loop = tornado.ioloop.IOLoop.current()
@@ -660,7 +721,7 @@ def _start_server(ssl_options, port: int, hostname: str, worker_count: int) -> N
                 _init_database()
                 app = _build_application()
                 _print_server_urls(port, hostname, proto)
-                _run_http_server(app, ssl_options, sockets)
+                _run_http_server(app, ssl_options, sockets, port)
                 return
 
             logger.info(
@@ -678,7 +739,7 @@ def _start_server(ssl_options, port: int, hostname: str, worker_count: int) -> N
             app = _build_application()
             if tornado.process.task_id() == 0:
                 _print_server_urls(port, hostname, proto)
-            _run_http_server(app, ssl_options, sockets)
+            _run_http_server(app, ssl_options, sockets, port)
             return
         except OSError:
             logger.exception("Failed to bind on port %d", port)
@@ -723,7 +784,12 @@ def main():
 
     gil_checker = getattr(sys, "_is_gil_enabled", None)
     if callable(gil_checker) and not gil_checker():
-        logger.info("Free-threaded Python runtime detected (GIL disabled)")
+        logger.info(
+            "Free-threaded Python runtime detected (GIL disabled). "
+            "With 50 MiB HTTP read chunks + FastUploadWriter this can outperform "
+            "GIL builds on LAN/WireGuard stream uploads — prefer whichever "
+            "interpreter measures faster on your host."
+        )
 
     if not _validate_ldap_config():
         return

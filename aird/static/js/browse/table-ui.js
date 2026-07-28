@@ -58,17 +58,17 @@ function closeMobileActionMenus(exceptCell) {
 }
 
 export function initMobileActionMenus() {
-  document.querySelectorAll('.mobile-actions-toggle').forEach(function (btn) {
-    btn.addEventListener('click', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      const cell = btn.closest('.actions-cell');
-      if (!cell) return;
-      const opening = !cell.classList.contains('mobile-actions-open');
-      closeMobileActionMenus(cell);
-      cell.classList.toggle('mobile-actions-open', opening);
-      btn.setAttribute('aria-expanded', opening ? 'true' : 'false');
-    });
+  document.getElementById('fileTable')?.addEventListener('click', function (e) {
+    const btn = e.target.closest('.mobile-actions-toggle');
+    if (!btn || !btn.closest('#fileTable')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const cell = btn.closest('.actions-cell');
+    if (!cell) return;
+    const opening = !cell.classList.contains('mobile-actions-open');
+    closeMobileActionMenus(cell);
+    cell.classList.toggle('mobile-actions-open', opening);
+    btn.setAttribute('aria-expanded', opening ? 'true' : 'false');
   });
 
   document.addEventListener('click', function (e) {
@@ -344,29 +344,29 @@ export function wireBrowseRowActions() {
       sortTable(Number.parseInt(this.dataset.sortColumn, 10));
     });
   });
-  document.querySelectorAll('[data-share-path]').forEach(function (el) {
-    el.addEventListener('click', function (e) {
-      e.stopPropagation();
-      e.preventDefault();
-      showShareDetails(this.dataset.sharePath);
-    });
-  });
-  document.querySelectorAll('[data-rename-path]').forEach(function (el) {
-    el.addEventListener('click', function (e) {
-      e.preventDefault();
-      renameItem(this.dataset.renamePath);
-    });
-  });
-  document.querySelectorAll('[data-delete-path]').forEach(function (el) {
-    el.addEventListener('click', function (e) {
-      e.preventDefault();
-      deleteItem(this.dataset.deletePath, this.dataset.isDir === '1');
-    });
-  });
 }
 
 export function wireBrowseTableDelegation() {
   document.getElementById('fileTable')?.addEventListener('click', function (e) {
+    const shareEl = e.target.closest('[data-share-path]');
+    if (shareEl && shareEl.closest('#fileTable')) {
+      e.stopPropagation();
+      e.preventDefault();
+      showShareDetails(shareEl.dataset.sharePath);
+      return;
+    }
+    const renameEl = e.target.closest('[data-rename-path]');
+    if (renameEl && renameEl.closest('#fileTable')) {
+      e.preventDefault();
+      renameItem(renameEl.dataset.renamePath);
+      return;
+    }
+    const deleteEl = e.target.closest('[data-delete-path]');
+    if (deleteEl && deleteEl.closest('#fileTable')) {
+      e.preventDefault();
+      deleteItem(deleteEl.dataset.deletePath, deleteEl.dataset.isDir === '1');
+      return;
+    }
     const dl = e.target.closest('.download-btn');
     if (dl) {
       e.preventDefault();

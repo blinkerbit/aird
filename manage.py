@@ -10,6 +10,11 @@ PACKAGE_NAME = "aird"
 SETUP_FILE = "setup.py"
 SRC_CSS = "src/input.css"
 DIST_CSS = "aird/static/css/app.css"
+DEPLOY_HOST = os.environ.get("AIRD_DEPLOY_HOST", "ubuntu@u")
+DEPLOY_DIR = os.environ.get("AIRD_DEPLOY_DIR", "/opt/aird")
+DEPLOY_VENV = os.environ.get("AIRD_DEPLOY_VENV", "/opt/aird/.venv")
+DEPLOY_SERVICE = os.environ.get("AIRD_DEPLOY_SERVICE", "aird")
+DEPLOY_URL = os.environ.get("AIRD_DEPLOY_URL", "https://aird.pothukuchi.com")
 
 def run_command(cmd, shell=True):
     """Utility to run a command and exit on failure."""
@@ -169,6 +174,45 @@ def bump_dev_version():
         dev_num = 0
     return _write_version(content, f"{major}.{minor}.{patch}.dev{dev_num}")
 
+def _find_wheel():
+    if not os.path.isdir("dist"):
+        print("Error: dist/ not found. Run build first.")
+        sys.exit(1)
+    wheels = sorted(
+        [f for f in os.listdir("dist") if f.endswith(".whl")],
+        key=lambda name: os.path.getmtime(os.path.join("dist", name)),
+        reverse=True,
+    )
+    if not wheels:
+        print("Error: No wheel found in dist/ after build.")
+        sys.exit(1)
+    return wheels[0]
+
+
+def deploy_wheel(host=None, deploy_dir=None, venv=None, service=None, wheel=None):
+    """Upload wheel via scp, install into remote venv, restart systemd service."""
+    host = host or DEPLOY_HOST
+    deploy_dir = deploy_dir or DEPLOY_DIR
+    venv = venv or DEPLOY_VENV
+    service = service or DEPLOY_SERVICE
+    wheel = wheel or _find_wheel()
+
+    local_wheel = os.path.join("dist", wheel)
+    remote_wheel = f"{deploy_dir}/{wheel}"
+
+    print(f"Uploading {local_wheel} -> {host}:{deploy_dir}/")
+    run_command(["scp", local_wheel, f"{host}:{deploy_dir}/"], shell=False)
+
+    remote_cmd = (
+        f"uv pip install --python {venv}/bin/python --prerelease=allow "
+        f"--force-reinstall {remote_wheel} "
+        f"&& sudo systemctl restart {service}"
+    )
+    print(f"Installing on {host} and restarting {service}...")
+    run_command(["ssh", host, remote_cmd], shell=False)
+    print(f"Deployed {wheel}. Live at {DEPLOY_URL}")
+
+
 def _upload_dist(version, prerelease=False):
     print(f"\nReady to upload version {version} to PyPI?")
     if prerelease:
@@ -191,11 +235,20 @@ def release(part="patch"):
     _upload_dist(version)
 
 
-def release_dev():
-    """Build and publish a PEP 440 dev release (requires pip install --pre)."""
+def release_dev(do_deploy=False):
+    """Bump .devN, build wheel (uv build), then upload to PyPI or deploy to server."""
     version = bump_dev_version()
     build()
-    _upload_dist(version, prerelease=True)
+    if do_deploy:
+        deploy_wheel()
+    else:
+        _upload_dist(version, prerelease=True)
+
+
+def deploy_dev():
+    """Build current tree and deploy wheel to the configured production host."""
+    build()
+    deploy_wheel()
 
 def main():
     parser = argparse.ArgumentParser(description="Aird Management Script")
@@ -215,10 +268,24 @@ def main():
     release_parser.add_argument("--minor", action="store_const", const="minor", dest="part")
     release_parser.add_argument("--major", action="store_const", const="major", dest="part")
 
-    subparsers.add_parser(
+    release_dev_parser = subparsers.add_parser(
         "release-dev",
-        help="Bump .devN version, build, and upload to PyPI (pip install --pre aird)",
+        help="Bump .devN version, build with uv, upload to PyPI or deploy to server",
     )
+    release_dev_parser.add_argument(
+        "--deploy",
+        action="store_true",
+        help=f"Deploy wheel to {DEPLOY_HOST}:{DEPLOY_DIR} instead of PyPI upload",
+    )
+
+    deploy_parser = subparsers.add_parser(
+        "deploy",
+        help=f"Build and deploy wheel to {DEPLOY_HOST}:{DEPLOY_DIR}",
+    )
+    deploy_parser.add_argument("--host", default=DEPLOY_HOST, help="SSH target (user@host)")
+    deploy_parser.add_argument("--dir", default=DEPLOY_DIR, help="Remote install directory")
+    deploy_parser.add_argument("--venv", default=DEPLOY_VENV, help="Remote virtualenv path")
+    deploy_parser.add_argument("--service", default=DEPLOY_SERVICE, help="systemd unit name")
 
     args = parser.parse_args()
 
@@ -235,7 +302,10 @@ def main():
     elif args.command == "release":
         release(args.part)
     elif args.command == "release-dev":
-        release_dev()
+        release_dev(do_deploy=args.deploy)
+    elif args.command == "deploy":
+        build()
+        deploy_wheel(host=args.host, deploy_dir=args.dir, venv=args.venv, service=args.service)
     else:
         parser.print_help()
 
