@@ -45,6 +45,7 @@ from aird.core.file_operations import get_files_by_tag_patterns, get_tags_for_pa
 from aird.core.http_range import parse_range_header
 from aird.core.compression import negotiate_encoding, should_compress, compress_file
 from aird.core.file_send import sendfile_available, sendfile_to_socket
+from aird.core.transfer_native import tune_transfer_stream
 from aird.core.rate_limit import TransferRateLimiter
 from aird.db.resource_tags import list_resource_tags
 from aird.db.tag_colors import get_tag_colors_map
@@ -68,6 +69,9 @@ async def _serve_download(handler, abspath, filename):
         handler.set_header("Retry-After", "5")
         handler.write({"error": "Too many concurrent transfers"})
         return
+    stream = getattr(handler.request.connection, "stream", None)
+    if stream is not None:
+        tune_transfer_stream(stream)
     try:
         await _serve_download_body(handler, abspath, filename, user_key)
     finally:
@@ -337,11 +341,6 @@ class MainHandler(BaseHandler):
             features=flags_for_template,
             max_file_size=constants_module.MAX_FILE_SIZE,
             large_file_threshold=constants_module.LARGE_FILE_THRESHOLD_BYTES,
-            range_chunk_bytes=constants_module.RANGE_CHUNK_BYTES,
-            range_upload_concurrency=constants_module.RANGE_UPLOAD_CONCURRENCY,
-            range_download_concurrency=constants_module.RANGE_DOWNLOAD_CONCURRENCY,
-            range_pipeline_depth=constants_module.RANGE_PIPELINE_DEPTH,
-            ws_chunk_bytes=constants_module.WS_CHUNK_BYTES,
             transfer_strategy=runtime_config,
             user_favorites=user_favorites,
             file_tags_map=file_tags_map,

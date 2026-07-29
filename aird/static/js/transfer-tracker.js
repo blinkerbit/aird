@@ -94,18 +94,50 @@
 
   /* ── DOM refs (lazy) ────────────────────────────────────────────── */
   let _btn, _circle, _pctText, _tooltip, _sidebar, _sidebarList, _backdrop;
+  let _listenersAttached = false;
 
   function _el(id) { return document.getElementById(id); }
 
+  function _attachGlobalListeners() {
+    if (_listenersAttached) return;
+    // Delegated handlers survive sidebar moves and work even when the navbar
+    // button is hidden (pointer-events: none) after transfers finish.
+    document.addEventListener('click', function (ev) {
+      var t = ev.target;
+      if (!t || !t.closest) return;
+      if (t.closest('#transferTrackerClose')) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        _closeSidebar();
+        return;
+      }
+      if (t.closest('#transferTrackerBackdrop')) {
+        _closeSidebar();
+        return;
+      }
+      if (t.closest('#transferTrackerBtn')) {
+        ev.preventDefault();
+        _toggleSidebar();
+      }
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && _sidebarOpen) {
+        e.preventDefault();
+        _closeSidebar();
+      }
+    });
+    _listenersAttached = true;
+  }
+
   function _refs() {
-    if (_btn) return;
-    _btn       = _el('transferTrackerBtn');
-    _circle    = _el('transferTrackerCircle');
-    _pctText   = _el('transferTrackerPct');
-    _tooltip   = _el('transferTrackerTooltip');
-    _sidebar   = _el('transferTrackerSidebar');
-    _sidebarList = _el('transferTrackerList');
-    _backdrop  = _el('transferTrackerBackdrop');
+    _btn = _el('transferTrackerBtn') || _btn;
+    _circle = _el('transferTrackerCircle') || _circle;
+    _pctText = _el('transferTrackerPct') || _pctText;
+    _tooltip = _el('transferTrackerTooltip') || _tooltip;
+    _sidebar = _el('transferTrackerSidebar') || _sidebar;
+    _sidebarList = _el('transferTrackerList') || _sidebarList;
+    _backdrop = _el('transferTrackerBackdrop') || _backdrop;
+    _attachGlobalListeners();
     // Escape .aird-shell stacking context so browse overlays cannot block Stop clicks.
     if (_backdrop && _backdrop.parentNode !== document.body) {
       document.body.appendChild(_backdrop);
@@ -113,16 +145,13 @@
     if (_sidebar && _sidebar.parentNode !== document.body) {
       document.body.appendChild(_sidebar);
     }
-    if (_btn) {
-      _btn.addEventListener('click', _toggleSidebar);
+    if (_btn && !_btn.dataset.ttHoverBound) {
+      _btn.dataset.ttHoverBound = '1';
       _btn.addEventListener('mouseenter', function () {
         if (!_isTouch()) _showTooltip();
       });
       _btn.addEventListener('mouseleave', _hideTooltip);
     }
-    if (_backdrop) _backdrop.addEventListener('click', _closeSidebar);
-    var closeBtn = _el('transferTrackerClose');
-    if (closeBtn) closeBtn.addEventListener('click', _closeSidebar);
   }
 
   /* ── Aggregate ──────────────────────────────────────────────────── */
@@ -298,7 +327,8 @@
     var agg = _aggregate();
     var hasWork = agg.active > 0 || agg.browser > 0 || agg.queued > 0;
 
-    _btn.classList.toggle('transfer-tracker-hidden', agg.count === 0);
+    // Keep the navbar control clickable while the sidebar is open so users can dismiss it.
+    _btn.classList.toggle('transfer-tracker-hidden', agg.count === 0 && !_sidebarOpen);
     _btn.classList.toggle('transfer-tracker-active', hasWork);
 
     var pct = _pct(agg.loadedBytes, agg.totalBytes);
@@ -515,9 +545,11 @@
     _renderSidebarList();
   }
   function _closeSidebar() {
+    _refs();
     if (_sidebar) _sidebar.classList.remove('tt-sidebar-open');
     if (_backdrop) _backdrop.classList.remove('tt-backdrop-visible');
     _sidebarOpen = false;
+    _hideTooltip();
   }
 
   /* ── Public API ─────────────────────────────────────────────────── */
@@ -641,6 +673,12 @@
   function clearAll() {
     _items.clear();
     _render();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _refs);
+  } else {
+    _refs();
   }
 
   global.AirdTransferTracker = {

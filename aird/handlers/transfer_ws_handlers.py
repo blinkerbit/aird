@@ -12,8 +12,9 @@ import zlib
 from collections import deque
 from urllib.parse import unquote
 
-import aiofiles
 import tornado.websocket
+
+from aird.core.fast_upload import FastUploadWriter
 
 import aird.constants as constants_module
 from aird.constants.file_ops import (
@@ -105,7 +106,7 @@ class FileTransferWebSocketHandler(
     @property
     def max_message_size(self):
         # One WS frame = one transfer chunk (raw or compressed). Add 4 MB headroom.
-        return constants_module.WS_CHUNK_BYTES + (4 * 1024 * 1024)
+        return 90 * 1024 * 1024 + (4 * 1024 * 1024)
 
     connection_manager = WebSocketConnectionManager(
         "file_streaming", default_max_connections=200, default_idle_timeout=300
@@ -201,8 +202,7 @@ class FileTransferWebSocketHandler(
             return
 
         fd, temp_path = tempfile.mkstemp(prefix="aird_ws_upload_")
-        os.close(fd)
-        aiofile = await aiofiles.open(temp_path, "wb")
+        writer = FastUploadWriter(fd)
         self._upload = {
             "upload_dir": upload_dir,
             "filename": filename,
@@ -210,7 +210,7 @@ class FileTransferWebSocketHandler(
             "compressed": compressed,
             "bytes_received": 0,
             "temp_path": temp_path,
-            "aiofile": aiofile,
+            "writer": writer,
         }
         self._upload_writer_done = False
         self._upload_buffer_event.clear()
@@ -245,9 +245,7 @@ class FileTransferWebSocketHandler(
                 self._upload_buffer_event.clear()
                 while self._upload_buffer and self._upload:
                     chunk = self._upload_buffer.popleft()
-                    await self._upload["aiofile"].write(chunk)
-                if self._upload:
-                    await self._upload["aiofile"].flush()
+                    self._upload["writer"].feed(chunk)
                 if self._upload_writer_done:
                     return
         except asyncio.CancelledError:
@@ -264,12 +262,12 @@ class FileTransferWebSocketHandler(
             except Exception:
                 logger.debug("WS upload writer await failed", exc_info=True)
             self._upload_writer_task = None
-        if self._upload and self._upload.get("aiofile"):
-            try:
-                await self._upload["aiofile"].close()
-            except Exception:
-                logger.debug("WS upload file close failed", exc_info=True)
-            self._upload["aiofile"] = None
+        if self._upload and self._upload.get("writer"):
+            writer = self._upload["writer"]
+            await asyncio.to_thread(writer.finish)
+            if writer.error is not None:
+                logger.warning("WS upload writer failed: %s", writer.error)
+            self._upload["writer"] = None
 
     async def _abort_upload(self, message: str | None = None) -> None:
         upload = self._upload

@@ -11,7 +11,7 @@ import os
 import queue
 import threading
 
-from aird.core.transfer_native import write_fd as native_write_fd
+from aird.core.transfer_native import write_fd as native_write_fd, pwrite_fd as native_pwrite_fd
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,91 @@ class FastUploadWriter:
         if not chunk or self.error is not None:
             return
         # Server already delivers ~chunk_size blocks; pass through when large.
+        if len(chunk) >= self._coalesce and not self._recv:
+            self._q.put(chunk)
+            return
+        self._recv.extend(chunk)
+        while len(self._recv) >= self._coalesce:
+            block = bytes(self._recv[: self._coalesce])
+            del self._recv[: self._coalesce]
+            self._q.put(block)
+
+    def finish(self, timeout: float = 600.0) -> None:
+        if self._recv:
+            self._q.put(bytes(self._recv))
+            self._recv.clear()
+        self._q.put(None)
+        self._done.wait(timeout=timeout)
+        if self._thread.is_alive():
+            self._thread.join(timeout=min(30.0, timeout))
+
+    def abort(self) -> None:
+        self._aborted = True
+        self._recv.clear()
+        while True:
+            try:
+                self._q.get_nowait()
+            except queue.Empty:
+                break
+        try:
+            self._q.put_nowait(None)
+        except Exception:
+            pass
+        self._done.wait(timeout=5.0)
+
+
+def _pwrite_all(fd: int, data: bytes, offset: int) -> None:
+    native_pwrite_fd(fd, data, offset)
+
+
+class FastRangeChunkWriter:
+    """Background pwrite loop for ranged PUT chunks (keeps Tornado IOLoop free)."""
+
+    def __init__(
+        self,
+        path: str,
+        start_offset: int,
+        *,
+        coalesce_bytes: int = DEFAULT_COALESCE_BYTES,
+        queue_maxitems: int = DEFAULT_QUEUE_MAXITEMS,
+    ) -> None:
+        self._fd = os.open(path, os.O_RDWR)
+        self._offset = int(start_offset)
+        self._coalesce = max(256 * 1024, int(coalesce_bytes))
+        self._q: queue.Queue[bytes | None] = queue.Queue(maxsize=max(2, queue_maxitems))
+        self._recv = bytearray()
+        self.error: BaseException | None = None
+        self._aborted = False
+        self._done = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run, name="aird-fast-range", daemon=True
+        )
+        self._thread.start()
+
+    def _run(self) -> None:
+        try:
+            while True:
+                item = self._q.get()
+                if item is None:
+                    break
+                if self._aborted:
+                    continue
+                _pwrite_all(self._fd, item, self._offset)
+                self._offset += len(item)
+        except Exception as exc:
+            self.error = exc
+            logger.warning("Fast range chunk writer failed: %s", exc)
+        finally:
+            try:
+                os.close(self._fd)
+            except OSError:
+                pass
+            self._fd = -1
+            self._done.set()
+
+    def feed(self, chunk: bytes) -> None:
+        if not chunk or self.error is not None:
+            return
         if len(chunk) >= self._coalesce and not self._recv:
             self._q.put(chunk)
             return

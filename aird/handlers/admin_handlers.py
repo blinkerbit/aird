@@ -90,28 +90,6 @@ def _get_user_service(handler) -> Any:
     return handler.get_service("user_service")
 
 
-_VALID_TRANSFER_PROFILES = ("cloudflare", "wireguard", "open")
-
-
-def _resolve_transfer_profile_submission(
-    handler: BaseHandler, current_runtime: dict
-) -> tuple[str | None, bool]:
-    request_arguments = getattr(handler.request, "arguments", {})
-    submitted = isinstance(request_arguments, dict) and (
-        "transfer_profile" in request_arguments
-        or b"transfer_profile" in request_arguments
-    )
-    configured = current_runtime.get("configuredProfile", "open")
-    requested = (
-        handler.get_argument("transfer_profile", configured).strip().lower()
-        if submitted
-        else configured
-    )
-    if requested not in _VALID_TRANSFER_PROFILES:
-        return None, False
-    return requested, submitted and configured != requested
-
-
 class AdminHandler(BaseHandler):
     @tornado.web.authenticated
     @require_admin(redirect_url=URL_ADMIN_LOGIN)
@@ -159,7 +137,6 @@ class AdminHandler(BaseHandler):
             websocket_config=current_websocket_config,
             upload_config=UPLOAD_CONFIG,
             runtime_config=runtime_config,
-            transfer_profile_names=_VALID_TRANSFER_PROFILES,
             ldap_enabled=ldap_enabled,
             available_extensions=available_extensions,
             allowed_extensions_current=allowed_current,
@@ -170,17 +147,6 @@ class AdminHandler(BaseHandler):
     @tornado.web.authenticated
     @require_admin(deny_status=HTTP_FORBIDDEN, deny_body=ACCESS_DENIED)
     def post(self):
-        current_runtime = self.get_service("config_service").get_runtime_config(
-            self.db_conn
-        )
-        requested_profile, profile_changed = _resolve_transfer_profile_submission(
-            self, current_runtime
-        )
-        if requested_profile is None:
-            self.set_status(HTTP_BAD_REQUEST)
-            self.write("Invalid transfer profile")
-            return
-
         FEATURE_FLAGS["file_upload"] = self.get_argument("file_upload", "off") == "on"
         FEATURE_FLAGS["file_delete"] = self.get_argument("file_delete", "off") == "on"
         FEATURE_FLAGS["file_rename"] = self.get_argument("file_rename", "off") == "on"
@@ -256,53 +222,6 @@ class AdminHandler(BaseHandler):
                 1, int(self.get_argument("max_file_size_mb", "10240"))
             )
             UPLOAD_CONFIG["max_file_size_mb"] = max_file_size_mb
-            if profile_changed:
-                constants_module.apply_transfer_profile_defaults(requested_profile)
-            else:
-                single_request_max_mb = int(
-                    self.get_argument(
-                        "single_request_max_mb",
-                        str(UPLOAD_CONFIG.get("single_request_max_mb", 100)),
-                    )
-                )
-                if single_request_max_mb <= 0:
-                    UPLOAD_CONFIG["single_request_max_mb"] = 0
-                else:
-                    UPLOAD_CONFIG["single_request_max_mb"] = min(
-                        single_request_max_mb, max_file_size_mb
-                    )
-                range_chunk_mb = max(
-                    4,
-                    min(
-                        200,
-                        int(
-                            self.get_argument(
-                                "range_chunk_mb",
-                                str(UPLOAD_CONFIG.get("range_chunk_mb", 90)),
-                            )
-                        ),
-                    ),
-                )
-                UPLOAD_CONFIG["range_chunk_mb"] = range_chunk_mb
-                UPLOAD_CONFIG["range_upload_concurrency"] = max(
-                    1,
-                    min(
-                        64,
-                        int(
-                            self.get_argument(
-                                "range_upload_concurrency",
-                                str(
-                                    UPLOAD_CONFIG.get(
-                                        "range_upload_concurrency", 16
-                                    )
-                                ),
-                            )
-                        ),
-                    ),
-                )
-            ws_chunk_mb = max(1, min(200, int(self.get_argument("ws_chunk_mb", "90"))))
-            UPLOAD_CONFIG["ws_chunk_mb"] = ws_chunk_mb
-            constants_module.set_transfer_profile(requested_profile)
             constants_module.refresh_upload_derived_constants()
             UPLOAD_CONFIG["allow_all_file_types"] = (
                 1 if self.get_argument("allow_all_file_types", "off") == "on" else 0
@@ -328,7 +247,7 @@ class AdminHandler(BaseHandler):
                 self.get_service("config_service").sync_upload_config_from_db(db_conn)
                 runtime_config = self.get_service(
                     "config_service"
-                ).save_transfer_profile(db_conn, requested_profile)
+                ).bump_runtime_config_revision(db_conn)
                 # When "allow all file types" is off, persist selected extensions from checkboxes
                 if not UPLOAD_CONFIG.get("allow_all_file_types"):
                     selected_extensions = {

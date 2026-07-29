@@ -21,11 +21,9 @@ describe('AirdRuntimeConfig', () => {
     vi.stubGlobal('WebSocket', FakeWebSocket);
     globalThis.__BROWSE_CONFIG = {
       transferStrategy: {
-        profile: 'open',
         revision: 1,
-        uploadTransport: 'adaptive',
-        downloadTransport: 'adaptive',
-        rangeChunkBytes: 32,
+        maxFileSize: 1000,
+        directUploadMaxBytes: 1000,
       },
     };
     delete globalThis.AirdRuntimeConfig;
@@ -36,32 +34,29 @@ describe('AirdRuntimeConfig', () => {
     vi.useRealTimers();
   });
 
-  it('applies a newer profile live and updates compatibility fields', () => {
+  it('applies a newer revision live and updates compatibility fields', () => {
     const changed = vi.fn();
     window.addEventListener('aird:runtime-config-changed', changed, { once: true });
 
     const applied = globalThis.AirdRuntimeConfig.applyStrategy({
-      profile: 'wireguard',
       revision: 2,
-      uploadTransport: 'stream',
-      downloadTransport: 'stream',
-      directUploadMaxBytes: 1000,
-      rangeChunkBytes: 90,
-      rangeUploadConcurrency: 1,
+      maxFileSize: 2000,
+      directUploadMaxBytes: 2000,
+      uploadConcurrency: 2,
     });
 
     expect(applied).toBe(true);
-    expect(globalThis.__BROWSE_CONFIG.transferStrategy.profile).toBe('wireguard');
-    expect(globalThis.__BROWSE_CONFIG.largeFileThreshold).toBe(1000);
+    expect(globalThis.__BROWSE_CONFIG.transferStrategy.revision).toBe(2);
+    expect(globalThis.__BROWSE_CONFIG.largeFileThreshold).toBe(2000);
     expect(changed).toHaveBeenCalledOnce();
   });
 
   it('ignores stale revisions', () => {
     expect(globalThis.AirdRuntimeConfig.applyStrategy({
-      profile: 'cloudflare',
       revision: 0,
+      maxFileSize: 1,
     })).toBe(false);
-    expect(globalThis.AirdRuntimeConfig.getTransferStrategy().profile).toBe('open');
+    expect(globalThis.AirdRuntimeConfig.getTransferStrategy().revision).toBe(1);
   });
 
   it('returns an immutable strategy snapshot', () => {
@@ -69,13 +64,11 @@ describe('AirdRuntimeConfig', () => {
     expect(Object.isFrozen(snapshot)).toBe(true);
 
     globalThis.AirdRuntimeConfig.applyStrategy({
-      profile: 'cloudflare',
       revision: 2,
-      uploadTransport: 'ranged',
-      downloadTransport: 'ranged',
+      maxFileSize: 5000,
     });
 
-    expect(snapshot.profile).toBe('open');
-    expect(globalThis.AirdRuntimeConfig.getTransferStrategy().profile).toBe('cloudflare');
+    expect(snapshot.revision).toBe(1);
+    expect(globalThis.AirdRuntimeConfig.getTransferStrategy().revision).toBe(2);
   });
 });

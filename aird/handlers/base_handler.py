@@ -595,7 +595,7 @@ class BaseHandler(tornado.web.RequestHandler):
         config_service = self.get_service("config_service")
         if config_service is not None and self.db_conn is not None:
             config_service.sync_upload_config_from_db(self.db_conn)
-            config_service.sync_transfer_profile_from_db(self.db_conn)
+            config_service.sync_runtime_config_from_db(self.db_conn)
 
     def publish_event(self, event: Any) -> None:
         bus = self.event_bus

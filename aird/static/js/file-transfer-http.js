@@ -1,12 +1,8 @@
 /**
- * HTTP file transfers: single POST/GET below threshold; Range for large files.
+ * HTTP file transfers: single-stream POST upload and native GET download.
  */
 (function (global) {
   'use strict';
-
-  const DEFAULT_LARGE_THRESHOLD = 500 * 1024 * 1024;
-  const DEFAULT_RANGE_CHUNK = 90 * 1024 * 1024;
-  const DEFAULT_RANGE_CONCURRENCY = 16;
 
   function config() {
     return global.__BROWSE_CONFIG || {};
@@ -15,30 +11,6 @@
   function transferStrategy(options) {
     return options?.strategy || global.AirdRuntimeConfig?.getTransferStrategy?.()
       || config().transferStrategy || {};
-  }
-
-  function largeThreshold(strategy) {
-    return strategy?.directUploadMaxBytes
-      || config().largeFileThreshold
-      || DEFAULT_LARGE_THRESHOLD;
-  }
-
-  function rangeChunkBytes(strategy) {
-    return strategy?.rangeChunkBytes || config().rangeChunkBytes || DEFAULT_RANGE_CHUNK;
-  }
-
-  function rangeUploadConcurrency(strategy) {
-    const n = strategy?.rangeUploadConcurrency
-      || config().rangeUploadConcurrency
-      || DEFAULT_RANGE_CONCURRENCY;
-    return Math.max(1, Math.min(64, Number(n) || DEFAULT_RANGE_CONCURRENCY));
-  }
-
-  function rangeDownloadConcurrency(strategy) {
-    const n = strategy?.rangeDownloadConcurrency
-      || config().rangeDownloadConcurrency
-      || DEFAULT_RANGE_CONCURRENCY;
-    return Math.max(1, Math.min(64, Number(n) || DEFAULT_RANGE_CONCURRENCY));
   }
 
   function createCancelScope(externalSignal) {
@@ -54,14 +26,10 @@
 
     function abortTracked() {
       xhrs.forEach((xhr) => {
-        try { xhr.abort(); } catch (abortErr) {
-          console.debug('xhr abort ignored', abortErr);
-        }
+        try { xhr.abort(); } catch (_) { /* ignore */ }
       });
       controllers.forEach((ac) => {
-        try { ac.abort(); } catch (abortErr) {
-          console.debug('abort controller ignored', abortErr);
-        }
+        try { ac.abort(); } catch (_) { /* ignore */ }
       });
     }
 
@@ -71,26 +39,19 @@
       softAborting = false;
       abortTracked();
       abortListeners.forEach((fn) => {
-        try { fn(); } catch (listenerErr) {
-          console.debug('abort listener ignored', listenerErr);
-        }
+        try { fn(); } catch (_) { /* ignore */ }
       });
     }
 
-    // Parent → child: if the outer scope aborts, fire this scope's listeners
-    // (close WS, reject waiters). Do NOT write to externalSignal.aborted —
-    // that re-entered parent setters and could couple unrelated transfers.
     if (externalSignal && typeof externalSignal.addEventListener === 'function') {
       externalSignal.addEventListener('abort', abort);
     }
 
-    /** Abort in-flight requests without cancelling the transfer (background pause). */
     function pauseInFlight() {
       softAborting = true;
       try {
         abortTracked();
       } finally {
-        // Abort handlers run sync during abort(); clear after they settle.
         queueMicrotask(() => { softAborting = false; });
       }
     }
@@ -123,65 +84,6 @@
     };
   }
 
-  function abortableSleep(ms, cancelScope) {
-    return new Promise((resolve, reject) => {
-      if (cancelScope.aborted) {
-        reject(new Error('cancelled'));
-        return;
-      }
-      const timer = setTimeout(() => {
-        cancelScope.removeEventListener('abort', onAbort);
-        resolve();
-      }, ms);
-      function onAbort() {
-        clearTimeout(timer);
-        cancelScope.removeEventListener('abort', onAbort);
-        reject(new Error('cancelled'));
-      }
-      cancelScope.addEventListener('abort', onAbort);
-    });
-  }
-
-  function createProgressReporter(fn, intervalMs) {
-    const interval = intervalMs || 100;
-    let last = 0;
-    let timer = null;
-    function flush() {
-      timer = null;
-      last = Date.now();
-      fn();
-    }
-    return function report(force) {
-      if (force) {
-        if (timer) { clearTimeout(timer); timer = null; }
-        flush();
-        return;
-      }
-      const now = Date.now();
-      if (now - last >= interval) {
-        if (timer) { clearTimeout(timer); timer = null; }
-        flush();
-        return;
-      }
-      if (!timer) timer = setTimeout(flush, interval - (now - last));
-    };
-  }
-
-  function isCancelError(err) {
-    return err?.message === 'cancelled' || err?.name === 'AbortError';
-  }
-
-  function isPauseError(err) {
-    return err?.message === 'paused'
-      || (global.AirdTransferBackground && global.AirdTransferBackground.isPauseError(err));
-  }
-
-  function cancelError() {
-    const err = new Error('cancelled');
-    err.name = 'AbortError';
-    return err;
-  }
-
   function wrapCancelOptions(options) {
     options = options || {};
     const userOnCancel = options.onCancel;
@@ -195,76 +97,13 @@
         }
       };
     }
-    // Avoid stacking cancel scopes if this options object was already wrapped.
     if (options.signal && typeof options.signal.abort === 'function'
         && typeof options.signal.addEventListener === 'function'
         && typeof options.signal.throwIfAborted === 'function') {
-      return {
-        ...options,
-        onCancel: chainCancel(options.signal),
-      };
+      return { ...options, onCancel: chainCancel(options.signal) };
     }
     const scope = createCancelScope(options.signal);
-    return {
-      ...options,
-      signal: scope,
-      onCancel: chainCancel(scope),
-    };
-  }
-
-  async function putRangeChunkWithRetry(uploadId, start, end, totalSize, body, xsrf, cancelScope, onChunkProgress, concurrencyHints) {
-    let lastRes = null;
-    let lastErr = null;
-    const strategy = transferStrategy();
-    const lanFast = strategy.profile === 'wireguard';
-    const MAX_ATTEMPTS = lanFast ? 8 : 5;
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      cancelScope.throwIfAborted();
-      try {
-        lastRes = await putRangeChunk(
-          uploadId, start, end, totalSize, body, xsrf, cancelScope, onChunkProgress
-        );
-      } catch (err) {
-        if (isCancelError(err)) throw cancelError();
-        if (isPauseError(err)) throw err;
-        lastErr = err;
-        const BG = global.AirdTransferBackground;
-        if (!(BG?.isRetryableError(err) || isPauseError(err)) && attempt >= 1) throw err;
-        await abortableSleep(Math.min(1000 * 2 ** attempt, lanFast ? 15000 : 8000), cancelScope);
-        continue;
-      }
-      if (lastRes.status === 201 || lastRes.status === 200) return lastRes;
-      if (lastRes.status === 429) {
-        // Server is overloaded — signal caller to reduce concurrency.
-        if (concurrencyHints) concurrencyHints.backoff = true;
-        await abortableSleep(Math.min(2000 * 2 ** attempt, 16000), cancelScope);
-        continue;
-      }
-      if (lastRes.status === 507) return lastRes;
-      if (lastRes.status === 404) return lastRes;
-      if (lastRes.status >= 500) {
-        await abortableSleep(Math.min(1000 * 2 ** attempt, lanFast ? 15000 : 8000), cancelScope);
-        continue;
-      }
-      return lastRes;
-    }
-    if (lastErr) throw lastErr;
-    return lastRes;
-  }
-
-  async function fetchRangePartWithRetry(url, start, end, cancelScope) {
-    let lastErr = null;
-    for (let attempt = 0; attempt < 4; attempt++) {
-      cancelScope.throwIfAborted();
-      try {
-        return await fetchRangePart(url, start, end, cancelScope);
-      } catch (err) {
-        if (isCancelError(err)) throw cancelError();
-        lastErr = err;
-        await abortableSleep(Math.min(1000 * 2 ** attempt, 8000), cancelScope);
-      }
-    }
-    throw lastErr || new Error('Range download failed');
+    return { ...options, signal: scope, onCancel: chainCancel(scope) };
   }
 
   function getXSRFToken() {
@@ -320,74 +159,6 @@
     return { TT, ttId };
   }
 
-  function putRangeChunk(uploadId, start, end, totalSize, body, xsrf, cancelScope, onChunkProgress) {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      if (cancelScope) cancelScope.trackXhr(xhr);
-
-      if (onChunkProgress) {
-        xhr.upload.addEventListener('progress', (ev) => {
-          if (ev.lengthComputable) onChunkProgress(ev.loaded);
-        });
-      }
-
-      xhr.addEventListener('load', () => {
-        resolve({
-          status: xhr.status,
-          ok: xhr.status >= 200 && xhr.status < 300,
-          text: () => Promise.resolve(xhr.responseText),
-        });
-      });
-      xhr.addEventListener('error', () => {
-        reject(new Error('Network error during chunk upload'));
-      });
-      xhr.addEventListener('abort', () => {
-        if (cancelScope && cancelScope.softAborting) {
-          reject(new Error('paused'));
-          return;
-        }
-        reject(new Error('cancelled'));
-      });
-
-      xhr.open('PUT', `/api/upload/range/${encodeURIComponent(uploadId)}`);
-      xhr.withCredentials = true;
-      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-      xhr.setRequestHeader('Content-Range', `bytes ${start}-${end}/${totalSize}`);
-      xhr.setRequestHeader('X-XSRFToken', xsrf);
-      xhr.send(body);
-    });
-  }
-
-  async function readStreamToBlob(reader, total, ttId, onProgress, cancelScope) {
-    const TT = global.AirdTransferTracker;
-    const chunks = [];
-    let loaded = 0;
-    while (true) {
-      if (cancelScope) cancelScope.throwIfAborted();
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      loaded += value.byteLength;
-      if (TT && ttId) TT.updateProgress(ttId, loaded, total || loaded);
-      if (onProgress) onProgress(loaded, total || loaded);
-    }
-    return new Blob(chunks);
-  }
-
-  async function fetchRangePart(url, start, end, cancelScope) {
-    const ac = new AbortController();
-    if (cancelScope) cancelScope.trackController(ac);
-    const res = await fetch(url, {
-      credentials: 'same-origin',
-      signal: ac.signal,
-      headers: { Range: `bytes=${start}-${end}` },
-    });
-    if (res.status !== 206 && res.status !== 200) {
-      throw new Error(`Range download failed (${res.status})`);
-    }
-    return res.arrayBuffer();
-  }
-
   function ttFail(TT, ttId, msg) {
     if (TT && ttId) TT.failTransfer(ttId, msg);
   }
@@ -406,86 +177,6 @@
 
   function ttActivate(TT, ttId) {
     if (TT && ttId) TT.setTransferStatus(ttId, 'active', '');
-  }
-
-  function chunkRangeCovered(idx, chunkSz, total, ranges) {
-    const start = idx * chunkSz;
-    const end = Math.min(start + chunkSz - 1, total - 1);
-    return ranges.some((r) => r[0] <= start && r[1] >= end);
-  }
-
-  async function fetchUploadStatus(uploadId, xsrf) {
-    const res = await fetch(
-      `/api/upload/range/${encodeURIComponent(uploadId)}/status`,
-      { credentials: 'same-origin', headers: { 'X-XSRFToken': xsrf } }
-    );
-    if (!res.ok) {
-      throw new Error(await res.text() || `Status failed (${res.status})`);
-    }
-    return res.json();
-  }
-
-  async function createRangeUploadSession(uploadDir, filename, totalSize, xsrf, TT, ttId) {
-    const sessionRes = await fetch('/api/upload/range/session', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-XSRFToken': xsrf,
-      },
-      body: JSON.stringify({
-        upload_dir: uploadDir,
-        filename: filename,
-        total_size: totalSize,
-      }),
-    });
-    if (!sessionRes.ok) {
-      const errText = await sessionRes.text();
-      ttFail(TT, ttId, errText);
-      throw new Error(errText || `Session failed (${sessionRes.status})`);
-    }
-    const session = await sessionRes.json();
-    return {
-      uploadId: session.upload_id,
-      chunkBytes: session.chunk_bytes || rangeChunkBytes(),
-    };
-  }
-
-  async function sendRangeUploadChunk(file, uploadId, start, chunkSize, totalSize, xsrf, cancelScope, onChunkProgress, TT, ttId, concurrencyHints) {
-    cancelScope.throwIfAborted();
-    const end = Math.min(start + chunkSize - 1, totalSize - 1);
-    const chunk = file.slice(start, end + 1);
-    const putRes = await putRangeChunkWithRetry(
-      uploadId, start, end, totalSize, chunk, xsrf, cancelScope, onChunkProgress, concurrencyHints
-    );
-
-    if (cancelScope.aborted) throw new Error('cancelled');
-
-    if (putRes.status === 201) {
-      return { finished: true, bytes: end - start + 1 };
-    }
-    if (!putRes.ok && putRes.status !== 200) {
-      const errText = await putRes.text();
-      ttFail(TT, ttId, errText);
-      throw new Error(errText || `Chunk failed (${putRes.status})`);
-    }
-
-    return { finished: false, bytes: end - start + 1 };
-  }
-
-  async function downloadRangeChunk(url, start, chunkSize, total, cancelScope, parts, TT, ttId) {
-    cancelScope.throwIfAborted();
-    const end = Math.min(start + chunkSize - 1, total - 1);
-    let buf;
-    try {
-      buf = await fetchRangePartWithRetry(url, start, end, cancelScope);
-    } catch (err) {
-      if (isCancelError(err)) throw cancelError();
-      ttFail(TT, ttId, err.message);
-      throw err;
-    }
-    parts[Math.floor(start / chunkSize)] = new Uint8Array(buf);
-    return buf.byteLength;
   }
 
   function smallUpload(file, options) {
@@ -558,517 +249,15 @@
     })();
   }
 
-  async function discardRangeUploadSession(uploadId, xsrf) {
-    if (!uploadId) return;
-    try {
-      await fetch(`/api/upload/range/${encodeURIComponent(uploadId)}`, {
-        method: 'DELETE',
-        credentials: 'same-origin',
-        headers: { 'X-XSRFToken': xsrf || getXSRFToken() },
-      });
-    } catch (_) { /* ignore — server may already have dropped the connection */ }
-  }
-
-  async function rangedUpload(file, options) {
-    options = wrapCancelOptions(options);
-    const strategy = transferStrategy(options);
-    const uploadDir = options.uploadDir ?? '';
-    const filename = options.filename ?? (file.name || 'upload');
-    const onProgress = options.onProgress || function () {};
-    const cancelScope = options.signal;
-    const totalSize = file.size;
-    const xsrf = getXSRFToken();
-    const BG = global.AirdTransferBackground;
-    const { TT, ttId } = trackUpload(filename, totalSize, options);
-    ttPreparing(TT, ttId);
-    if (BG?.syncFromDocument) BG.syncFromDocument();
-    if (BG) await BG.acquireWakeLock();
-
-    let unsub = null;
-    let uploadId = null;
-    let failure = null;
-    try {
-      const session = await createRangeUploadSession(
-        uploadDir, filename, totalSize, xsrf, TT, ttId
-      );
-      uploadId = session.uploadId;
-      const chunkSize = session.chunkBytes;
-      const maxConcurrency = rangeUploadConcurrency(strategy);
-      const totalChunks = Math.ceil(totalSize / chunkSize);
-
-      const chunkDone = new Uint8Array(totalChunks);
-      const inFlight = new Map();
-      const pending = new Set();
-      for (let i = 0; i < totalChunks; i++) pending.add(i);
-
-      let bytesUploaded = 0;
-      let remaining = totalChunks;
-      let finished = false;
-      let active = 0;
-      let transferActive = false;
-      let uiPaused = false;
-      let activeConcurrency = maxConcurrency;
-      let resumeSync = null;
-      const concurrencyHints = { backoff: false };
-
-      let settleResolve = null;
-      const settled = new Promise((resolve) => { settleResolve = resolve; });
-
-      function markDone(idx, bytes) {
-        if (chunkDone[idx]) return;
-        chunkDone[idx] = 1;
-        remaining -= 1;
-        bytesUploaded += bytes;
-      }
-
-      function maybeSettle() {
-        if (finished || failure) {
-          settleResolve();
-          return;
-        }
-        if (cancelScope.aborted) {
-          failure = failure || new Error('cancelled');
-          settleResolve();
-          return;
-        }
-        if (active === 0 && pending.size === 0 && remaining === 0) {
-          finished = true;
-          settleResolve();
-        }
-      }
-
-      cancelScope.addEventListener('abort', () => {
-        failure = failure || new Error('cancelled');
-        settleResolve();
-      });
-
-      function loadedBytes() {
-        let loaded = bytesUploaded;
-        inFlight.forEach((n) => { loaded += n; });
-        return Math.min(totalSize, loaded);
-      }
-
-      const reportProgress = createProgressReporter(() => {
-        const loaded = loadedBytes();
-        if (!transferActive && loaded > 0 && !uiPaused) {
-          transferActive = true;
-          ttActivate(TT, ttId);
-        }
-        const pct = totalSize > 0 ? (loaded / totalSize) * 100 : 0;
-        onProgress(Math.round(pct), loaded, totalSize);
-        ttUpdate(TT, ttId, loaded, totalSize);
-      });
-
-      function setPaused(paused, reason) {
-        if (uiPaused === paused) {
-          if (paused && TT && ttId && reason) {
-            TT.setTransferStatus(ttId, 'preparing', reason);
-          }
-          return;
-        }
-        uiPaused = paused;
-        if (!TT || !ttId) return;
-        if (paused) {
-          TT.setTransferStatus(ttId, 'preparing', reason || BG?.pauseReason() || '');
-        } else {
-          TT.setTransferStatus(ttId, 'active', '');
-          transferActive = true;
-        }
-      }
-
-      function requeue(idx) {
-        if (!chunkDone[idx] && !inFlight.has(idx)) pending.add(idx);
-      }
-
-      function rebuildPending() {
-        pending.clear();
-        for (let i = 0; i < totalChunks; i++) {
-          if (!chunkDone[i] && !inFlight.has(i)) pending.add(i);
-        }
-      }
-
-      async function syncFromServer() {
-        const status = await fetchUploadStatus(uploadId, xsrf);
-        if (status.complete) {
-          remaining = 0;
-          bytesUploaded = totalSize;
-          finished = true;
-          reportProgress(true);
-          ttComplete(TT, ttId);
-          settleResolve();
-          return true;
-        }
-        const ranges = status.ranges || [];
-        let confirmed = 0;
-        let left = 0;
-        for (let i = 0; i < totalChunks; i++) {
-          const covered = chunkRangeCovered(i, chunkSize, totalSize, ranges);
-          chunkDone[i] = covered ? 1 : 0;
-          if (covered) confirmed += Math.min(chunkSize, totalSize - i * chunkSize);
-          else left += 1;
-        }
-        remaining = left;
-        bytesUploaded = confirmed;
-        rebuildPending();
-        reportProgress(true);
-        return false;
-      }
-
-      function shouldRetry(err) {
-        return isPauseError(err)
-          || BG?.isRetryableError(err)
-          || BG?.isBackgroundPaused();
-      }
-
-      function startNext() {
-        if (failure || finished || cancelScope.aborted) {
-          maybeSettle();
-          return;
-        }
-        if (BG?.isBackgroundPaused()) {
-          setPaused(true, BG.pauseReason());
-          return;
-        }
-        setPaused(false);
-
-        if (concurrencyHints.backoff) {
-          concurrencyHints.backoff = false;
-          activeConcurrency = Math.max(1, Math.floor(activeConcurrency / 2));
-        } else if (active === 0 && activeConcurrency < maxConcurrency) {
-          activeConcurrency = Math.min(maxConcurrency, activeConcurrency + 1);
-        }
-
-        while (active < activeConcurrency && pending.size > 0) {
-          const idx = pending.values().next().value;
-          pending.delete(idx);
-          if (chunkDone[idx] || inFlight.has(idx)) continue;
-          const start = idx * chunkSize;
-          active += 1;
-          inFlight.set(idx, 0);
-          reportProgress();
-
-          sendRangeUploadChunk(
-            file, uploadId, start, chunkSize, totalSize, xsrf, cancelScope,
-            (chunkLoaded) => {
-              inFlight.set(idx, chunkLoaded);
-              reportProgress();
-            },
-            TT, ttId, concurrencyHints
-          ).then((result) => {
-            active -= 1;
-            inFlight.delete(idx);
-            if (cancelScope.aborted) {
-              failure = new Error('cancelled');
-              maybeSettle();
-              return;
-            }
-            if (result.finished) {
-              finished = true;
-              failure = null;
-              remaining = 0;
-              bytesUploaded = totalSize;
-              reportProgress(true);
-              ttComplete(TT, ttId);
-              cancelScope.pauseInFlight();
-              maybeSettle();
-              return;
-            }
-            markDone(idx, result.bytes || Math.min(chunkSize, totalSize - start));
-            reportProgress();
-            startNext();
-            maybeSettle();
-          }).catch((err) => {
-            active -= 1;
-            inFlight.delete(idx);
-            if (finished) {
-              maybeSettle();
-              return;
-            }
-            if (cancelScope.aborted || (isCancelError(err) && !isPauseError(err))) {
-              failure = isCancelError(err) ? err : new Error('cancelled');
-              maybeSettle();
-              return;
-            }
-            if (shouldRetry(err)) {
-              requeue(idx);
-              if (BG?.isBackgroundPaused()) {
-                setPaused(true, BG.pauseReason());
-                maybeSettle();
-                return;
-              }
-              abortableSleep(Math.min(1000 * (1 + inFlight.size), 4000), cancelScope)
-                .then(() => { if (!finished && !failure) startNext(); })
-                .catch(() => {
-                  failure = new Error('cancelled');
-                  maybeSettle();
-                });
-              return;
-            }
-            failure = err;
-            maybeSettle();
-          });
-        }
-        maybeSettle();
-      }
-
-      unsub = BG?.onChange((ev) => {
-        if (finished || failure) return;
-        if (ev.type === 'pause') {
-          setPaused(true, ev.reason || BG.pauseReason());
-          cancelScope.pauseInFlight();
-          return;
-        }
-        if (resumeSync) return;
-        setPaused(false);
-        resumeSync = syncFromServer()
-          .then((done) => {
-            if (done || finished || failure || cancelScope.aborted) return;
-            startNext();
-          })
-          .catch(() => {
-            if (!finished && !failure) startNext();
-          })
-          .finally(() => { resumeSync = null; });
-      });
-
-      // Always start chunks. Stale background-pause must not block the first byte.
-      if (BG?.syncFromDocument) BG.syncFromDocument();
-      startNext();
-
-      await settled;
-
-      if (finished) {
-        return { message: 'Upload successful' };
-      }
-      if (cancelScope.aborted && !failure) failure = new Error('cancelled');
-      if (failure) {
-        if (failure.message === 'cancelled') ttFail(TT, ttId, 'Cancelled');
-        else ttFail(TT, ttId, failure.message);
-        throw failure;
-      }
-      if (!finished) {
-        try {
-          await syncFromServer();
-        } catch (_) { /* fall through */ }
-      }
-      if (!finished && remaining === 0) {
-        finished = true;
-        ttComplete(TT, ttId);
-      }
-      if (!finished) {
-        const err = new Error('Upload did not complete');
-        ttFail(TT, ttId, err.message);
-        throw err;
-      }
-      return { message: 'Upload successful' };
-    } finally {
-      if (typeof unsub === 'function') unsub();
-      if (BG) BG.releaseWakeLock();
-      if (uploadId && (cancelScope.aborted || failure?.message === 'cancelled')) {
-        void discardRangeUploadSession(uploadId, xsrf);
-      }
-    }
-  }
-
   async function uploadFile(file, options) {
-    options = wrapCancelOptions(options || {});
-    const strategy = transferStrategy(options);
-    if (strategy.uploadTransport === 'stream') {
-      return smallUpload(file, options);
-    }
-    if (file.size >= largeThreshold(strategy)) {
-      // Parallel HTTP range PUT — fastest path (multiple concurrent TCP streams).
-      return rangedUpload(file, options);
-    }
-    return smallUpload(file, options);
-  }
-
-  async function fetchFileSize(url, cancelScope) {
-    const ac = new AbortController();
-    if (cancelScope) cancelScope.trackController(ac);
-    const head = await fetch(url, { method: 'HEAD', credentials: 'same-origin', signal: ac.signal });
-    if (!head.ok) {
-      throw new Error(`HEAD failed (${head.status})`);
-    }
-    const len = parseInt(head.headers.get('Content-Length') || '0', 10);
-    return len;
-  }
-
-  async function smallDownload(path, options) {
-    options = wrapCancelOptions(options);
-    const url = filesUrl(path);
-    const cancelScope = options.signal;
-    const fname = path.split('/').pop() || path;
-    const { TT, ttId } = trackDownload(fname, options);
-
-    const ac = new AbortController();
-    cancelScope.trackController(ac);
-    const res = await fetch(url, { credentials: 'same-origin', signal: ac.signal });
-    if (!res.ok) {
-      if (TT && ttId) TT.failTransfer(ttId, `HTTP ${res.status}`);
-      throw new Error(`Download failed (${res.status})`);
-    }
-    const total = parseInt(res.headers.get('Content-Length') || '0', 10);
-    if (TT && ttId && total) TT.updateProgress(ttId, 0, total);
-
-    const reader = res.body?.getReader();
-    if (!reader) {
-      const blob = await res.blob();
-      if (options.writable) {
-        await options.writable.write(blob);
-        await options.writable.close();
-        if (TT && ttId) TT.completeTransfer(ttId);
-        return { saved: true, filename: fname, path, size: blob.size };
-      }
-      if (TT && ttId) TT.completeTransfer(ttId);
-      return { blob, filename: fname, path, size: blob.size };
-    }
-
-    if (options.writable) {
-      let loaded = 0;
-      try {
-        while (true) {
-          cancelScope.throwIfAborted();
-          const { done, value } = await reader.read();
-          if (done) break;
-          await options.writable.write(value);
-          loaded += value.byteLength;
-          ttUpdate(TT, ttId, loaded, total || loaded);
-          if (options.onProgress) options.onProgress(loaded, total || loaded);
-        }
-        await options.writable.close();
-        ttComplete(TT, ttId);
-        return { saved: true, filename: fname, path, size: loaded };
-      } catch (err) {
-        try {
-          await options.writable.abort();
-        } catch (abortErr) {
-          console.debug('Writable abort ignored', abortErr);
-        }
-        throw err;
-      }
-    }
-
-    const blob = await readStreamToBlob(reader, total, ttId, options.onProgress, cancelScope);
-    if (TT && ttId) TT.completeTransfer(ttId);
-    return { blob, filename: fname, path, size: blob.size };
-  }
-
-  async function rangedDownload(path, options) {
-    options = wrapCancelOptions(options);
-    const strategy = transferStrategy(options);
-    const url = filesUrl(path);
-    const cancelScope = options.signal;
-    const chunkSize = rangeChunkBytes(strategy);
-    const concurrency = rangeDownloadConcurrency(strategy);
-    const fname = path.split('/').pop() || path;
-    const { TT, ttId } = trackDownload(fname, options);
-
-    const total = await fetchFileSize(url, cancelScope);
-    if (TT && ttId) TT.updateProgress(ttId, 0, total);
-
-    const parts = options.writable ? null : new Array(Math.ceil(total / chunkSize));
-    const totalChunks = Math.ceil(total / chunkSize);
-    let nextChunkIndex = 0;
-    let loaded = 0;
-    let failure = null;
-    let writeChain = Promise.resolve();
-
-    if (options.writable) await options.writable.truncate(total);
-
-    function reportDlProgress() {
-      ttUpdate(TT, ttId, loaded, total);
-      if (options.onProgress) options.onProgress(loaded, total);
-    }
-
-    async function worker() {
-      while (!failure) {
-        if (cancelScope.aborted) {
-          failure = new Error('cancelled');
-          return;
-        }
-        const idx = nextChunkIndex++;
-        if (idx >= totalChunks) return;
-        const start = idx * chunkSize;
-        try {
-          const end = Math.min(start + chunkSize - 1, total - 1);
-          if (options.writable) {
-            const buf = await fetchRangePartWithRetry(url, start, end, cancelScope);
-            writeChain = writeChain.then(() => options.writable.write({
-              type: 'write',
-              position: start,
-              data: new Uint8Array(buf),
-            }));
-            await writeChain;
-            loaded += buf.byteLength;
-          } else {
-            loaded += await downloadRangeChunk(
-              url, start, chunkSize, total, cancelScope, parts, TT, ttId
-            );
-          }
-          reportDlProgress();
-        } catch (err) {
-          failure = err;
-          return;
-        }
-      }
-    }
-
-    await Promise.all(Array.from({ length: concurrency }, () => worker()));
-    if (failure) {
-      if (options.writable) {
-        try {
-          await options.writable.abort();
-        } catch (abortErr) {
-          console.debug('Writable abort ignored', abortErr);
-        }
-      }
-      if (failure.message === 'cancelled') ttFail(TT, ttId, 'Cancelled');
-      throw failure;
-    }
-
-    if (options.writable) {
-      await writeChain;
-      await options.writable.close();
-      ttComplete(TT, ttId);
-      return { saved: true, filename: fname, path, size: total };
-    }
-
-    const blob = new Blob(parts);
-    ttComplete(TT, ttId);
-    return { blob, filename: fname, path, size: blob.size };
+    return smallUpload(file, wrapCancelOptions(options || {}));
   }
 
   async function downloadFile(path, options) {
     options = wrapCancelOptions(options || {});
     const url = filesUrl(path);
-    const strategy = transferStrategy(options);
     const fname = path.split('/').pop() || path;
-    if (strategy.downloadTransport === 'stream') {
-      return { native: true, url, filename: fname, path };
-    }
-    if (
-      options.directToDisk
-      && !options.writable
-      && typeof window.showSaveFilePicker === 'function'
-    ) {
-      try {
-        const handle = await window.showSaveFilePicker({ suggestedName: fname });
-        options.writable = await handle.createWritable();
-      } catch (err) {
-        if (err?.name === 'AbortError') throw new Error('cancelled');
-      }
-    }
-    let total = 0;
-    try {
-      total = await fetchFileSize(url, options.signal);
-    } catch {
-      return smallDownload(path, options);
-    }
-    if (total >= largeThreshold(strategy)) {
-      return rangedDownload(path, options);
-    }
-    return smallDownload(path, options);
+    return { native: true, url, filename: fname, path };
   }
 
   async function saveBlob(blob, filename) {
@@ -1107,10 +296,6 @@
     downloadFile,
     saveBlob,
     filesUrl,
-    largeThreshold,
-    rangeChunkBytes,
-    rangeUploadConcurrency,
-    rangeDownloadConcurrency,
     createCancelScope,
   };
-})(typeof globalThis !== 'undefined' ? globalThis : window);
+}(typeof window !== 'undefined' ? window : globalThis));

@@ -44,7 +44,7 @@ class ConfigService:
                 )
 
         self.sync_upload_config_from_db(conn)
-        self.sync_transfer_profile_from_db(conn)
+        self.sync_runtime_config_from_db(conn)
 
         constants.UPLOAD_ALLOWED_EXTENSIONS = load_allowed_extensions(conn)
         if not constants.UPLOAD_ALLOWED_EXTENSIONS:
@@ -66,43 +66,32 @@ class ConfigService:
     def save_upload_config(self, conn: Any, upload_config: dict) -> None:
         save_upload_config(conn, upload_config)
 
-    def sync_transfer_profile_from_db(self, conn: Any) -> dict:
-        """Refresh the effective profile and return its browser-safe strategy."""
-        persisted = load_server_config(conn) if conn is not None else {}
-        profile = persisted.get(
-            "hosting_profile",
-            constants.TRANSFER_PROFILE if conn is None else "open",
-        )
-        try:
-            revision = int(
-                persisted.get("revision", constants.TRANSFER_CONFIG_REVISION)
-            )
-        except (TypeError, ValueError):
-            revision = 0
-        constants.set_transfer_profile(profile, revision)
-        strategy = constants.get_effective_transfer_strategy()
-        strategy["configuredProfile"] = constants.normalize_transfer_profile(profile)
-        strategy["environmentOverride"] = bool(
-            constants.transfer_profile_env_override()
-        )
-        return strategy
+    def sync_runtime_config_from_db(self, conn: Any) -> dict:
+        """Refresh revision from SQLite and return the browser-safe strategy."""
+        if conn is not None:
+            persisted = load_server_config(conn)
+            try:
+                revision = int(
+                    persisted.get("revision", constants.TRANSFER_CONFIG_REVISION)
+                )
+            except (TypeError, ValueError):
+                revision = 0
+            constants.TRANSFER_CONFIG_REVISION = max(0, revision)
+            constants.refresh_upload_derived_constants()
+        return constants.get_effective_transfer_strategy()
 
     def get_runtime_config(self, conn: Any) -> dict:
         """Return the latest effective transfer strategy from shared SQLite."""
         if conn is not None:
             self.sync_upload_config_from_db(conn)
-        return self.sync_transfer_profile_from_db(conn)
+        return self.sync_runtime_config_from_db(conn)
 
-    def save_transfer_profile(self, conn: Any, profile: str) -> dict:
-        """Persist a validated profile, bump revision, and apply it locally."""
-        normalized = constants.normalize_transfer_profile(profile)
-        revision = save_server_config(
-            conn,
-            {"hosting_profile": normalized},
-            bump_revision=True,
-        )
-        constants.set_transfer_profile(normalized, revision)
-        return self.sync_transfer_profile_from_db(conn)
+    def bump_runtime_config_revision(self, conn: Any) -> dict:
+        """Persist a bumped revision and apply it locally."""
+        revision = save_server_config(conn, {}, bump_revision=True)
+        constants.TRANSFER_CONFIG_REVISION = revision
+        constants.refresh_upload_derived_constants()
+        return constants.get_effective_transfer_strategy()
 
     def load_allowed_extensions(self, conn: Any) -> set[str]:
         return load_allowed_extensions(conn)

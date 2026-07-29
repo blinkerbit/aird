@@ -48,12 +48,6 @@ from aird.db.policies import (
 )
 from aird.db.policy_decisions import get_policy_decisions, log_policy_decision
 from aird.db.quota import get_user_quota, set_user_quota, update_user_used_bytes
-from aird.db.ranged_uploads import (
-    create_session,
-    delete_session,
-    get_session,
-    update_ranges,
-)
 from aird.db.resource_tags import (
     delete_resource_tag,
     delete_resource_tag_by_name,
@@ -220,30 +214,6 @@ class TestDbFavoritesQuota:
       assert info["quota_bytes"] == 1000
       assert info["used_bytes"] == 250
       update_user_used_bytes(None, "quota_user", 10)
-
-
-class TestDbRangedUploads:
-  def test_session_lifecycle(self, db_conn):
-      create_session(
-          db_conn,
-          session_id="sess-1",
-          username="alice",
-          upload_dir="/tmp",
-          filename="big.bin",
-          temp_path="/tmp/big.bin.part",
-          total_size=100,
-      )
-      session = get_session(db_conn, "sess-1")
-      assert session is not None
-      assert session["total_size"] == 100
-      assert session["ranges"] == []
-      from aird.core.http_range import ByteRange
-
-      update_ranges(db_conn, "sess-1", [ByteRange(0, 49)])
-      session = get_session(db_conn, "sess-1")
-      assert len(session["ranges"]) == 1
-      delete_session(db_conn, "sess-1")
-      assert get_session(db_conn, "sess-1") is None
 
 
 class TestDbUserAttributes:
@@ -790,95 +760,6 @@ class TestFileOperationsScan:
 
       with patch("os.walk", side_effect=OSError("nope")):
           assert get_all_files_recursive("/bad/path") == []
-
-
-class TestRangedUploadHandler:
-  def test_post_validation_errors(self):
-      from aird.handlers.ranged_upload_handlers import RangedUploadSessionHandler
-
-      app = MagicMock()
-      app.settings = {"services": _default_services()}
-      req = MagicMock()
-      req.body = b"not-json"
-      req.remote_ip = "127.0.0.1"
-      req.connection = MagicMock()
-      req.connection.context = MagicMock()
-      handler = RangedUploadSessionHandler(app, req)
-      authenticate(handler)
-      prepare_handler(handler)
-
-      with patch.object(handler, "require_feature", return_value=True), patch(
-          "aird.handlers.ranged_upload_handlers.is_feature_enabled", return_value=True
-      ):
-          import asyncio
-
-          asyncio.run(handler.post())
-      handler.set_status.assert_called_with(400)
-      import asyncio
-
-      import aird.constants as constants
-      from aird.handlers.ranged_upload_handlers import RangedUploadSessionHandler
-
-      app = MagicMock()
-      app.settings = {"services": _default_services()}
-      req = MagicMock()
-      req.body = json.dumps(
-          {"filename": "tiny.txt", "total_size": 10, "upload_dir": ""}
-      ).encode()
-      req.remote_ip = "127.0.0.1"
-      req.connection = MagicMock()
-      req.connection.context = MagicMock()
-      handler = RangedUploadSessionHandler(app, req)
-      authenticate(handler)
-      prepare_handler(handler)
-
-      with patch_db_conn(db_conn), patch.object(
-          handler, "require_feature", return_value=True
-      ), patch(
-          "aird.handlers.ranged_upload_handlers.is_feature_enabled", return_value=True
-      ), patch.object(
-          constants, "LARGE_FILE_THRESHOLD_BYTES", 100
-      ):
-          asyncio.run(handler.post())
-      handler.set_status.assert_called_with(400)
-
-
-class TestRangedUploadSessionSuccess:
-  def test_create_session(self, db_conn, temp_dir):
-      import asyncio
-
-      import aird.constants as constants
-      from aird.handlers.ranged_upload_handlers import RangedUploadSessionHandler
-
-      app = MagicMock()
-      app.settings = {"services": _default_services()}
-      req = MagicMock()
-      req.body = json.dumps(
-          {
-              "filename": "big.bin",
-              "total_size": constants.LARGE_FILE_THRESHOLD_BYTES + 1000,
-              "upload_dir": "",
-          }
-      ).encode()
-      req.remote_ip = "127.0.0.1"
-      req.connection = MagicMock()
-      req.connection.context = MagicMock()
-      handler = RangedUploadSessionHandler(app, req)
-      authenticate(handler)
-      prepare_handler(handler)
-      handler.get_display_username = MagicMock(return_value="alice")
-
-      with patch_db_conn(db_conn), patch.object(
-          handler, "require_feature", return_value=True
-      ), patch(
-          "aird.handlers.ranged_upload_handlers.is_feature_enabled", return_value=True
-      ), patch(
-          "aird.handlers.ranged_upload_handlers.get_user_root", return_value=temp_dir
-      ), patch.object(constants, "MAX_FILE_SIZE", 1024 * 1024 * 1024):
-          asyncio.run(handler.post())
-      handler.set_status.assert_called_with(201)
-      payload = handler.write.call_args[0][0]
-      assert "upload_id" in payload
 
 
 class TestCliAuthelia:

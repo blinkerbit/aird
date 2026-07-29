@@ -33,6 +33,24 @@ from aird.handlers.constants import (
     LOGIN_HTML,
     DB_NOT_AVAILABLE_MSG,
 )
+
+_XSRF_RELOAD_MSG = "Session expired. Reload this page and try again."
+
+
+def _ensure_form_xsrf(handler, on_failure) -> None:
+    """Validate form XSRF; re-render instead of a bare 403 when token is missing."""
+    if handler.request.method not in ("POST", "PUT", "DELETE", "PATCH"):
+        return
+    if not handler.get_argument("_xsrf", None) or not handler.get_cookie("_xsrf"):
+        on_failure()
+        raise tornado.web.Finish()
+    try:
+        tornado.web.RequestHandler.check_xsrf_cookie(handler)
+    except tornado.web.HTTPError as exc:
+        if exc.status_code == 403:
+            on_failure()
+            raise tornado.web.Finish() from exc
+        raise
 from aird.db.shares import list_shares_accessible_to_user
 from aird.db.sessions import (
     SESSION_COOKIE_NAME,
@@ -582,6 +600,17 @@ class LDAPLoginHandler(BaseHandler):
 
 
 class LoginHandler(BaseHandler):
+    def check_xsrf_cookie(self) -> None:
+        def _fail() -> None:
+            self.render(
+                LOGIN_HTML,
+                error=_XSRF_RELOAD_MSG,
+                settings=self.settings,
+                next_url=self._get_safe_next_url(),
+            )
+
+        _ensure_form_xsrf(self, _fail)
+
     def _is_safe_redirect_url(self, url: str) -> bool:
         """Validate that a redirect URL is safe (relative path only, no external redirects)."""
         if not url:
@@ -683,6 +712,12 @@ class LoginHandler(BaseHandler):
 
 
 class AdminLoginHandler(BaseHandler):
+    def check_xsrf_cookie(self) -> None:
+        def _fail() -> None:
+            self.render(ADMIN_LOGIN_TEMPLATE, error=_XSRF_RELOAD_MSG)
+
+        _ensure_form_xsrf(self, _fail)
+
     def get(self):
         cu = self.current_user
         if cu and isinstance(cu, dict) and cu.get("must_change_password"):
@@ -745,6 +780,23 @@ def _mandatory_password_safe_next(next_arg: str) -> str:
 
 
 class MandatoryPasswordHandler(BaseHandler):
+    def check_xsrf_cookie(self) -> None:
+        next_url = _mandatory_password_safe_next(self.get_argument("next", ""))
+        username = ""
+        cu = getattr(self, "current_user", None)
+        if isinstance(cu, dict):
+            username = cu.get("username", "")
+
+        def _fail() -> None:
+            self.render(
+                MANDATORY_PASSWORD_TEMPLATE,
+                error=_XSRF_RELOAD_MSG,
+                next_url=next_url,
+                username=username,
+            )
+
+        _ensure_form_xsrf(self, _fail)
+
     @tornado.web.authenticated
     def get(self):
         cu = self.current_user
