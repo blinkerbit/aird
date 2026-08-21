@@ -623,6 +623,60 @@ code, kbd, pre, samp {
   margin-bottom: 0.3rem;
 }
 
+.tt-row-close {
+  flex-shrink: 0;
+  min-height: 1.5rem;
+  min-width: 1.5rem;
+  padding: 0;
+  line-height: 1;
+}
+
+.tt-stop-btn {
+  font-size: 0.7rem;
+  min-height: 1.65rem;
+  height: 1.65rem;
+  padding: 0 0.55rem;
+}
+
+@keyframes tt-indeterminate-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+progress.tt-indeterminate {
+  animation: tt-indeterminate-pulse 1.2s ease-in-out infinite;
+}
+
+.tt-status-pill {
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  line-height: 1.4;
+}
+
+.tt-status-pill--queued {
+  background: color-mix(in oklch, var(--color-base-content) 8%, transparent);
+}
+
+.tt-status-pill--active {
+  background: color-mix(in oklch, var(--color-primary) 18%, transparent);
+  color: var(--color-primary);
+}
+
+.tt-status-pill--cancelled {
+  background: color-mix(in oklch, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
+}
+
+.tt-icon.tt-queued {
+  opacity: 0.55;
+}
+
+.tt-icon.tt-preparing {
+  opacity: 0.7;
+}
+
 .tt-icon {
   flex-shrink: 0;
   width: 1.25rem;

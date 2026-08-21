@@ -65,8 +65,6 @@ from aird.event_loop import install_uvloop_if_linux
 from aird.handlers.health_handler import HealthHandler
 from aird.server_runtime import (
     describe_worker_layout,
-    detect_physical_cpu_count,
-    detect_threads_per_core,
     resolve_worker_count,
 )
 from aird.services.audit_service import AuditService
@@ -524,32 +522,14 @@ class TestEventLoop:
 
 
 class TestServerRuntimeExtended:
-  def test_detect_threads_per_core_env(self):
-      with patch.dict("os.environ", {"AIRD_THREADS_PER_CORE": "4"}):
-          assert detect_threads_per_core() == 4.0
-      with patch.dict("os.environ", {"AIRD_THREADS_PER_CORE": "bad"}):
-          assert detect_threads_per_core() == 2.0
-
-  def test_detect_physical_cpu_count_linux_proc(self):
-      cpuinfo = "core id\t: 0\ncore id\t: 1\n"
-      with patch("aird.server_runtime.sys.platform", "linux"), patch(
-          "builtins.open", mock_open(read_data=cpuinfo)
-      ):
-          assert detect_physical_cpu_count() == 2
-
-  def test_resolve_worker_count_env(self):
-      with patch("aird.server_runtime.sys.platform", "linux"), patch.dict(
-          "os.environ", {"AIRD_WORKERS": "5"}
-      ):
-          assert resolve_worker_count() == 5
-      with patch("aird.server_runtime.sys.platform", "linux"), patch.dict(
-          "os.environ", {"AIRD_WORKERS": "0"}
-      ), patch("aird.server_runtime.compute_default_worker_count", return_value=3):
-          assert resolve_worker_count() == 3
+  def test_resolve_worker_count_always_one(self):
+      assert resolve_worker_count() == 1
+      assert resolve_worker_count(5) == 1
 
   def test_describe_worker_layout(self):
-      text = describe_worker_layout(4)
-      assert "workers=4" in text
+      text = describe_worker_layout(1)
+      assert "workers=1" in text
+      assert "socketify" in text
 
 
 class TestSqlIdentifiers:

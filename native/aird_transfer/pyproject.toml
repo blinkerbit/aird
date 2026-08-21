@@ -5,7 +5,28 @@ build-backend = "maturin"
 [project]
 name = "aird-transfer"
 version = "0.1.0"
+description = "Native socket→disk transfer acceleration for Aird (PyO3 / Rust)"
+readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "Custom" }
+authors = [{ name = "Viswantha Srinivas P", email = "psviswanatha@gmail.com" }]
+keywords = ["aird", "upload", "pyo3", "performance"]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/blinkerbit/aird"
+Repository = "https://github.com/blinkerbit/aird"
+Documentation = "https://github.com/blinkerbit/aird/tree/main/native/aird_transfer"
 
 [tool.maturin]
 module-name = "aird_transfer"
+strip = true

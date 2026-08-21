@@ -74,14 +74,24 @@ UPLOAD_CONCURRENCY = 2
 def get_effective_transfer_strategy() -> dict:
     """Return browser/server transfer settings (stream upload/download only)."""
     max_mb = max(1, int(UPLOAD_CONFIG.get("max_file_size_mb", 10240)))
-    return {
+    from aird.core.transfer_http_listener import strategy_fields
+
+    # Browser-facing only. AIRD_TRANSFER_PORT_HTTP is the service bind port and is
+    # not reachable from the browser behind the gateway; opt in explicitly instead.
+    transfer_http = int(os.environ.get("AIRD_TRANSFER_PUBLIC_PORT", "0") or "0")
+    out = {
         "revision": TRANSFER_CONFIG_REVISION,
         "maxFileSize": max_mb * 1024 * 1024,
         "directUploadMaxBytes": max_mb * 1024 * 1024,
         "bulkWsPath": "/ws/bulk",
         "bulkTcpPort": int(os.environ.get("AIRD_BULK_PORT", "0") or "0"),
         "uploadConcurrency": UPLOAD_CONCURRENCY,
+        "parallelChunkUploads": max(2, min(8, UPLOAD_CONCURRENCY * 2)),
+        # Features (Granian) vs transfer (socketify) split — browser posts bodies here.
+        "transferHttpPort": transfer_http,
     }
+    out.update(strategy_fields())
+    return out
 
 
 def bump_transfer_config_revision() -> int:
@@ -175,9 +185,11 @@ UPLOAD_ALLOWED_EXTENSIONS = set(ALLOWED_UPLOAD_EXTENSIONS)
 
 # Mmap constants
 MMAP_MIN_SIZE = 1 * 1024 * 1024  # 1 MB
-CHUNK_SIZE = 64 * 1024  # 64 KB
+# Download fallback chunk size (when sendfile is unavailable). 4 MB keeps asyncio
+# round-trips low enough for ~100+ MB/s on the Python write path.
+CHUNK_SIZE = 4 * 1024 * 1024
 # Legacy WebSocket frame size (optional fallback; HTTP is primary for transfers)
-WS_TRANSFER_FRAME_BYTES = 2 * 1024 * 1024
+WS_TRANSFER_FRAME_BYTES = 8 * 1024 * 1024
 
 # Network share manager (set at startup)
 NETWORK_SHARE_MANAGER = None

@@ -1,20 +1,14 @@
 import logging
 import os
-import secrets
 import socket
 import sqlite3
 import sys
-import ssl
 from datetime import datetime, timedelta, timezone
 
-import tornado.httpserver
-import tornado.ioloop
-import tornado.netutil
-import tornado.process
 import tornado.web
 import logging.handlers
 
-from aird.server_runtime import describe_worker_layout, resolve_worker_count
+from aird.server_runtime import resolve_worker_count
 
 
 import aird.constants as constants
@@ -122,7 +116,6 @@ from aird.handlers.webauthn_handlers import (
     WebAuthnRegisterVerifyHandler,
     WebAuthnStatusHandler,
 )
-from aird.handlers.transfer_ws_handlers import FileTransferWebSocketHandler
 from aird.handlers.bulk_handlers import BulkTicketHandler, BulkWebSocketHandler
 from aird.handlers.file_op_handlers import (
     CloudUploadHandler,
@@ -135,6 +128,7 @@ from aird.handlers.file_op_handlers import (
     DownloadZipHandler,
     RenameHandler,
     UploadHandler,
+    UploadSessionPrepareHandler,
 )
 from aird.handlers.health_handler import HealthHandler, ServiceWorkerHandler
 from aird.handlers.share_handlers import (
@@ -267,7 +261,6 @@ def make_app(
         (r"/admin/api/abac/user-attributes", AdminUserAttributeAPIHandler),
         (r"/ws/policy-decisions", PolicyDecisionsWebSocket),
         (r"/stream/(.*)", FileStreamHandler),
-        (r"/ws/file-transfer", FileTransferWebSocketHandler),
         (r"/ws/bulk", BulkWebSocketHandler),
         (r"/api/folder-size", FolderSizeAPIHandler),
         (r"/features", FeatureFlagSocketHandler),
@@ -275,6 +268,7 @@ def make_app(
         (r"/runtime-config", RuntimeConfigSocketHandler),
         (r"/api/runtime-config", RuntimeConfigAPIHandler),
         (r"/upload", UploadHandler),
+        (r"/api/upload/session", UploadSessionPrepareHandler),
         (r"/mkdir", CreateFolderHandler),
         (r"/delete", DeleteHandler),
         (r"/rename", RenameHandler),
@@ -322,9 +316,7 @@ def make_app(
             ]
         )
 
-    from aird.web import AirdApplication
-
-    return AirdApplication(routes, **settings)
+    return tornado.web.Application(routes, **settings)
 
 
 def print_banner():
@@ -495,6 +487,9 @@ def _print_server_urls(port: int, hostname: str, scheme: str) -> None:
         print(f"{scheme}://{fqdn}:{port}/")
 
 
+from aird.core.upload_sessions import cleanup_stale_sessions
+
+
 def _run_cleanup_expired_shares():
     if constants.DB_CONN:
         deleted = cleanup_expired_shares(constants.DB_CONN)
@@ -505,7 +500,10 @@ def _run_cleanup_expired_shares():
         expired_sessions = cleanup_expired_sessions(constants.DB_CONN)
         if expired_sessions > 0:
             logger.info("Cleaned up %d expired login session(s)", expired_sessions)
-    tornado.ioloop.IOLoop.current().call_later(3600, _run_cleanup_expired_shares)
+    try:
+        cleanup_stale_sessions()
+    except Exception:
+        logger.debug("upload session cleanup failed", exc_info=True)
 
 
 def _build_app_context() -> AppContext:
@@ -583,42 +581,6 @@ def _build_application():
     )
 
 
-def _tune_sockets(sockets: list) -> None:
-    """Apply TCP tuning for high-throughput file transfers."""
-    for sock in sockets:
-        try:
-            # Large send/receive buffers — 4 MB each enables high BDP on fast LANs.
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 16 * 1024 * 1024)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16 * 1024 * 1024)
-        except OSError:
-            pass
-        try:
-            # TCP_NODELAY: disable Nagle — reduces latency for small control frames.
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        except OSError:
-            pass
-        try:
-            # TCP_CORK / TCP_NOPUSH: batch large writes (Linux/macOS).
-            _TCP_CORK = getattr(socket, "TCP_CORK", None)
-            if _TCP_CORK is not None:
-                sock.setsockopt(socket.IPPROTO_TCP, _TCP_CORK, 0)
-        except OSError:
-            pass
-        try:
-            # Enable BBR congestion control if the kernel supports it (Linux 4.9+).
-            # Falls back silently on kernels without BBR or on non-Linux.
-            _TCP_CONGESTION = getattr(socket, "TCP_CONGESTION", 13)
-            sock.setsockopt(socket.IPPROTO_TCP, _TCP_CONGESTION, b"bbr\x00")
-        except OSError:
-            pass
-        try:
-            # Increase the socket-level accept backlog hint (actual limit is
-            # also controlled by /proc/sys/net/core/somaxconn on Linux).
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        except OSError:
-            pass
-
-
 def _maybe_start_bulk_server(app, http_port: int) -> None:
     """Enable bulk transfers for WireGuard / LAN.
 
@@ -626,12 +588,6 @@ def _maybe_start_bulk_server(app, http_port: int) -> None:
     listener is started only when ``AIRD_BULK_PORT`` is explicitly set.
     """
     env_port = os.environ.get("AIRD_BULK_PORT", "").strip()
-    task_id = tornado.process.task_id()
-    if task_id not in (0, None):
-        logger.warning(
-            "Bulk engine runs on worker 0 only (this worker=%s)", task_id
-        )
-        return
     from aird.core.bulk.engine import BulkEngine
     from aird.core.bulk.tcp_server import BulkTcpServer
 
@@ -657,66 +613,120 @@ def _maybe_start_bulk_server(app, http_port: int) -> None:
     app.settings["bulk_tcp_server"] = server
 
 
-def _run_http_server(app, ssl_options, sockets, http_port: int) -> None:
+def _run_cleanup_loop_background() -> None:
+    """Periodic share/session cleanup (socketify has no Tornado IOLoop.call_later)."""
+    import threading
+    import time
+
+    def _loop() -> None:
+        while True:
+            time.sleep(3600)
+            try:
+                _run_cleanup_expired_shares()
+            except Exception:
+                logger.exception("periodic cleanup failed")
+
+    threading.Thread(target=_loop, name="aird-cleanup", daemon=True).start()
+
+
+def _run_microservices(http_port: int, ssl_options) -> None:
+    """Default serving mode: Granian features + socketify transfer (no Tornado listen)."""
+    import subprocess
+    import sys
+    import time
+
     from aird.event_loop import apply_io_thread_pool
 
-    _tune_sockets(sockets)
-    _maybe_start_bulk_server(app, http_port)
-    # Default Tornado chunk_size is 64 KiB. WireGuard/LAN uses 50 MiB reads so
-    # the IOLoop barely touches each gigabyte transferred.
-    _HTTP_READ_CHUNK = 50 * 1024 * 1024
-    _HTTP_STREAM_BUFFER = 128 * 1024 * 1024
-    server = tornado.httpserver.HTTPServer(
-        app,
-        ssl_options=ssl_options,
-        chunk_size=_HTTP_READ_CHUNK,
-        max_body_size=constants.UPLOAD_REQUEST_MAX_BODY_SIZE,
-        # Must be >= chunk_size; keep headroom for a couple of in-flight reads.
-        max_buffer_size=_HTTP_STREAM_BUFFER,
-        body_timeout=None,
-    )
-    server.add_sockets(sockets)
-    io_loop = tornado.ioloop.IOLoop.current()
     apply_io_thread_pool()
-    if tornado.process.task_id() in (0, None):
-        io_loop.call_later(3600, _run_cleanup_expired_shares)
-    io_loop.start()
+    _run_cleanup_loop_background()
+
+    transfer_port = int(os.environ.get("AIRD_TRANSFER_PORT_HTTP", "0") or "0")
+    if transfer_port <= 0:
+        transfer_port = int(http_port) + 1
+    os.environ["AIRD_TRANSFER_PORT_HTTP"] = str(transfer_port)
+    os.environ.setdefault("AIRD_FEATURES_PORT", str(http_port))
+    # Keep backends loopback-only; public ingress is Caddy.
+    os.environ.setdefault("AIRD_FEATURES_HOST", "127.0.0.1")
+    os.environ.setdefault("AIRD_TRANSFER_HOST", "127.0.0.1")
+    os.environ.setdefault("AIRD_BROWSE_HOST", "127.0.0.1")
+    # Local convenience only when no gateway mesh secret was provided.
+    if not os.environ.get("AIRD_MESH_SECRET", "").strip():
+        os.environ.setdefault("AIRD_ALLOW_INSECURE_MESH", "1")
+        os.environ.setdefault("AIRD_DEV_OPEN_AUTH", "1")
+
+    logger.info(
+        "Microservices mode: features(Granian)=:%s transfer(socketify)=:%s",
+        http_port,
+        transfer_port,
+    )
+    if ssl_options:
+        logger.warning(
+            "TLS on the monolith path is unused in microservices mode; "
+            "terminate TLS at Caddy (deploy/Caddyfile) instead"
+        )
+
+    env = os.environ.copy()
+    env["AIRD_TRANSFER_PORT_HTTP"] = str(transfer_port)
+    transfer_proc = subprocess.Popen(
+        [sys.executable, "-m", "aird.ms.transfer"],
+        env=env,
+    )
+    time.sleep(0.4)
+    if transfer_proc.poll() is not None:
+        raise RuntimeError("aird-transfer failed to start")
+
+    try:
+        from aird.ms.features import main as features_main
+
+        # features main reads AIRD_FEATURES_PORT
+        os.environ["AIRD_FEATURES_PORT"] = str(http_port)
+        features_main()
+    finally:
+        transfer_proc.terminate()
+        try:
+            transfer_proc.wait(timeout=5)
+        except Exception:
+            transfer_proc.kill()
 
 
-def _start_server(ssl_options, port: int, hostname: str, worker_count: int) -> None:
+def _run_http_server(app, ssl_options, http_port: int) -> None:
+    """Serve the app.
+
+    Default: microservices (Granian features + socketify transfer).
+    Legacy monolith: ``AIRD_MODE=monolith``.
+    """
+    mode = os.environ.get("AIRD_MODE", "microservices").strip().lower()
+    if mode in ("ms", "microservices", "microservice", ""):
+        _run_microservices(http_port, ssl_options)
+        return
+    if mode not in ("monolith", "legacy", "socketify"):
+        logger.warning("Unknown AIRD_MODE=%r — using microservices", mode)
+        _run_microservices(http_port, ssl_options)
+        return
+
+    from aird.event_loop import apply_io_thread_pool
+    from aird.web.socketify_server import run_socketify_app
+
+    apply_io_thread_pool()
+    _maybe_start_bulk_server(app, http_port)
+    _run_cleanup_loop_background()
+    run_socketify_app(app, host="0.0.0.0", port=http_port, ssl_options=ssl_options)
+
+
+def _start_server(ssl_options, port: int, hostname: str) -> None:
     _MAX_PORT_RETRIES = 3
     proto = "https" if ssl_options else "http"
     for attempt in range(_MAX_PORT_RETRIES):
         try:
-            sockets = tornado.netutil.bind_sockets(port, address="")
-            if worker_count <= 1:
-                logger.info(
-                    "Serving %s on 0.0.0.0 port %d (single process) ...",
-                    proto.upper(),
-                    port,
-                )
-                _init_database()
-                app = _build_application()
-                _print_server_urls(port, hostname, proto)
-                _run_http_server(app, ssl_options, sockets, port)
-                return
-
             logger.info(
-                "Serving %s on 0.0.0.0 port %d (%s) ...",
+                "Serving %s on 0.0.0.0 port %d (microservices: Granian+socketify) ...",
                 proto.upper(),
                 port,
-                describe_worker_layout(worker_count),
             )
-            logger.warning(
-                "Multiple workers: in-memory WebSocket/P2P state is per process; "
-                "use sticky sessions at the load balancer if needed."
-            )
-            tornado.process.fork_processes(worker_count)
             _init_database()
             app = _build_application()
-            if tornado.process.task_id() == 0:
-                _print_server_urls(port, hostname, proto)
-            _run_http_server(app, ssl_options, sockets, port)
+            _print_server_urls(port, hostname, proto)
+            _run_http_server(app, ssl_options, port)
             return
         except OSError:
             logger.exception("Failed to bind on port %d", port)
@@ -803,13 +813,15 @@ def main():
 
     ssl_options = None
     if config.SSL_CERT and config.SSL_KEY:
-        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
-        ssl_context.load_cert_chain(config.SSL_CERT, config.SSL_KEY)
-        ssl_options = ssl_context
+        # socketify AppOptions wants PEM paths (not ssl.SSLContext).
+        ssl_options = {
+            "keyfile": config.SSL_KEY,
+            "certfile": config.SSL_CERT,
+        }
 
-    worker_count = resolve_worker_count(config.WORKERS)
-    _start_server(ssl_options, config.PORT, config.HOSTNAME, worker_count)
+    # Warn if stale --workers / AIRD_WORKERS config is present.
+    resolve_worker_count(config.WORKERS)
+    _start_server(ssl_options, config.PORT, config.HOSTNAME)
 
 
 if __name__ == "__main__":

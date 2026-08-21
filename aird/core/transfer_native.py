@@ -1,16 +1,16 @@
-"""Optional Rust extension (aird_transfer) for upload fd pumps.
+"""Rust transfer extension (aird_transfer) — installed by default with ``aird``.
 
-Build (from repo root):
+Build from source (dev):
     pip install maturin
     cd native/aird_transfer && maturin develop --release
 
-When the extension is not installed, all helpers fall back to pure Python.
+``pip install aird`` pulls prebuilt wheels of ``aird-transfer`` (same model as
+``ruff``). If the extension cannot be imported, helpers fall back to pure Python.
 """
 
 from __future__ import annotations
 
 import asyncio
-import fcntl
 import logging
 import os
 import socket
@@ -49,8 +49,6 @@ def native_available() -> bool:
 
 def socket_pump_supported() -> bool:
     """True when native recv_to_fd is available (detach upload path)."""
-    if sys.platform == "win32":
-        return False
     return native_available()
 
 
@@ -188,16 +186,55 @@ def _drain_iostream_prefetch(
     return n, file_offset + n
 
 
-def _dup_blocking_socket_fd(sock: socket.socket) -> int:
+def _blocking_socket_fd_for_pump(sock: socket.socket) -> tuple[int, bool]:
+    """Return (fd_or_handle, should_close) for a blocking native recv pump.
+
+    On Windows, ``sock.fileno()`` is a SOCKET handle (not a CRT fd). Do not
+    ``os.dup``/``os.close`` it — that would corrupt the live connection.
+    """
+    sock.setblocking(True)
+    if sys.platform == "win32":
+        return int(sock.fileno()), False
     dup_fd = os.dup(sock.fileno())
     try:
         dup_sock = socket.socket(sock.family, sock.type, sock.proto, fileno=dup_fd)
         dup_sock.setblocking(True)
         dup_sock.detach()
     except OSError:
+        import fcntl
+
         flags = fcntl.fcntl(dup_fd, fcntl.F_GETFL)
         fcntl.fcntl(dup_fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
-    return dup_fd
+    return dup_fd, True
+
+
+def _dup_blocking_socket_fd(sock: socket.socket) -> int:
+    """Legacy helper — prefer ``_blocking_socket_fd_for_pump``."""
+    fd, should_close = _blocking_socket_fd_for_pump(sock)
+    if not should_close and sys.platform != "win32":
+        return fd
+    if not should_close:
+        # Callers that always os.close() need a duplicated SOCKET on Windows.
+        # DuplicateHandle keeps the original alive when the dup is closed.
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        current = kernel32.GetCurrentProcess()
+        new_handle = wintypes.HANDLE()
+        ok = kernel32.DuplicateHandle(
+            current,
+            wintypes.HANDLE(fd),
+            current,
+            ctypes.byref(new_handle),
+            0,
+            False,
+            0x00000002,  # DUPLICATE_SAME_ACCESS
+        )
+        if not ok:
+            raise OSError(ctypes.get_last_error(), "DuplicateHandle failed")
+        return int(new_handle.value)
+    return fd
 
 
 def _ssl_blocking_recv_to_fd(
@@ -239,7 +276,11 @@ async def zcopy_pump_detached(
     *,
     file_offset: int = 0,
 ) -> int:
-    """Socket→disk without Python per-chunk copies (Linux splice or recv→pwrite)."""
+    """Socket→disk without Python per-chunk copies.
+
+    Linux: splice when possible, else recv→pwrite.
+    Windows: CancelIoEx + exclusive SOCKET + overlapped WSARecv→WriteFile.
+    """
     tune_transfer_stream(stream)
     written, pos = await asyncio.to_thread(
         _drain_iostream_prefetch, stream, file_fd, file_offset
@@ -261,18 +302,78 @@ async def zcopy_pump_detached(
         )
         return written + extra
 
-    dup_fd = await asyncio.to_thread(_dup_blocking_socket_fd, sock)
+    if sys.platform == "win32":
+        # Stealing the SOCKET from asyncio's IOCP drops in-flight receive buffers and
+        # deadlocks. Stay on Tornado reads; WriteFile still runs in native code.
+        # (WSADuplicateSocket escape is available via take_socket_from_iocp for
+        # non-Tornado sockets / future dedicated listeners.)
+        extra = await pump_detached_stream_to_fd(
+            stream,
+            file_fd,
+            remaining,
+            cancel,
+            file_offset=pos,
+            chunk_size=16 * 1024 * 1024,
+        )
+        return written + extra
+
+    def _prep() -> tuple[int, bool]:
+        return _blocking_socket_fd_for_pump(sock)
+
+    sock_fd, should_close = await asyncio.to_thread(_prep)
     try:
         pump_cancel = cancel if cancel is not None else new_cancel_flag()
         extra = await asyncio.to_thread(
-            recv_to_fd, dup_fd, file_fd, remaining, pump_cancel, pos
+            recv_to_fd, sock_fd, file_fd, remaining, pump_cancel, pos
         )
     finally:
-        try:
-            os.close(dup_fd)
-        except OSError:
-            pass
+        if should_close:
+            try:
+                os.close(sock_fd)
+            except OSError:
+                pass
     return written + extra
+
+
+def _take_windows_socket(stream: Any) -> int:
+    """Cancel pending IOCP ops and detach the SOCKET from the Python socket object."""
+    sock = getattr(stream, "socket", None)
+    if sock is None:
+        raise OSError("stream has no socket")
+    try:
+        import ctypes
+
+        handle = int(sock.fileno())
+        ctypes.windll.kernel32.CancelIoEx(ctypes.c_void_p(handle), None)
+    except OSError:
+        pass
+    # detach() returns the SOCKET handle; Python will not closesocket it.
+    fd = int(sock.detach())
+    try:
+        stream.socket = None
+    except Exception:
+        pass
+    return fd
+
+
+def windows_socket_send_all(sock_fd: int, data: bytes) -> None:
+    mod = _load_extension()
+    if mod is None or not hasattr(mod, "socket_send_all"):
+        raise RuntimeError("aird_transfer.socket_send_all unavailable")
+    mod.socket_send_all(int(sock_fd), data)
+
+
+def windows_socket_close(sock_fd: int) -> None:
+    mod = _load_extension()
+    if mod is not None and hasattr(mod, "socket_close"):
+        mod.socket_close(int(sock_fd))
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.ws2_32.closesocket(ctypes.c_uint64(sock_fd))
+    except OSError:
+        pass
 
 
 def recv_to_fd(

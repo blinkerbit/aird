@@ -129,8 +129,7 @@
     return runUploadJob(job)
       .then((result) => {
         if (job.cancelled) return;
-        if (result?.managedComplete && TT) TT.completeTransfer(job.ttId);
-        if (typeof pumpSuccessCb === 'function') pumpSuccessCb(job);
+        if (typeof pumpSuccessCb === 'function') pumpSuccessCb(job, result);
       })
       .catch((err) => {
         if (!isCancelErr(err) && !job.cancelled) {
@@ -210,27 +209,18 @@
     });
     wireCancel(ttId, job);
 
-    const strategy = getStrategy();
-    const scope = FTH.createCancelScope(job.signal);
-    job.onCleanup(() => { try { scope.abort(); } catch (_) { /* ignore */ } });
-
     try {
-      const result = await FTH.downloadFile(path, {
-        signal: scope,
-        strategy,
-        onCancel: () => cancelByTtId(job.ttId),
-        ttId: job.ttId,
-      });
+      const result = await FTH.downloadFile(path);
       if (job.cancelled) return;
-      if (result.saved) {
-        if (TT) TT.completeTransfer(job.ttId);
-      } else if (result.native) {
+      if (result.native) {
         global.AirdDownloadManager?.triggerNativeDownload?.(result.url, result.filename);
         if (TT) {
           TT.setTransferStatus(job.ttId, 'browser', 'In browser downloads');
           setTimeout(() => TT.completeTransfer(job.ttId), 4000);
         }
-      } else {
+        return;
+      }
+      if (result.blob) {
         await FTH.saveBlob(result.blob, result.filename);
         if (TT) TT.completeTransfer(job.ttId);
       }

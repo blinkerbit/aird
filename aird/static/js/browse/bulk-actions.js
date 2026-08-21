@@ -90,16 +90,21 @@ export async function newFolder() {
   }
 }
 
-function downloadUrlForPath(path) {
-  const enc = String(path || '').split('/').filter(Boolean).map(encodeURIComponent).join('/');
-  return `/files/${enc}?download=1`;
+function filesDownloadUrl(path) {
+  const enc = String(path || '')
+    .replace(/^\/+/, '')
+    .split('/')
+    .filter(Boolean)
+    .map(encodeURIComponent)
+    .join('/');
+  return enc ? `/files/${enc}?download=1` : '/files/?download=1';
 }
 
 export async function downloadFileViaHttp(filePath) {
   const FTH = globalThis.AirdFileTransferHttp;
   const Dl = globalThis.AirdDownloadManager;
   if (!FTH?.downloadFile) {
-    globalThis.location.href = downloadUrlForPath(filePath);
+    globalThis.location.href = filesDownloadUrl(filePath);
     return;
   }
   if (!Dl?.DownloadBatch) {
@@ -166,16 +171,6 @@ export async function expandSelectionToFiles(paths) {
     await walkDownloadTree(p, entries, listFn, seen, files);
   }
   return files;
-}
-
-function filesDownloadUrl(path) {
-  const enc = String(path || '')
-    .replace(/^\/+/, '')
-    .split('/')
-    .filter(Boolean)
-    .map(encodeURIComponent)
-    .join('/');
-  return enc ? `/files/${enc}?download=1` : '/files/?download=1';
 }
 
 function pathIsDirectory(relPath) {

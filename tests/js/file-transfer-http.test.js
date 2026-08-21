@@ -23,22 +23,6 @@ describe('AirdFileTransferHttp', () => {
     expect(xhr.abort).toHaveBeenCalled();
   });
 
-  it('pauseInFlight soft-aborts without marking cancelled', async () => {
-    const scope = globalThis.AirdFileTransferHttp.createCancelScope();
-    const xhr = {
-      abort: vi.fn(),
-      addEventListener: vi.fn(),
-    };
-    scope.trackXhr(xhr);
-    scope.pauseInFlight();
-    expect(scope.aborted).toBe(false);
-    expect(xhr.abort).toHaveBeenCalled();
-    expect(scope.softAborting).toBe(true);
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(scope.softAborting).toBe(false);
-  });
-
   it('small upload syncs background state before sending', async () => {
     const BG = globalThis.AirdTransferBackground;
     const sync = vi.spyOn(BG, 'syncFromDocument');

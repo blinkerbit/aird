@@ -17,12 +17,13 @@ htmlcov
 .env.test.local
 .env.production.local
 dists
+dist/
 aird.egg-info
 *.tar.gz
-main_combine.py 
-combine_main.py 
-permission.md 
-*.txt 
+main_combine.py
+combine_main.py
+permission.md
+*.txt
 
 *.egg*
 worktree.json
@@ -52,3 +53,20 @@ aird/static/js/share/app.js
 *.md
 *.err
 coverage.json
+
+# Packaging / license kept in git despite *.md / *.txt rules
+!README.md
+!LICENSE
+!MANIFEST.in
+!native/aird_transfer/README.md
+!.github/**/*.md
+
+# Local secrets and runtime state (never publish)
+.aird/
+**/.aird/
+
+# Rust / maturin build trees
+native/**/target/
+native/**/.venv/
+native/**/uv.lock
+**/Cargo.toml.orig

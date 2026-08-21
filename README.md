@@ -56,15 +56,29 @@ Transfer progress, cancel, and resume metadata are handled in the browser (`tran
 
 ```bash
 pip install aird
+```
 
+That installs Aird **and** the Rust accelerator [`aird-transfer`](https://pypi.org/project/aird-transfer/) (prebuilt wheels on PyPI — same idea as `ruff`: no Rust toolchain needed on the machine).
+
+```bash
 # Optional: HTTP response compression codecs (gzip is always available)
 pip install "aird[compress]"
 
-# From source
+# From source (editable)
 git clone https://github.com/blinkerbit/aird.git
 cd aird
 pip install -e .
 ```
+
+If you are developing the extension itself (needs [Rust](https://rustup.rs/)):
+
+```bash
+cd native/aird_transfer
+pip install maturin
+maturin develop --release
+```
+
+Details: [`native/aird_transfer/README.md`](native/aird_transfer/README.md).
 
 **Python:** 3.10+ required. On Linux, **free-threaded** builds (`3.13t` / `3.14t`) are supported and recommended for parallel disk I/O; the server detects nogil at startup and sizes the I/O thread pool accordingly.
 
@@ -138,6 +152,8 @@ python -m aird --config /etc/aird/config.json
 |----------|---------|
 | `AIRD_ACCESS_TOKEN` | Login token |
 | `AIRD_COOKIE_SECRET` | Persistent session signing (set in production) |
+| `AIRD_MESH_SECRET` | Required shared secret between Caddy and private services |
+| `AIRD_JWT_SECRET` | Required JWT signing secret for API/CLI access tokens |
 | `AIRD_CORPORATE_IP_CIDRS` | Comma-separated CIDRs for ABAC / WAN compression rules |
 | `AIRD_GDRIVE_ACCESS_TOKEN` / `AIRD_ONEDRIVE_ACCESS_TOKEN` | Cloud providers |
 
@@ -149,9 +165,24 @@ python -m aird --config /etc/aird/config.json
 
 ## Production deployment
 
-### Reverse proxy
+### Microservices gateway
 
-Aird listens on one port (default **8000**). Terminate TLS at **Caddy**, **nginx**, or similar.
+The default deployment uses Caddy on **8080** in front of independent Granian
+services and the Socketify transfer service. Backend ports bind loopback and
+must not be exposed. On Windows with the existing uv venv:
+
+```bat
+deploy\start-ms.bat
+```
+
+See [`deploy/MICROSERVICES.md`](deploy/MICROSERVICES.md) for ports, routing,
+authentication, secrets, and the manual test gate. Legacy
+`AIRD_MODE=monolith` remains available during migration.
+
+### Reverse proxy (legacy monolith)
+
+The legacy monolith listens on one port. Terminate TLS at **Caddy**, **nginx**,
+or similar.
 
 **nginx example** (adjust chunk size to match Admin → HTTP chunk):
 

@@ -20,6 +20,10 @@
       maxFileSize: Number(value.maxFileSize) || 0,
       directUploadMaxBytes: Number(value.directUploadMaxBytes) || 0,
       uploadConcurrency: Math.max(1, Number(value.uploadConcurrency) || 2),
+      parallelChunkUploads: Math.max(2, Math.min(8, Number(value.parallelChunkUploads) || 4)),
+      nativeUploadPort: Math.max(0, Number(value.nativeUploadPort) || 0),
+      nativeUploadEnabled: !!value.nativeUploadEnabled,
+      transferHttpPort: Math.max(0, Number(value.transferHttpPort) || 0),
     };
   }
 

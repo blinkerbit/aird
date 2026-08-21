@@ -27,13 +27,10 @@ def test_write_fd_fallback():
       assert f.read() == b"hello-native"
 
 
-def test_socket_pump_not_on_windows():
-    import sys
+def test_socket_pump_tracks_native_extension():
+    from aird.core.transfer_native import native_available, socket_pump_supported
 
-    from aird.core.transfer_native import socket_pump_supported
-
-    if sys.platform == "win32":
-        assert socket_pump_supported() is False
+    assert socket_pump_supported() is native_available()
 
 
 def test_native_available_without_build():

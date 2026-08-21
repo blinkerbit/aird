@@ -116,13 +116,19 @@ async def _stream_chunks_to_handler(handler, chunk_iter, user_key):
 
 
 async def _try_sendfile_download(handler, abspath, offset, length, user_key):
-    if not is_feature_enabled("transfer_sendfile", False) or not sendfile_available():
+    if not is_feature_enabled("transfer_sendfile", True) or not sendfile_available():
         return False
     sock = _download_socket(handler)
     if not sock:
         return False
+    # Headers must hit the wire before sendfile writes body bytes on the dup fd.
+    await handler.flush()
     if not await sendfile_to_socket(sock, abspath, offset, length):
         return False
+    # Kernel send bypasses Tornado's write(); clear Content-Length debt.
+    conn = getattr(handler.request, "connection", None)
+    if conn is not None and getattr(conn, "_expected_content_remaining", None) is not None:
+        conn._expected_content_remaining = 0
     await TransferRateLimiter.wait_for_bytes(user_key, length, direction="download")
     return True
 

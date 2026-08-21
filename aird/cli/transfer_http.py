@@ -24,6 +24,7 @@ def upload_file(
     class _ProgressReader:
         def __init__(self, fh):
             self._fh = fh
+            self.len = total  # urllib3 uses .len for Content-Length
 
         def read(self, size: int = -1) -> bytes:
             data = self._fh.read(size)
@@ -33,12 +34,22 @@ def upload_file(
                 on_progress(uploaded, total)
             return data
 
+        def seek(self, offset: int, whence: int = 0) -> int:
+            return self._fh.seek(offset, whence)
+
+        def tell(self) -> int:
+            return self._fh.tell()
+
+        def __len__(self) -> int:
+            return total
+
     with local_path.open("rb") as fh:
         r = http.post(
             f"{base_url}/upload",
             data=_ProgressReader(fh),
             headers={
                 "Content-Type": "application/octet-stream",
+                "Content-Length": str(total),
                 "X-Upload-Dir": remote_dir.strip("/"),
                 "X-Upload-Filename": filename,
                 **xsrf_header,

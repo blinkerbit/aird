@@ -344,7 +344,7 @@ def init_config():
         "--workers",
         type=int,
         default=None,
-        help="HTTP worker processes (default: ceil(1.25 * threads_per_core * physical_cores); 1 on Windows)",
+        help="Ignored (socketify is single-process); kept for compatibility",
     )
     args = parser.parse_args()
 

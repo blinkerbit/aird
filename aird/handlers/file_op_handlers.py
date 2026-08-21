@@ -731,6 +731,82 @@ class UploadHandler(BaseHandler):
         self._abort_upload_staging()
 
 
+class UploadSessionPrepareHandler(BaseHandler):
+    """Create a parallel upload session and register it with the Rust listener."""
+
+    def check_xsrf_cookie(self) -> None:
+        cookie_token = self.get_cookie("_xsrf")
+        if not cookie_token:
+            raise tornado.web.HTTPError(403, "'_xsrf' cookie missing")
+        provided = self.request.headers.get("X-XSRFToken") or ""
+        if not provided or not secrets.compare_digest(provided, cookie_token):
+            raise tornado.web.HTTPError(403, "XSRF validation failed")
+
+    async def post(self):
+        from aird.core import upload_sessions
+        from aird.core.transfer_http_listener import (
+            native_upload_enabled,
+            transfer_upload_port,
+        )
+
+        self.sync_upload_config_from_db()
+        self.check_xsrf_cookie()
+        if not self.get_current_user():
+            raise tornado.web.HTTPError(403, "Authentication required")
+        if not self.has_modify_privileges():
+            raise tornado.web.HTTPError(403, ACCESS_DENIED)
+        if _check_and_deny_action(self, "file.write", None):
+            raise tornado.web.HTTPError(403, "Access denied")
+        if not is_feature_enabled("file_upload", True):
+            raise tornado.web.HTTPError(400, FILE_UPLOAD_DISABLED)
+        if not native_upload_enabled():
+            self.set_status(503)
+            self.write({"error": "Native upload listener not running"})
+            return
+
+        try:
+            data = json.loads(self.request.body.decode("utf-8") or "{}")
+        except Exception as exc:
+            raise tornado.web.HTTPError(400, "Invalid JSON") from exc
+
+        session_id = str(data.get("session") or "").strip()
+        filename = unquote(str(data.get("filename") or "").strip())
+        upload_dir = unquote(str(data.get("upload_dir") or "").strip())
+        try:
+            total = int(data.get("total") or 0)
+        except (TypeError, ValueError):
+            total = 0
+        if not upload_sessions.valid_session_id(session_id) or not filename or total <= 0:
+            raise tornado.web.HTTPError(400, "Invalid session metadata")
+        if total > constants_module.MAX_FILE_SIZE:
+            raise tornado.web.HTTPError(413, "File too large")
+
+        user_root = get_user_root(self)
+        _, upload_err = _validate_upload_destination(upload_dir, filename, user_root)
+        if upload_err is not None:
+            raise tornado.web.HTTPError(upload_err[0], upload_err[1])
+
+        try:
+            sess = upload_sessions.open_or_get_session(
+                session_id=session_id,
+                user_root=user_root,
+                upload_dir=upload_dir,
+                filename=filename,
+                total=total,
+            )
+        except ValueError as exc:
+            raise tornado.web.HTTPError(400, str(exc) or "Bad upload session") from exc
+
+        self.write(
+            {
+                "session": sess.session_id,
+                "ticket": sess.ticket,
+                "port": transfer_upload_port(),
+                "total": sess.total,
+            }
+        )
+
+
 class CreateFolderHandler(BaseHandler):
     @tornado.web.authenticated
     @require_action("file.write")

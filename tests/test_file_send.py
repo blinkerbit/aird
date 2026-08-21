@@ -20,6 +20,15 @@ def test_sendfile_available_on_linux():
         assert sendfile_available() is False
 
 
+def test_sendfile_available_on_windows_with_extension():
+    fake = MagicMock()
+    fake.transmit_file_available.return_value = True
+    with patch.object(sys, "platform", "win32"), patch(
+        "aird.core.file_send._load_extension", return_value=fake
+    ):
+        assert sendfile_available() is True
+
+
 @pytest.mark.asyncio
 async def test_sendfile_unsupported_platform():
     with patch("aird.core.file_send.sendfile_available", return_value=False):

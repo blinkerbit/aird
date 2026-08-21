@@ -151,10 +151,16 @@ class BulkWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
             return
         if self._session is None:
             engine = _bulk_engine(self)
-            loop = tornado.ioloop.IOLoop.current()
+            schedule = getattr(self, "_schedule", None)
 
             def on_complete(status: int) -> None:
-                loop.add_callback(self._send_status, status)
+                if callable(schedule):
+                    schedule(lambda: self._send_status(status))
+                    return
+                try:
+                    tornado.ioloop.IOLoop.current().add_callback(self._send_status, status)
+                except Exception:
+                    self._send_status(status)
 
             self._session = WsBulkSession(engine, on_complete)
             self._session.feed(message)
