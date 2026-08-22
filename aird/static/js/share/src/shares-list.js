@@ -10,7 +10,6 @@ function _formatBytes(n) {
 
 function _renderSenderGroup(group, idx) {
   const sender = escapeHtml(group.sender_username || 'unknown');
-  const folder = escapeAttr(group.folder_path || '');
   const browseUrl = `/files/${encodeURI(group.folder_path || '')}`;
   const files = Array.isArray(group.files) ? group.files : [];
   const count = files.length;
@@ -52,7 +51,7 @@ function _renderSenderGroup(group, idx) {
 
 async function loadChatShares() {
   const section = elements.fromChatSection;
-  if (!section || section.hasAttribute('data-chat-disabled')) return;
+  if (!section || section.dataset.chatDisabled) return;
   try {
     const res = await fetch('/api/chat/shared-with-me', { headers: { Accept: 'application/json' } });
     if (res.status === 403 || res.status === 404) {

@@ -514,7 +514,9 @@ class UploadHandler(BaseHandler):
                 self._aiofile = None
         else:
             self._fast_writer = None
-            self._sync_file = os.fdopen(fd, "wb", buffering=8 * 1024 * 1024)
+            self._sync_file = await asyncio.to_thread(
+                os.fdopen, fd, "wb", 8 * 1024 * 1024
+            )
             self._upload_file_fd = None
             self._aiofile = None
 

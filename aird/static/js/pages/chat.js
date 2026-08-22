@@ -24,7 +24,6 @@
   let conversations = [];
   let browsePath = '';
   let userSearchTimer = null;
-  let wsUnsub = null;
   let pollTimer = null;
   let loadGen = 0;
 
@@ -403,8 +402,15 @@
     await loadConversations();
   }
 
+  function trimBrowsePath(path) {
+    let s = String(path || '').trim();
+    while (s.startsWith('/')) s = s.slice(1);
+    while (s.endsWith('/')) s = s.slice(0, -1);
+    return s;
+  }
+
   async function loadBrowseDir(path) {
-    browsePath = (path || '').replace(/^\/+|\/+$/g, '');
+    browsePath = trimBrowsePath(path);
     if (browsePathEl) browsePathEl.textContent = browsePath ? `/${browsePath}` : '/';
     const url = browsePath ? `/api/files/${encodeURI(browsePath)}` : '/api/files/';
     const data = await api(url);
@@ -464,7 +470,7 @@
     const WS = window.AirdChatWS;
     if (WS) {
       WS.connect();
-      wsUnsub = WS.subscribe(handleWsEvent);
+      WS.subscribe(handleWsEvent);
     }
     loadConversations()
       .then(() => {

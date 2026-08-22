@@ -37,15 +37,13 @@ class WsBulkTransport:
             event.set()
 
     def _wait_data(self) -> None:
-        if self._cur or self._chunks:
-            return
-        if self._closed:
-            raise ConnectionError("WS transport closed")
-        event = threading.Event()
-        self._waiters.append(event)
-        event.wait(timeout=600.0)
-        if not self._cur and not self._chunks and self._closed:
-            raise ConnectionError("WS transport closed")
+        while not self._cur and not self._chunks:
+            if self._closed:
+                raise ConnectionError("WS transport closed")
+            event = threading.Event()
+            self._waiters.append(event)
+            if not event.wait(timeout=600.0):
+                continue
 
     def recv(self, nbytes: int) -> bytes:
         out = bytearray()

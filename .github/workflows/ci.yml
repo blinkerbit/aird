@@ -26,10 +26,10 @@ jobs:
 
       - name: Install package with chat extra
         run: |
-          python -m pip install -U pip
+          python -m pip install "pip==25.2"
+          python -m pip install --only-binary=:all: build
+          python -m pip install --only-binary=:all: -r requirements-test.txt
           pip install -e ".[chat]"
-          pip install -r requirements-test.txt
-          pip install build
 
       - name: Build share UI bundle
         run: |
