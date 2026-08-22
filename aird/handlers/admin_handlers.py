@@ -38,6 +38,7 @@ from aird.network_share_manager import (
     smb_library_available,
     webdav_library_available,
 )
+from aird.plugins.chat import chat_library_available
 from aird.constants.admin import (
     ACCESS_DENIED,
     ACCESS_DENIED_JSON,
@@ -165,6 +166,8 @@ class AdminHandler(BaseHandler):
             allowed_extensions_current=allowed_current,
             smb_library_available=smb_library_available(),
             webdav_library_available=webdav_library_available(),
+            chat_library_available=chat_library_available(),
+            admin_notice=self.get_argument("notice", ""),
         )
 
     @tornado.web.authenticated
@@ -208,6 +211,13 @@ class AdminHandler(BaseHandler):
             self.get_argument("abac_audit_decisions", "off") == "on"
         )
         FEATURE_FLAGS["webauthn"] = self.get_argument("webauthn", "off") == "on"
+        direct_messages_requested = self.get_argument("direct_messages", "off") == "on"
+        if direct_messages_requested and not chat_library_available():
+            FEATURE_FLAGS["direct_messages"] = False
+            chat_save_notice = "chat_package_required"
+        else:
+            FEATURE_FLAGS["direct_messages"] = direct_messages_requested
+            chat_save_notice = ""
         FEATURE_FLAGS["smb_server"] = self.get_argument("smb_server", "off") == "on"
         FEATURE_FLAGS["webdav_server"] = self.get_argument("webdav_server", "off") == "on"
 
@@ -350,7 +360,10 @@ class AdminHandler(BaseHandler):
                 constants_module.get_effective_transfer_strategy(),
             )
         )
-        self.redirect(URL_ADMIN)
+        if chat_save_notice:
+            self.redirect(f"{URL_ADMIN}?notice={chat_save_notice}")
+        else:
+            self.redirect(URL_ADMIN)
 
 
 class WebSocketStatsHandler(BaseHandler):

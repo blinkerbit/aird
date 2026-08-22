@@ -6,7 +6,7 @@
 
 ![Aird demo](./demo.webp)
 
-**Aird** is a self-hosted file browser, editor, and sharing platform built on **Python** and **Tornado**. It targets fast local and LAN use: parallel HTTP transfers for large files, real-time log streaming, content search, secure shares, optional multi-user isolation, and an admin console that applies settings without restarts.
+**Aird** is a self-hosted file browser, editor, and sharing platform built on **Python** and **Tornado**. It targets fast local and LAN use: parallel HTTP transfers for large files, real-time log streaming, content search, secure shares, optional multi-user isolation, direct messages between users, and an admin console that applies settings without restarts.
 
 ---
 
@@ -17,6 +17,7 @@
 | **File manager** | Browse, upload, download, rename, move, copy, bulk ops, in-browser text edit, ZIP download |
 | **Large transfers** | Parallel **HTTP `Content-Range`** uploads/downloads (primary path for big files) |
 | **Search** | **Super Search** — glob + regex content search with live WebSocket progress |
+| **Direct messages** | Optional chat plugin — DMs, file/GIF attachments, realtime WebSocket, “From chat” on Shares |
 | **Streaming** | Tail log files over WebSocket with filters |
 | **Sharing** | Token-based public/private shares, static or live folder views |
 | **Security** | CSRF, CSP, path traversal checks, optional **ABAC** policies, WebAuthn, LDAP |
@@ -57,13 +58,17 @@ Transfer progress, cancel, and resume metadata are handled in the browser (`tran
 ```bash
 pip install aird
 
-# Optional: HTTP response compression codecs (gzip is always available)
-pip install "aird[compress]"
+# Optional extras
+pip install "aird[compress]"   # zstandard HTTP compression
+pip install "aird[chat]"     # direct messages (bleach)
+pip install "aird[all]"      # compress + native build tools + chat
 
 # From source
 git clone https://github.com/blinkerbit/aird.git
 cd aird
 pip install -e .
+# With chat:
+pip install -e ".[chat]"
 ```
 
 **Python:** 3.10+ required. On Linux, **free-threaded** builds (`3.13t` / `3.14t`) are supported and recommended for parallel disk I/O; the server detects nogil at startup and sizes the I/O thread pool accordingly.
@@ -78,7 +83,7 @@ python -m aird
 python -m aird --root /data --port 8080
 
 # Multi-user (per-user home directories under root)
-python -m aird --root /data --multi-user
+python -m aird --root /data --multi-user --token "your-long-secret"
 
 # TLS
 python -m aird --ssl-cert /path/cert.pem --ssl-key /path/key.pem --port 443
@@ -88,6 +93,8 @@ python -m aird --workers 4
 ```
 
 On first start, random **access** and **admin** tokens are printed unless you set them via `--token`, `--admin-token`, `config.json`, or `AIRD_ACCESS_TOKEN`.
+
+**Multi-user mode** requires an explicit **access token** at startup (`--token`, `AIRD_ACCESS_TOKEN`, or `token` in config). Users still log in with username/password; the token is for API/CLI automation.
 
 Open `http://localhost:8000/` → redirects to `/files/`.
 
@@ -99,6 +106,22 @@ aird-cli config set server https://your-host
 aird-cli login
 aird-cli ls /
 ```
+
+---
+
+## Direct messages (optional)
+
+Requires `pip install "aird[chat]"` and **Admin → Direct messages** enabled (feature flag `direct_messages`).
+
+| Feature | Details |
+|---------|---------|
+| **UI** | `/chat` — conversation list, rich-text composer, browse/upload/GIF attachments |
+| **Realtime** | WebSocket `/ws/chat` (messages, read receipts, notifications) |
+| **File shares** | Copies land in recipient `{home}/.aird-shares/{sender}/` (hidden from browse root) |
+| **Shares page** | “From chat” section — grouped by sender, recipient can delete received files |
+| **Notifications** | Nav badge, in-app toasts, optional browser notifications (profile toggle) |
+
+Logged-in DB/LDAP users only (not token-only sessions).
 
 ---
 
@@ -123,6 +146,7 @@ aird-cli ls /
   "feature_flags": {
     "file_upload": true,
     "super_search": true,
+    "direct_messages": false,
     "abac_engine": false
   }
 }
@@ -136,7 +160,7 @@ python -m aird --config /etc/aird/config.json
 
 | Variable | Purpose |
 |----------|---------|
-| `AIRD_ACCESS_TOKEN` | Login token |
+| `AIRD_ACCESS_TOKEN` | Login / API token (required in multi-user mode) |
 | `AIRD_COOKIE_SECRET` | Persistent session signing (set in production) |
 | `AIRD_CORPORATE_IP_CIDRS` | Comma-separated CIDRs for ABAC / WAN compression rules |
 | `AIRD_GDRIVE_ACCESS_TOKEN` / `AIRD_ONEDRIVE_ACCESS_TOKEN` | Cloud providers |
@@ -168,7 +192,7 @@ location / {
 }
 ```
 
-WebSocket routes (`/stream/`, `/search/ws`, `/features`, `/ws/…`) need `Upgrade` and `Connection` headers if you proxy them.
+WebSocket routes (`/stream/`, `/search/ws`, `/features`, `/ws/chat`, `/ws/…`) need `Upgrade` and `Connection` headers if you proxy them.
 
 ### Ubuntu deploy script
 
@@ -197,6 +221,7 @@ Authentication: session cookie after `/login`, bearer token, or `Authorization` 
 | Search (live) | WebSocket `/search/ws` |
 | Log stream | WebSocket `/stream/{path}` |
 | Shares | `POST /share/create`, `GET /share/list`, … |
+| Chat (optional) | `GET /chat`, `GET/POST /api/chat/conversations`, WebSocket `/ws/chat` |
 | Health | `GET /health` |
 
 Page-level UI contracts and routes are documented under [`docs/`](docs/README.md).
@@ -210,6 +235,7 @@ Page-level UI contracts and routes are documented under [`docs/`](docs/README.md
 - **HTTP compression:** `gzip` by default; optional `zstandard` via `pip install aird[compress]` (loaded only on builds where the extension is nogil-safe).
 - **Security headers:** COOP/COEP/CORP for transfer workers; strict CSP on HTML pages.
 - **ABAC:** Optional policy engine (`abac_engine` flag) with admin-defined policies, tags, and user attributes.
+- **Plugins:** Optional features (e.g. chat) live under `aird/plugins/` and register routes from `main.py`. An alternate **microservices** layout exists under `aird/ms/` for split deployment behind Caddy (not used by default `python -m aird`).
 
 ---
 
@@ -220,7 +246,7 @@ Page-level UI contracts and routes are documented under [`docs/`](docs/README.md
 ```bash
 npm install
 npm run css:build          # Tailwind → aird/static/css/app.css
-npm run js:share           # Bundle share UI
+npm run js:share           # Bundle share UI → aird/static/js/share/app.js
 npm run vendor:fflate      # Compression worker dependency
 ```
 
@@ -234,7 +260,9 @@ python -m pytest tests/
 
 ```
 aird/
-  handlers/       # HTTP & WebSocket handlers
+  handlers/       # HTTP & WebSocket handlers (monolith)
+  plugins/        # Optional features (e.g. chat)
+  ms/             # Starlette microservices (split deploy)
   services/       # Config, quota, share, audit, …
   static/js/      # Browser UI & transfer engine
   templates/      # Jinja2 pages

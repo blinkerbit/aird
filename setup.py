@@ -15,11 +15,13 @@ install_requires = [
 extras_require = {
     "compress": ["zstandard>=0.22.0"],
     "native": ["maturin>=1.4,<2"],
+    "chat": ["bleach>=6.0"],
+    "all": ["zstandard>=0.22.0", "maturin>=1.4,<2", "bleach>=6.0"],
 }
 
 setup(
     name="aird",
-    version="0.4.25",
+    version="0.5.1",
     packages=find_packages(),
     include_package_data=True,
     package_data={"aird": [

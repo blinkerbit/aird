@@ -324,8 +324,12 @@ def get_files_in_directory(path="."):
     # Materialize once so we can skip per-dir child counts on large listings.
     entries = list(os.scandir(path))
     skip_child_counts = len(entries) > 80
+    from aird.constants import CHAT_SHARE_FOLDER
+
     for entry in entries:
         if is_upload_staging_filename(entry.name):
+            continue
+        if entry.name == CHAT_SHARE_FOLDER:
             continue
         stat = entry.stat()
         is_dir = entry.is_dir()

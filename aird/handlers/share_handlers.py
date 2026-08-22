@@ -18,6 +18,7 @@ from aird.handlers.base_handler import (
     require_db,
     require_modify_access,
 )
+from aird.plugins.chat import is_chat_enabled
 from aird.core.events import ShareCreatedEvent, now_ts
 from aird.domain.contracts import ShareCreateRequest, ShareCreateResponse
 from aird.constants.input_limits import ACCESS_TOKEN_MAX_LEN, SHARE_JSON_BODY_MAX_BYTES, SHARE_ID_MAX_LEN
@@ -668,7 +669,7 @@ class ShareFilesHandler(BaseHandler):
             body="Feature disabled: File sharing is currently disabled by administrator",
         ):
             return
-        self.render("share.html", shares={})
+        self.render("share.html", shares={}, chat_enabled=is_chat_enabled())
 
 
 class ShareCreateHandler(XSRFTokenMixin, BaseHandler):

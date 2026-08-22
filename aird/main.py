@@ -319,6 +319,10 @@ def make_app(
         (r"/files/(.*)", MainHandler),
     ]
 
+    from aird.plugins.chat import register_chat
+
+    register_chat(routes)
+
     # Add LDAP routes only if LDAP is enabled
     if ldap_enabled:
         routes.extend(

@@ -309,6 +309,60 @@ def init_db(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL
         )
         """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS chat_conversations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS chat_members (
+            conversation_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            PRIMARY KEY (conversation_id, user_id),
+            FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id INTEGER NOT NULL,
+            sender_id INTEGER NOT NULL,
+            msg_type TEXT NOT NULL,
+            body TEXT,
+            metadata_json TEXT,
+            attachment_path TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id)
+        )
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS chat_read_state (
+            conversation_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            last_read_message_id INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (conversation_id, user_id)
+        )
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS chat_file_shares (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id INTEGER NOT NULL,
+            message_id INTEGER NOT NULL,
+            sender_id INTEGER NOT NULL,
+            recipient_id INTEGER NOT NULL,
+            relative_path TEXT NOT NULL,
+            original_name TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_chat_messages_conv
+        ON chat_messages (conversation_id, id)
+        """)
 
     conn.commit()
 

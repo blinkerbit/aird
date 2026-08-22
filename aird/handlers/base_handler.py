@@ -996,6 +996,9 @@ class BaseHandler(tornado.web.RequestHandler):
         namespace = super().get_template_namespace()
         namespace["csp_nonce"] = self.get_csp_nonce()
         namespace["is_feature_enabled"] = is_feature_enabled
+        from aird.plugins.chat import is_chat_enabled
+
+        namespace["is_chat_enabled"] = is_chat_enabled
         namespace["json_encode_for_script"] = json_encode_for_script
         # _app_nav_header.html expects these; missing keys raise when Super Search link renders.
         namespace.setdefault("nav_search_path", "")
