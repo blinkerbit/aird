@@ -443,6 +443,28 @@ class TestGetCurrentFeatureFlags:
         finally:
             conn.close()
 
+    def test_get_current_feature_flags_db_overrides_memory(self):
+        """Persisted flags must win so multi-worker processes see admin changes."""
+        invalidate_feature_flags_cache()
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE feature_flags (key TEXT PRIMARY KEY, value INTEGER)")
+        conn.execute("INSERT INTO feature_flags (key, value) VALUES ('direct_messages', 1)")
+        conn.commit()
+
+        try:
+            with patch(
+                "aird.utils.util.FEATURE_FLAGS",
+                {"direct_messages": False, "mem_only": True},
+            ), patch("aird.utils.util.constants_module.DB_CONN", conn), patch(
+                "aird.utils.util.load_feature_flags",
+                return_value={"direct_messages": True},
+            ):
+                result = get_current_feature_flags()
+                assert result["direct_messages"] is True
+                assert result["mem_only"] is True
+        finally:
+            conn.close()
+
 
 class TestGetCurrentWebsocketConfig:
     """Tests for get_current_websocket_config function"""

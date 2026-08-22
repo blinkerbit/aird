@@ -33,9 +33,12 @@
   }
 
   function connect() {
-    if (!global.document.querySelector('[data-aird-feature="direct_messages"]')
-        && !global.document.getElementById('chatUnreadBadge')
-        && global.location.pathname !== '/chat') {
+    const onChatPage = global.location.pathname === '/chat'
+        || global.location.pathname.startsWith('/chat/');
+    const hasChatUi = onChatPage
+        || global.document.querySelector('a[href="/chat"]')
+        || global.document.getElementById('chatUnreadBadge');
+    if (!hasChatUi) {
       return;
     }
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {

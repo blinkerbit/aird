@@ -421,19 +421,20 @@ def invalidate_websocket_config_cache() -> None:
 
 
 def _merge_flags(current: dict, persisted: dict) -> dict:
-    """Merge persisted DB flags with in-memory flags; in-memory takes precedence."""
-    merged = persisted.copy()
-    for k, v in current.items():
-        merged[k] = bool(v)
-    # Also include any DB-only flags not yet in merged
+    """Merge in-memory defaults with persisted DB flags; DB wins on conflicts.
+
+    Each worker keeps its own ``FEATURE_FLAGS`` copy. After admin saves to SQLite,
+    other processes must honor the database — not stale in-memory defaults.
+    """
+    merged = current.copy()
     for k, v in persisted.items():
-        if k not in merged:
-            merged[k] = bool(v)
+        merged[k] = bool(v)
     return merged
 
 
 def get_current_feature_flags() -> dict:
-    """Return current feature flags with in-memory changes taking precedence over DB.
+    """Return current feature flags (DB overrides in-memory defaults on conflicts).
+
     Results are cached for a short TTL to avoid hitting the database on every request.
     Falls back to in-memory defaults if DB is unavailable.
     """

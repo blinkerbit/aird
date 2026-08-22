@@ -91,7 +91,7 @@
 
   function boot() {
     if (!document.getElementById('chatUnreadBadge')
-        && !document.querySelector('[data-aird-feature="direct_messages"]')) {
+        && !document.querySelector('a[href="/chat"]')) {
       return;
     }
     refreshUnread();
