@@ -1,11 +1,6 @@
 # Testing dependencies
-setuptools>=75.0.0
 pytest>=8.3.3
 pytest-asyncio>=0.25.0
-pytest-mock>=3.14.0
-pytest-cov>=6.0.0
-pytest-tornado>=0.8.1
-pytest-xdist>=3.5.0
 coverage>=7.6.9
 mock>=5.1.0
 zipp>=3.19.1 # not directly required, pinned by Snyk to avoid a vulnerability
