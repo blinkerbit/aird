@@ -6,7 +6,6 @@ name: wheels
 #   v0.4.25               → uploads aird (and aird-transfer if matrix built)
 #
 # PyPI: set repository secret PYPI_API_TOKEN (pypi.org → Account → API tokens).
-# Optional: configure trusted publishing on PyPI for this workflow + environment "pypi".
 
 on:
   workflow_dispatch:
@@ -14,27 +13,27 @@ on:
     tags:
       - "v*"
       - "aird-transfer-v*"
-
-permissions:
-  contents: read
+      - "*-dev*"
 
 jobs:
   aird-transfer:
     name: aird-transfer (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-14]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d274f6b6b64417e # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@0b93645e7b0624c84cb932f9b9f9324e4ea2796f # v5
         with:
           python-version: "3.12"
 
       - name: Build wheels
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         with:
           working-directory: native/aird_transfer
           args: --release --out dist -i 3.10 3.11 3.12 3.13
@@ -43,13 +42,13 @@ jobs:
 
       - name: Build sdist (Linux only)
         if: runner.os == 'Linux'
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         with:
           working-directory: native/aird_transfer
           command: sdist
           args: --out dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@b4ffdd433da6463ab3febc7a8515265ad70906a # v4
         with:
           name: aird-transfer-${{ matrix.os }}
           path: native/aird_transfer/dist/*
@@ -57,10 +56,12 @@ jobs:
   aird:
     name: aird (pure Python)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d274f6b6b64417e # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@0b93645e7b0624c84cb932f9b9f9324e4ea2796f # v5
         with:
           python-version: "3.12"
 
@@ -71,10 +72,10 @@ jobs:
 
       - name: Build sdist + wheel
         run: |
-          python -m pip install -U pip build
+          python -m pip install "pip==25.2" "build==1.5.0"
           python -m build --sdist --wheel -o dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@b4ffdd433da6463ab3febc7a8515265ad70906a # v4
         with:
           name: aird-python
           path: dist/*
@@ -84,15 +85,17 @@ jobs:
     needs: [aird-transfer]
     if: startsWith(github.ref, 'refs/tags/aird-transfer-v')
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a959a429dccffe038edb7bcaedc51bdb4e # v4
         with:
           pattern: aird-transfer-*
           merge-multiple: true
           path: dist
 
       - name: Publish
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: dist/
           password: ${{ secrets.PYPI_API_TOKEN }}
@@ -100,16 +103,18 @@ jobs:
   publish-aird:
     name: Publish aird to PyPI
     needs: [aird]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || contains(github.ref, '-dev')
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a959a429dccffe038edb7bcaedc51bdb4e # v4
         with:
           name: aird-python
           path: dist
 
       - name: Publish
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: dist/
           password: ${{ secrets.PYPI_API_TOKEN }}

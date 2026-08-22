@@ -4,6 +4,8 @@ import shutil
 import subprocess
 import argparse
 import re
+import shlex
+import glob
 
 # --- Configuration ---
 PACKAGE_NAME = "aird"
@@ -16,19 +18,25 @@ DEPLOY_VENV = os.environ.get("AIRD_DEPLOY_VENV", "/opt/aird/.venv")
 DEPLOY_SERVICE = os.environ.get("AIRD_DEPLOY_SERVICE", "aird")
 DEPLOY_URL = os.environ.get("AIRD_DEPLOY_URL", "https://aird.pothukuchi.com")
 
-def run_command(cmd, shell=True):
+def run_command(cmd):
     """Utility to run a command and exit on failure."""
     try:
-        subprocess.check_call(cmd, shell=shell)
+        if isinstance(cmd, str):
+            subprocess.check_call(shlex.split(cmd))
+        else:
+            subprocess.check_call(cmd)
     except subprocess.CalledProcessError as e:
         print(f"\nError: Command failed with exit code {e.returncode}")
         sys.exit(e.returncode)
 
 
-def run_shell_command_checked(cmd, shell=True):
-    """Run a shell command without exiting; True on success."""
+def run_shell_command_checked(cmd):
+    """Run a command without exiting; True on success."""
     try:
-        subprocess.check_call(cmd, shell=shell)
+        if isinstance(cmd, str):
+            subprocess.check_call(shlex.split(cmd))
+        else:
+            subprocess.check_call(cmd)
         return True
     except subprocess.CalledProcessError as e:
         print(f"\nError: Command failed with exit code {e.returncode}")
@@ -201,7 +209,7 @@ def deploy_wheel(host=None, deploy_dir=None, venv=None, service=None, wheel=None
     remote_wheel = f"{deploy_dir}/{wheel}"
 
     print(f"Uploading {local_wheel} -> {host}:{deploy_dir}/")
-    run_command(["scp", local_wheel, f"{host}:{deploy_dir}/"], shell=False)
+    run_command(["scp", local_wheel, f"{host}:{deploy_dir}/"],)
 
     remote_cmd = (
         f"uv pip install --python {venv}/bin/python --prerelease=allow "
@@ -209,7 +217,7 @@ def deploy_wheel(host=None, deploy_dir=None, venv=None, service=None, wheel=None
         f"&& sudo systemctl restart {service}"
     )
     print(f"Installing on {host} and restarting {service}...")
-    run_command(["ssh", host, remote_cmd], shell=False)
+    run_command(["ssh", host, remote_cmd],)
     print(f"Deployed {wheel}. Live at {DEPLOY_URL}")
 
 
@@ -223,7 +231,8 @@ def _upload_dist(version, prerelease=False):
         print("  # or: uv pip install " + f'"aird>={version}"')
     confirm = input("Type 'yes' to proceed with twine upload: ")
     if confirm.lower() == "yes":
-        run_command("twine upload dist/*")
+        for artifact in glob.glob("dist/*"):
+            run_command([sys.executable, "-m", "twine", "upload", artifact])
     else:
         print("Upload cancelled.")
 
