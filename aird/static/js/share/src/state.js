@@ -24,7 +24,10 @@ export const elements = {
   activeSharesCount: document.getElementById('activeSharesCount'),
   sharedWithMeSection: document.getElementById('sharedWithMeSection'),
   sharedWithMeTableBody: document.getElementById('sharedWithMeTableBody'),
-  sharedWithMeCount: document.getElementById('sharedWithMeCount')
+  sharedWithMeCount: document.getElementById('sharedWithMeCount'),
+  fromChatSection: document.getElementById('fromChatSection'),
+  fromChatGroups: document.getElementById('fromChatGroups'),
+  fromChatCount: document.getElementById('fromChatCount'),
 };
 
 export const selectedFileMetadata = new Map();

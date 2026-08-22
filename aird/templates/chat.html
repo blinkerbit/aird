@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  {% include '_theme_early.html' %}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/chat.css" />
+  <link rel="icon" href="/static/favicon.png" type="image/png" />
+  <title>Chat · Aird</title>
+</head>
+<body>
+  <div class="aird-shell aird-shell--wide">
+{% set nav_title = "Aird" %}
+{% set nav_search_path = "" %}
+{% set show_admin_link = False %}
+{% include '_app_nav_header.html' %}
+
+    <header class="mb-4">
+      <h1 class="aird-page-title">Direct messages</h1>
+      <p class="aird-page-lead">Chat with other users. Share files from your workspace or upload attachments.</p>
+    </header>
+
+    <div class="chat-layout">
+      <aside class="chat-sidebar">
+        <div class="chat-sidebar-head">
+          <h2>Conversations</h2>
+        </div>
+        <div class="chat-sidebar-body">
+          <div class="chat-new-user-wrap">
+            <input id="chatNewUser" type="text" class="input input-bordered input-sm flex-1" placeholder="Find user…" autocomplete="off" aria-autocomplete="list" aria-controls="chatUserSuggest">
+            <button type="button" id="chatStartBtn" class="btn btn-primary btn-sm">Start</button>
+            <ul id="chatUserSuggest" class="menu menu-sm bg-base-100 border border-base-300 rounded-box shadow-lg hidden" role="listbox"></ul>
+          </div>
+          <ul id="chatConvList"></ul>
+        </div>
+      </aside>
+
+      <section class="chat-thread-panel">
+        <div id="chatThreadHeader" class="chat-thread-head">
+          <div class="chat-empty chat-empty--head">
+            <p>Select a conversation</p>
+          </div>
+        </div>
+        <div class="chat-thread-body">
+          <div id="chatMessages">
+            <div class="chat-empty" id="chatEmptyState">
+              <div class="chat-empty-icon" aria-hidden="true">💬</div>
+              <p>Pick someone from the list or start a new chat.</p>
+            </div>
+          </div>
+          <form id="chatComposer" class="chat-composer hidden">
+            <div class="chat-toolbar">
+              <button type="button" class="chat-toolbar-btn" data-cmd="bold" title="Bold"><strong>B</strong></button>
+              <button type="button" class="chat-toolbar-btn" data-cmd="italic" title="Italic"><em>I</em></button>
+              <button type="button" class="chat-toolbar-btn" data-cmd="link" title="Insert link">Link</button>
+              <button type="button" id="chatBrowseBtn" class="chat-toolbar-btn" title="Attach from browse">Browse</button>
+              <label class="chat-toolbar-btn" title="Upload file">
+                Upload
+                <input type="file" id="chatFileInput" class="hidden">
+              </label>
+              <label class="chat-toolbar-btn" title="Upload GIF">
+                GIF
+                <input type="file" id="chatGifInput" accept="image/gif,.gif" class="hidden">
+              </label>
+            </div>
+            <div id="chatEditor" contenteditable="true" data-placeholder="Write a message…" role="textbox" aria-multiline="true"></div>
+            <div class="chat-composer-actions">
+              <button type="submit" class="btn btn-primary btn-sm px-5">Send</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <dialog id="chatBrowseModal" class="modal">
+    <div class="modal-box max-w-lg">
+      <h3 class="font-bold text-lg">Pick a file from your workspace</h3>
+      <p class="text-sm opacity-60 mt-1">Path: <span id="chatBrowsePath">/</span></p>
+      <div class="flex gap-2 my-3">
+        <button type="button" id="chatBrowseUp" class="btn btn-xs btn-ghost">↑ Up</button>
+      </div>
+      <div id="chatBrowseList" class="border border-base-300 rounded-lg max-h-64 overflow-y-auto divide-y divide-base-300"></div>
+      <div class="modal-action">
+        <button type="button" id="chatBrowseClose" class="btn btn-sm">Cancel</button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button type="submit">close</button></form>
+  </dialog>
+
+  <div id="chatToastHost" class="toast toast-top toast-end z-50"></div>
+
+  <script nonce="{{ csp_nonce }}">window.__AIRD_CHAT_USER__ = {% raw json_encode(current_user.get('username') if current_user else '') %};</script>
+  <script nonce="{{ csp_nonce }}" src="/static/js/pages/chat.js"></script>
+</body>
+</html>
+

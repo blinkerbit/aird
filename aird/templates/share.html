@@ -84,6 +84,13 @@
       </div>
     </div>
 
+    <!-- From chat (hidden when empty or chat disabled) -->
+    <div class="mt-8 hidden" id="fromChatSection"{% if not chat_enabled %} data-chat-disabled{% end %}>
+      <h2 class="aird-section-title mb-4">From chat (<span id="fromChatCount" class="count">0</span> files)</h2>
+      <p class="text-sm text-base-content/60 mb-3">Files copied into your workspace at <code>.aird-shares/&lt;sender&gt;/</code>. Grouped by who sent them.</p>
+      <div id="fromChatGroups" class="space-y-2"></div>
+    </div>
+
     <!-- Create share -->
     <div class="share-create-toolbar mt-8 flex flex-wrap items-center justify-between gap-4">
       <div>

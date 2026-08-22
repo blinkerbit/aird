@@ -50,10 +50,13 @@ import {
 } from './create-share.js';
 import {
   loadActiveShares,
+  loadChatShares,
+  deleteChatShare,
   copyToClipboard,
   openShare,
   revokeShare,
 } from './shares-list.js';
+import { showDialog } from './utils.js';
 import {
   previewFile,
   showShareDetails,
@@ -131,11 +134,15 @@ export function initSharePage() {
 
   document.addEventListener('DOMContentLoaded', () => {
     loadActiveShares();
+    loadChatShares();
     setupUserSearch();
     setupModifyUserSearch();
     consumeShareCreatePrefill();
 
-    document.getElementById('refreshSharesBtn')?.addEventListener('click', loadActiveShares);
+    document.getElementById('refreshSharesBtn')?.addEventListener('click', () => {
+      loadActiveShares();
+      loadChatShares();
+    });
     document.getElementById('startCreateShareBtn')?.addEventListener('click', openShareFilePicker);
     document.getElementById('cancelCreateShareBtn')?.addEventListener('click', closeShareFilePicker);
 
@@ -204,6 +211,10 @@ export function initSharePage() {
         case 'revokeShare':
           e.preventDefault();
           revokeShare(el.dataset.id);
+          break;
+        case 'deleteChatShare':
+          e.preventDefault();
+          deleteChatShare(el.dataset.id).catch((err) => showDialog(err.message || 'Delete failed', 'Error'));
           break;
         case 'removeUserFromShare':
           e.preventDefault();

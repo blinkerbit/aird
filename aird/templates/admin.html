@@ -23,6 +23,11 @@
         <p class="aird-page-lead">Feature flags, security, and server defaults for this Aird instance.</p>
       </div>
     </header>
+    {% if admin_notice == 'chat_package_required' %}
+    <div class="alert alert-warning mb-4">
+      Direct messages requires the chat extra: <code>pip install 'aird[chat]'</code>
+    </div>
+    {% end %}
     <form method="POST" class="space-y-6">
       {% raw xsrf_form_html() %}
 
@@ -90,6 +95,10 @@
             <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
               <input type="checkbox" name="webauthn" class="toggle toggle-primary toggle-sm" {% if features.get('webauthn') %}checked{% end %}>
               <span class="label-text">WebAuthn passkeys (optional login)</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive{% if not chat_library_available %} opacity-60{% end %}">
+              <input type="checkbox" name="direct_messages" class="toggle toggle-primary toggle-sm" {% if features.get('direct_messages') %}checked{% end %}{% if not chat_library_available %} disabled{% end %}>
+              <span class="label-text">Direct messages{% if not chat_library_available %} <span class="text-xs text-base-content/50">(install pip install aird[chat])</span>{% end %}</span>
             </label>
             <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive{% if not webdav_library_available %} opacity-60{% end %}">
               <input type="checkbox" name="webdav_server" class="toggle toggle-primary toggle-sm" {% if features.get('webdav_server') %}checked{% end %}{% if not webdav_library_available %} disabled{% end %}>

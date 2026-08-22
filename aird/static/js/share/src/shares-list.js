@@ -1,6 +1,96 @@
 import { elements } from './state.js';
 import { getXSRFToken, showDialog, escapeHtml, escapeAttr } from './utils.js';
 
+function _formatBytes(n) {
+  if (!n) return '';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function _renderSenderGroup(group, idx) {
+  const sender = escapeHtml(group.sender_username || 'unknown');
+  const folder = escapeAttr(group.folder_path || '');
+  const browseUrl = `/files/${encodeURI(group.folder_path || '')}`;
+  const files = Array.isArray(group.files) ? group.files : [];
+  const count = files.length;
+  const collapseId = `fromChatCollapse${idx}`;
+  const fileRows = files.map((item) => {
+    const fileUrl = `/files/${encodeURI(item.relative_path)}`;
+    const when = item.created_at ? new Date(item.created_at).toLocaleString() : '—';
+    const size = _formatBytes(item.size_bytes);
+    return `<tr>
+      <td class="align-middle">${escapeHtml(item.original_name || item.relative_path)}</td>
+      <td class="align-middle text-sm opacity-70">${escapeHtml(when)}${size ? ` · ${escapeHtml(size)}` : ''}</td>
+      <td class="align-middle text-right whitespace-nowrap">
+        <a class="btn btn-sm btn-primary btn-outline" href="${escapeAttr(fileUrl)}" target="_blank" rel="noopener">Open</a>
+        <button type="button" class="btn btn-sm btn-ghost text-error" data-action="deleteChatShare" data-id="${escapeAttr(String(item.id))}" title="Remove from my workspace">Delete</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="collapse collapse-arrow bg-base-100 border border-base-300 rounded-box">
+    <input type="checkbox" id="${collapseId}" />
+    <div class="collapse-title font-medium flex flex-wrap items-center gap-2 pr-12">
+      <span class="font-semibold">${sender}</span>
+      <span class="badge badge-ghost badge-sm">${count} file${count === 1 ? '' : 's'}</span>
+      <span class="text-xs opacity-50 font-normal"><code>.aird-shares/${escapeHtml(group.folder_path?.split('/').pop() || sender)}</code></span>
+    </div>
+    <div class="collapse-content">
+      <div class="flex justify-end mb-2">
+        <a class="btn btn-xs btn-ghost" href="${escapeAttr(browseUrl)}">Browse folder</a>
+      </div>
+      <div class="overflow-x-auto aird-table-wrap">
+        <table class="table table-sm table-zebra w-full">
+          <thead><tr><th>File</th><th>Date</th><th class="text-right">Actions</th></tr></thead>
+          <tbody>${fileRows}</tbody>
+        </table>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function loadChatShares() {
+  const section = elements.fromChatSection;
+  if (!section || section.hasAttribute('data-chat-disabled')) return;
+  try {
+    const res = await fetch('/api/chat/shared-with-me', { headers: { Accept: 'application/json' } });
+    if (res.status === 403 || res.status === 404) {
+      section.classList.add('hidden');
+      return;
+    }
+    if (!res.ok) return;
+    const data = await res.json();
+    const senders = Array.isArray(data.senders) ? data.senders : [];
+    const total = data.total_files ?? senders.reduce((n, g) => n + (g.files?.length || 0), 0);
+    if (elements.fromChatCount) elements.fromChatCount.textContent = String(total);
+    if (!total) {
+      section.classList.add('hidden');
+      return;
+    }
+    section.classList.remove('hidden');
+    if (!elements.fromChatGroups) return;
+    elements.fromChatGroups.innerHTML = senders.map(_renderSenderGroup).join('');
+  } catch (e) {
+    console.debug('loadChatShares failed', e);
+    section.classList.add('hidden');
+  }
+}
+
+async function deleteChatShare(shareId) {
+  const confirmed = await showDialog('Remove this file from your workspace?', 'Delete chat share', { showCancel: true });
+  if (!confirmed) return;
+  const res = await fetch(`/api/chat/shared-with-me/${encodeURIComponent(shareId)}`, {
+    method: 'DELETE',
+    headers: { Accept: 'application/json', 'X-XSRFToken': getXSRFToken() },
+  });
+  const text = await res.text();
+  let data = {};
+  try { data = JSON.parse(text); } catch { data = { error: text }; }
+  if (!res.ok) throw new Error(data.error || text || `HTTP ${res.status}`);
+  await loadChatShares();
+}
+
 function _buildAccessInfo(share) {
   const au = share.allowed_users;
   let accessInfo;
@@ -87,7 +177,6 @@ async function loadActiveShares() {
     }
     const data = await response.json();
 
-    // --- My Shares ---
     const sharesArray = data.shares ? Object.keys(data.shares).map(id => ({
       id: id,
       ...data.shares[id],
@@ -112,7 +201,6 @@ async function loadActiveShares() {
       });
     }
 
-    // --- Shared with Me ---
     const sharedWithMe = Array.isArray(data.shared_with_me) ? data.shared_with_me : [];
     sharedWithMe.sort((a, b) => new Date(b.created || 0) - new Date(a.created || 0));
 
@@ -190,6 +278,8 @@ async function revokeShare(shareId) {
 
 export {
   loadActiveShares,
+  loadChatShares,
+  deleteChatShare,
   revokeShare,
   copyToClipboard,
   openShare,

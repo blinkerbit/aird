@@ -135,6 +135,20 @@
         </div>
         {% end %}
 
+        {% if is_chat_enabled() %}
+        <div class="card bg-base-100 shadow-sm border border-base-300">
+          <div class="card-body">
+            <h3 class="font-semibold">Chat notifications</h3>
+            <p class="text-sm text-base-content/60 mt-1">Desktop alerts when you receive a message while this tab is in the background.</p>
+            <label class="label cursor-pointer justify-start gap-3 mt-3 border border-base-300 rounded-lg px-3 py-2">
+              <input type="checkbox" id="chatBrowserNotify" class="toggle toggle-primary toggle-sm">
+              <span class="label-text">Browser notifications</span>
+            </label>
+            <p id="chatNotifyMsg" class="text-xs text-base-content/50 mt-2 hidden"></p>
+          </div>
+        </div>
+        {% end %}
+
         <div id="sessions-card" class="card bg-base-100 shadow-sm border border-base-300">
           <div class="card-body">
             <h3 class="font-semibold">Active sessions</h3>
@@ -310,6 +324,40 @@
 
   globalThis.addEventListener('load', function () {
     loadSessions();
+    const chatToggle = document.getElementById('chatBrowserNotify');
+    const chatMsg = document.getElementById('chatNotifyMsg');
+    if (chatToggle) {
+      chatToggle.checked = localStorage.getItem('aird.chat.browserNotify') !== '0';
+      chatToggle.addEventListener('change', async function () {
+        if (chatToggle.checked) {
+          if ('Notification' in globalThis) {
+            const perm = await Notification.requestPermission();
+            if (perm !== 'granted') {
+              chatToggle.checked = false;
+              localStorage.setItem('aird.chat.browserNotify', '0');
+              if (chatMsg) {
+                chatMsg.textContent = 'Permission denied. Enable notifications in browser settings.';
+                chatMsg.classList.remove('hidden');
+              }
+              return;
+            }
+          }
+          localStorage.setItem('aird.chat.browserNotify', '1');
+          if (chatMsg) {
+            chatMsg.textContent = 'Browser notifications enabled.';
+            chatMsg.classList.remove('hidden', 'text-error');
+            chatMsg.classList.add('text-success');
+          }
+        } else {
+          localStorage.setItem('aird.chat.browserNotify', '0');
+          if (chatMsg) {
+            chatMsg.textContent = 'Browser notifications disabled.';
+            chatMsg.classList.remove('hidden', 'text-error');
+            chatMsg.classList.add('text-success');
+          }
+        }
+      });
+    }
     const WA = globalThis.AirdWebAuthn;
     if (!WA) return;
     WA.showIfEnabled('passkey-card');

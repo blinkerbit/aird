@@ -47,6 +47,13 @@
       <span class="hidden sm:inline">Share</span>
     </a>
     {% end %}
+    {% if is_chat_enabled() %}
+    <a href="/chat" data-aird-feature="direct_messages" class="btn btn-ghost btn-sm gap-1 relative" title="Direct messages">
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span class="hidden sm:inline">Chat</span>
+      <span id="chatUnreadBadge" class="badge badge-primary badge-xs absolute -top-1 -right-1 hidden min-w-[1.1rem]">0</span>
+    </a>
+    {% end %}
     {% if is_feature_enabled('p2p_transfer', True) %}
     <a href="/p2p" data-aird-feature="p2p_transfer" class="btn btn-ghost btn-sm gap-1" title="Peer-to-peer transfer">
       <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
@@ -116,6 +123,10 @@
 <script src="/static/js/common/command-palette.js" defer></script>
 {% if current_user %}
 <script nonce="{{ csp_nonce }}" src="/static/js/feature-flags-live.js" defer></script>
+{% if is_chat_enabled() %}
+<script nonce="{{ csp_nonce }}" src="/static/js/chat-ws.js"></script>
+<script nonce="{{ csp_nonce }}" src="/static/js/chat-notify.js" defer></script>
+{% end %}
 {% end %}
 
 <!-- Transfer tracker sidebar -->
