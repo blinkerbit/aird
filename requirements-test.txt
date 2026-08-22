@@ -1,4 +1,5 @@
 # Testing dependencies
+setuptools>=75.0.0
 pytest>=8.3.3
 pytest-asyncio>=0.25.0
 pytest-mock>=3.14.0
