@@ -145,9 +145,10 @@ class TestInitConfig:
 
     def test_init_config_with_config_file(self, _mock_fqdn):
         """Test init_config with a config file"""
+        root_dir = tempfile.mkdtemp()
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             config_data = {
-                "root": "/test/root",
+                "root": root_dir,
                 "port": 9000,
                 "token": "test_token",
                 "admin_token": "admin_test_token",
@@ -169,7 +170,7 @@ class TestInitConfig:
                 config.init_config()
 
                 assert config.CONFIG_FILE == os.path.realpath(os.path.abspath(config_file))
-                assert config.ROOT_DIR == "/test/root"
+                assert config.ROOT_DIR == os.path.realpath(root_dir)
                 assert config.PORT == 9000
                 assert config.ACCESS_TOKEN == "test_token"
                 assert config.ADMIN_TOKEN == "admin_test_token"
@@ -180,9 +181,10 @@ class TestInitConfig:
 
     def test_init_config_command_line_args(self, _mock_fqdn):
         """Test init_config with command line arguments"""
+        root_dir = tempfile.mkdtemp()
         with patch(
             "sys.argv",
-            ["test", "--root", "/cli/root", "--port", "8080", "--token", "cli_token"],
+            ["test", "--root", root_dir, "--port", "8080", "--token", "cli_token"],
         ):
             from aird import config
 
@@ -193,7 +195,7 @@ class TestInitConfig:
 
             config.init_config()
 
-            assert config.ROOT_DIR == "/cli/root"
+            assert config.ROOT_DIR == os.path.realpath(root_dir)
             assert config.PORT == 8080
             assert config.ACCESS_TOKEN == "cli_token"
 
