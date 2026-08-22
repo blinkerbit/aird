@@ -4,9 +4,11 @@
 (function (global) {
   'use strict';
 
-  const DEFAULT_LARGE_THRESHOLD = 500 * 1024 * 1024;
+  const DEFAULT_LARGE_THRESHOLD = 32 * 1024 * 1024;
   const DEFAULT_RANGE_CHUNK = 90 * 1024 * 1024;
   const DEFAULT_RANGE_CONCURRENCY = 16;
+  const PARALLEL_MIN_BYTES = 32 * 1024 * 1024;
+  const STREAM_PARALLEL_CONCURRENCY = 4;
 
   function config() {
     return global.__BROWSE_CONFIG || {};
@@ -31,7 +33,14 @@
     const n = strategy?.rangeUploadConcurrency
       || config().rangeUploadConcurrency
       || DEFAULT_RANGE_CONCURRENCY;
-    return Math.max(1, Math.min(64, Number(n) || DEFAULT_RANGE_CONCURRENCY));
+    let c = Math.max(1, Math.min(64, Number(n) || DEFAULT_RANGE_CONCURRENCY));
+    // Chromium caps a single XHR around ~30 MB/s. Stream/LAN profiles used
+    // concurrency 1, which made browser uploads far slower than CLI/HTTP.
+    if (c < STREAM_PARALLEL_CONCURRENCY
+        && (strategy?.uploadTransport === 'stream' || strategy?.profile === 'wireguard')) {
+      c = STREAM_PARALLEL_CONCURRENCY;
+    }
+    return c;
   }
 
   function rangeDownloadConcurrency(strategy) {
@@ -516,15 +525,19 @@
             reject(error);
           }
 
+          let lastLoaded = 0;
+          const flushProgress = createProgressReporter(() => {
+            onProgress(totalSize > 0 ? (lastLoaded / totalSize) * 100 : 0, lastLoaded, totalSize);
+            ttUpdate(TT, ttId, lastLoaded, totalSize);
+          }, 100);
           xhr.upload.addEventListener('progress', (ev) => {
             if (!ev.lengthComputable) return;
-            const loaded = ev.loaded;
-            if (!transferActive && loaded > 0) {
+            lastLoaded = ev.loaded;
+            if (!transferActive && lastLoaded > 0) {
               transferActive = true;
               ttActivate(TT, ttId);
             }
-            onProgress(totalSize > 0 ? (loaded / totalSize) * 100 : 0, loaded, totalSize);
-            if (TT && ttId) TT.updateProgress(ttId, loaded, totalSize);
+            flushProgress();
           });
 
           xhr.addEventListener('load', () => {
@@ -873,11 +886,13 @@
   async function uploadFile(file, options) {
     options = wrapCancelOptions(options || {});
     const strategy = transferStrategy(options);
-    if (strategy.uploadTransport === 'stream') {
-      return smallUpload(file, options);
-    }
-    if (file.size >= largeThreshold(strategy)) {
-      // Parallel HTTP range PUT — fastest path (multiple concurrent TCP streams).
+    // Parallel HTTP for ≥32 MiB — Chromium single-XHR and the WS ack-window
+    // both stall around ~30 MB/s. POST remains the small-file path.
+    const useRanged = file.size >= PARALLEL_MIN_BYTES && (
+      strategy.uploadTransport === 'stream'
+      || file.size >= largeThreshold(strategy)
+    );
+    if (useRanged) {
       return rangedUpload(file, options);
     }
     return smallUpload(file, options);

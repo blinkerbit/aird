@@ -1,0 +1,108 @@
+name: wheels
+
+# Build binary wheels for aird-transfer (Rust) and a pure-Python aird wheel.
+# Publish to PyPI on tags:
+#   aird-transfer-v0.1.0  → uploads aird-transfer only
+#   v0.4.25               → uploads aird (and aird-transfer if matrix built)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+      - "aird-transfer-v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  aird-transfer:
+    name: aird-transfer (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-14]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: native/aird_transfer
+          args: --release --out dist -i 3.10 3.11 3.12 3.13
+          sccache: "true"
+          manylinux: auto
+
+      - name: Build sdist (Linux only)
+        if: runner.os == 'Linux'
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: native/aird_transfer
+          command: sdist
+          args: --out dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aird-transfer-${{ matrix.os }}
+          path: native/aird_transfer/dist/*
+
+  aird:
+    name: aird (pure Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist + wheel
+        run: |
+          python -m pip install -U pip build
+          python -m build --sdist --wheel -o dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aird-python
+          path: dist/*
+
+  publish-aird-transfer:
+    name: Publish aird-transfer to PyPI
+    needs: [aird-transfer]
+    if: startsWith(github.ref, 'refs/tags/aird-transfer-v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: aird-transfer-*
+          merge-multiple: true
+          path: dist
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  publish-aird:
+    name: Publish aird to PyPI
+    needs: [aird]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: aird-python
+          path: dist
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/

@@ -1,0 +1,15 @@
+recursive-include aird/templates *.html
+recursive-include aird/static/css *.css
+recursive-include aird/static/js *.js
+recursive-include aird/static/fonts *.woff2
+recursive-include aird/static/img *
+include aird/static/favicon.png
+include aird/static/favicon.ico
+include aird/static/favicon.svg
+
+# Native extension sources (built/published separately as aird-transfer;
+# shipped in the aird sdist so contributors can build from one tarball).
+include native/aird_transfer/Cargo.toml
+include native/aird_transfer/Cargo.lock
+include native/aird_transfer/pyproject.toml
+recursive-include native/aird_transfer/src *.rs

@@ -68,7 +68,7 @@ UPLOAD_CONFIG = {
     "single_request_max_mb": 100,
     # HTTP parallel upload: chunk size (MB) and concurrent streams.
     # Peak server RAM for ranged profiles ≈ range_chunk_mb × range_upload_concurrency.
-# WireGuard uses single-stream POST and does not allocate per-chunk buffers.
+    # WireGuard browser uploads use parallel HTTP above 32 MiB; POST is the small-file fallback.
     "range_chunk_mb": 90,
     "range_upload_concurrency": 16,
     # WebSocket upload chunk size (MB). Optional fallback path.
@@ -96,7 +96,7 @@ TRANSFER_PROFILE_PRESETS = {
         "upload_concurrency": 2,
         "single_request_max_mb": None,
         "range_chunk_mb": 32,
-        "range_upload_concurrency": 1,
+        "range_upload_concurrency": 8,
         "range_download_concurrency": 1,
         "range_pipeline_depth": 1,
     },
@@ -248,9 +248,10 @@ def _refresh_upload_derived_constants_impl() -> None:
     MAX_FILE_SIZE = UPLOAD_CONFIG["max_file_size_mb"] * 1024 * 1024
     strategy = get_effective_transfer_strategy()
     LARGE_FILE_THRESHOLD_BYTES = int(strategy["directUploadMaxBytes"])
-    # Single-stream transport forces single-request for all sizes.
+    # Browser uploads need parallel HTTP above 32 MiB (Chromium single-XHR cap).
+    # Keep POST /upload as the fallback for smaller stream-profile files.
     if strategy["uploadTransport"] == "stream":
-        LARGE_FILE_THRESHOLD_BYTES = MAX_FILE_SIZE + 1
+        LARGE_FILE_THRESHOLD_BYTES = 32 * 1024 * 1024
     single_request_bytes = min(MAX_FILE_SIZE, int(strategy["directUploadMaxBytes"]))
     RANGE_CHUNK_BYTES = int(strategy["rangeChunkBytes"])
     RANGE_UPLOAD_CONCURRENCY = int(strategy["rangeUploadConcurrency"])

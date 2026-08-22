@@ -55,7 +55,7 @@
     return loaded / (elapsed || 1);
   }
 
-  /** Recent throughput over ~2s (avoids average-since-start looking like a stall). */
+  /* Recent throughput over ~2s (avoids average-since-start looking like a stall). */
   function _recentSpeed(it) {
     var samples = it._speedSamples;
     if (!samples || samples.length < 2) {
@@ -70,26 +70,9 @@
     return bytes / dt;
   }
 
-  /* Eased display value: ramps toward the real byte count so parallel
-     socket-buffer bursts show as smooth motion instead of sudden jumps. */
   function _dispLoaded(it) {
     if (it.status === 'done') return it.total;
-    var d = (it.displayLoaded == null) ? it.loaded : it.displayLoaded;
-    return it.total ? Math.min(d, it.total) : d;
-  }
-
-  function _easeDisplay(it) {
-    if (it.displayLoaded == null) it.displayLoaded = 0;
-    if (it.status === 'done') { it.displayLoaded = it.total; return; }
-    if (it.status === 'error') return;
-    var target = it.total ? Math.min(it.loaded, it.total) : it.loaded;
-    if (target <= it.displayLoaded) return;
-    var gap = target - it.displayLoaded;
-    // Catch up quickly on large files so UI does not sit at 0.00% for seconds.
-    var step = gap > (8 * 1024 * 1024)
-      ? gap
-      : Math.max(gap * 0.35, 64 * 1024);
-    it.displayLoaded = Math.min(target, it.displayLoaded + step);
+    return it.loaded || 0;
   }
 
   /* ── DOM refs (lazy) ────────────────────────────────────────────── */
@@ -153,45 +136,9 @@
   /* ── Render ─────────────────────────────────────────────────────── */
   const CIRC = 2 * Math.PI * 18;
   let _renderPending = false;
-  let _animFrame = null;
 
   function _isCancellable(status) {
     return status === 'active' || status === 'preparing' || status === 'queued';
-  }
-
-  function _hasActiveTransfers() {
-    let active = false;
-    _items.forEach(function (it) {
-      if (
-        it.status === 'active'
-        || it.status === 'browser'
-        || it.status === 'preparing'
-        || it.status === 'queued'
-      ) {
-        active = true;
-      }
-    });
-    return active;
-  }
-
-  function _startAnimLoop() {
-    if (_animFrame) return;
-    function tick() {
-      if (!_hasActiveTransfers()) {
-        _animFrame = null;
-        return;
-      }
-      _render({ animOnly: true });
-      _animFrame = requestAnimationFrame(tick);
-    }
-    _animFrame = requestAnimationFrame(tick);
-  }
-
-  function _stopAnimLoop() {
-    if (_animFrame) {
-      cancelAnimationFrame(_animFrame);
-      _animFrame = null;
-    }
   }
 
   function _scheduleRender() {
@@ -294,7 +241,6 @@
     _refs();
     if (!_btn) return;
 
-    _items.forEach(_easeDisplay);
     var agg = _aggregate();
     var hasWork = agg.active > 0 || agg.browser > 0 || agg.queued > 0;
 
@@ -352,7 +298,6 @@
       it._ui.row.remove();
       it._ui = null;
     }
-    if (!_hasActiveTransfers()) _stopAnimLoop();
     _render();
   }
 
@@ -544,7 +489,6 @@
       startedAt: Date.now(),
     });
     _scheduleRender();
-    _startAnimLoop();
     return id;
   }
 
@@ -556,9 +500,6 @@
     else if (status === 'active') it.detail = '';
     if (it._ui) _syncRowUi(it, id);
     _scheduleRender();
-    if (status === 'preparing' || status === 'active' || status === 'queued') {
-      _startAnimLoop();
-    }
   }
 
   function setCancelHandler(id, fn) {
@@ -579,14 +520,15 @@
     }
     var now = Date.now();
     if (!it._speedSamples) it._speedSamples = [];
-    it._speedSamples.push({ t: now, b: loaded });
+    var last = it._speedSamples[it._speedSamples.length - 1];
+    if (!last || last.b !== it.loaded || (now - last.t) >= 250) {
+      it._speedSamples.push({ t: now, b: it.loaded });
+    }
     var cutoff = now - 2000;
     while (it._speedSamples.length > 2 && it._speedSamples[0].t < cutoff) {
       it._speedSamples.shift();
     }
-    if (it._ui) _syncRowUi(it, id);
     _scheduleRender();
-    _startAnimLoop();
   }
 
   function completeTransfer(id) {
@@ -595,7 +537,6 @@
     it.loaded = it.total;
     it.status = 'done';
     it.onCancel = null;
-    if (!_hasActiveTransfers()) _stopAnimLoop();
     _render();
     setTimeout(function () {
       _items.delete(id);
@@ -609,7 +550,6 @@
     it.status = 'error';
     it.errorMsg = msg || 'Failed';
     it.onCancel = null;
-    if (!_hasActiveTransfers()) _stopAnimLoop();
     _render();
     setTimeout(function () {
       _items.delete(id);

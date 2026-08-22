@@ -60,7 +60,8 @@ def test_wireguard_strategy_is_single_stream_lan():
     assert strategy["uploadTransport"] == "stream"
     assert strategy["downloadTransport"] == "stream"
     assert strategy["directUploadMaxBytes"] == strategy["maxFileSize"]
-    assert constants.LARGE_FILE_THRESHOLD_BYTES > constants.MAX_FILE_SIZE
+    assert constants.LARGE_FILE_THRESHOLD_BYTES == 32 * 1024 * 1024
+    assert strategy["rangeUploadConcurrency"] == 8
 
 
 def test_environment_profile_overrides_persisted_value(conn, monkeypatch):

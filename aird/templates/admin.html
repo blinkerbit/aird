@@ -137,7 +137,7 @@
           </div>
           <p class="text-xs text-base-content/60">
             Effective: <strong>{{ runtime_config.get('profile', 'open') }}</strong>.
-            Cloudflare uses proxy-safe 90 MiB ranges; WireGuard uses one continuous full-file POST (smooth LAN speed); Open uses resumable public-WAN transfers.
+            Cloudflare uses proxy-safe 90 MiB ranges; WireGuard uses parallel HTTP for large browser uploads (POST fallback under 32 MiB); Open uses resumable public-WAN transfers.
           </p>
         </div>
       </div>
@@ -168,7 +168,7 @@
             <label for="range_upload_concurrency" class="text-sm font-semibold w-48">HTTP parallelism</label>
             <input type="number" id="range_upload_concurrency" name="range_upload_concurrency" class="input input-bordered input-sm w-28"
                    value="{{ upload_config.get('range_upload_concurrency', 8) }}" min="1" max="64" step="1">
-            <span class="text-xs text-base-content/50">Open-profile maximum. Cloudflare is capped at 8; WireGuard uses a single stream (concurrency unused).</span>
+            <span class="text-xs text-base-content/50">Open-profile maximum. Cloudflare is capped at 8. WireGuard browser uploads use at least 4 parallel streams.</span>
           </div>
           <div class="flex flex-wrap items-center gap-3">
             <label for="ws_chunk_mb" class="text-sm font-semibold w-48">WS chunk (MB)</label>

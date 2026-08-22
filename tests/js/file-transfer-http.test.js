@@ -13,7 +13,7 @@ describe('AirdFileTransferHttp', () => {
 
   it('exposes default thresholds', () => {
     const FTH = globalThis.AirdFileTransferHttp;
-    expect(FTH.largeThreshold()).toBe(500 * 1024 * 1024);
+    expect(FTH.largeThreshold()).toBe(32 * 1024 * 1024);
     expect(FTH.rangeChunkBytes()).toBe(90 * 1024 * 1024);
     expect(FTH.rangeUploadConcurrency()).toBe(16);
   });
@@ -93,7 +93,7 @@ describe('AirdFileTransferHttp', () => {
     expect(result.message).toMatch(/successful/i);
   });
 
-  it('WireGuard always uses one direct POST even above its threshold', async () => {
+  it('WireGuard small files still use one direct POST', async () => {
     const open = vi.fn();
 
     class FakeXHR {
@@ -128,6 +128,65 @@ describe('AirdFileTransferHttp', () => {
     );
 
     expect(open).toHaveBeenCalledWith('POST', '/upload');
+  });
+
+  it('WireGuard large files use parallel HTTP ranges', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      if (String(url).includes('/api/upload/range/session')) {
+        return {
+          ok: true,
+          json: async () => ({ upload_id: 'u1', chunk_bytes: 32 * 1024 * 1024 }),
+          text: async () => '',
+        };
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+
+    const open = vi.fn();
+    class FakeXHR {
+      constructor() {
+        this.upload = { addEventListener: vi.fn() };
+        this._listeners = {};
+        this.abort = function () {};
+      }
+      addEventListener(type, fn) {
+        (this._listeners[type] ||= []).push(fn);
+      }
+      open(...args) { open(...args); }
+      setRequestHeader() {}
+      send() {
+        this.status = 201;
+        this.responseText = '';
+        queueMicrotask(() => {
+          for (const fn of this._listeners.load || []) fn();
+        });
+      }
+    }
+    vi.stubGlobal('XMLHttpRequest', FakeXHR);
+
+    const file = {
+      name: 'big.bin',
+      size: 32 * 1024 * 1024,
+      slice() { return new Blob(['x']); },
+    };
+    const result = await globalThis.AirdFileTransferHttp.uploadFile(file, {
+      strategy: {
+        profile: 'wireguard',
+        uploadTransport: 'stream',
+        rangeUploadConcurrency: 1,
+      },
+    });
+
+    expect(open).toHaveBeenCalledWith('PUT', expect.stringContaining('/api/upload/range/'));
+    expect(result.message).toMatch(/successful/i);
+  });
+
+  it('WireGuard concurrency is at least 4', () => {
+    expect(globalThis.AirdFileTransferHttp.rangeUploadConcurrency({
+      profile: 'wireguard',
+      uploadTransport: 'stream',
+      rangeUploadConcurrency: 1,
+    })).toBe(4);
   });
 
   it('WireGuard download returns a native streaming URL without fetching', async () => {

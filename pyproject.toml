@@ -1,0 +1,7 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# Project metadata lives in setup.py for now (version bump scripts).
+# Rust acceleration ships as ``aird-transfer`` (maturin / PyO3), required like
+# ``ruff``: ``pip install aird`` pulls prebuilt wheels — no local Rust needed.

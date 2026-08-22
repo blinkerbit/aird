@@ -323,17 +323,6 @@ class RangedUploadSessionHandler(BaseHandler):
             self.write({"error": FILE_UPLOAD_DISABLED})
             return
         strategy = constants_module.get_effective_transfer_strategy()
-        if strategy["uploadTransport"] == "stream":
-            self.set_status(409)
-            self.write(
-                {
-                    "error": (
-                        "Ranged uploads are disabled for this hosting profile; "
-                        "use POST /upload"
-                    )
-                }
-            )
-            return
         try:
             body = json.loads(self.request.body or b"{}")
         except json.JSONDecodeError:
