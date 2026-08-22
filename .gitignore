@@ -23,6 +23,9 @@ main_combine.py
 combine_main.py 
 permission.md 
 *.txt 
+!requirements.txt
+!requirements-test.txt
+!requirements-ci.txt
 
 *.egg*
 worktree.json
