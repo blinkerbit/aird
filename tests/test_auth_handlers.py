@@ -55,7 +55,7 @@ class TestLoginHandler:
         ) as mock_redirect:
 
             handler.post()
-            assert mock_cookie.call_count == 2  # user and role
+            assert mock_cookie.call_count == 3  # session, user, role
             mock_redirect.assert_called_with("/files/")
 
     def test_post_login_failure(self):
@@ -87,7 +87,7 @@ class TestLogoutHandler:
             handler, "redirect"
         ) as mock_redirect:
             handler.post()
-            assert mock_clear.call_count == 3  # user, user_role, and admin
+            assert mock_clear.call_count == 4  # session, user, user_role, admin
             mock_redirect.assert_called_with("/login")
 
     def test_logout_get_deprecated(self):
@@ -132,7 +132,7 @@ class TestAdminLoginHandler:
         ) as mock_redirect:
 
             handler.post()
-            assert mock_cookie.call_count == 3  # user, role, admin
+            assert mock_cookie.call_count == 4  # session, user, role, admin
             mock_redirect.assert_called_with("/admin")
 
 

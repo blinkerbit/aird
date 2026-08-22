@@ -28,9 +28,10 @@
         </div>
         <div class="chat-sidebar-body">
           <div class="chat-new-user-wrap">
+            <label for="chatNewUser" class="sr-only">Find user</label>
             <input id="chatNewUser" type="text" class="input input-bordered input-sm flex-1" placeholder="Find user…" autocomplete="off" aria-autocomplete="list" aria-controls="chatUserSuggest">
             <button type="button" id="chatStartBtn" class="btn btn-primary btn-sm">Start</button>
-            <ul id="chatUserSuggest" class="menu menu-sm bg-base-100 border border-base-300 rounded-box shadow-lg hidden" role="listbox"></ul>
+            <div id="chatUserSuggest" class="menu menu-sm bg-base-100 border border-base-300 rounded-box shadow-lg hidden"></div>
           </div>
           <ul id="chatConvList"></ul>
         </div>
@@ -64,7 +65,7 @@
                 <input type="file" id="chatGifInput" accept="image/gif,.gif" class="hidden">
               </label>
             </div>
-            <div id="chatEditor" contenteditable="true" data-placeholder="Write a message…" role="textbox" aria-multiline="true"></div>
+            <div id="chatEditor" contenteditable="true" data-placeholder="Write a message…" aria-label="Write a message" aria-multiline="true"></div>
             <div class="chat-composer-actions">
               <button type="submit" class="btn btn-primary btn-sm px-5">Send</button>
             </div>
@@ -96,4 +97,4 @@
   <script nonce="{{ csp_nonce }}" src="/static/js/pages/chat.js"></script>
 </body>
 </html>
-
+

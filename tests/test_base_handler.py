@@ -19,10 +19,20 @@ class TestBaseHandler:
 
         db_conn = MagicMock()
         self.mock_app.settings["db_conn"] = db_conn
+        session_row = {
+            "id": "sess-1",
+            "username": "testuser",
+            "user_role": "user",
+            "is_admin": 0,
+        }
         with patch.object(
             handler,
             "get_secure_cookie",
-            return_value=json.dumps(user_data).encode("utf-8"),
+            return_value=b"sess-1",
+        ), patch(
+            "aird.db.sessions.get_session", return_value=session_row
+        ), patch(
+            "aird.db.sessions.touch_session", return_value=None
         ), patch(
             "aird.handlers.base_handler.get_user_by_username", return_value=user_data
         ):

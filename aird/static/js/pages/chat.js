@@ -323,7 +323,7 @@
         return;
       }
       userSuggest.innerHTML = users.map((u) =>
-        `<li><button type="button" class="w-full text-left px-3 py-2 hover:bg-base-200" data-user="${esc(u.username)}">${esc(u.username)}</button></li>`
+        `<button type="button" class="w-full text-left px-3 py-2 hover:bg-base-200" data-user="${esc(u.username)}">${esc(u.username)}</button>`
       ).join('');
       userSuggest.classList.remove('hidden');
       userSuggest.querySelectorAll('[data-user]').forEach((btn) => {

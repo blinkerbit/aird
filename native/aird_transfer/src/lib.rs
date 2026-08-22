@@ -56,7 +56,9 @@ fn write_fd_impl(fd: i32, data: &[u8]) -> Result<usize, std::io::Error> {
         let n = {
             #[cfg(unix)]
             {
-                libc::write(fd, data[off..].as_ptr() as *const libc::c_void, count)
+                unsafe {
+                    libc::write(fd, data[off..].as_ptr() as *const libc::c_void, count)
+                }
             }
             #[cfg(windows)]
             {
@@ -103,11 +105,13 @@ fn recv_to_fd_impl(
             break;
         }
         let want = (max_bytes - total).min(BUF_SIZE as u64) as usize;
-        let n = libc::read(
-            sock_fd,
-            buf.as_mut_ptr() as *mut libc::c_void,
-            want,
-        );
+        let n = unsafe {
+            libc::read(
+                sock_fd,
+                buf.as_mut_ptr() as *mut libc::c_void,
+                want,
+            )
+        };
         if n < 0 {
             return Err(std::io::Error::last_os_error());
         }
@@ -116,11 +120,13 @@ fn recv_to_fd_impl(
         }
         let mut written = 0;
         while written < n as usize {
-            let w = libc::write(
-                file_fd,
-                buf[written..n as usize].as_ptr() as *const libc::c_void,
-                (n as usize) - written,
-            );
+            let w = unsafe {
+                libc::write(
+                    file_fd,
+                    buf[written..n as usize].as_ptr() as *const libc::c_void,
+                    (n as usize) - written,
+                )
+            };
             if w < 0 {
                 return Err(std::io::Error::last_os_error());
             }

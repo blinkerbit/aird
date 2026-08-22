@@ -300,6 +300,9 @@ class TestUploadHandler:
 
         with patch(
             "aird.handlers.base_handler.is_feature_enabled", side_effect=lambda k, default=True: False if k == "abac_engine" else True
+        ), patch(
+            "aird.handlers.file_op_handlers.finalize_upload_to_disk",
+            return_value=(True, 200, "Upload successful"),
         ), patch("os.path.realpath", side_effect=lambda p: p), patch(
             "aird.handlers.file_op_handlers.is_within_root", return_value=True
         ), patch(

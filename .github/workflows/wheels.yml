@@ -4,6 +4,9 @@ name: wheels
 # Publish to PyPI on tags:
 #   aird-transfer-v0.1.0  → uploads aird-transfer only
 #   v0.4.25               → uploads aird (and aird-transfer if matrix built)
+#
+# PyPI: set repository secret PYPI_API_TOKEN (pypi.org → Account → API tokens).
+# Optional: configure trusted publishing on PyPI for this workflow + environment "pypi".
 
 on:
   workflow_dispatch:
@@ -14,7 +17,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   aird-transfer:
@@ -64,7 +66,7 @@ jobs:
 
       - name: Build share UI bundle
         run: |
-          npm ci
+          npm ci --ignore-scripts
           npm run js:share
 
       - name: Build sdist + wheel
@@ -82,7 +84,6 @@ jobs:
     needs: [aird-transfer]
     if: startsWith(github.ref, 'refs/tags/aird-transfer-v')
     runs-on: ubuntu-latest
-    environment: pypi
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -94,13 +95,13 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          password: ${{ secrets.PYPI_API_TOKEN }}
 
   publish-aird:
     name: Publish aird to PyPI
     needs: [aird]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    environment: pypi
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -111,3 +112,4 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          password: ${{ secrets.PYPI_API_TOKEN }}

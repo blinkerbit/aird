@@ -855,7 +855,7 @@ class TestRangedUploadSessionSuccess:
       req = MagicMock()
       req.body = json.dumps(
           {
-              "filename": "big.bin",
+              "filename": "big.zip",
               "total_size": constants.LARGE_FILE_THRESHOLD_BYTES + 1000,
               "upload_dir": "",
           }

@@ -48,7 +48,7 @@ class TestShareFilesHandler:
         ), patch.object(handler, "render") as mock_render:
 
             handler.get()
-            mock_render.assert_called_with("share.html", shares={})
+            mock_render.assert_called_with("share.html", shares={}, chat_enabled=False)
 
     def test_get_feature_disabled(self):
         handler = prepare_handler(ShareFilesHandler(self.mock_app, self.mock_request))
