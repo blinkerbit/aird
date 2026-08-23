@@ -26,6 +26,7 @@ permission.md
 !requirements.txt
 !requirements-test.txt
 !requirements-ci.txt
+!requirements-ci.in
 
 *.egg*
 worktree.json

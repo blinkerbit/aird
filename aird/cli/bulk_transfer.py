@@ -130,8 +130,9 @@ class _WsBinaryClient:
                 raise ConnectionError(
                     f"WebSocket upgrade failed: {status_line.decode('latin1', 'replace')}"
                 )
+            # RFC 6455 mandates SHA-1 for the Sec-WebSocket-Accept handshake value.
             expected = base64.b64encode(
-                hashlib.sha1(
+                hashlib.sha1(  # NOSONAR python:S4790 - protocol-required, not security crypto
                     (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii"),
                     usedforsecurity=False,
                 ).digest()

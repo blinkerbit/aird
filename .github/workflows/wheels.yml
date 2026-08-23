@@ -26,14 +26,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-14]
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d274f6b6b64417e # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: actions/setup-python@0b93645e7b0624c84cb932f9b9f9324e4ea2796f # v5
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
           python-version: "3.12"
 
       - name: Build wheels
-        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
+        uses: PyO3/maturin-action@aef21716ff3dcae8a1c301d23ec3e4446972a6e3 # v1.49.1
         with:
           working-directory: native/aird_transfer
           args: --release --out dist -i 3.10 3.11 3.12 3.13
@@ -42,13 +42,13 @@ jobs:
 
       - name: Build sdist (Linux only)
         if: runner.os == 'Linux'
-        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
+        uses: PyO3/maturin-action@aef21716ff3dcae8a1c301d23ec3e4446972a6e3 # v1.49.1
         with:
           working-directory: native/aird_transfer
           command: sdist
           args: --out dist
 
-      - uses: actions/upload-artifact@b4ffdd433da6463ab3febc7a8515265ad70906a # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: aird-transfer-${{ matrix.os }}
           path: native/aird_transfer/dist/*
@@ -59,9 +59,9 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d274f6b6b64417e # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: actions/setup-python@0b93645e7b0624c84cb932f9b9f9324e4ea2796f # v5
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
           python-version: "3.12"
 
@@ -72,10 +72,10 @@ jobs:
 
       - name: Build sdist + wheel
         run: |
-          python -m pip install "pip==25.2" "build==1.5.0"
+          python -m pip install --require-hashes -r requirements-ci.txt
           python -m build --sdist --wheel -o dist
 
-      - uses: actions/upload-artifact@b4ffdd433da6463ab3febc7a8515265ad70906a # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: aird-python
           path: dist/*
@@ -88,14 +88,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/download-artifact@d3f86a959a429dccffe038edb7bcaedc51bdb4e # v4
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
         with:
           pattern: aird-transfer-*
           merge-multiple: true
           path: dist
 
       - name: Publish
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # v1.12.4
         with:
           packages-dir: dist/
           password: ${{ secrets.PYPI_API_TOKEN }}
@@ -108,13 +108,13 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/download-artifact@d3f86a959a429dccffe038edb7bcaedc51bdb4e # v4
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
         with:
           name: aird-python
           path: dist
 
       - name: Publish
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # v1.12.4
         with:
           packages-dir: dist/
           password: ${{ secrets.PYPI_API_TOKEN }}

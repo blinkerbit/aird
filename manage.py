@@ -4,7 +4,6 @@ import shutil
 import subprocess
 import argparse
 import re
-import shlex
 import glob
 
 # --- Configuration ---
@@ -18,53 +17,73 @@ DEPLOY_VENV = os.environ.get("AIRD_DEPLOY_VENV", "/opt/aird/.venv")
 DEPLOY_SERVICE = os.environ.get("AIRD_DEPLOY_SERVICE", "aird")
 DEPLOY_URL = os.environ.get("AIRD_DEPLOY_URL", "https://aird.pothukuchi.com")
 
+# Safe CLI tokens for deploy/ssh targets (blocks argument injection).
+_SAFE_HOST_RE = re.compile(r"^[A-Za-z0-9._@%-]+$")
+_SAFE_PATH_RE = re.compile(r"^[A-Za-z0-9._/\\-]+$")
+_SAFE_SERVICE_RE = re.compile(r"^[A-Za-z0-9._@:-]+$")
+_SAFE_WHEEL_RE = re.compile(r"^[A-Za-z0-9._+-]+\.whl$")
+
+
+def _require_safe(value: str, pattern: re.Pattern, label: str) -> str:
+    text = str(value or "").strip()
+    if not text or not pattern.fullmatch(text):
+        print(f"Error: invalid {label}: {value!r}", file=sys.stderr)
+        sys.exit(1)
+    return text
+
+
 def run_command(cmd):
-    """Utility to run a command and exit on failure."""
+    """Run an argv list; exit on failure."""
+    if not isinstance(cmd, (list, tuple)) or not all(isinstance(c, str) for c in cmd):
+        print("Error: run_command requires a list of string arguments", file=sys.stderr)
+        sys.exit(1)
     try:
-        if isinstance(cmd, str):
-            subprocess.check_call(shlex.split(cmd))
-        else:
-            subprocess.check_call(cmd)
+        subprocess.check_call(list(cmd))
     except subprocess.CalledProcessError as e:
         print(f"\nError: Command failed with exit code {e.returncode}")
         sys.exit(e.returncode)
 
 
 def run_shell_command_checked(cmd):
-    """Run a command without exiting; True on success."""
+    """Run an argv list without exiting; True on success."""
+    if not isinstance(cmd, (list, tuple)) or not all(isinstance(c, str) for c in cmd):
+        print(
+            "Error: run_shell_command_checked requires a list of string arguments",
+            file=sys.stderr,
+        )
+        return False
     try:
-        if isinstance(cmd, str):
-            subprocess.check_call(shlex.split(cmd))
-        else:
-            subprocess.check_call(cmd)
+        subprocess.check_call(list(cmd))
         return True
     except subprocess.CalledProcessError as e:
         print(f"\nError: Command failed with exit code {e.returncode}")
         return False
 
+
 def clean():
     """Clean up build and temporary files."""
     print("Cleaning up build artifacts...")
-    folders = ['build', 'dist', f'{PACKAGE_NAME}.egg-info', 'htmlcov', '.pytest_cache']
+    folders = ["build", "dist", f"{PACKAGE_NAME}.egg-info", "htmlcov", ".pytest_cache"]
     for folder in folders:
         if os.path.exists(folder):
             shutil.rmtree(folder)
-    
-    if os.path.exists('.coverage'):
-        os.remove('.coverage')
-    
+
+    if os.path.exists(".coverage"):
+        os.remove(".coverage")
+
     # Clean __pycache__
-    for root, dirs, files in os.walk('.'):
+    for root, dirs, files in os.walk("."):
         for d in dirs:
-            if d == '__pycache__':
+            if d == "__pycache__":
                 shutil.rmtree(os.path.join(root, d))
+
 
 def build_css():
     """Compile Tailwind CSS."""
     if os.path.exists("package.json"):
         print("Building Tailwind CSS...")
-        run_command("npm install")
-        run_command("npm run css:build")
+        run_command(["npm", "install"])
+        run_command(["npm", "run", "css:build"])
     else:
         print("Warning: package.json not found, skipping CSS build.")
 
@@ -73,8 +92,8 @@ def build_js():
     """Bundle share UI (esbuild output is not committed; see .gitignore)."""
     if os.path.exists("package.json"):
         print("Building share JS bundle...")
-        run_command("npm install")
-        run_command("npm run js:share")
+        run_command(["npm", "install"])
+        run_command(["npm", "run", "js:share"])
     else:
         print("Warning: package.json not found, skipping JS bundle.")
 
@@ -84,29 +103,37 @@ def build():
     clean()
     build_css()
     build_js()
-    if run_shell_command_checked("uv build"):
+    if run_shell_command_checked(["uv", "build"]):
         return
     if (
-        run_shell_command_checked(f"{sys.executable} -m pip install build")
-        and run_shell_command_checked(f"{sys.executable} -m build")
+        run_shell_command_checked([sys.executable, "-m", "pip", "install", "build"])
+        and run_shell_command_checked([sys.executable, "-m", "build"])
     ):
         return
-    if not run_shell_command_checked(f"{sys.executable} -m pip install setuptools wheel"):
+    if not run_shell_command_checked(
+        [sys.executable, "-m", "pip", "install", "setuptools", "wheel"]
+    ):
         sys.exit(1)
-    run_command(f"{sys.executable} {SETUP_FILE} sdist bdist_wheel")
+    run_command([sys.executable, SETUP_FILE, "sdist", "bdist_wheel"])
+
 
 def install():
     """Build and install the package binaries."""
     build()
     print("Installing package...")
-    # Find the wheel in dist/
-    wheels = [f for f in os.listdir('dist') if f.endswith('.whl')]
+    wheels = [f for f in os.listdir("dist") if f.endswith(".whl")]
     if not wheels:
         print("Error: No wheel found in dist/ after build.")
         sys.exit(1)
-    if run_shell_command_checked(f"uv pip install dist/{wheels[0]} --force-reinstall"):
+    wheel_path = os.path.join("dist", wheels[0])
+    if run_shell_command_checked(
+        ["uv", "pip", "install", wheel_path, "--force-reinstall"]
+    ):
         return
-    run_command(f"{sys.executable} -m pip install dist/{wheels[0]} --force-reinstall")
+    run_command(
+        [sys.executable, "-m", "pip", "install", wheel_path, "--force-reinstall"]
+    )
+
 
 def test(verbose=False, quick=False):
     """Run tests using pytest."""
@@ -117,14 +144,16 @@ def test(verbose=False, quick=False):
         cmd.append("-v")
     else:
         cmd.append("-q")
-    run_command(" ".join(cmd))
+    run_command(cmd)
+
 
 def lint():
     """Run linting tests."""
     if os.path.exists("run_tests.py"):
-        run_command(f"{sys.executable} run_tests.py --lint")
+        run_command([sys.executable, "run_tests.py", "--lint"])
     else:
         print("Error: run_tests.py not found.")
+
 
 _VERSION_RE = re.compile(
     r'version="(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)(?P<suffix>(?:\.dev\d+|rc\d+)?)"'
@@ -182,6 +211,7 @@ def bump_dev_version():
         dev_num = 0
     return _write_version(content, f"{major}.{minor}.{patch}.dev{dev_num}")
 
+
 def _find_wheel():
     if not os.path.isdir("dist"):
         print("Error: dist/ not found. Run build first.")
@@ -199,17 +229,17 @@ def _find_wheel():
 
 def deploy_wheel(host=None, deploy_dir=None, venv=None, service=None, wheel=None):
     """Upload wheel via scp, install into remote venv, restart systemd service."""
-    host = host or DEPLOY_HOST
-    deploy_dir = deploy_dir or DEPLOY_DIR
-    venv = venv or DEPLOY_VENV
-    service = service or DEPLOY_SERVICE
-    wheel = wheel or _find_wheel()
+    host = _require_safe(host or DEPLOY_HOST, _SAFE_HOST_RE, "deploy host")
+    deploy_dir = _require_safe(deploy_dir or DEPLOY_DIR, _SAFE_PATH_RE, "deploy dir")
+    venv = _require_safe(venv or DEPLOY_VENV, _SAFE_PATH_RE, "deploy venv")
+    service = _require_safe(service or DEPLOY_SERVICE, _SAFE_SERVICE_RE, "deploy service")
+    wheel = _require_safe(wheel or _find_wheel(), _SAFE_WHEEL_RE, "wheel name")
 
     local_wheel = os.path.join("dist", wheel)
     remote_wheel = f"{deploy_dir}/{wheel}"
 
     print(f"Uploading {local_wheel} -> {host}:{deploy_dir}/")
-    run_command(["scp", local_wheel, f"{host}:{deploy_dir}/"],)
+    run_command(["scp", local_wheel, f"{host}:{deploy_dir}/"])
 
     remote_cmd = (
         f"uv pip install --python {venv}/bin/python --prerelease=allow "
@@ -217,7 +247,7 @@ def deploy_wheel(host=None, deploy_dir=None, venv=None, service=None, wheel=None
         f"&& sudo systemctl restart {service}"
     )
     print(f"Installing on {host} and restarting {service}...")
-    run_command(["ssh", host, remote_cmd],)
+    run_command(["ssh", host, remote_cmd])
     print(f"Deployed {wheel}. Live at {DEPLOY_URL}")
 
 
@@ -259,6 +289,7 @@ def deploy_dev():
     build()
     deploy_wheel()
 
+
 def main():
     parser = argparse.ArgumentParser(description="Aird Management Script")
     subparsers = parser.add_subparsers(dest="command")
@@ -267,13 +298,15 @@ def main():
     subparsers.add_parser("build", help="Compile CSS and build binaries")
     subparsers.add_parser("install", help="Build and install the package")
     subparsers.add_parser("lint", help="Run linting")
-    
+
     test_parser = subparsers.add_parser("test", help="Run tests")
     test_parser.add_argument("--verbose", action="store_true", help="Verbose output")
     test_parser.add_argument("--quick", action="store_true", help="Quick run")
 
     release_parser = subparsers.add_parser("release", help="Bump version and publish stable")
-    release_parser.add_argument("--patch", action="store_const", const="patch", dest="part", default="patch")
+    release_parser.add_argument(
+        "--patch", action="store_const", const="patch", dest="part", default="patch"
+    )
     release_parser.add_argument("--minor", action="store_const", const="minor", dest="part")
     release_parser.add_argument("--major", action="store_const", const="major", dest="part")
 
@@ -314,9 +347,12 @@ def main():
         release_dev(do_deploy=args.deploy)
     elif args.command == "deploy":
         build()
-        deploy_wheel(host=args.host, deploy_dir=args.dir, venv=args.venv, service=args.service)
+        deploy_wheel(
+            host=args.host, deploy_dir=args.dir, venv=args.venv, service=args.service
+        )
     else:
         parser.print_help()
+
 
 if __name__ == "__main__":
     main()

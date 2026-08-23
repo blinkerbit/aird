@@ -7,8 +7,9 @@ importScripts(
 );
 
 globalThis.onmessage = (ev) => {
-  const expectedOrigin = globalThis.location?.origin;
-  if (ev.origin && expectedOrigin && ev.origin !== expectedOrigin) return;
+  if (ev.origin !== globalThis.location.origin) {
+    return;
+  }
   const data = ev.data || {};
   const { type, jobId } = data;
 
