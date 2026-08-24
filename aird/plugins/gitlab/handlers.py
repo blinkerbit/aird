@@ -1,0 +1,756 @@
+"""HTTP handlers for GitLab bindings, comments, and owner-only GitLab proxy."""
+
+from __future__ import annotations
+
+import logging
+
+import tornado.web
+
+from aird.constants.input_limits import (
+    FILE_COMMENT_MAX_LEN,
+    GITLAB_BOARD_ID_MAX,
+    GITLAB_HOST_MAX_LEN,
+    GITLAB_PROJECT_PATH_MAX_LEN,
+    GITLAB_TOKEN_MAX_LEN,
+)
+from aird.handlers.base_handler import (
+    BaseHandler,
+    XSRFTokenMixin,
+    get_username_string_for_db,
+    require_db,
+)
+from aird.plugins.gitlab import db as gitlab_db
+from aird.plugins.gitlab import is_gitlab_enabled
+from aird.plugins.gitlab.acl import PathAccess, resolve_access
+from aird.plugins.gitlab.board_stats import (
+    busyness_for_issues,
+    days_in_lane,
+    days_since,
+    last_comment_at,
+)
+from aird.plugins.gitlab.client import (
+    GitlabError,
+    create_issue_note,
+    create_mr_note,
+    get_board,
+    get_mr,
+    list_boards,
+    list_issue_notes,
+    list_label_events,
+    list_mr_notes,
+    list_mrs,
+    list_open_issues,
+    list_pipelines,
+)
+from aird.plugins.gitlab.hub import get_comment_hub
+from aird.plugins.gitlab.paths import bind_matches_name, extract_file_paths
+from aird.plugins.gitlab.token import (
+    delete_user_token,
+    load_owner_token,
+    save_user_token,
+)
+
+logger = logging.getLogger(__name__)
+_TOKEN_ONLY = frozenset({"token_user", "admin_token"})
+
+
+def _require_gitlab(handler: BaseHandler) -> bool:
+    if not is_gitlab_enabled():
+        handler.set_status(403)
+        handler.write({"error": "GitLab integration is disabled."})
+        return False
+    return True
+
+
+def _username(handler: BaseHandler) -> str:
+    return get_username_string_for_db(handler) or ""
+
+
+def _access(handler: BaseHandler) -> PathAccess | None:
+    share_id = (handler.get_argument("share_id", "") or "").strip() or None
+    path = handler.get_argument("path", "") or ""
+    try:
+        return resolve_access(handler, path=path, share_id=share_id)
+    except ValueError as exc:
+        handler.set_status(400)
+        handler.write({"error": str(exc)})
+        return None
+
+
+def _need_access(handler: BaseHandler, *, write: bool = False, owner_proxy: bool = False):
+    access = _access(handler)
+    if access is None:
+        if handler.get_status() == 200:
+            handler.set_status(403)
+            handler.write({"error": "Access denied"})
+        return None
+    if write and not access.can_write:
+        handler.set_status(403)
+        handler.write({"error": "This folder is read-only for comments and bindings."})
+        return None
+    if owner_proxy and not access.is_self:
+        handler.set_status(403)
+        handler.write(
+            {
+                "error": "GitLab proxy is only available to the folder owner. "
+                "Use your own GitLab token in the browser."
+            }
+        )
+        return None
+    return access
+
+
+def _binding_and_token(handler: BaseHandler, access: PathAccess):
+    binding = gitlab_db.resolve_binding(
+        handler.db_conn, access.owner_username, access.rel_path
+    )
+    host = (binding or {}).get("gitlab_host") or "https://gitlab.com"
+    token = load_owner_token(access.owner_username, host) if access.is_self else None
+    return binding, token
+
+
+def _gl_call(handler: BaseHandler, fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except GitlabError as exc:
+        handler.set_status(exc.status if 400 <= exc.status < 500 else 502)
+        handler.write({"error": exc.message})
+        return None
+
+
+class GitlabStatusHandler(BaseHandler):
+    @tornado.web.authenticated
+    @require_db
+    def get(self):
+        if not _require_gitlab(self):
+            return
+        access = _need_access(self)
+        if not access:
+            return
+        binding, token = _binding_and_token(self, access)
+        self.write(
+            {
+                "enabled": True,
+                "is_self": access.is_self,
+                "can_write": access.can_write,
+                "owner_username": access.owner_username,
+                "path": access.rel_path,
+                "binding": binding,
+                "token_configured": bool(token) if access.is_self else False,
+            }
+        )
+
+
+class GitlabTokenHandler(BaseHandler, XSRFTokenMixin):
+    @tornado.web.authenticated
+    def put(self):
+        if not _require_gitlab(self):
+            return
+        self.check_xsrf_cookie()
+        access = _need_access(self, owner_proxy=True)
+        if not access:
+            return
+        try:
+            body = self.parse_json_body()
+        except tornado.web.HTTPError:
+            return
+        token = str(body.get("token") or "").strip()
+        if not token or len(token) > GITLAB_TOKEN_MAX_LEN:
+            self.set_status(400)
+            self.write({"error": "A GitLab token is required"})
+            return
+        save_user_token(access.owner_username, token)
+        self.write({"ok": True, "token_configured": True})
+
+    @tornado.web.authenticated
+    def delete(self):
+        if not _require_gitlab(self):
+            return
+        self.check_xsrf_cookie()
+        access = _need_access(self, owner_proxy=True)
+        if not access:
+            return
+        delete_user_token(access.owner_username)
+        self.write({"ok": True, "token_configured": False})
+
+
+class GitlabBindingHandler(BaseHandler, XSRFTokenMixin):
+    @tornado.web.authenticated
+    @require_db
+    def get(self):
+        if not _require_gitlab(self):
+            return
+        access = _need_access(self)
+        if not access:
+            return
+        binding = gitlab_db.resolve_binding(
+            self.db_conn, access.owner_username, access.rel_path
+        )
+        self.write({"binding": binding})
+
+    @tornado.web.authenticated
+    @require_db
+    def put(self):
+        if not _require_gitlab(self):
+            return
+        self.check_xsrf_cookie()
+        access = _need_access(self, write=True)
+        if not access:
+            return
+        try:
+            body = self.parse_json_body()
+        except tornado.web.HTTPError:
+            return
+        host = str(body.get("gitlab_host") or "https://gitlab.com").strip()
+        code = str(body.get("code_project") or "").strip()
+        issues = str(body.get("issues_project") or code).strip()
+        prefix = str(body.get("repo_path_prefix") or "").strip()
+        board_raw = body.get("board_iid")
+        if len(host) > GITLAB_HOST_MAX_LEN or len(code) > GITLAB_PROJECT_PATH_MAX_LEN:
+            self.set_status(400)
+            self.write({"error": "GitLab host or project path is too long"})
+            return
+        if not code:
+            self.set_status(400)
+            self.write({"error": "code_project is required"})
+            return
+        board_iid = None
+        if board_raw not in (None, ""):
+            try:
+                board_iid = int(board_raw)
+            except (TypeError, ValueError):
+                self.set_status(400)
+                self.write({"error": "board_iid must be an integer"})
+                return
+            if board_iid < 1 or board_iid > GITLAB_BOARD_ID_MAX:
+                self.set_status(400)
+                self.write({"error": "board_iid out of range"})
+                return
+        binding = gitlab_db.upsert_binding(
+            self.db_conn,
+            owner_username=access.owner_username,
+            folder_rel_path=access.rel_path,
+            gitlab_host=host,
+            code_project=code,
+            issues_project=issues,
+            board_iid=board_iid,
+            repo_path_prefix=prefix,
+            updated_by=_username(self),
+        )
+        self.write({"binding": binding})
+
+    @tornado.web.authenticated
+    @require_db
+    def delete(self):
+        if not _require_gitlab(self):
+            return
+        self.check_xsrf_cookie()
+        access = _need_access(self, write=True)
+        if not access:
+            return
+        gitlab_db.delete_binding(self.db_conn, access.owner_username, access.rel_path)
+        self.write({"ok": True})
+
+
+class GitlabFolderMetaHandler(BaseHandler):
+    @tornado.web.authenticated
+    @require_db
+    def get(self):
+        if not _require_gitlab(self):
+            return
+        access = _need_access(self)
+        if not access:
+            return
+        names = self.get_arguments("name") or []
+        binding = gitlab_db.resolve_binding(
+            self.db_conn, access.owner_username, access.rel_path
+        )
+        counts = gitlab_db.comment_counts(
+            self.db_conn, access.owner_username, access.rel_path, names
+        )
+        self.write(
+            {
+                "binding": binding,
+                "comment_counts": counts,
+                "is_self": access.is_self,
+                "can_write": access.can_write,
+            }
+        )
+
+
+class GitlabPipelinesHandler(BaseHandler):
+    @tornado.web.authenticated
+    @require_db
+    def get(self):
+        if not _require_gitlab(self):
+            return
+        access = _need_access(self, owner_proxy=True)
+        if not access:
+            return
+        binding, token = _binding_and_token(self, access)
+        if not binding:
+            self.set_status(404)
+            self.write({"error": "No GitLab binding for this folder"})
+            return
+        if not token:
+            self.set_status(401)
+            self.write({"error": "Configure a GitLab token for this account"})
+            return
+        pipes = _gl_call(
+            self, list_pipelines, binding["gitlab_host"], token, binding["code_project"]
+        )
+        if pipes is None:
+            return
+        self.write({"pipelines": pipes, "latest": pipes[0] if pipes else None})
+
+
+def _issues_mentioning(handler, access: PathAccess, names: list[str]):
+    binding, token = _binding_and_token(handler, access)
+    if not binding or not token:
+        return binding, token, {}
+    project = binding.get("issues_project") or binding.get("code_project")
+    issues = _gl_call(
+        handler, list_open_issues, binding["gitlab_host"], token, project
+    )
+    if issues is None:
+        return binding, token, None
+    mentioned: list[str] = []
+    issue_by_path: dict[str, list[dict]] = {}
+    for issue in issues:
+        blob = f"{issue.get('title') or ''}\n{issue.get('description') or ''}"
+        paths = extract_file_paths(blob)
+        mentioned.extend(paths)
+        mapped = bind_matches_name(
+            names,
+            paths,
+            folder_rel=access.rel_path,
+            repo_prefix=binding.get("repo_path_prefix") or "",
+        )
+        for name, hits in mapped.items():
+            if not hits:
+                continue
+            issue_by_path.setdefault(name, []).append(
+                {
+                    "iid": issue.get("iid"),
+                    "title": issue.get("title"),
+                    "web_url": issue.get("web_url"),
+                    "state": issue.get("state"),
+                    "paths": hits,
+                }
+            )
+    return binding, token, issue_by_path
+
+
+class GitlabIssuesForPathHandler(BaseHandler):
+    @tornado.web.authenticated
+    @require_db
+    def get(self):
+        if not _require_gitlab(self):
+            return
+        access = _need_access(self, owner_proxy=True)
+        if not access:
+            return
+        names = self.get_arguments("name") or []
+        if not names:
+            leaf = access.rel_path.split("/")[-1] if access.rel_path else ""
+            if leaf:
+                names = [leaf]
+        binding, token, mapped = _issues_mentioning(self, access, names)
+        if mapped is None:
+            return
+        if not binding:
+            self.set_status(404)
+            self.write({"error": "No GitLab binding for this folder"})
+            return
+        if not token:
+            self.set_status(401)
+            self.write({"error": "Configure a GitLab token for this account"})
+            return
+        self.write({"issues_by_name": mapped})
+
+
+class GitlabMrsHandler(BaseHandler):
+    @tornado.web.authenticated
+    @require_db
+    def get(self):
+        if not _require_gitlab(self):
+            return
+        access = _need_access(self, owner_proxy=True)
+        if not access:
+            return
+        binding, token = _binding_and_token(self, access)
+        if not binding or not token:
+            self.set_status(404 if not binding else 401)
+            self.write({"error": "GitLab binding or token missing"})
+            return
+        data = _gl_call(
+            self, list_mrs, binding["gitlab_host"], token, binding["code_project"]
+        )
+        if data is None:
+            return
+        self.write({"merge_requests": data})
+
+
+class GitlabMrItemHandler(BaseHandler):
+    @tornado.web.authenticated
+    @require_db
+    def get(self, iid):
+        if not _require_gitlab(self):
+            return
+        access = _need_access(self, owner_proxy=True)
+        if not access:
+            return
+        binding, token = _binding_and_token(self, access)
+        if not binding or not token:
+            self.set_status(404 if not binding else 401)
+            self.write({"error": "GitLab binding or token missing"})
+            return
+        try:
+            mr_iid = int(iid)
+        except (TypeError, ValueError):
+            self.set_status(400)
+            self.write({"error": "Invalid merge request id"})
+            return
+        mr = _gl_call(
+            self, get_mr, binding["gitlab_host"], token, binding["code_project"], mr_iid
+        )
+        if mr is None:
+            return
+        notes = _gl_call(
+            self,
+            list_mr_notes,
+            binding["gitlab_host"],
+            token,
+            binding["code_project"],
+            mr_iid,
+        )
+        if notes is None:
+            return
+        self.write({"merge_request": mr, "notes": notes})
+
+
+class GitlabMrNotesHandler(BaseHandler, XSRFTokenMixin):
+    @tornado.web.authenticated
+    @require_db
+    def post(self, iid):
+        if not _require_gitlab(self):
+            return
+        self.check_xsrf_cookie()
+        access = _need_access(self, owner_proxy=True)
+        if not access:
+            return
+        binding, token = _binding_and_token(self, access)
+        if not binding or not token:
+            self.set_status(404 if not binding else 401)
+            self.write({"error": "GitLab binding or token missing"})
+            return
+        try:
+            body = self.parse_json_body()
+            mr_iid = int(iid)
+        except (tornado.web.HTTPError, TypeError, ValueError):
+            self.set_status(400)
+            self.write({"error": "Invalid request"})
+            return
+        text = str(body.get("body") or "").strip()
+        if not text or len(text) > FILE_COMMENT_MAX_LEN:
+            self.set_status(400)
+            self.write({"error": "Note body required"})
+            return
+        note = _gl_call(
+            self,
+            create_mr_note,
+            binding["gitlab_host"],
+            token,
+            binding["code_project"],
+            mr_iid,
+            text,
+        )
+        if note is None:
+            return
+        self.write({"note": note})
+
+
+class GitlabBoardHandler(BaseHandler):
+    @tornado.web.authenticated
+    @require_db
+    def get(self):
+        if not _require_gitlab(self):
+            return
+        access = _need_access(self, owner_proxy=True)
+        if not access:
+            return
+        binding, token = _binding_and_token(self, access)
+        if not binding or not token:
+            self.set_status(404 if not binding else 401)
+            self.write({"error": "GitLab binding or token missing"})
+            return
+        host = binding["gitlab_host"]
+        project = binding.get("issues_project") or binding["code_project"]
+        board_id = binding.get("board_iid")
+        board = None
+        if board_id:
+            board = _gl_call(self, get_board, host, token, project, int(board_id))
+            if board is None:
+                return
+        else:
+            boards = _gl_call(self, list_boards, host, token, project)
+            if boards is None:
+                return
+            board = boards[0] if boards else None
+        issues = _gl_call(self, list_open_issues, host, token, project)
+        if issues is None:
+            return
+        lists = (board or {}).get("lists") or []
+        label_names = []
+        for lane in lists:
+            label = lane.get("label") or {}
+            if label.get("name"):
+                label_names.append(label["name"])
+        enriched = []
+        for issue in issues:
+            iid = issue.get("iid")
+            notes = []
+            events = []
+            if iid:
+                notes = list_issue_notes(host, token, project, int(iid)) or []
+                events = list_label_events(host, token, project, int(iid)) or []
+            labels = [
+                (lab.get("name") if isinstance(lab, dict) else str(lab))
+                for lab in (issue.get("labels") or [])
+            ]
+            last_gl = last_comment_at(notes)
+            aird_comments = gitlab_db.list_comments(
+                self.db_conn, access.owner_username, access.rel_path
+            )
+            aird_last = None
+            for c in aird_comments:
+                if c.get("gitlab_issue_iid") == iid:
+                    aird_last = c.get("created_at")
+            last = last_gl or aird_last
+            enriched.append(
+                {
+                    "iid": iid,
+                    "title": issue.get("title"),
+                    "web_url": issue.get("web_url"),
+                    "assignees": issue.get("assignees") or [],
+                    "labels": labels,
+                    "weight": issue.get("weight"),
+                    "time_stats": issue.get("time_stats"),
+                    "created_at": issue.get("created_at"),
+                    "last_comment_at": last,
+                    "days_since_comment": days_since(last),
+                    "days_in_lane": days_in_lane(
+                        events, labels, fallback_created_at=issue.get("created_at")
+                    ),
+                }
+            )
+        self.write(
+            {
+                "board": board,
+                "lists": lists,
+                "issues": enriched,
+                "busyness": busyness_for_issues(issues),
+            }
+        )
+
+
+class GitlabCommentsHandler(BaseHandler, XSRFTokenMixin):
+    @tornado.web.authenticated
+    @require_db
+    def get(self):
+        if not _require_gitlab(self):
+            return
+        access = _need_access(self)
+        if not access:
+            return
+        comments = gitlab_db.list_comments(
+            self.db_conn, access.owner_username, access.rel_path
+        )
+        self.write({"comments": comments, "can_write": access.can_write})
+
+    @tornado.web.authenticated
+    @require_db
+    def post(self):
+        if not _require_gitlab(self):
+            return
+        self.check_xsrf_cookie()
+        access = _need_access(self, write=True)
+        if not access:
+            return
+        author = _username(self)
+        if not author or author in _TOKEN_ONLY:
+            self.set_status(403)
+            self.write({"error": "A logged-in user account is required to comment"})
+            return
+        try:
+            body = self.parse_json_body()
+        except tornado.web.HTTPError:
+            return
+        text = str(body.get("body") or "")
+        issue_iid = body.get("gitlab_issue_iid")
+        try:
+            iid = int(issue_iid) if issue_iid not in (None, "") else None
+        except (TypeError, ValueError):
+            iid = None
+        try:
+            comment = gitlab_db.insert_comment(
+                self.db_conn,
+                owner_username=access.owner_username,
+                file_rel_path=access.rel_path,
+                author_username=author,
+                body=text,
+                gitlab_issue_iid=iid,
+            )
+        except ValueError as exc:
+            self.set_status(400)
+            self.write({"error": str(exc)})
+            return
+        get_comment_hub().publish(
+            access.owner_username,
+            access.rel_path,
+            {"type": "comment_created", "comment": comment},
+        )
+        self.write({"comment": comment})
+
+
+class GitlabCommentItemHandler(BaseHandler, XSRFTokenMixin):
+    @tornado.web.authenticated
+    @require_db
+    def patch(self, comment_id):
+        if not _require_gitlab(self):
+            return
+        self.check_xsrf_cookie()
+        comment = gitlab_db.get_comment(self.db_conn, comment_id)
+        if not comment:
+            self.set_status(404)
+            self.write({"error": "Comment not found"})
+            return
+        access = resolve_access(
+            self,
+            path=comment["file_rel_path"],
+            share_id=(self.get_argument("share_id", "") or "").strip() or None,
+        )
+        if not access or not access.can_write:
+            self.set_status(403)
+            self.write({"error": "Access denied"})
+            return
+        try:
+            body = self.parse_json_body()
+        except tornado.web.HTTPError:
+            return
+        author = _username(self)
+        set_promote = "gitlab_note_id" in body or "gitlab_issue_iid" in body
+        if body.get("body") is not None and comment["author_username"] != author:
+            self.set_status(403)
+            self.write({"error": "Only the author can edit this comment"})
+            return
+        note_id = body.get("gitlab_note_id")
+        issue_iid = body.get("gitlab_issue_iid")
+        try:
+            updated = gitlab_db.update_comment(
+                self.db_conn,
+                comment_id,
+                body=body.get("body"),
+                gitlab_issue_iid=int(issue_iid) if issue_iid not in (None, "") else None,
+                gitlab_note_id=int(note_id) if note_id not in (None, "") else None,
+                set_promote=set_promote,
+            )
+        except ValueError as exc:
+            self.set_status(400)
+            self.write({"error": str(exc)})
+            return
+        get_comment_hub().publish(
+            access.owner_username,
+            access.rel_path,
+            {"type": "comment_updated", "comment": updated},
+        )
+        self.write({"comment": updated})
+
+    @tornado.web.authenticated
+    @require_db
+    def delete(self, comment_id):
+        if not _require_gitlab(self):
+            return
+        self.check_xsrf_cookie()
+        comment = gitlab_db.get_comment(self.db_conn, comment_id)
+        if not comment:
+            self.set_status(404)
+            self.write({"error": "Comment not found"})
+            return
+        access = resolve_access(
+            self,
+            path=comment["file_rel_path"],
+            share_id=(self.get_argument("share_id", "") or "").strip() or None,
+        )
+        author = _username(self)
+        if not access or not access.can_write:
+            self.set_status(403)
+            self.write({"error": "Access denied"})
+            return
+        if comment["author_username"] != author and not access.is_self:
+            self.set_status(403)
+            self.write({"error": "Only the author or folder owner can delete"})
+            return
+        gitlab_db.delete_comment(self.db_conn, comment_id)
+        get_comment_hub().publish(
+            access.owner_username,
+            access.rel_path,
+            {"type": "comment_deleted", "id": comment_id},
+        )
+        self.write({"ok": True})
+
+
+class GitlabPromoteHandler(BaseHandler, XSRFTokenMixin):
+    @tornado.web.authenticated
+    @require_db
+    def post(self, comment_id):
+        if not _require_gitlab(self):
+            return
+        self.check_xsrf_cookie()
+        comment = gitlab_db.get_comment(self.db_conn, comment_id)
+        if not comment:
+            self.set_status(404)
+            self.write({"error": "Comment not found"})
+            return
+        access = resolve_access(
+            self,
+            path=comment["file_rel_path"],
+            share_id=(self.get_argument("share_id", "") or "").strip() or None,
+        )
+        if not access or not access.is_self:
+            self.set_status(403)
+            self.write({"error": "Only the folder owner can promote via Aird GitLab token"})
+            return
+        try:
+            body = self.parse_json_body()
+            iid = int(body.get("gitlab_issue_iid") or comment.get("gitlab_issue_iid"))
+        except (tornado.web.HTTPError, TypeError, ValueError):
+            self.set_status(400)
+            self.write({"error": "gitlab_issue_iid is required"})
+            return
+        binding, token = _binding_and_token(self, access)
+        if not binding or not token:
+            self.set_status(401)
+            self.write({"error": "GitLab binding or token missing"})
+            return
+        project = binding.get("issues_project") or binding.get("code_project")
+        note_body = f"**Aird comment** on `{comment['file_rel_path']}` by {comment['author_username']}:\n\n{comment['body']}"
+        note = _gl_call(
+            self,
+            create_issue_note,
+            binding["gitlab_host"],
+            token,
+            project,
+            iid,
+            note_body,
+        )
+        if note is None:
+            return
+        updated = gitlab_db.update_comment(
+            self.db_conn,
+            comment_id,
+            gitlab_issue_iid=iid,
+            gitlab_note_id=note.get("id"),
+            set_promote=True,
+        )
+        self.write({"comment": updated, "note": note})

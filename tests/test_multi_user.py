@@ -226,7 +226,7 @@ class TestGetUserRoot:
             mock_const.MULTI_USER = True
             mock_const.ROOT_DIR = temp_root
             result = get_user_root(handler)
-        assert result == os.path.join(temp_root, "alice")
+        assert result == os.path.join(temp_root, "alice", "data")
 
     def test_multi_user_mode_creates_directory(self, temp_root):
         """User directory is auto-created on first access."""
@@ -236,7 +236,10 @@ class TestGetUserRoot:
             mock_const.ROOT_DIR = temp_root
             result = get_user_root(handler)
         assert os.path.isdir(result)
-        assert os.path.basename(result) == "bob"
+        assert os.path.basename(result) == "data"
+        assert os.path.basename(os.path.dirname(result)) == "bob"
+        assert os.path.isdir(os.path.join(temp_root, "bob", ".aird-chats"))
+        assert os.path.isdir(os.path.join(temp_root, "bob", ".aird-shares"))
 
     def test_multi_user_mode_unauthenticated_fallback(self, temp_root):
         """Unauthenticated user falls back to ROOT_DIR."""
@@ -287,7 +290,7 @@ class TestGetUserRoot:
             mock_const.ROOT_DIR = temp_root
             result = get_user_root(handler)
         expected_folder = sanitize_username_for_folder("user@example.com")
-        assert result == os.path.join(temp_root, expected_folder)
+        assert result == os.path.join(temp_root, expected_folder, "data")
         assert os.path.isdir(result)
 
     def test_multi_user_mode_isolates_users(self, temp_root):
@@ -300,8 +303,9 @@ class TestGetUserRoot:
             root_alice = get_user_root(handler_alice)
             root_bob = get_user_root(handler_bob)
         assert root_alice != root_bob
-        assert os.path.basename(root_alice) == "alice"
-        assert os.path.basename(root_bob) == "bob"
+        assert os.path.basename(root_alice) == "data"
+        assert os.path.basename(root_bob) == "data"
+        assert os.path.dirname(root_alice) != os.path.dirname(root_bob)
 
     def test_handler_without_get_current_user(self, temp_root):
         """Handler without get_current_user attribute falls back gracefully."""
@@ -320,7 +324,24 @@ class TestGetUserRoot:
             mock_const.MULTI_USER = True
             mock_const.ROOT_DIR = temp_root
             result = get_user_root(handler)
-        assert result == os.path.join(temp_root, "charlie")
+        assert result == os.path.join(temp_root, "charlie", "data")
+
+    def test_migrates_existing_files_into_data(self, temp_root):
+        home = os.path.join(temp_root, "alice")
+        os.makedirs(home)
+        with open(os.path.join(home, "notes.txt"), "w", encoding="utf-8") as fh:
+            fh.write("keep")
+        os.makedirs(os.path.join(home, ".aird-shares"))
+        handler = self._make_handler("alice")
+        with patch("aird.handlers.base_handler.constants_module") as mock_const:
+            mock_const.MULTI_USER = True
+            mock_const.ROOT_DIR = temp_root
+            result = get_user_root(handler)
+        assert result == os.path.join(home, "data")
+        assert os.path.isfile(os.path.join(result, "notes.txt"))
+        assert os.path.isdir(os.path.join(home, ".aird-shares"))
+        assert os.path.isdir(os.path.join(home, ".aird-chats"))
+        assert not os.path.isfile(os.path.join(home, "notes.txt"))
 
 
 # ---------------------------------------------------------------------------

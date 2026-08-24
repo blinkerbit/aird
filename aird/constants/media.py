@@ -30,6 +30,9 @@ IMAGE_BROWSER_EXTENSIONS: frozenset = frozenset(
     {
         ".jpg",
         ".jpeg",
+        ".jpe",
+        ".jif",
+        ".jfif",
         ".png",
         ".gif",
         ".bmp",
@@ -38,10 +41,33 @@ IMAGE_BROWSER_EXTENSIONS: frozenset = frozenset(
         ".tif",
         ".svg",
         ".ico",
+        ".avif",
+        ".heic",
+        ".heif",
     }
 )
 
+# Camera RAW: open in the image viewer (embedded JPEG preview when present).
+IMAGE_RAW_EXTENSIONS: frozenset = frozenset(
+    {
+        ".dng",
+        ".cr2",
+        ".nef",
+        ".arw",
+        ".orf",
+        ".rw2",
+        ".raf",
+        ".raw",
+    }
+)
+
+IMAGE_VIEWER_EXTENSIONS: frozenset = IMAGE_BROWSER_EXTENSIONS | IMAGE_RAW_EXTENSIONS
+
 PDF_BROWSER_EXTENSION = ".pdf"
+
+LISTING_MEDIA_STEMS: frozenset = frozenset(
+    ext.lstrip(".") for ext in IMAGE_VIEWER_EXTENSIONS
+) | frozenset({PDF_BROWSER_EXTENSION.lstrip(".")})
 
 AUDIO_EXTENSIONS: frozenset = frozenset(
     {
@@ -104,12 +130,26 @@ EXTENSION_ICONS: dict[str, str] = {
     # Images
     ".jpg": "🖼️",
     ".jpeg": "🖼️",
+    ".jpe": "🖼️",
+    ".jif": "🖼️",
+    ".jfif": "🖼️",
     ".png": "🖼️",
     ".gif": "🖼️",
     ".bmp": "🖼️",
     ".webp": "🖼️",
     ".tiff": "🖼️",
     ".tif": "🖼️",
+    ".avif": "🖼️",
+    ".heic": "🖼️",
+    ".heif": "🖼️",
+    ".dng": "🖼️",
+    ".cr2": "🖼️",
+    ".nef": "🖼️",
+    ".arw": "🖼️",
+    ".orf": "🖼️",
+    ".rw2": "🖼️",
+    ".raf": "🖼️",
+    ".raw": "🖼️",
     ".svg": "🎨",
     ".ico": "🎨",
     ".psd": "🎭",

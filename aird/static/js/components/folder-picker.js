@@ -26,7 +26,8 @@
       this._destDisplay = document.getElementById('fpDestDisplay');
       this._confirmBtn = document.getElementById('fpConfirmBtn');
       this._titleEl = document.getElementById('fpTitle');
-      if (!this._overlay) return;
+      if (!this._overlay || this._inited) return;
+      this._inited = true;
 
       document.getElementById('fpCloseBtn')?.addEventListener('click', () => this.close(null));
       document.getElementById('fpCancelBtn')?.addEventListener('click', () => this.close(null));
@@ -37,16 +38,21 @@
       document.getElementById('fpNewFolderBtn')?.addEventListener('click', () => this._createFolder());
     },
 
-    open(mode) {
+    open(mode, opts) {
+      const options = (opts && typeof opts === 'object') ? opts : {};
       this._mode = mode;
       if (this._titleEl) {
-        this._titleEl.textContent = mode === 'copy' ? 'Copy to...' : 'Move to...';
+        this._titleEl.textContent = options.title
+          || (mode === 'copy' ? 'Copy to...' : 'Move to...');
       }
       if (this._confirmBtn) {
-        this._confirmBtn.textContent = mode === 'copy' ? 'Paste here' : 'Move here';
+        this._confirmBtn.textContent = options.confirmLabel
+          || (mode === 'copy' ? 'Paste here' : 'Move here');
       }
       this._overlay?.classList.add('show');
-      const startPath = document.getElementById('currentPath')?.value ?? '';
+      const startPath = options.startPath
+        ?? document.getElementById('currentPath')?.value
+        ?? '';
       this._navigate(startPath);
       return new Promise((resolve) => { this._resolve = resolve; });
     },

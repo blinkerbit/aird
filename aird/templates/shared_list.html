@@ -5,6 +5,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/static/css/app.css" />
+  {% if is_gitlab_enabled() %}
+  <link rel="stylesheet" href="/static/css/gitlab.css" />
+  {% end %}
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Shared files · Aird</title>
     <style>
@@ -34,6 +37,16 @@
         {% end %}
       </span>
     </header>
+    {% if is_gitlab_enabled() %}
+    <div id="gitlabStrip" class="gitlab-strip"></div>
+    <aside id="gitlabPanel" class="gitlab-panel" hidden>
+      <div class="gitlab-panel-head">
+        <h3 class="gitlab-panel-title text-sm font-bold">GitLab</h3>
+        <button type="button" class="btn btn-ghost btn-xs" id="gitlabPanelClose">Close</button>
+      </div>
+      <div class="gitlab-panel-body"></div>
+    </aside>
+    {% end %}
 
 
     <div class="flex flex-wrap items-center gap-3 mb-3" id="bulkDownloadBar">
@@ -341,5 +354,13 @@
   </script>
   <script src="/static/js/download-manager.js"></script>
   <script src="/static/js/theme.js"></script>
+  {% if is_gitlab_enabled() %}
+  <input type="hidden" id="currentPath" value="" />
+  <script nonce="{{ csp_nonce }}" type="module">
+    globalThis.__GITLAB_CONFIG = { enabled: true, shareId: '{{ share_id }}' };
+    import { initGitlabUi } from '/static/js/gitlab.js?v=20260823a';
+    initGitlabUi();
+  </script>
+  {% end %}
 </body>
 </html>

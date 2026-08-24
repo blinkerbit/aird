@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import os
 import re
 
 import aird.constants as constants_module
-from aird.core.security import sanitize_username_for_folder
 
 # Must match base_handler token display labels (avoid importing handlers here).
 _DISPLAY_ADMIN_TOKEN = "Admin (Token)"  # nosec B105
@@ -42,14 +40,15 @@ def creator_folder_username_from_share_field(created_by: str | None) -> str:
 
 def filesystem_root_for_share(share: dict) -> str:
     """Directory relative to which *share*'s local paths and tag scans are resolved."""
+    from aird.core.user_storage import user_data_dir_for_username
+
     if not constants_module.MULTI_USER:
         return constants_module.ROOT_DIR
     login = creator_folder_username_from_share_field(share.get("created_by"))
     if not login or login in _TOKEN_ONLY_USERNAMES:
         return constants_module.ROOT_DIR
-    safe = sanitize_username_for_folder(login)
-    if not safe:
-        return constants_module.ROOT_DIR
-    user_root = os.path.join(constants_module.ROOT_DIR, safe)
-    os.makedirs(user_root, exist_ok=True)
-    return user_root
+    return user_data_dir_for_username(
+        login,
+        root_dir=constants_module.ROOT_DIR,
+        multi_user=True,
+    )

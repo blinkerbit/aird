@@ -48,10 +48,12 @@ FEATURE_FLAGS = {
     "smb_server": False,
     "webdav_server": False,
     "direct_messages": False,
+    "gitlab_integration": False,
     "transfer_sendfile": True,
 }
 
 CHAT_SHARE_FOLDER = ".aird-shares"
+CHAT_STORE_FOLDER = ".aird-chats"
 
 # WebSocket connection configuration
 WEBSOCKET_CONFIG = {
@@ -63,6 +65,8 @@ WEBSOCKET_CONFIG = {
     "search_idle_timeout": 180,  # 3 minutes
     "chat_max_connections": 100,
     "chat_idle_timeout": 600,  # 10 minutes
+    "file_comments_max_connections": 100,
+    "file_comments_idle_timeout": 600,
 }
 
 # Upload configuration (admin-configurable, persisted to database)

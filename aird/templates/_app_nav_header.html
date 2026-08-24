@@ -48,10 +48,12 @@
     </a>
     {% end %}
     {% if is_chat_enabled() %}
-    <a href="/chat" class="btn btn-ghost btn-sm gap-1 relative" title="Direct messages">
-      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    <a href="/chat" class="btn btn-ghost btn-sm gap-1" title="Direct messages">
+      <span class="chat-nav-ico">
+        <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span id="chatUnreadBadge" class="badge badge-primary badge-xs chat-nav-badge hidden">0</span>
+      </span>
       <span class="hidden sm:inline">Chat</span>
-      <span id="chatUnreadBadge" class="badge badge-primary badge-xs absolute -top-1 -right-1 hidden min-w-[1.1rem]">0</span>
     </a>
     {% end %}
     {% if is_feature_enabled('p2p_transfer', True) %}

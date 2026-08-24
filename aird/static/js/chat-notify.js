@@ -70,7 +70,7 @@
   function onNotify(payload) {
     if (location.pathname === '/chat') {
       const params = new URLSearchParams(location.search);
-      if (Number(params.get('c')) === Number(payload.conversation_id)) return;
+      if (String(params.get('c')) === String(payload.conversation_id)) return;
     }
     updateBadge(payload.unread_total ?? null);
     if (payload.unread_total == null) refreshUnread();

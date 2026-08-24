@@ -16,7 +16,6 @@ import tornado.websocket
 import aird.config as config_module
 from aird.core.auth_secrets import verify_auth_secret
 import aird.constants as constants_module
-from aird.core.security import legacy_folder_name, sanitize_username_for_folder
 from aird.db import get_user_attributes, get_user_by_username
 from aird.domain.models import (
     AccessDecision,
@@ -74,18 +73,14 @@ _TOKEN_ONLY_USERNAMES = {"token_user", "admin_token"}
 
 
 def get_user_root(handler) -> str:
-    """Return the effective root directory for the current user.
+    """Return the browsable directory for the current user.
 
-    In single-user mode (default), this simply returns ``constants.ROOT_DIR``.
-    In multi-user mode, each authenticated user gets a private subdirectory
-    under ``ROOT_DIR`` named after their sanitised username.
-
-    Falls back to ``ROOT_DIR`` when:
-    - Multi-user mode is disabled
-    - The user is not authenticated
-    - The user is a token-only user (no personal folder)
-    - The username cannot be sanitised to a safe folder name
+    In single-user mode this is ``ROOT_DIR``. In multi-user mode it is
+    ``ROOT_DIR/{username}/data`` (account folder also holds ``.aird-shares``
+    and ``.aird-chats`` beside ``data``).
     """
+    from aird.core.user_storage import user_data_dir_for_username
+
     if not constants_module.MULTI_USER:
         return constants_module.ROOT_DIR
 
@@ -97,24 +92,11 @@ def get_user_root(handler) -> str:
     if not username or username in _TOKEN_ONLY_USERNAMES:
         return constants_module.ROOT_DIR
 
-    safe_name = sanitize_username_for_folder(username)
-    if not safe_name:
-        logger.warning(
-            "Cannot create safe folder for username %r, using global root", username
-        )
-        return constants_module.ROOT_DIR
-
-    user_root = os.path.join(constants_module.ROOT_DIR, safe_name)
-    # Legacy: pre-hash folders used plain 20-char truncation
-    if constants_module.MULTI_USER and not os.path.isdir(user_root):
-        legacy = legacy_folder_name(username)
-        if legacy and legacy != safe_name:
-            legacy_root = os.path.join(constants_module.ROOT_DIR, legacy)
-            if os.path.isdir(legacy_root):
-                user_root = legacy_root
-
-    os.makedirs(user_root, exist_ok=True)
-    return user_root
+    return user_data_dir_for_username(
+        username,
+        root_dir=constants_module.ROOT_DIR,
+        multi_user=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -972,13 +954,21 @@ class BaseHandler(tornado.web.RequestHandler):
         """Set CSP header with the request-specific nonce."""
         nonce = self.get_csp_nonce()
         # Use nonce for scripts, keep unsafe-inline for styles (inline style attributes are common)
+        connect = "'self'"
+        try:
+            from aird.plugins.gitlab import is_gitlab_enabled
+
+            if is_gitlab_enabled():
+                connect = "'self' https: http://127.0.0.1:* http://localhost:*"
+        except Exception:
+            pass
         csp = (
             f"default-src 'self'; "
             f"script-src 'self' 'nonce-{nonce}'; "
             f"style-src 'self' 'unsafe-inline'; "
             f"font-src 'self' data:; "
-            f"img-src 'self' data: blob:; "
-            f"connect-src 'self'; "
+            f"img-src 'self' data: blob: https:; "
+            f"connect-src {connect}; "
             f"worker-src 'self'; "
             f"frame-src 'self' blob:; "
             f"object-src 'self' blob:; "
@@ -997,8 +987,10 @@ class BaseHandler(tornado.web.RequestHandler):
         namespace["csp_nonce"] = self.get_csp_nonce()
         namespace["is_feature_enabled"] = is_feature_enabled
         from aird.plugins.chat import is_chat_enabled
+        from aird.plugins.gitlab import is_gitlab_enabled
 
         namespace["is_chat_enabled"] = is_chat_enabled
+        namespace["is_gitlab_enabled"] = is_gitlab_enabled
         namespace["json_encode_for_script"] = json_encode_for_script
         # _app_nav_header.html expects these; missing keys raise when Super Search link renders.
         namespace.setdefault("nav_search_path", "")

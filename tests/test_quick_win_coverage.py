@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from unittest.mock import MagicMock, mock_open, patch
 
@@ -196,7 +197,7 @@ class TestShareRoot:
           constants, "ROOT_DIR", temp_dir
       ):
           root = filesystem_root_for_share({"created_by": "alice (User)"})
-          assert root.endswith("alice")
+          assert root.endswith(os.path.join("alice", "data"))
           assert filesystem_root_for_share({"created_by": "token_user"}) == temp_dir
 
 

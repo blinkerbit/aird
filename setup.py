@@ -38,6 +38,7 @@ setup(
         "console_scripts": [
             "aird=aird.main:main",
             "aird-cli=aird.cli.main:main",
+            "aird-gitlab-mcp=aird.plugins.gitlab.mcp:main",
         ],
     },
     install_requires=install_requires,

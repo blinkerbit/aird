@@ -10,6 +10,7 @@ import {
   wireSharePopupClose,
   wireShareActionDelegation,
 } from '/static/js/browse/shares.js';
+import { initGitlabUi } from '/static/js/gitlab.js';
 import {
   initFileListViewToggle,
   initMobileActionMenus,
@@ -71,6 +72,7 @@ export function initBrowsePage() {
   runInitStep('shareActions', wireShareActionDelegation);
   runInitStep('keyboard', initBrowseKeyboardShortcuts);
   runInitStep('columnResize', initBrowseColumnResize);
+  runInitStep('gitlab', initGitlabUi);
 }
 
 if (document.readyState === 'loading') {

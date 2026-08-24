@@ -363,6 +363,37 @@ def init_db(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_chat_messages_conv
         ON chat_messages (conversation_id, id)
         """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS gitlab_bindings (
+            owner_username TEXT NOT NULL,
+            folder_rel_path TEXT NOT NULL,
+            gitlab_host TEXT NOT NULL,
+            code_project TEXT NOT NULL,
+            issues_project TEXT NOT NULL,
+            board_iid INTEGER,
+            repo_path_prefix TEXT,
+            updated_by TEXT,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (owner_username, folder_rel_path)
+        )
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS file_comments (
+            id TEXT PRIMARY KEY,
+            owner_username TEXT NOT NULL,
+            file_rel_path TEXT NOT NULL,
+            author_username TEXT NOT NULL,
+            body TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            edited_at TEXT,
+            gitlab_issue_iid INTEGER,
+            gitlab_note_id INTEGER
+        )
+        """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_file_comments_path
+        ON file_comments (owner_username, file_rel_path, created_at)
+        """)
 
     conn.commit()
 

@@ -320,8 +320,10 @@ def make_app(
     ]
 
     from aird.plugins.chat import register_chat
+    from aird.plugins.gitlab import register_gitlab
 
     register_chat(routes)
+    register_gitlab(routes)
 
     # Add LDAP routes only if LDAP is enabled
     if ldap_enabled:

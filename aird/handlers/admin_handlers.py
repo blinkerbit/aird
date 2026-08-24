@@ -39,6 +39,7 @@ from aird.network_share_manager import (
     webdav_library_available,
 )
 from aird.plugins.chat import chat_library_available
+from aird.plugins.gitlab import gitlab_library_available
 from aird.constants.admin import (
     ACCESS_DENIED,
     ACCESS_DENIED_JSON,
@@ -167,6 +168,7 @@ class AdminHandler(BaseHandler):
             smb_library_available=smb_library_available(),
             webdav_library_available=webdav_library_available(),
             chat_library_available=chat_library_available(),
+            gitlab_library_available=gitlab_library_available(),
             admin_notice=self.get_argument("notice", ""),
         )
 
@@ -211,13 +213,19 @@ class AdminHandler(BaseHandler):
             self.get_argument("abac_audit_decisions", "off") == "on"
         )
         FEATURE_FLAGS["webauthn"] = self.get_argument("webauthn", "off") == "on"
+        plugin_notice = ""
         direct_messages_requested = self.get_argument("direct_messages", "off") == "on"
         if direct_messages_requested and not chat_library_available():
             FEATURE_FLAGS["direct_messages"] = False
-            chat_save_notice = "chat_package_required"
+            plugin_notice = "chat_package_required"
         else:
             FEATURE_FLAGS["direct_messages"] = direct_messages_requested
-            chat_save_notice = ""
+        gitlab_requested = self.get_argument("gitlab_integration", "off") == "on"
+        if gitlab_requested and not gitlab_library_available():
+            FEATURE_FLAGS["gitlab_integration"] = False
+            plugin_notice = plugin_notice or "gitlab_package_required"
+        else:
+            FEATURE_FLAGS["gitlab_integration"] = gitlab_requested
         FEATURE_FLAGS["smb_server"] = self.get_argument("smb_server", "off") == "on"
         FEATURE_FLAGS["webdav_server"] = self.get_argument("webdav_server", "off") == "on"
 
@@ -360,8 +368,8 @@ class AdminHandler(BaseHandler):
                 constants_module.get_effective_transfer_strategy(),
             )
         )
-        if chat_save_notice:
-            self.redirect(f"{URL_ADMIN}?notice={chat_save_notice}")
+        if plugin_notice:
+            self.redirect(f"{URL_ADMIN}?notice={plugin_notice}")
         else:
             self.redirect(URL_ADMIN)
 

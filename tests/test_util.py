@@ -1279,6 +1279,14 @@ class TestBrowserMediaKind:
     def test_text_not_media(self):
         assert browser_media_kind("readme.txt") is None
 
+    def test_dng_opens_as_image(self):
+        assert is_image_file("shot.DNG")
+        assert browser_media_kind("shot.dng") == "image"
+        assert get_file_icon("shot.dng") == "🖼️"
+
+    def test_heic_opens_as_image(self):
+        assert browser_media_kind("img.heic") == "image"
+
 
 class TestSanitizeCloudFilenameEdgeCases:
     def test_all_dots_returns_default(self):

@@ -6,6 +6,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
+  {% if is_gitlab_enabled() %}
+  <link rel="stylesheet" href="/static/css/gitlab.css" />
+  {% end %}
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Browse · Aird</title>
 </head>
@@ -69,6 +72,9 @@
       <button type="button" id="copyPathBtn" class="ml-2 opacity-50 hover:opacity-100 hover:text-primary transition-all" title="Copy current path" aria-label="Copy current path"><svg class="ico w-4 h-4" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="3" width="11" height="14" rx="2"/><path d="M5 7v12a2 2 0 0 0 2 2h10"/></svg></button>
       {% end %}
     </div>
+    {% if is_gitlab_enabled() %}
+    <div id="gitlabStrip" class="gitlab-strip" aria-label="GitLab"></div>
+    {% end %}
 
     <!-- File Listing Table -->
     <div id="browseListingPanel" class="browse-listing-panel">
@@ -126,10 +132,13 @@
               <span class="shared-icon" title="Click to view share details"
                 data-share-path="{{ escape(join_path(current_path, file['name'])) }}">🔗</span>
               {% end %}
+              {% if is_gitlab_enabled() %}
+              <span class="gitlab-file-ico" title="GitLab and comments" hidden>🦊</span>
+              {% end %}
             </a>
             {% else %}
             {% set _ext = file['name'].rsplit('.', 1)[-1].lower() if '.' in file['name'] else '' %}
-            {% set _is_media = _ext in ('jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tif', 'tiff', 'pdf') %}
+            {% set _is_media = _ext in ('jpg', 'jpeg', 'jpe', 'jif', 'jfif', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tif', 'tiff', 'pdf', 'avif', 'heic', 'heif', 'dng', 'cr2', 'nef', 'arw', 'orf', 'rw2', 'raf', 'raw') %}
             <a href="/files/{{ escape(join_path(current_path, file['name'])) }}{% if not _is_media %}?start_line=1&end_line=1000{% end %}"
               class="file-link">
               <span class="file-icon">{{ get_file_icon(file["name"]) }}</span>{{
@@ -137,6 +146,9 @@
               {% if file.get('is_shared') %}
               <span class="shared-icon" title="Click to view share details"
                 data-share-path="{{ escape(join_path(current_path, file['name'])) }}">🔗</span>
+              {% end %}
+              {% if is_gitlab_enabled() %}
+              <span class="gitlab-file-ico" title="GitLab and comments" hidden>🦊</span>
               {% end %}
             </a>
             {% end %}
@@ -390,13 +402,14 @@
         delete: {{ 'true' if features.get('file_delete') else 'false' }}
       }
     };
+    globalThis.__GITLAB_CONFIG = { enabled: {{ 'true' if is_gitlab_enabled() else 'false' }}, shareId: null };
   </script>
   <script nonce="{{ csp_nonce }}" type="importmap">
   {
     "imports": {
       "/static/js/browse/app.js": "/static/js/browse/app.js?v=20260728a",
       "/static/js/browse/upload.js": "/static/js/browse/upload.js?v=20260728a",
-      "/static/js/browse/listing.js": "/static/js/browse/listing.js?v=20260726d",
+      "/static/js/browse/listing.js": "/static/js/browse/listing.js?v=20260823a",
       "/static/js/browse/util.js": "/static/js/browse/util.js?v=20260726d",
       "/static/js/browse/upload-errors.js": "/static/js/browse/upload-errors.js?v=20260726d",
       "/static/js/browse/selection-ui.js": "/static/js/browse/selection-ui.js?v=20260726d",
@@ -405,7 +418,8 @@
       "/static/js/browse/tags.js": "/static/js/browse/tags.js?v=20260726d",
       "/static/js/browse/tag-api.js": "/static/js/browse/tag-api.js?v=20260726d",
       "/static/js/browse/shares.js": "/static/js/browse/shares.js?v=20260726d",
-      "/static/js/browse/table-ui.js": "/static/js/browse/table-ui.js?v=20260726d"
+      "/static/js/browse/table-ui.js": "/static/js/browse/table-ui.js?v=20260726d",
+      "/static/js/gitlab.js": "/static/js/gitlab.js?v=20260823a"
     }
   }
   </script>
@@ -503,6 +517,15 @@
     <form method="dialog" class="modal-backdrop"><button type="submit">close</button></form>
   </dialog>
   <script src="/static/js/theme.js" defer></script>
+  {% if is_gitlab_enabled() %}
+  <aside id="gitlabPanel" class="gitlab-panel" hidden>
+    <div class="gitlab-panel-head">
+      <h3 class="gitlab-panel-title text-sm font-bold">GitLab</h3>
+      <button type="button" class="btn btn-ghost btn-xs" id="gitlabPanelClose" aria-label="Close">Close</button>
+    </div>
+    <div class="gitlab-panel-body"></div>
+  </aside>
+  {% end %}
 </body>
 
 </html>

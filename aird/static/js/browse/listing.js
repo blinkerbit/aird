@@ -3,7 +3,9 @@
 import { escapeAttr, escapeHtml, getCanTag } from '/static/js/browse/util.js';
 
 const MEDIA_EXTS = new Set([
-  'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tif', 'tiff', 'pdf',
+  'jpg', 'jpeg', 'jpe', 'jif', 'jfif', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico',
+  'tif', 'tiff', 'pdf', 'avif', 'heic', 'heif', 'dng', 'cr2', 'nef', 'arw', 'orf',
+  'rw2', 'raf', 'raw',
 ]);
 
 const ACTION_SVGS = {
@@ -60,7 +62,7 @@ function formatListingModified(tsMs) {
 function fileIconForName(name) {
   const lower = String(name || '').toLowerCase();
   const ext = lower.includes('.') ? lower.split('.').pop() : '';
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) return '🖼️';
+  if (['jpg', 'jpeg', 'jpe', 'jif', 'jfif', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tif', 'tiff', 'avif', 'heic', 'heif', 'dng', 'cr2', 'nef', 'arw', 'orf', 'rw2', 'raf', 'raw'].includes(ext)) return '🖼️';
   if (ext === 'pdf') return '📕';
   if (['mp4', 'mov', 'mkv', 'webm', 'avi'].includes(ext)) return '🎬';
   if (['mp3', 'wav', 'flac', 'ogg', 'm4a'].includes(ext)) return '🎵';
@@ -183,6 +185,7 @@ function buildListingRow({ name, sizeBytes, isDir, modifiedMs }) {
     + `<input type="checkbox" class="row-checkbox" data-path="${pathAttr}" data-is-dir="${isDir ? '1' : '0'}" aria-label="Select ${nameAttr}" />`
     + `<a href="${escapeAttr(href)}" class="file-link">`
     + `<span class="file-icon">${icon}</span>${nameHtml}`
+    + `<span class="gitlab-file-ico" title="GitLab and comments" hidden>🦊</span>`
     + `</a></div></td>`
     + buildTagsHtml(fullPath)
     + `<td class="size-cell" data-label="Size" data-bytes="${isDir ? 0 : (Number(sizeBytes) || 0)}"${isDir ? ' data-is-dir="1"' : ''}>`

@@ -29,6 +29,7 @@ from aird.core.security import (  # noqa: F401
     is_valid_websocket_origin,
     join_path,
 )
+from aird.core.image_preview import inline_preview_payload
 from aird.core.mmap_handler import MMapFileHandler
 from aird.config import (
     MAX_READABLE_FILE_SIZE,
@@ -206,6 +207,15 @@ def _raw_mode_allows_same_origin_frame(mime_type: str, abspath: str) -> bool:
 async def _serve_raw_mode(handler, abspath):
     """Serve raw file content (inline) for client-side consumption."""
     try:
+        preview = inline_preview_payload(abspath)
+        if preview:
+            data, mime_type = preview
+            handler.set_header("Content-Type", mime_type)
+            handler.set_header("Content-Disposition", "inline")
+            handler.set_header("X-Frame-Options", "SAMEORIGIN")
+            handler.set_header("Content-Length", str(len(data)))
+            handler.write(data)
+            return
         mime_type = APPLICATION_OCTET_STREAM
         try:
             guessed_type, _ = mimetypes.guess_type(abspath)
@@ -351,9 +361,12 @@ class MainHandler(BaseHandler):
 
     async def _handle_file_path(self, path: str) -> None:
         user_root = get_user_root(self)
-        abspath = os.path.abspath(os.path.join(user_root, path))
+        from aird.core.user_storage import confine_root_for_rel, join_user_rel
 
-        if not is_within_root(abspath, user_root):
+        abspath = join_user_rel(user_root, path)
+        confine = confine_root_for_rel(user_root, path)
+
+        if not is_within_root(abspath, confine):
             self.set_status(403)
             self.write(
                 "Access denied: You don't have permission to perform this action"
@@ -369,7 +382,7 @@ class MainHandler(BaseHandler):
             return
 
         if os.path.isfile(abspath):
-            await self.serve_file(self, abspath, user_root)
+            await self.serve_file(self, abspath, confine)
             return
 
         self.set_status(404)
