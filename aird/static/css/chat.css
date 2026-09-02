@@ -522,6 +522,58 @@
   color: color-mix(in oklch, var(--color-base-content) 50%, transparent);
 }
 
+#chatEditorWrap,
+.chat-editor-wrap {
+  position: relative;
+}
+
+.chat-emoji-picker {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: 0.35rem;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 0.15rem;
+  padding: 0.45rem;
+  max-height: 11rem;
+  overflow-y: auto;
+  background: var(--color-base-100);
+  border: 1px solid var(--color-base-300);
+  border-radius: 0.75rem;
+  box-shadow: 0 8px 24px color-mix(in oklch, var(--color-base-content) 12%, transparent);
+}
+
+.chat-emoji-picker[hidden] {
+  display: none !important;
+}
+
+.chat-emoji-item {
+  border: 0;
+  background: transparent;
+  font-size: 1.2rem;
+  line-height: 1.4;
+  border-radius: 0.4rem;
+  cursor: pointer;
+}
+
+.chat-emoji-item:hover {
+  background: var(--color-base-200);
+}
+
+.chat-e2e-lock {
+  font-size: 0.75rem;
+  margin-left: 0.2rem;
+  opacity: 0.75;
+}
+
+.chat-e2e-fail {
+  opacity: 0.65;
+  font-size: 0.85em;
+}
+
 .chat-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -1056,3 +1108,103 @@
   margin-left: 1rem;
 }
 
+.chat-page-header-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.chat-e2e-help-btn {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.chat-e2e-help-btn:hover {
+  opacity: 1;
+}
+
+.chat-e2e-help-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.chat-e2e-help-dialog {
+  border: 0;
+  padding: 0;
+  max-width: 32rem;
+  width: calc(100% - 2rem);
+  border-radius: 1rem;
+  background: var(--color-base-100);
+  color: var(--color-base-content);
+  box-shadow: 0 10px 40px color-mix(in oklch, var(--color-base-content) 25%, transparent);
+}
+
+.chat-e2e-help-dialog::backdrop {
+  background: color-mix(in oklch, var(--color-base-content) 35%, transparent);
+}
+
+.chat-e2e-help-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: min(85vh, 36rem);
+}
+
+.chat-e2e-help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1.1rem 0.5rem;
+}
+
+.chat-e2e-help-head h2 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.chat-e2e-help-body {
+  padding: 0 1.1rem 0.75rem;
+  overflow: auto;
+}
+
+.chat-e2e-disclaimer {
+  font-size: 0.9rem;
+  line-height: 1.45;
+  margin: 0 0 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.65rem;
+  background: color-mix(in oklch, var(--color-warning) 12%, var(--color-base-200));
+  border: 1px solid color-mix(in oklch, var(--color-warning) 35%, var(--color-base-300));
+}
+
+.chat-e2e-help-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.chat-e2e-od-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.chat-e2e-help-restore h3 {
+  font-size: 0.92rem;
+  font-weight: 600;
+  margin: 0.5rem 0 0.25rem;
+}
+
+.chat-e2e-key-status {
+  margin: 0.5rem 0 0;
+  min-height: 1.25rem;
+}
+
+.chat-e2e-help-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.5rem 1.1rem 1rem;
+  border-top: 1px solid var(--color-base-300);
+}

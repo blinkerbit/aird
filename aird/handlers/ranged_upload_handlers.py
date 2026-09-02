@@ -46,9 +46,11 @@ from aird.db.ranged_uploads import (
 from aird.handlers.base_handler import (
     BaseHandler,
     get_user_root,
+    get_username_string_for_db,
     require_action,
     require_modify_access,
 )
+from aird.core.browse_paths import mounts_for_username
 from aird.handlers.constants import DB_UNAVAILABLE_SHORT
 from aird.handlers.file_op_handlers import (
     _validate_upload_destination,
@@ -398,7 +400,10 @@ class RangedUploadSessionHandler(BaseHandler):
         session_id = secrets.token_urlsafe(16)
         user_root = get_user_root(self)
         final_path_abs, upload_err = _validate_upload_destination(
-            upload_dir, filename, user_root
+            upload_dir,
+            filename,
+            user_root,
+            mounts_for_username(self.db_conn, get_username_string_for_db(self) or ""),
         )
         if upload_err is not None:
             self.set_status(upload_err[0])

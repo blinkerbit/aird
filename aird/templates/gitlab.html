@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  {% include '_theme_early.html' %}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/gitlab.css" />
+  <link rel="icon" href="/static/favicon.png" type="image/png" />
+  <title>GitLab · Aird</title>
+</head>
+<body>
+  <div class="aird-shell aird-shell--wide">
+{% set nav_title = "Aird" %}
+{% set nav_search_path = initial_path or "" %}
+{% set show_admin_link = False %}
+{% include '_app_nav_header.html' %}
+
+    <header class="mb-4">
+      <h1 class="aird-page-title">GitLab</h1>
+      <p class="aird-page-lead">Link an Aird folder to a GitLab project. CI, merge requests, board, and file comments live here — not on Browse.</p>
+    </header>
+
+    <section id="gitlabDashboard" class="gitlab-dashboard card bg-base-100 shadow-sm border border-base-300 mb-4" hidden>
+      <div class="card-body">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h2 class="card-title text-base">Overview</h2>
+          <div class="flex items-center gap-2">
+            <span id="gitlabCacheMeta" class="text-xs opacity-60"></span>
+            <button type="button" id="gitlabRefreshBtn" class="btn btn-ghost btn-xs">Refresh tickets</button>
+          </div>
+        </div>
+        <div id="gitlabDashboardGrid" class="gitlab-dashboard-grid"></div>
+      </div>
+    </section>
+
+    <form id="gitlabPathForm" class="flex flex-wrap items-end gap-2 mb-4">
+      <label class="form-control flex-1 min-w-56">
+        <span class="label-text text-sm">Aird folder</span>
+        <input id="gitlabPath" class="input input-bordered input-sm" value="{{ initial_path or '' }}" placeholder="e.g. src/app" autocomplete="off">
+      </label>
+      <button type="submit" class="btn btn-primary btn-sm">Load</button>
+    </form>
+    <input type="hidden" id="currentPath" value="{{ initial_path or '' }}" />
+
+    <div id="gitlabStrip" class="gitlab-strip" aria-label="GitLab"></div>
+
+    <div id="gitlabPathBar" class="gitlab-pathbar text-sm mb-2" aria-label="Current folder"></div>
+
+    <section class="card bg-base-100 shadow-sm border border-base-300 mt-4">
+      <div class="card-body">
+        <h2 class="card-title text-base">Files in this folder</h2>
+        <p class="text-sm text-base-content/70">Click a folder to open it. Click a file or <strong>Comments</strong> to view or add notes.</p>
+        <ul id="gitlabFileList" class="gitlab-file-list mt-2"></ul>
+      </div>
+    </section>
+  </div>
+
+  <aside id="gitlabPanel" class="gitlab-panel" hidden>
+    <div class="gitlab-panel-head">
+      <h3 class="gitlab-panel-title text-sm font-bold">GitLab</h3>
+      <button type="button" class="btn btn-ghost btn-xs" id="gitlabPanelClose" aria-label="Close">Close</button>
+    </div>
+    <div class="gitlab-panel-body"></div>
+  </aside>
+
+  <script nonce="{{ csp_nonce }}">
+    globalThis.__GITLAB_CONFIG = { enabled: true, shareId: null };
+  </script>
+  <script nonce="{{ csp_nonce }}" type="module">
+    import { initGitlabUi } from '/static/js/gitlab.js?v=20260825e';
+    initGitlabUi();
+  </script>
+  <script src="/static/js/theme.js" defer></script>
+</body>
+</html>

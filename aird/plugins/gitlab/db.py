@@ -153,6 +153,17 @@ def comment_counts(
     if not names:
         return counts
     prefix = f"{folder}/" if folder else ""
+    for name in names:
+        exact = f"{prefix}{name}" if prefix else name
+        row = conn.execute(
+            """
+            SELECT COUNT(*) FROM file_comments
+            WHERE owner_username = ? AND file_rel_path = ?
+            """,
+            (owner_username, exact),
+        ).fetchone()
+        if row:
+            counts[name] += int(row[0] or 0)
     rows = conn.execute(
         """
         SELECT file_rel_path, COUNT(*) FROM file_comments
@@ -163,6 +174,8 @@ def comment_counts(
     ).fetchall()
     for rel, count in rows:
         rel_n = _norm(rel)
+        if rel_n in {_norm(f"{prefix}{n}" if prefix else n) for n in names}:
+            continue
         child = rel_n[len(prefix) :] if prefix and rel_n.startswith(prefix) else rel_n
         first = child.split("/", 1)[0]
         if first in counts:

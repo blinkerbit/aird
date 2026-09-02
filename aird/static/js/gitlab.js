@@ -110,6 +110,88 @@ function badgeClass(status) {
 
 let _status = null;
 let _ws = null;
+let _dashboard = null;
+let _panelTarget = null;
+
+function formatCacheAge(iso) {
+  if (!iso) return "Never refreshed";
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return "Cached";
+  const mins = Math.round((Date.now() - then) / 60000);
+  if (mins < 1) return "Cached just now";
+  if (mins < 60) return `Cached ${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  return `Cached ${hrs}h ago`;
+}
+
+async function loadDashboard() {
+  const section = document.getElementById("gitlabDashboard");
+  const grid = document.getElementById("gitlabDashboardGrid");
+  const meta = document.getElementById("gitlabCacheMeta");
+  if (!section || !grid) return;
+  try {
+    _dashboard = await aird("GET", `/api/gitlab/dashboard?${qs()}`);
+  } catch (_) {
+    section.hidden = true;
+    return;
+  }
+  const hasData = _dashboard.binding || (_dashboard.boards || []).length;
+  if (!hasData) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+  const user = _dashboard.gitlab_user;
+  const users = _dashboard.active_users || [];
+  const issues = _dashboard.open_issues || [];
+  const mrs = _dashboard.merge_requests || [];
+  const userHtml = user
+    ? `<div class="gitlab-dash-card"><div class="gitlab-dash-label">Signed in</div><div class="gitlab-dash-value">${escapeHtml(user.name || user.username)}</div></div>`
+    : `<div class="gitlab-dash-card"><div class="gitlab-dash-label">Signed in</div><div class="gitlab-dash-value opacity-60">Token required</div></div>`;
+  const teamHtml = users.length
+    ? `<div class="gitlab-dash-card gitlab-dash-card--wide"><div class="gitlab-dash-label">Active on board</div><div class="gitlab-dash-users">${users.map((u) => `<span class="gitlab-dash-user">${escapeHtml(u.name || u.username)}</span>`).join("")}</div></div>`
+    : "";
+  grid.innerHTML = `${userHtml}
+    <div class="gitlab-dash-card"><div class="gitlab-dash-label">Open issues</div><div class="gitlab-dash-value">${_dashboard.open_issue_count ?? issues.length}</div></div>
+    <div class="gitlab-dash-card"><div class="gitlab-dash-label">Open MRs</div><div class="gitlab-dash-value">${_dashboard.open_mr_count ?? mrs.length}</div></div>
+    ${teamHtml}
+    <div class="gitlab-dash-card gitlab-dash-card--wide">
+      <div class="gitlab-dash-label">Recent issues</div>
+      <div class="gitlab-dash-list">${issues.slice(0, 8).map((iss) =>
+        `<a class="link text-sm" href="${escapeHtml(iss.web_url || "#")}" target="_blank">#${iss.iid} ${escapeHtml(iss.title)}</a>`
+      ).join("") || "<span class='text-xs opacity-60'>Refresh to load cached tickets</span>"}</div>
+    </div>
+    <div class="gitlab-dash-card gitlab-dash-card--wide">
+      <div class="gitlab-dash-label">Open merge requests</div>
+      <div class="gitlab-dash-list">${mrs.slice(0, 6).map((mr) =>
+        `<button type="button" class="link text-sm gitlab-dash-mr" data-iid="${mr.iid}">!${mr.iid} ${escapeHtml(mr.title)}</button>`
+      ).join("") || "<span class='text-xs opacity-60'>None</span>"}</div>
+    </div>`;
+  if (meta) meta.textContent = formatCacheAge(_dashboard.cache?.refreshed_at);
+  grid.querySelectorAll(".gitlab-dash-mr").forEach((btn) => {
+    btn.addEventListener("click", () => openMr(btn.dataset.iid));
+  });
+}
+
+async function refreshTickets() {
+  const btn = document.getElementById("gitlabRefreshBtn");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Refreshing…";
+  }
+  try {
+    await aird("POST", `/api/gitlab/refresh?${qs()}`);
+    await loadDashboard();
+    await loadFolderFiles();
+  } catch (err) {
+    alert(err.message || "Refresh failed");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Refresh tickets";
+    }
+  }
+}
 
 async function refreshStatus() {
   _status = await aird("GET", `/api/gitlab/status?${qs()}`);
@@ -123,7 +205,7 @@ function renderStrip() {
   const bits = [];
   bits.push(`<button type="button" class="btn btn-ghost btn-xs" id="gitlabBindBtn">${b ? "GitLab settings" : "Link GitLab"}</button>`);
   if (_status.is_self) {
-    bits.push(`<button type="button" class="btn btn-ghost btn-xs" id="gitlabTokenBtn">${_status.token_configured ? "Token saved" : "GitLab token"}</button>`);
+    bits.push(`<span class="text-xs opacity-60">${_status.token_configured ? "Token ready" : "Token missing — set in Admin → Plugins"}</span>`);
   } else {
     bits.push(`<button type="button" class="btn btn-ghost btn-xs" id="gitlabViewerTokenBtn">Browser GitLab token</button>`);
   }
@@ -132,7 +214,6 @@ function renderStrip() {
   bits.push(`<span id="gitlabCiBadge" class="gitlab-badge">CI …</span>`);
   strip.innerHTML = bits.join("");
   strip.querySelector("#gitlabBindBtn")?.addEventListener("click", openBind);
-  strip.querySelector("#gitlabTokenBtn")?.addEventListener("click", openOwnerToken);
   strip.querySelector("#gitlabViewerTokenBtn")?.addEventListener("click", openViewerToken);
   strip.querySelector("#gitlabMrsBtn")?.addEventListener("click", openMrs);
   strip.querySelector("#gitlabBoardBtn")?.addEventListener("click", openBoard);
@@ -175,44 +256,136 @@ async function loadCi() {
   }
 }
 
-async function loadRowIcons() {
-  const names = [...document.querySelectorAll(".file-row")].map((row) => {
-    const p = row.dataset.path || "";
-    return p.split("/").pop();
-  }).filter(Boolean);
-  if (!names.length || !_status) return;
-  const counts = {};
-  try {
-    const meta = await aird("GET", `/api/gitlab/folder-meta?${qs({ name: names })}`);
-    Object.assign(counts, meta.comment_counts || {});
-  } catch (_) { /* ignore */ }
-  let issuesBy = {};
-  try {
-    if (_status.is_self && _status.binding && _status.token_configured) {
-      const data = await aird("GET", `/api/gitlab/issues-for-path?${qs({ name: names })}`);
-      issuesBy = data.issues_by_name || {};
-    }
-  } catch (_) { /* ignore */ }
-  document.querySelectorAll(".file-row").forEach((row) => {
-    const name = (row.dataset.path || "").split("/").pop();
-    const ico = row.querySelector(".gitlab-file-ico");
-    if (!ico) return;
-    const n = counts[name] || 0;
-    const issues = issuesBy[name] || [];
-    if (n || issues.length) {
-      ico.hidden = false;
-      ico.title = issues.length ? `${issues.length} GitLab issue(s), ${n} comment(s)` : `${n} comment(s)`;
-      ico.dataset.hasGitlab = issues.length ? "1" : "0";
-    } else {
-      ico.hidden = false;
-      ico.title = "File comments";
-    }
-    ico.onclick = (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      openFilePanel(row.dataset.path, name);
-    };
+function parentPath(dir) {
+  const parts = String(dir || "").replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+  parts.pop();
+  return parts.join("/");
+}
+
+function navigateTo(path) {
+  setCurrentPath(path);
+  const url = new URL(location.href);
+  const rel = currentPath();
+  if (rel) url.searchParams.set("path", rel);
+  else url.searchParams.delete("path");
+  history.replaceState(null, "", url);
+  bootGitlab();
+}
+
+function renderPathBar() {
+  const bar = document.getElementById("gitlabPathBar");
+  if (!bar) return;
+  const dir = currentPath();
+  const parts = dir.split("/").filter(Boolean);
+  const crumbs = ['<a href="#" class="gitlab-path-crumb" data-path="">Home</a>'];
+  parts.forEach((part, i) => {
+    const partial = parts.slice(0, i + 1).join("/");
+    crumbs.push(`<span class="opacity-40">/</span><a href="#" class="gitlab-path-crumb" data-path="${escapeHtml(partial)}">${escapeHtml(part)}</a>`);
   });
+  bar.innerHTML = crumbs.join(" ");
+  bar.querySelectorAll(".gitlab-path-crumb").forEach((link) => {
+    link.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      navigateTo(link.dataset.path || "");
+    });
+  });
+}
+
+function commentLabel(count, issues) {
+  const bits = [];
+  if (issues?.length) bits.push(`${issues.length} issue(s)`);
+  if (count) bits.push(`${count} comment(s)`);
+  return bits.length ? bits.join(", ") : "Comments";
+}
+
+function joinRel(dir, name) {
+  const base = (dir || "").replace(/^\/+|\/+$/g, "");
+  return base ? `${base}/${name}` : name;
+}
+
+function setCurrentPath(path) {
+  const rel = String(path || "").replace(/^\/+/, "");
+  const hidden = document.getElementById("currentPath");
+  if (hidden) hidden.value = rel;
+  const input = document.getElementById("gitlabPath");
+  if (input) input.value = rel;
+}
+
+async function loadFolderFiles() {
+  const list = document.getElementById("gitlabFileList");
+  if (!list || !_status) return;
+  const dir = currentPath();
+  const enc = dir.split("/").filter(Boolean).map(encodeURIComponent).join("/");
+  list.innerHTML = `<p class="text-sm opacity-60">Loading files…</p>`;
+  let files = [];
+  try {
+    const res = await fetch(enc ? `/api/files/${enc}` : "/api/files/", { credentials: "same-origin" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText || "Could not list folder");
+    files = data.files || [];
+  } catch (err) {
+    list.innerHTML = `<p class="text-error text-sm">${escapeHtml(err.message)}</p>`;
+    return;
+  }
+  const names = files.map((f) => f.name).filter(Boolean);
+  const counts = {};
+  let issuesBy = {};
+  if (names.length) {
+    try {
+      const meta = await aird("GET", `/api/gitlab/folder-meta?${qs({ name: names })}`);
+      Object.assign(counts, meta.comment_counts || {});
+    } catch (_) { /* ignore */ }
+    try {
+      if (_status.is_self && _status.binding && _status.token_configured) {
+        const data = await aird("GET", `/api/gitlab/cached-issues?${qs({ name: names })}`);
+        issuesBy = data.issues_by_name || {};
+      }
+    } catch (_) { /* ignore */ }
+  }
+  if (!files.length && !dir) {
+    list.innerHTML = `<p class="text-sm opacity-60">This folder is empty.</p>`;
+    return;
+  }
+  const rows = [];
+  if (dir) {
+    rows.push(`<li class="gitlab-file-row">
+      <button type="button" class="gitlab-file-link gitlab-open-dir" data-path="${escapeHtml(parentPath(dir))}">
+        <span class="gitlab-file-icon" aria-hidden="true">📁</span>
+        <span>..</span>
+      </button>
+    </li>`);
+  }
+  files.forEach((f) => {
+    const full = joinRel(dir, f.name);
+    const n = counts[f.name] || 0;
+    const issues = issuesBy[f.name] || [];
+    const label = commentLabel(n, issues);
+    const icon = f.is_dir ? "📁" : "📄";
+    const linkClass = f.is_dir ? "gitlab-file-link gitlab-open-dir" : "gitlab-file-link gitlab-open-file";
+    rows.push(`<li class="gitlab-file-row">
+      <button type="button" class="${linkClass}" data-path="${escapeHtml(full)}" data-name="${escapeHtml(f.name)}" data-is-dir="${f.is_dir ? "1" : "0"}">
+        <span class="gitlab-file-icon" aria-hidden="true">${icon}</span>
+        <span class="gitlab-file-name">${escapeHtml(f.name)}</span>
+      </button>
+      <button type="button" class="btn btn-ghost btn-xs gitlab-open-comments" data-path="${escapeHtml(full)}" data-name="${escapeHtml(f.name)}">${escapeHtml(label)}</button>
+    </li>`);
+  });
+  list.innerHTML = rows.join("");
+  list.querySelectorAll(".gitlab-open-dir").forEach((btn) => {
+    btn.addEventListener("click", () => navigateTo(btn.dataset.path || ""));
+  });
+  list.querySelectorAll(".gitlab-open-file").forEach((btn) => {
+    btn.addEventListener("click", () => openCommentsPanel(btn.dataset.path, btn.dataset.name, false));
+  });
+  list.querySelectorAll(".gitlab-open-comments").forEach((btn) => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const row = btn.closest(".gitlab-file-row");
+      const isDir = row?.querySelector(".gitlab-open-dir") != null;
+      openCommentsPanel(btn.dataset.path, btn.dataset.name, isDir);
+    });
+  });
+  renderPathBar();
 }
 
 function openPanel(title, html) {
@@ -226,6 +399,7 @@ function openPanel(title, html) {
 function closePanel() {
   const panel = panelEl();
   if (panel) panel.hidden = true;
+  _panelTarget = null;
   if (_ws) {
     _ws.close();
     _ws = null;
@@ -266,34 +440,6 @@ function openBind() {
   });
 }
 
-function openOwnerToken() {
-  openPanel(
-    "GitLab token (this machine)",
-    `<p class="text-sm opacity-70">Stored in your Aird secrets. Not used for share viewers.</p>
-     <form class="gitlab-form" id="gitlabTokForm">
-       <label>Personal access token <input name="token" type="password" autocomplete="off" /></label>
-       <button class="btn btn-primary btn-sm mt-2" type="submit">Save</button>
-       <button class="btn btn-ghost btn-sm" type="button" id="gitlabTokClear">Clear</button>
-     </form>`
-  );
-  document.getElementById("gitlabTokForm")?.addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    const token = new FormData(ev.target).get("token");
-    try {
-      await aird("PUT", `/api/gitlab/token?${qs()}`, { token });
-      await bootGitlab();
-      closePanel();
-    } catch (err) {
-      alert(err.message);
-    }
-  });
-  document.getElementById("gitlabTokClear")?.addEventListener("click", async () => {
-    await aird("DELETE", `/api/gitlab/token?${qs()}`);
-    await bootGitlab();
-    closePanel();
-  });
-}
-
 function openViewerToken() {
   const host = _status?.binding?.gitlab_host || "https://gitlab.com";
   openPanel(
@@ -317,8 +463,9 @@ function openViewerToken() {
   });
 }
 
-async function openFilePanel(fullPath, name) {
+async function openCommentsPanel(fullPath, name, isDir = false) {
   const rel = (fullPath || "").replace(/^\/+/, "");
+  _panelTarget = { fullPath, name, isDir };
   openPanel(name || rel, `<p class="text-sm">Loading…</p>`);
   const q = qs({ path: rel });
   let comments = [];
@@ -334,14 +481,15 @@ async function openFilePanel(fullPath, name) {
   let issues = [];
   try {
     if (_status?.is_self) {
-      const data = await aird("GET", `/api/gitlab/issues-for-path?${qs({ path: rel, name: [name] })}`);
+      const data = await aird("GET", `/api/gitlab/cached-issues?${qs({ path: rel, name: [name] })}`);
       issues = (data.issues_by_name || {})[name] || [];
     }
   } catch (_) { /* ignore */ }
+  const target = isDir ? "folder" : "file";
   const issueHtml = issues.length
     ? `<h4 class="font-semibold text-sm mt-2">Linked issues</h4>` +
       issues.map((iss) => `<div><a class="link" href="${escapeHtml(iss.web_url)}" target="_blank">#${iss.iid} ${escapeHtml(iss.title)}</a></div>`).join("")
-    : `<p class="text-xs opacity-60">No GitLab issue mentions for this file.</p>`;
+    : `<p class="text-xs opacity-60">No GitLab issue mentions for this ${target}.</p>`;
   const commentsHtml = comments.map((c) => `
     <div class="gitlab-comment" data-id="${escapeHtml(c.id)}">
       <div class="gitlab-comment-meta">${escapeHtml(c.author_username)} · ${escapeHtml(c.created_at || "")}${c.gitlab_note_id ? " · promoted" : ""}</div>
@@ -363,7 +511,7 @@ async function openFilePanel(fullPath, name) {
     const body = new FormData(ev.target).get("body");
     try {
       await aird("POST", `/api/gitlab/comments?${q}`, { body, gitlab_issue_iid: issues[0]?.iid });
-      openFilePanel(fullPath, name);
+      openCommentsPanel(fullPath, name, isDir);
     } catch (err) {
       alert(err.message);
     }
@@ -390,7 +538,7 @@ async function openFilePanel(fullPath, name) {
             gitlab_note_id: note.id,
           });
         }
-        openFilePanel(fullPath, name);
+        openCommentsPanel(fullPath, name, isDir);
       } catch (err) {
         alert(err.message);
       }
@@ -407,9 +555,9 @@ function connectCommentsWs(rel) {
   _ws.onmessage = (ev) => {
     try {
       const msg = JSON.parse(ev.data);
-      if (msg.type && msg.type.startsWith("comment_")) {
-        const name = rel.split("/").pop();
-        openFilePanel(rel, name);
+      if (msg.type && msg.type.startsWith("comment_") && _panelTarget) {
+        const { fullPath, name, isDir } = _panelTarget;
+        openCommentsPanel(fullPath, name, isDir);
       }
     } catch (_) { /* ignore */ }
   };
@@ -549,12 +697,18 @@ export async function bootGitlab() {
     return;
   }
   renderStrip();
-  await loadCi();
-  await loadRowIcons();
+  await Promise.all([loadCi(), loadDashboard()]);
+  await loadFolderFiles();
 }
 
 export function initGitlabUi() {
   if (!cfg().enabled) return;
   document.getElementById("gitlabPanelClose")?.addEventListener("click", closePanel);
+  document.getElementById("gitlabRefreshBtn")?.addEventListener("click", refreshTickets);
+  document.getElementById("gitlabPathForm")?.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    setCurrentPath(document.getElementById("gitlabPath")?.value);
+    navigateTo(currentPath());
+  });
   bootGitlab();
 }

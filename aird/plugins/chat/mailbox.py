@@ -81,6 +81,12 @@ CREATE TABLE IF NOT EXISTS pins (
     pinned_at TEXT NOT NULL,
     PRIMARY KEY (conversation_id, message_id)
 );
+CREATE TABLE IF NOT EXISTS e2e_wraps (
+    conversation_id TEXT NOT NULL,
+    username TEXT NOT NULL,
+    wrap_json TEXT NOT NULL,
+    PRIMARY KEY (conversation_id, username)
+);
 """
 
 

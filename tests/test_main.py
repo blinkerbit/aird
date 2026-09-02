@@ -812,17 +812,20 @@ class TestMainModuleHelpers:
     def test_load_and_merge_configs(self, db_conn):
         orig_flags = copy.deepcopy(constants_module.FEATURE_FLAGS)
         orig_upload = copy.deepcopy(constants_module.UPLOAD_CONFIG)
+        orig_ws = copy.deepcopy(constants_module.WEBSOCKET_CONFIG)
+        orig_transfer = copy.deepcopy(constants_module.TRANSFER_CONFIG)
         orig_max = constants_module.MAX_FILE_SIZE
         orig_ext = constants_module.UPLOAD_ALLOWED_EXTENSIONS.copy()
         try:
             with patch(
-                "aird.main.load_feature_flags",
+                "aird.services.config_service.load_feature_flags",
                 return_value={"super_search": False},
             ), patch(
                 "aird.services.config_service.load_upload_config",
                 return_value={"max_file_size_mb": 77, "allow_all_file_types": 0},
             ), patch(
-                "aird.main.load_allowed_extensions", return_value={".zz"}
+                "aird.services.config_service.load_allowed_extensions",
+                return_value={".zz"},
             ):
                 _load_and_merge_configs(db_conn)
             assert constants_module.FEATURE_FLAGS["super_search"] is False
@@ -834,6 +837,10 @@ class TestMainModuleHelpers:
             constants_module.FEATURE_FLAGS.update(orig_flags)
             constants_module.UPLOAD_CONFIG.clear()
             constants_module.UPLOAD_CONFIG.update(orig_upload)
+            constants_module.WEBSOCKET_CONFIG.clear()
+            constants_module.WEBSOCKET_CONFIG.update(orig_ws)
+            constants_module.TRANSFER_CONFIG.clear()
+            constants_module.TRANSFER_CONFIG.update(orig_transfer)
             constants_module.MAX_FILE_SIZE = orig_max
             constants_module.UPLOAD_ALLOWED_EXTENSIONS.clear()
             constants_module.UPLOAD_ALLOWED_EXTENSIONS.update(orig_ext)
@@ -841,13 +848,19 @@ class TestMainModuleHelpers:
     def test_load_and_merge_configs_seeds_extensions(self, db_conn):
         orig_flags = copy.deepcopy(constants_module.FEATURE_FLAGS)
         orig_upload = copy.deepcopy(constants_module.UPLOAD_CONFIG)
+        orig_ws = copy.deepcopy(constants_module.WEBSOCKET_CONFIG)
         orig_max = constants_module.MAX_FILE_SIZE
         orig_ext = constants_module.UPLOAD_ALLOWED_EXTENSIONS.copy()
         try:
-            with patch("aird.main.load_feature_flags", return_value={}), patch(
+            with patch(
+                "aird.services.config_service.load_feature_flags", return_value={}
+            ), patch(
                 "aird.services.config_service.load_upload_config", return_value={}
-            ), patch("aird.main.load_allowed_extensions", return_value=set()), patch(
-                "aird.main.save_allowed_extensions"
+            ), patch(
+                "aird.services.config_service.load_allowed_extensions",
+                return_value=set(),
+            ), patch(
+                "aird.services.config_service.save_allowed_extensions"
             ) as mock_save:
                 _load_and_merge_configs(db_conn)
             mock_save.assert_called_once()
@@ -857,6 +870,8 @@ class TestMainModuleHelpers:
             constants_module.FEATURE_FLAGS.update(orig_flags)
             constants_module.UPLOAD_CONFIG.clear()
             constants_module.UPLOAD_CONFIG.update(orig_upload)
+            constants_module.WEBSOCKET_CONFIG.clear()
+            constants_module.WEBSOCKET_CONFIG.update(orig_ws)
             constants_module.MAX_FILE_SIZE = orig_max
             constants_module.UPLOAD_ALLOWED_EXTENSIONS.clear()
             constants_module.UPLOAD_ALLOWED_EXTENSIONS.update(orig_ext)

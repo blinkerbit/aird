@@ -437,6 +437,9 @@ def _profile_render(handler, user, error=None, success=None, ldap_enabled=None, 
     """Render profile template with common kwargs."""
     if ldap_enabled is None:
         ldap_enabled = handler.settings.get("ldap_server") is not None
+    from aird.plugins.access import user_facing_plugins
+
+    uname = _profile_username(user) if user else None
     handler.render(
         PROFILE_TEMPLATE,
         user=user,
@@ -446,6 +449,7 @@ def _profile_render(handler, user, error=None, success=None, ldap_enabled=None, 
         quota=_profile_quota(handler, user),
         passkeys=_profile_passkeys(handler, user, passkeys),
         shared_with_me=_profile_shared_with_me(handler, user),
+        user_plugins=user_facing_plugins(uname, handler.db_conn) if user else [],
     )
 
 
@@ -950,6 +954,12 @@ class ProfileHandler(BaseHandler):
                 "admin_token",
             ):
                 passkeys = webauthn_db.list_credentials(self.db_conn, uname)
+        user_plugins = []
+        if user:
+            from aird.plugins.access import user_facing_plugins
+
+            uname = user.get("username", "") if isinstance(user, dict) else str(user)
+            user_plugins = user_facing_plugins(uname, self.db_conn)
         self.render(
             PROFILE_TEMPLATE,
             user=user,
@@ -959,6 +969,7 @@ class ProfileHandler(BaseHandler):
             quota=quota,
             shared_with_me=shared_with_me,
             passkeys=passkeys,
+            user_plugins=user_plugins,
         )
 
     @tornado.web.authenticated

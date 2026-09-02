@@ -153,6 +153,20 @@ class TestFeatureFlags:
         result = load_feature_flags(db_conn)
         assert result["flag1"] is False
 
+    def test_seed_runtime_defaults_does_not_overwrite_p2p(self, db_conn):
+        from aird.db.config import seed_runtime_defaults
+
+        save_feature_flags(db_conn, {"p2p_transfer": False})
+        seed_runtime_defaults(
+            db_conn,
+            feature_flags={"p2p_transfer": True, "file_share": True},
+            websocket_config={"search_max_connections": 100},
+            upload_config={"max_file_size_mb": 10},
+        )
+        result = load_feature_flags(db_conn)
+        assert result["p2p_transfer"] is False
+        assert result["file_share"] is True
+
 
 class TestShares:
     """Tests for share functions"""

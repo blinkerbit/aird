@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import mimetypes
 import os
@@ -42,6 +43,12 @@ from aird.plugins.chat.notify import (
     dispatch_pin,
     dispatch_reaction,
 )
+from aird.plugins.chat.e2e import (
+    get_identity_keys,
+    is_e2e_meta,
+    metadata_from_e2e_request,
+    put_identity_key,
+)
 from aird.plugins.chat.sanitize import sanitize_chat_html
 from aird.plugins.chat.service import get_chat_hub
 from aird.utils.util import is_feature_enabled
@@ -58,6 +65,12 @@ def _att_at(msg: dict, index: int) -> dict | None:
     return atts[index]
 
 
+def _e2e_from_body(body: dict) -> dict | None:
+    if not body.get("e2e"):
+        return None
+    return metadata_from_e2e_request(body)
+
+
 def _require_chat(handler: BaseHandler) -> bool:
     if not is_chat_enabled():
         handler.set_status(403)
@@ -67,6 +80,12 @@ def _require_chat(handler: BaseHandler) -> bool:
     if not username or username in _TOKEN_ONLY:
         handler.set_status(403)
         handler.write({"error": "Chat requires a logged-in user account."})
+        return False
+    from aird.plugins.access import PLUGIN_CHAT, user_may_use_plugin
+
+    if not user_may_use_plugin(PLUGIN_CHAT, username, handler.db_conn):
+        handler.set_status(403)
+        handler.write({"error": "Direct messages are not assigned to this account."})
         return False
     return True
 
@@ -345,20 +364,37 @@ class ChatConversationMessagesHandler(BaseHandler, XSRFTokenMixin):
             self.set_status(400)
             self.write({"error": "Use /attach for files"})
             return
-        text = sanitize_chat_html(body.get("body") or "")
-        if not text:
-            self.set_status(400)
-            self.write({"error": "Empty message"})
-            return
         reply_to = str(body.get("reply_to_id") or "") or None
-        msg = chat_db.insert_message(
-            self.db_conn,
-            username=name,
-            conversation_id=conversation_id,
-            msg_type="text",
-            body=text,
-            reply_to_id=reply_to,
-        )
+        try:
+            e2e_meta = _e2e_from_body(body)
+        except ValueError as exc:
+            self.set_status(400)
+            self.write({"error": str(exc)})
+            return
+        if e2e_meta:
+            msg = chat_db.insert_message(
+                self.db_conn,
+                username=name,
+                conversation_id=conversation_id,
+                msg_type="text",
+                body="",
+                metadata=e2e_meta,
+                reply_to_id=reply_to,
+            )
+        else:
+            text = sanitize_chat_html(body.get("body") or "")
+            if not text:
+                self.set_status(400)
+                self.write({"error": "Empty message"})
+                return
+            msg = chat_db.insert_message(
+                self.db_conn,
+                username=name,
+                conversation_id=conversation_id,
+                msg_type="text",
+                body=text,
+                reply_to_id=reply_to,
+            )
         dispatch_message(msg, sender_id=uid, sender_username=name)
         self.write({"message": msg})
 
@@ -379,21 +415,37 @@ class ChatMessageHandler(BaseHandler, XSRFTokenMixin):
             body = self.parse_json_body()
         except tornado.web.HTTPError:
             return
-        text = sanitize_chat_html(body.get("body") or "")
-        if not text:
+        try:
+            e2e_meta = _e2e_from_body(body)
+        except ValueError as exc:
             self.set_status(400)
-            self.write({"error": "Empty message"})
+            self.write({"error": str(exc)})
             return
-        current = chat_db.get_message(name, message_id)
-        if current is not None:
-            from aird.plugins.chat.sanitize import plain_preview
-
-            if plain_preview(current.get("body") or "", 10000) == plain_preview(text, 10000):
-                self.write({"message": current})
+        if e2e_meta:
+            msg = chat_db.edit_message(
+                actor=name,
+                conversation_id=conversation_id,
+                message_id=message_id,
+                body="",
+                e2e=e2e_meta["e2e"],
+                mentions=e2e_meta.get("mentions"),
+            )
+        else:
+            text = sanitize_chat_html(body.get("body") or "")
+            if not text:
+                self.set_status(400)
+                self.write({"error": "Empty message"})
                 return
-        msg = chat_db.edit_message(
-            actor=name, conversation_id=conversation_id, message_id=message_id, body=text
-        )
+            current = chat_db.get_message(name, message_id)
+            if current is not None:
+                from aird.plugins.chat.sanitize import plain_preview
+
+                if plain_preview(current.get("body") or "", 10000) == plain_preview(text, 10000):
+                    self.write({"message": current})
+                    return
+            msg = chat_db.edit_message(
+                actor=name, conversation_id=conversation_id, message_id=message_id, body=text
+            )
         if msg is None:
             self.set_status(404)
             self.write({"error": "Message not found or not editable"})
@@ -438,6 +490,21 @@ class ChatAttachHandler(BaseHandler, XSRFTokenMixin):
             return
         caption = sanitize_chat_html(self.get_argument("caption", "") or self.get_argument("body", ""))
         reply_to = str(self.get_argument("reply_to_id", "") or "") or None
+        e2e_meta = None
+        raw_e2e = (self.get_argument("e2e", "") or "").strip()
+        if raw_e2e:
+            try:
+                parsed = json.loads(raw_e2e)
+                try:
+                    mentions = json.loads(self.get_argument("mentions", "") or "[]")
+                except json.JSONDecodeError:
+                    mentions = []
+                e2e_meta = metadata_from_e2e_request({"e2e": parsed, "mentions": mentions})
+                caption = ""
+            except (ValueError, json.JSONDecodeError) as exc:
+                self.set_status(400)
+                self.write({"error": str(exc)})
+                return
         sender_root = get_user_root(self)
         atts: list[dict] = []
         tmps: list[str] = []
@@ -512,6 +579,8 @@ class ChatAttachHandler(BaseHandler, XSRFTokenMixin):
                     )
                 )
             packed = pack_attachments(atts)
+            if e2e_meta:
+                packed.update(e2e_meta)
             kinds = {a.get("media_kind") for a in atts}
             msg_type = "gif" if kinds == {"gif"} else "file"
             msg = chat_db.insert_message(
@@ -804,6 +873,10 @@ class ChatForwardHandler(BaseHandler, XSRFTokenMixin):
             self.set_status(404)
             self.write({"error": "Message not found"})
             return
+        if is_e2e_meta(src.get("metadata")) or src.get("e2e"):
+            self.set_status(400)
+            self.write({"error": "Encrypted messages must be re-encrypted on the client"})
+            return
         try:
             body = self.parse_json_body()
         except tornado.web.HTTPError:
@@ -955,3 +1028,80 @@ class ChatUnreadHandler(BaseHandler):
             return
         name = _username(self)
         self.write(chat_db.unread_summary(self.db_conn, name))
+
+
+class ChatE2EKeysHandler(BaseHandler, XSRFTokenMixin):
+    @tornado.web.authenticated
+    @require_db
+    def get(self):
+        if not _require_chat(self):
+            return
+        raw = self.get_argument("users", "")
+        names = [n.strip() for n in raw.split(",") if n.strip()][:50]
+        if not names:
+            names = [_username(self)]
+        self.write({"keys": get_identity_keys(self.db_conn, names)})
+
+    @tornado.web.authenticated
+    @require_db
+    def put(self):
+        if not _require_chat(self):
+            return
+        self.check_xsrf_cookie()
+        try:
+            body = self.parse_json_body()
+        except tornado.web.HTTPError:
+            return
+        try:
+            jwk = put_identity_key(self.db_conn, _username(self), body.get("public_jwk"))
+        except ValueError as exc:
+            self.set_status(400)
+            self.write({"error": str(exc)})
+            return
+        self.write({"ok": True, "public_jwk": jwk})
+
+
+class ChatConversationE2EHandler(BaseHandler, XSRFTokenMixin):
+    @tornado.web.authenticated
+    @require_db
+    def get(self, conversation_id: str):
+        if not _require_chat(self):
+            return
+        name = _username(self)
+        if not chat_db.user_in_conversation(name, conversation_id):
+            self.set_status(403)
+            self.write({"error": "Forbidden"})
+            return
+        conv = chat_db.get_conversation(name, conversation_id)
+        members = [m["username"] for m in (conv or {}).get("members") or []]
+        self.write(
+            {
+                "wraps": chat_db.get_e2e_wraps(name, conversation_id),
+                "keys": get_identity_keys(self.db_conn, members),
+            }
+        )
+
+    @tornado.web.authenticated
+    @require_db
+    def put(self, conversation_id: str):
+        if not _require_chat(self):
+            return
+        self.check_xsrf_cookie()
+        name = _username(self)
+        if not chat_db.user_in_conversation(name, conversation_id):
+            self.set_status(403)
+            self.write({"error": "Forbidden"})
+            return
+        try:
+            body = self.parse_json_body()
+        except tornado.web.HTTPError:
+            return
+        try:
+            wraps = chat_db.put_e2e_wraps(
+                actor=name, conversation_id=conversation_id, wraps=body.get("wraps") or {}
+            )
+        except ValueError as exc:
+            self.set_status(400)
+            self.write({"error": str(exc)})
+            return
+        self.write({"wraps": wraps})

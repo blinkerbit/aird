@@ -24,6 +24,58 @@
   font-size: 0.9em;
 }
 .gitlab-file-ico[hidden] { display: none !important; }
+.gitlab-file-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.gitlab-file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--color-base-300, #ddd);
+  font-size: 0.875rem;
+}
+.gitlab-file-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0.15rem 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.gitlab-file-link:hover .gitlab-file-name {
+  color: var(--color-primary, #6366f1);
+  text-decoration: underline;
+}
+.gitlab-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gitlab-file-icon { flex-shrink: 0; }
+.gitlab-pathbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+.gitlab-pathbar a {
+  color: inherit;
+  text-decoration: none;
+}
+.gitlab-pathbar a:hover {
+  color: var(--color-primary, #6366f1);
+  text-decoration: underline;
+}
 .gitlab-panel {
   position: fixed;
   top: 0;
@@ -77,3 +129,47 @@
 .gitlab-busy-bar > span { display: block; height: 100%; background: #6366f1; }
 .gitlab-form label { display: block; font-size: 0.75rem; margin-top: 0.4rem; }
 .gitlab-form input { width: 100%; }
+
+.gitlab-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75rem;
+}
+.gitlab-dash-card {
+  border: 1px solid var(--color-base-300, #ddd);
+  border-radius: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  background: var(--color-base-200, #f6f6f6);
+}
+.gitlab-dash-card--wide { grid-column: 1 / -1; }
+.gitlab-dash-label { font-size: 0.7rem; opacity: 0.65; margin-bottom: 0.2rem; }
+.gitlab-dash-value { font-size: 1.1rem; font-weight: 700; }
+.gitlab-dash-users { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.gitlab-dash-user {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: var(--color-base-100, #fff);
+  border: 1px solid var(--color-base-300, #ddd);
+}
+.gitlab-dash-list { display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-start; }
+
+.browse-gitlab-panel {
+  margin: 0.75rem 0 1rem;
+  border: 1px solid var(--color-base-300, #ddd);
+  border-radius: 0.65rem;
+  background: var(--color-base-100, #fff);
+}
+.browse-gitlab-panel[hidden] { display: none !important; }
+.browse-gitlab-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--color-base-300, #ddd);
+}
+.browse-gitlab-body { padding: 0.65rem 0.75rem; font-size: 0.85rem; }
+.browse-gitlab-issues { display: flex; flex-direction: column; gap: 0.25rem; }
+.browse-gitlab-file { margin-top: 0.5rem; }
+.browse-gitlab-file strong { font-size: 0.8rem; }

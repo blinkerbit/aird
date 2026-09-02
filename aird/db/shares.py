@@ -397,15 +397,29 @@ def list_files_for_tag_share(
     return filter_files_by_patterns(matched, allow_list, avoid_list)
 
 
-def _share_covers_dynamic_path(share: dict, rel_path: str, root_dir: str) -> bool:
+def _share_covers_dynamic_path(
+    share: dict, rel_path: str, root_dir: str, mounts=None
+) -> bool:
     """Check if rel_path is covered by a dynamic share."""
+    from aird.core.browse_paths import resolve_rel
+
     allow_list = share.get("allow_list", [])
     avoid_list = share.get("avoid_list", [])
     for folder_path in share.get("paths") or []:
         try:
-            full_folder_path = os.path.abspath(os.path.join(root_dir, folder_path))
-            full_file_path = os.path.abspath(os.path.join(root_dir, rel_path))
-            if not is_within_root(full_file_path, root_dir):
+            full_folder_path, folder_confine = resolve_rel(
+                root_dir, folder_path, mounts or []
+            )
+            full_file_path, file_confine = resolve_rel(
+                root_dir, rel_path, mounts or []
+            )
+            if (
+                not full_folder_path
+                or not folder_confine
+                or not full_file_path
+                or not file_confine
+                or not is_within_root(full_file_path, file_confine)
+            ):
                 continue
             if os.path.isdir(full_folder_path) and is_within_root(
                 full_file_path, full_folder_path
@@ -442,8 +456,11 @@ def share_covers_relative_path(
     share: dict,
     rel_path: str,
     root_dir: str,
+    mounts=None,
 ) -> bool:
     """True if *rel_path* (relative to *root_dir*) is covered by *share* (static, dynamic, or tag)."""
+    from aird.core.browse_paths import resolve_rel
+
     share_type = share.get("share_type", "static")
     allow_list = share.get("allow_list", [])
     avoid_list = share.get("avoid_list", [])
@@ -463,14 +480,16 @@ def share_covers_relative_path(
                 return False
             if not filter_files_by_patterns([norm], allow_list, avoid_list):
                 return False
-            full = os.path.join(root_dir, *norm.split("/")) if norm else root_dir
-            return os.path.lexists(full)
+            full, confine = resolve_rel(root_dir, norm, mounts or [])
+            return bool(
+                full and confine and os.path.lexists(full) and is_within_root(full, confine)
+            )
         except Exception:
             logger.debug("share_covers_relative_path tag failed", exc_info=True)
             return False
 
     if share_type == "dynamic":
-        return _share_covers_dynamic_path(share, rel_path, root_dir)
+        return _share_covers_dynamic_path(share, rel_path, root_dir, mounts)
 
     return _share_covers_static_path(share, rel_path)
 

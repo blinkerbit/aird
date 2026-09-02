@@ -171,6 +171,31 @@ def get_board(host: str, token: str, project: str, board_id: int) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def get_current_user(host: str, token: str) -> dict:
+    data = gitlab_request(host, token, "GET", "user")
+    return data if isinstance(data, dict) else {}
+
+
+def get_issue(host: str, token: str, project: str, iid: int) -> dict | None:
+    data = gitlab_request(
+        host,
+        token,
+        "GET",
+        f"projects/{project_id(project)}/issues/{iid}",
+    )
+    return data if isinstance(data, dict) else None
+
+
+def list_issue_links(host: str, token: str, project: str, iid: int) -> list:
+    data = gitlab_request(
+        host,
+        token,
+        "GET",
+        f"projects/{project_id(project)}/issues/{iid}/links",
+    )
+    return data if isinstance(data, list) else []
+
+
 def list_label_events(host: str, token: str, project: str, iid: int) -> list:
     data = gitlab_request(
         host,

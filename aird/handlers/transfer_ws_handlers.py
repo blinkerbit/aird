@@ -31,6 +31,7 @@ from aird.handlers.base_handler import (
     _display_username_from_dict,
     authenticate_handler,
     get_user_root,
+    resolve_handler_rel,
 )
 from aird.handlers.constants import AUTH_REQUIRED
 from aird.handlers.file_op_handlers import finalize_upload_to_disk
@@ -344,9 +345,8 @@ class FileTransferWebSocketHandler(
             await self._send_json({"type": "error", "message": ACCESS_DENIED})
             return
 
-        user_root = get_user_root(self)
-        abs_path = os.path.abspath(os.path.join(user_root, rel_path))
-        if not is_within_root(abs_path, user_root) or not os.path.isfile(abs_path):
+        abs_path, confine = resolve_handler_rel(self, rel_path)
+        if not abs_path or not confine or not is_within_root(abs_path, confine) or not os.path.isfile(abs_path):
             await self._send_json({"type": "error", "message": "File not found"})
             return
 

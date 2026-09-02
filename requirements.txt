@@ -8,4 +8,4 @@ argon2-cffi>=23.1.0
 requests>=2.31.0
 chardet>=5.0.0,<6.0.0
 pyasn1>=0.6.2
-# Optional: pip install zstandard brotli  (or: pip install aird[compress])
+watchdog>=4.0.0

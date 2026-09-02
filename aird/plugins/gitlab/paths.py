@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import unquote, urlparse
 
 _BACKTICK = re.compile(r"`([^`\n]{1,512})`")
 _MD_LINK = re.compile(r"\[[^\]]{0,256}\]\(([^)]{1,512})\)")
 _BARE_FILE = re.compile(
     r"(?<![A-Za-z0-9_])((?:[\w.-]+/){1,24}[\w.-]+\.[A-Za-z0-9]{1,12})"
+)
+_GITLAB_BLOB = re.compile(
+    r"/(?:-/)?blob/[^/]+/(.+?)(?:#|\?|$)",
+    re.IGNORECASE,
+)
+_GITLAB_TREE = re.compile(
+    r"/(?:-/)?tree/[^/]+/(.+?)(?:#|\?|$)",
+    re.IGNORECASE,
 )
 _SKIP_SCHEMES = ("http://", "https://", "mailto:", "#")
 
@@ -36,19 +45,66 @@ def _looks_like_path(text: str) -> bool:
     return True
 
 
+def _path_from_gitlab_url(url: str, *, host: str = "", project: str = "") -> str | None:
+    text = unquote((url or "").strip())
+    if not text:
+        return None
+    for rx in (_GITLAB_BLOB, _GITLAB_TREE):
+        match = rx.search(text)
+        if match:
+            cand = _clean_candidate(match.group(1))
+            return cand if _looks_like_path(cand) else None
+    parsed = urlparse(text)
+    if parsed.scheme not in ("http", "https"):
+        return None
+    path = parsed.path or ""
+    host_bits = (host or "").replace("https://", "").replace("http://", "").strip("/")
+    if host_bits and host_bits not in (parsed.netloc or ""):
+        return None
+    if project:
+        proj = project.strip("/")
+        marker = f"/{proj}/-/"
+        if marker not in path and f"/{proj}/" not in path:
+            return None
+    for rx in (_GITLAB_BLOB, _GITLAB_TREE):
+        match = rx.search(path)
+        if match:
+            cand = _clean_candidate(match.group(1))
+            return cand if _looks_like_path(cand) else None
+    return None
+
+
 def extract_file_paths(markdown: str | None) -> list[str]:
     """Return unique repo-relative paths mentioned in issue/MR markdown."""
+    return collect_paths_from_text(markdown)
+
+
+def collect_paths_from_text(
+    markdown: str | None,
+    *,
+    host: str = "",
+    project: str = "",
+) -> list[str]:
+    """Return unique repo-relative paths from markdown, URLs, and bare paths."""
     if not markdown:
         return []
     found: list[str] = []
     seen: set[str] = set()
+
+    def add(raw: str) -> None:
+        cand = _clean_candidate(raw)
+        if not _looks_like_path(cand) or cand in seen:
+            return
+        seen.add(cand)
+        found.append(cand)
+
     for rx in (_BACKTICK, _MD_LINK, _BARE_FILE):
         for match in rx.finditer(markdown):
-            cand = _clean_candidate(match.group(1))
-            if not _looks_like_path(cand) or cand in seen:
-                continue
-            seen.add(cand)
-            found.append(cand)
+            add(match.group(1))
+    for token in re.findall(r"https?://[^\s)>\"']+", markdown):
+        from_url = _path_from_gitlab_url(token, host=host, project=project)
+        if from_url:
+            add(from_url)
     return found
 
 

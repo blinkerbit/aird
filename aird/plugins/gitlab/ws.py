@@ -46,6 +46,13 @@ class GitlabCommentsWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.We
         if not user:
             self.close(code=1008, reason="Authentication required")
             return
+        from aird.plugins.access import PLUGIN_GITLAB, user_may_use_plugin
+
+        username = user.get("username") if isinstance(user, dict) else None
+        conn = self.application.settings.get("db_conn")
+        if not user_may_use_plugin(PLUGIN_GITLAB, username, conn):
+            self.close(code=1008, reason="GitLab not assigned")
+            return
         self._user = user
         if not self.register_connection():
             return

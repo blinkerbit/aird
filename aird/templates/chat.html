@@ -16,10 +16,51 @@
 {% set show_admin_link = False %}
 {% include '_app_nav_header.html' %}
 
-    <header class="mb-4">
-      <h1 class="aird-page-title">Chat</h1>
-      <p class="aird-page-lead">Direct messages and groups. Files stay in the sender’s space until you save a copy.</p>
+    <header class="mb-4 chat-page-header">
+      <div class="chat-page-header-row">
+        <h1 class="aird-page-title">Chat</h1>
+        <button type="button" id="chatE2eHelpBtn" class="btn btn-ghost btn-circle btn-sm chat-e2e-help-btn" aria-label="Encryption key help" title="Encryption key help">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="chat-e2e-help-icon" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </button>
+      </div>
+      <p class="aird-page-lead">Direct messages are end-to-end encrypted on your device. The server and admins only see ciphertext.</p>
     </header>
+
+    <dialog id="chatE2eHelpDialog" class="chat-e2e-help-dialog">
+      <form method="dialog" class="chat-e2e-help-panel">
+        <div class="chat-e2e-help-head">
+          <h2>Encryption key backup</h2>
+          <button type="button" class="btn btn-ghost btn-xs" data-chat-e2e-close aria-label="Close">✕</button>
+        </div>
+        <div class="chat-e2e-help-body">
+          <p class="chat-e2e-disclaimer">Your private encryption key stays in this browser. Prefer backing it up to OneDrive — if you open Chat on a new browser or after clearing site data without a backup, older messages cannot be decrypted. Sign in to OneDrive and set the key folder under your username → Settings → Direct messages → Settings.</p>
+          <p class="text-sm opacity-70" data-chat-e2e-backup-status></p>
+          <div class="chat-e2e-help-actions">
+            <button type="button" id="chatE2eDownloadBtn" class="btn btn-outline btn-sm">Download key file</button>
+            <div data-chat-e2e-od-section class="chat-e2e-od-actions">
+              <button type="button" id="chatE2eBackupOdBtn" class="btn btn-primary btn-sm">Back up to OneDrive</button>
+              <button type="button" id="chatE2eBackupOdPickBtn" class="btn btn-ghost btn-sm">Choose OneDrive folder…</button>
+            </div>
+          </div>
+          <div class="chat-e2e-help-restore">
+            <h3>Restore key</h3>
+            <p class="text-sm opacity-70">Use this after switching browsers or clearing site data.</p>
+            <div class="chat-e2e-help-actions">
+              <button type="button" id="chatE2eRestoreMappedBtn" class="btn btn-outline btn-sm" hidden>Restore from mapped OneDrive folder</button>
+              <button type="button" id="chatE2eRestoreOdBtn" class="btn btn-outline btn-sm" data-chat-e2e-od-section>Browse OneDrive for key file</button>
+              <label class="btn btn-ghost btn-sm">
+                Upload key file
+                <input type="file" id="chatE2eKeyFileInput" accept="application/json,.json" class="hidden">
+              </label>
+            </div>
+          </div>
+          <p id="chatE2eKeyStatus" class="chat-e2e-key-status text-sm" hidden></p>
+        </div>
+        <div class="chat-e2e-help-foot">
+          <button type="button" class="btn btn-ghost btn-sm" data-chat-e2e-close>Close</button>
+        </div>
+      </form>
+    </dialog>
 
     <div class="chat-layout">
       <aside class="chat-sidebar">
@@ -63,6 +104,7 @@
             <div class="chat-toolbar">
               <button type="button" class="chat-toolbar-btn" data-cmd="bold" title="Bold"><strong>B</strong></button>
               <button type="button" class="chat-toolbar-btn" data-cmd="italic" title="Italic"><em>I</em></button>
+              <button type="button" class="chat-toolbar-btn" id="chatEmojiBtn" title="Emoji">😊</button>
               <button type="button" class="chat-toolbar-btn" data-cmd="link" title="Insert link">Link</button>
               <button type="button" id="chatBrowseBtn" class="chat-toolbar-btn" title="Attach from browse">Browse</button>
               <label class="chat-toolbar-btn" title="Upload file">
@@ -75,6 +117,7 @@
               </label>
             </div>
             <div class="chat-editor-wrap">
+              <div id="chatEmojiPicker" class="chat-emoji-picker hidden" hidden></div>
               <div id="chatPathSuggest" class="chat-path-suggest" hidden></div>
               <div id="chatPending" class="chat-pending" hidden></div>
               <div id="chatEditor" contenteditable="true" data-placeholder="Write a message…" aria-label="Write a message" aria-multiline="true" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
@@ -178,8 +221,12 @@
   </div>
 
   <script nonce="{{ csp_nonce }}">window.__AIRD_CHAT_USER__ = {% raw json_encode(current_user.get('username') if current_user else '') %};</script>
+  <script nonce="{{ csp_nonce }}">globalThis.__ONEDRIVE_BROWSER_CONFIG = { enabled: {{ 'true' if is_onedrive_browser_enabled() else 'false' }} };</script>
   <script nonce="{{ csp_nonce }}" src="/static/js/components/folder-picker.js"></script>
   <script nonce="{{ csp_nonce }}" src="/static/js/chat-ws.js"></script>
-  <script nonce="{{ csp_nonce }}" src="/static/js/pages/chat.js?v=20260823d"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/onedrive-fe/index.js?v=20260902b"></script>
+  <script nonce="{{ csp_nonce }}" src="/static/js/chat-e2e.js?v=20260825e2e"></script>
+  <script nonce="{{ csp_nonce }}" src="/static/js/chat-key-backup.js?v=20260825e2e"></script>
+  <script nonce="{{ csp_nonce }}" src="/static/js/pages/chat.js?v=20260825e2e2"></script>
 </body>
 </html>

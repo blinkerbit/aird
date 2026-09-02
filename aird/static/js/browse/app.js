@@ -10,7 +10,10 @@ import {
   wireSharePopupClose,
   wireShareActionDelegation,
 } from '/static/js/browse/shares.js';
-import { initGitlabUi } from '/static/js/gitlab.js';
+import { initOneDriveFeUi } from '/static/js/onedrive-fe/index.js';
+import { initRowMoreMenus } from '/static/js/browse/row-more-menu.js';
+import { registerOneDriveFeBrowseActions } from '/static/js/browse/onedrive-fe-actions.js';
+import { initBrowseGitlabPanel } from '/static/js/browse/gitlab-panel.js';
 import {
   initFileListViewToggle,
   initMobileActionMenus,
@@ -72,7 +75,10 @@ export function initBrowsePage() {
   runInitStep('shareActions', wireShareActionDelegation);
   runInitStep('keyboard', initBrowseKeyboardShortcuts);
   runInitStep('columnResize', initBrowseColumnResize);
-  runInitStep('gitlab', initGitlabUi);
+  runInitStep('onedriveFeActions', registerOneDriveFeBrowseActions);
+  runInitStep('rowMoreMenu', initRowMoreMenus);
+  runInitStep('onedriveFe', initOneDriveFeUi);
+  runInitStep('gitlabPanel', initBrowseGitlabPanel);
 }
 
 if (document.readyState === 'loading') {

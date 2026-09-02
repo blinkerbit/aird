@@ -1,6 +1,7 @@
 "use strict";
 
 import { escapeAttr, escapeHtml, getCanTag } from '/static/js/browse/util.js';
+import { buildMoreMenuHtml } from '/static/js/browse/row-more-menu.js';
 
 const MEDIA_EXTS = new Set([
   'jpg', 'jpeg', 'jpe', 'jif', 'jfif', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico',
@@ -30,6 +31,7 @@ const ACTION_SVGS = {
     '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">'
     + '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/>'
     + '<circle cx="19" cy="12" r="1.5"/></svg>',
+  onedrive: '☁',
 };
 
 function normalizePath(p) {
@@ -124,6 +126,7 @@ function buildActionsHtml(fullPath, name, isDir, features) {
       ACTION_SVGS.delete,
     ));
   }
+  parts.push(buildMoreMenuHtml());
   return (
     `<td class="actions-cell" data-label="Actions">`
     + `<button type="button" class="mobile-actions-toggle" aria-label="Show actions for ${nameAttr}" aria-expanded="false">`
@@ -185,7 +188,6 @@ function buildListingRow({ name, sizeBytes, isDir, modifiedMs }) {
     + `<input type="checkbox" class="row-checkbox" data-path="${pathAttr}" data-is-dir="${isDir ? '1' : '0'}" aria-label="Select ${nameAttr}" />`
     + `<a href="${escapeAttr(href)}" class="file-link">`
     + `<span class="file-icon">${icon}</span>${nameHtml}`
-    + `<span class="gitlab-file-ico" title="GitLab and comments" hidden>🦊</span>`
     + `</a></div></td>`
     + buildTagsHtml(fullPath)
     + `<td class="size-cell" data-label="Size" data-bytes="${isDir ? 0 : (Number(sizeBytes) || 0)}"${isDir ? ' data-is-dir="1"' : ''}>`

@@ -1,0 +1,128 @@
+/* Admin plugins — iOS-style split settings */
+
+.admin-plugins-layout {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  gap: 0;
+  min-height: 28rem;
+  border: 1px solid oklch(var(--b3));
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: oklch(var(--b1));
+}
+
+.admin-plugins-nav {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid oklch(var(--b3));
+  background: oklch(var(--b2) / 0.35);
+  padding: 0.35rem;
+  gap: 0.15rem;
+}
+
+.admin-plugins-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.65rem 0.75rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.admin-plugins-nav-item:hover {
+  background: oklch(var(--b3) / 0.55);
+}
+
+.admin-plugins-nav-item.is-active {
+  background: oklch(var(--b1));
+  box-shadow: 0 1px 2px oklch(var(--bc) / 0.08);
+  font-weight: 600;
+}
+
+.admin-plugins-nav-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-plugins-detail {
+  padding: 1.25rem 1.5rem;
+  overflow-y: auto;
+  max-height: 70vh;
+}
+
+.admin-plugins-pane[hidden] {
+  display: none !important;
+}
+
+.admin-plugins-pane h2 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 0 0 0.35rem;
+}
+
+.admin-plugins-pane .pane-lead {
+  font-size: 0.875rem;
+  opacity: 0.7;
+  margin-bottom: 1.25rem;
+}
+
+.admin-plugins-section {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid oklch(var(--b3));
+}
+
+.admin-plugins-section h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+}
+
+.board-row {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid oklch(var(--b3));
+  border-radius: 0.5rem;
+  margin-bottom: 0.5rem;
+  background: oklch(var(--b2) / 0.2);
+}
+
+.board-row-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.5rem;
+}
+
+@media (max-width: 768px) {
+  .admin-plugins-layout {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .admin-plugins-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid oklch(var(--b3));
+  }
+
+  .admin-plugins-nav-item {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .admin-plugins-detail {
+    max-height: none;
+  }
+}

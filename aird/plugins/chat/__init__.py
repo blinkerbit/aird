@@ -33,8 +33,10 @@ def register_chat(routes: list) -> None:
         return
     from aird.plugins.chat.handlers import (
         ChatAttachHandler,
+        ChatConversationE2EHandler,
         ChatConversationMessagesHandler,
         ChatConversationsHandler,
+        ChatE2EKeysHandler,
         ChatForwardHandler,
         ChatMembersHandler,
         ChatMessageFileHandler,
@@ -57,6 +59,8 @@ def register_chat(routes: list) -> None:
         [
             (r"/chat", ChatPageHandler),
             (r"/api/chat/conversations", ChatConversationsHandler),
+            (r"/api/chat/e2e/keys", ChatE2EKeysHandler),
+            (rf"/api/chat/conversations/{cid}/e2e", ChatConversationE2EHandler),
             (rf"/api/chat/conversations/{cid}/messages/{mid}/file", ChatMessageFileHandler),
             (rf"/api/chat/conversations/{cid}/messages/{mid}/save-copy", ChatSaveCopyHandler),
             (rf"/api/chat/conversations/{cid}/messages/{mid}/reactions", ChatReactionHandler),

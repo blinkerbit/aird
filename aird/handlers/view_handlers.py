@@ -12,6 +12,7 @@ from aird.handlers.base_handler import (
     get_username_string_for_db,
     get_user_root,
     require_action,
+    resolve_handler_rel,
 )
 from aird.utils.tag_display import tag_chip_inline_style
 from aird.utils.util import (
@@ -253,10 +254,9 @@ def _request_file_base(handler) -> str:
     return handler.request.path.split("?", 1)[0]
 
 
-def _serve_file_view(handler, abspath, filename, user_root):
+def _serve_file_view(handler, abspath, filename, rel_path):
     """Render file view template (client-side fetch)."""
     file_size = get_file_size_safe(abspath)
-    rel_path = os.path.relpath(abspath, user_root).replace("\\", "/")
     handler.render(
         "file.html",
         filename=filename,
@@ -269,10 +269,9 @@ def _serve_file_view(handler, abspath, filename, user_root):
     )
 
 
-def _serve_media_view(handler, abspath, filename, user_root, media_kind: str):
+def _serve_media_view(handler, abspath, filename, rel_path, media_kind: str):
     """Render inline image/PDF viewer (browser-native display via ?mode=raw)."""
     file_size = get_file_size_safe(abspath)
-    rel_path = os.path.relpath(abspath, user_root).replace("\\", "/")
     base = _request_file_base(handler)
     media_src = f"{base}?mode=raw"
     download_href = f"{base}?download=1"
@@ -301,6 +300,14 @@ class MainHandler(BaseHandler):
             return
 
         files = get_files_in_directory(abspath)
+        from aird.core.browse_paths import mounts_for_username, overlay_mount_entries
+
+        if not path:
+            overlay_mount_entries(
+                files,
+                mounts_for_username(self.db_conn, get_username_string_for_db(self) or ""),
+                path,
+            )
 
         db_conn = self.db_conn
         user_root = get_user_root(self)
@@ -360,11 +367,13 @@ class MainHandler(BaseHandler):
         )
 
     async def _handle_file_path(self, path: str) -> None:
-        user_root = get_user_root(self)
-        from aird.core.user_storage import confine_root_for_rel, join_user_rel
-
-        abspath = join_user_rel(user_root, path)
-        confine = confine_root_for_rel(user_root, path)
+        abspath, confine = resolve_handler_rel(self, path)
+        if not abspath or not confine:
+            self.set_status(403)
+            self.write(
+                "Access denied: You don't have permission to perform this action"
+            )
+            return
 
         if not is_within_root(abspath, confine):
             self.set_status(403)
@@ -382,7 +391,7 @@ class MainHandler(BaseHandler):
             return
 
         if os.path.isfile(abspath):
-            await self.serve_file(self, abspath, confine)
+            await self.serve_file(self, abspath, virtual_rel=path)
             return
 
         self.set_status(404)
@@ -399,11 +408,13 @@ class MainHandler(BaseHandler):
         await self._handle_file_path(path)
 
     @staticmethod
-    async def serve_file(handler, abspath, user_root=None):
-        if user_root is None:
-            user_root = get_user_root(handler)
+    async def serve_file(handler, abspath, user_root=None, virtual_rel=None):
         filename = os.path.basename(abspath)
-        rel_path = os.path.relpath(abspath, user_root).replace("\\", "/")
+        rel_path = (virtual_rel or "").replace("\\", "/").strip("/")
+        if not rel_path:
+            if user_root is None:
+                user_root = get_user_root(handler)
+            rel_path = os.path.relpath(abspath, user_root).replace("\\", "/")
         file_size = get_file_size_safe(abspath)
 
         if handler.get_argument("download", None):
@@ -431,9 +442,9 @@ class MainHandler(BaseHandler):
             return
         media_kind = browser_media_kind(filename)
         if media_kind:
-            _serve_media_view(handler, abspath, filename, user_root, media_kind)
+            _serve_media_view(handler, abspath, filename, rel_path, media_kind)
             return
-        _serve_file_view(handler, abspath, filename, user_root)
+        _serve_file_view(handler, abspath, filename, rel_path)
 
 
 class EditViewHandler(BaseHandler):
@@ -447,9 +458,19 @@ class EditViewHandler(BaseHandler):
         ):
             return
 
-        user_root = get_user_root(self)
-        abspath = os.path.abspath(os.path.join(user_root, path))
-        if not is_within_root(abspath, user_root):
+        from aird.core.browse_paths import mounts_for_username, write_blocked_reason
+
+        if write_blocked_reason(
+            path,
+            mounts_for_username(self.db_conn, get_username_string_for_db(self) or ""),
+        ):
+            self.set_status(403)
+            self.write(
+                "Access denied: You don't have permission to perform this action"
+            )
+            return
+        abspath, confine = resolve_handler_rel(self, path)
+        if not abspath or not confine or not is_within_root(abspath, confine):
             self.set_status(403)
             self.write(
                 "Access denied: You don't have permission to perform this action"

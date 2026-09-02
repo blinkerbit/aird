@@ -33,6 +33,7 @@ from aird.plugins.gitlab.client import (
     create_issue_note,
     create_mr_note,
     get_board,
+    get_current_user,
     get_mr,
     list_boards,
     list_issue_notes,
@@ -42,8 +43,9 @@ from aird.plugins.gitlab.client import (
     list_open_issues,
     list_pipelines,
 )
+from aird.plugins.gitlab import cache as gitlab_cache
+from aird.plugins.gitlab import settings as gitlab_settings
 from aird.plugins.gitlab.hub import get_comment_hub
-from aird.plugins.gitlab.paths import bind_matches_name, extract_file_paths
 from aird.plugins.gitlab.token import (
     delete_user_token,
     load_owner_token,
@@ -58,6 +60,13 @@ def _require_gitlab(handler: BaseHandler) -> bool:
     if not is_gitlab_enabled():
         handler.set_status(403)
         handler.write({"error": "GitLab integration is disabled."})
+        return False
+    from aird.plugins.access import PLUGIN_GITLAB, user_may_use_plugin
+
+    username = get_username_string_for_db(handler)
+    if not user_may_use_plugin(PLUGIN_GITLAB, username, handler.db_conn):
+        handler.set_status(403)
+        handler.write({"error": "GitLab is not assigned to this account."})
         return False
     return True
 
@@ -105,7 +114,11 @@ def _binding_and_token(handler: BaseHandler, access: PathAccess):
         handler.db_conn, access.owner_username, access.rel_path
     )
     host = (binding or {}).get("gitlab_host") or "https://gitlab.com"
-    token = load_owner_token(access.owner_username, host) if access.is_self else None
+    token = (
+        load_owner_token(access.owner_username, host, conn=handler.db_conn)
+        if access.is_self
+        else None
+    )
     return binding, token
 
 
@@ -116,6 +129,18 @@ def _gl_call(handler: BaseHandler, fn, *args, **kwargs):
         handler.set_status(exc.status if 400 <= exc.status < 500 else 502)
         handler.write({"error": exc.message})
         return None
+
+
+class GitlabPageHandler(BaseHandler):
+    @tornado.web.authenticated
+    @require_db
+    def get(self):
+        if not _require_gitlab(self):
+            return
+        path = (self.get_argument("path", "") or "").replace("\\", "/").strip("/")
+        if ".." in path.split("/"):
+            path = ""
+        self.render("gitlab.html", initial_path=path)
 
 
 class GitlabStatusHandler(BaseHandler):
@@ -143,6 +168,7 @@ class GitlabStatusHandler(BaseHandler):
 
 class GitlabTokenHandler(BaseHandler, XSRFTokenMixin):
     @tornado.web.authenticated
+    @require_db
     def put(self):
         if not _require_gitlab(self):
             return
@@ -159,10 +185,11 @@ class GitlabTokenHandler(BaseHandler, XSRFTokenMixin):
             self.set_status(400)
             self.write({"error": "A GitLab token is required"})
             return
-        save_user_token(access.owner_username, token)
+        save_user_token(access.owner_username, token, conn=self.db_conn)
         self.write({"ok": True, "token_configured": True})
 
     @tornado.web.authenticated
+    @require_db
     def delete(self):
         if not _require_gitlab(self):
             return
@@ -170,7 +197,7 @@ class GitlabTokenHandler(BaseHandler, XSRFTokenMixin):
         access = _need_access(self, owner_proxy=True)
         if not access:
             return
-        delete_user_token(access.owner_username)
+        delete_user_token(access.owner_username, conn=self.db_conn)
         self.write({"ok": True, "token_configured": False})
 
 
@@ -309,36 +336,16 @@ def _issues_mentioning(handler, access: PathAccess, names: list[str]):
     if not binding or not token:
         return binding, token, {}
     project = binding.get("issues_project") or binding.get("code_project")
-    issues = _gl_call(
-        handler, list_open_issues, binding["gitlab_host"], token, project
+    key = gitlab_cache.project_key(binding["gitlab_host"], project)
+    cached = gitlab_cache.issues_for_names(
+        handler.db_conn,
+        access.owner_username,
+        key,
+        names,
+        folder_rel=access.rel_path,
+        repo_prefix=binding.get("repo_path_prefix") or "",
     )
-    if issues is None:
-        return binding, token, None
-    mentioned: list[str] = []
-    issue_by_path: dict[str, list[dict]] = {}
-    for issue in issues:
-        blob = f"{issue.get('title') or ''}\n{issue.get('description') or ''}"
-        paths = extract_file_paths(blob)
-        mentioned.extend(paths)
-        mapped = bind_matches_name(
-            names,
-            paths,
-            folder_rel=access.rel_path,
-            repo_prefix=binding.get("repo_path_prefix") or "",
-        )
-        for name, hits in mapped.items():
-            if not hits:
-                continue
-            issue_by_path.setdefault(name, []).append(
-                {
-                    "iid": issue.get("iid"),
-                    "title": issue.get("title"),
-                    "web_url": issue.get("web_url"),
-                    "state": issue.get("state"),
-                    "paths": hits,
-                }
-            )
-    return binding, token, issue_by_path
+    return binding, token, cached
 
 
 class GitlabIssuesForPathHandler(BaseHandler):
@@ -356,8 +363,6 @@ class GitlabIssuesForPathHandler(BaseHandler):
             if leaf:
                 names = [leaf]
         binding, token, mapped = _issues_mentioning(self, access, names)
-        if mapped is None:
-            return
         if not binding:
             self.set_status(404)
             self.write({"error": "No GitLab binding for this folder"})
@@ -366,7 +371,184 @@ class GitlabIssuesForPathHandler(BaseHandler):
             self.set_status(401)
             self.write({"error": "Configure a GitLab token for this account"})
             return
-        self.write({"issues_by_name": mapped})
+        self.write({"issues_by_name": mapped, "cache": gitlab_cache.cache_meta(
+            self.db_conn,
+            access.owner_username,
+            gitlab_cache.project_key(binding["gitlab_host"], binding.get("issues_project") or binding.get("code_project")),
+        )})
+
+
+class GitlabCachedIssuesHandler(BaseHandler):
+    @tornado.web.authenticated
+    @require_db
+    def get(self):
+        if not _require_gitlab(self):
+            return
+        access = _need_access(self, owner_proxy=True)
+        if not access:
+            return
+        binding, token = _binding_and_token(self, access)
+        if not binding:
+            self.set_status(404)
+            self.write({"error": "No GitLab binding for this folder"})
+            return
+        if not token:
+            self.set_status(401)
+            self.write({"error": "Configure a GitLab token for this account"})
+            return
+        project = binding.get("issues_project") or binding.get("code_project")
+        key = gitlab_cache.project_key(binding["gitlab_host"], project)
+        names = self.get_arguments("name") or []
+        if names:
+            mapped = gitlab_cache.issues_for_names(
+                self.db_conn,
+                access.owner_username,
+                key,
+                names,
+                folder_rel=access.rel_path,
+                repo_prefix=binding.get("repo_path_prefix") or "",
+            )
+            self.write(
+                {
+                    "issues_by_name": mapped,
+                    "cache": gitlab_cache.cache_meta(self.db_conn, access.owner_username, key),
+                }
+            )
+            return
+        issues = gitlab_cache.list_cached_issues(self.db_conn, access.owner_username, key)
+        self.write(
+            {
+                "issues": issues,
+                "cache": gitlab_cache.cache_meta(self.db_conn, access.owner_username, key),
+            }
+        )
+
+
+class GitlabRefreshHandler(BaseHandler, XSRFTokenMixin):
+    @tornado.web.authenticated
+    @require_db
+    def post(self):
+        if not _require_gitlab(self):
+            return
+        self.check_xsrf_cookie()
+        access = _need_access(self, owner_proxy=True)
+        if not access:
+            return
+        binding, token = _binding_and_token(self, access)
+        if not binding:
+            self.set_status(404)
+            self.write({"error": "No GitLab binding for this folder"})
+            return
+        if not token:
+            self.set_status(401)
+            self.write({"error": "Configure a GitLab token for this account"})
+            return
+        host = binding["gitlab_host"]
+        project = binding.get("issues_project") or binding.get("code_project")
+        result = gitlab_cache.refresh_project_cache(
+            self.db_conn,
+            owner_username=access.owner_username,
+            host=host,
+            issues_project=project,
+            token=token,
+        )
+        admin_boards = gitlab_settings.get_settings(self.db_conn).get("boards") or []
+        extra = []
+        for board in admin_boards:
+            if board.get("issues_project") == project and board.get("gitlab_host") == host:
+                continue
+            try:
+                extra.append(
+                    gitlab_cache.refresh_project_cache(
+                        self.db_conn,
+                        owner_username=access.owner_username,
+                        host=board["gitlab_host"],
+                        issues_project=board["issues_project"],
+                        token=token,
+                    )
+                )
+            except Exception as exc:
+                logger.warning("GitLab board cache refresh failed: %s", exc)
+        self.write({"ok": True, "primary": result, "boards": extra})
+
+
+class GitlabDashboardHandler(BaseHandler):
+    @tornado.web.authenticated
+    @require_db
+    def get(self):
+        if not _require_gitlab(self):
+            return
+        access = _need_access(self, owner_proxy=True)
+        if not access:
+            return
+        binding, token = _binding_and_token(self, access)
+        admin_cfg = gitlab_settings.get_settings(self.db_conn)
+        boards = admin_cfg.get("boards") or []
+        if not binding and not boards:
+            self.write(
+                {
+                    "binding": None,
+                    "boards": boards,
+                    "gitlab_user": None,
+                    "open_issues": [],
+                    "merge_requests": [],
+                    "active_users": [],
+                    "cache": None,
+                }
+            )
+            return
+        gitlab_user = None
+        open_issues: list[dict] = []
+        merge_requests: list[dict] = []
+        cache_meta = None
+        if token:
+            user_host = (
+                (binding or {}).get("gitlab_host")
+                or (boards[0]["gitlab_host"] if boards else None)
+                or admin_cfg.get("default_host")
+            )
+            gitlab_user = _gl_call(self, get_current_user, user_host, token)
+            if gitlab_user is None:
+                return
+        if binding and token:
+            host = binding["gitlab_host"]
+            code = binding.get("code_project")
+            issues_project = binding.get("issues_project") or code
+            key = gitlab_cache.project_key(host, issues_project)
+            cache_meta = gitlab_cache.cache_meta(self.db_conn, access.owner_username, key)
+            open_issues = gitlab_cache.list_cached_issues(
+                self.db_conn, access.owner_username, key
+            )
+            mrs = _gl_call(self, list_mrs, host, token, code)
+            if mrs is None:
+                return
+            merge_requests = mrs
+        elif token and boards:
+            host = boards[0]["gitlab_host"]
+            issues_project = boards[0]["issues_project"]
+            key = gitlab_cache.project_key(host, issues_project)
+            cache_meta = gitlab_cache.cache_meta(self.db_conn, access.owner_username, key)
+            open_issues = gitlab_cache.list_cached_issues(
+                self.db_conn, access.owner_username, key
+            )
+            code = boards[0].get("code_project") or issues_project
+            mrs = _gl_call(self, list_mrs, host, token, code)
+            if mrs is None:
+                return
+            merge_requests = mrs
+        self.write(
+            {
+                "binding": binding,
+                "boards": boards,
+                "gitlab_user": gitlab_user,
+                "open_issues": open_issues[:50],
+                "open_issue_count": len(open_issues),
+                "merge_requests": merge_requests[:20],
+                "open_mr_count": len(merge_requests),
+                "active_users": gitlab_cache.active_assignees(open_issues),
+                "cache": cache_meta,
+            }
+        )
 
 
 class GitlabMrsHandler(BaseHandler):

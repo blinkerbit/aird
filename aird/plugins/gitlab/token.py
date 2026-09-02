@@ -1,14 +1,26 @@
-"""Resolve the folder owner's GitLab PAT (self only). Never used for share viewers."""
+"""Resolve the folder owner's GitLab PAT (self only). Never used for share viewers.
+
+Preferred store: encrypted row in SQLite (same Fernet key as share passwords).
+Legacy plaintext files are migrated into the DB on first read, then removed.
+"""
 
 from __future__ import annotations
 
+import logging
 import os
+import sqlite3
 import stat
 from pathlib import Path
 
 from aird.core.user_storage import user_home_for_username
+from aird.db.plugin_secrets import (
+    SECRET_GITLAB,
+    delete_plugin_secret,
+    get_plugin_secret,
+    set_plugin_secret,
+)
 
-_TOKEN_NAMES = ("gitlab_token", "GITLAB_TOKEN")
+logger = logging.getLogger(__name__)
 
 
 def _secrets_dir(username: str) -> Path:
@@ -26,19 +38,45 @@ def token_file_for(username: str) -> Path:
     return _secrets_dir(username) / "gitlab_token"
 
 
-def save_user_token(username: str, token: str) -> None:
+def _migrate_file_token(username: str, conn: sqlite3.Connection | None) -> str | None:
     path = token_file_for(username)
-    path.write_text((token or "").strip(), encoding="utf-8")
+    if not path.is_file():
+        return None
     try:
-        path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+        value = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not value:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        return None
+    try:
+        set_plugin_secret(conn, username, SECRET_GITLAB, value)
+        path.unlink()
+    except Exception:
+        logger.debug("GitLab token file migrate skipped", exc_info=True)
+        return value
+    return value
+
+
+def save_user_token(
+    username: str, token: str, conn: sqlite3.Connection | None = None
+) -> None:
+    set_plugin_secret(conn, username, SECRET_GITLAB, token)
+    try:
+        token_file_for(username).unlink()
     except OSError:
         pass
 
 
-def delete_user_token(username: str) -> None:
-    path = token_file_for(username)
+def delete_user_token(
+    username: str, conn: sqlite3.Connection | None = None
+) -> None:
+    delete_plugin_secret(conn, username, SECRET_GITLAB)
     try:
-        path.unlink()
+        token_file_for(username).unlink()
     except OSError:
         pass
 
@@ -79,18 +117,36 @@ def _read_glab_token(host: str) -> str | None:
     return None
 
 
-def load_owner_token(username: str, host: str = "https://gitlab.com") -> str | None:
-    path = token_file_for(username)
-    if path.is_file():
-        value = path.read_text(encoding="utf-8").strip()
-        if value:
-            return value
+def load_owner_token(
+    username: str,
+    host: str = "https://gitlab.com",
+    conn: sqlite3.Connection | None = None,
+) -> str | None:
+    from aird.plugins.gitlab.settings import resolve_server_token
+
+    server = resolve_server_token(conn)
+    if server:
+        return server
+    value = get_plugin_secret(conn, username, SECRET_GITLAB)
+    if value:
+        return value
+    migrated = _migrate_file_token(username, conn)
+    if migrated:
+        return migrated
     for env_name in ("GITLAB_TOKEN", "GL_TOKEN", "GITLAB_PRIVATE_TOKEN"):
-        value = (os.environ.get(env_name) or "").strip()
-        if value:
-            return value
+        env_value = (os.environ.get(env_name) or "").strip()
+        if env_value:
+            return env_value
     return _read_glab_token(host)
 
 
-def token_configured(username: str, host: str = "https://gitlab.com") -> bool:
-    return bool(load_owner_token(username, host))
+def token_configured(
+    username: str,
+    host: str = "https://gitlab.com",
+    conn: sqlite3.Connection | None = None,
+) -> bool:
+    from aird.plugins.gitlab.settings import resolve_server_token
+
+    if resolve_server_token(conn):
+        return True
+    return bool(load_owner_token(username, host, conn=conn))

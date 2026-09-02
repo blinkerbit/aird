@@ -25,14 +25,17 @@ def user_root_for_username(username: str) -> str:
     )
 
 
-def resolve_download_path(relpath: str, user_root: str) -> tuple[str | None, str | None]:
-    from aird.core.user_storage import confine_root_for_rel, join_user_rel
+def resolve_download_path(relpath: str, user_root: str, mounts=None) -> tuple[str | None, str | None]:
+    from aird.core.browse_paths import resolve_rel
 
     rel = (relpath or "").strip().strip("/")
     if not rel:
         return None, "invalid path"
-    abspath = os.path.realpath(join_user_rel(user_root, rel))
-    confine = os.path.realpath(confine_root_for_rel(user_root, rel))
+    abspath, confine = resolve_rel(user_root, rel, mounts or [])
+    if not abspath or not confine:
+        return None, "access denied"
+    abspath = os.path.realpath(abspath)
+    confine = os.path.realpath(confine)
     if not is_within_root(abspath, confine):
         return None, "access denied"
     if not os.path.isfile(abspath):
@@ -41,6 +44,6 @@ def resolve_download_path(relpath: str, user_root: str) -> tuple[str | None, str
 
 
 def validate_upload_path(
-    upload_dir: str, filename: str, user_root: str
+    upload_dir: str, filename: str, user_root: str, mounts=None
 ) -> tuple[str | None, tuple[int, str] | None]:
-    return _validate_upload_destination(upload_dir, filename, user_root)
+    return _validate_upload_destination(upload_dir, filename, user_root, mounts)

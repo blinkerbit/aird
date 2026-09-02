@@ -121,7 +121,10 @@
     .browse-listing-panel.browse-listing--compact .file-table .size-cell,
     .browse-listing-panel.browse-listing--compact .file-table .modified-cell,
     .browse-listing-panel.browse-listing--compact .file-table th[data-sort-column="2"],
-    .browse-listing-panel.browse-listing--compact .file-table th[data-sort-column="3"] {
+    .browse-listing-panel.browse-listing--compact .file-table th[data-sort-column="3"],
+    .browse-listing-panel.browse-listing--compact .file-table .file-col-tags,
+    .browse-listing-panel.browse-listing--compact .file-table .file-col-size,
+    .browse-listing-panel.browse-listing--compact .file-table .file-col-modified {
       display: none !important;
     }
 
@@ -243,20 +246,40 @@
       text-overflow: ellipsis;
     }
 
+    .file-table .file-col-name,
     .name-col {
-      width: 50%;
+      width: auto;
     }
 
+    .file-table .file-col-tags {
+      width: 7rem;
+    }
+
+    .file-table .file-col-size,
     .size-col {
-      width: 15%;
+      width: 8rem;
     }
 
+    .file-table .file-col-modified,
     .modified-col {
-      width: 20%;
+      width: 12rem;
     }
 
-    .actions-col {
-      width: 15%;
+    .file-table .file-col-actions,
+    .file-table th.actions-col,
+    .file-table td.actions-cell {
+      width: 14.5rem;
+    }
+
+    .file-table th.actions-col,
+    .file-table td.actions-cell {
+      text-align: right;
+      overflow: visible;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    .actions-cell {
       text-align: right;
     }
 
@@ -308,10 +331,6 @@
       font-size: 0.65rem;
       line-height: 1;
       vertical-align: middle;
-    }
-
-    .actions-cell {
-      text-align: right;
     }
 
     .modified-cell {
@@ -684,7 +703,6 @@
     .action-link {
       color: var(--ds-text-muted);
       text-decoration: none;
-      margin-right: 4px;
       padding: 6px 8px;
       border: 1px solid var(--ds-border-muted);
       background: var(--ds-bg-muted);
@@ -1890,3 +1908,165 @@
         min-height: 48px;
       }
     }
+
+/* Row more menu (Browse) */
+.row-more-wrap {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.row-more-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 40;
+  min-width: 12rem;
+  margin-top: 4px;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--ds-border, oklch(var(--b3)));
+  background: var(--ds-surface, oklch(var(--b1)));
+  box-shadow: 0 8px 24px oklch(var(--bc) / 0.12);
+}
+
+.row-more-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  color: inherit;
+}
+
+.row-more-item:hover {
+  background: var(--ds-bg-muted, oklch(var(--b2)));
+}
+
+/* OneDrive FE folder/file picker */
+.od-fe-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 16px;
+}
+
+.od-fe-picker-panel {
+  width: min(28rem, 92vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background: oklch(var(--b1));
+  color: inherit;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+  border: 1px solid oklch(var(--b3));
+}
+
+.od-fe-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid oklch(var(--b3));
+}
+
+.od-fe-pick-list {
+  overflow: auto;
+  padding: 8px 12px;
+  min-height: 12rem;
+  flex: 1;
+}
+
+.od-fe-picker-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid oklch(var(--b3));
+}
+
+/* OneDrive FE sign-in dialog */
+.od-fe-signin-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 16px;
+}
+
+.od-fe-signin-panel {
+  width: min(26rem, 92vw);
+  padding: 20px;
+  border-radius: 12px;
+  background: oklch(var(--b1));
+  border: 1px solid oklch(var(--b3));
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+}
+
+.od-fe-signin-panel h3 {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.od-fe-signin-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.od-fe-signin-mode {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid oklch(var(--b3));
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.od-fe-signin-mode:has(input:checked) {
+  border-color: oklch(var(--p));
+  background: oklch(var(--b2) / 0.5);
+}
+
+.od-fe-signin-mode span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.od-fe-signin-mode small {
+  opacity: 0.7;
+  font-size: 12px;
+}
+
+.od-fe-signin-device {
+  margin: 12px 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: oklch(var(--b2) / 0.5);
+  border: 1px solid oklch(var(--b3));
+}
+
+.od-fe-signin-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}

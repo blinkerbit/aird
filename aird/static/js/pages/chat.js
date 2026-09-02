@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const REACTIONS = ['👍', '❤️', '😂', '👀'];
+  const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🎉', '🔥', '👀'];
   const IMAGE_EXTS = ['jpg', 'jpeg', 'jpe', 'jif', 'jfif', 'png', 'gif', 'bmp', 'webp', 'tiff', 'tif', 'svg', 'ico', 'avif', 'heic', 'heif', 'dng', 'cr2', 'nef', 'arw', 'orf', 'rw2', 'raf', 'raw'];
 
   const qs = (sel) => document.querySelector(sel);
@@ -137,6 +137,48 @@
     return json;
   }
 
+  const E2E = window.AirdChatE2E;
+  const e2ePlain = new Map();
+
+  function memberNames(conv) {
+    return (conv?.members || []).map((m) => m.username).filter(Boolean);
+  }
+
+  async function e2eReady(convId) {
+    if (!E2E?.ready()) return false;
+    const conv = conversations.find((c) => c.id === convId);
+    await E2E.ensureConversation(api, convId, memberNames(conv));
+    return true;
+  }
+
+  async function decryptPayload(convId, payload) {
+    if (!payload || !E2E) return '';
+    try {
+      const html = await E2E.decrypt(convId, payload);
+      return E2E.sanitizeHtml(html);
+    } catch (_) {
+      return '<em class="chat-e2e-fail">Unable to decrypt on this device</em>';
+    }
+  }
+
+  async function prepareMessage(msg) {
+    if (!msg) return msg;
+    const blob = msg.metadata && msg.metadata.e2e;
+    if (msg.e2e || blob) {
+      const html = await decryptPayload(msg.conversation_id, blob);
+      msg.body = html;
+      msg._e2e = true;
+      e2ePlain.set(msg.id, html);
+    }
+    return msg;
+  }
+
+  function extractMentions(html, conv) {
+    const names = memberNames(conv).filter((n) => n !== me);
+    if (E2E?.extractMentions) return E2E.extractMentions(html, names);
+    return [];
+  }
+
   function esc(s) {
     return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
@@ -208,7 +250,8 @@
     const dot = conv.kind === 'dm' && isOnlineUser(conv.peer_username)
       ? '<span class="chat-online-dot" title="Online"></span>'
       : '';
-    header.innerHTML = `<span class="chat-avatar-wrap">${avatarHtml(title)}${dot}</span><div class="chat-thread-head-main"><div class="chat-thread-title">${esc(title)}</div><div class="chat-thread-sub">${esc(sub)}</div></div>
+      const lock = '<span class="chat-e2e-lock" title="End-to-end encrypted">🔒</span>';
+    header.innerHTML = `<span class="chat-avatar-wrap">${avatarHtml(title)}${dot}</span><div class="chat-thread-head-main"><div class="chat-thread-title">${esc(title)} ${lock}</div><div class="chat-thread-sub">${esc(sub)}</div></div>
       <div class="chat-thread-actions">
         <button type="button" class="chat-icon-btn" id="chatMuteBtn" title="${conv.muted ? 'Unmute' : 'Mute'}">${conv.muted ? 'Unmute' : 'Mute'}</button>
         ${conv.kind === 'group' ? '<button type="button" class="chat-icon-btn" id="chatAddMemberBtn">Add</button>' : ''}
@@ -238,6 +281,7 @@
     await loadConversations();
     const updated = conversations.find((c) => c.id === conv.id);
     setThreadHeader(updated || conv);
+    try { await e2eReady(conv.id); } catch (_) { /* */ }
   }
 
   function showEmptyThread() {
@@ -282,6 +326,17 @@
         if (typeof m.online === 'boolean') presence[m.username] = m.online;
       });
     });
+    await Promise.all(conversations.map(async (c) => {
+      if (!c.last_e2e || !E2E?.ready()) return;
+      try {
+        await e2eReady(c.id);
+        const html = await decryptPayload(c.id, c.last_e2e);
+        const tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        const text = (tmp.innerText || '').trim();
+        if (text) c.last_preview = text.slice(0, 80);
+      } catch (_) { /* keep placeholder */ }
+    }));
     renderConvList();
     updateNavBadge();
   }
@@ -556,11 +611,19 @@
         return;
       }
       try {
+        if (!E2E?.ready()) throw new Error('Encrypted chat is not ready on this device');
+        const e2e = await (async () => {
+          await e2eReady(activeConvId);
+          return E2E.encrypt(activeConvId, E2E.sanitizeHtml(textEl.innerHTML || next));
+        })();
         const data = await api(`/api/chat/conversations/${activeConvId}/messages/${messageId}`, {
           method: 'PATCH',
-          body: JSON.stringify({ body: next }),
+          body: JSON.stringify({
+            e2e,
+            mentions: extractMentions(textEl.innerHTML || next, activeConv()),
+          }),
         });
-        if (data.message) replaceMessage(data.message);
+        if (data.message) replaceMessage(await prepareMessage(data.message));
       } catch (err) {
         textEl.innerHTML = originalHtml;
         alert(err.message);
@@ -624,16 +687,35 @@
     if (!activeConvId || !forwardMsgId) return;
     const ids = [...(qs('#chatForwardList')?.querySelectorAll('input:checked') || [])].map((i) => i.value);
     if (!ids.length) return;
-    await api(`/api/chat/conversations/${activeConvId}/messages/${forwardMsgId}/forward`, {
-      method: 'POST',
-      body: JSON.stringify({ conversation_ids: ids }),
-    });
+    const isE2e = e2ePlain.has(forwardMsgId);
+    const plain = e2ePlain.get(forwardMsgId)
+      || messagesEl?.querySelector(`[data-msg-id="${cssEscape(forwardMsgId)}"] .chat-msg-text`)?.innerHTML
+      || '';
+    if (isE2e) {
+      if (!E2E?.ready()) throw new Error('Encrypted chat is not ready on this device');
+      if (plain.includes('chat-e2e-fail')) throw new Error('Cannot forward a message that did not decrypt on this device');
+      const html = E2E.sanitizeHtml(plain);
+      for (const id of ids) {
+        await e2eReady(id);
+        const e2e = await E2E.encrypt(id, html);
+        await api(`/api/chat/conversations/${id}/messages`, {
+          method: 'POST',
+          body: JSON.stringify({ type: 'text', e2e }),
+        });
+      }
+    } else {
+      await api(`/api/chat/conversations/${activeConvId}/messages/${forwardMsgId}/forward`, {
+        method: 'POST',
+        body: JSON.stringify({ conversation_ids: ids }),
+      });
+    }
     qs('#chatForwardModal')?.close();
     await loadConversations();
   }
 
-  function appendMessage(msg) {
+  async function appendMessage(msg) {
     if (!messagesEl) return;
+    await prepareMessage(msg);
     tagMine(msg);
     messagesEl.querySelector('.chat-empty')?.remove();
     messagesEl.insertAdjacentHTML('beforeend', messageHtml(msg));
@@ -641,7 +723,8 @@
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
-  function replaceMessage(msg) {
+  async function replaceMessage(msg) {
+    await prepareMessage(msg);
     tagMine(msg);
     const el = messagesEl?.querySelector(`[data-msg-id="${cssEscape(msg.id)}"]`);
     if (!el) {
@@ -672,6 +755,7 @@
     messagesEl.innerHTML = '<div class="chat-empty"><p>Loading…</p></div>';
     renderConvList();
     setPollEnabled(true);
+    try { await e2eReady(convId); } catch (_) { /* */ }
     const data = await api(`/api/chat/conversations/${convId}/messages`);
     if (gen !== loadGen) return;
     clearMessagesView();
@@ -679,8 +763,14 @@
     receipts = data.receipts || [];
     renderPins();
     const msgs = data.messages || [];
+    for (const m of msgs) await prepareMessage(m);
     if (!msgs.length) showEmptyThread();
-    else msgs.forEach((m) => appendMessage(m));
+    else msgs.forEach((m) => {
+      tagMine(m);
+      messagesEl.insertAdjacentHTML('beforeend', messageHtml(m));
+      bindMessageUi(messagesEl.lastElementChild);
+    });
+    if (msgs.length) messagesEl.scrollTop = messagesEl.scrollHeight;
     const last = msgs.slice(-1)[0];
     if (last) markRead(last);
     const params = new URLSearchParams(location.search);
@@ -705,8 +795,7 @@
       const msg = tagMine({ ...data.message });
       if (msg.conversation_id === activeConvId) {
         if (!messagesEl?.querySelector(`[data-msg-id="${cssEscape(msg.id)}"]`)) {
-          appendMessage(msg);
-          markRead(msg);
+          appendMessage(msg).then(() => markRead(msg)).catch(() => {});
         }
       }
       loadConversations();
@@ -716,7 +805,9 @@
       loadConversations();
       updateNavBadge();
     } else if (data.type === 'chat_message_edited' && data.message) {
-      if (data.message.conversation_id === activeConvId) replaceMessage(data.message);
+      if (data.message.conversation_id === activeConvId) {
+        replaceMessage(data.message).catch(() => {});
+      }
     } else if (data.type === 'chat_reaction') {
       if (data.conversation_id === activeConvId) applyReactions(data.message_id, data.reactions || []);
     } else if (data.type === 'chat_receipt') {
@@ -884,6 +975,23 @@
     if (!hasText && !pending.length) return;
     const body = editor.innerHTML.trim();
     const reply = replyToId;
+    let e2e = null;
+    let mentions = [];
+    if (hasText) {
+      if (!E2E?.ready()) {
+        alert('Encrypted chat is not ready on this device.');
+        return;
+      }
+      try {
+        await e2eReady(activeConvId);
+        const html = E2E.sanitizeHtml(body);
+        e2e = await E2E.encrypt(activeConvId, html);
+        mentions = extractMentions(html, activeConv());
+      } catch (err) {
+        alert(err.message);
+        return;
+      }
+    }
     const staged = pending.slice();
     pending = [];
     renderPending();
@@ -892,7 +1000,12 @@
     hidePathSuggest();
     if (staged.length) {
       const fd = new FormData();
-      if (hasText) fd.append('caption', body);
+      if (e2e) {
+        fd.append('e2e', JSON.stringify(e2e));
+        fd.append('mentions', JSON.stringify(mentions));
+      } else if (hasText) {
+        fd.append('caption', body);
+      }
       if (reply) fd.append('reply_to_id', reply);
       for (const item of staged) {
         if (item.path) fd.append('source_path', item.path);
@@ -905,12 +1018,16 @@
     }
     let sentHttp = false;
     if (hasText) {
-      const payload = { type: 'chat_send', conversation_id: activeConvId, body, reply_to_id: reply };
+      const payload = e2e
+        ? { type: 'chat_send', conversation_id: activeConvId, e2e, mentions, reply_to_id: reply }
+        : { type: 'chat_send', conversation_id: activeConvId, body, reply_to_id: reply };
       const WS = window.AirdChatWS;
       if (!(WS?.isOpen() && WS.send(payload))) {
         await api(`/api/chat/conversations/${activeConvId}/messages`, {
           method: 'POST',
-          body: JSON.stringify({ type: 'text', body, reply_to_id: reply }),
+          body: JSON.stringify(e2e
+            ? { type: 'text', e2e, mentions, reply_to_id: reply }
+            : { type: 'text', body, reply_to_id: reply }),
         });
         sentHttp = true;
       }
@@ -1037,6 +1154,49 @@
       }
       editor?.focus();
     });
+  });
+
+  const EMOJIS = ['😀','😁','😂','🤣','😊','😇','🙂','😉','😍','😘','😜','🤔','😎','🤩','🥳','😢','😭','😤','😡','🤯','😳','🤗','🙏','👍','👎','👏','🔥','❤️','💯','🎉','✨','⭐','👀','✅','❌'];
+  const emojiBtn = qs('#chatEmojiBtn');
+  const emojiPicker = qs('#chatEmojiPicker');
+
+  function insertEmoji(ch) {
+    if (!editor) return;
+    editor.focus();
+    document.execCommand('insertText', false, ch);
+  }
+
+  function hideEmojiPicker() {
+    if (!emojiPicker) return;
+    emojiPicker.hidden = true;
+    emojiPicker.classList.add('hidden');
+  }
+
+  function toggleEmojiPicker() {
+    if (!emojiPicker) return;
+    if (!emojiPicker.dataset.ready) {
+      emojiPicker.innerHTML = EMOJIS.map((e) =>
+        `<button type="button" class="chat-emoji-item">${e}</button>`
+      ).join('');
+      emojiPicker.dataset.ready = '1';
+      emojiPicker.querySelectorAll('.chat-emoji-item').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          insertEmoji(btn.textContent);
+          hideEmojiPicker();
+        });
+      });
+    }
+    const show = emojiPicker.hidden;
+    emojiPicker.hidden = !show;
+    emojiPicker.classList.toggle('hidden', !show);
+  }
+
+  emojiBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleEmojiPicker();
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#chatEmojiPicker, #chatEmojiBtn')) hideEmojiPicker();
   });
 
   function renderPending() {
@@ -1671,14 +1831,22 @@
       WS.connect();
       WS.subscribe(handleWsEvent);
     }
-    loadConversations()
-      .then(() => {
-        const initialConv = new URLSearchParams(location.search).get('c');
-        if (initialConv) openConversation(initialConv);
-      })
-      .catch((err) => {
-        if (messagesEl) messagesEl.innerHTML = `<p class="text-error">${esc(err.message)}</p>`;
-      });
+    const start = async () => {
+      if (E2E && me) {
+        const KB = globalThis.AirdChatKeyBackup;
+        if (KB?.tryRestoreFromConfiguredPath) {
+          const restored = await KB.tryRestoreFromConfiguredPath(me);
+          if (restored) return;
+        }
+        try { await E2E.init(me, api); } catch (err) { console.warn('chat e2e', err); }
+      }
+      await loadConversations();
+      const initialConv = new URLSearchParams(location.search).get('c');
+      if (initialConv) await openConversation(initialConv);
+    };
+    start().catch((err) => {
+      if (messagesEl) messagesEl.innerHTML = `<p class="text-error">${esc(err.message)}</p>`;
+    });
   }
 
   boot();

@@ -34,6 +34,15 @@ def test_schema_has_gitlab_tables(gl_env):
     names = {r[0] for r in gl_env.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
     assert "gitlab_bindings" in names
     assert "file_comments" in names
+    assert "gitlab_issue_cache" in names
+
+
+def test_collect_paths_from_gitlab_url():
+    from aird.plugins.gitlab.paths import collect_paths_from_text
+
+    md = "See https://gitlab.com/group/app/-/blob/main/src/foo.py#L10"
+    paths = collect_paths_from_text(md, host="https://gitlab.com", project="group/app")
+    assert "src/foo.py" in paths
 
 
 def test_extract_file_paths():

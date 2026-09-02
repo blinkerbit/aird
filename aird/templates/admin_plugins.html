@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  {% include '_theme_early.html' %}
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/admin-plugins.css" />
+  <link rel="icon" href="/static/favicon.png" type="image/png" />
+  <title>Plugins · Aird</title>
+</head>
+<body class="bg-base-200 min-h-screen">
+  <div class="aird-shell aird-shell--wide">
+    {% set nav_title = "⚙ Admin Panel" %}
+    {% set show_admin_link = False %}
+    {% include '_app_nav_header.html' %}
+    {% set admin_active_tab = "plugins" %}
+    {% include '_admin_tabs.html' %}
+
+    <main class="aird-page">
+      <header class="aird-page-header">
+        <div>
+          <h1 class="aird-page-title">Plugins</h1>
+          <p class="aird-page-lead">Configure access and plugin-specific settings. Instance flags on Overview must still be on.</p>
+        </div>
+      </header>
+
+      {% if saved %}
+      <div class="alert alert-success mb-4" role="status"><span>Plugin settings saved.</span></div>
+      {% end %}
+
+      <form method="post" id="adminPluginsForm" class="space-y-4">
+        {% raw xsrf_form_html() %}
+        <input type="hidden" name="selected_plugin" id="selectedPluginInput" value="{{ selected_plugin or (plugins[0]['id'] if plugins else '') }}" />
+        <input type="hidden" name="gitlab_boards_json" id="gitlabBoardsJson" value="" />
+
+        <div class="admin-plugins-layout">
+          <nav class="admin-plugins-nav" aria-label="Plugins">
+            {% for plugin in plugins %}
+            <button type="button"
+              class="admin-plugins-nav-item{% if (selected_plugin or plugins[0]['id']) == plugin['id'] %} is-active{% end %}"
+              data-plugin="{{ plugin['id'] }}">
+              <span class="admin-plugins-nav-label">{{ plugin['label'] }}</span>
+              <span class="flex gap-1 shrink-0">
+                {% if plugin['flag_on'] %}
+                <span class="badge badge-success badge-xs">On</span>
+                {% else %}
+                <span class="badge badge-ghost badge-xs">Off</span>
+                {% end %}
+              </span>
+            </button>
+            {% end %}
+          </nav>
+
+          <div class="admin-plugins-detail">
+            {% for plugin in plugins %}
+            <section class="admin-plugins-pane" data-plugin="{{ plugin['id'] }}"{% if (selected_plugin or plugins[0]['id']) != plugin['id'] %} hidden{% end %}>
+              <h2>{{ plugin['label'] }}</h2>
+              <p class="pane-lead">
+                {% if plugin['id'] == 'direct_messages' %}
+                End-to-end encrypted direct messages between users.
+                {% elif plugin['id'] == 'gitlab' %}
+                GitLab boards, issue mapping, and repo-linked tickets. Admin app — open from here, not the main nav.
+                {% elif plugin['id'] == 'onedrive' %}
+                Server-side OneDrive backup for user folders. Admin app — open from here, not the main nav.
+                {% elif plugin['id'] == 'onedrive_browser' %}
+                Browser SSO for saving files to personal OneDrive (user app).
+                {% else %}
+                Plugin configuration.
+                {% end %}
+                {% if not plugin['available'] %}
+                <span class="badge badge-warning badge-sm ml-1">Package missing</span>
+                {% end %}
+                {% if plugin.get('audience') == 'admin' %}
+                <span class="badge badge-neutral badge-sm ml-1">Admin</span>
+                {% else %}
+                <span class="badge badge-ghost badge-sm ml-1">User</span>
+                {% end %}
+              </p>
+              {% if plugin.get('href') and plugin.get('audience') == 'admin' and plugin['flag_on'] and plugin['id'] != 'onedrive' %}
+              <div class="mb-3">
+                <a href="{{ escape(plugin['href']) }}" class="btn btn-primary btn-sm">Open {{ escape(plugin['label']) }}</a>
+              </div>
+              {% end %}
+
+              <div class="admin-plugins-section" style="margin-top:0;padding-top:0;border-top:none">
+                <h3>Who can use it</h3>
+                <div class="flex flex-wrap gap-4 mb-3">
+                  <label class="label cursor-pointer gap-2 justify-start">
+                    <input type="radio" class="radio radio-sm" name="scope_{{ plugin['id'] }}" value="none" {% if plugin['scope'] == 'none' %}checked{% end %}>
+                    <span class="label-text">None</span>
+                  </label>
+                  <label class="label cursor-pointer gap-2 justify-start">
+                    <input type="radio" class="radio radio-sm" name="scope_{{ plugin['id'] }}" value="all" {% if plugin['scope'] == 'all' %}checked{% end %}>
+                    <span class="label-text">All users</span>
+                  </label>
+                  <label class="label cursor-pointer gap-2 justify-start">
+                    <input type="radio" class="radio radio-sm" name="scope_{{ plugin['id'] }}" value="users" {% if plugin['scope'] == 'users' %}checked{% end %}>
+                    <span class="label-text">Specific users</span>
+                  </label>
+                </div>
+                <label class="form-control">
+                  <div class="label"><span class="label-text">Usernames (one per line)</span></div>
+                  <textarea name="usernames_{{ plugin['id'] }}" class="textarea textarea-bordered textarea-sm h-24" placeholder="alice&#10;bob">{{ plugin['usernames_text'] }}</textarea>
+                </label>
+              </div>
+
+              {% if plugin['id'] == 'gitlab' %}
+              <div class="admin-plugins-section">
+                <h3>API token</h3>
+                <p class="text-sm text-base-content/70 mb-3">Used for boards, issues, and repo ticket mapping. Configure once here — not on Browse or GitLab pages.</p>
+                <p class="text-sm mb-3">
+                  Status:
+                  {% if gitlab_settings['token_configured'] %}
+                  <span class="badge badge-success badge-sm">{{ gitlab_settings['token_status_detail'] }}</span>
+                  {% else %}
+                  <span class="badge badge-warning badge-sm">{{ gitlab_settings['token_status_detail'] }}</span>
+                  {% end %}
+                </p>
+                <div class="flex flex-wrap gap-4 mb-3">
+                  <label class="label cursor-pointer gap-2 justify-start">
+                    <input type="radio" class="radio radio-sm" name="gitlab_token_source" value="env" {% if gitlab_settings['token_source'] == 'env' %}checked{% end %}>
+                    <span class="label-text">Environment variable</span>
+                  </label>
+                  <label class="label cursor-pointer gap-2 justify-start">
+                    <input type="radio" class="radio radio-sm" name="gitlab_token_source" value="stored" {% if gitlab_settings['token_source'] == 'stored' %}checked{% end %}>
+                    <span class="label-text">Stored in Aird</span>
+                  </label>
+                </div>
+                <div id="gitlabTokenEnvBlock" class="space-y-2 mb-3"{% if gitlab_settings['token_source'] != 'env' %} hidden{% end %}>
+                  <label class="form-control">
+                    <div class="label"><span class="label-text">Variable name</span></div>
+                    <input type="text" name="gitlab_token_env_var" class="input input-bordered input-sm w-64" maxlength="64" value="{{ gitlab_settings['token_env_var'] }}" placeholder="GITLAB_TOKEN">
+                  </label>
+                  <p class="text-xs text-base-content/60">Also checks <code>GL_TOKEN</code> and <code>GITLAB_PRIVATE_TOKEN</code> when the named variable is unset.</p>
+                </div>
+                <div id="gitlabTokenStoredBlock" class="space-y-2 mb-3"{% if gitlab_settings['token_source'] != 'stored' %} hidden{% end %}>
+                  <label class="form-control">
+                    <div class="label"><span class="label-text">Personal access token</span></div>
+                    <input type="password" name="gitlab_token" class="input input-bordered input-sm" maxlength="256" placeholder="{% if gitlab_settings['stored_token_configured'] %}Leave blank to keep current token{% else %}glpat-…{% end %}" autocomplete="new-password">
+                  </label>
+                  {% if gitlab_settings['stored_token_configured'] %}
+                  <label class="label cursor-pointer gap-2 justify-start">
+                    <input type="checkbox" class="checkbox checkbox-sm" name="gitlab_token_clear" value="1">
+                    <span class="label-text">Remove stored token</span>
+                  </label>
+                  {% end %}
+                </div>
+              </div>
+              <div class="admin-plugins-section">
+                <h3>GitLab defaults</h3>
+                <p class="text-sm text-base-content/70 mb-3">Configure scrum boards used on the GitLab page. Users still link folders per-repo; tickets are cached and refreshed manually.</p>
+                <label class="form-control mb-3">
+                  <div class="label"><span class="label-text">Default GitLab host</span></div>
+                  <input type="text" name="gitlab_default_host" class="input input-bordered input-sm" maxlength="256" value="{{ gitlab_settings['default_host'] }}" placeholder="https://gitlab.com">
+                </label>
+                <div id="gitlabBoardsList"></div>
+                <button type="button" class="btn btn-ghost btn-sm" id="gitlabAddBoardBtn">+ Add board</button>
+              </div>
+              {% end %}
+
+              {% if plugin['id'] == 'onedrive' %}
+              <div class="admin-plugins-section" style="margin-top:0;padding-top:0;border-top:none">
+                <h3>Graph authentication</h3>
+                <p class="text-sm text-base-content/70 mb-3">Host backup uses one server-side Microsoft Graph identity. Device login is the default for headless hosts.</p>
+                <p class="text-sm mb-3">
+                  Status:
+                  {% if onedrive_settings['token_configured'] %}
+                  <span class="badge badge-success badge-sm">{{ onedrive_settings['token_status_detail'] }}</span>
+                  {% else %}
+                  <span class="badge badge-warning badge-sm">{{ onedrive_settings['token_status_detail'] }}</span>
+                  {% end %}
+                </p>
+                <div class="flex flex-wrap gap-4 mb-3">
+                  <label class="label cursor-pointer gap-2 justify-start">
+                    <input type="radio" class="radio radio-sm" name="onedrive_auth_source" value="device" {% if onedrive_settings['auth_source'] == 'device' %}checked{% end %}>
+                    <span class="label-text">Device login</span>
+                  </label>
+                  <label class="label cursor-pointer gap-2 justify-start">
+                    <input type="radio" class="radio radio-sm" name="onedrive_auth_source" value="env" {% if onedrive_settings['auth_source'] == 'env' %}checked{% end %}>
+                    <span class="label-text">Environment variable</span>
+                  </label>
+                  <label class="label cursor-pointer gap-2 justify-start">
+                    <input type="radio" class="radio radio-sm" name="onedrive_auth_source" value="stored" {% if onedrive_settings['auth_source'] == 'stored' %}checked{% end %}>
+                    <span class="label-text">Stored token</span>
+                  </label>
+                </div>
+                <div id="onedriveDeviceBlock" class="space-y-2 mb-3"{% if onedrive_settings['auth_source'] != 'device' %} hidden{% end %}>
+                  <label class="form-control">
+                    <div class="label"><span class="label-text">Azure client ID (public app)</span></div>
+                    <input type="text" name="onedrive_client_id" class="input input-bordered input-sm" maxlength="80" value="{{ onedrive_settings['client_id'] }}" placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off">
+                  </label>
+                  <label class="form-control">
+                    <div class="label"><span class="label-text">Tenant</span></div>
+                    <input type="text" name="onedrive_tenant" class="input input-bordered input-sm w-48" maxlength="80" value="{{ onedrive_settings['tenant'] }}" placeholder="common">
+                  </label>
+                  <p class="text-xs text-base-content/60">Enable public client flows on the Azure app. Scopes: <code>Files.ReadWrite offline_access User.Read</code>.</p>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <button type="button" class="btn btn-outline btn-sm" id="onedriveDeviceStart">Start device login</button>
+                    <span id="onedriveDeviceStatus" class="text-xs opacity-70"></span>
+                  </div>
+                  <div id="onedriveDevicePrompt" class="text-sm hidden">
+                    <p>Go to <a id="onedriveDeviceUrl" href="#" target="_blank" rel="noopener" class="link"></a> and enter code <strong id="onedriveDeviceCode"></strong></p>
+                  </div>
+                </div>
+                <div id="onedriveEnvBlock" class="space-y-2 mb-3"{% if onedrive_settings['auth_source'] != 'env' %} hidden{% end %}>
+                  <label class="form-control">
+                    <div class="label"><span class="label-text">Variable name</span></div>
+                    <input type="text" name="onedrive_token_env_var" class="input input-bordered input-sm w-64" maxlength="64" value="{{ onedrive_settings['token_env_var'] }}" placeholder="ONEDRIVE_TOKEN">
+                  </label>
+                  <p class="text-xs text-base-content/60">Also checks <code>GRAPH_ACCESS_TOKEN</code> and <code>MS_GRAPH_TOKEN</code>.</p>
+                </div>
+                <div id="onedriveStoredBlock" class="space-y-2 mb-3"{% if onedrive_settings['auth_source'] != 'stored' %} hidden{% end %}>
+                  <label class="form-control">
+                    <div class="label"><span class="label-text">Graph access token</span></div>
+                    <input type="password" name="onedrive_token" class="input input-bordered input-sm" maxlength="16384" placeholder="{% if onedrive_settings['stored_token_configured'] %}Leave blank to keep current token{% else %}Paste bearer token{% end %}" autocomplete="new-password">
+                  </label>
+                  {% if onedrive_settings['stored_token_configured'] %}
+                  <label class="label cursor-pointer gap-2 justify-start">
+                    <input type="checkbox" class="checkbox checkbox-sm" name="onedrive_token_clear" value="1">
+                    <span class="label-text">Remove stored token</span>
+                  </label>
+                  {% end %}
+                </div>
+              </div>
+              <div class="admin-plugins-section">
+                <h3>Host sync</h3>
+                <p class="text-sm text-base-content/70 mb-3">Background sync from mapped local folders. Watchers debounce changes; interval is a fallback.</p>
+                <div id="odHostStatusPanel" class="space-y-3 text-sm">
+                  <p id="odHostStatusLine" class="opacity-80">Loading status…</p>
+                  <div class="flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-outline btn-sm" id="odHostSyncNowBtn">Sync now</button>
+                    <button type="button" class="btn btn-outline btn-sm" id="odHostRetryBtn">Retry failed</button>
+                    <button type="button" class="btn btn-ghost btn-sm" id="odHostPauseBtn">Pause sync</button>
+                  </div>
+                  <div id="odHostFailedList" class="text-xs opacity-80"></div>
+                </div>
+              </div>
+              <div class="admin-plugins-section">
+                <h3>Folder maps</h3>
+                <p class="text-sm text-base-content/70 mb-3">Map local paths (under user roots) to OneDrive remote paths. Add-only sync.</p>
+                <div id="odHostMapsList" class="space-y-2"></div>
+                <button type="button" class="btn btn-ghost btn-sm mt-2" id="odHostAddMapBtn">+ Add map</button>
+              </div>
+              <div class="admin-plugins-section">
+                <h3>Global rules</h3>
+                <label class="label cursor-pointer gap-2 justify-start">
+                  <input type="checkbox" class="checkbox checkbox-sm" id="odHostIncludeAird" value="1">
+                  <span class="label-text">Include <code>.aird</code> config in sync</span>
+                </label>
+              </div>
+              <div class="admin-plugins-section">
+                <h3>Backup settings</h3>
+                <p class="text-sm text-base-content/70 mb-3">Server-side Graph token. Maps local folders to OneDrive. Add-only (no deletes).</p>
+                <label class="form-control mb-3">
+                  <div class="label"><span class="label-text">Root folder path</span></div>
+                  <input type="text" name="onedrive_root_path" class="input input-bordered input-sm" maxlength="512" value="{{ onedrive_settings['root_path'] }}" placeholder="Aird">
+                </label>
+                <label class="form-control">
+                  <div class="label"><span class="label-text">Sync interval (minutes)</span></div>
+                  <input type="number" name="onedrive_sync_interval" class="input input-bordered input-sm w-32" min="5" max="1440" value="{{ onedrive_settings['sync_interval_minutes'] }}">
+                </label>
+              </div>
+              {% end %}
+
+              {% if plugin['id'] == 'onedrive_browser' %}
+              <div class="admin-plugins-section">
+                <h3>Azure SSO</h3>
+                <p class="text-sm text-base-content/70 mb-3">Public Azure SPA app id only. Tokens stay in the browser. Redirect URI: <code>/onedrive-browser/callback</code></p>
+                <label class="form-control mb-3">
+                  <div class="label"><span class="label-text">Azure client ID</span></div>
+                  <input type="text" name="onedrive_browser_client_id" class="input input-bordered input-sm" maxlength="80" value="{{ onedrive_browser_settings['client_id'] }}" placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off">
+                </label>
+                <label class="form-control">
+                  <div class="label"><span class="label-text">Tenant</span></div>
+                  <input type="text" name="onedrive_browser_tenant" class="input input-bordered input-sm" maxlength="80" value="{{ onedrive_browser_settings['tenant'] }}" placeholder="common">
+                </label>
+              </div>
+              {% end %}
+            </section>
+            {% end %}
+          </div>
+        </div>
+
+        <div class="flex justify-end">
+          <button type="submit" class="btn btn-primary btn-sm">Save settings</button>
+        </div>
+      </form>
+    </main>
+  </div>
+
+  <script nonce="{{ csp_nonce }}">
+    globalThis.__ADMIN_PLUGINS = {
+      gitlabBoards: {% raw json_encode_for_script(gitlab_settings['boards']) %}
+    };
+  </script>
+  <script nonce="{{ csp_nonce }}" src="/static/js/admin-plugins.js"></script>
+</body>
+</html>

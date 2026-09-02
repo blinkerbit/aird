@@ -6,9 +6,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
-  {% if is_gitlab_enabled() %}
   <link rel="stylesheet" href="/static/css/gitlab.css" />
-  {% end %}
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Browse · Aird</title>
 </head>
@@ -72,10 +70,6 @@
       <button type="button" id="copyPathBtn" class="ml-2 opacity-50 hover:opacity-100 hover:text-primary transition-all" title="Copy current path" aria-label="Copy current path"><svg class="ico w-4 h-4" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="3" width="11" height="14" rx="2"/><path d="M5 7v12a2 2 0 0 0 2 2h10"/></svg></button>
       {% end %}
     </div>
-    {% if is_gitlab_enabled() %}
-    <div id="gitlabStrip" class="gitlab-strip" aria-label="GitLab"></div>
-    {% end %}
-
     <!-- File Listing Table -->
     <div id="browseListingPanel" class="browse-listing-panel">
     <div class="mobile-sort-control" aria-label="Sort files">
@@ -90,9 +84,16 @@
     <!-- File Listing Table -->
     <div class="overflow-x-auto aird-table-wrap aird-panel--static">
     <table class="table table-zebra w-full file-table" id="fileTable">
+      <colgroup>
+        <col class="file-col-name" />
+        <col class="file-col-tags" />
+        <col class="file-col-size" />
+        <col class="file-col-modified" />
+        <col class="file-col-actions" />
+      </colgroup>
       <thead>
         <tr>
-          <th class="sort-header hover:bg-base-300 transition-colors" data-sort-column="0" aria-sort="none">
+          <th class="name-col sort-header hover:bg-base-300 transition-colors" data-sort-column="0" aria-sort="none">
             <div class="flex items-center gap-2">
               <input type="checkbox" id="selectAllCheckbox" class="checkbox checkbox-sm checkbox-primary" title="Select all visible" aria-label="Select all visible files" />
               <span>Name</span>
@@ -101,21 +102,21 @@
             <div class="col-resizer" data-col="0"></div>
           </th>
           <th class="tags-col-header">Tags<div class="col-resizer" data-col="1"></div></th>
-          <th class="sort-header hover:bg-base-300 transition-colors" data-sort-column="2" aria-sort="none">
+          <th class="size-col sort-header hover:bg-base-300 transition-colors" data-sort-column="2" aria-sort="none">
             <div class="flex items-center gap-2">
               <span>Size</span>
               <span class="sort-indicator opacity-50"></span>
             </div>
             <div class="col-resizer" data-col="2"></div>
           </th>
-          <th class="sort-header hover:bg-base-300 transition-colors" data-sort-column="3" aria-sort="none">
+          <th class="modified-col sort-header hover:bg-base-300 transition-colors" data-sort-column="3" aria-sort="none">
             <div class="flex items-center gap-2">
               <span>Modified</span>
               <span class="sort-indicator opacity-50"></span>
             </div>
             <div class="col-resizer" data-col="3"></div>
           </th>
-          <th class="text-right">Actions</th>
+          <th class="actions-col" scope="col">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -132,9 +133,6 @@
               <span class="shared-icon" title="Click to view share details"
                 data-share-path="{{ escape(join_path(current_path, file['name'])) }}">🔗</span>
               {% end %}
-              {% if is_gitlab_enabled() %}
-              <span class="gitlab-file-ico" title="GitLab and comments" hidden>🦊</span>
-              {% end %}
             </a>
             {% else %}
             {% set _ext = file['name'].rsplit('.', 1)[-1].lower() if '.' in file['name'] else '' %}
@@ -146,9 +144,6 @@
               {% if file.get('is_shared') %}
               <span class="shared-icon" title="Click to view share details"
                 data-share-path="{{ escape(join_path(current_path, file['name'])) }}">🔗</span>
-              {% end %}
-              {% if is_gitlab_enabled() %}
-              <span class="gitlab-file-ico" title="GitLab and comments" hidden>🦊</span>
               {% end %}
             </a>
             {% end %}
@@ -237,6 +232,12 @@
                 <path d="M14 11v7"/>
               </svg></a>
             {% end %}
+            <span class="row-more-wrap">
+              <button type="button" class="action-link row-more-toggle" title="More options" aria-label="More options" aria-haspopup="menu" aria-expanded="false">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+              </button>
+              <div class="row-more-menu" role="menu" hidden></div>
+            </span>
             </div>
           </td>
         </tr>
@@ -298,6 +299,14 @@
       </button>
       <button type="button" id="bulkAddToShareBtn" class="browse-drawer-btn browse-drawer-btn-secondary">
         Add to existing share
+      </button>
+      {% end %}
+      {% if is_onedrive_browser_enabled() %}
+      <button type="button" id="bulkOdCopyBtn" class="browse-drawer-btn browse-drawer-btn-secondary">
+        Copy to OneDrive
+      </button>
+      <button type="button" id="bulkOdFolderBtn" class="browse-drawer-btn browse-drawer-btn-secondary">
+        Copy to folder in OneDrive
       </button>
       {% end %}
       {% if current_user and current_user.get('role') == 'admin' %}
@@ -402,24 +411,38 @@
         delete: {{ 'true' if features.get('file_delete') else 'false' }}
       }
     };
-    globalThis.__GITLAB_CONFIG = { enabled: {{ 'true' if is_gitlab_enabled() else 'false' }}, shareId: null };
+    globalThis.__ONEDRIVE_BROWSER_CONFIG = {% raw json_encode_for_script({
+      'enabled': is_onedrive_browser_enabled(),
+      'clientId': onedrive_browser_public_config().get('client_id') or '',
+      'tenant': onedrive_browser_public_config().get('tenant') or 'common',
+      'configured': onedrive_browser_public_config().get('configured', False),
+    }) %};
+    globalThis.__GITLAB_BROWSE_CONFIG = { enabled: {{ 'true' if is_gitlab_enabled() else 'false' }} };
   </script>
   <script nonce="{{ csp_nonce }}" type="importmap">
   {
     "imports": {
-      "/static/js/browse/app.js": "/static/js/browse/app.js?v=20260728a",
+      "/static/js/browse/app.js": "/static/js/browse/app.js?v=20260902d",
       "/static/js/browse/upload.js": "/static/js/browse/upload.js?v=20260728a",
-      "/static/js/browse/listing.js": "/static/js/browse/listing.js?v=20260823a",
+      "/static/js/browse/listing.js": "/static/js/browse/listing.js?v=20260902a",
       "/static/js/browse/util.js": "/static/js/browse/util.js?v=20260726d",
       "/static/js/browse/upload-errors.js": "/static/js/browse/upload-errors.js?v=20260726d",
       "/static/js/browse/selection-ui.js": "/static/js/browse/selection-ui.js?v=20260726d",
       "/static/js/browse/selection-store.js": "/static/js/browse/selection-store.js?v=20260726d",
-      "/static/js/browse/bulk-actions.js": "/static/js/browse/bulk-actions.js?v=20260726d",
+      "/static/js/browse/bulk-actions.js": "/static/js/browse/bulk-actions.js?v=20260902a",
       "/static/js/browse/tags.js": "/static/js/browse/tags.js?v=20260726d",
       "/static/js/browse/tag-api.js": "/static/js/browse/tag-api.js?v=20260726d",
       "/static/js/browse/shares.js": "/static/js/browse/shares.js?v=20260726d",
-      "/static/js/browse/table-ui.js": "/static/js/browse/table-ui.js?v=20260726d",
-      "/static/js/gitlab.js": "/static/js/gitlab.js?v=20260823a"
+      "/static/js/browse/table-ui.js": "/static/js/browse/table-ui.js?v=20260902a",
+      "/static/js/browse/row-more-menu.js": "/static/js/browse/row-more-menu.js?v=20260902d",
+      "/static/js/browse/onedrive-fe-actions.js": "/static/js/browse/onedrive-fe-actions.js?v=20260902d",
+      "/static/js/browse/gitlab-panel.js": "/static/js/browse/gitlab-panel.js?v=20260825d",
+      "/static/js/onedrive-fe/index.js": "/static/js/onedrive-fe/index.js?v=20260902c",
+      "/static/js/onedrive-fe/auth.js": "/static/js/onedrive-fe/auth.js?v=20260902c",
+      "/static/js/onedrive-fe/sign-in.js": "/static/js/onedrive-fe/sign-in.js?v=20260902c",
+      "/static/js/onedrive-fe/settings.js": "/static/js/onedrive-fe/settings.js?v=20260902c",
+      "/static/js/onedrive-fe/graph.js": "/static/js/onedrive-fe/graph.js?v=20260902c",
+      "/static/js/onedrive-fe/tokens.js": "/static/js/onedrive-fe/tokens.js?v=20260902a"
     }
   }
   </script>
@@ -429,7 +452,7 @@
   <script src="/static/js/transfer-manager.js?v=20260821a"></script>
   <script src="/static/js/download-manager.js?v=20260821a"></script>
   <script src="/static/js/components/folder-picker.js"></script>
-  <script type="module" src="/static/js/browse/app.js?v=20260728a"></script>
+  <script type="module" src="/static/js/browse/app.js?v=20260902d"></script>
   <script src="/static/js/folder-size-scan.js"></script>
 
   <!-- Hover popup: all tags for a row (overflow) -->
@@ -517,15 +540,6 @@
     <form method="dialog" class="modal-backdrop"><button type="submit">close</button></form>
   </dialog>
   <script src="/static/js/theme.js" defer></script>
-  {% if is_gitlab_enabled() %}
-  <aside id="gitlabPanel" class="gitlab-panel" hidden>
-    <div class="gitlab-panel-head">
-      <h3 class="gitlab-panel-title text-sm font-bold">GitLab</h3>
-      <button type="button" class="btn btn-ghost btn-xs" id="gitlabPanelClose" aria-label="Close">Close</button>
-    </div>
-    <div class="gitlab-panel-body"></div>
-  </aside>
-  {% end %}
 </body>
 
 </html>

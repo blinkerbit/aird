@@ -11,6 +11,7 @@ from aird.core.security import is_valid_websocket_origin
 from aird.handlers.base_handler import ManagedWebSocketMixin, authenticate_handler
 from aird.plugins.chat import db as chat_db
 from aird.plugins.chat import is_chat_enabled
+from aird.plugins.chat.e2e import metadata_from_e2e_request
 from aird.plugins.chat.notify import dispatch_message, dispatch_presence, dispatch_receipt, dispatch_typing
 from aird.plugins.chat.sanitize import sanitize_chat_html
 from aird.plugins.chat.service import get_chat_hub
@@ -47,6 +48,11 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
         conn = self.application.settings.get("db_conn")
         if conn is None:
             self.close(code=1011, reason="Database unavailable")
+            return
+        from aird.plugins.access import PLUGIN_CHAT, user_may_use_plugin
+
+        if not user_may_use_plugin(PLUGIN_CHAT, username, conn):
+            self.close(code=1008, reason="Chat not assigned")
             return
         uid = chat_db.resolve_user_id(conn, username)
         if uid is None:
@@ -95,19 +101,35 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
         if not conversation_id or not chat_db.user_in_conversation(self._username, conversation_id):
             self.write_message(json.dumps({"type": "error", "message": "Forbidden"}))
             return
-        body = sanitize_chat_html(data.get("body") or "")
-        if not body:
-            self.write_message(json.dumps({"type": "error", "message": "Empty message"}))
-            return
         reply_to = str(data.get("reply_to_id") or "") or None
-        msg = chat_db.insert_message(
-            conn,
-            username=self._username,
-            conversation_id=conversation_id,
-            msg_type="text",
-            body=body,
-            reply_to_id=reply_to,
-        )
+        try:
+            if data.get("e2e"):
+                meta = metadata_from_e2e_request(data)
+                msg = chat_db.insert_message(
+                    conn,
+                    username=self._username,
+                    conversation_id=conversation_id,
+                    msg_type="text",
+                    body="",
+                    metadata=meta,
+                    reply_to_id=reply_to,
+                )
+            else:
+                body = sanitize_chat_html(data.get("body") or "")
+                if not body:
+                    self.write_message(json.dumps({"type": "error", "message": "Empty message"}))
+                    return
+                msg = chat_db.insert_message(
+                    conn,
+                    username=self._username,
+                    conversation_id=conversation_id,
+                    msg_type="text",
+                    body=body,
+                    reply_to_id=reply_to,
+                )
+        except ValueError as exc:
+            self.write_message(json.dumps({"type": "error", "message": str(exc)}))
+            return
         dispatch_message(msg, sender_id=self._user_id, sender_username=self._username)
 
     def _handle_read(self, data: dict) -> None:

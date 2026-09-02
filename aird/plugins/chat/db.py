@@ -18,6 +18,12 @@ from aird.plugins.chat.mailbox import (
     MAX_PINS,
     mailbox,
 )
+from aird.plugins.chat.e2e import (
+    ENCRYPTED_PREVIEW,
+    is_e2e_meta,
+    parse_e2e_payload,
+    parse_wrap,
+)
 from aird.plugins.chat.sanitize import plain_preview
 
 logger = logging.getLogger(__name__)
@@ -396,10 +402,14 @@ def list_conversations(central: sqlite3.Connection, username: str) -> list[dict]
             last = _last_message(box.conn, conv_id)
             preview = ""
             last_type = None
+            last_e2e = None
             if last:
                 last_type = last[2]
                 meta = _loads(last[4])
-                if last[2] == "text":
+                if is_e2e_meta(meta):
+                    preview = ENCRYPTED_PREVIEW
+                    last_e2e = meta.get("e2e")
+                elif last[2] == "text":
                     preview = plain_preview(last[3] or "")
                 else:
                     preview = f"Shared {meta.get('original_name') or 'a file'}"
@@ -416,6 +426,7 @@ def list_conversations(central: sqlite3.Connection, username: str) -> list[dict]
                     "unread": _unread_count(box.conn, conv_id, username),
                     "last_preview": preview,
                     "last_type": last_type,
+                    "last_e2e": last_e2e,
                 }
             )
         return out
@@ -445,6 +456,7 @@ def _row_to_message(row, *, reactions: list[dict] | None = None) -> dict:
         "reactions": reactions or [],
         "mentions": meta.get("mentions") or [],
         "forwarded_from": meta.get("forwarded_from"),
+        "e2e": is_e2e_meta(meta),
     }
     if attachment_entries(meta):
         msg["file_url"] = (
@@ -583,9 +595,23 @@ def insert_message(
     now = _now_iso()
     mid = message_id or _new_id()
     meta = dict(metadata or {})
-    mentions = extract_mentions(body or "", [m["username"] for m in members if m["username"] != username])
-    if mentions:
+    member_names = [m["username"] for m in members if m["username"] != username]
+    if is_e2e_meta(meta):
+        meta["e2e"] = parse_e2e_payload(meta.get("e2e"))
+        body = ""
+        allowed = set(member_names)
+        mentions = []
+        for name in meta.get("mentions") or []:
+            name = str(name or "")
+            if name in allowed and name not in mentions:
+                mentions.append(name)
         meta["mentions"] = mentions
+        fts_body = ""
+    else:
+        mentions = extract_mentions(body or "", member_names)
+        if mentions:
+            meta["mentions"] = mentions
+        fts_body = body or ""
     meta_json = json.dumps(meta)
     original = _meta_name(meta)
 
@@ -613,7 +639,7 @@ def insert_message(
             "UPDATE conversations SET updated_at = ? WHERE id = ?",
             (now, conversation_id),
         )
-        _fts_upsert(box, mid, body or "", original)
+        _fts_upsert(box, mid, fts_body, original)
 
     _fanout_members(members, write)
     msg = get_message(username, mid)
@@ -622,7 +648,15 @@ def insert_message(
     return msg
 
 
-def edit_message(*, actor: str, conversation_id: str, message_id: str, body: str) -> dict | None:
+def edit_message(
+    *,
+    actor: str,
+    conversation_id: str,
+    message_id: str,
+    body: str,
+    e2e: dict | None = None,
+    mentions: list[str] | None = None,
+) -> dict | None:
     current = get_message(actor, message_id)
     if current is None or current["conversation_id"] != conversation_id:
         return None
@@ -631,8 +665,23 @@ def edit_message(*, actor: str, conversation_id: str, message_id: str, body: str
     members = members_of(actor, conversation_id)
     now = _now_iso()
     meta = dict(current.get("metadata") or {})
-    mentions = extract_mentions(body, [m["username"] for m in members if m["username"] != actor])
-    meta["mentions"] = mentions
+    member_names = [m["username"] for m in members if m["username"] != actor]
+    if e2e is not None:
+        meta["e2e"] = parse_e2e_payload(e2e)
+        body = ""
+        allowed = set(member_names)
+        clean: list[str] = []
+        for name in mentions or []:
+            name = str(name or "")
+            if name in allowed and name not in clean:
+                clean.append(name)
+        meta["mentions"] = clean
+        fts_body = ""
+    else:
+        mentions = extract_mentions(body, member_names)
+        meta["mentions"] = mentions
+        fts_body = body
+        meta.pop("e2e", None)
     meta_json = json.dumps(meta)
 
     def write(box, _m):
@@ -640,7 +689,7 @@ def edit_message(*, actor: str, conversation_id: str, message_id: str, body: str
             "UPDATE messages SET body = ?, metadata_json = ?, edited_at = ? WHERE id = ?",
             (body, meta_json, now, message_id),
         )
-        _fts_upsert(box, message_id, body, _meta_name(meta))
+        _fts_upsert(box, message_id, fts_body, _meta_name(meta))
 
     _fanout_members(members, write)
     updated = get_message(actor, message_id)
@@ -802,7 +851,10 @@ def list_pins(username: str, conversation_id: str) -> list[dict]:
         out = []
         for r in rows:
             meta = _loads(r[5])
-            preview = plain_preview(r[3] or "") if r[4] == "text" else (meta.get("original_name") or "File")
+            if is_e2e_meta(meta):
+                preview = ENCRYPTED_PREVIEW
+            else:
+                preview = plain_preview(r[3] or "") if r[4] == "text" else (meta.get("original_name") or "File")
             out.append(
                 {
                     "message_id": r[0],
@@ -892,6 +944,8 @@ def search_messages(username: str, query: str, *, limit: int = 40) -> list[dict]
         results = []
         for r in rows:
             msg = _row_to_message(r)
+            if msg.get("e2e"):
+                continue
             msg["snippet"] = plain_preview(msg["body"] or _meta_name(msg["metadata"]), 160)
             results.append(msg)
         return results
@@ -1043,6 +1097,59 @@ def other_member_id(username: str, conversation_id: str, user_id: int) -> int | 
 
 def member_user_ids(username: str, conversation_id: str) -> list[int]:
     return [m["user_id"] for m in members_of(username, conversation_id)]
+
+
+def get_e2e_wraps(username: str, conversation_id: str) -> dict[str, dict]:
+    with mailbox(username) as box:
+        try:
+            rows = box.conn.execute(
+                "SELECT username, wrap_json FROM e2e_wraps WHERE conversation_id = ?",
+                (conversation_id,),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return {}
+        out: dict[str, dict] = {}
+        for name, raw in rows:
+            try:
+                out[str(name)] = parse_wrap(json.loads(raw) if isinstance(raw, str) else raw)
+            except (ValueError, json.JSONDecodeError, TypeError):
+                continue
+        return out
+
+
+def put_e2e_wraps(*, actor: str, conversation_id: str, wraps: dict) -> dict[str, dict]:
+    conv = get_conversation(actor, conversation_id)
+    if conv is None:
+        raise ValueError("Conversation not found")
+    members = conv["members"]
+    allowed = {m["username"] for m in members}
+    if not isinstance(wraps, dict) or not wraps:
+        raise ValueError("wraps required")
+    if len(wraps) > len(allowed) + 2:
+        raise ValueError("Too many wraps")
+    clean: dict[str, dict] = {}
+    for name, blob in wraps.items():
+        name = str(name or "")
+        if name not in allowed:
+            continue
+        clean[name] = parse_wrap(blob)
+    if not clean:
+        raise ValueError("No valid wraps")
+
+    def write(box, _m):
+        for name, wrap in clean.items():
+            box.conn.execute(
+                """
+                INSERT INTO e2e_wraps (conversation_id, username, wrap_json)
+                VALUES (?, ?, ?)
+                ON CONFLICT(conversation_id, username) DO UPDATE SET wrap_json = excluded.wrap_json
+                """,
+                (conversation_id, name, json.dumps(wrap, separators=(",", ":"))),
+            )
+
+    _fanout_members(members, write)
+    return get_e2e_wraps(actor, conversation_id)
+
 
 
 def peer_user_ids_for_presence(username: str) -> list[int]:

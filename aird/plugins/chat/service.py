@@ -105,7 +105,11 @@ def get_chat_hub() -> ChatHub:
 
 
 def message_preview(msg: dict) -> str:
+    from aird.plugins.chat.e2e import ENCRYPTED_PREVIEW, is_e2e_meta
+
     meta = msg.get("metadata") or {}
+    if is_e2e_meta(meta) or msg.get("e2e"):
+        return ENCRYPTED_PREVIEW
     names = [str(a.get("original_name") or "") for a in attachment_entries(meta)]
     names = [n for n in names if n]
     body = plain_preview(msg.get("body") or "")

@@ -6,19 +6,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
-  <title>Profile · Aird</title>
+  <title>Settings · Aird</title>
 </head>
 <body class="bg-base-200 min-h-screen">
   <div class="aird-shell">
     {% set nav_title = "Aird" %}
     {% set nav_search_path = "" %}
-    {% set show_admin_link = True %}
     {% include '_app_nav_header.html' %}
 
     <div class="aird-page">
     <header class="flex items-baseline justify-between flex-wrap gap-3 pb-3 mb-6 border-b border-base-300">
       <div>
-        <h1 class="aird-page-title">Profile settings</h1>
+        <h1 class="aird-page-title">Settings</h1>
         {% if user %}
         <p class="aird-page-lead">{{ escape(user['username']) }} · {{ escape(user['role']) }}</p>
         {% end %}
@@ -67,6 +66,132 @@
         <span>Profile management is not available for token-authenticated sessions.</span>
       </div>
       {% else %}
+        {% if is_admin_user %}
+        <div class="card bg-base-100 shadow-sm border border-base-300">
+          <div class="card-body">
+            <h3 class="font-semibold">Server administration</h3>
+            <p class="text-sm text-base-content/60 mt-1">Manage users, plugins, hosting, and other server-wide options. Admin apps such as GitLab and OneDrive host backup live under Admin → Plugins.</p>
+            <div class="flex justify-end mt-3">
+              <a href="/admin" class="btn btn-primary btn-sm">Open admin console</a>
+            </div>
+          </div>
+        </div>
+        {% end %}
+
+        {% if user_plugins %}
+        <div class="card bg-base-100 shadow-sm border border-base-300">
+          <div class="card-body">
+            <h3 class="font-semibold">Your plugins</h3>
+            <p class="text-sm text-base-content/60 mt-1">Apps available on your account.</p>
+            <ul class="mt-3 space-y-3">
+              {% for plugin in user_plugins %}
+              <li class="rounded-lg border border-base-300 overflow-hidden">
+                <div class="flex items-center justify-between gap-3 px-3 py-2">
+                  <div class="min-w-0">
+                    <div class="font-medium truncate">{{ escape(plugin['label']) }}</div>
+                    {% if plugin['id'] == 'onedrive_browser' %}
+                    <p class="text-xs text-base-content/50 mt-0.5">Save files to your OneDrive from Browse. Sign in here first.</p>
+                    {% elif plugin['id'] == 'direct_messages' %}
+                    <p class="text-xs text-base-content/50 mt-0.5">Encrypted direct messages. Configure key backup path in Settings.</p>
+                    {% end %}
+                  </div>
+                  <div class="flex gap-2 shrink-0">
+                    {% if plugin['id'] == 'direct_messages' %}
+                    <button type="button" class="btn btn-ghost btn-sm" data-plugin-panel="chat-key">Settings</button>
+                    <a href="{{ escape(plugin.get('href') or '/chat') }}" class="btn btn-outline btn-sm">Open</a>
+                    {% elif plugin['id'] == 'onedrive_browser' %}
+                    <button type="button" class="btn btn-ghost btn-sm" data-plugin-panel="onedrive-browser">Settings</button>
+                    <a href="{{ escape(plugin.get('href') or '/files/') }}" class="btn btn-outline btn-sm">Open</a>
+                    {% else %}
+                    <a href="{{ escape(plugin.get('href') or '/files/') }}" class="btn btn-outline btn-sm">Open</a>
+                    {% end %}
+                  </div>
+                </div>
+
+                {% if plugin['id'] == 'direct_messages' %}
+                <div id="pluginPanelChatKey" class="border-t border-base-300 bg-base-200/40 px-3 py-3 hidden" data-plugin-panel-body="chat-key">
+                  <h4 class="font-semibold text-sm">Chat encryption key backup</h4>
+                  <p class="text-xs text-base-content/60 mt-1">
+                    Your private key stays in this browser. Set the OneDrive folder for key backups so Chat can restore it after sign-in on a new browser.
+                  </p>
+                  <div class="form-control mt-3 max-w-xl">
+                    <label class="label" for="chatKeyOdPath"><span class="label-text font-semibold text-sm">OneDrive folder path</span></label>
+                    <input id="chatKeyOdPath" type="text" class="input input-bordered input-sm w-full font-mono"
+                      placeholder="Aird/chat-keys" autocomplete="off">
+                    <span class="label-text-alt mt-1">From your OneDrive root, e.g. <code>Aird/chat-keys</code></span>
+                  </div>
+                  <div class="flex flex-wrap gap-2 mt-3">
+                    <button type="button" id="chatKeySavePathBtn" class="btn btn-primary btn-sm">Save path</button>
+                    {% if is_onedrive_browser_enabled() %}
+                    <button type="button" id="chatKeyPickOdBtn" class="btn btn-outline btn-sm">Choose folder on OneDrive…</button>
+                    <button type="button" id="chatKeyRestoreOdBtn" class="btn btn-ghost btn-sm">Restore key from OneDrive</button>
+                    {% end %}
+                  </div>
+                  <p id="chatKeyOdMsg" class="text-sm mt-2 hidden"></p>
+                </div>
+                {% end %}
+
+                {% if plugin['id'] == 'onedrive_browser' %}
+                <div id="pluginPanelOdBrowser" class="border-t border-base-300 bg-base-200/40 px-3 py-3 hidden" data-plugin-panel-body="onedrive-browser">
+                  <h4 class="font-semibold text-sm">OneDrive</h4>
+                  <p class="text-xs text-base-content/60 mt-1">
+                    Sign in with Microsoft to copy files from Browse to your personal OneDrive. Tokens stay in this browser.
+                  </p>
+                  <p id="odBrowserStatus" class="text-sm mt-2">Checking…</p>
+                  <div class="form-control mt-3 max-w-xl">
+                    <label class="label" for="odBrowserClientId"><span class="label-text font-semibold text-sm">Azure application (client) ID</span></label>
+                    <input id="odBrowserClientId" type="text" class="input input-bordered input-sm w-full font-mono"
+                      placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off">
+                    <span class="label-text-alt mt-1">Required if your admin has not configured a server-wide app. Stored in this browser only.</span>
+                  </div>
+                  <div class="form-control mt-2 max-w-xs">
+                    <label class="label" for="odBrowserTenant"><span class="label-text font-semibold text-sm">Tenant</span></label>
+                    <input id="odBrowserTenant" type="text" class="input input-bordered input-sm w-full" placeholder="common" autocomplete="off">
+                  </div>
+                  <div class="flex flex-wrap gap-2 mt-3">
+                    <button type="button" id="odBrowserSignInBtn" class="btn btn-primary btn-sm">Sign in to OneDrive</button>
+                    <button type="button" id="odBrowserSignOutBtn" class="btn btn-outline btn-sm">Sign out</button>
+                  </div>
+                  <div class="form-control mt-4 max-w-xl">
+                    <label class="label" for="odBrowserAuthMode"><span class="label-text font-semibold text-sm">Sign-in method</span></label>
+                    <select id="odBrowserAuthMode" class="select select-bordered select-sm w-full max-w-xs">
+                      <option value="redirect">Browser redirect (recommended)</option>
+                      <option value="device">Device code</option>
+                    </select>
+                  </div>
+                  <div id="odBrowserDeviceBlock" class="mt-3 hidden">
+                    <button type="button" id="odBrowserDeviceStartBtn" class="btn btn-outline btn-sm">Start device login</button>
+                    <p id="odBrowserDevicePrompt" class="text-sm mt-2 hidden">Go to <a id="odBrowserDeviceUrl" href="#" target="_blank" rel="noopener" class="link"></a> and enter code <strong id="odBrowserDeviceCode"></strong></p>
+                  </div>
+                  <div class="form-control mt-4 max-w-xl">
+                    <label class="label" for="odBrowserSavePath"><span class="label-text font-semibold text-sm">Default copy folder</span></label>
+                    <input id="odBrowserSavePath" type="text" class="input input-bordered input-sm w-full font-mono"
+                      placeholder="aird/datacopy" autocomplete="off">
+                    <span class="label-text-alt mt-1">Browse copies save into this OneDrive folder by default.</span>
+                  </div>
+                  <div class="form-control mt-3 max-w-xs">
+                    <label class="label" for="odBrowserConflict"><span class="label-text font-semibold text-sm">If file exists</span></label>
+                    <select id="odBrowserConflict" class="select select-bordered select-sm w-full">
+                      <option value="replace">Replace</option>
+                      <option value="rename">Rename</option>
+                      <option value="fail">Skip</option>
+                    </select>
+                  </div>
+                  <div class="flex flex-wrap gap-2 mt-3">
+                    <button type="button" id="odBrowserSavePathBtn" class="btn btn-primary btn-sm">Save settings</button>
+                    <button type="button" id="odBrowserPickPathBtn" class="btn btn-outline btn-sm">Choose folder on OneDrive…</button>
+                    <button type="button" id="odBrowserClearPathBtn" class="btn btn-ghost btn-sm">Clear folder</button>
+                  </div>
+                  <p id="odBrowserMsg" class="text-sm mt-2 hidden"></p>
+                </div>
+                {% end %}
+              </li>
+              {% end %}
+            </ul>
+          </div>
+        </div>
+        {% end %}
+
         {% if not ldap_enabled %}
         <div class="card bg-base-100 shadow-sm border border-base-300">
           <div class="card-body">
@@ -238,7 +363,19 @@
   </div>
   <script src="/static/js/theme.js" defer></script>
   <script src="/static/js/webauthn.js" defer></script>
-  <script nonce="{{ csp_nonce }}">
+  {% if is_onedrive_browser_enabled() or is_chat_enabled() %}
+  <script nonce="{{ csp_nonce }}">globalThis.__ONEDRIVE_BROWSER_CONFIG = {% raw json_encode_for_script({
+    'enabled': is_onedrive_browser_enabled(),
+    'clientId': onedrive_browser_public_config().get('client_id') or '',
+    'tenant': onedrive_browser_public_config().get('tenant') or 'common',
+    'configured': onedrive_browser_public_config().get('configured', False),
+  }) %};</script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/onedrive-fe/index.js?v=20260902c"></script>
+  {% end %}
+  {% if is_chat_enabled() %}
+  <script nonce="{{ csp_nonce }}" src="/static/js/chat-e2e.js?v=20260825e2e"></script>
+  <script nonce="{{ csp_nonce }}" src="/static/js/chat-key-backup.js?v=20260825e2e"></script>
+  {% end %}
   <script nonce="{{ csp_nonce }}">
   function getXsrfToken() {
     const input = document.querySelector('input[name="_xsrf"]');
@@ -246,6 +383,166 @@
     const match = /(?:^|; )_xsrf=([^;]*)/.exec(document.cookie);
     return match ? decodeURIComponent(match[1]) : '';
   }
+
+  function setOdMsg(el, text, isErr) {
+    if (!el) return;
+    el.textContent = text || '';
+    el.classList.toggle('hidden', !text);
+    el.classList.toggle('text-error', !!isErr);
+    el.classList.toggle('text-success', !!text && !isErr);
+  }
+
+  function refreshOdBrowserPanel() {
+    const OD = globalThis.AirdOneDriveFe;
+    const status = document.getElementById('odBrowserStatus');
+    const pathInput = document.getElementById('odBrowserSavePath');
+    const clientInput = document.getElementById('odBrowserClientId');
+    const tenantInput = document.getElementById('odBrowserTenant');
+    const signInBtn = document.getElementById('odBrowserSignInBtn');
+    const signOutBtn = document.getElementById('odBrowserSignOutBtn');
+    const authMode = document.getElementById('odBrowserAuthMode');
+    const conflict = document.getElementById('odBrowserConflict');
+    const deviceBlock = document.getElementById('odBrowserDeviceBlock');
+    if (!status) return;
+    const signed = !!OD?.isSignedInSync?.();
+    const saved = OD?.getDefaultSave?.() || null;
+    const appCfg = OD?.getLocalAppConfig?.() || null;
+    const pageCfg = globalThis.__ONEDRIVE_BROWSER_CONFIG || {};
+    status.textContent = signed
+      ? 'Signed in to OneDrive in this browser.'
+      : 'Not signed in. Click Sign in and choose browser or device code.';
+    if (pathInput) pathInput.value = saved?.path || 'aird/datacopy';
+    if (clientInput) clientInput.value = appCfg?.clientId || pageCfg.clientId || '';
+    if (tenantInput) tenantInput.value = appCfg?.tenant || pageCfg.tenant || 'common';
+    if (authMode) authMode.value = OD?.getAuthMode?.() || 'redirect';
+    if (conflict) conflict.value = OD?.getConflictPolicy?.() || 'replace';
+    if (deviceBlock) deviceBlock.classList.toggle('hidden', authMode?.value !== 'device');
+    if (signInBtn) signInBtn.disabled = signed;
+    if (signOutBtn) signOutBtn.disabled = !signed;
+  }
+
+  function wireOdBrowserSettings() {
+    const OD = globalThis.AirdOneDriveFe;
+    const msg = document.getElementById('odBrowserMsg');
+    const pathInput = document.getElementById('odBrowserSavePath');
+    const authMode = document.getElementById('odBrowserAuthMode');
+    const conflict = document.getElementById('odBrowserConflict');
+    const deviceBlock = document.getElementById('odBrowserDeviceBlock');
+    if (!pathInput) return;
+    refreshOdBrowserPanel();
+
+    authMode?.addEventListener('change', () => {
+      OD?.setAuthMode?.(authMode.value);
+      if (deviceBlock) deviceBlock.classList.toggle('hidden', authMode.value !== 'device');
+    });
+
+    document.getElementById('odBrowserSignInBtn')?.addEventListener('click', async () => {
+      try {
+        setOdMsg(msg, 'Opening sign-in…');
+        if (!OD?.ensureSignedIn) throw new Error('OneDrive is not available');
+        const token = await OD.ensureSignedIn({ returnTo: globalThis.location.href });
+        if (token) {
+          refreshOdBrowserPanel();
+          setOdMsg(msg, 'Signed in.');
+        }
+      } catch (err) {
+        setOdMsg(msg, err.message || 'Sign-in failed', true);
+      }
+    });
+
+    document.getElementById('odBrowserSignOutBtn')?.addEventListener('click', async () => {
+      await OD?.signOut?.();
+      refreshOdBrowserPanel();
+      setOdMsg(msg, 'Signed out of OneDrive on this browser.');
+    });
+
+    document.getElementById('odBrowserSavePathBtn')?.addEventListener('click', () => {
+      try {
+        const clientId = document.getElementById('odBrowserClientId')?.value?.trim();
+        const tenant = document.getElementById('odBrowserTenant')?.value?.trim();
+        if (clientId) OD.setLocalAppConfig?.({ clientId, tenant: tenant || 'common' });
+        const saved = OD.setDefaultSave({ path: pathInput.value });
+        OD.setConflictPolicy?.(conflict?.value || 'replace');
+        pathInput.value = saved?.path || '';
+        setOdMsg(msg, `Saved settings${clientId ? ' (including Azure app ID)' : ''}.`);
+      } catch (err) {
+        setOdMsg(msg, err.message || 'Could not save settings', true);
+      }
+    });
+
+    document.getElementById('odBrowserClearPathBtn')?.addEventListener('click', () => {
+      OD?.setDefaultSave?.({ path: 'aird/datacopy' });
+      pathInput.value = 'aird/datacopy';
+      setOdMsg(msg, 'Reset default folder to aird/datacopy.');
+    });
+
+    document.getElementById('odBrowserPickPathBtn')?.addEventListener('click', async () => {
+      try {
+        setOdMsg(msg, 'Connecting to OneDrive…');
+        const token = await OD.ensureAccessToken();
+        if (!token) return;
+        setOdMsg(msg, 'Choose the default folder for Browse copies…');
+        await OD.showFolderPicker({
+          token,
+          title: 'Default OneDrive copy folder',
+          onPick: async (folderId, names) => {
+            const path = Array.isArray(names) && names.length > 1 ? names.slice(1).join('/') : '';
+            const saved = OD.setDefaultSave({ path, folderId });
+            pathInput.value = saved?.path || '';
+            setOdMsg(msg, `Default copy folder: ${saved?.path || 'OneDrive root'}`);
+            refreshOdBrowserPanel();
+          },
+        });
+      } catch (err) {
+        setOdMsg(msg, err.message || 'Could not map folder', true);
+      }
+    });
+
+    let devicePoll = null;
+    document.getElementById('odBrowserDeviceStartBtn')?.addEventListener('click', async () => {
+      try {
+        setOdMsg(msg, 'Starting device login…');
+        const flow = await OD.startDeviceCode();
+        const prompt = document.getElementById('odBrowserDevicePrompt');
+        const url = document.getElementById('odBrowserDeviceUrl');
+        const code = document.getElementById('odBrowserDeviceCode');
+        if (url) { url.href = flow.verification_uri || '#'; url.textContent = flow.verification_uri || ''; }
+        if (code) code.textContent = flow.user_code || '';
+        prompt?.classList.remove('hidden');
+        if (devicePoll) clearInterval(devicePoll);
+        devicePoll = setInterval(async () => {
+          try {
+            const result = await OD.pollDeviceCode();
+            if (result?.pending) return;
+            clearInterval(devicePoll);
+            devicePoll = null;
+            refreshOdBrowserPanel();
+            setOdMsg(msg, 'Signed in with device code.');
+          } catch (err) {
+            clearInterval(devicePoll);
+            devicePoll = null;
+            setOdMsg(msg, err.message || 'Device login failed', true);
+          }
+        }, Math.max(3000, (flow.interval || 5) * 1000));
+      } catch (err) {
+        setOdMsg(msg, err.message || 'Could not start device login', true);
+      }
+    });
+  }
+
+  document.querySelectorAll('[data-plugin-panel]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-plugin-panel');
+      const panel = document.querySelector(`[data-plugin-panel-body="${id}"]`);
+      if (!panel) return;
+      const open = panel.classList.contains('hidden');
+      document.querySelectorAll('[data-plugin-panel-body]').forEach((el) => el.classList.add('hidden'));
+      if (open) {
+        panel.classList.remove('hidden');
+        if (id === 'onedrive-browser') refreshOdBrowserPanel();
+      }
+    });
+  });
 
   async function loadSessions() {
     const list = document.getElementById('session-list');
@@ -324,6 +621,11 @@
 
   globalThis.addEventListener('load', function () {
     loadSessions();
+    const KB = globalThis.AirdChatKeyBackup;
+    if (KB?.initProfile) {
+      KB.initProfile({ username: {% raw json_encode(user['username'] if user else '') %} });
+    }
+    wireOdBrowserSettings();
     const chatToggle = document.getElementById('chatBrowserNotify');
     const chatMsg = document.getElementById('chatNotifyMsg');
     if (chatToggle) {

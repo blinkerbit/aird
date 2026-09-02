@@ -1,7 +1,7 @@
 "use strict";
 
 import { SelectionStore } from '/static/js/browse/selection-store.js';
-import { isInputKeyTarget } from '/static/js/browse/util.js';
+import { isInputKeyTarget, showDialog } from '/static/js/browse/util.js';
 import { updateBulkToolbar } from '/static/js/browse/selection-ui.js';
 import { closeRowTagPopover, isRowTagPopoverOpen, openRowTagPopover } from '/static/js/browse/tags.js';
 import { closeSharePopup, showShareDetails } from '/static/js/browse/shares.js';
@@ -235,7 +235,7 @@ export function initBrowseColumnResize() {
   const resizers = table.querySelectorAll('.col-resizer');
   if (!resizers.length) return;
 
-  const STORAGE_KEY = 'aird_browse_col_widths';
+  const STORAGE_KEY = 'aird_browse_col_widths_v2';
   const ths = Array.from(table.querySelectorAll('thead th'));
 
   function saveWidths() {

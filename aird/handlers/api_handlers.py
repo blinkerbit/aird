@@ -29,6 +29,7 @@ from aird.handlers.base_handler import (
     authenticate_handler,
     get_username_string_for_db,
     get_user_root,
+    resolve_handler_rel,
     login_matches_share_creator_field,
     require_action,
     require_db,
@@ -182,13 +183,16 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
         if not self.register_connection():
             return
 
-        user_root = get_user_root(self)
-        self.file_path = os.path.abspath(os.path.join(user_root, unquote(path)))
-        if not is_within_root(self.file_path, user_root) or not os.path.isfile(
-            self.file_path
+        abspath, confine = resolve_handler_rel(self, unquote(path))
+        if (
+            not abspath
+            or not confine
+            or not is_within_root(abspath, confine)
+            or not os.path.isfile(abspath)
         ):
             self.close(code=1003, reason="File not found")
             return
+        self.file_path = abspath
 
         n_str = self.get_argument("n", "1000")
         try:
@@ -242,9 +246,8 @@ class FileStreamHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandle
                 json.dumps({"type": "error", "message": "file_path is required"})
             )
             return
-        user_root = get_user_root(self)
-        abs_path = os.path.abspath(os.path.join(user_root, rel_path))
-        if not is_within_root(abs_path, user_root):
+        abs_path, confine = resolve_handler_rel(self, rel_path)
+        if not abs_path or not confine or not is_within_root(abs_path, confine):
             self.write_message(
                 json.dumps({"type": "error", "message": "Forbidden path"})
             )
@@ -397,6 +400,7 @@ class FolderSizeAPIHandler(BaseHandler):
 
     @tornado.web.authenticated
     async def get(self):
+        from aird.core.browse_paths import mounts_for_username
         from aird.core.folder_size import (
             compute_folder_size,
             norm_rel_path,
@@ -414,7 +418,11 @@ class FolderSizeAPIHandler(BaseHandler):
             return
 
         user_root = get_user_root(self)
-        abs_path = resolve_folder_abspath(user_root, path)
+        abs_path = resolve_folder_abspath(
+            user_root,
+            path,
+            mounts_for_username(self.db_conn, get_username_string_for_db(self) or ""),
+        )
         if not abs_path:
             self.set_status(404)
             self.set_header("Content-Type", CONTENT_TYPE_JSON)
@@ -450,8 +458,8 @@ class FileListAPIHandler(BaseHandler):
     @require_action("file.list", resource_arg="path")
     def get(self, path):
         user_root = get_user_root(self)
-        abspath = os.path.abspath(os.path.join(user_root, path))
-        if not is_within_root(abspath, user_root):
+        abspath, confine = resolve_handler_rel(self, path)
+        if not abspath or not confine or not is_within_root(abspath, confine):
             self.set_status(403)
             self.write(ACCESS_DENIED_MSG)
             return
@@ -461,6 +469,16 @@ class FileListAPIHandler(BaseHandler):
             return
         try:
             files = get_files_in_directory(abspath)
+            if not path:
+                from aird.core.browse_paths import mounts_for_username, overlay_mount_entries
+
+                overlay_mount_entries(
+                    files,
+                    mounts_for_username(
+                        self.db_conn, get_username_string_for_db(self) or ""
+                    ),
+                    path,
+                )
 
             # Augment file data with shared status
             db_conn = self.db_conn

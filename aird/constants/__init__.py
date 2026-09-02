@@ -49,11 +49,14 @@ FEATURE_FLAGS = {
     "webdav_server": False,
     "direct_messages": False,
     "gitlab_integration": False,
+    "onedrive_backup": False,
+    "onedrive_browser": False,
     "transfer_sendfile": True,
 }
 
 CHAT_SHARE_FOLDER = ".aird-shares"
 CHAT_STORE_FOLDER = ".aird-chats"
+AIRD_META_FOLDER = ".aird"
 
 # WebSocket connection configuration
 WEBSOCKET_CONFIG = {

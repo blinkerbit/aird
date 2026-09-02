@@ -15,6 +15,7 @@ import tornado.websocket
 
 import aird.config as config_module
 from aird.core.auth_secrets import verify_auth_secret
+from aird.core.csp import connect_src
 import aird.constants as constants_module
 from aird.db import get_user_attributes, get_user_by_username
 from aird.domain.models import (
@@ -97,6 +98,14 @@ def get_user_root(handler) -> str:
         root_dir=constants_module.ROOT_DIR,
         multi_user=True,
     )
+
+
+def resolve_handler_rel(handler, rel: str) -> tuple[str | None, str | None]:
+    """Resolve a browse-relative path for the current user (mounts + personal data)."""
+    from aird.core.browse_paths import resolve_for_user
+
+    username = get_username_string_for_db(handler) or ""
+    return resolve_for_user(username, rel, get_user_root(handler), handler.db_conn)
 
 
 # ---------------------------------------------------------------------------
@@ -954,14 +963,7 @@ class BaseHandler(tornado.web.RequestHandler):
         """Set CSP header with the request-specific nonce."""
         nonce = self.get_csp_nonce()
         # Use nonce for scripts, keep unsafe-inline for styles (inline style attributes are common)
-        connect = "'self'"
-        try:
-            from aird.plugins.gitlab import is_gitlab_enabled
-
-            if is_gitlab_enabled():
-                connect = "'self' https: http://127.0.0.1:* http://localhost:*"
-        except Exception:
-            pass
+        connect = connect_src()
         csp = (
             f"default-src 'self'; "
             f"script-src 'self' 'nonce-{nonce}'; "
@@ -986,17 +988,16 @@ class BaseHandler(tornado.web.RequestHandler):
         namespace = super().get_template_namespace()
         namespace["csp_nonce"] = self.get_csp_nonce()
         namespace["is_feature_enabled"] = is_feature_enabled
-        from aird.plugins.chat import is_chat_enabled
-        from aird.plugins.gitlab import is_gitlab_enabled
+        from aird.plugins.access import bind_template_plugin_checks
 
-        namespace["is_chat_enabled"] = is_chat_enabled
-        namespace["is_gitlab_enabled"] = is_gitlab_enabled
+        username = get_username_string_for_db(self)
+        namespace.update(bind_template_plugin_checks(username, getattr(self, "db_conn", None)))
         namespace["json_encode_for_script"] = json_encode_for_script
         # _app_nav_header.html expects these; missing keys raise when Super Search link renders.
         namespace.setdefault("nav_search_path", "")
         namespace.setdefault("nav_title", "")
-        namespace.setdefault("show_admin_link", False)
         namespace.setdefault("ldap_enabled", self.settings.get("ldap_server") is not None)
+        namespace["is_admin_user"] = self.is_admin_user()
         return namespace
 
     def get_current_user(self):

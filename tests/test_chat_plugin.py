@@ -627,3 +627,81 @@ def test_legacy_migrate(chat_env):
     migrate_user_mailbox(chat_env, "alice")
     convos = chat_db.list_conversations(chat_env, "alice")
     assert any("legacy-hi" in (c.get("last_preview") or "") for c in convos)
+
+
+def _b64(fill: bytes, n: int = 32) -> str:
+    import base64
+
+    return base64.urlsafe_b64encode(fill * n).decode("ascii").rstrip("=")
+
+
+def test_e2e_stores_ciphertext_not_plaintext(chat_env):
+    from aird.plugins.chat import db as chat_db
+    from aird.plugins.chat.e2e import ENCRYPTED_PREVIEW
+
+    a = chat_db.resolve_user_id(chat_env, "alice")
+    b = chat_db.resolve_user_id(chat_env, "bob")
+    conv = chat_db.create_dm_conversation(chat_env, a, b)
+    payload = {"v": 1, "iv": _b64(b"\x01", 12), "ct": _b64(b"\xab", 40)}
+    msg = chat_db.insert_message(
+        chat_env,
+        username="alice",
+        conversation_id=conv,
+        msg_type="text",
+        body="<p>secret-plaintext</p>",
+        metadata={"e2e": payload, "mentions": ["bob"]},
+    )
+    assert msg["body"] == ""
+    assert msg["e2e"] is True
+    assert msg["metadata"]["e2e"]["ct"] == payload["ct"]
+    assert chat_db.get_message("bob", msg["id"])["body"] == ""
+    convos = chat_db.list_conversations(chat_env, "bob")
+    assert convos[0]["last_preview"] == ENCRYPTED_PREVIEW
+    assert chat_db.search_messages("alice", "secret-plaintext") == []
+    hits = chat_db.search_messages("alice", payload["ct"][:12])
+    assert all(h["id"] != msg["id"] for h in hits)
+
+
+def test_e2e_identity_rejects_private_jwk(chat_env):
+    from aird.plugins.chat.e2e import get_identity_keys, put_identity_key
+
+    pub = {"kty": "EC", "crv": "P-256", "x": _b64(b"\x11"), "y": _b64(b"\x22")}
+    put_identity_key(chat_env, "alice", pub)
+    assert get_identity_keys(chat_env, ["alice"])["alice"]["x"] == pub["x"]
+    with pytest.raises(ValueError, match="Private"):
+        put_identity_key(chat_env, "alice", {**pub, "d": _b64(b"\x33")})
+
+
+def test_e2e_wraps_fanout(chat_env):
+    from aird.plugins.chat import db as chat_db
+
+    a = chat_db.resolve_user_id(chat_env, "alice")
+    b = chat_db.resolve_user_id(chat_env, "bob")
+    conv = chat_db.create_dm_conversation(chat_env, a, b)
+    pub = {"kty": "EC", "crv": "P-256", "x": _b64(b"\x11"), "y": _b64(b"\x22")}
+    wrap = {
+        "v": 1,
+        "kid": _b64(b"k", 16),
+        "epk": pub,
+        "iv": _b64(b"\x03", 12),
+        "ct": _b64(b"\x04", 32),
+    }
+    stored = chat_db.put_e2e_wraps(
+        actor="alice", conversation_id=conv, wraps={"alice": wrap, "bob": wrap}
+    )
+    assert set(stored) == {"alice", "bob"}
+    assert "bob" in chat_db.get_e2e_wraps("bob", conv)
+
+
+def test_plaintext_messages_still_work(chat_env):
+    from aird.plugins.chat import db as chat_db
+
+    a = chat_db.resolve_user_id(chat_env, "alice")
+    b = chat_db.resolve_user_id(chat_env, "bob")
+    conv = chat_db.create_dm_conversation(chat_env, a, b)
+    msg = chat_db.insert_message(
+        chat_env, username="alice", conversation_id=conv, msg_type="text", body="<p>visible</p>"
+    )
+    assert "visible" in msg["body"]
+    assert msg["e2e"] is False
+    assert any("visible" in (h.get("snippet") or h.get("body") or "") for h in chat_db.search_messages("bob", "visible"))

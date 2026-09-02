@@ -9,19 +9,37 @@ import aird.constants as constants
 from aird.db.config import (
     load_allowed_extensions,
     load_feature_flags,
+    load_json_server_config,
     load_server_config,
     load_upload_config,
+    load_websocket_config,
     save_allowed_extensions,
     save_feature_flags,
+    save_json_server_config,
     save_server_config,
     save_upload_config,
     save_websocket_config,
+    seed_runtime_defaults,
 )
 
 logger = logging.getLogger(__name__)
 
 
 class ConfigService:
+    def seed_defaults(self, conn: Any) -> None:
+        """Insert missing runtime keys only; existing SQLite values win."""
+        if conn is None:
+            return
+        seed_runtime_defaults(
+            conn,
+            feature_flags=constants.FEATURE_FLAGS,
+            websocket_config=constants.WEBSOCKET_CONFIG,
+            upload_config=constants.UPLOAD_CONFIG,
+            transfer_config=constants.TRANSFER_CONFIG,
+            compression_config=constants.COMPRESSION_CONFIG,
+            hosting_profile=getattr(constants, "TRANSFER_PROFILE", "open"),
+        )
+
     def sync_upload_config_from_db(self, conn: Any) -> None:
         """Reload upload limits from SQLite (required with multiple workers)."""
         if conn is None:
@@ -34,7 +52,35 @@ class ConfigService:
                     "Upload config '%s' set to %s from database", key, int(value)
                 )
 
+    def sync_websocket_config_from_db(self, conn: Any) -> None:
+        if conn is None:
+            return
+        persisted = load_websocket_config(conn)
+        if persisted:
+            constants.WEBSOCKET_CONFIG.update({k: int(v) for k, v in persisted.items()})
+
+    def sync_transfer_limits_from_db(self, conn: Any) -> None:
+        data = load_json_server_config(conn, "transfer_config") if conn is not None else {}
+        if data:
+            constants.TRANSFER_CONFIG.update(data)
+
+    def sync_compression_from_db(self, conn: Any) -> None:
+        data = (
+            load_json_server_config(conn, "compression_config") if conn is not None else {}
+        )
+        if data:
+            constants.COMPRESSION_CONFIG.update(data)
+
+    def save_transfer_limits(self, conn: Any, cfg: dict) -> None:
+        save_json_server_config(conn, "transfer_config", cfg)
+
+    def save_compression_config(self, conn: Any, cfg: dict) -> None:
+        save_json_server_config(conn, "compression_config", cfg)
+
     def merge_from_db(self, conn: Any) -> None:
+        if conn is None:
+            return
+        self.seed_defaults(conn)
         persisted_flags = load_feature_flags(conn)
         if persisted_flags:
             for key, value in persisted_flags.items():
@@ -44,7 +90,14 @@ class ConfigService:
                 )
 
         self.sync_upload_config_from_db(conn)
+        self.sync_websocket_config_from_db(conn)
         self.sync_transfer_profile_from_db(conn)
+        self.sync_transfer_limits_from_db(conn)
+        self.sync_compression_from_db(conn)
+
+        from aird.core.rate_limit import TransferRateLimiter
+
+        TransferRateLimiter.apply_transfer_config(constants.TRANSFER_CONFIG)
 
         constants.UPLOAD_ALLOWED_EXTENSIONS = load_allowed_extensions(conn)
         if not constants.UPLOAD_ALLOWED_EXTENSIONS:
@@ -109,3 +162,52 @@ class ConfigService:
 
     def save_allowed_extensions(self, conn: Any, extensions: set[str]) -> None:
         save_allowed_extensions(conn, extensions)
+
+    def apply_feature_flag(self, conn: Any, key: str, enabled: bool) -> dict[str, Any]:
+        """Persist one feature flag. Unknown keys return status 400."""
+        from aird.network_share_manager import (
+            smb_library_available,
+            webdav_library_available,
+        )
+        from aird.plugins.chat import chat_library_available
+        from aird.plugins.gitlab import gitlab_library_available
+        from aird.utils.util import invalidate_feature_flags_cache
+
+        if key not in constants.FEATURE_FLAGS:
+            return {"ok": False, "error": "Unknown feature flag", "status": 400}
+
+        value = bool(enabled)
+        notice = ""
+        if value:
+            if key == "direct_messages" and not chat_library_available():
+                value = False
+                notice = "chat_package_required"
+            elif key == "gitlab_integration" and not gitlab_library_available():
+                value = False
+                notice = "gitlab_package_required"
+            elif key == "webdav_server" and not webdav_library_available():
+                value = False
+                notice = "webdav_package_required"
+            elif key == "smb_server" and not smb_library_available():
+                value = False
+                notice = "smb_package_required"
+
+        constants.FEATURE_FLAGS[key] = value
+        if conn is not None:
+            self.save_feature_flags(conn, constants.FEATURE_FLAGS)
+            persisted = self.load_feature_flags(conn)
+            if persisted:
+                constants.FEATURE_FLAGS.update(persisted)
+        invalidate_feature_flags_cache()
+        try:
+            from aird.handlers.api_handlers import FeatureFlagSocketHandler
+
+            FeatureFlagSocketHandler.send_updates()
+        except Exception:
+            logger.debug("feature flag live broadcast failed", exc_info=True)
+        return {
+            "ok": True,
+            "flag": key,
+            "enabled": bool(constants.FEATURE_FLAGS.get(key)),
+            "notice": notice,
+        }

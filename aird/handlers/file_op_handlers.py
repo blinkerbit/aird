@@ -20,9 +20,11 @@ from aird.handlers.base_handler import (
     require_action,
     require_modify_access,
     get_user_root,
+    get_username_string_for_db,
+    resolve_handler_rel,
 )
 from aird.core.transfer_native import try_start_native_socket_upload
-from aird.core.fast_upload import FastUploadWriter
+from aird.core.browse_paths import mounts_for_username, write_blocked_reason
 from aird.core.mmap_handler import MMapFileHandler
 from aird.core.zip_download import ZipDownloadError, build_zip_file, collect_zip_entries
 from aird.utils.util import sanitize_cloud_filename, is_feature_enabled, get_file_size_safe
@@ -106,17 +108,42 @@ HEADER_APPLICATION_JSON = "application/json"
 FILES_URL_STRING = "/files/"
 
 
+def _handler_mounts(handler) -> list[dict]:
+    return mounts_for_username(handler.db_conn, get_username_string_for_db(handler) or "")
+
+
+def _deny_write_rel(handler, *rels, as_target: bool = False) -> bool:
+    mounts = _handler_mounts(handler)
+    for rel in rels:
+        if write_blocked_reason(rel, mounts, as_target=as_target):
+            handler.set_status(403)
+            handler.write(ACCESS_DENIED)
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Helpers for upload validation (reduce cognitive complexity)
 # ---------------------------------------------------------------------------
 
 
-def _validate_upload_destination(upload_dir, filename, root_dir):
+def _validate_upload_destination(upload_dir, filename, root_dir, mounts=None):
     """Validate upload dir and filename. Return (final_path_abs, None) or (None, (status, message))."""
-    safe_dir_abs = os.path.realpath(
-        os.path.join(root_dir, (upload_dir or "").strip().strip("/"))
-    )
-    if not is_within_root(safe_dir_abs, root_dir):
+    from aird.core.browse_paths import resolve_rel
+
+    rel = (upload_dir or "").strip().strip("/")
+    if not rel:
+        safe_dir_abs = os.path.realpath(root_dir)
+        confine = os.path.realpath(root_dir)
+    else:
+        resolved, confine = resolve_rel(root_dir, rel, mounts or [])
+        if not resolved or not confine:
+            return (None, (403, ACCESS_DENIED_PATH))
+        safe_dir_abs = os.path.realpath(resolved)
+        confine = os.path.realpath(confine)
+        if not is_within_root(safe_dir_abs, confine):
+            return (None, (403, ACCESS_DENIED_PATH))
+    if not is_within_root(safe_dir_abs, confine):
         return (None, (403, ACCESS_DENIED_PATH))
     safe_filename = os.path.basename(filename)
     if not safe_filename or safe_filename in (".", ".."):
@@ -134,6 +161,8 @@ def _validate_upload_destination(upload_dir, filename, root_dir):
         return (None, (400, FILENAME_TOO_LONG))
     final_path_abs = os.path.realpath(os.path.join(safe_dir_abs, safe_filename))
     if not is_within_root(final_path_abs, safe_dir_abs):
+        return (None, (403, ACCESS_DENIED_PATH))
+    if write_blocked_reason(rel, mounts or []):
         return (None, (403, ACCESS_DENIED_PATH))
     return (final_path_abs, None)
 
@@ -161,7 +190,10 @@ def finalize_upload_to_disk(
             return (False, 413, "Storage quota exceeded")
 
     final_path_abs, upload_err = _validate_upload_destination(
-        upload_dir, filename, user_root
+        upload_dir,
+        filename,
+        user_root,
+        mounts_for_username(db_conn, username) if db_conn else None,
     )
     if upload_err is not None:
         return (False, upload_err[0], upload_err[1])
@@ -481,7 +513,10 @@ class UploadHandler(BaseHandler):
 
         user_root = get_user_root(self)
         final_path_abs, upload_err = _validate_upload_destination(
-            self.upload_dir, self.filename, user_root
+            self.upload_dir,
+            self.filename,
+            user_root,
+            mounts_for_username(self.db_conn, get_username_string_for_db(self) or ""),
         )
         if upload_err is not None:
             self._reject = True
@@ -742,13 +777,16 @@ class CreateFolderHandler(BaseHandler):
             self.set_status(400)
             self.write(FOLDER_NAME_TOO_LONG)
             return
-        user_root = get_user_root(self)
-        parent_abs = (
-            os.path.abspath(os.path.join(user_root, parent)) if parent else user_root
-        )
+        if _deny_write_rel(self, parent):
+            return
+        parent_abs, confine = resolve_handler_rel(self, parent)
+        if not parent_abs or not confine:
+            self.set_status(403)
+            self.write(ACCESS_DENIED)
+            return
         new_dir_abs = os.path.abspath(os.path.join(parent_abs, name))
-        if not is_within_root(parent_abs, user_root) or not is_within_root(
-            new_dir_abs, user_root
+        if not is_within_root(parent_abs, confine) or not is_within_root(
+            new_dir_abs, confine
         ):
             self.set_status(403)
             self.write(ACCESS_DENIED)
@@ -841,10 +879,10 @@ class DeleteHandler(BaseHandler):
     @require_modify_access()
     def post(self):
         path = self.get_argument("path", "")
-        user_root = get_user_root(self)
-        abspath = os.path.abspath(os.path.join(user_root, path))
-        root = user_root
-        if not is_within_root(abspath, root):
+        if _deny_write_rel(self, path, as_target=True):
+            return
+        abspath, confine = resolve_handler_rel(self, path)
+        if not abspath or not confine or not is_within_root(abspath, confine):
             self.set_status(403)
             self.write(ACCESS_DENIED)
             return
@@ -894,12 +932,23 @@ class RenameHandler(BaseHandler):
             self.write(FILENAME_TOO_LONG)
             return
 
-        abspath = os.path.abspath(os.path.join(get_user_root(self), path))
-        new_abspath = os.path.abspath(
-            os.path.join(get_user_root(self), os.path.dirname(path), new_name)
-        )
-        root = get_user_root(self)
-        if not (is_within_root(abspath, root) and is_within_root(new_abspath, root)):
+        if _deny_write_rel(self, path, as_target=True):
+            return
+        if _deny_write_rel(self, os.path.dirname(path.replace("\\", "/"))):
+            return
+
+        abspath, confine = resolve_handler_rel(self, path)
+        parent_rel = os.path.dirname(path.replace("\\", "/")).replace("\\", "/")
+        new_rel = f"{parent_rel}/{new_name}" if parent_rel else new_name
+        new_abspath, new_confine = resolve_handler_rel(self, new_rel)
+        if (
+            not abspath
+            or not confine
+            or not new_abspath
+            or not new_confine
+            or not is_within_root(abspath, confine)
+            or not is_within_root(new_abspath, new_confine)
+        ):
             self.set_status(403)
             self.write(ACCESS_DENIED)
             return
@@ -937,10 +986,18 @@ def _resolve_copy_move_paths(handler, path: str, dest: str) -> tuple[str, str] |
         handler.set_status(400)
         handler.write(INVALID_REQUEST_PATH_DEST)
         return None
-    user_root = get_user_root(handler)
-    src_abs = os.path.abspath(os.path.join(user_root, path))
-    dest_abs = os.path.abspath(os.path.join(user_root, dest))
-    if not is_within_root(src_abs, user_root) or not is_within_root(dest_abs, user_root):
+    if _deny_write_rel(handler, path, as_target=True) or _deny_write_rel(handler, dest):
+        return None
+    src_abs, src_confine = resolve_handler_rel(handler, path)
+    dest_abs, dest_confine = resolve_handler_rel(handler, dest)
+    if (
+        not src_abs
+        or not src_confine
+        or not dest_abs
+        or not dest_confine
+        or not is_within_root(src_abs, src_confine)
+        or not is_within_root(dest_abs, dest_confine)
+    ):
         handler.set_status(403)
         handler.write(ACCESS_DENIED_SHORT)
         return None
@@ -1081,8 +1138,9 @@ class DownloadZipHandler(XSRFTokenMixin, BaseHandler):
             return
 
         root = get_user_root(self)
+        mounts = mounts_for_username(self.db_conn, get_username_string_for_db(self) or "")
         try:
-            entries = await asyncio.to_thread(collect_zip_entries, root, paths)
+            entries = await asyncio.to_thread(collect_zip_entries, root, paths, mounts)
             self._zip_temp_path = await asyncio.to_thread(build_zip_file, entries)
             filename = (data.get("filename") or "aird-download.zip").strip()
             if not filename.lower().endswith(".zip"):
@@ -1103,13 +1161,15 @@ class DownloadZipHandler(XSRFTokenMixin, BaseHandler):
             self.write("Failed to create zip archive")
 
 
-def _validate_bulk_path(path, root: str) -> tuple[str | None, str | None]:
+def _validate_bulk_path(path, root: str, mounts=None) -> tuple[str | None, str | None]:
     """Return (abspath, error) — error is non-None if path is invalid."""
+    from aird.core.browse_paths import resolve_rel
+
     if not isinstance(path, str):
         return None, INVALID_PATH
     path = path.strip().strip("/")
-    abspath = os.path.abspath(os.path.join(root, path))
-    if not is_within_root(abspath, root):
+    abspath, confine = resolve_rel(root, path, mounts or [])
+    if not abspath or not confine or not is_within_root(abspath, confine):
         return None, ACCESS_DENIED_LOWER
     if not os.path.exists(abspath):
         return None, NOT_FOUND_LOWER
@@ -1144,10 +1204,11 @@ class BulkHandler(BaseHandler):
             self.write(BAD_REQUEST)
             return
         root = get_user_root(self)
+        mounts = mounts_for_username(self.db_conn, get_username_string_for_db(self) or "")
         results = {"ok": True, "results": []}
         remote_ip = self.request.remote_ip
         for path in paths:
-            abspath, path_err = _validate_bulk_path(path, root)
+            abspath, path_err = _validate_bulk_path(path, root, mounts)
             display_path = path.strip().strip("/") if isinstance(path, str) else path
             if path_err:
                 results["results"].append({"path": display_path, "ok": False, "error": path_err})
@@ -1219,11 +1280,11 @@ class EditHandler(BaseHandler):
             self.write(INVALID_PATH)
             return
 
-        user_root = get_user_root(self)
         safe_path = str(path).lstrip("/\\")
-        abspath = (pathlib.Path(user_root) / safe_path).resolve()
-
-        if not is_within_root(str(abspath), user_root):
+        if _deny_write_rel(self, safe_path):
+            return
+        abspath, confine = resolve_handler_rel(self, safe_path)
+        if not abspath or not confine or not is_within_root(str(abspath), confine):
             logging.warning(f"EditHandler: access denied for path {path}.")
             self.set_status(403)
             self.write(ACCESS_DENIED_WITH_PERIOD)
@@ -1240,7 +1301,7 @@ class EditHandler(BaseHandler):
             self.get_service("audit_service").log(
                 self.db_conn, "file_edit",
                 username=self.get_display_username(),
-                details=path_to_rel(str(abspath), user_root),
+                details=path_to_rel(str(abspath), confine),
                 ip=self.request.remote_ip,
             )
             self.set_status(200)

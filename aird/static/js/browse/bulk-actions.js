@@ -10,6 +10,7 @@ import {
   wireBrowseButton,
 } from '/static/js/browse/util.js';
 import { closeSelectionDrawer } from '/static/js/browse/selection-ui.js';
+import { bulkCopyToDefault, bulkCopyToFolder } from '/static/js/browse/onedrive-fe-actions.js';
 
 const FolderPicker = globalThis.AirdFolderPicker;
 
@@ -391,6 +392,28 @@ export async function bulkAddToShare() {
   }
 }
 
+async function bulkOdCopyDefault() {
+  const paths = getSelectedPaths();
+  if (!paths.length) {
+    showDialog('Select files or folders to copy to OneDrive.', 'OneDrive');
+    return;
+  }
+  await bulkCopyToDefault(paths);
+  SelectionStore.clear();
+  closeSelectionDrawer();
+}
+
+async function bulkOdCopyFolder() {
+  const paths = getSelectedPaths();
+  if (!paths.length) {
+    showDialog('Select files or folders to copy to OneDrive.', 'OneDrive');
+    return;
+  }
+  await bulkCopyToFolder(paths);
+  SelectionStore.clear();
+  closeSelectionDrawer();
+}
+
 export function wireBrowseBulkActions({ bulkAddTags, openShareByTag }) {
   wireBrowseButton('newFolderBtn', newFolder);
   wireBrowseButton('bulkDownloadBtn', bulkDownload);
@@ -399,6 +422,10 @@ export function wireBrowseBulkActions({ bulkAddTags, openShareByTag }) {
   wireBrowseButton('bulkMoveBtn', bulkMove);
   wireBrowseButton('bulkAddToShareBtn', bulkAddToShare);
   wireBrowseButton('bulkCreateShareBtn', bulkCreateShare);
+  if (globalThis.__ONEDRIVE_BROWSER_CONFIG?.enabled) {
+    wireBrowseButton('bulkOdCopyBtn', bulkOdCopyDefault);
+    wireBrowseButton('bulkOdFolderBtn', bulkOdCopyFolder);
+  }
   if (bulkAddTags) wireBrowseButton('bulkAddTagsBtn', bulkAddTags);
   if (openShareByTag) wireBrowseButton('shareByTagBtn', openShareByTag);
 }

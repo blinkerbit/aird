@@ -18,6 +18,7 @@ import os
 import shutil
 
 import aird.constants as constants_module
+from aird.constants import AIRD_META_FOLDER
 from aird.core.security import legacy_folder_name, sanitize_username_for_folder
 
 logger = logging.getLogger(__name__)
@@ -28,9 +29,9 @@ USER_CHATS_DIRNAME = ".aird-chats"
 
 _TOKEN_ONLY_USERNAMES = {"token_user", "admin_token"}
 _RESERVED_HOME_NAMES = frozenset(
-    {USER_DATA_DIRNAME, USER_SHARES_DIRNAME, USER_CHATS_DIRNAME}
+    {USER_DATA_DIRNAME, USER_SHARES_DIRNAME, USER_CHATS_DIRNAME, AIRD_META_FOLDER}
 )
-_META_PREFIXES = (USER_SHARES_DIRNAME, USER_CHATS_DIRNAME)
+_META_PREFIXES = (USER_SHARES_DIRNAME, USER_CHATS_DIRNAME, AIRD_META_FOLDER)
 
 
 def _username_from_user(user) -> str:

@@ -30,12 +30,8 @@ from aird.core.events import (
 from aird.db import (
     get_all_network_shares,
     init_db,
-    load_allowed_extensions,
-    load_feature_flags,
-    load_upload_config,
     assign_admin_privileges,
     cleanup_expired_shares,
-    save_allowed_extensions,
     wrap_connection,
 )
 from aird.services import (
@@ -72,10 +68,16 @@ from aird.handlers.abac_handlers import (
 )
 from aird.handlers.admin_handlers import (
     AdminAuditHandler,
+    AdminFeatureFlagAPIHandler,
     AdminHandler,
     AdminNetworkShareDeleteHandler,
     AdminNetworkSharesHandler,
     AdminNetworkShareToggleHandler,
+    AdminOneDriveDevicePollHandler,
+    AdminOneDriveDeviceStartHandler,
+    AdminPluginsHandler,
+    AdminUserPathDeleteHandler,
+    AdminUserPathsHandler,
     AdminUsersHandler,
     LDAPConfigCreateHandler,
     LDAPConfigDeleteHandler,
@@ -252,7 +254,11 @@ def make_app(
         (r"/tagged/([^/]+)", TaggedFilesHandler),
         (r"/admin/login", AdminLoginHandler),
         (r"/admin", AdminHandler),
+        (r"/admin/api/feature-flags", AdminFeatureFlagAPIHandler),
         (r"/admin/users", AdminUsersHandler),
+        (r"/admin/plugins", AdminPluginsHandler),
+        (r"/admin/api/onedrive/device-start", AdminOneDriveDeviceStartHandler),
+        (r"/admin/api/onedrive/device-poll", AdminOneDriveDevicePollHandler),
         (r"/admin/users/create", UserCreateHandler),
         (r"/admin/users/edit/([0-9]+)", UserEditHandler),
         (r"/admin/users/delete", UserDeleteHandler),
@@ -262,6 +268,8 @@ def make_app(
         (r"/admin/network-shares", AdminNetworkSharesHandler),
         (r"/admin/network-shares/delete", AdminNetworkShareDeleteHandler),
         (r"/admin/network-shares/toggle", AdminNetworkShareToggleHandler),
+        (r"/admin/paths", AdminUserPathsHandler),
+        (r"/admin/paths/delete", AdminUserPathDeleteHandler),
         (r"/admin/tags", AdminTagsHandler),
         (r"/admin/api/abac/tags", AdminTagAPIHandler),
         (r"/admin/api/abac/tag-colors", AdminTagColorAPIHandler),
@@ -321,9 +329,13 @@ def make_app(
 
     from aird.plugins.chat import register_chat
     from aird.plugins.gitlab import register_gitlab
+    from aird.plugins.onedrive_host import register_onedrive_host
+    from aird.plugins.onedrive_browser import register_onedrive_browser
 
     register_chat(routes)
     register_gitlab(routes)
+    register_onedrive_host(routes)
+    register_onedrive_browser(routes)
 
     # Add LDAP routes only if LDAP is enabled
     if ldap_enabled:
@@ -419,25 +431,9 @@ def _create_emergency_db_connection() -> None:
 
 
 def _load_and_merge_configs(db_conn) -> None:
-    # Keep legacy helper function references for test compatibility while
-    # preserving behavior equivalent to ConfigService.merge_from_db.
     from aird.services.config_service import ConfigService
 
-    config_service = ConfigService()
-    persisted_flags = load_feature_flags(db_conn)
-    if persisted_flags:
-        for key, value in persisted_flags.items():
-            constants.FEATURE_FLAGS[key] = bool(value)
-            logger.debug("Feature flag '%s' set to %s from database", key, bool(value))
-
-    config_service.sync_upload_config_from_db(db_conn)
-    config_service.sync_transfer_profile_from_db(db_conn)
-
-    constants.UPLOAD_ALLOWED_EXTENSIONS = load_allowed_extensions(db_conn)
-    if not constants.UPLOAD_ALLOWED_EXTENSIONS:
-        constants.UPLOAD_ALLOWED_EXTENSIONS = set(constants.ALLOWED_UPLOAD_EXTENSIONS)
-        save_allowed_extensions(db_conn, constants.UPLOAD_ALLOWED_EXTENSIONS)
-        logger.info("Seeded upload allowed extensions from defaults")
+    ConfigService().merge_from_db(db_conn)
 
     logger.info("Final feature flags:")
     for key, value in constants.FEATURE_FLAGS.items():
@@ -447,10 +443,6 @@ def _load_and_merge_configs(db_conn) -> None:
         constants.UPLOAD_CONFIG["max_file_size_mb"],
     )
     logger.info("Transfer profile: %s", constants.TRANSFER_PROFILE)
-
-    from aird.core.rate_limit import TransferRateLimiter
-
-    TransferRateLimiter.apply_transfer_config(constants.TRANSFER_CONFIG)
 
 
 def _auto_start_network_shares(db_conn) -> None:
@@ -709,6 +701,11 @@ def _run_http_server(app, ssl_options, sockets, http_port: int) -> None:
     apply_io_thread_pool()
     if tornado.process.task_id() in (0, None):
         io_loop.call_later(3600, _run_cleanup_expired_shares)
+        from aird.plugins.onedrive_host.sync_queue import start_host_scheduler
+        from aird.plugins.onedrive_host.watcher import reload_watchers
+
+        start_host_scheduler(io_loop)
+        reload_watchers(getattr(constants, "DB_CONN", None))
     io_loop.start()
 
 

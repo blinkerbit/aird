@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  {% include '_theme_early.html' %}
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="icon" href="/static/favicon.png" type="image/png" />
+  <title>User paths · Aird</title>
+</head>
+<body class="bg-base-200 min-h-screen">
+  <div class="aird-shell aird-shell--wide">
+    {% set nav_title = "⚙ Admin Panel" %}
+    {% set show_admin_link = False %}
+    {% include '_app_nav_header.html' %}
+    {% set admin_active_tab = "paths" %}
+    {% include '_admin_tabs.html' %}
+
+    <main class="aird-page">
+    <header class="aird-page-header">
+      <h1 class="aird-page-title">User paths</h1>
+      <p class="text-sm text-base-content/70 mt-1">
+        Map host folders onto a user’s browse root. Assigned folders appear as virtual directories there.
+        If the user shares one, it shows up for others under Shares.
+      </p>
+    </header>
+
+    {% if error %}
+    <div class="alert alert-error shadow-sm mb-4" role="alert">
+      <span class="h-5 w-5 shrink-0" aria-hidden="true">⚠</span><span>{{ error }}</span>
+    </div>
+    {% end %}
+
+    <section class="card bg-base-100 shadow-sm border border-base-300">
+      <div class="px-5 py-3 border-b border-base-300 bg-base-200/50">
+        <h2 class="aird-section-title m-0">Assigned paths</h2>
+      </div>
+      {% if mounts %}
+      <table class="table table-zebra">
+        <thead>
+          <tr>
+            <th>Folder name</th>
+            <th>Host path</th>
+            <th>User</th>
+            <th>Writable</th>
+            <th class="text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in mounts %}
+          <tr>
+            <td><strong>{{ m["mount_name"] }}</strong></td>
+            <td class="text-sm font-mono break-all">{{ m["host_path"] }}</td>
+            <td class="text-sm">{% if m["username"] == "*" %}Everyone{% else %}{{ m["username"] }}{% end %}</td>
+            <td class="text-sm">{{ "Yes" if m["writable"] else "No" }}</td>
+            <td class="text-right">
+              <form method="POST" action="/admin/paths/delete">
+                {% raw xsrf_form_html() %}
+                <input type="hidden" name="mount_id" value="{{ m['id'] }}" />
+                <button type="submit" class="btn btn-error btn-xs btn-outline">Remove</button>
+              </form>
+            </td>
+          </tr>
+          {% end %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="card-body">
+        <div class="alert alert-info shadow-sm">
+          <span>No host paths assigned yet.</span>
+        </div>
+      </div>
+      {% end %}
+    </section>
+
+    <section class="card bg-base-100 shadow-sm border border-base-300 mt-5">
+      <div class="card-body">
+        <h2 class="card-title text-base mt-0">Assign a host path</h2>
+        <form method="POST" action="/admin/paths" class="space-y-4 mt-4">
+          {% raw xsrf_form_html() %}
+          <div class="flex flex-wrap items-center gap-3">
+            <label for="host_path" class="label-text font-semibold min-w-[160px]">Host path</label>
+            <input type="text" id="host_path" name="host_path" class="input input-bordered input-sm w-96" required placeholder="e.g. D:\Projects or /data/shared" />
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <label for="mount_name" class="label-text font-semibold min-w-[160px]">Folder name</label>
+            <input type="text" id="mount_name" name="mount_name" class="input input-bordered input-sm w-80" required placeholder="Shown at the user’s browse root" maxlength="64" />
+          </div>
+          <div class="flex flex-wrap items-start gap-3">
+            <span class="label-text font-semibold min-w-[160px] pt-1">Users</span>
+            <div class="flex flex-col gap-1">
+              <label class="label cursor-pointer justify-start gap-2 py-0">
+                <input type="checkbox" name="everyone" class="checkbox checkbox-sm" />
+                <span class="label-text">Everyone</span>
+              </label>
+              {% for u in users %}
+              <label class="label cursor-pointer justify-start gap-2 py-0">
+                <input type="checkbox" name="usernames" value="{{ u }}" class="checkbox checkbox-sm" />
+                <span class="label-text">{{ u }}</span>
+              </label>
+              {% end %}
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <label class="label cursor-pointer justify-start gap-3 w-auto font-normal inline-flex items-center flex-nowrap" for="writable">
+              <span class="label-text font-semibold min-w-[160px]">Writable</span>
+              <input type="checkbox" id="writable" name="writable" class="toggle toggle-sm" checked />
+            </label>
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm">Assign path</button>
+        </form>
+      </div>
+    </section>
+    </main>
+  </div>
+</body>
+</html>

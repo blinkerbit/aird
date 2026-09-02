@@ -364,6 +364,13 @@ def init_db(conn: sqlite3.Connection) -> None:
         ON chat_messages (conversation_id, id)
         """)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS chat_e2e_keys (
+            username TEXT PRIMARY KEY,
+            public_jwk TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS gitlab_bindings (
             owner_username TEXT NOT NULL,
             folder_rel_path TEXT NOT NULL,
@@ -393,6 +400,105 @@ def init_db(conn: sqlite3.Connection) -> None:
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_file_comments_path
         ON file_comments (owner_username, file_rel_path, created_at)
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS gitlab_issue_cache (
+            owner_username TEXT NOT NULL,
+            project_key TEXT NOT NULL,
+            issue_iid INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            web_url TEXT,
+            state TEXT NOT NULL DEFAULT 'opened',
+            paths_json TEXT NOT NULL DEFAULT '[]',
+            assignees_json TEXT NOT NULL DEFAULT '[]',
+            labels_json TEXT NOT NULL DEFAULT '[]',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (owner_username, project_key, issue_iid)
+        )
+        """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_gitlab_issue_cache_owner_project
+        ON gitlab_issue_cache (owner_username, project_key)
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS plugin_access (
+            plugin_id TEXT PRIMARY KEY,
+            scope TEXT NOT NULL,
+            usernames_json TEXT NOT NULL DEFAULT '[]',
+            updated_at TEXT NOT NULL
+        )
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS onedrive_backup_rules (
+            username TEXT PRIMARY KEY,
+            paths_json TEXT NOT NULL DEFAULT '[]',
+            include_untracked INTEGER NOT NULL DEFAULT 1,
+            include_aird_config INTEGER NOT NULL DEFAULT 1,
+            updated_at TEXT NOT NULL
+        )
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS onedrive_folder_maps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            local_path TEXT NOT NULL,
+            remote_path TEXT NOT NULL,
+            ignore_extra TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL,
+            UNIQUE(username, local_path)
+        )
+        """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_onedrive_folder_maps_user
+        ON onedrive_folder_maps (username)
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS onedrive_sync_state (
+            username TEXT NOT NULL,
+            rel_path TEXT NOT NULL,
+            local_mtime REAL NOT NULL,
+            local_size INTEGER NOT NULL,
+            remote_item_id TEXT,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (username, rel_path)
+        )
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS onedrive_sync_status (
+            username TEXT PRIMARY KEY,
+            last_started_at TEXT,
+            last_finished_at TEXT,
+            last_ok INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            uploaded INTEGER NOT NULL DEFAULT 0,
+            skipped INTEGER NOT NULL DEFAULT 0,
+            failed INTEGER NOT NULL DEFAULT 0
+        )
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_plugin_secrets (
+            username TEXT NOT NULL,
+            secret_key TEXT NOT NULL,
+            ciphertext TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (username, secret_key)
+        )
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_path_mounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            host_path TEXT NOT NULL,
+            mount_name TEXT NOT NULL,
+            writable INTEGER NOT NULL DEFAULT 1,
+            created_by TEXT,
+            created_at TEXT NOT NULL,
+            UNIQUE(username, mount_name)
+        )
+        """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_user_path_mounts_user
+        ON user_path_mounts (username)
         """)
 
     conn.commit()

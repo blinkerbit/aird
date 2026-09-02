@@ -24,15 +24,19 @@ def register_gitlab(routes: list) -> None:
     from aird.plugins.gitlab.handlers import (
         GitlabBindingHandler,
         GitlabBoardHandler,
+        GitlabCachedIssuesHandler,
         GitlabCommentItemHandler,
         GitlabCommentsHandler,
+        GitlabDashboardHandler,
         GitlabFolderMetaHandler,
         GitlabIssuesForPathHandler,
         GitlabMrItemHandler,
         GitlabMrNotesHandler,
         GitlabMrsHandler,
+        GitlabPageHandler,
         GitlabPipelinesHandler,
         GitlabPromoteHandler,
+        GitlabRefreshHandler,
         GitlabStatusHandler,
         GitlabTokenHandler,
     )
@@ -41,12 +45,16 @@ def register_gitlab(routes: list) -> None:
     cid = r"([^/]+)"
     routes.extend(
         [
+            (r"/gitlab", GitlabPageHandler),
             (r"/api/gitlab/status", GitlabStatusHandler),
             (r"/api/gitlab/token", GitlabTokenHandler),
             (r"/api/gitlab/bindings", GitlabBindingHandler),
             (r"/api/gitlab/folder-meta", GitlabFolderMetaHandler),
             (r"/api/gitlab/pipelines", GitlabPipelinesHandler),
             (r"/api/gitlab/issues-for-path", GitlabIssuesForPathHandler),
+            (r"/api/gitlab/cached-issues", GitlabCachedIssuesHandler),
+            (r"/api/gitlab/refresh", GitlabRefreshHandler),
+            (r"/api/gitlab/dashboard", GitlabDashboardHandler),
             (r"/api/gitlab/mrs", GitlabMrsHandler),
             (rf"/api/gitlab/mrs/{cid}/notes", GitlabMrNotesHandler),
             (rf"/api/gitlab/mrs/{cid}", GitlabMrItemHandler),
