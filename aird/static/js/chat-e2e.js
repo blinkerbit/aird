@@ -21,7 +21,9 @@
   }
 
   function unb64(str) {
-    const bin = atob(str);
+    const n = String(str || '').replace(/-/g, '+').replace(/_/g, '/');
+    const pad = n.length % 4 === 0 ? '' : '='.repeat(4 - (n.length % 4));
+    const bin = atob(n + pad);
     const out = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
     return out;
@@ -91,9 +93,29 @@
     );
   }
 
-  async function loadOrCreateIdentity(user) {
+  async function loadOrCreateIdentity(user, api) {
     username = user;
     const stored = await idbGet('identity', user);
+    if (!stored?.privateJwk && api) {
+      try {
+        const remote = await api('/api/chat/e2e/identity');
+        const backup = remote?.backup;
+        if (backup?.privateJwk && backup?.publicJwk) {
+          await importBackup(backup, user);
+          return identity;
+        }
+      } catch (err) {
+        console.debug('aird identity restore failed', err);
+      }
+    }
+    if (!(await idbGet('identity', user))?.privateJwk && global.AirdChatKeyBackup?.tryRestoreFromConfiguredPath) {
+      try {
+        const restored = await global.AirdChatKeyBackup.tryRestoreFromConfiguredPath(user);
+        if (restored) return identity;
+      } catch (err) {
+        console.debug('onedrive identity restore failed', err);
+      }
+    }
     if (stored && stored.privateJwk && stored.publicJwk) {
       identity = {
         publicJwk: stored.publicJwk,
@@ -110,6 +132,25 @@
     await idbSet('identity', user, { publicJwk, privateJwk, kid });
     identity = { publicJwk, privateKey: pair.privateKey, kid };
     return identity;
+  }
+
+  async function persistIdentity(api) {
+    if (!api || !identity) return;
+    const bundle = await exportBackup();
+    let seenRemote = false;
+    let remoteKid = '';
+    try {
+      remoteKid = (await api('/api/chat/e2e/identity'))?.backup?.kid || '';
+      seenRemote = true;
+    } catch (_) { /* keep any existing server copy */ }
+    if (seenRemote && !remoteKid) {
+      await api('/api/chat/e2e/identity', {
+        method: 'PUT',
+        body: JSON.stringify({ backup: bundle }),
+      });
+      return;
+    }
+    await publishIdentity(api);
   }
 
   async function publishIdentity(api) {
@@ -152,7 +193,23 @@
     return crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
   }
 
+  function bytesEq(a, b) {
+    if (!a || !b || a.length !== b.length) return false;
+    let x = 0;
+    for (let i = 0; i < a.length; i += 1) x |= a[i] ^ b[i];
+    return x === 0;
+  }
+
+  function asBytes(raw) {
+    if (!raw) return null;
+    if (raw instanceof Uint8Array) return raw;
+    if (raw instanceof ArrayBuffer) return new Uint8Array(raw);
+    return new Uint8Array(raw);
+  }
+
   const convCache = new Map();
+  const convFallback = new Map();
+  const inflight = new Map();
 
   async function loadConvRaw(convId) {
     const hit = convCache.get(convId);
@@ -167,31 +224,70 @@
 
   async function saveConvRaw(convId, raw) {
     const copy = raw instanceof Uint8Array ? raw : new Uint8Array(raw);
+    const prev = asBytes(convCache.get(convId));
+    if (prev && !bytesEq(prev, copy)) {
+      const list = convFallback.get(convId) || [];
+      list.push(prev);
+      convFallback.set(convId, list.slice(-4));
+    }
     convCache.set(convId, copy);
     await idbSet('convKeys', convId, copy);
   }
 
   async function ensureConversation(api, convId, memberNames) {
+    const pending = inflight.get(convId);
+    if (pending) return pending;
+    const run = ensureConversationInner(api, convId, memberNames).finally(() => {
+      if (inflight.get(convId) === run) inflight.delete(convId);
+    });
+    inflight.set(convId, run);
+    return run;
+  }
+
+  async function ensureConversationInner(api, convId, memberNames) {
+    api = api || defaultApi;
     if (!identity) throw new Error('E2E identity missing');
     const state = await api(`/api/chat/conversations/${encodeURIComponent(convId)}/e2e`);
     const wraps = state.wraps || {};
     const keys = state.keys || {};
-    let raw = await loadConvRaw(convId);
+    const local = asBytes(await loadConvRaw(convId));
+    let raw = null;
+    if (state.conv_key?.key) {
+      try { raw = unb64(state.conv_key.key); } catch (_) { raw = null; }
+    }
     const mine = wraps[username];
     if (!raw && mine) {
       try {
         raw = await unwrapForMe(mine, convId);
-        await saveConvRaw(convId, raw);
       } catch (_) {
         raw = null;
       }
-    }
-    if (!raw) {
-      if (Object.keys(wraps).length) {
-        throw new Error('Waiting for a current member to share the encryption key with this device.');
+      if (!raw) {
+        try {
+          const backup = (await api('/api/chat/e2e/identity'))?.backup;
+          if (backup?.privateJwk) {
+            await importBackup(backup, username);
+            raw = await unwrapForMe(mine, convId);
+          }
+        } catch (_) {
+          raw = null;
+        }
       }
+    }
+    if (!raw) raw = local;
+    const hasExisting = !!(Object.keys(wraps).length || state.conv_key);
+    if (!raw) {
+      if (hasExisting) return null;
       raw = crypto.getRandomValues(new Uint8Array(32));
-      await saveConvRaw(convId, raw);
+    }
+    if (!local || !bytesEq(local, raw)) await saveConvRaw(convId, raw);
+    let wrapMatchesKey = !mine;
+    if (mine && raw) {
+      try {
+        wrapMatchesKey = bytesEq(asBytes(await unwrapForMe(mine, convId)), raw);
+      } catch (_) {
+        wrapMatchesKey = false;
+      }
     }
     const next = {};
     let changed = false;
@@ -201,20 +297,127 @@
       if (!pub) continue;
       const kid = await fingerprint(pub);
       const existing = wraps[name];
-      if (existing && existing.kid === kid) {
+      if (existing && existing.kid === kid && wrapMatchesKey) {
         next[name] = existing;
         continue;
       }
       next[name] = await wrapFor(raw, pub, convId);
       changed = true;
     }
-    if (changed) {
-      await api(`/api/chat/conversations/${encodeURIComponent(convId)}/e2e`, {
+    if (!changed && state.conv_key?.key) {
+      return importAes(raw);
+    }
+    try {
+      const saved = await api(`/api/chat/conversations/${encodeURIComponent(convId)}/e2e`, {
         method: 'PUT',
-        body: JSON.stringify({ wraps: next }),
+        body: JSON.stringify({
+          wraps: next,
+          conv_key: { v: 1, conversation_id: convId, key: b64(raw) },
+        }),
       });
+      if (saved?.conv_key?.key) {
+        const canonical = unb64(saved.conv_key.key);
+        if (!bytesEq(raw, canonical)) {
+          raw = canonical;
+          await saveConvRaw(convId, raw);
+          const repaired = {};
+          for (const name of names) {
+            const pub = keys[name];
+            if (!pub) continue;
+            repaired[name] = await wrapFor(raw, pub, convId);
+          }
+          await api(`/api/chat/conversations/${encodeURIComponent(convId)}/e2e`, {
+            method: 'PUT',
+            body: JSON.stringify({
+              wraps: repaired,
+              conv_key: { v: 1, conversation_id: convId, key: b64(raw) },
+            }),
+          });
+        }
+      }
+    } catch (err) {
+      if (changed) throw err;
+      console.debug('e2e share persist failed', err);
     }
     return importAes(raw);
+  }
+
+  const XSRF_RE = /(?:^|;\s*)_xsrf=([^;]+)/;
+
+  function defaultApi(path, opts = {}) {
+    const m = XSRF_RE.exec(document.cookie);
+    const token = m ? decodeURIComponent(m[1]) : '';
+    const { _retry304, ...fetchOpts } = opts;
+    const method = String(fetchOpts.method || 'GET').toUpperCase();
+    let url = path;
+    if (method === 'GET' && !/[?&]_=/.test(path)) {
+      url = `${path}${path.includes('?') ? '&' : '?'}_=${Date.now()}`;
+    }
+    return fetch(url, {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: {
+        Accept: 'application/json',
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+        ...(fetchOpts.body && !(fetchOpts.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
+        ...(fetchOpts.method && fetchOpts.method !== 'GET' ? { 'X-XSRFToken': token } : {}),
+      },
+      ...fetchOpts,
+    }).then(async (res) => {
+      if (res.status === 304) {
+        if (_retry304) throw new Error('HTTP 304');
+        return defaultApi(path, { ...opts, _retry304: true });
+      }
+      const text = await res.text();
+      let json = {};
+      try { json = JSON.parse(text); } catch { json = { error: text }; }
+      if (!res.ok) throw new Error(json.error || text || `HTTP ${res.status}`);
+      return json;
+    });
+  }
+
+  function requestKeyShare(convId) {
+    if (!convId) return;
+    global.AirdChatWS?.send({ type: 'chat_e2e_need_key', conversation_id: convId });
+  }
+
+  async function shareIfHaveKey(convId) {
+    if (!identity || !convId) return false;
+    const raw = await loadConvRaw(convId);
+    if (!raw) return false;
+    try {
+      await ensureConversation(defaultApi, convId, []);
+      return true;
+    } catch (err) {
+      console.debug('auto share conv key failed', err);
+      return false;
+    }
+  }
+
+  function onHubEvent(data) {
+    if (data?.type === 'chat_e2e_need_key' && data.conversation_id && data.username !== username) {
+      shareIfHaveKey(data.conversation_id);
+    }
+  }
+
+  function bootBackground() {
+    const user = global.__AIRD_CHAT_USER__;
+    if (!user || !global.crypto?.subtle) return;
+    const start = async () => {
+      try {
+        if (!identity) await loadOrCreateIdentity(user, defaultApi);
+        try { await persistIdentity(defaultApi); } catch (err) { console.debug('e2e persist', err); }
+      } catch (err) {
+        console.debug('e2e background init failed', err);
+      }
+      const WS = global.AirdChatWS;
+      if (WS) {
+        WS.subscribe(onHubEvent);
+        WS.connect();
+      }
+    };
+    start();
   }
 
   async function aesFor(convId) {
@@ -237,13 +440,29 @@
 
   async function decrypt(convId, payload) {
     if (!payload || payload.v !== 1) throw new Error('Bad payload');
-    const key = await aesFor(convId);
-    const pt = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: unb64(payload.iv), additionalData: new TextEncoder().encode(convId) },
-      key,
-      unb64(payload.ct),
-    );
-    return new TextDecoder().decode(pt);
+    const iv = unb64(payload.iv);
+    const ct = unb64(payload.ct);
+    const ad = { name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(convId) };
+    const primary = asBytes(await loadConvRaw(convId));
+    const extras = (convFallback.get(convId) || []).map(asBytes).filter(Boolean);
+    const seen = [];
+    const candidates = [primary, ...extras].filter((raw) => {
+      if (!raw) return false;
+      if (seen.some((s) => bytesEq(s, raw))) return false;
+      seen.push(raw);
+      return true;
+    });
+    let lastErr = new Error('No conversation key');
+    for (const raw of candidates) {
+      try {
+        const key = await importAes(raw);
+        const pt = await crypto.subtle.decrypt(ad, key, ct);
+        return new TextDecoder().decode(pt);
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw lastErr;
   }
 
   const ALLOWED = new Set(['P', 'BR', 'STRONG', 'EM', 'A', 'CODE']);
@@ -360,11 +579,18 @@
   global.AirdChatE2E = {
     async init(user, api) {
       if (!user || !global.crypto?.subtle) throw new Error('Web Crypto required for encrypted chat');
-      await loadOrCreateIdentity(user);
-      await publishIdentity(api);
+      await loadOrCreateIdentity(user, api || defaultApi);
+      try {
+        await persistIdentity(api || defaultApi);
+      } catch (err) {
+        console.warn('chat e2e persist', err);
+        try { await publishIdentity(api || defaultApi); } catch (_) { /* */ }
+      }
       return identity.publicJwk;
     },
     ensureConversation,
+    requestKeyShare,
+    hasConvKey: (convId) => convCache.has(convId),
     encrypt,
     decrypt,
     sanitizeHtml,
@@ -375,6 +601,12 @@
     hasStoredIdentity,
     downloadBackup,
     backupFilename,
-    publishIdentity: (api) => publishIdentity(api),
+    publishIdentity: (api) => publishIdentity(api || defaultApi),
   };
+
+  if (global.document.readyState === 'loading') {
+    global.document.addEventListener('DOMContentLoaded', bootBackground);
+  } else {
+    bootBackground();
+  }
 })(window);

@@ -3,14 +3,13 @@
  * Sends { type:'compressed', ratio, buffer } or { type:'skipped', buffer } when
  * compression expanded the data (incompressible input).
  */
-importScripts('/static/js/vendor/fflate.js');
+importScripts('../vendor/fflate.js');
 
 const jobs = new Map();
 
 globalThis.onmessage = (ev) => {
-  if (ev.origin !== globalThis.location.origin) {
-    return;
-  }
+  // DedicatedWorkers report empty origin; reject only cross-origin messages.
+  if (ev.origin && ev.origin !== globalThis.location.origin) return;
   const msg = ev.data || {};
   if (msg.type === 'cancel') {
     const job = jobs.get(msg.jobId);

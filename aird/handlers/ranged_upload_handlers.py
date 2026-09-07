@@ -63,6 +63,7 @@ from aird.core.rate_limit import TransferRateLimiter
 logger = logging.getLogger(__name__)
 
 _SESSION_NOT_FOUND = "Upload session not found"
+_UPLOAD_SESSION_TEMP_CLEANUP_FAILED = "Upload session temp cleanup failed"
 # WireGuard/LAN can leave incomplete sessions after disconnects; allow enough
 # headroom for resume + a multi-file queue without failing the first upload.
 _MAX_ACTIVE_SESSIONS_PER_USER = 32
@@ -75,7 +76,7 @@ def _remove_session_temp(temp_path: str | None) -> None:
         if os.path.exists(temp_path):
             os.remove(temp_path)
     except OSError:
-        logger.debug("Upload session temp cleanup failed", exc_info=True)
+        logger.debug(_UPLOAD_SESSION_TEMP_CLEANUP_FAILED, exc_info=True)
 
 
 def _reclaim_sessions_for_user(conn, username: str, need: int = 1) -> int:
@@ -310,6 +311,171 @@ async def _finalize_ranged_upload_if_complete(
     return True
 
 
+def _tune_chunk_upload_socket(handler: BaseHandler) -> None:
+    try:
+        stream = getattr(handler.request.connection, "stream", None)
+        sock = getattr(stream, "socket", None) if stream is not None else None
+        if sock is not None:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 * 1024 * 1024)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 8 * 1024 * 1024)
+    except OSError:
+        pass
+
+
+def _acquire_chunk_upload_slot(
+    handler: BaseHandler, session: dict | None, username: str | None
+) -> None:
+    if not session or session["username"] != username:
+        return
+    preset = constants_module.TRANSFER_PROFILE_PRESETS.get(
+        session["transfer_profile"],
+        constants_module.TRANSFER_PROFILE_PRESETS["open"],
+    )
+    limit = int(preset["range_upload_concurrency"]) * max(
+        1, int(preset.get("range_pipeline_depth", 1))
+    )
+    limit += 2
+    if not _try_acquire_chunk_stream(username, limit):
+        handler.set_header("Retry-After", "5")
+        raise tornado.web.HTTPError(429, reason="Too many concurrent upload chunks")
+    handler._chunk_slot_user = username
+
+
+async def _write_chunk_payload(
+    handler: BaseHandler,
+    *,
+    session: dict,
+    start: int,
+    streamed_request: bool,
+) -> OSError | None:
+    temp_path = session["temp_path"]
+    try:
+        if streamed_request and getattr(handler, "_direct_path", None):
+            return None
+        if streamed_request:
+            await asyncio.to_thread(
+                _copy_range_file_sync,
+                temp_path,
+                handler._request_temp_path,
+                start,
+            )
+        else:
+            await asyncio.to_thread(
+                _write_range_sync,
+                temp_path,
+                start,
+                handler.request.body or b"",
+            )
+    except OSError as exc:
+        logger.exception("Ranged upload write failed")
+        status, message = _upload_storage_response(exc)
+        handler.set_status(status)
+        handler.write({"error": message})
+        return exc
+    return None
+
+
+def _chunk_received_response(
+    handler: BaseHandler, session: dict, new_ranges: list
+) -> None:
+    handler.set_status(200)
+    handler.write(
+        {
+            "status": "chunk_received",
+            "ranges": ranges_to_json(new_ranges),
+            "total_size": session["total_size"],
+            "transfer_profile": session["transfer_profile"],
+            "chunk_bytes": session["chunk_bytes"],
+        }
+    )
+
+
+async def _chunk_put_body_length(
+    handler: BaseHandler, streamed_request: bool
+) -> int | None:
+    if not streamed_request:
+        return len(handler.request.body or b"")
+    await handler._finalize_request_body()
+    if handler._request_write_error is not None:
+        status, message = _upload_storage_response(handler._request_write_error)
+        handler.set_status(status)
+        handler.write({"error": message})
+        return None
+    return handler._request_bytes
+
+
+async def _commit_uploaded_chunk_range(
+    handler: BaseHandler,
+    upload_id: str,
+    session: dict,
+    start: int,
+    end: int,
+) -> None:
+    lock = _session_lock(upload_id)
+    async with lock:
+        session = get_session(handler.db_conn, upload_id)
+        if not session:
+            handler.set_status(404)
+            handler.write({"error": _SESSION_NOT_FOUND})
+            return
+        new_ranges = merge_ranges(session["ranges"] + [ByteRange(start, end)])
+        update_ranges(handler.db_conn, upload_id, new_ranges)
+        if await _finalize_ranged_upload_if_complete(
+            handler, upload_id, session, session["temp_path"], new_ranges
+        ):
+            return
+        _chunk_received_response(handler, session, new_ranges)
+
+
+def _parse_ranged_session_request(
+    handler: BaseHandler,
+) -> tuple[str, str, int] | None:
+    try:
+        body = json.loads(handler.request.body or b"{}")
+    except json.JSONDecodeError:
+        handler.set_status(400)
+        handler.write({"error": BAD_REQUEST})
+        return None
+    upload_dir = unquote(str(body.get("upload_dir") or ""))
+    filename = unquote(str(body.get("filename") or ""))
+    total_size = body.get("total_size")
+    if not filename or not isinstance(total_size, int) or total_size < 0:
+        handler.set_status(400)
+        handler.write({"error": "filename and total_size are required"})
+        return None
+    if total_size > constants_module.MAX_FILE_SIZE:
+        limit_mb = constants_module.UPLOAD_CONFIG.get("max_file_size_mb", 512)
+        handler.set_status(413)
+        handler.write({"error": FILE_TOO_LARGE_TEMPLATE.format(limit_mb=limit_mb)})
+        return None
+    if total_size < constants_module.LARGE_FILE_THRESHOLD_BYTES:
+        handler.set_status(400)
+        handler.write(
+            {
+                "error": "Use POST /upload for files under the large-file threshold",
+                "threshold_bytes": constants_module.LARGE_FILE_THRESHOLD_BYTES,
+            }
+        )
+        return None
+    return upload_dir, filename, total_size
+
+
+def _ensure_ranged_session_capacity(handler: BaseHandler, username: str) -> bool:
+    active = count_active_sessions(handler.db_conn, username)
+    if active >= _MAX_ACTIVE_SESSIONS_PER_USER:
+        _reclaim_sessions_for_user(
+            handler.db_conn,
+            username,
+            need=active - _MAX_ACTIVE_SESSIONS_PER_USER + 1,
+        )
+    if count_active_sessions(handler.db_conn, username) >= _MAX_ACTIVE_SESSIONS_PER_USER:
+        handler.set_status(429)
+        handler.set_header("Retry-After", "30")
+        handler.write({"error": "Too many active upload sessions"})
+        return False
+    return True
+
+
 class RangedUploadSessionHandler(BaseHandler):
     """Create a ranged upload session (POST)."""
 
@@ -324,38 +490,10 @@ class RangedUploadSessionHandler(BaseHandler):
             self.set_status(403)
             self.write({"error": FILE_UPLOAD_DISABLED})
             return
-        strategy = constants_module.get_effective_transfer_strategy()
-        try:
-            body = json.loads(self.request.body or b"{}")
-        except json.JSONDecodeError:
-            self.set_status(400)
-            self.write({"error": BAD_REQUEST})
+        parsed = _parse_ranged_session_request(self)
+        if parsed is None:
             return
-
-        upload_dir = unquote(str(body.get("upload_dir") or ""))
-        filename = unquote(str(body.get("filename") or ""))
-        total_size = body.get("total_size")
-
-        if not filename or not isinstance(total_size, int) or total_size < 0:
-            self.set_status(400)
-            self.write({"error": "filename and total_size are required"})
-            return
-        if total_size > constants_module.MAX_FILE_SIZE:
-            limit_mb = constants_module.UPLOAD_CONFIG.get("max_file_size_mb", 512)
-            self.set_status(413)
-            self.write(
-                {"error": FILE_TOO_LARGE_TEMPLATE.format(limit_mb=limit_mb)}
-            )
-            return
-        if total_size < constants_module.LARGE_FILE_THRESHOLD_BYTES:
-            self.set_status(400)
-            self.write(
-                {
-                    "error": "Use POST /upload for files under the large-file threshold",
-                    "threshold_bytes": constants_module.LARGE_FILE_THRESHOLD_BYTES,
-                }
-            )
-            return
+        upload_dir, filename, total_size = parsed
 
         if self.db_conn is None:
             self.set_status(500)
@@ -384,17 +522,7 @@ class RangedUploadSessionHandler(BaseHandler):
             )
             return
 
-        active = count_active_sessions(self.db_conn, username)
-        if active >= _MAX_ACTIVE_SESSIONS_PER_USER:
-            _reclaim_sessions_for_user(
-                self.db_conn,
-                username,
-                need=active - _MAX_ACTIVE_SESSIONS_PER_USER + 1,
-            )
-        if count_active_sessions(self.db_conn, username) >= _MAX_ACTIVE_SESSIONS_PER_USER:
-            self.set_status(429)
-            self.set_header("Retry-After", "30")
-            self.write({"error": "Too many active upload sessions"})
+        if not _ensure_ranged_session_capacity(self, username):
             return
 
         session_id = secrets.token_urlsafe(16)
@@ -421,6 +549,7 @@ class RangedUploadSessionHandler(BaseHandler):
         finally:
             os.close(fd)
 
+        strategy = constants_module.get_effective_transfer_strategy()
         create_session(
             self.db_conn,
             session_id=session_id,
@@ -482,30 +611,9 @@ class RangedUploadChunkHandler(BaseHandler):
             )
         except (AttributeError, RuntimeError):
             pass
-        try:
-            stream = getattr(self.request.connection, "stream", None)
-            sock = getattr(stream, "socket", None) if stream is not None else None
-            if sock is not None:
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 * 1024 * 1024)
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 8 * 1024 * 1024)
-        except OSError:
-            pass
+        _tune_chunk_upload_socket(self)
         if session and session["username"] == username:
-            preset = constants_module.TRANSFER_PROFILE_PRESETS.get(
-                session["transfer_profile"],
-                constants_module.TRANSFER_PROFILE_PRESETS["open"],
-            )
-            limit = int(preset["range_upload_concurrency"]) * max(
-                1, int(preset.get("range_pipeline_depth", 1))
-            )
-            # Small headroom so a racing retry does not 429 the whole upload.
-            limit += 2
-            if not _try_acquire_chunk_stream(username, limit):
-                self.set_header("Retry-After", "5")
-                raise tornado.web.HTTPError(
-                    429, reason="Too many concurrent upload chunks"
-                )
-            self._chunk_slot_user = username
+            _acquire_chunk_upload_slot(self, session, username)
         # Prefer writing straight into the session file at Content-Range offset
         # (one disk write). Fall back to a staging temp when range is missing.
         parsed = parse_content_range(self.request.headers.get("Content-Range"))
@@ -606,16 +714,9 @@ class RangedUploadChunkHandler(BaseHandler):
 
         parsed = parse_content_range(self.request.headers.get("Content-Range"))
         streamed_request = hasattr(self, "_request_bytes")
-        if streamed_request:
-            await self._finalize_request_body()
-            if self._request_write_error is not None:
-                status, message = _upload_storage_response(self._request_write_error)
-                self.set_status(status)
-                self.write({"error": message})
-                return
-            body_length = self._request_bytes
-        else:
-            body_length = len(self.request.body or b"")
+        body_length = await _chunk_put_body_length(self, streamed_request)
+        if body_length is None:
+            return
         validated = _validate_chunk_put_request(
             self, session, parsed, body_length
         )
@@ -629,74 +730,19 @@ class RangedUploadChunkHandler(BaseHandler):
                 self, upload_id, session, session["temp_path"], session["ranges"]
             ):
                 return
-            self.set_status(200)
-            self.write(
-                {
-                    "status": "chunk_received",
-                    "ranges": ranges_to_json(session["ranges"]),
-                    "total_size": session["total_size"],
-                    "transfer_profile": session["transfer_profile"],
-                    "chunk_bytes": session["chunk_bytes"],
-                }
-            )
+            _chunk_received_response(self, session, session["ranges"])
             return
 
         await TransferRateLimiter.wait_for_bytes(
             user_key, body_length, direction="upload"
         )
 
-        temp_path = session["temp_path"]
-        try:
-            if streamed_request and getattr(self, "_direct_path", None):
-                # Bytes already written at Content-Range offset during data_received.
-                pass
-            elif streamed_request:
-                await asyncio.to_thread(
-                    _copy_range_file_sync,
-                    temp_path,
-                    self._request_temp_path,
-                    start,
-                )
-            else:
-                await asyncio.to_thread(
-                    _write_range_sync,
-                    temp_path,
-                    start,
-                    self.request.body or b"",
-                )
-        except OSError as exc:
-            logger.exception("Ranged upload write failed")
-            status, message = _upload_storage_response(exc)
-            self.set_status(status)
-            self.write({"error": message})
+        if await _write_chunk_payload(
+            self, session=session, start=start, streamed_request=streamed_request
+        ) is not None:
             return
 
-        lock = _session_lock(upload_id)
-        async with lock:
-            session = get_session(self.db_conn, upload_id)
-            if not session:
-                self.set_status(404)
-                self.write({"error": _SESSION_NOT_FOUND})
-                return
-
-            new_ranges = merge_ranges(session["ranges"] + [ByteRange(start, end)])
-            update_ranges(self.db_conn, upload_id, new_ranges)
-
-            if await _finalize_ranged_upload_if_complete(
-                self, upload_id, session, temp_path, new_ranges
-            ):
-                return
-
-            self.set_status(200)
-            self.write(
-                {
-                    "status": "chunk_received",
-                    "ranges": ranges_to_json(new_ranges),
-                    "total_size": session["total_size"],
-                    "transfer_profile": session["transfer_profile"],
-                    "chunk_bytes": session["chunk_bytes"],
-                }
-            )
+        await _commit_uploaded_chunk_range(self, upload_id, session, start, end)
 
     def on_finish(self) -> None:
         _release_chunk_stream(getattr(self, "_chunk_slot_user", None))
@@ -733,7 +779,7 @@ class RangedUploadChunkHandler(BaseHandler):
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
             except OSError:
-                logger.debug("Upload session temp cleanup failed", exc_info=True)
+                logger.debug(_UPLOAD_SESSION_TEMP_CLEANUP_FAILED, exc_info=True)
         self.set_status(200)
         self.write({"status": "deleted"})
 
@@ -791,6 +837,6 @@ class RangedUploadStatusHandler(BaseHandler):
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
             except OSError:
-                logger.debug("Upload session temp cleanup failed", exc_info=True)
+                logger.debug(_UPLOAD_SESSION_TEMP_CLEANUP_FAILED, exc_info=True)
         self.set_status(200)
         self.write({"status": "deleted"})

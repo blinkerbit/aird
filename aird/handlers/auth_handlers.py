@@ -30,6 +30,7 @@ from aird.handlers.constants import (
     PROFILE_TEMPLATE,
     MANDATORY_PASSWORD_TEMPLATE,
     FILES_BASE_URL,
+    LOGIN_URL,
     LOGIN_HTML,
     DB_NOT_AVAILABLE_MSG,
 )
@@ -777,7 +778,7 @@ class MandatoryPasswordHandler(BaseHandler):
         db_conn = self.db_conn
         cu = self.current_user
         if not db_conn or not isinstance(cu, dict):
-            self.redirect("/login")
+            self.redirect(LOGIN_URL)
             return
         row = self.get_service("user_service").get_user(db_conn, cu["username"])
         if not row or not row.get("must_change_password"):
@@ -849,14 +850,14 @@ class MandatoryPasswordHandler(BaseHandler):
 class LogoutHandler(XSRFTokenMixin, BaseHandler):
     def post(self):
         terminate_server_session(self)
-        self.redirect("/login")
+        self.redirect(LOGIN_URL)
 
     def get(self):
         logging.warning(
             "Deprecated GET /logout from %s; use POST with XSRF",
             getattr(self.request, "remote_ip", ""),
         )
-        self.redirect("/login")
+        self.redirect(LOGIN_URL)
 
 
 _TOKEN_ONLY_PROFILE_USERNAMES = {"token_user", "admin_token"}

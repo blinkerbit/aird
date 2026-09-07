@@ -1,7 +1,7 @@
 "use strict";
 
-import { escapeAttr, escapeHtml, getCanTag } from '/static/js/browse/util.js';
-import { buildMoreMenuHtml } from '/static/js/browse/row-more-menu.js';
+import { escapeAttr, escapeHtml, getCanTag } from './util.js';
+import { buildMoreMenuHtml } from './row-more-menu.js';
 
 const MEDIA_EXTS = new Set([
   'jpg', 'jpeg', 'jpe', 'jif', 'jfif', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico',
@@ -35,12 +35,16 @@ const ACTION_SVGS = {
 };
 
 function normalizePath(p) {
-  return String(p || '').replace(/^\/+|\/+$/g, '');
+  let s = String(p || '');
+  while (s.startsWith('/')) s = s.slice(1);
+  while (s.endsWith('/')) s = s.slice(0, -1);
+  return s;
 }
 
 function joinBrowsePath(dir, name) {
   const d = normalizePath(dir);
-  const n = String(name || '').replace(/^\/+/g, '');
+  let n = String(name || '');
+  while (n.startsWith('/')) n = n.slice(1);
   return d ? `${d}/${n}` : n;
 }
 
@@ -223,7 +227,7 @@ function updateExistingRow(row, { sizeBytes, isDir, modifiedMs }) {
   }
   row.classList.remove('file-row--just-uploaded');
   // force reflow so animation can replay
-  void row.offsetWidth;
+  row.getBoundingClientRect();
   row.classList.add('file-row--just-uploaded');
 }
 
@@ -275,7 +279,7 @@ export function reflectUploadInListing(item) {
   if (!underCurrent) return false;
 
   const rest = current === '' ? uploadDir : uploadDir.slice(current.length + 1);
-  const top = rest.split('/').filter(Boolean)[0];
+  const top = rest.split('/').find(Boolean);
   if (!top) return false;
   return upsertListingEntry({
     name: top,

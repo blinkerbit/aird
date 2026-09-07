@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🎉', '🔥', '👀'];
+  const REACTIONS = ['👍', '❤️', '😂', '🎉'];
   const IMAGE_EXTS = ['jpg', 'jpeg', 'jpe', 'jif', 'jfif', 'png', 'gif', 'bmp', 'webp', 'tiff', 'tif', 'svg', 'ico', 'avif', 'heic', 'heif', 'dng', 'cr2', 'nef', 'arw', 'orf', 'rw2', 'raf', 'raw'];
 
   const qs = (sel) => document.querySelector(sel);
@@ -27,6 +27,15 @@
   const searchInput = qs('#chatSearch');
   const searchResults = qs('#chatSearchResults');
   const mentionSuggest = qs('#chatMentionSuggest');
+  const layoutEl = qs('#chatLayout');
+  const newBtn = qs('#chatNewBtn');
+  const newPanel = qs('#chatNewPanel');
+  const groupFields = qs('#chatNewGroupFields');
+  const groupChipsEl = qs('#chatGroupChips');
+  const groupCreateBtn = qs('#chatGroupCreate');
+  const memberModal = qs('#chatMemberModal');
+  const memberUserInput = qs('#chatMemberUser');
+  const memberSuggest = qs('#chatMemberSuggest');
 
   function getPathSuggest() {
     let el = document.getElementById('chatPathSuggest');
@@ -68,6 +77,12 @@
   let loadGen = 0;
   let typingTimer = null;
   let forwardMsgId = null;
+  let loadingOlder = false;
+  let hasOlder = false;
+  let newMode = 'dm';
+  let groupPicks = [];
+  let keyWaitTimer = null;
+  let keyWaitConv = '';
   const presence = {};
 
   function lastMessageId() {
@@ -76,12 +91,15 @@
     return nodes[nodes.length - 1].dataset.msgId || '';
   }
 
+  function firstMessageId() {
+    return messagesEl?.querySelector('[data-msg-id]')?.dataset.msgId || '';
+  }
+
   async function syncNewMessages() {
     if (!activeConvId || !messagesEl) return;
     const afterId = lastMessageId();
-    const data = await api(
-      `/api/chat/conversations/${activeConvId}/messages${afterId ? `?after_id=${encodeURIComponent(afterId)}` : ''}`,
-    );
+    const query = afterId ? `?after_id=${encodeURIComponent(afterId)}` : '';
+    const data = await api(`/api/chat/conversations/${activeConvId}/messages${query}`);
     let added = false;
     (data.messages || []).forEach((m) => {
       if (!messagesEl.querySelector(`[data-msg-id="${cssEscape(m.id)}"]`)) {
@@ -101,7 +119,7 @@
   }
 
   function cssEscape(s) {
-    return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return String(s).replaceAll('\\', '\\\\').replaceAll('"', '\\"');
   }
 
   function setPollEnabled(on) {
@@ -112,24 +130,40 @@
     if (!on || !activeConvId) return;
     pollTimer = setInterval(() => {
       if (window.AirdChatWS?.isOpen()) return;
-      syncNewMessages().catch(() => { /* */ });
+      syncNewMessages().catch((err) => { console.debug('chat poll sync failed', err); });
     }, 4000);
   }
 
+  const XSRF_RE = /(?:^|;\s*)_xsrf=([^;]+)/;
+
   function xsrf() {
-    const m = document.cookie.match(/(?:^|;\s*)_xsrf=([^;]+)/);
+    const m = XSRF_RE.exec(document.cookie);
     return m ? decodeURIComponent(m[1]) : '';
   }
 
+  function apiUrl(path, opts = {}) {
+    const method = String(opts.method || 'GET').toUpperCase();
+    if (method !== 'GET' || /[?&]_=/.test(path)) return path;
+    return `${path}${path.includes('?') ? '&' : '?'}_=${Date.now()}`;
+  }
+
   async function api(path, opts = {}) {
-    const res = await fetch(path, {
+    const { _retry304, ...fetchOpts } = opts;
+    const res = await fetch(apiUrl(path, fetchOpts), {
+      cache: 'no-store',
       headers: {
         Accept: 'application/json',
-        ...(opts.body && !(opts.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
-        ...(opts.method && opts.method !== 'GET' ? { 'X-XSRFToken': xsrf() } : {}),
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+        ...(fetchOpts.body && !(fetchOpts.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
+        ...(fetchOpts.method && fetchOpts.method !== 'GET' ? { 'X-XSRFToken': xsrf() } : {}),
       },
-      ...opts,
+      ...fetchOpts,
     });
+    if (res.status === 304) {
+      if (_retry304) throw new Error('HTTP 304');
+      return api(path, { ...opts, _retry304: true });
+    }
     const text = await res.text();
     let json = {};
     try { json = JSON.parse(text); } catch { json = { error: text }; }
@@ -146,24 +180,85 @@
 
   async function e2eReady(convId) {
     if (!E2E?.ready()) return false;
-    const conv = conversations.find((c) => c.id === convId);
-    await E2E.ensureConversation(api, convId, memberNames(conv));
-    return true;
+    try {
+      const conv = conversations.find((c) => c.id === convId);
+      const key = await E2E.ensureConversation(api, convId, memberNames(conv));
+      if (key) {
+        stopKeyWait();
+        setE2eStatus('');
+        return true;
+      }
+    } catch (err) {
+      console.debug('e2e ready failed', err);
+    }
+    E2E.requestKeyShare?.(convId);
+    startKeyWait(convId);
+    setE2eStatus('Setting up encryption…');
+    return false;
+  }
+
+  function setE2eStatus(text) {
+    const el = qs('#chatE2eStatus');
+    if (!el) return;
+    if (!text) {
+      el.hidden = true;
+      el.textContent = '';
+      return;
+    }
+    el.hidden = false;
+    el.textContent = text;
+  }
+
+  function stopKeyWait() {
+    if (keyWaitTimer) {
+      clearInterval(keyWaitTimer);
+      keyWaitTimer = null;
+    }
+    keyWaitConv = '';
+  }
+
+  function startKeyWait(convId) {
+    if (keyWaitConv === convId && keyWaitTimer) return;
+    stopKeyWait();
+    keyWaitConv = convId;
+    keyWaitTimer = setInterval(() => {
+      if (convId !== activeConvId) {
+        stopKeyWait();
+        return;
+      }
+      E2E.requestKeyShare?.(convId);
+      e2eReady(convId).then((ok) => {
+        if (ok) reloadThreadAfterKey(convId);
+      }).catch((err) => console.debug('e2e wait retry failed', err));
+    }, 2500);
+  }
+
+  async function reloadThreadAfterKey(convId) {
+    if (convId !== activeConvId) return;
+    setE2eStatus('');
+    await loadConversations();
+    await openConversation(convId);
   }
 
   async function decryptPayload(convId, payload) {
     if (!payload || !E2E) return '';
+    const tryDecrypt = async () => E2E.sanitizeHtml(await E2E.decrypt(convId, payload));
     try {
-      const html = await E2E.decrypt(convId, payload);
-      return E2E.sanitizeHtml(html);
+      return await tryDecrypt();
     } catch (_) {
-      return '<em class="chat-e2e-fail">Unable to decrypt on this device</em>';
+      try {
+        const conv = conversations.find((c) => c.id === convId);
+        await E2E.ensureConversation(api, convId, memberNames(conv));
+        return await tryDecrypt();
+      } catch {
+        return '<em class="chat-e2e-fail">Unable to decrypt on this device</em>';
+      }
     }
   }
 
   async function prepareMessage(msg) {
     if (!msg) return msg;
-    const blob = msg.metadata && msg.metadata.e2e;
+    const blob = msg.metadata?.e2e;
     if (msg.e2e || blob) {
       const html = await decryptPayload(msg.conversation_id, blob);
       msg.body = html;
@@ -180,13 +275,13 @@
   }
 
   function esc(s) {
-    return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return String(s ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
   }
 
   function avatarHue(name) {
     let h = 0;
     const s = String(name || '');
-    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.codePointAt(i)) >>> 0;
     return [250, 280, 200, 160, 30, 340, 220][h % 7];
   }
 
@@ -198,7 +293,8 @@
 
   function avatarHtml(name, extraClass) {
     const hue = avatarHue(name);
-    return `<span class="chat-avatar${extraClass ? ` ${extraClass}` : ''}" style="--chat-hue:${hue}" aria-hidden="true">${esc(initials(name))}</span>`;
+    const cls = extraClass ? ` ${extraClass}` : '';
+    return `<span class="chat-avatar${cls}" style="--chat-hue:${hue}" aria-hidden="true">${esc(initials(name))}</span>`;
   }
 
   function formatTime(iso) {
@@ -210,6 +306,52 @@
     const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     if (sameDay) return time;
     return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} · ${time}`;
+  }
+
+  function formatConvTime(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) {
+      return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    }
+    if ((now - d) / 86400000 < 7) return d.toLocaleDateString([], { weekday: 'short' });
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+
+  function dayKey(iso) {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? '' : d.toDateString();
+  }
+
+  function dateLabel(iso) {
+    const key = dayKey(iso);
+    if (!key) return '';
+    const now = new Date();
+    if (key === now.toDateString()) return 'Today';
+    const y = new Date(now);
+    y.setDate(now.getDate() - 1);
+    if (key === y.toDateString()) return 'Yesterday';
+    return new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+
+  function dateChipHtml(iso) {
+    const key = dayKey(iso);
+    if (!key) return '';
+    return `<div class="chat-day" data-day="${esc(key)}">${esc(dateLabel(iso))}</div>`;
+  }
+
+  function lastDayKey() {
+    const days = messagesEl?.querySelectorAll('.chat-day');
+    if (!days?.length) return '';
+    return days[days.length - 1].dataset.day || '';
+  }
+
+  function setMobileView(view) {
+    if (!layoutEl) return;
+    layoutEl.classList.toggle('chat-layout--thread', view === 'thread');
+    layoutEl.classList.toggle('chat-layout--list', view !== 'thread');
   }
 
   function tagMine(msg) {
@@ -226,7 +368,18 @@
   function isOnlineUser(username) {
     if (Object.prototype.hasOwnProperty.call(presence, username)) return presence[username];
     const conv = conversations.find((c) => (c.members || []).some((m) => m.username === username && m.online));
-    return !!(conv && (conv.members || []).some((m) => m.username === username && m.online));
+    return !!conv?.members?.some((m) => m.username === username && m.online);
+  }
+
+  function threadSubtitle(conv) {
+    const mutedSuffix = conv.muted ? ' · muted' : '';
+    if (conv.kind === 'group') {
+      const n = (conv.members || []).length;
+      const on = (conv.members || []).filter((m) => m.online || isOnlineUser(m.username)).length;
+      return `${n} members · ${on} online${mutedSuffix}`;
+    }
+    const on = isOnlineUser(conv.peer_username);
+    return `${on ? 'Online' : 'Direct message'}${mutedSuffix}`;
   }
 
   function setThreadHeader(conv) {
@@ -236,28 +389,28 @@
       return;
     }
     const title = convTitle(conv);
-    const muted = conv.muted ? 'Muted' : '';
-    let sub;
-    if (conv.kind === 'group') {
-      const n = (conv.members || []).length;
-      const on = (conv.members || []).filter((m) => m.online || isOnlineUser(m.username)).length;
-      sub = `${n} members · ${on} online${muted ? ' · muted' : ''}`;
-    } else {
-      const peer = conv.peer_username;
-      const on = isOnlineUser(peer);
-      sub = `${on ? 'Online' : 'Direct message'}${muted ? ' · muted' : ''}`;
-    }
+    const sub = threadSubtitle(conv);
     const dot = conv.kind === 'dm' && isOnlineUser(conv.peer_username)
       ? '<span class="chat-online-dot" title="Online"></span>'
       : '';
-      const lock = '<span class="chat-e2e-lock" title="End-to-end encrypted">🔒</span>';
-    header.innerHTML = `<span class="chat-avatar-wrap">${avatarHtml(title)}${dot}</span><div class="chat-thread-head-main"><div class="chat-thread-title">${esc(title)} ${lock}</div><div class="chat-thread-sub">${esc(sub)}</div></div>
+    const lock = '<span class="chat-e2e-lock" title="End-to-end encrypted">🔒</span>';
+    const groupActs = conv.kind === 'group'
+      ? '<button type="button" id="chatAddMemberBtn">Add member</button><button type="button" id="chatLeaveBtn" class="is-danger">Leave group</button>'
+      : '';
+    header.innerHTML = `<button type="button" class="chat-back" id="chatBackBtn" aria-label="Back to conversations"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button><span class="chat-avatar-wrap">${avatarHtml(title)}${dot}</span><div class="chat-thread-head-main"><div class="chat-thread-title">${esc(title)} ${lock}</div><div class="chat-thread-sub">${esc(sub)}</div></div>
       <div class="chat-thread-actions">
-        <button type="button" class="chat-icon-btn" id="chatMuteBtn" title="${conv.muted ? 'Unmute' : 'Mute'}">${conv.muted ? 'Unmute' : 'Mute'}</button>
-        ${conv.kind === 'group' ? '<button type="button" class="chat-icon-btn" id="chatAddMemberBtn">Add</button>' : ''}
+        <details class="chat-head-more">
+          <summary aria-label="Conversation actions">⋯</summary>
+          <div class="chat-head-menu">
+            <button type="button" id="chatMuteBtn">${conv.muted ? 'Unmute' : 'Mute'}</button>
+            ${groupActs}
+          </div>
+        </details>
       </div>`;
+    qs('#chatBackBtn')?.addEventListener('click', () => setMobileView('list'));
     qs('#chatMuteBtn')?.addEventListener('click', () => toggleMute(conv).catch((e) => alert(e.message)));
-    qs('#chatAddMemberBtn')?.addEventListener('click', () => addMember(conv).catch((e) => alert(e.message)));
+    qs('#chatAddMemberBtn')?.addEventListener('click', () => openAddMember());
+    qs('#chatLeaveBtn')?.addEventListener('click', () => leaveGroup(conv).catch((e) => alert(e.message)));
   }
 
   async function toggleMute(conv) {
@@ -271,22 +424,45 @@
     renderConvList();
   }
 
-  async function addMember(conv) {
-    const username = prompt('Username to add');
-    if (!username) return;
+  function openAddMember() {
+    qs('.chat-head-more')?.removeAttribute('open');
+    if (memberUserInput) memberUserInput.value = '';
+    memberSuggest?.classList.add('hidden');
+    memberModal?.showModal();
+    memberUserInput?.focus();
+  }
+
+  async function addMember(conv, username) {
+    conv = conv || activeConv();
+    const name = (username || memberUserInput?.value || '').trim();
+    if (!conv || !name) return;
     await api(`/api/chat/conversations/${conv.id}/members`, {
       method: 'POST',
-      body: JSON.stringify({ username: username.trim() }),
+      body: JSON.stringify({ username: name }),
     });
+    memberModal?.close();
     await loadConversations();
     const updated = conversations.find((c) => c.id === conv.id);
     setThreadHeader(updated || conv);
-    try { await e2eReady(conv.id); } catch (_) { /* */ }
+    try { await e2eReady(conv.id); } catch (err) { console.debug('e2e ready after addMember failed', err); }
+  }
+
+  async function leaveGroup(conv) {
+    if (!confirm('Leave this group?')) return;
+    await api(`/api/chat/conversations/${conv.id}/members?username=${encodeURIComponent(me)}`, { method: 'DELETE' });
+    activeConvId = null;
+    composer?.classList.add('hidden');
+    setThreadHeader(null);
+    clearMessagesView();
+    showEmptyThread();
+    setMobileView('list');
+    history.replaceState(null, '', location.pathname);
+    await loadConversations();
   }
 
   function showEmptyThread() {
     if (!messagesEl) return;
-    messagesEl.innerHTML = '<div class="chat-empty"><div class="chat-empty-icon" aria-hidden="true">💬</div><p>No messages yet. Say hello!</p></div>';
+    messagesEl.innerHTML = '<div class="chat-empty"><div class="chat-empty-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><p>No messages yet</p><p class="chat-empty-hint">Say hello.</p></div>';
   }
 
   function clearMessagesView() {
@@ -308,7 +484,8 @@
       const on = c.kind === 'dm' && isOnlineUser(c.peer_username);
       const dot = on ? '<span class="chat-online-dot chat-online-dot--list"></span>' : '';
       const mute = c.muted ? ' <span class="opacity-40">🔇</span>' : '';
-      return `<li><a href="#" class="chat-conv-item${active}" data-id="${esc(c.id)}">${avatarHtml(title)}${dot}<span class="chat-conv-main"><span class="chat-conv-top"><span class="chat-conv-name">${esc(title)}${mute}</span>${badge}</span><span class="chat-conv-preview">${preview}</span></span></a></li>`;
+      const when = formatConvTime(c.updated_at);
+      return `<li><a href="#" class="chat-conv-item${active}" data-id="${esc(c.id)}">${avatarHtml(title)}${dot}<span class="chat-conv-main"><span class="chat-conv-top"><span class="chat-conv-name">${esc(title)}${mute}</span><span class="chat-conv-meta">${when}${badge}</span></span><span class="chat-conv-preview">${preview}</span></span></a></li>`;
     }).join('');
     convList.querySelectorAll('.chat-conv-item').forEach((el) => {
       el.addEventListener('click', (e) => {
@@ -335,14 +512,14 @@
         tmp.innerHTML = html;
         const text = (tmp.innerText || '').trim();
         if (text) c.last_preview = text.slice(0, 80);
-      } catch (_) { /* keep placeholder */ }
+      } catch (err) { console.debug('conv preview decrypt failed', err); }
     }));
     renderConvList();
     updateNavBadge();
   }
 
   function attOpenUrl(att, msg, index) {
-    if (att && att.share_url) return att.share_url;
+    if (att?.share_url) return att.share_url;
     return fileUrl(msg, index);
   }
 
@@ -360,14 +537,14 @@
   }
 
   function isFolderAtt(att) {
-    return (att && att.media_kind) === 'folder';
+    return att?.media_kind === 'folder';
   }
 
   function isImageAtt(att, msg) {
     if (isFolderAtt(att)) return false;
-    const kind = (att && att.media_kind) || (msg && msg.msg_type === 'gif' ? 'gif' : '');
+    const kind = att?.media_kind || (msg?.msg_type === 'gif' ? 'gif' : '');
     if (kind === 'image' || kind === 'gif') return true;
-    const name = String((att && att.original_name) || '').toLowerCase();
+    const name = String(att?.original_name || '').toLowerCase();
     const ext = name.split('.').pop();
     return IMAGE_EXTS.includes(ext);
   }
@@ -432,18 +609,22 @@
   }
 
   function hoverBarHtml(msg) {
+    const id = esc(msg.id);
     const emojis = REACTIONS.map((e) =>
-      `<button type="button" class="chat-react-emoji" data-emoji="${e}" data-id="${esc(msg.id)}" title="${e}">${e}</button>`
+      `<button type="button" class="chat-react-emoji" data-emoji="${e}" data-id="${id}" title="${e}">${e}</button>`
     ).join('');
+    const mineActs = msg._mine
+      ? `<button type="button" data-act="edit" data-id="${id}">Edit</button><button type="button" data-act="delete" data-id="${id}">Delete</button>`
+      : '';
     return `<div class="chat-hover-bar" role="toolbar" aria-label="Message actions">
       ${emojis}
       <details class="chat-msg-more">
         <summary aria-label="More">⋯</summary>
         <div class="chat-msg-more-list">
-          <button type="button" data-act="reply" data-id="${esc(msg.id)}">Reply</button>
-          <button type="button" data-act="forward" data-id="${esc(msg.id)}">Forward</button>
-          <button type="button" data-act="pin" data-id="${esc(msg.id)}">Pin</button>
-          ${msg._mine ? `<button type="button" data-act="edit" data-id="${esc(msg.id)}">Edit</button><button type="button" data-act="delete" data-id="${esc(msg.id)}">Delete</button>` : ''}
+          <button type="button" data-act="reply" data-id="${id}">Reply</button>
+          <button type="button" data-act="forward" data-id="${id}">Forward</button>
+          <button type="button" data-act="pin" data-id="${id}">Pin</button>
+          ${mineActs}
         </div>
       </details>
     </div>`;
@@ -464,7 +645,7 @@
     const rowClass = msg._mine ? 'chat-msg-row--mine' : 'chat-msg-row--theirs';
     const bubbleClass = msg._mine ? 'aird-chat-bubble--mine' : 'aird-chat-bubble--theirs';
     let body = '';
-    if (msg.forwarded_from || (msg.metadata && msg.metadata.forwarded_from)) {
+    if (msg.forwarded_from || msg.metadata?.forwarded_from) {
       body += '<div class="chat-forwarded">Forwarded</div>';
     }
     body += replyQuoteHtml(msg);
@@ -513,7 +694,7 @@
   function openLightbox(imgEl) {
     const dlg = qs('#chatLightbox');
     const img = qs('#chatLightboxImg');
-    const url = (imgEl && (imgEl.dataset.full || imgEl.src)) || '';
+    const url = (imgEl?.dataset.full || imgEl?.src) || '';
     if (img && url) img.src = url;
     dlg?.showModal();
   }
@@ -611,11 +792,10 @@
         return;
       }
       try {
-        if (!E2E?.ready()) throw new Error('Encrypted chat is not ready on this device');
-        const e2e = await (async () => {
-          await e2eReady(activeConvId);
-          return E2E.encrypt(activeConvId, E2E.sanitizeHtml(textEl.innerHTML || next));
-        })();
+        if (!E2E?.ready()) throw new Error('Setting up encryption…');
+        const ok = await e2eReady(activeConvId);
+        if (!ok) throw new Error('Setting up encryption…');
+        const e2e = await E2E.encrypt(activeConvId, E2E.sanitizeHtml(textEl.innerHTML || next));
         const data = await api(`/api/chat/conversations/${activeConvId}/messages/${messageId}`, {
           method: 'PATCH',
           body: JSON.stringify({
@@ -626,7 +806,7 @@
         if (data.message) replaceMessage(await prepareMessage(data.message));
       } catch (err) {
         textEl.innerHTML = originalHtml;
-        alert(err.message);
+        setE2eStatus(err.message);
       }
     };
     const onKey = (e) => {
@@ -692,11 +872,12 @@
       || messagesEl?.querySelector(`[data-msg-id="${cssEscape(forwardMsgId)}"] .chat-msg-text`)?.innerHTML
       || '';
     if (isE2e) {
-      if (!E2E?.ready()) throw new Error('Encrypted chat is not ready on this device');
+      if (!E2E?.ready()) throw new Error('Setting up encryption…');
       if (plain.includes('chat-e2e-fail')) throw new Error('Cannot forward a message that did not decrypt on this device');
       const html = E2E.sanitizeHtml(plain);
       for (const id of ids) {
-        await e2eReady(id);
+        const ok = await e2eReady(id);
+        if (!ok) throw new Error('Setting up encryption…');
         const e2e = await E2E.encrypt(id, html);
         await api(`/api/chat/conversations/${id}/messages`, {
           method: 'POST',
@@ -718,6 +899,10 @@
     await prepareMessage(msg);
     tagMine(msg);
     messagesEl.querySelector('.chat-empty')?.remove();
+    const day = dayKey(msg.created_at);
+    if (day && day !== lastDayKey()) {
+      messagesEl.insertAdjacentHTML('beforeend', dateChipHtml(msg.created_at));
+    }
     messagesEl.insertAdjacentHTML('beforeend', messageHtml(msg));
     bindMessageUi(messagesEl.lastElementChild);
     messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -742,6 +927,56 @@
     if (messagesEl && !messagesEl.querySelector('[data-msg-id]')) showEmptyThread();
   }
 
+  function paintMessage(msg) {
+    tagMine(msg);
+    const day = dayKey(msg.created_at);
+    if (day && day !== lastDayKey()) {
+      messagesEl.insertAdjacentHTML('beforeend', dateChipHtml(msg.created_at));
+    }
+    messagesEl.insertAdjacentHTML('beforeend', messageHtml(msg));
+    bindMessageUi(messagesEl.lastElementChild);
+  }
+
+  async function loadOlderMessages() {
+    if (!activeConvId || !messagesEl || loadingOlder || !hasOlder) return;
+    const beforeId = firstMessageId();
+    if (!beforeId) return;
+    loadingOlder = true;
+    const prevH = messagesEl.scrollHeight;
+    const prevTop = messagesEl.scrollTop;
+    try {
+      const data = await api(`/api/chat/conversations/${activeConvId}/messages?before_id=${encodeURIComponent(beforeId)}&limit=50`);
+      const msgs = data.messages || [];
+      hasOlder = msgs.length >= 50;
+      if (!msgs.length) return;
+      for (const m of msgs) await prepareMessage(m);
+      const firstDay = messagesEl.querySelector('.chat-day');
+      const frag = document.createElement('div');
+      let prevDay = '';
+      msgs.forEach((m) => {
+        tagMine(m);
+        const day = dayKey(m.created_at);
+        if (day && day !== prevDay) {
+          frag.insertAdjacentHTML('beforeend', dateChipHtml(m.created_at));
+          prevDay = day;
+        }
+        frag.insertAdjacentHTML('beforeend', messageHtml(m));
+      });
+      if (firstDay && firstDay.dataset.day === prevDay) firstDay.remove();
+      const nodes = [...frag.childNodes];
+      const first = messagesEl.firstChild;
+      nodes.forEach((n) => messagesEl.insertBefore(n, first));
+      nodes.forEach((n) => {
+        if (n.nodeType === 1 && n.matches?.('[data-msg-id]')) bindMessageUi(n);
+      });
+      messagesEl.scrollTop = messagesEl.scrollHeight - prevH + prevTop;
+    } catch (err) {
+      console.debug('load older failed', err);
+    } finally {
+      loadingOlder = false;
+    }
+  }
+
   async function openConversation(convId) {
     if (activeConvId && convId !== activeConvId) {
       pending = [];
@@ -749,27 +984,26 @@
     }
     const gen = ++loadGen;
     activeConvId = convId;
+    loadingOlder = false;
     const conv = conversations.find((c) => c.id === convId);
     setThreadHeader(conv || null);
     composer.classList.remove('hidden');
     messagesEl.innerHTML = '<div class="chat-empty"><p>Loading…</p></div>';
     renderConvList();
     setPollEnabled(true);
-    try { await e2eReady(convId); } catch (_) { /* */ }
-    const data = await api(`/api/chat/conversations/${convId}/messages`);
+    setMobileView('thread');
+    try { await e2eReady(convId); } catch (err) { console.debug('e2e ready on openConversation failed', err); }
+    const data = await api(`/api/chat/conversations/${convId}/messages?limit=50`);
     if (gen !== loadGen) return;
     clearMessagesView();
     pins = data.pins || [];
     receipts = data.receipts || [];
     renderPins();
     const msgs = data.messages || [];
+    hasOlder = msgs.length >= 50;
     for (const m of msgs) await prepareMessage(m);
     if (!msgs.length) showEmptyThread();
-    else msgs.forEach((m) => {
-      tagMine(m);
-      messagesEl.insertAdjacentHTML('beforeend', messageHtml(m));
-      bindMessageUi(messagesEl.lastElementChild);
-    });
+    else msgs.forEach((m) => paintMessage(m));
     if (msgs.length) messagesEl.scrollTop = messagesEl.scrollHeight;
     const last = msgs.slice(-1)[0];
     if (last) markRead(last);
@@ -789,59 +1023,93 @@
     loadConversations();
   }
 
-  function handleWsEvent(data) {
-    if (!data?.type) return;
-    if (data.type === 'chat_message' && data.message) {
-      const msg = tagMine({ ...data.message });
-      if (msg.conversation_id === activeConvId) {
-        if (!messagesEl?.querySelector(`[data-msg-id="${cssEscape(msg.id)}"]`)) {
-          appendMessage(msg).then(() => markRead(msg)).catch(() => {});
-        }
+  function onWsChatMessage(data) {
+    if (!data.message) return;
+    const msg = tagMine({ ...data.message });
+    if (msg.conversation_id === activeConvId) {
+      if (!messagesEl?.querySelector(`[data-msg-id="${cssEscape(msg.id)}"]`)) {
+        appendMessage(msg).then(() => markRead(msg)).catch((err) => {
+          console.debug('appendMessage failed', err);
+        });
       }
-      loadConversations();
-      updateNavBadge();
-    } else if (data.type === 'chat_message_deleted') {
+    }
+    loadConversations();
+    updateNavBadge();
+  }
+
+  function onWsTyping(data) {
+    if (data.conversation_id !== activeConvId) return;
+    const sub = header?.querySelector('.chat-thread-sub');
+    if (!sub || data.username === me) return;
+    const prev = sub.dataset.base || sub.textContent;
+    sub.dataset.base = prev;
+    sub.textContent = `${data.username} is typing…`;
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => { sub.textContent = sub.dataset.base || prev; }, 1500);
+  }
+
+  const WS_HANDLERS = {
+    chat_message: onWsChatMessage,
+    chat_message_deleted: (data) => {
       if (data.conversation_id === activeConvId) removeMessageEl(data.message_id);
       loadConversations();
       updateNavBadge();
-    } else if (data.type === 'chat_message_edited' && data.message) {
-      if (data.message.conversation_id === activeConvId) {
-        replaceMessage(data.message).catch(() => {});
+    },
+    chat_message_edited: (data) => {
+      if (data.message?.conversation_id === activeConvId) {
+        replaceMessage(data.message).catch((err) => {
+          console.debug('replaceMessage failed', err);
+        });
       }
-    } else if (data.type === 'chat_reaction') {
+    },
+    chat_reaction: (data) => {
       if (data.conversation_id === activeConvId) applyReactions(data.message_id, data.reactions || []);
-    } else if (data.type === 'chat_receipt') {
-      if (data.conversation_id === activeConvId) {
-        receipts = receipts.filter((r) => r.username !== data.username);
-        receipts.push({ username: data.username, last_read_id: data.last_read_id });
-      }
-    } else if (data.type === 'chat_pin' || data.type === 'chat_unpin') {
-      if (data.conversation_id === activeConvId) {
-        pins = data.pins || [];
-        renderPins();
-      }
-    } else if (data.type === 'chat_presence') {
+    },
+    chat_receipt: (data) => {
+      if (data.conversation_id !== activeConvId) return;
+      receipts = receipts.filter((r) => r.username !== data.username);
+      receipts.push({ username: data.username, last_read_id: data.last_read_id });
+    },
+    chat_pin: (data) => {
+      if (data.conversation_id !== activeConvId) return;
+      pins = data.pins || [];
+      renderPins();
+    },
+    chat_unpin: (data) => {
+      if (data.conversation_id !== activeConvId) return;
+      pins = data.pins || [];
+      renderPins();
+    },
+    chat_presence: (data) => {
       presence[data.username] = !!data.online;
       renderConvList();
       if (activeConvId) setThreadHeader(activeConv());
-    } else if (data.type === 'chat_notify') {
+    },
+    chat_notify: (data) => {
       updateNavBadge(data.unread_total);
-      if (data.conversation_id === activeConvId) syncNewMessages().catch(() => { /* */ });
-      loadConversations();
-    } else if (data.type === 'chat_ws_close') {
-      setPollEnabled(true);
-    } else if (data.type === 'chat_ws_open') {
-      setPollEnabled(!!activeConvId);
-    } else if (data.type === 'chat_typing' && data.conversation_id === activeConvId) {
-      const sub = header?.querySelector('.chat-thread-sub');
-      if (sub && data.username !== me) {
-        const prev = sub.dataset.base || sub.textContent;
-        sub.dataset.base = prev;
-        sub.textContent = `${data.username} is typing…`;
-        clearTimeout(typingTimer);
-        typingTimer = setTimeout(() => { sub.textContent = sub.dataset.base || prev; }, 1500);
+      if (data.conversation_id === activeConvId) {
+        syncNewMessages().catch((err) => { console.debug('chat_notify sync failed', err); });
       }
-    }
+      loadConversations();
+    },
+    chat_ws_close: () => setPollEnabled(true),
+    chat_ws_open: () => setPollEnabled(!!activeConvId),
+    chat_typing: onWsTyping,
+    chat_e2e_key_ready: (data) => {
+      const convId = data.conversation_id;
+      if (!convId) return;
+      const had = E2E?.hasConvKey?.(convId);
+      e2eReady(convId).then((ok) => {
+        if (!ok) return;
+        loadConversations();
+        if (convId === activeConvId && !had) reloadThreadAfterKey(convId);
+      }).catch((err) => console.debug('e2e key ready failed', err));
+    },
+  };
+
+  function handleWsEvent(data) {
+    const handler = data?.type && WS_HANDLERS[data.type];
+    if (handler) handler(data);
   }
 
   async function startConversation(username) {
@@ -852,20 +1120,80 @@
       method: 'POST',
       body: JSON.stringify({ username: name }),
     });
-    if (newUserInput) newUserInput.value = name;
+    if (newUserInput) newUserInput.value = '';
+    setNewPanel(false);
     await loadConversations();
     const id = data.conversation?.id;
     if (id) openConversation(id);
   }
 
+  function renderGroupChips() {
+    if (!groupChipsEl) return;
+    if (!groupPicks.length) {
+      groupChipsEl.hidden = true;
+      groupChipsEl.innerHTML = '';
+      return;
+    }
+    groupChipsEl.hidden = false;
+    groupChipsEl.innerHTML = groupPicks.map((u) =>
+      `<span class="chat-chip">${esc(u)}<button type="button" data-rm="${esc(u)}" aria-label="Remove ${esc(u)}">×</button></span>`
+    ).join('');
+    groupChipsEl.querySelectorAll('[data-rm]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        groupPicks = groupPicks.filter((x) => x !== btn.dataset.rm);
+        renderGroupChips();
+      });
+    });
+  }
+
+  function addGroupPick(username) {
+    const name = (username || '').trim();
+    if (!name || name === me || groupPicks.includes(name)) return;
+    groupPicks.push(name);
+    renderGroupChips();
+    if (newUserInput) newUserInput.value = '';
+    hideUserSuggest();
+  }
+
+  function setNewMode(mode) {
+    newMode = mode === 'group' ? 'group' : 'dm';
+    document.querySelectorAll('.chat-new-tab').forEach((btn) => {
+      const on = btn.dataset.new === newMode;
+      btn.classList.toggle('is-on', on);
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    if (groupFields) groupFields.hidden = newMode !== 'group';
+    if (startBtn) startBtn.hidden = newMode !== 'dm';
+    if (groupCreateBtn) groupCreateBtn.hidden = newMode !== 'group';
+    if (newUserInput) newUserInput.placeholder = newMode === 'group' ? 'Add people…' : 'Find people…';
+  }
+
+  function setNewPanel(open) {
+    if (!newPanel) return;
+    newPanel.hidden = !open;
+    if (open) {
+      setNewMode(newMode);
+      newUserInput?.focus();
+    } else {
+      hideUserSuggest();
+    }
+  }
+
   async function createGroup() {
     const title = qs('#chatGroupTitle')?.value.trim() || 'Group';
-    const members = (qs('#chatGroupMembers')?.value || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const members = groupPicks.slice();
+    if (!members.length) {
+      alert('Add at least one person.');
+      return;
+    }
     const data = await api('/api/chat/conversations', {
       method: 'POST',
       body: JSON.stringify({ title, members }),
     });
-    qs('#chatGroupModal')?.close();
+    groupPicks = [];
+    renderGroupChips();
+    if (qs('#chatGroupTitle')) qs('#chatGroupTitle').value = '';
+    setNewPanel(false);
     await loadConversations();
     if (data.conversation?.id) openConversation(data.conversation.id);
   }
@@ -878,32 +1206,38 @@
     await loadConversations();
   }
 
-  async function searchUsers(q) {
-    if (!userSuggest) return;
+  async function searchUsers(q, suggestEl, onPick) {
+    const box = suggestEl || userSuggest;
+    if (!box) return;
     const query = (q || '').trim();
     if (query.length < 2) {
-      hideUserSuggest();
+      box.classList.add('hidden');
+      box.innerHTML = '';
       return;
     }
     try {
       const data = await api(`/api/users/search?q=${encodeURIComponent(query)}`);
       const users = (data.users || []).filter((u) => u.username !== me);
       if (!users.length) {
-        hideUserSuggest();
+        box.classList.add('hidden');
+        box.innerHTML = '';
         return;
       }
-      userSuggest.innerHTML = users.map((u) =>
+      box.innerHTML = users.map((u) =>
         `<button type="button" class="w-full text-left px-3 py-2 hover:bg-base-200" data-user="${esc(u.username)}">${esc(u.username)}</button>`
       ).join('');
-      userSuggest.classList.remove('hidden');
-      userSuggest.querySelectorAll('[data-user]').forEach((btn) => {
+      box.classList.remove('hidden');
+      box.querySelectorAll('[data-user]').forEach((btn) => {
         btn.addEventListener('click', () => {
-          if (newUserInput) newUserInput.value = btn.dataset.user || '';
-          hideUserSuggest();
+          const name = btn.dataset.user || '';
+          if (onPick) onPick(name);
+          else if (newMode === 'group') addGroupPick(name);
+          else startConversation(name).catch((err) => alert(err.message));
         });
       });
-    } catch (_) {
-      hideUserSuggest();
+    } catch (err) {
+      console.debug('user search failed', err);
+      box.classList.add('hidden');
     }
   }
 
@@ -946,32 +1280,26 @@
   });
   searchInput?.addEventListener('input', () => {
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => runSearch(searchInput.value).catch(() => { /* */ }), 280);
+    searchTimer = setTimeout(() => runSearch(searchInput.value).catch((err) => {
+      console.debug('chat search failed', err);
+    }), 280);
   });
 
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.chat-new-user-wrap')) hideUserSuggest();
+    if (!e.target.closest('#chatMemberModal')) memberSuggest?.classList.add('hidden');
   });
 
   const ENTER_SEND_KEY = 'aird-chat-enter-to-send';
-  const enterToSendEl = qs('#chatEnterToSend');
 
   function enterToSendEnabled() {
-    if (enterToSendEl) return enterToSendEl.checked;
-    return true;
-  }
-
-  if (enterToSendEl) {
     const stored = localStorage.getItem(ENTER_SEND_KEY);
-    enterToSendEl.checked = stored === null ? true : stored === '1';
-    enterToSendEl.addEventListener('change', () => {
-      localStorage.setItem(ENTER_SEND_KEY, enterToSendEl.checked ? '1' : '0');
-    });
+    return stored === null ? true : stored === '1';
   }
 
   async function sendEditorMessage() {
     if (!activeConvId || !editor) return;
-    const hasText = (editor.innerText || '').replace(/\u00a0/g, ' ').trim().length > 0;
+    const hasText = (editor.innerText || '').replaceAll('\u00a0', ' ').trim().length > 0;
     if (!hasText && !pending.length) return;
     const body = editor.innerHTML.trim();
     const reply = replyToId;
@@ -979,16 +1307,17 @@
     let mentions = [];
     if (hasText) {
       if (!E2E?.ready()) {
-        alert('Encrypted chat is not ready on this device.');
+        setE2eStatus('Setting up encryption…');
         return;
       }
       try {
-        await e2eReady(activeConvId);
+        const ok = await e2eReady(activeConvId);
+        if (!ok) return;
         const html = E2E.sanitizeHtml(body);
         e2e = await E2E.encrypt(activeConvId, html);
         mentions = extractMentions(html, activeConv());
       } catch (err) {
-        alert(err.message);
+        setE2eStatus(err.message || 'Could not encrypt this message.');
         return;
       }
     }
@@ -1119,7 +1448,9 @@
       const at = text.split(/\s/).pop() || '';
       const tokenInfo = caretPathToken();
       if (tokenInfo && looksLikePath(tokenInfo.token)) {
-        updateComposerPathSuggest(tokenInfo).catch(() => {});
+        updateComposerPathSuggest(tokenInfo).catch((err) => {
+          console.debug('path suggest update failed', err);
+        });
         return;
       }
       hidePathSuggest();
@@ -1131,7 +1462,8 @@
           mentionSuggest.classList.remove('hidden');
           mentionSuggest.querySelectorAll('[data-user]').forEach((btn) => {
             btn.addEventListener('click', () => {
-              editor.innerHTML = `${editor.innerHTML.replace(/@[\w.\-@]*$/, '')}@${btn.dataset.user}&nbsp;`;
+              const prefix = editor.innerHTML.replace(/@[\w.\-@]*$/, '');
+              editor.innerHTML = prefix + '@' + btn.dataset.user + '&nbsp;';
               mentionSuggest.classList.add('hidden');
               editor.focus();
             });
@@ -1143,14 +1475,31 @@
     });
   });
 
+  // document.execCommand is deprecated but remains the most reliable option for
+  // contenteditable toolbar formatting across browsers.
+  function execEditorCommand(cmd, value) {
+    document.execCommand(cmd, false, value ?? null);
+  }
+
+  function insertTextAtCaret(text) {
+    const sel = window.getSelection();
+    if (!sel?.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(document.createTextNode(text));
+    range.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
   document.querySelectorAll('.chat-toolbar [data-cmd], [data-cmd]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const cmd = btn.dataset.cmd;
       if (cmd === 'link') {
         const url = prompt('URL');
-        if (url) document.execCommand('createLink', false, url);
+        if (url) execEditorCommand('createLink', url);
       } else if (cmd) {
-        document.execCommand(cmd, false, null);
+        execEditorCommand(cmd);
       }
       editor?.focus();
     });
@@ -1163,7 +1512,7 @@
   function insertEmoji(ch) {
     if (!editor) return;
     editor.focus();
-    document.execCommand('insertText', false, ch);
+    insertTextAtCaret(ch);
   }
 
   function hideEmojiPicker() {
@@ -1266,7 +1615,7 @@
   }
 
   function trimBrowsePath(path) {
-    let s = String(path || '').trim().replace(/\\/g, '/');
+    let s = String(path || '').trim().replaceAll('\\', '/');
     while (s.startsWith('/')) s = s.slice(1);
     while (s.endsWith('/')) s = s.slice(0, -1);
     return s;
@@ -1294,7 +1643,7 @@
   }
 
   function parsePathInput(raw) {
-    let s = String(raw || '').replace(/\\/g, '/').trim();
+    let s = String(raw || '').replaceAll('\\', '/').trim();
     if (s.startsWith('~/')) s = s.slice(2);
     while (s.startsWith('/')) s = s.slice(1);
     const dirEnds = !s || s.endsWith('/');
@@ -1311,7 +1660,7 @@
 
   function sameBrowseValue(a, b) {
     const norm = (v) => {
-      const s = String(v || '').replace(/\\/g, '/').trim();
+      const s = String(v || '').replaceAll('\\', '/').trim();
       const slash = s.endsWith('/') && s !== '/';
       const rel = normalizeRel(s);
       return `${rel}${slash ? '/' : ''}`;
@@ -1456,7 +1805,7 @@
   function bellPathInput() {
     if (!browsePathEl) return;
     browsePathEl.classList.remove('chat-browse-path--miss');
-    void browsePathEl.offsetWidth;
+    browsePathEl.getBoundingClientRect();
     browsePathEl.classList.add('chat-browse-path--miss');
   }
 
@@ -1553,9 +1902,9 @@
       }
     }
     if (!left) left = editor.innerText || editor.textContent || '';
-    left = left.replace(/\u00a0/g, ' ').replace(/\r/g, '');
+    left = left.replaceAll('\u00a0', ' ').replaceAll('\r', '');
     const line = left.split('\n').pop() || '';
-    const m = line.match(/([^\s]+)$/);
+    const m = /([^\s]+)$/.exec(line);
     if (!m) return null;
     return { token: m[1], start: left.length - m[1].length, end: left.length };
   }
@@ -1594,7 +1943,7 @@
       const text = node.textContent || '';
       const offset = sel.anchorOffset;
       const left = text.slice(0, offset);
-      const m = left.match(/([^\s]+)$/);
+      const m = /([^\s]+)$/.exec(left);
       if (m) {
         const start = offset - m[1].length;
         node.textContent = `${text.slice(0, start)}${next}${text.slice(offset)}`;
@@ -1606,7 +1955,7 @@
         return;
       }
     }
-    const raw = (editor.innerText || '').replace(/\u00a0/g, ' ');
+    const raw = (editor.innerText || '').replaceAll('\u00a0', ' ');
     const start = info?.start ?? Math.max(0, raw.length - (info?.token || '').length);
     const end = info?.end ?? raw.length;
     editor.textContent = `${raw.slice(0, start)}${next}${raw.slice(end)}`;
@@ -1732,10 +2081,21 @@
     if (next) renderPathSuggest(next);
   }
 
-  fileInput?.addEventListener('change', () => attachUpload(fileInput));
-  gifInput?.addEventListener('change', () => attachUpload(gifInput));
+  function closeAttachMenu() {
+    qs('.chat-attach-menu')?.removeAttribute('open');
+  }
+
+  fileInput?.addEventListener('change', () => {
+    closeAttachMenu();
+    attachUpload(fileInput);
+  });
+  gifInput?.addEventListener('change', () => {
+    closeAttachMenu();
+    attachUpload(gifInput);
+  });
   browseBtn?.addEventListener('click', () => {
     if (!activeConvId) return;
+    closeAttachMenu();
     dirCache.clear();
     browseModal?.showModal();
     loadBrowseDir('').then(() => {
@@ -1774,13 +2134,44 @@
   browsePathEl?.addEventListener('input', () => {
     clearTimeout(browseInputTimer);
     browseInputTimer = setTimeout(() => {
-      onBrowseInput().catch(() => {});
+      onBrowseInput().catch((err) => { console.debug('browse input failed', err); });
     }, 80);
   });
   startBtn?.addEventListener('click', () => startConversation().catch((err) => alert(err.message)));
-  qs('#chatGroupBtn')?.addEventListener('click', () => qs('#chatGroupModal')?.showModal());
-  qs('#chatGroupCancel')?.addEventListener('click', () => qs('#chatGroupModal')?.close());
-  qs('#chatGroupCreate')?.addEventListener('click', () => createGroup().catch((e) => alert(e.message)));
+  newBtn?.addEventListener('click', () => setNewPanel(newPanel?.hidden !== false));
+  document.querySelectorAll('.chat-new-tab').forEach((btn) => {
+    btn.addEventListener('click', () => setNewMode(btn.dataset.new));
+  });
+  groupCreateBtn?.addEventListener('click', () => createGroup().catch((e) => alert(e.message)));
+  newUserInput?.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (newMode === 'group') addGroupPick(newUserInput.value);
+    else startConversation().catch((err) => alert(err.message));
+  });
+  memberUserInput?.addEventListener('input', () => {
+    clearTimeout(userSearchTimer);
+    userSearchTimer = setTimeout(() => {
+      searchUsers(memberUserInput.value, memberSuggest, (name) => {
+        addMember(activeConv(), name).catch((err) => alert(err.message));
+      });
+    }, 250);
+  });
+  qs('#chatMemberCancel')?.addEventListener('click', () => memberModal?.close());
+  qs('#chatMemberAdd')?.addEventListener('click', () => {
+    const conv = activeConv();
+    if (conv) addMember(conv).catch((e) => alert(e.message));
+  });
+  memberUserInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const conv = activeConv();
+      if (conv) addMember(conv).catch((err) => alert(err.message));
+    }
+  });
+  messagesEl?.addEventListener('scroll', () => {
+    if (messagesEl.scrollTop < 64) loadOlderMessages();
+  });
   qs('#chatReplyCancel')?.addEventListener('click', clearReply);
   qs('#chatForwardCancel')?.addEventListener('click', () => qs('#chatForwardModal')?.close());
   qs('#chatForwardSend')?.addEventListener('click', () => sendForward().catch((e) => alert(e.message)));
@@ -1821,7 +2212,7 @@
     try {
       const data = await api('/api/chat/unread');
       updateNavBadge(data.total || 0);
-    } catch (_) { /* */ }
+    } catch (err) { console.debug('nav badge unread fetch failed', err); }
   }
 
   function boot() {
@@ -1833,11 +2224,6 @@
     }
     const start = async () => {
       if (E2E && me) {
-        const KB = globalThis.AirdChatKeyBackup;
-        if (KB?.tryRestoreFromConfiguredPath) {
-          const restored = await KB.tryRestoreFromConfiguredPath(me);
-          if (restored) return;
-        }
         try { await E2E.init(me, api); } catch (err) { console.warn('chat e2e', err); }
       }
       await loadConversations();

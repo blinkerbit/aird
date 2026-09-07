@@ -70,21 +70,7 @@ def test_save_folder_map(db):
     assert od_db.list_maps(db, "alice") == []
 
 
-def test_sync_skips_unchanged_and_uploads_new(db, tmp_path):
-    set_assignment(db, PLUGIN_ONEDRIVE, SCOPE_ALL)
-    data = tmp_path / "alice" / "data"
-    data.mkdir(parents=True)
-    target = data / "notes.txt"
-    target.write_text("hello", encoding="utf-8")
-    st = target.stat()
-    od_db.save_map(db, "alice", local_path="notes.txt", remote_path="inbox")
-    uploaded = CloudFile(id="remote1", name="notes.txt", is_dir=False)
-
-    def fake_upload(stream, *, drive_path, size=None, content_type=None, conflict="replace"):
-        assert drive_path.endswith("inbox/notes.txt")
-        assert conflict == "replace"
-        assert stream.read() == b"hello"
-        return uploaded
+def test_provider_get_item_missing_returns_none():
     provider = OneDriveProvider("tok")
     mock_resp = MagicMock()
     mock_resp.status_code = 404
@@ -106,11 +92,11 @@ def test_sync_skips_unchanged_and_uploads_new(db, tmp_path):
     target = data / "notes.txt"
     target.write_text("hello", encoding="utf-8")
     st = target.stat()
-    od_db.save_rules(db, "alice", paths=["notes.txt"], include_untracked=False, include_aird_config=False)
+    od_db.save_map(db, "alice", local_path="notes.txt", remote_path="inbox")
     uploaded = CloudFile(id="remote1", name="notes.txt", is_dir=False)
 
     def fake_upload(stream, *, drive_path, size=None, content_type=None, conflict="replace"):
-        assert drive_path.endswith("files/notes.txt")
+        assert drive_path.endswith("inbox/notes.txt")
         assert conflict == "replace"
         assert stream.read() == b"hello"
         return uploaded

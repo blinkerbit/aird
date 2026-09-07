@@ -1,8 +1,8 @@
 'use strict';
 
-import { registerRowMoreAction } from '/static/js/browse/row-more-menu.js';
-import { showDialog } from '/static/js/browse/util.js';
-import { runWithAuth, savePendingAction } from '/static/js/onedrive-fe/index.js';
+import { registerRowMoreAction } from './row-more-menu.js';
+import { showDialog } from './util.js';
+import { runWithAuth, savePendingAction } from '../onedrive-fe/index.js';
 
 function itemsFromCtx(ctx) {
   if (!ctx?.path) return [];

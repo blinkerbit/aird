@@ -3,9 +3,55 @@
 import {
   getMaxFileSize,
   showDialog,
-} from '/static/js/browse/util.js';
-import { friendlyUploadErrorMessage } from '/static/js/browse/upload-errors.js';
-import { reflectUploadInListing } from '/static/js/browse/listing.js';
+} from './util.js';
+import { friendlyUploadErrorMessage } from './upload-errors.js';
+import { reflectUploadInListing } from './listing.js';
+
+function onUploadSuccess(job) {
+  reflectUploadInListing({
+    file: job.file,
+    uploadDir: job.uploadDir,
+    uploadName: job.filename,
+  });
+}
+
+function onUploadError(_job, err) {
+  showDialog(friendlyUploadErrorMessage(err), 'Upload failed');
+}
+
+async function readAllEntries(reader) {
+  const results = [];
+  let batch;
+  do {
+    batch = await new Promise((res) => reader.readEntries(res));
+    results.push(...batch);
+  } while (batch.length > 0);
+  return results;
+}
+
+function getFileFromEntry(entry) {
+  return new Promise((resolve, reject) => entry.file(resolve, reject));
+}
+
+async function traverseEntries(entries, pathPrefix) {
+  const result = [];
+  for (const entry of entries) {
+    if (entry.isFile) {
+      try {
+        const file = await getFileFromEntry(entry);
+        result.push({ file, relativePath: pathPrefix + file.name });
+      } catch (e) {
+        console.warn('Skipping unreadable entry:', e);
+      }
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const children = await readAllEntries(reader);
+      const sub = await traverseEntries(children, pathPrefix + entry.name + '/');
+      result.push(...sub);
+    }
+  }
+  return result;
+}
 
 export function initUploadUi() {
   const uploadZone = document.getElementById('uploadZone');
@@ -13,18 +59,6 @@ export function initUploadUi() {
   const TM = globalThis.AirdTransferManager;
 
   if (!uploadZone || !fileInput || !TM?.enqueueUpload) return;
-
-  function onUploadSuccess(job) {
-    reflectUploadInListing({
-      file: job.file,
-      uploadDir: job.uploadDir,
-      uploadName: job.filename,
-    });
-  }
-
-  function onUploadError(_job, err) {
-    showDialog(friendlyUploadErrorMessage(err), 'Upload failed');
-  }
 
   function enqueueFiles(files, uploadDir, uploadName) {
     for (const file of files) {
@@ -70,40 +104,6 @@ export function initUploadUi() {
   fileInput.addEventListener('change', (e) => {
     handlePlainFiles(e.target.files);
   });
-
-  async function readAllEntries(reader) {
-    const results = [];
-    let batch;
-    do {
-      batch = await new Promise((res) => reader.readEntries(res));
-      results.push(...batch);
-    } while (batch.length > 0);
-    return results;
-  }
-
-  function getFileFromEntry(entry) {
-    return new Promise((resolve, reject) => entry.file(resolve, reject));
-  }
-
-  async function traverseEntries(entries, pathPrefix) {
-    const result = [];
-    for (const entry of entries) {
-      if (entry.isFile) {
-        try {
-          const file = await getFileFromEntry(entry);
-          result.push({ file, relativePath: pathPrefix + file.name });
-        } catch (e) {
-          console.warn('Skipping unreadable entry:', e);
-        }
-      } else if (entry.isDirectory) {
-        const reader = entry.createReader();
-        const children = await readAllEntries(reader);
-        const sub = await traverseEntries(children, pathPrefix + entry.name + '/');
-        result.push(...sub);
-      }
-    }
-    return result;
-  }
 
   function handleFilesWithPaths(filesWithPaths) {
     if (filesWithPaths.length === 0) return;

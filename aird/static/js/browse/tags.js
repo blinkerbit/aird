@@ -1,6 +1,6 @@
 "use strict";
 
-import { SelectionStore } from '/static/js/browse/selection-store.js';
+import { SelectionStore } from './selection-store.js';
 import {
   getCanTag,
   getTagColors,
@@ -8,22 +8,22 @@ import {
   escapeAttr,
   showDialog,
   pathBasename,
-} from '/static/js/browse/util.js';
+} from './util.js';
 import {
   applyTagRules,
   deleteTagRuleIds,
   fetchAllTagRules,
   tagsOnPath,
-} from '/static/js/browse/tag-api.js';
+} from './tag-api.js';
 
 function tagChipStyleAttr(tagName) {
   const hex = getTagColors()[tagName];
   if (!hex || typeof hex !== 'string') return '';
   const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
   if (!m) return '';
-  const r = parseInt(m[1].slice(0, 2), 16);
-  const g = parseInt(m[1].slice(2, 4), 16);
-  const b = parseInt(m[1].slice(4, 6), 16);
+  const r = Number.parseInt(m[1].slice(0, 2), 16);
+  const g = Number.parseInt(m[1].slice(2, 4), 16);
+  const b = Number.parseInt(m[1].slice(4, 6), 16);
   const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   const fg = lum > 0.55 ? '#111827' : '#f9fafb';
   return ' style="background:' + hex + ';color:' + fg + ';border-color:color-mix(in oklch, '

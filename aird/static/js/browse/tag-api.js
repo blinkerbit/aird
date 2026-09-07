@@ -1,6 +1,6 @@
 "use strict";
 
-import { getXSRFToken } from '/static/js/browse/util.js';
+import { getXSRFToken } from './util.js';
 
 export async function postTagRule(tag, globPattern) {
   const res = await fetch('/admin/api/abac/tags', {

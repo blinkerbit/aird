@@ -99,6 +99,147 @@ def _get_user_service(handler) -> Any:
 
 _VALID_TRANSFER_PROFILES = ("cloudflare", "wireguard", "open")
 
+_ADMIN_FEATURE_FLAG_NAMES = (
+    "file_upload",
+    "file_delete",
+    "file_rename",
+    "file_download",
+    "file_edit",
+    "file_share",
+    "super_search",
+    "compression",
+    "p2p_transfer",
+    "favorites",
+    "storage_quotas",
+    "email_notifications",
+    "transfer_sendfile",
+    "folder_create",
+    "folder_delete",
+    "allow_simple_passwords",
+    "abac_engine",
+    "abac_audit_decisions",
+    "webauthn",
+    "onedrive_backup",
+    "onedrive_browser",
+    "smb_server",
+    "webdav_server",
+)
+
+
+def _admin_checkbox(handler: BaseHandler, name: str) -> bool:
+    return handler.get_argument(name, "off") == "on"
+
+
+def _apply_admin_feature_flags(handler: BaseHandler) -> str:
+    for name in _ADMIN_FEATURE_FLAG_NAMES:
+        FEATURE_FLAGS[name] = _admin_checkbox(handler, name)
+    plugin_notice = ""
+    direct_messages_requested = _admin_checkbox(handler, "direct_messages")
+    if direct_messages_requested and not chat_library_available():
+        FEATURE_FLAGS["direct_messages"] = False
+        plugin_notice = "chat_package_required"
+    else:
+        FEATURE_FLAGS["direct_messages"] = direct_messages_requested
+    gitlab_requested = _admin_checkbox(handler, "gitlab_integration")
+    if gitlab_requested and not gitlab_library_available():
+        FEATURE_FLAGS["gitlab_integration"] = False
+        plugin_notice = plugin_notice or "gitlab_package_required"
+    else:
+        FEATURE_FLAGS["gitlab_integration"] = gitlab_requested
+    return plugin_notice
+
+
+def _apply_admin_websocket_config(handler: BaseHandler) -> None:
+    websocket_config = {}
+    try:
+        websocket_config["feature_flags_max_connections"] = max(
+            1,
+            min(1000, int(handler.get_argument("feature_flags_max_connections", "50"))),
+        )
+        websocket_config["feature_flags_idle_timeout"] = max(
+            30,
+            min(7200, int(handler.get_argument("feature_flags_idle_timeout", "600"))),
+        )
+        websocket_config["file_streaming_max_connections"] = max(
+            1,
+            min(
+                1000,
+                int(handler.get_argument("file_streaming_max_connections", "200")),
+            ),
+        )
+        websocket_config["file_streaming_idle_timeout"] = max(
+            30,
+            min(7200, int(handler.get_argument("file_streaming_idle_timeout", "300"))),
+        )
+        websocket_config["search_max_connections"] = max(
+            1, min(1000, int(handler.get_argument("search_max_connections", "100")))
+        )
+        websocket_config["search_idle_timeout"] = max(
+            30, min(7200, int(handler.get_argument("search_idle_timeout", "180")))
+        )
+        WEBSOCKET_CONFIG.update(websocket_config)
+    except (ValueError, TypeError):
+        pass
+
+
+def _apply_admin_upload_config(
+    handler: BaseHandler, requested_profile: str, profile_changed: bool
+) -> None:
+    try:
+        max_file_size_mb = max(1, int(handler.get_argument("max_file_size_mb", "10240")))
+        UPLOAD_CONFIG["max_file_size_mb"] = max_file_size_mb
+        if profile_changed:
+            constants_module.apply_transfer_profile_defaults(requested_profile)
+        else:
+            single_request_max_mb = int(
+                handler.get_argument(
+                    "single_request_max_mb",
+                    str(UPLOAD_CONFIG.get("single_request_max_mb", 100)),
+                )
+            )
+            if single_request_max_mb <= 0:
+                UPLOAD_CONFIG["single_request_max_mb"] = 0
+            else:
+                UPLOAD_CONFIG["single_request_max_mb"] = min(
+                    single_request_max_mb, max_file_size_mb
+                )
+            range_chunk_mb = max(
+                4,
+                min(
+                    200,
+                    int(
+                        handler.get_argument(
+                            "range_chunk_mb",
+                            str(UPLOAD_CONFIG.get("range_chunk_mb", 90)),
+                        )
+                    ),
+                ),
+            )
+            UPLOAD_CONFIG["range_chunk_mb"] = range_chunk_mb
+            UPLOAD_CONFIG["range_upload_concurrency"] = max(
+                1,
+                min(
+                    64,
+                    int(
+                        handler.get_argument(
+                            "range_upload_concurrency",
+                            str(
+                                UPLOAD_CONFIG.get("range_upload_concurrency", 16)
+                            ),
+                        )
+                    ),
+                ),
+            )
+        ws_chunk_mb = max(1, min(200, int(handler.get_argument("ws_chunk_mb", "90"))))
+        UPLOAD_CONFIG["ws_chunk_mb"] = ws_chunk_mb
+        constants_module.set_transfer_profile(requested_profile)
+        constants_module.refresh_upload_derived_constants()
+        UPLOAD_CONFIG["allow_all_file_types"] = (
+            1 if handler.get_argument("allow_all_file_types", "off") == "on" else 0
+        )
+    except (ValueError, TypeError):
+        pass
+
 
 def _resolve_transfer_profile_submission(
     handler: BaseHandler, current_runtime: dict
@@ -117,6 +258,138 @@ def _resolve_transfer_profile_submission(
     if requested not in _VALID_TRANSFER_PROFILES:
         return None, False
     return requested, submitted and configured != requested
+
+
+def _persist_admin_runtime_config(
+    handler: BaseHandler, requested_profile: str
+) -> dict | None:
+    """Persist admin form config to DB. Return runtime payload or None."""
+    db_conn = handler.db_conn
+    if db_conn is None:
+        return None
+    cfg = handler.get_service("config_service")
+    cfg.save_feature_flags(db_conn, FEATURE_FLAGS)
+    persisted_flags = cfg.load_feature_flags(db_conn)
+    if persisted_flags:
+        FEATURE_FLAGS.update(persisted_flags)
+    invalidate_feature_flags_cache()
+    cfg.save_websocket_config(db_conn, WEBSOCKET_CONFIG)
+    invalidate_websocket_config_cache()
+    cfg.save_upload_config(db_conn, UPLOAD_CONFIG)
+    cfg.sync_upload_config_from_db(db_conn)
+    cfg.save_transfer_limits(db_conn, TRANSFER_CONFIG)
+    cfg.save_compression_config(db_conn, COMPRESSION_CONFIG)
+    runtime_config = cfg.save_transfer_profile(db_conn, requested_profile)
+    if not UPLOAD_CONFIG.get("allow_all_file_types"):
+        selected_extensions = {
+            e for e in handler.get_arguments("allow_ext") if e and e.startswith(".")
+        }
+        cfg.save_allowed_extensions(db_conn, selected_extensions)
+        constants_module.UPLOAD_ALLOWED_EXTENSIONS = selected_extensions
+    return runtime_config if isinstance(runtime_config, dict) else None
+
+
+def _runtime_payload_or_fallback(runtime_config: dict | None) -> dict:
+    if isinstance(runtime_config, dict):
+        return runtime_config
+    try:
+        runtime_payload = constants_module.get_effective_transfer_strategy()
+    except Exception:
+        runtime_payload = {}
+    return runtime_payload if isinstance(runtime_payload, dict) else {}
+
+
+def _parse_plugin_usernames(raw: str) -> list[str]:
+    from aird.constants.input_limits import PLUGIN_MAX_USERNAMES, PLUGIN_USERNAME_MAX_LEN
+
+    names: list[str] = []
+    seen: set[str] = set()
+    for part in (raw or "").replace(",", " ").split():
+        name = part.strip()
+        if not name or len(name) > PLUGIN_USERNAME_MAX_LEN or name in seen:
+            continue
+        seen.add(name)
+        names.append(name)
+        if len(names) >= PLUGIN_MAX_USERNAMES:
+            break
+    return names
+
+
+def _save_plugin_scope_assignments(handler: BaseHandler, conn) -> None:
+    from aird.plugins.access import (
+        SCOPE_ALL,
+        SCOPE_NONE,
+        SCOPE_USERS,
+        catalog,
+        set_assignment,
+    )
+
+    allowed = {SCOPE_NONE, SCOPE_ALL, SCOPE_USERS}
+    for item in catalog():
+        pid = item["id"]
+        scope = (handler.get_argument(f"scope_{pid}", SCOPE_NONE) or SCOPE_NONE).strip()
+        if scope not in allowed:
+            scope = SCOPE_NONE
+        names = _parse_plugin_usernames(handler.get_argument(f"usernames_{pid}", "") or "")
+        set_assignment(conn, pid, scope, names)
+
+
+def _save_onedrive_plugin_settings(handler: BaseHandler, conn) -> None:
+    from aird.plugins.onedrive.settings import (
+        clear_token_blob,
+        save_settings,
+        save_stored_access_token,
+    )
+    from aird.plugins.onedrive_browser.settings import save_settings as save_browser_settings
+
+    save_settings(
+        conn,
+        root_path=handler.get_argument("onedrive_root_path", "") or "",
+        sync_interval_minutes=handler.get_argument("onedrive_sync_interval", "") or 10,
+        auth_source=handler.get_argument("onedrive_auth_source", "") or "",
+        client_id=handler.get_argument("onedrive_client_id", "") or "",
+        tenant=handler.get_argument("onedrive_tenant", "") or "common",
+        token_env_var=handler.get_argument("onedrive_token_env_var", "") or "",
+    )
+    if handler.get_argument("onedrive_token_clear", "") == "1":
+        clear_token_blob(conn)
+    od_token = (handler.get_argument("onedrive_token", "") or "").strip()
+    if od_token:
+        save_stored_access_token(conn, od_token)
+    save_browser_settings(
+        conn,
+        client_id=handler.get_argument("onedrive_browser_client_id", "") or "",
+        tenant=handler.get_argument("onedrive_browser_tenant", "") or "common",
+    )
+
+
+def _save_gitlab_plugin_settings(handler: BaseHandler, conn) -> None:
+    import json as _json
+
+    from aird.plugins.gitlab.settings import (
+        clear_stored_token,
+        normalize_boards,
+        save_settings as save_gitlab_settings,
+        save_stored_token,
+    )
+
+    boards_raw = handler.get_argument("gitlab_boards_json", "") or "[]"
+    try:
+        boards = normalize_boards(_json.loads(boards_raw))
+    except (TypeError, ValueError, _json.JSONDecodeError):
+        boards = []
+    save_gitlab_settings(
+        conn,
+        default_host=handler.get_argument("gitlab_default_host", "") or "",
+        boards=boards,
+        token_source=handler.get_argument("gitlab_token_source", "") or "",
+        token_env_var=handler.get_argument("gitlab_token_env_var", "") or "",
+    )
+    if handler.get_argument("gitlab_token_clear", "") == "1":
+        clear_stored_token(conn)
+    token = (handler.get_argument("gitlab_token", "") or "").strip()
+    if token:
+        save_stored_token(conn, token)
 
 
 class AdminHandler(BaseHandler):
@@ -173,216 +446,17 @@ class AdminHandler(BaseHandler):
             self.write("Invalid transfer profile")
             return
 
-        FEATURE_FLAGS["file_upload"] = self.get_argument("file_upload", "off") == "on"
-        FEATURE_FLAGS["file_delete"] = self.get_argument("file_delete", "off") == "on"
-        FEATURE_FLAGS["file_rename"] = self.get_argument("file_rename", "off") == "on"
-        FEATURE_FLAGS["file_download"] = (
-            self.get_argument("file_download", "off") == "on"
-        )
-        FEATURE_FLAGS["file_edit"] = self.get_argument("file_edit", "off") == "on"
-        FEATURE_FLAGS["file_share"] = self.get_argument("file_share", "off") == "on"
-        FEATURE_FLAGS["super_search"] = self.get_argument("super_search", "off") == "on"
-        FEATURE_FLAGS["compression"] = self.get_argument("compression", "off") == "on"
-        FEATURE_FLAGS["p2p_transfer"] = self.get_argument("p2p_transfer", "off") == "on"
-        FEATURE_FLAGS["favorites"] = self.get_argument("favorites", "off") == "on"
-        FEATURE_FLAGS["storage_quotas"] = (
-            self.get_argument("storage_quotas", "off") == "on"
-        )
-        FEATURE_FLAGS["email_notifications"] = (
-            self.get_argument("email_notifications", "off") == "on"
-        )
-        FEATURE_FLAGS["transfer_sendfile"] = (
-            self.get_argument("transfer_sendfile", "off") == "on"
-        )
-        FEATURE_FLAGS["folder_create"] = (
-            self.get_argument("folder_create", "off") == "on"
-        )
-        FEATURE_FLAGS["folder_delete"] = (
-            self.get_argument("folder_delete", "off") == "on"
-        )
-        FEATURE_FLAGS["allow_simple_passwords"] = (
-            self.get_argument("allow_simple_passwords", "off") == "on"
-        )
-        FEATURE_FLAGS["abac_engine"] = (
-            self.get_argument("abac_engine", "off") == "on"
-        )
-        FEATURE_FLAGS["abac_audit_decisions"] = (
-            self.get_argument("abac_audit_decisions", "off") == "on"
-        )
-        FEATURE_FLAGS["webauthn"] = self.get_argument("webauthn", "off") == "on"
-        plugin_notice = ""
-        direct_messages_requested = self.get_argument("direct_messages", "off") == "on"
-        if direct_messages_requested and not chat_library_available():
-            FEATURE_FLAGS["direct_messages"] = False
-            plugin_notice = "chat_package_required"
-        else:
-            FEATURE_FLAGS["direct_messages"] = direct_messages_requested
-        gitlab_requested = self.get_argument("gitlab_integration", "off") == "on"
-        if gitlab_requested and not gitlab_library_available():
-            FEATURE_FLAGS["gitlab_integration"] = False
-            plugin_notice = plugin_notice or "gitlab_package_required"
-        else:
-            FEATURE_FLAGS["gitlab_integration"] = gitlab_requested
-        FEATURE_FLAGS["onedrive_backup"] = (
-            self.get_argument("onedrive_backup", "off") == "on"
-        )
-        FEATURE_FLAGS["onedrive_browser"] = (
-            self.get_argument("onedrive_browser", "off") == "on"
-        )
-        FEATURE_FLAGS["smb_server"] = self.get_argument("smb_server", "off") == "on"
-        FEATURE_FLAGS["webdav_server"] = self.get_argument("webdav_server", "off") == "on"
+        plugin_notice = _apply_admin_feature_flags(self)
+        _apply_admin_websocket_config(self)
+        _apply_admin_upload_config(self, requested_profile, profile_changed)
 
-        # Update WebSocket configuration
-        websocket_config = {}
+        runtime_config = None
         try:
-            # Parse and validate WebSocket settings
-            websocket_config["feature_flags_max_connections"] = max(
-                1,
-                min(
-                    1000, int(self.get_argument("feature_flags_max_connections", "50"))
-                ),
-            )
-            websocket_config["feature_flags_idle_timeout"] = max(
-                30,
-                min(7200, int(self.get_argument("feature_flags_idle_timeout", "600"))),
-            )
-            websocket_config["file_streaming_max_connections"] = max(
-                1,
-                min(
-                    1000,
-                    int(self.get_argument("file_streaming_max_connections", "200")),
-                ),
-            )
-            websocket_config["file_streaming_idle_timeout"] = max(
-                30,
-                min(7200, int(self.get_argument("file_streaming_idle_timeout", "300"))),
-            )
-            websocket_config["search_max_connections"] = max(
-                1, min(1000, int(self.get_argument("search_max_connections", "100")))
-            )
-            websocket_config["search_idle_timeout"] = max(
-                30, min(7200, int(self.get_argument("search_idle_timeout", "180")))
-            )
-
-            # Update in-memory configuration
-            WEBSOCKET_CONFIG.update(websocket_config)
-
-        except (ValueError, TypeError):
-            # If parsing fails, use current values
-            pass
-
-        # Update upload configuration
-        try:
-            max_file_size_mb = max(
-                1, int(self.get_argument("max_file_size_mb", "10240"))
-            )
-            UPLOAD_CONFIG["max_file_size_mb"] = max_file_size_mb
-            if profile_changed:
-                constants_module.apply_transfer_profile_defaults(requested_profile)
-            else:
-                single_request_max_mb = int(
-                    self.get_argument(
-                        "single_request_max_mb",
-                        str(UPLOAD_CONFIG.get("single_request_max_mb", 100)),
-                    )
-                )
-                if single_request_max_mb <= 0:
-                    UPLOAD_CONFIG["single_request_max_mb"] = 0
-                else:
-                    UPLOAD_CONFIG["single_request_max_mb"] = min(
-                        single_request_max_mb, max_file_size_mb
-                    )
-                range_chunk_mb = max(
-                    4,
-                    min(
-                        200,
-                        int(
-                            self.get_argument(
-                                "range_chunk_mb",
-                                str(UPLOAD_CONFIG.get("range_chunk_mb", 90)),
-                            )
-                        ),
-                    ),
-                )
-                UPLOAD_CONFIG["range_chunk_mb"] = range_chunk_mb
-                UPLOAD_CONFIG["range_upload_concurrency"] = max(
-                    1,
-                    min(
-                        64,
-                        int(
-                            self.get_argument(
-                                "range_upload_concurrency",
-                                str(
-                                    UPLOAD_CONFIG.get(
-                                        "range_upload_concurrency", 16
-                                    )
-                                ),
-                            )
-                        ),
-                    ),
-                )
-            ws_chunk_mb = max(1, min(200, int(self.get_argument("ws_chunk_mb", "90"))))
-            UPLOAD_CONFIG["ws_chunk_mb"] = ws_chunk_mb
-            constants_module.set_transfer_profile(requested_profile)
-            constants_module.refresh_upload_derived_constants()
-            UPLOAD_CONFIG["allow_all_file_types"] = (
-                1 if self.get_argument("allow_all_file_types", "off") == "on" else 0
-            )
-        except (ValueError, TypeError):
-            pass
-
-        # Persist feature flags, WebSocket, and upload configuration
-        try:
-            db_conn = self.db_conn
-            if db_conn is not None:
-                self.get_service("config_service").save_feature_flags(
-                    db_conn, FEATURE_FLAGS
-                )
-                persisted_flags = self.get_service("config_service").load_feature_flags(
-                    db_conn
-                )
-                if persisted_flags:
-                    FEATURE_FLAGS.update(persisted_flags)
-                invalidate_feature_flags_cache()
-                self.get_service("config_service").save_websocket_config(
-                    db_conn, WEBSOCKET_CONFIG
-                )
-                invalidate_websocket_config_cache()
-                self.get_service("config_service").save_upload_config(
-                    db_conn, UPLOAD_CONFIG
-                )
-                self.get_service("config_service").sync_upload_config_from_db(db_conn)
-                self.get_service("config_service").save_transfer_limits(
-                    db_conn, TRANSFER_CONFIG
-                )
-                self.get_service("config_service").save_compression_config(
-                    db_conn, COMPRESSION_CONFIG
-                )
-                runtime_config = self.get_service(
-                    "config_service"
-                ).save_transfer_profile(db_conn, requested_profile)
-                # When "allow all file types" is off, persist selected extensions from checkboxes
-                if not UPLOAD_CONFIG.get("allow_all_file_types"):
-                    selected_extensions = {
-                        e
-                        for e in self.get_arguments("allow_ext")
-                        if e and e.startswith(".")
-                    }
-                    self.get_service("config_service").save_allowed_extensions(
-                        db_conn, selected_extensions
-                    )
-                    constants_module.UPLOAD_ALLOWED_EXTENSIONS = selected_extensions
+            runtime_config = _persist_admin_runtime_config(self, requested_profile)
         except Exception:
             logging.warning("admin config save failed", exc_info=True)
 
-        runtime_payload = locals().get("runtime_config")
-        if not isinstance(runtime_payload, dict):
-            try:
-                runtime_payload = constants_module.get_effective_transfer_strategy()
-            except Exception:
-                runtime_payload = {}
-            if not isinstance(runtime_payload, dict):
-                runtime_payload = {}
+        runtime_payload = _runtime_payload_or_fallback(runtime_config)
         FeatureFlagSocketHandler.send_updates()
         RuntimeConfigSocketHandler.send_updates(runtime_payload)
         if plugin_notice:
@@ -464,83 +538,14 @@ class AdminPluginsHandler(BaseHandler):
     @tornado.web.authenticated
     @require_admin(deny_status=HTTP_FORBIDDEN, deny_body=ACCESS_DENIED)
     def post(self):
-        from aird.constants.input_limits import PLUGIN_MAX_USERNAMES, PLUGIN_USERNAME_MAX_LEN
-        from aird.plugins.access import (
-            SCOPE_ALL,
-            SCOPE_NONE,
-            SCOPE_USERS,
-            catalog,
-            set_assignment,
-        )
-
         conn = self.db_conn
         if conn is None:
             self.set_status(503)
             self.write("Database not available")
             return
-        allowed = {SCOPE_NONE, SCOPE_ALL, SCOPE_USERS}
-        for item in catalog():
-            pid = item["id"]
-            scope = (self.get_argument(f"scope_{pid}", SCOPE_NONE) or SCOPE_NONE).strip()
-            if scope not in allowed:
-                scope = SCOPE_NONE
-            raw = self.get_argument(f"usernames_{pid}", "") or ""
-            names: list[str] = []
-            seen: set[str] = set()
-            for part in raw.replace(",", " ").split():
-                name = part.strip()
-                if not name or len(name) > PLUGIN_USERNAME_MAX_LEN or name in seen:
-                    continue
-                seen.add(name)
-                names.append(name)
-                if len(names) >= PLUGIN_MAX_USERNAMES:
-                    break
-            set_assignment(conn, pid, scope, names)
-        from aird.plugins.onedrive.settings import save_settings
-        from aird.plugins.onedrive_browser.settings import save_settings as save_browser_settings
-        from aird.plugins.gitlab.settings import normalize_boards, save_settings as save_gitlab_settings
-        import json as _json
-
-        save_settings(
-            conn,
-            root_path=self.get_argument("onedrive_root_path", "") or "",
-            sync_interval_minutes=self.get_argument("onedrive_sync_interval", "") or 10,
-            auth_source=self.get_argument("onedrive_auth_source", "") or "",
-            client_id=self.get_argument("onedrive_client_id", "") or "",
-            tenant=self.get_argument("onedrive_tenant", "") or "common",
-            token_env_var=self.get_argument("onedrive_token_env_var", "") or "",
-        )
-        from aird.plugins.onedrive.settings import clear_token_blob, save_stored_access_token
-
-        if self.get_argument("onedrive_token_clear", "") == "1":
-            clear_token_blob(conn)
-        od_token = (self.get_argument("onedrive_token", "") or "").strip()
-        if od_token:
-            save_stored_access_token(conn, od_token)
-        save_browser_settings(
-            conn,
-            client_id=self.get_argument("onedrive_browser_client_id", "") or "",
-            tenant=self.get_argument("onedrive_browser_tenant", "") or "common",
-        )
-        boards_raw = self.get_argument("gitlab_boards_json", "") or "[]"
-        try:
-            boards = normalize_boards(_json.loads(boards_raw))
-        except (TypeError, ValueError, _json.JSONDecodeError):
-            boards = []
-        save_gitlab_settings(
-            conn,
-            default_host=self.get_argument("gitlab_default_host", "") or "",
-            boards=boards,
-            token_source=self.get_argument("gitlab_token_source", "") or "",
-            token_env_var=self.get_argument("gitlab_token_env_var", "") or "",
-        )
-        from aird.plugins.gitlab.settings import clear_stored_token, save_stored_token
-
-        if self.get_argument("gitlab_token_clear", "") == "1":
-            clear_stored_token(conn)
-        token = (self.get_argument("gitlab_token", "") or "").strip()
-        if token:
-            save_stored_token(conn, token)
+        _save_plugin_scope_assignments(self, conn)
+        _save_onedrive_plugin_settings(self, conn)
+        _save_gitlab_plugin_settings(self, conn)
         selected = (self.get_argument("selected_plugin", "") or "").strip()
         suffix = f"&p={selected}" if selected else ""
         self.redirect(f"{URL_ADMIN_PLUGINS}?saved=1{suffix}")

@@ -98,6 +98,22 @@ def _add_local_path(ap, path_str, share_type, valid_paths, dynamic_folders):
                 logging.exception("Error scanning directory %s", path_str)
 
 
+def _append_request_path_entry(
+    entry, share_type, root_dir, mounts, valid_paths, dynamic_folders, remote_items
+) -> None:
+    path_str, is_cloud = _normalize_path_entry(entry)
+    if is_cloud:
+        if isinstance(entry, dict):
+            remote_items.append(entry)
+        return
+    if not path_str:
+        return
+    ap, confine = resolve_rel(root_dir, path_str, mounts)
+    if not ap or not confine or not is_within_root(ap, confine):
+        return
+    _add_local_path(ap, path_str, share_type, valid_paths, dynamic_folders)
+
+
 def _collect_paths_from_request(paths, share_type, root_dir=None, mounts=None):
     """Parse paths from request; return (valid_paths, dynamic_folders, remote_items)."""
     if root_dir is None:
@@ -105,18 +121,17 @@ def _collect_paths_from_request(paths, share_type, root_dir=None, mounts=None):
     valid_paths = []
     dynamic_folders = []
     remote_items = []
+    mount_list = mounts or []
     for entry in paths:
-        path_str, is_cloud = _normalize_path_entry(entry)
-        if is_cloud:
-            if isinstance(entry, dict):
-                remote_items.append(entry)
-            continue
-        if not path_str:
-            continue
-        ap, confine = resolve_rel(root_dir, path_str, mounts or [])
-        if not ap or not confine or not is_within_root(ap, confine):
-            continue
-        _add_local_path(ap, path_str, share_type, valid_paths, dynamic_folders)
+        _append_request_path_entry(
+            entry,
+            share_type,
+            root_dir,
+            mount_list,
+            valid_paths,
+            dynamic_folders,
+            remote_items,
+        )
     return valid_paths, dynamic_folders, remote_items
 
 
@@ -441,6 +456,26 @@ def _parse_paths_for_update(paths, share_id, requested_share_type, current_paths
     return (deduped_paths, new_cloud_paths, removed_via_override, None)
 
 
+def _validate_update_local_path_entry(
+    share_id, path_str, share_type: str, root_dir, mounts
+) -> tuple[int, dict] | None:
+    if is_cloud_relative_path(share_id, path_str):
+        return None
+    ap, confine = resolve_rel(root_dir, path_str, mounts)
+    if not ap or not confine or not is_within_root(ap, confine):
+        return (400, {"error": f"Invalid path: {path_str}"})
+    if share_type == "dynamic":
+        if not os.path.isdir(ap):
+            return (
+                400,
+                {"error": "Dynamic share paths must be existing directories"},
+            )
+        return None
+    if not (os.path.isfile(ap) or os.path.isdir(ap)):
+        return (400, {"error": f"Path not found: {path_str}"})
+    return None
+
+
 def _validate_update_local_paths(handler, share_id, path_strings, share_type: str):
     """Ensure local path strings exist under the user's root. Return (status, body) or None."""
     root_dir = get_user_root(handler)
@@ -448,19 +483,11 @@ def _validate_update_local_paths(handler, share_id, path_strings, share_type: st
         handler.db_conn, get_username_string_for_db(handler) or ""
     )
     for path_str in path_strings:
-        if is_cloud_relative_path(share_id, path_str):
-            continue
-        ap, confine = resolve_rel(root_dir, path_str, mounts)
-        if not ap or not confine or not is_within_root(ap, confine):
-            return (400, {"error": f"Invalid path: {path_str}"})
-        if share_type == "dynamic":
-            if not os.path.isdir(ap):
-                return (
-                    400,
-                    {"error": "Dynamic share paths must be existing directories"},
-                )
-        elif not (os.path.isfile(ap) or os.path.isdir(ap)):
-            return (400, {"error": f"Path not found: {path_str}"})
+        err = _validate_update_local_path_entry(
+            share_id, path_str, share_type, root_dir, mounts
+        )
+        if err is not None:
+            return err
     return None
 
 
@@ -1023,50 +1050,66 @@ class SharedListHandler(BaseHandler):
         )
 
 
+def _deny_shared_file_access(handler, share, sid, path) -> bool:
+    """Return True when an error response was written."""
+    if not share:
+        handler.set_status(404)
+        handler.write(INVALID_SHARE_LINK)
+        return True
+    if handler.get_service("share_service").is_expired(share.get("expiry_date")):
+        handler.set_status(410)
+        handler.write("Share expired: This share is no longer available")
+        return True
+    allowed_ok, redirect_to_verify, user_err = _check_share_access(
+        share, sid, handler.request, handler.get_cookie, handler.get_secure_cookie
+    )
+    if not allowed_ok:
+        if redirect_to_verify:
+            handler.set_status(403)
+            handler.write(ACCESS_TOKEN_INVALID_OR_EXPIRED)
+        else:
+            handler.set_status(user_err[0])
+            handler.write(user_err[1])
+        return True
+    if not _is_path_in_share(share, path, handler.db_conn):
+        handler.set_status(403)
+        handler.write("Access denied: This file is not part of the share")
+        return True
+    return False
+
+
+def _resolve_shared_file_abspath(handler, share, path):
+    """Return abspath when allowed, else write error and return None."""
+    rel = path.replace("\\", "/").lstrip("/")
+    norm = posixpath.normpath(rel)
+    if norm.startswith("..") or os.path.isabs(norm):
+        handler.set_status(403)
+        handler.write("Access denied: Invalid path")
+        return None
+    if norm != rel and not _is_path_in_share(share, norm, handler.db_conn):
+        handler.set_status(403)
+        handler.write("Access denied: This file is not part of the share")
+        return None
+    abspath, confine = resolve_share_rel(share, norm, handler.db_conn)
+    if not abspath or not confine or not is_within_root(abspath, confine):
+        handler.set_status(403)
+        handler.write("Access denied: Path outside share root")
+        return None
+    if not os.path.isfile(abspath):
+        handler.set_status(404)
+        return None
+    return abspath
+
+
 class SharedFileHandler(BaseHandler):
     @require_db
     async def get(self, sid, path):
         share = self.get_service("share_service").get_share(self.db_conn, sid)
-        if not share:
-            self.set_status(404)
-            self.write(INVALID_SHARE_LINK)
+        if _deny_shared_file_access(self, share, sid, path):
             return
-        if self.get_service("share_service").is_expired(share.get("expiry_date")):
-            self.set_status(410)
-            self.write("Share expired: This share is no longer available")
+        abspath = _resolve_shared_file_abspath(self, share, path)
+        if abspath is None:
             return
-        allowed_ok, redirect_to_verify, user_err = _check_share_access(share, sid, self.request, self.get_cookie, self.get_secure_cookie)
-        if not allowed_ok:
-            if redirect_to_verify:
-                self.set_status(403)
-                self.write(ACCESS_TOKEN_INVALID_OR_EXPIRED)
-            else:
-                self.set_status(user_err[0])
-                self.write(user_err[1])
-            return
-        if not _is_path_in_share(share, path, self.db_conn):
-            self.set_status(403)
-            self.write("Access denied: This file is not part of the share")
-            return
-        rel = path.replace("\\", "/").lstrip("/")
-        norm = posixpath.normpath(rel)
-        if norm.startswith("..") or os.path.isabs(norm):
-            self.set_status(403)
-            self.write("Access denied: Invalid path")
-            return
-        if norm != rel and not _is_path_in_share(share, norm, self.db_conn):
-            self.set_status(403)
-            self.write("Access denied: This file is not part of the share")
-            return
-        abspath, confine = resolve_share_rel(share, norm, self.db_conn)
-        if not abspath or not confine or not is_within_root(abspath, confine):
-            self.set_status(403)
-            self.write("Access denied: Path outside share root")
-            return
-        if not os.path.isfile(abspath):
-            self.set_status(404)
-            return
-        # Track download for analytics
         if self.db_conn:
             try:
                 self.get_service("audit_service").log(

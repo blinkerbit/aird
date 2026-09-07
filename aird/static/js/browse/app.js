@@ -1,19 +1,19 @@
 "use strict";
 
-import { showDialog } from '/static/js/browse/util.js';
-import { initUploadUi } from '/static/js/browse/upload.js';
-import { initBrowseSelectionUi } from '/static/js/browse/selection-ui.js';
-import { wireBrowseBulkActions } from '/static/js/browse/bulk-actions.js';
-import { bulkAddTags, initTagsUi } from '/static/js/browse/tags.js';
+import { showDialog } from './util.js';
+import { initUploadUi } from './upload.js';
+import { initBrowseSelectionUi } from './selection-ui.js';
+import { wireBrowseBulkActions } from './bulk-actions.js';
+import { bulkAddTags, initTagsUi } from './tags.js';
 import {
   openShareByTag,
   wireSharePopupClose,
   wireShareActionDelegation,
-} from '/static/js/browse/shares.js';
-import { initOneDriveFeUi } from '/static/js/onedrive-fe/index.js';
-import { initRowMoreMenus } from '/static/js/browse/row-more-menu.js';
-import { registerOneDriveFeBrowseActions } from '/static/js/browse/onedrive-fe-actions.js';
-import { initBrowseGitlabPanel } from '/static/js/browse/gitlab-panel.js';
+} from './shares.js';
+import { initOneDriveFeUi } from '../onedrive-fe/index.js';
+import { initRowMoreMenus } from './row-more-menu.js';
+import { registerOneDriveFeBrowseActions } from './onedrive-fe-actions.js';
+import { initBrowseGitlabPanel } from './gitlab-panel.js';
 import {
   initFileListViewToggle,
   initMobileActionMenus,
@@ -22,7 +22,7 @@ import {
   wireBrowseRowActions,
   wireBrowseTableDelegation,
   wireMobileSortSelect,
-} from '/static/js/browse/table-ui.js';
+} from './table-ui.js';
 
 let _browseBooted = false;
 

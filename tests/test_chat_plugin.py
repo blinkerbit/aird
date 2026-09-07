@@ -705,3 +705,175 @@ def test_plaintext_messages_still_work(chat_env):
     assert "visible" in msg["body"]
     assert msg["e2e"] is False
     assert any("visible" in (h.get("snippet") or h.get("body") or "") for h in chat_db.search_messages("bob", "visible"))
+
+
+def test_identity_backup_in_user_space(chat_env):
+    from aird.plugins.chat.e2e import load_identity_backup, save_identity_backup
+
+    pub = {"kty": "EC", "crv": "P-256", "x": _b64(b"\x11"), "y": _b64(b"\x22")}
+    bundle = {
+        "v": 1,
+        "kind": "aird-chat-e2e-identity",
+        "username": "alice",
+        "exported_at": "2026-01-01T00:00:00Z",
+        "publicJwk": pub,
+        "privateJwk": {**pub, "d": _b64(b"\x33")},
+        "kid": _b64(b"k", 16),
+    }
+    saved = save_identity_backup("alice", bundle)
+    loaded = load_identity_backup("alice")
+    assert loaded["kid"] == saved["kid"]
+    assert loaded["privateJwk"]["d"] == bundle["privateJwk"]["d"]
+    assert load_identity_backup("bob") is None
+    with pytest.raises(ValueError, match="another user"):
+        save_identity_backup("alice", {**bundle, "username": "bob"})
+
+
+def test_conv_key_shared_with_peer(chat_env):
+    from aird.plugins.chat import db as chat_db
+    from aird.plugins.chat.e2e import load_conv_key, share_conv_key
+
+    a = chat_db.resolve_user_id(chat_env, "alice")
+    b = chat_db.resolve_user_id(chat_env, "bob")
+    conv = chat_db.create_dm_conversation(chat_env, a, b)
+    share_conv_key(
+        ["alice", "bob"],
+        conv,
+        {"v": 1, "conversation_id": conv, "key": _b64(b"\xab", 32)},
+    )
+    alice_key = load_conv_key("alice", conv)
+    bob_key = load_conv_key("bob", conv)
+    assert alice_key["key"] == bob_key["key"]
+    assert alice_key["conversation_id"] == conv
+
+
+def test_adopt_conv_key_copies_from_peer(chat_env):
+    from aird.plugins.chat import db as chat_db
+    from aird.plugins.chat.e2e import adopt_conv_key, load_conv_key, save_conv_key
+
+    a = chat_db.resolve_user_id(chat_env, "alice")
+    b = chat_db.resolve_user_id(chat_env, "bob")
+    conv = chat_db.create_dm_conversation(chat_env, a, b)
+    save_conv_key("alice", conv, {"v": 1, "conversation_id": conv, "key": _b64(b"\xcd", 32)})
+    assert load_conv_key("bob", conv) is None
+    adopted = adopt_conv_key("bob", conv, ["alice", "bob"])
+    assert adopted["key"] == load_conv_key("alice", conv)["key"]
+    assert load_conv_key("bob", conv)["key"] == adopted["key"]
+
+
+def _ec_jwk_pair():
+    import base64
+
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    priv = ec.generate_private_key(ec.SECP256R1())
+    nums = priv.private_numbers()
+    pubn = nums.public_numbers
+
+    def coord(n):
+        return base64.urlsafe_b64encode(n.to_bytes(32, "big")).decode().rstrip("=")
+
+    pub = {"kty": "EC", "crv": "P-256", "x": coord(pubn.x), "y": coord(pubn.y)}
+    return pub, {**pub, "d": coord(nums.private_value)}
+
+
+def _wrap_conv_key(pub_jwk, raw: bytes, conv_id: str) -> dict:
+    import os
+
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+    from aird.plugins.chat.e2e import _E2E_INFO, _b64_std, _ec_public_from_jwk
+
+    eph = ec.generate_private_key(ec.SECP256R1())
+    shared = eph.exchange(ec.ECDH(), _ec_public_from_jwk(pub_jwk))
+    aes_key = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=str(conv_id).encode("utf-8"),
+        info=_E2E_INFO,
+    ).derive(shared)
+    iv = os.urandom(12)
+    ct = AESGCM(aes_key).encrypt(iv, raw, None)
+    nums = eph.public_key().public_numbers()
+
+    def coord(n):
+        import base64
+
+        return base64.urlsafe_b64encode(n.to_bytes(32, "big")).decode().rstrip("=")
+
+    return {
+        "v": 1,
+        "kid": "aaaaaaaa",
+        "epk": {"kty": "EC", "crv": "P-256", "x": coord(nums.x), "y": coord(nums.y)},
+        "iv": _b64_std(iv),
+        "ct": _b64_std(ct),
+    }
+
+
+def test_recover_conv_key_from_identity_wrap(chat_env):
+    import base64
+
+    from aird.plugins.chat import db as chat_db
+    from aird.plugins.chat.e2e import load_conv_key, recover_conv_key, save_identity_backup
+
+    a = chat_db.resolve_user_id(chat_env, "alice")
+    b = chat_db.resolve_user_id(chat_env, "bob")
+    conv = chat_db.create_dm_conversation(chat_env, a, b)
+    pub, priv = _ec_jwk_pair()
+    save_identity_backup(
+        "alice",
+        {
+            "v": 1,
+            "kind": "aird-chat-e2e-identity",
+            "username": "alice",
+            "publicJwk": pub,
+            "privateJwk": priv,
+            "kid": _b64(b"k", 16),
+        },
+    )
+    raw = b"\x42" * 32
+    wrap = _wrap_conv_key(pub, raw, conv)
+    recovered = recover_conv_key(conv, ["alice", "bob"], {"alice": wrap})
+    assert recovered is not None
+    assert base64.b64decode(recovered["key"]) == raw
+    assert load_conv_key("bob", conv)["key"] == recovered["key"]
+
+
+def test_concurrent_share_conv_key_same_file(chat_env):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from aird.plugins.chat import db as chat_db
+    from aird.plugins.chat.e2e import load_conv_key, share_conv_key
+
+    a = chat_db.resolve_user_id(chat_env, "alice")
+    b = chat_db.resolve_user_id(chat_env, "bob")
+    conv = chat_db.create_dm_conversation(chat_env, a, b)
+    bundle = {"v": 1, "conversation_id": conv, "key": _b64(b"\xee", 32)}
+
+    def write():
+        return share_conv_key(["alice", "bob"], conv, bundle)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda _: write(), range(24)))
+    assert all(r["key"] == bundle["key"] for r in results)
+    assert load_conv_key("alice", conv)["key"] == bundle["key"]
+    assert load_conv_key("bob", conv)["key"] == bundle["key"]
+
+
+def test_bind_conv_key_keeps_first_key(chat_env):
+    from aird.plugins.chat import db as chat_db
+    from aird.plugins.chat.e2e import bind_conv_key, load_conv_key, share_conv_key
+
+    a = chat_db.resolve_user_id(chat_env, "alice")
+    b = chat_db.resolve_user_id(chat_env, "bob")
+    conv = chat_db.create_dm_conversation(chat_env, a, b)
+    first = {"v": 1, "conversation_id": conv, "key": _b64(b"\x11", 32)}
+    second = {"v": 1, "conversation_id": conv, "key": _b64(b"\x22", 32)}
+    share_conv_key(["alice"], conv, first)
+    kept = bind_conv_key(["alice", "bob"], conv, second)
+    assert kept["key"] == first["key"]
+    assert load_conv_key("alice", conv)["key"] == first["key"]
+    assert load_conv_key("bob", conv)["key"] == first["key"]

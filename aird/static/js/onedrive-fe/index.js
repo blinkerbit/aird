@@ -120,7 +120,7 @@ export async function initOneDriveFeUi() {
     try {
       const result = await resumePendingAction();
       if (result?.uploaded != null) {
-        const { showDialog } = await import('/static/js/browse/util.js');
+        const { showDialog } = await import('../browse/util.js');
         showDialog(`Copied ${result.uploaded} file(s) to OneDrive.`, 'OneDrive');
       }
     } catch (err) {

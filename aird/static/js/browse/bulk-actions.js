@@ -1,6 +1,6 @@
 "use strict";
 
-import { SelectionStore } from '/static/js/browse/selection-store.js';
+import { SelectionStore } from './selection-store.js';
 import {
   escapeHtml,
   escapeAttr,
@@ -8,9 +8,9 @@ import {
   getXSRFToken,
   pathBasename,
   wireBrowseButton,
-} from '/static/js/browse/util.js';
-import { closeSelectionDrawer } from '/static/js/browse/selection-ui.js';
-import { bulkCopyToDefault, bulkCopyToFolder } from '/static/js/browse/onedrive-fe-actions.js';
+} from './util.js';
+import { closeSelectionDrawer } from './selection-ui.js';
+import { bulkCopyToDefault, bulkCopyToFolder } from './onedrive-fe-actions.js';
 
 const FolderPicker = globalThis.AirdFolderPicker;
 

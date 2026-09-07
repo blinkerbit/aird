@@ -1,11 +1,11 @@
 "use strict";
 
-import { SelectionStore } from '/static/js/browse/selection-store.js';
-import { isInputKeyTarget, showDialog } from '/static/js/browse/util.js';
-import { updateBulkToolbar } from '/static/js/browse/selection-ui.js';
-import { closeRowTagPopover, isRowTagPopoverOpen, openRowTagPopover } from '/static/js/browse/tags.js';
-import { closeSharePopup, showShareDetails } from '/static/js/browse/shares.js';
-import { renameItem, deleteItem, downloadFileViaHttp } from '/static/js/browse/bulk-actions.js';
+import { SelectionStore } from './selection-store.js';
+import { isInputKeyTarget, showDialog } from './util.js';
+import { updateBulkToolbar } from './selection-ui.js';
+import { closeRowTagPopover, isRowTagPopoverOpen, openRowTagPopover } from './tags.js';
+import { closeSharePopup, showShareDetails } from './shares.js';
+import { renameItem, deleteItem, downloadFileViaHttp } from './bulk-actions.js';
 
 const FolderPicker = globalThis.AirdFolderPicker;
 const FILE_VIEW_STORAGE_KEY = 'aird-browse-file-view';
@@ -60,7 +60,7 @@ function closeMobileActionMenus(exceptCell) {
 export function initMobileActionMenus() {
   document.getElementById('fileTable')?.addEventListener('click', function (e) {
     const btn = e.target.closest('.mobile-actions-toggle');
-    if (!btn || !btn.closest('#fileTable')) return;
+    if (!btn?.closest('#fileTable')) return;
     e.preventDefault();
     e.stopPropagation();
     const cell = btn.closest('.actions-cell');
@@ -349,20 +349,20 @@ export function wireBrowseRowActions() {
 export function wireBrowseTableDelegation() {
   document.getElementById('fileTable')?.addEventListener('click', function (e) {
     const shareEl = e.target.closest('[data-share-path]');
-    if (shareEl && shareEl.closest('#fileTable')) {
+    if (shareEl?.closest('#fileTable')) {
       e.stopPropagation();
       e.preventDefault();
       showShareDetails(shareEl.dataset.sharePath);
       return;
     }
     const renameEl = e.target.closest('[data-rename-path]');
-    if (renameEl && renameEl.closest('#fileTable')) {
+    if (renameEl?.closest('#fileTable')) {
       e.preventDefault();
       renameItem(renameEl.dataset.renamePath);
       return;
     }
     const deleteEl = e.target.closest('[data-delete-path]');
-    if (deleteEl && deleteEl.closest('#fileTable')) {
+    if (deleteEl?.closest('#fileTable')) {
       e.preventDefault();
       deleteItem(deleteEl.dataset.deletePath, deleteEl.dataset.isDir === '1');
       return;

@@ -6,7 +6,7 @@ import {
   escapeAttr,
   showDialog,
   getXSRFToken,
-} from '/static/js/browse/util.js';
+} from './util.js';
 
 function formatShareAccessLabel(share) {
   const users = share.allowed_users;
