@@ -12,7 +12,13 @@ from aird.handlers.base_handler import ManagedWebSocketMixin, authenticate_handl
 from aird.plugins.chat import db as chat_db
 from aird.plugins.chat import is_chat_enabled
 from aird.plugins.chat.e2e import metadata_from_e2e_request
-from aird.plugins.chat.notify import dispatch_message, dispatch_presence, dispatch_receipt, dispatch_typing
+from aird.plugins.chat.notify import (
+    dispatch_message,
+    dispatch_presence,
+    dispatch_receipt,
+    dispatch_typing,
+    dispatch_e2e_need_key,
+)
 from aird.plugins.chat.sanitize import sanitize_chat_html
 from aird.plugins.chat.service import get_chat_hub
 from aird.utils.util import WebSocketConnectionManager
@@ -95,6 +101,8 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
             self._handle_read(data)
         elif msg_type == "chat_typing":
             self._handle_typing(data)
+        elif msg_type == "chat_e2e_need_key":
+            self._handle_e2e_need_key(data)
 
     def _handle_send(self, conn, data: dict) -> None:
         conversation_id = str(data.get("conversation_id") or "")
@@ -147,3 +155,9 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
         if not conversation_id or not chat_db.user_in_conversation(self._username, conversation_id):
             return
         dispatch_typing(self._username, conversation_id, self._user_id)
+
+    def _handle_e2e_need_key(self, data: dict) -> None:
+        conversation_id = str(data.get("conversation_id") or "")
+        if not conversation_id or not chat_db.user_in_conversation(self._username, conversation_id):
+            return
+        dispatch_e2e_need_key(self._username, conversation_id, self._user_id)

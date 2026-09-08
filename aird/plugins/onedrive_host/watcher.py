@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 
 logger = logging.getLogger(__name__)
 
 _observer = None
 _timer: threading.Timer | None = None
 _debounce_sec = 45
-_watch_paths: set[str] = set()
 
 
 def _schedule_kick() -> None:
@@ -41,10 +39,9 @@ def _on_fs_event(_event) -> None:
 
 
 def start_watchers(paths: list[str]) -> None:
-    global _observer, _watch_paths
+    global _observer
     stop_watchers()
     cleaned = {p for p in paths if p}
-    _watch_paths = cleaned
     if not cleaned:
         return
     try:

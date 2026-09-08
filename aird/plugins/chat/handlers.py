@@ -42,12 +42,19 @@ from aird.plugins.chat.notify import (
     dispatch_message_edited,
     dispatch_pin,
     dispatch_reaction,
+    dispatch_e2e_key_ready,
 )
 from aird.plugins.chat.e2e import (
     get_identity_keys,
     is_e2e_meta,
+    adopt_conv_key,
+    bind_conv_key,
+    load_conv_key,
+    recover_conv_key,
+    load_identity_backup,
     metadata_from_e2e_request,
     put_identity_key,
+    save_identity_backup,
 )
 from aird.plugins.chat.sanitize import sanitize_chat_html
 from aird.plugins.chat.service import get_chat_hub
@@ -56,6 +63,12 @@ from aird.utils.util import is_feature_enabled
 logger = logging.getLogger(__name__)
 
 _TOKEN_ONLY = frozenset({"token_user", "admin_token"})
+_ERR_USER_NOT_FOUND = "User not found"
+
+
+def _reject_user_not_found(handler: BaseHandler, *, status: int = 403) -> None:
+    handler.set_status(status)
+    handler.write({"error": _ERR_USER_NOT_FOUND})
 
 
 def _att_at(msg: dict, index: int) -> dict | None:
@@ -206,19 +219,64 @@ def _ensure_chat_folder_share(
     return None
 
 
+def _mark_members_online(members: list, online: set) -> None:
+    for m in members:
+        m["online"] = m["user_id"] in online
+
+
+def _apply_conversation_online(c: dict, online: set) -> None:
+    members = c.get("members") or []
+    _mark_members_online(members, online)
+    if c.get("kind") == "dm":
+        me = c.get("_me")
+        c["online"] = any(m["online"] for m in members if m.get("username") != me)
+        return
+    c["online_count"] = sum(1 for m in members if m.get("online"))
+
+
 def _decorate_online(convs: list[dict]) -> list[dict]:
-    hub = get_chat_hub()
-    online = hub.online_user_ids()
+    online = get_chat_hub().online_user_ids()
     for c in convs:
-        for m in c.get("members") or []:
-            m["online"] = m["user_id"] in online
-        if c.get("kind") == "dm":
-            c["online"] = any(
-                m["online"] for m in (c.get("members") or []) if m.get("username") != c.get("_me")
-            )
-        else:
-            c["online_count"] = sum(1 for m in (c.get("members") or []) if m.get("online"))
+        _apply_conversation_online(c, online)
     return convs
+
+
+def _create_conversation_from_body(
+    handler: BaseHandler, name: str, uid: int, body: dict
+) -> str | None:
+    """Create group or DM; write error response and return None on failure."""
+    members = body.get("members")
+    if members is not None:
+        title = str(body.get("title") or "").strip()
+        try:
+            return chat_db.create_group_conversation(
+                handler.db_conn,
+                creator_username=name,
+                title=title,
+                member_usernames=[str(m) for m in members],
+            )
+        except ValueError as exc:
+            handler.set_status(400)
+            handler.write({"error": str(exc)})
+            return None
+    peer_name = str(body.get("username") or "").strip()
+    if not peer_name:
+        handler.set_status(400)
+        handler.write({"error": "username required"})
+        return None
+    if peer_name in _TOKEN_ONLY:
+        handler.set_status(400)
+        handler.write({"error": "Invalid recipient"})
+        return None
+    peer_id = chat_db.resolve_user_id(handler.db_conn, peer_name)
+    if peer_id is None:
+        _reject_user_not_found(handler, status=404)
+        return None
+    if peer_id == uid:
+        handler.set_status(400)
+        handler.write({"error": "Cannot message yourself"})
+        return None
+    return chat_db.create_dm_conversation(handler.db_conn, uid, peer_id)
 
 
 def _quota_check(handler: BaseHandler, username: str, extra: int) -> bool:
@@ -244,6 +302,233 @@ def _quota_bump(handler: BaseHandler, username: str, extra: int) -> None:
     svc = handler.get_service("quota_service")
     if svc:
         svc.update_used_bytes(handler.db_conn, username, extra)
+
+
+def _parse_chat_attach_e2e(handler: BaseHandler) -> tuple[dict | None, str | None]:
+    raw_e2e = (handler.get_argument("e2e", "") or "").strip()
+    if not raw_e2e:
+        return None, None
+    try:
+        parsed = json.loads(raw_e2e)
+        try:
+            mentions = json.loads(handler.get_argument("mentions", "") or "[]")
+        except json.JSONDecodeError:
+            mentions = []
+        return metadata_from_e2e_request({"e2e": parsed, "mentions": mentions}), None
+    except (ValueError, json.JSONDecodeError) as exc:
+        return None, str(exc)
+
+
+def _store_uploaded_chat_attachment(
+    handler: BaseHandler,
+    *,
+    name: str,
+    meta: dict,
+    conversation_id: str,
+    tmps: list[str],
+) -> dict | None:
+    original_name = os.path.basename(meta["filename"] or "file")
+    fd, tmp = tempfile.mkstemp(prefix="aird_chat_")
+    os.close(fd)
+    tmps.append(tmp)
+    with open(tmp, "wb") as out:
+        out.write(meta["body"])
+    size = os.path.getsize(tmp)
+    if not _quota_check(handler, name, size):
+        return None
+    owner_rel, size = store_upload(
+        sender_username=name,
+        conversation_id=conversation_id,
+        source_abs=tmp,
+        original_name=original_name,
+    )
+    _quota_bump(handler, name, size)
+    return attachment_meta(
+        original_name=original_name,
+        owner_username=name,
+        owner_rel=owner_rel,
+        size_bytes=size,
+    )
+
+
+def _chat_attachment_from_source_path(
+    handler: BaseHandler,
+    *,
+    source_path: str,
+    sender_root: str,
+    peers: list[str],
+    name: str,
+) -> tuple[dict | None, tuple[int, str] | None]:
+    source_abs = os.path.join(sender_root, source_path.replace("/", os.sep))
+    original_name = os.path.basename(source_path.rstrip("/"))
+    if (
+        not is_within_root(source_abs, sender_root)
+        or os.path.islink(source_abs)
+        or not (os.path.isfile(source_abs) or os.path.isdir(source_abs))
+    ):
+        return None, (400, f"Invalid source: {original_name or source_path}")
+    is_dir = os.path.isdir(source_abs)
+    try:
+        size = dir_tree_size(source_abs) if is_dir else os.path.getsize(source_abs)
+    except ValueError as exc:
+        return None, (413, str(exc))
+    share_id, share_url = _try_create_chat_share(
+        handler, rel_path=source_path, allowed_users=peers
+    )
+    return (
+        attachment_meta(
+            original_name=original_name or os.path.basename(source_path),
+            owner_username=name,
+            owner_rel=source_path,
+            size_bytes=size,
+            media_kind="folder" if is_dir else None,
+            share_id=share_id,
+            share_url=share_url,
+        ),
+        None,
+    )
+
+
+def _collect_chat_attachments(
+    handler: BaseHandler,
+    *,
+    name: str,
+    conversation_id: str,
+    sender_root: str,
+    peers: list[str],
+    tmps: list[str],
+) -> list[dict] | None:
+    """Build attachment list from uploads/paths; write error and return None on failure."""
+    uploads = list(handler.request.files.get("file") or [])
+    paths = [
+        p.strip().lstrip("/")
+        for p in handler.get_arguments("source_path")
+        if p and p.strip()
+    ]
+    total = len(uploads) + len(paths)
+    if total < 1:
+        handler.set_status(400)
+        handler.write({"error": "file or source_path required"})
+        return None
+    if total > CHAT_MAX_ATTACHMENTS:
+        handler.set_status(400)
+        handler.write({"error": f"Up to {CHAT_MAX_ATTACHMENTS} files per message"})
+        return None
+    atts: list[dict] = []
+    for meta in uploads:
+        att = _store_uploaded_chat_attachment(
+            handler,
+            name=name,
+            meta=meta,
+            conversation_id=conversation_id,
+            tmps=tmps,
+        )
+        if att is None:
+            return None
+        atts.append(att)
+    for source_path in paths:
+        att, err = _chat_attachment_from_source_path(
+            handler,
+            source_path=source_path,
+            sender_root=sender_root,
+            peers=peers,
+            name=name,
+        )
+        if err is not None:
+            status, message = err
+            handler.set_status(status)
+            handler.write({"error": message})
+            return None
+        atts.append(att)
+    return atts
+
+
+def _save_copy_attachment(
+    handler: BaseHandler,
+    *,
+    name: str,
+    message_id: str,
+    msg: dict,
+    idx: int,
+) -> dict | None:
+    """Save attachment copy; return response dict or None after writing an error."""
+    att = _att_at(msg, idx)
+    if not att:
+        handler.set_status(404)
+        handler.write({"error": "No attachment"})
+        return None
+    if att.get("owner_username") == name:
+        return {"saved_rel": att.get("owner_rel"), "already_owner": True}
+    try:
+        abs_path = owner_abs_path(att["owner_username"], att["owner_rel"])
+    except (ValueError, KeyError):
+        handler.set_status(400)
+        handler.write({"error": "Invalid attachment"})
+        return None
+    if not os.path.isfile(abs_path) and not os.path.isdir(abs_path):
+        handler.set_status(410)
+        handler.write({"error": "File unavailable"})
+        return None
+    try:
+        size = dir_tree_size(abs_path) if os.path.isdir(abs_path) else os.path.getsize(abs_path)
+    except ValueError as exc:
+        handler.set_status(413)
+        handler.write({"error": str(exc)})
+        return None
+    if not _quota_check(handler, name, size):
+        return None
+    payload = handler.parse_json_body()
+    if not isinstance(payload, dict) or "dest_dir" not in payload:
+        handler.set_status(400)
+        handler.write({"error": "Choose a folder to save into"})
+        return None
+    try:
+        saved_rel, size = save_copy_to_data(
+            recipient_username=name,
+            source_abs=abs_path,
+            original_name=att.get("original_name") or "file",
+            dest_dir=payload.get("dest_dir") or "",
+        )
+    except (OSError, ValueError) as exc:
+        handler.set_status(400)
+        handler.write({"error": str(exc)})
+        return None
+    _quota_bump(handler, name, size)
+    chat_db.set_saved_rel(name, message_id, saved_rel, index=idx)
+    return {"saved_rel": saved_rel, "size_bytes": size}
+
+
+def _forward_message_to_targets(
+    handler: BaseHandler,
+    *,
+    name: str,
+    uid: int,
+    conversation_id: str,
+    src: dict,
+    targets: list,
+) -> list[dict]:
+    forwarded = []
+    meta = dict(src.get("metadata") or {})
+    meta["forwarded_from"] = {
+        "username": src.get("sender_username"),
+        "source_message_id": src["id"],
+        "source_conversation_id": conversation_id,
+    }
+    for dest in targets[:20]:
+        dest_id = str(dest)
+        if not chat_db.user_in_conversation(name, dest_id):
+            continue
+        msg = chat_db.insert_message(
+            handler.db_conn,
+            username=name,
+            conversation_id=dest_id,
+            msg_type=src.get("msg_type") or "text",
+            body=src.get("body") or "",
+            metadata=meta if attachment_entries(meta) else {"forwarded_from": meta["forwarded_from"]},
+        )
+        dispatch_message(msg, sender_id=uid, sender_username=name)
+        forwarded.append(msg)
+    return forwarded
 
 
 class ChatPageHandler(BaseHandler):
@@ -275,47 +560,15 @@ class ChatConversationsHandler(BaseHandler, XSRFTokenMixin):
         name = _username(self)
         uid = _uid(self)
         if uid is None:
-            self.set_status(403)
-            self.write({"error": "User not found"})
+            _reject_user_not_found(self)
             return
         try:
             body = self.parse_json_body()
         except tornado.web.HTTPError:
             return
-        members = body.get("members")
-        if members is not None:
-            title = str(body.get("title") or "").strip()
-            try:
-                conv_id = chat_db.create_group_conversation(
-                    self.db_conn,
-                    creator_username=name,
-                    title=title,
-                    member_usernames=[str(m) for m in members],
-                )
-            except ValueError as exc:
-                self.set_status(400)
-                self.write({"error": str(exc)})
-                return
-        else:
-            peer_name = str(body.get("username") or "").strip()
-            if not peer_name:
-                self.set_status(400)
-                self.write({"error": "username required"})
-                return
-            if peer_name in _TOKEN_ONLY:
-                self.set_status(400)
-                self.write({"error": "Invalid recipient"})
-                return
-            peer_id = chat_db.resolve_user_id(self.db_conn, peer_name)
-            if peer_id is None:
-                self.set_status(404)
-                self.write({"error": "User not found"})
-                return
-            if peer_id == uid:
-                self.set_status(400)
-                self.write({"error": "Cannot message yourself"})
-                return
-            conv_id = chat_db.create_dm_conversation(self.db_conn, uid, peer_id)
+        conv_id = _create_conversation_from_body(self, name, uid, body)
+        if conv_id is None:
+            return
         convos = chat_db.list_conversations(self.db_conn, name)
         match = next((c for c in convos if c["id"] == conv_id), None)
         self.write({"conversation": match or {"id": conv_id}})
@@ -475,6 +728,40 @@ class ChatMessageHandler(BaseHandler, XSRFTokenMixin):
         self.write({"deleted": True, "message_id": message_id})
 
 
+def _cleanup_tmp_paths(tmps: list[str]) -> None:
+    for tmp in tmps:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
+def _insert_chat_attachment_message(
+    handler: BaseHandler,
+    *,
+    name: str,
+    conversation_id: str,
+    caption: str,
+    reply_to: str | None,
+    e2e_meta: dict | None,
+    atts: list[dict],
+) -> dict:
+    packed = pack_attachments(atts)
+    if e2e_meta:
+        packed.update(e2e_meta)
+    kinds = {a.get("media_kind") for a in atts}
+    msg_type = "gif" if kinds == {"gif"} else "file"
+    return chat_db.insert_message(
+        handler.db_conn,
+        username=name,
+        conversation_id=conversation_id,
+        msg_type=msg_type,
+        body=caption,
+        metadata=packed,
+        reply_to_id=reply_to,
+    )
+
+
 class ChatAttachHandler(BaseHandler, XSRFTokenMixin):
     @tornado.web.authenticated
     @require_db
@@ -490,107 +777,33 @@ class ChatAttachHandler(BaseHandler, XSRFTokenMixin):
             return
         caption = sanitize_chat_html(self.get_argument("caption", "") or self.get_argument("body", ""))
         reply_to = str(self.get_argument("reply_to_id", "") or "") or None
-        e2e_meta = None
-        raw_e2e = (self.get_argument("e2e", "") or "").strip()
-        if raw_e2e:
-            try:
-                parsed = json.loads(raw_e2e)
-                try:
-                    mentions = json.loads(self.get_argument("mentions", "") or "[]")
-                except json.JSONDecodeError:
-                    mentions = []
-                e2e_meta = metadata_from_e2e_request({"e2e": parsed, "mentions": mentions})
-                caption = ""
-            except (ValueError, json.JSONDecodeError) as exc:
-                self.set_status(400)
-                self.write({"error": str(exc)})
-                return
-        sender_root = get_user_root(self)
-        atts: list[dict] = []
+        e2e_meta, e2e_err = _parse_chat_attach_e2e(self)
+        if e2e_err is not None:
+            self.set_status(400)
+            self.write({"error": e2e_err})
+            return
+        if e2e_meta:
+            caption = ""
         tmps: list[str] = []
-        peers = _chat_peer_usernames(name, conversation_id)
         try:
-            uploads = list(self.request.files.get("file") or [])
-            paths = [p.strip().lstrip("/") for p in self.get_arguments("source_path") if p and p.strip()]
-            total = len(uploads) + len(paths)
-            if total < 1:
-                self.set_status(400)
-                self.write({"error": "file or source_path required"})
-                return
-            if total > CHAT_MAX_ATTACHMENTS:
-                self.set_status(400)
-                self.write({"error": f"Up to {CHAT_MAX_ATTACHMENTS} files per message"})
-                return
-            for meta in uploads:
-                original_name = os.path.basename(meta["filename"] or "file")
-                fd, tmp = tempfile.mkstemp(prefix="aird_chat_")
-                os.close(fd)
-                tmps.append(tmp)
-                with open(tmp, "wb") as out:
-                    out.write(meta["body"])
-                size = os.path.getsize(tmp)
-                if not _quota_check(self, name, size):
-                    return
-                owner_rel, size = store_upload(
-                    sender_username=name,
-                    conversation_id=conversation_id,
-                    source_abs=tmp,
-                    original_name=original_name,
-                )
-                _quota_bump(self, name, size)
-                atts.append(
-                    attachment_meta(
-                        original_name=original_name,
-                        owner_username=name,
-                        owner_rel=owner_rel,
-                        size_bytes=size,
-                    )
-                )
-            for source_path in paths:
-                source_abs = os.path.join(sender_root, source_path.replace("/", os.sep))
-                original_name = os.path.basename(source_path.rstrip("/"))
-                if (
-                    not is_within_root(source_abs, sender_root)
-                    or os.path.islink(source_abs)
-                    or not (os.path.isfile(source_abs) or os.path.isdir(source_abs))
-                ):
-                    self.set_status(400)
-                    self.write({"error": f"Invalid source: {original_name or source_path}"})
-                    return
-                is_dir = os.path.isdir(source_abs)
-                try:
-                    size = dir_tree_size(source_abs) if is_dir else os.path.getsize(source_abs)
-                except ValueError as exc:
-                    self.set_status(413)
-                    self.write({"error": str(exc)})
-                    return
-                share_id, share_url = _try_create_chat_share(
-                    self, rel_path=source_path, allowed_users=peers
-                )
-                atts.append(
-                    attachment_meta(
-                        original_name=original_name or os.path.basename(source_path),
-                        owner_username=name,
-                        owner_rel=source_path,
-                        size_bytes=size,
-                        media_kind="folder" if is_dir else None,
-                        share_id=share_id,
-                        share_url=share_url,
-                    )
-                )
-            packed = pack_attachments(atts)
-            if e2e_meta:
-                packed.update(e2e_meta)
-            kinds = {a.get("media_kind") for a in atts}
-            msg_type = "gif" if kinds == {"gif"} else "file"
-            msg = chat_db.insert_message(
-                self.db_conn,
-                username=name,
+            atts = _collect_chat_attachments(
+                self,
+                name=name,
                 conversation_id=conversation_id,
-                msg_type=msg_type,
-                body=caption,
-                metadata=packed,
-                reply_to_id=reply_to,
+                sender_root=get_user_root(self),
+                peers=_chat_peer_usernames(name, conversation_id),
+                tmps=tmps,
+            )
+            if atts is None:
+                return
+            msg = _insert_chat_attachment_message(
+                self,
+                name=name,
+                conversation_id=conversation_id,
+                caption=caption,
+                reply_to=reply_to,
+                e2e_meta=e2e_meta,
+                atts=atts,
             )
         except (OSError, ValueError) as exc:
             logger.exception("chat attach failed")
@@ -598,13 +811,68 @@ class ChatAttachHandler(BaseHandler, XSRFTokenMixin):
             self.write({"error": str(exc)})
             return
         finally:
-            for tmp in tmps:
-                try:
-                    os.unlink(tmp)
-                except OSError:
-                    pass
+            _cleanup_tmp_paths(tmps)
         dispatch_message(msg, sender_id=uid, sender_username=name)
         self.write({"message": msg})
+
+
+async def _stream_file_chunks(handler: BaseHandler, path: str) -> None:
+    with open(path, "rb") as fh:
+        while True:
+            chunk = fh.read(CHUNK_SIZE)
+            if not chunk:
+                break
+            handler.write(chunk)
+            await handler.flush()
+
+
+async def _serve_chat_folder_zip(handler: BaseHandler, owner: str, rel: str) -> None:
+    try:
+        root = attachment_store_root(owner, rel)
+        entries = await asyncio.to_thread(collect_zip_entries, root, [rel])
+        zip_path = await asyncio.to_thread(build_zip_file, entries)
+    except ZipDownloadError as exc:
+        handler.set_status(exc.status)
+        handler.write({"error": str(exc)})
+        return
+    except Exception:
+        logger.exception("chat folder zip failed")
+        handler.set_status(500)
+        handler.write({"error": "Failed to zip folder"})
+        return
+    filename = f"{os.path.basename(rel.rstrip('/')) or 'folder'}.zip"
+    try:
+        handler.set_header("Content-Type", "application/zip")
+        handler.set_header("Cache-Control", "private, max-age=60")
+        handler.set_header("Content-Length", str(os.path.getsize(zip_path)))
+        handler.set_header("Content-Disposition", f'attachment; filename="{filename}"')
+        await _stream_file_chunks(handler, zip_path)
+    finally:
+        try:
+            os.unlink(zip_path)
+        except OSError:
+            pass
+
+
+async def _serve_chat_file_attachment(
+    handler: BaseHandler, abs_path: str, att: dict
+) -> None:
+    filename = att.get("original_name") or os.path.basename(abs_path)
+    preview = inline_preview_payload(abs_path)
+    if preview:
+        data, mime = preview
+        handler.set_header("Content-Type", mime)
+        handler.set_header("Cache-Control", "private, max-age=60")
+        handler.set_header("Content-Length", str(len(data)))
+        handler.set_header("Content-Disposition", f'inline; filename="{filename}"')
+        handler.write(data)
+        return
+    mime, _ = mimetypes.guess_type(filename)
+    handler.set_header("Content-Type", mime or "application/octet-stream")
+    handler.set_header("Cache-Control", "private, max-age=60")
+    handler.set_header("Content-Length", str(os.path.getsize(abs_path)))
+    handler.set_header("Content-Disposition", f'inline; filename="{filename}"')
+    await _stream_file_chunks(handler, abs_path)
 
 
 class ChatMessageFileHandler(BaseHandler):
@@ -658,65 +926,13 @@ class ChatMessageFileHandler(BaseHandler):
             if share_url:
                 self.redirect(share_url)
                 return
-            try:
-                root = attachment_store_root(owner, rel)
-                entries = await asyncio.to_thread(collect_zip_entries, root, [rel])
-                zip_path = await asyncio.to_thread(build_zip_file, entries)
-            except ZipDownloadError as exc:
-                self.set_status(exc.status)
-                self.write({"error": str(exc)})
-                return
-            except Exception:
-                logger.exception("chat folder zip failed")
-                self.set_status(500)
-                self.write({"error": "Failed to zip folder"})
-                return
-            filename = f"{os.path.basename(rel.rstrip('/')) or 'folder'}.zip"
-            try:
-                self.set_header("Content-Type", "application/zip")
-                self.set_header("Cache-Control", "private, max-age=60")
-                self.set_header("Content-Length", str(os.path.getsize(zip_path)))
-                self.set_header("Content-Disposition", f'attachment; filename="{filename}"')
-                with open(zip_path, "rb") as fh:
-                    while True:
-                        chunk = fh.read(CHUNK_SIZE)
-                        if not chunk:
-                            break
-                        self.write(chunk)
-                        await self.flush()
-            finally:
-                try:
-                    os.unlink(zip_path)
-                except OSError:
-                    pass
+            await _serve_chat_folder_zip(self, owner, rel)
             return
         if not os.path.isfile(abs_path):
             self.set_status(410)
             self.write({"error": "File unavailable"})
             return
-        filename = att.get("original_name") or os.path.basename(abs_path)
-        preview = inline_preview_payload(abs_path)
-        if preview:
-            data, mime = preview
-            self.set_header("Content-Type", mime)
-            self.set_header("Cache-Control", "private, max-age=60")
-            self.set_header("Content-Length", str(len(data)))
-            self.set_header("Content-Disposition", f'inline; filename="{filename}"')
-            self.write(data)
-            return
-        mime, _ = mimetypes.guess_type(filename)
-        self.set_header("Content-Type", mime or "application/octet-stream")
-        self.set_header("Cache-Control", "private, max-age=60")
-        size = os.path.getsize(abs_path)
-        self.set_header("Content-Length", str(size))
-        self.set_header("Content-Disposition", f'inline; filename="{filename}"')
-        with open(abs_path, "rb") as fh:
-            while True:
-                chunk = fh.read(CHUNK_SIZE)
-                if not chunk:
-                    break
-                self.write(chunk)
-                await self.flush()
+        await _serve_chat_file_attachment(self, abs_path, att)
 
 
 class ChatSaveCopyHandler(BaseHandler, XSRFTokenMixin):
@@ -740,51 +956,11 @@ class ChatSaveCopyHandler(BaseHandler, XSRFTokenMixin):
             idx = int(self.get_argument("i", "0") or 0)
         except (TypeError, ValueError):
             idx = 0
-        att = _att_at(msg, idx)
-        if not att:
-            self.set_status(404)
-            self.write({"error": "No attachment"})
-            return
-        if att.get("owner_username") == name:
-            self.write({"saved_rel": att.get("owner_rel"), "already_owner": True})
-            return
-        try:
-            abs_path = owner_abs_path(att["owner_username"], att["owner_rel"])
-        except (ValueError, KeyError):
-            self.set_status(400)
-            self.write({"error": "Invalid attachment"})
-            return
-        if not os.path.isfile(abs_path) and not os.path.isdir(abs_path):
-            self.set_status(410)
-            self.write({"error": "File unavailable"})
-            return
-        try:
-            size = dir_tree_size(abs_path) if os.path.isdir(abs_path) else os.path.getsize(abs_path)
-        except ValueError as exc:
-            self.set_status(413)
-            self.write({"error": str(exc)})
-            return
-        if not _quota_check(self, name, size):
-            return
-        payload = self.parse_json_body()
-        if not isinstance(payload, dict) or "dest_dir" not in payload:
-            self.set_status(400)
-            self.write({"error": "Choose a folder to save into"})
-            return
-        try:
-            saved_rel, size = save_copy_to_data(
-                recipient_username=name,
-                source_abs=abs_path,
-                original_name=att.get("original_name") or "file",
-                dest_dir=payload.get("dest_dir") or "",
-            )
-        except (OSError, ValueError) as exc:
-            self.set_status(400)
-            self.write({"error": str(exc)})
-            return
-        _quota_bump(self, name, size)
-        chat_db.set_saved_rel(name, message_id, saved_rel, index=idx)
-        self.write({"saved_rel": saved_rel, "size_bytes": size})
+        result = _save_copy_attachment(
+            self, name=name, message_id=message_id, msg=msg, idx=idx
+        )
+        if result is not None:
+            self.write(result)
 
 
 class ChatReactionHandler(BaseHandler, XSRFTokenMixin):
@@ -886,27 +1062,14 @@ class ChatForwardHandler(BaseHandler, XSRFTokenMixin):
             self.set_status(400)
             self.write({"error": "conversation_ids required"})
             return
-        forwarded = []
-        meta = dict(src.get("metadata") or {})
-        meta["forwarded_from"] = {
-            "username": src.get("sender_username"),
-            "source_message_id": src["id"],
-            "source_conversation_id": conversation_id,
-        }
-        for dest in targets[:20]:
-            dest_id = str(dest)
-            if not chat_db.user_in_conversation(name, dest_id):
-                continue
-            msg = chat_db.insert_message(
-                self.db_conn,
-                username=name,
-                conversation_id=dest_id,
-                msg_type=src.get("msg_type") or "text",
-                body=src.get("body") or "",
-                metadata=meta if attachment_entries(meta) else {"forwarded_from": meta["forwarded_from"]},
-            )
-            dispatch_message(msg, sender_id=uid, sender_username=name)
-            forwarded.append(msg)
+        forwarded = _forward_message_to_targets(
+            self,
+            name=name,
+            uid=uid,
+            conversation_id=conversation_id,
+            src=src,
+            targets=targets,
+        )
         self.write({"messages": forwarded})
 
 
@@ -1031,6 +1194,9 @@ class ChatUnreadHandler(BaseHandler):
 
 
 class ChatE2EKeysHandler(BaseHandler, XSRFTokenMixin):
+    def compute_etag(self):
+        return None
+
     @tornado.web.authenticated
     @require_db
     def get(self):
@@ -1040,6 +1206,7 @@ class ChatE2EKeysHandler(BaseHandler, XSRFTokenMixin):
         names = [n.strip() for n in raw.split(",") if n.strip()][:50]
         if not names:
             names = [_username(self)]
+        self.set_header("Cache-Control", "no-store, no-cache, must-revalidate")
         self.write({"keys": get_identity_keys(self.db_conn, names)})
 
     @tornado.web.authenticated
@@ -1061,7 +1228,44 @@ class ChatE2EKeysHandler(BaseHandler, XSRFTokenMixin):
         self.write({"ok": True, "public_jwk": jwk})
 
 
+class ChatE2EIdentityHandler(BaseHandler, XSRFTokenMixin):
+    def compute_etag(self):
+        return None
+
+    @tornado.web.authenticated
+    @require_db
+    def get(self):
+        if not _require_chat(self):
+            return
+        name = _username(self)
+        self.set_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        self.write({"backup": load_identity_backup(name)})
+
+    @tornado.web.authenticated
+    @require_db
+    def put(self):
+        if not _require_chat(self):
+            return
+        self.check_xsrf_cookie()
+        name = _username(self)
+        try:
+            body = self.parse_json_body()
+        except tornado.web.HTTPError:
+            return
+        try:
+            backup = save_identity_backup(name, body.get("backup") or body)
+            jwk = put_identity_key(self.db_conn, name, backup["publicJwk"])
+        except ValueError as exc:
+            self.set_status(400)
+            self.write({"error": str(exc)})
+            return
+        self.write({"ok": True, "backup": backup, "public_jwk": jwk})
+
+
 class ChatConversationE2EHandler(BaseHandler, XSRFTokenMixin):
+    def compute_etag(self):
+        return None
+
     @tornado.web.authenticated
     @require_db
     def get(self, conversation_id: str):
@@ -1074,10 +1278,25 @@ class ChatConversationE2EHandler(BaseHandler, XSRFTokenMixin):
             return
         conv = chat_db.get_conversation(name, conversation_id)
         members = [m["username"] for m in (conv or {}).get("members") or []]
+        wraps = chat_db.get_e2e_wraps(name, conversation_id)
+        conv_key = None
+        try:
+            conv_key = adopt_conv_key(name, conversation_id, members)
+        except OSError:
+            logger.warning("e2e conv key adopt failed", exc_info=True)
+            conv_key = load_conv_key(name, conversation_id)
+        if not conv_key:
+            try:
+                conv_key = recover_conv_key(conversation_id, members, wraps)
+            except OSError:
+                logger.warning("e2e conv key recover failed", exc_info=True)
+                conv_key = load_conv_key(name, conversation_id)
+        self.set_header("Cache-Control", "no-store, no-cache, must-revalidate")
         self.write(
             {
-                "wraps": chat_db.get_e2e_wraps(name, conversation_id),
+                "wraps": wraps,
                 "keys": get_identity_keys(self.db_conn, members),
+                "conv_key": conv_key,
             }
         )
 
@@ -1096,12 +1315,35 @@ class ChatConversationE2EHandler(BaseHandler, XSRFTokenMixin):
             body = self.parse_json_body()
         except tornado.web.HTTPError:
             return
+        wraps_in = body.get("wraps") if isinstance(body.get("wraps"), dict) else {}
+        conv_key_in = body.get("conv_key")
+        if not wraps_in and not conv_key_in:
+            self.set_status(400)
+            self.write({"error": "wraps or conv_key required"})
+            return
+        conv = chat_db.get_conversation(name, conversation_id)
+        members = [m["username"] for m in (conv or {}).get("members") or []]
         try:
-            wraps = chat_db.put_e2e_wraps(
-                actor=name, conversation_id=conversation_id, wraps=body.get("wraps") or {}
+            wraps = (
+                chat_db.put_e2e_wraps(actor=name, conversation_id=conversation_id, wraps=wraps_in)
+                if wraps_in
+                else chat_db.get_e2e_wraps(name, conversation_id)
             )
+            shared = None
+            if conv_key_in:
+                shared = bind_conv_key(members, conversation_id, conv_key_in)
         except ValueError as exc:
             self.set_status(400)
             self.write({"error": str(exc)})
             return
-        self.write({"wraps": wraps})
+        except OSError:
+            logger.warning("e2e conv key write failed", exc_info=True)
+            self.set_status(503)
+            self.write({"error": "Could not save encryption key"})
+            return
+        if conv_key_in:
+            try:
+                dispatch_e2e_key_ready(name, conversation_id)
+            except Exception:
+                logger.debug("e2e key ready dispatch failed", exc_info=True)
+        self.write({"wraps": wraps, "conv_key": shared or load_conv_key(name, conversation_id)})

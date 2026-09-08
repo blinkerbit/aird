@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/css/app.css" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
+  {% include '_pwa_head.html' %}
   <title>Settings · Aird</title>
 </head>
 <body class="bg-base-200 min-h-screen">
@@ -92,7 +93,7 @@
                     {% if plugin['id'] == 'onedrive_browser' %}
                     <p class="text-xs text-base-content/50 mt-0.5">Save files to your OneDrive from Browse. Sign in here first.</p>
                     {% elif plugin['id'] == 'direct_messages' %}
-                    <p class="text-xs text-base-content/50 mt-0.5">Encrypted direct messages. Configure key backup path in Settings.</p>
+                    <p class="text-xs text-base-content/50 mt-0.5">Encrypted direct messages. Keys are saved in your Aird chat folder automatically.</p>
                     {% end %}
                   </div>
                   <div class="flex gap-2 shrink-0">
@@ -112,7 +113,7 @@
                 <div id="pluginPanelChatKey" class="border-t border-base-300 bg-base-200/40 px-3 py-3 hidden" data-plugin-panel-body="chat-key">
                   <h4 class="font-semibold text-sm">Chat encryption key backup</h4>
                   <p class="text-xs text-base-content/60 mt-1">
-                    Your private key stays in this browser. Set the OneDrive folder for key backups so Chat can restore it after sign-in on a new browser.
+                    Your encryption key is stored in your Aird chat folder and restored automatically. OneDrive is an optional extra copy.
                   </p>
                   <div class="form-control mt-3 max-w-xl">
                     <label class="label" for="chatKeyOdPath"><span class="label-text font-semibold text-sm">OneDrive folder path</span></label>
@@ -264,10 +265,12 @@
         <div class="card bg-base-100 shadow-sm border border-base-300">
           <div class="card-body">
             <h3 class="font-semibold">Chat notifications</h3>
-            <p class="text-sm text-base-content/60 mt-1">Desktop alerts when you receive a message while this tab is in the background.</p>
+            <p class="text-sm text-base-content/60 mt-1">
+              Alerts on this device when you get a message — including when Aird is installed as an app and closed (requires HTTPS).
+            </p>
             <label class="label cursor-pointer justify-start gap-3 mt-3 border border-base-300 rounded-lg px-3 py-2">
               <input type="checkbox" id="chatBrowserNotify" class="toggle toggle-primary toggle-sm">
-              <span class="label-text">Browser notifications</span>
+              <span class="label-text">Browser / app notifications</span>
             </label>
             <p id="chatNotifyMsg" class="text-xs text-base-content/50 mt-2 hidden"></p>
           </div>
@@ -373,8 +376,7 @@
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/onedrive-fe/index.js?v=20260902c"></script>
   {% end %}
   {% if is_chat_enabled() %}
-  <script nonce="{{ csp_nonce }}" src="/static/js/chat-e2e.js?v=20260825e2e"></script>
-  <script nonce="{{ csp_nonce }}" src="/static/js/chat-key-backup.js?v=20260825e2e"></script>
+  <script nonce="{{ csp_nonce }}" src="/static/js/chat-key-backup.js?v=20260906p"></script>
   {% end %}
   <script nonce="{{ csp_nonce }}">
   function getXsrfToken() {
@@ -632,28 +634,38 @@
       chatToggle.checked = localStorage.getItem('aird.chat.browserNotify') !== '0';
       chatToggle.addEventListener('change', async function () {
         if (chatToggle.checked) {
-          if ('Notification' in globalThis) {
-            const perm = await Notification.requestPermission();
-            if (perm !== 'granted') {
-              chatToggle.checked = false;
-              localStorage.setItem('aird.chat.browserNotify', '0');
-              if (chatMsg) {
-                chatMsg.textContent = 'Permission denied. Enable notifications in browser settings.';
-                chatMsg.classList.remove('hidden');
-              }
-              return;
+          try {
+            if (globalThis.AirdPwa?.subscribePush) {
+              await globalThis.AirdPwa.subscribePush();
+            } else if ('Notification' in globalThis) {
+              const perm = await Notification.requestPermission();
+              if (perm !== 'granted') throw new Error('Permission denied');
+              localStorage.setItem('aird.chat.browserNotify', '1');
+            }
+            if (chatMsg) {
+              chatMsg.textContent = 'Notifications enabled for this device (including installed app).';
+              chatMsg.classList.remove('hidden', 'text-error');
+              chatMsg.classList.add('text-success');
+            }
+          } catch (err) {
+            chatToggle.checked = false;
+            localStorage.setItem('aird.chat.browserNotify', '0');
+            if (chatMsg) {
+              chatMsg.textContent = (err && err.message) || 'Permission denied. Enable notifications in browser settings.';
+              chatMsg.classList.remove('hidden', 'text-success');
+              chatMsg.classList.add('text-error');
             }
           }
-          localStorage.setItem('aird.chat.browserNotify', '1');
-          if (chatMsg) {
-            chatMsg.textContent = 'Browser notifications enabled.';
-            chatMsg.classList.remove('hidden', 'text-error');
-            chatMsg.classList.add('text-success');
-          }
         } else {
-          localStorage.setItem('aird.chat.browserNotify', '0');
+          try {
+            if (globalThis.AirdPwa?.unsubscribePush) {
+              await globalThis.AirdPwa.unsubscribePush();
+            } else {
+              localStorage.setItem('aird.chat.browserNotify', '0');
+            }
+          } catch { localStorage.setItem('aird.chat.browserNotify', '0'); }
           if (chatMsg) {
-            chatMsg.textContent = 'Browser notifications disabled.';
+            chatMsg.textContent = 'Notifications disabled on this device.';
             chatMsg.classList.remove('hidden', 'text-error');
             chatMsg.classList.add('text-success');
           }

@@ -2,8 +2,24 @@
 
 from __future__ import annotations
 
+import logging
+
 from aird.plugins.chat import db as chat_db
 from aird.plugins.chat.service import get_chat_hub, message_preview
+
+logger = logging.getLogger(__name__)
+
+
+def _send_web_push(username: str, payload: dict) -> None:
+    """Best-effort Web Push for installed PWAs / background browsers."""
+    try:
+        import aird.constants as constants_module
+        from aird.pwa.push import send_web_push
+
+        conn = getattr(constants_module, "DB_CONN", None)
+        send_web_push(conn, username, payload)
+    except Exception:
+        logger.debug("web push skipped for %s", username, exc_info=True)
 
 
 def dispatch_message(msg: dict, *, sender_id: int, sender_username: str) -> None:
@@ -24,17 +40,28 @@ def dispatch_message(msg: dict, *, sender_id: int, sender_username: str) -> None
             total = chat_db.unread_total(m["username"])
         except Exception:
             total = 0
-        get_chat_hub().send_to_user(
-            m["user_id"],
+        preview = message_preview(msg)
+        notify = {
+            "type": "chat_notify",
+            "conversation_id": conv_id,
+            "message_id": msg["id"],
+            "sender": msg.get("sender_username"),
+            "msg_type": msg.get("msg_type"),
+            "preview": preview,
+            "unread_total": total,
+            "mention": m["username"] in mentions,
+        }
+        get_chat_hub().send_to_user(m["user_id"], notify)
+        _send_web_push(
+            m["username"],
             {
-                "type": "chat_notify",
-                "conversation_id": conv_id,
-                "message_id": msg["id"],
+                "title": msg.get("sender_username") or "Aird",
+                "body": preview,
                 "sender": msg.get("sender_username"),
-                "msg_type": msg.get("msg_type"),
-                "preview": message_preview(msg),
-                "unread_total": total,
-                "mention": m["username"] in mentions,
+                "preview": preview,
+                "conversation_id": conv_id,
+                "url": f"/chat?c={conv_id}",
+                "tag": f"aird-chat-{conv_id}",
             },
         )
 
@@ -106,4 +133,23 @@ def dispatch_typing(username: str, conversation_id: str, actor_id: int) -> None:
         chat_db.member_user_ids(username, conversation_id),
         {"type": "chat_typing", "conversation_id": conversation_id, "username": username},
         exclude_user_id=actor_id,
+    )
+
+
+def dispatch_e2e_need_key(username: str, conversation_id: str, actor_id: int) -> None:
+    get_chat_hub().broadcast_user_ids(
+        chat_db.member_user_ids(username, conversation_id),
+        {
+            "type": "chat_e2e_need_key",
+            "conversation_id": conversation_id,
+            "username": username,
+        },
+        exclude_user_id=actor_id,
+    )
+
+
+def dispatch_e2e_key_ready(username: str, conversation_id: str) -> None:
+    get_chat_hub().broadcast_user_ids(
+        chat_db.member_user_ids(username, conversation_id),
+        {"type": "chat_e2e_key_ready", "conversation_id": conversation_id},
     )

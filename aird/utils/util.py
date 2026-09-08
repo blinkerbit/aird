@@ -310,12 +310,14 @@ def _format_child_count(count: int) -> str:
 
 def is_upload_staging_filename(name: str) -> bool:
     """Temp files created during in-progress uploads — never show in browse."""
-    return (
-        name.startswith(".aird_up_")
-        or name.startswith(".aird_range_")
-        or name.startswith(".aird_bulk_")
-        or name.startswith("aird_range_request_")
-        or name.startswith("aird_ws_upload_")
+    return name.startswith(
+        (
+            ".aird_up_",
+            ".aird_range_",
+            ".aird_bulk_",
+            "aird_range_request_",
+            "aird_ws_upload_",
+        )
     )
 
 

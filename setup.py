@@ -10,6 +10,8 @@ install_requires = [
     "chardet>=5.0.0,<6.0.0",
     "pyasn1>=0.6.2",
     "webauthn>=2.0.0",
+    "watchdog>=4.0.0",
+    "pywebpush>=1.14.0",
 ]
 
 extras_require = {
@@ -21,7 +23,7 @@ extras_require = {
 
 setup(
     name="aird",
-    version="0.5.3.dev0",
+    version="0.5.4",
     packages=find_packages(),
     include_package_data=True,
     package_data={"aird": [
@@ -33,6 +35,7 @@ setup(
         "static/img/*",
         "static/img/**/*",
         "static/favicon.*",
+        "static/manifest.webmanifest",
     ]},
     entry_points={
         "console_scripts": [

@@ -144,7 +144,14 @@ from aird.handlers.file_op_handlers import (
     RenameHandler,
     UploadHandler,
 )
-from aird.handlers.health_handler import HealthHandler, ServiceWorkerHandler
+from aird.handlers.health_handler import HealthHandler
+from aird.handlers.pwa_handlers import (
+    ManifestHandler,
+    PwaPushSubscribeHandler,
+    PwaPushUnsubscribeHandler,
+    PwaVapidPublicKeyHandler,
+    ServiceWorkerHandler,
+)
 from aird.handlers.share_handlers import (
     ShareCreateHandler,
     ShareFilesHandler,
@@ -238,7 +245,12 @@ def make_app(
         ),
         (r"/", RootHandler),
         (r"/health", HealthHandler),
+        (r"/sw.js", ServiceWorkerHandler),
         (r"/sw-transfer.js", ServiceWorkerHandler),
+        (r"/manifest.webmanifest", ManifestHandler),
+        (r"/api/pwa/vapid-public-key", PwaVapidPublicKeyHandler),
+        (r"/api/pwa/push-subscribe", PwaPushSubscribeHandler),
+        (r"/api/pwa/push-unsubscribe", PwaPushUnsubscribeHandler),
         (r"/login", login_handler),
         (r"/logout", LogoutHandler),
         (r"/auth/mandatory-password", MandatoryPasswordHandler),

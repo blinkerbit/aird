@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import logging
-
 import tornado.web
 
 from aird.handlers.base_handler import BaseHandler, XSRFTokenMixin, require_db
@@ -13,20 +10,14 @@ from aird.plugins.onedrive.settings import (
     get_settings,
     save_device_pending,
     save_device_tokens,
-    save_settings,
     load_device_pending,
-    clear_token_blob,
-    save_stored_access_token,
 )
 from aird.plugins.onedrive.auth import OneDriveAuthError, poll_device_flow, start_device_flow
 from aird.plugins.onedrive_host import is_onedrive_enabled
 from aird.plugins.onedrive_host import status as host_status
-from aird.plugins.onedrive_host.sync import sync_host
 from aird.plugins.onedrive_host.sync_queue import kick_sync
 from aird.plugins.onedrive_host.token_store import save_file_token, file_token_configured
 from aird.plugins.onedrive_host.watcher import reload_watchers
-
-logger = logging.getLogger(__name__)
 
 
 def _require_admin(handler: BaseHandler) -> bool:
@@ -57,28 +48,33 @@ class OneDriveHostStatusHandler(BaseHandler):
         })
 
 
+def _list_all_maps(conn) -> list[dict]:
+    maps = od_db.list_maps(conn, "admin")
+    if maps:
+        return maps
+    out = []
+    for row in conn.execute(
+        "SELECT id, username, local_path, remote_path, ignore_extra, updated_at "
+        "FROM onedrive_folder_maps ORDER BY id"
+    ).fetchall():
+        out.append({
+            "id": int(row[0]),
+            "username": row[1],
+            "local_path": row[2],
+            "remote_path": row[3],
+            "ignore_extra": row[4] or "",
+            "updated_at": row[5],
+        })
+    return out
+
+
 class OneDriveHostMapsHandler(BaseHandler, XSRFTokenMixin):
     @tornado.web.authenticated
     @require_db
     def get(self):
         if not _require_admin(self):
             return
-        maps = od_db.list_maps(self.db_conn, "admin")
-        if not maps:
-            maps = []
-            for row in self.db_conn.execute(
-                "SELECT id, username, local_path, remote_path, ignore_extra, updated_at "
-                "FROM onedrive_folder_maps ORDER BY id"
-            ).fetchall():
-                maps.append({
-                    "id": int(row[0]),
-                    "username": row[1],
-                    "local_path": row[2],
-                    "remote_path": row[3],
-                    "ignore_extra": row[4] or "",
-                    "updated_at": row[5],
-                })
-        self.write({"maps": maps})
+        self.write({"maps": _list_all_maps(self.db_conn)})
 
     @tornado.web.authenticated
     @require_db

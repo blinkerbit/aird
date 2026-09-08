@@ -5,26 +5,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/static/css/app.css" />
-  <link rel="stylesheet" href="/static/css/chat.css" />
+  <link rel="stylesheet" href="/static/css/chat.css?v=20260906n" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
+  {% include '_pwa_head.html' %}
   <title>Chat · Aird</title>
 </head>
-<body>
-  <div class="aird-shell aird-shell--wide">
+<body class="chat-page">
+  <div class="aird-shell aird-shell--wide aird-shell--chat">
 {% set nav_title = "Aird" %}
 {% set nav_search_path = "" %}
 {% set show_admin_link = False %}
 {% include '_app_nav_header.html' %}
-
-    <header class="mb-4 chat-page-header">
-      <div class="chat-page-header-row">
-        <h1 class="aird-page-title">Chat</h1>
-        <button type="button" id="chatE2eHelpBtn" class="btn btn-ghost btn-circle btn-sm chat-e2e-help-btn" aria-label="Encryption key help" title="Encryption key help">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="chat-e2e-help-icon" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        </button>
-      </div>
-      <p class="aird-page-lead">Direct messages are end-to-end encrypted on your device. The server and admins only see ciphertext.</p>
-    </header>
 
     <dialog id="chatE2eHelpDialog" class="chat-e2e-help-dialog">
       <form method="dialog" class="chat-e2e-help-panel">
@@ -33,7 +24,7 @@
           <button type="button" class="btn btn-ghost btn-xs" data-chat-e2e-close aria-label="Close">✕</button>
         </div>
         <div class="chat-e2e-help-body">
-          <p class="chat-e2e-disclaimer">Your private encryption key stays in this browser. Prefer backing it up to OneDrive — if you open Chat on a new browser or after clearing site data without a backup, older messages cannot be decrypted. Sign in to OneDrive and set the key folder under your username → Settings → Direct messages → Settings.</p>
+          <p class="chat-e2e-disclaimer">Your private encryption key is saved in your Aird chat folder and restored on this device automatically. Starting a chat also shares the conversation key with the other people in it. OneDrive backup is optional if you want a copy off this server.</p>
           <p class="text-sm opacity-70" data-chat-e2e-backup-status></p>
           <div class="chat-e2e-help-actions">
             <button type="button" id="chatE2eDownloadBtn" class="btn btn-outline btn-sm">Download key file</button>
@@ -62,21 +53,39 @@
       </form>
     </dialog>
 
-    <div class="chat-layout">
+    <div class="chat-layout chat-layout--list" id="chatLayout">
       <aside class="chat-sidebar">
         <div class="chat-sidebar-head">
-          <h2>Conversations</h2>
+          <h2>Messages</h2>
+          <div class="chat-sidebar-tools">
+            <button type="button" id="chatE2eHelpBtn" class="chat-tool-btn" aria-label="Encryption key help" title="Encryption key">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+            </button>
+            <button type="button" id="chatNewBtn" class="chat-tool-btn chat-tool-btn--accent" aria-label="New conversation" title="New conversation">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+          </div>
         </div>
         <div class="chat-sidebar-body">
+          <div id="chatNewPanel" class="chat-new-panel" hidden>
+            <div class="chat-new-tabs" role="tablist">
+              <button type="button" class="chat-new-tab is-on" data-new="dm" role="tab" aria-selected="true">Direct</button>
+              <button type="button" class="chat-new-tab" data-new="group" role="tab" aria-selected="false">Group</button>
+            </div>
+            <div id="chatNewGroupFields" class="chat-new-group" hidden>
+              <input id="chatGroupTitle" type="text" class="input input-bordered input-sm w-full" maxlength="80" placeholder="Group name" autocomplete="off">
+              <div id="chatGroupChips" class="chat-chips" hidden></div>
+            </div>
+            <div class="chat-new-user-wrap">
+              <label for="chatNewUser" class="sr-only">Find user</label>
+              <input id="chatNewUser" type="text" class="input input-bordered input-sm flex-1" placeholder="Find people…" autocomplete="off" aria-autocomplete="list" aria-controls="chatUserSuggest">
+              <button type="button" id="chatStartBtn" class="btn btn-primary btn-sm">Chat</button>
+              <button type="button" id="chatGroupCreate" class="btn btn-primary btn-sm" hidden>Create</button>
+              <div id="chatUserSuggest" class="menu menu-sm bg-base-100 border border-base-300 rounded-box shadow-lg hidden"></div>
+            </div>
+          </div>
           <input id="chatSearch" type="search" class="input input-bordered input-sm w-full" placeholder="Search messages…" autocomplete="off">
           <div id="chatSearchResults" class="chat-search-results hidden"></div>
-          <div class="chat-new-user-wrap">
-            <label for="chatNewUser" class="sr-only">Find user</label>
-            <input id="chatNewUser" type="text" class="input input-bordered input-sm flex-1" placeholder="Find user…" autocomplete="off" aria-autocomplete="list" aria-controls="chatUserSuggest">
-            <button type="button" id="chatStartBtn" class="btn btn-primary btn-sm">DM</button>
-            <button type="button" id="chatGroupBtn" class="btn btn-ghost btn-sm">Group</button>
-            <div id="chatUserSuggest" class="menu menu-sm bg-base-100 border border-base-300 rounded-box shadow-lg hidden"></div>
-          </div>
           <ul id="chatConvList"></ul>
         </div>
       </aside>
@@ -88,11 +97,15 @@
           </div>
         </div>
         <div id="chatPinBar" class="chat-pin-bar" hidden></div>
+        <div id="chatE2eStatus" class="chat-e2e-status" hidden></div>
         <div class="chat-thread-body">
           <div id="chatMessages">
             <div class="chat-empty" id="chatEmptyState">
-              <div class="chat-empty-icon" aria-hidden="true">💬</div>
-              <p>Pick someone from the list or start a new chat.</p>
+              <div class="chat-empty-icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              </div>
+              <p>Your messages</p>
+              <p class="chat-empty-hint">Pick someone from the list or start a new chat.</p>
             </div>
           </div>
           <div id="chatReplyBar" class="chat-reply-bar hidden">
@@ -102,32 +115,35 @@
           <div id="chatMentionSuggest" class="menu menu-sm bg-base-100 border border-base-300 rounded-box shadow-lg hidden"></div>
           <form id="chatComposer" class="chat-composer hidden">
             <div class="chat-toolbar">
-              <button type="button" class="chat-toolbar-btn" data-cmd="bold" title="Bold"><strong>B</strong></button>
-              <button type="button" class="chat-toolbar-btn" data-cmd="italic" title="Italic"><em>I</em></button>
-              <button type="button" class="chat-toolbar-btn" id="chatEmojiBtn" title="Emoji">😊</button>
-              <button type="button" class="chat-toolbar-btn" data-cmd="link" title="Insert link">Link</button>
-              <button type="button" id="chatBrowseBtn" class="chat-toolbar-btn" title="Attach from browse">Browse</button>
-              <label class="chat-toolbar-btn" title="Upload file">
-                Upload
-                <input type="file" id="chatFileInput" class="hidden" multiple>
-              </label>
-              <label class="chat-toolbar-btn" title="Upload GIF">
-                GIF
-                <input type="file" id="chatGifInput" accept="image/gif,.gif" class="hidden">
-              </label>
+              <button type="button" class="chat-toolbar-btn" data-cmd="bold" title="Bold" aria-label="Bold"><strong>B</strong></button>
+              <button type="button" class="chat-toolbar-btn" data-cmd="italic" title="Italic" aria-label="Italic"><em>I</em></button>
+              <button type="button" class="chat-toolbar-btn" id="chatEmojiBtn" title="Emoji" aria-label="Emoji">😊</button>
+              <button type="button" class="chat-toolbar-btn" data-cmd="link" title="Insert link" aria-label="Insert link">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l1.83-1.83a5 5 0 0 0-7.07-7.07L10.5 6.5"/><path d="M14 11a5 5 0 0 0-7.54-.54L4.63 12.3a5 5 0 0 0 7.07 7.07L13.5 17.5"/></svg>
+              </button>
+              <details class="chat-attach-menu">
+                <summary class="chat-toolbar-btn" title="Attach" aria-label="Attach">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21.44 11.05 12.06 20.4a5.5 5.5 0 0 1-7.78-7.78l10.6-10.6a3.5 3.5 0 0 1 4.95 4.95L8.7 18.17a1.5 1.5 0 0 1-2.12-2.12l9.9-9.9"/></svg>
+                </summary>
+                <div class="chat-attach-list">
+                  <button type="button" id="chatBrowseBtn">From files</button>
+                  <label>Upload<input type="file" id="chatFileInput" class="hidden" multiple></label>
+                  <label>GIF<input type="file" id="chatGifInput" accept="image/gif,.gif" class="hidden"></label>
+                </div>
+              </details>
             </div>
             <div class="chat-editor-wrap">
               <div id="chatEmojiPicker" class="chat-emoji-picker hidden" hidden></div>
               <div id="chatPathSuggest" class="chat-path-suggest" hidden></div>
-              <div id="chatPending" class="chat-pending" hidden></div>
-              <div id="chatEditor" contenteditable="true" data-placeholder="Write a message…" aria-label="Write a message" aria-multiline="true" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
-            </div>
-            <div class="chat-composer-actions">
-              <label class="chat-enter-send">
-                <input type="checkbox" id="chatEnterToSend" checked>
-                <span>Press Enter to send</span>
-              </label>
-              <button type="submit" class="btn btn-primary btn-sm px-5">Send</button>
+              <div class="chat-composer-row">
+                <div class="chat-composer-field">
+                  <div id="chatPending" class="chat-pending" hidden></div>
+                  <div id="chatEditor" contenteditable="true" data-placeholder="Write a message…" aria-label="Write a message" aria-multiline="true" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
+                </div>
+                <button type="submit" class="chat-send-btn" title="Send" aria-label="Send">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3.4 20.6 21 12 3.4 3.4 3 10.2 15 12 3 13.8z"/></svg>
+                </button>
+              </div>
             </div>
           </form>
         </div>
@@ -154,20 +170,16 @@
     <form method="dialog" class="modal-backdrop"><button type="submit">close</button></form>
   </dialog>
 
-  <dialog id="chatGroupModal" class="modal">
-    <div class="modal-box max-w-md">
-      <h3 class="font-bold text-lg">New group</h3>
-      <label class="form-control mt-3">
-        <span class="label-text text-sm">Title</span>
-        <input id="chatGroupTitle" type="text" class="input input-bordered input-sm" maxlength="80" placeholder="Team">
-      </label>
-      <label class="form-control mt-3">
-        <span class="label-text text-sm">Members (comma-separated usernames)</span>
-        <input id="chatGroupMembers" type="text" class="input input-bordered input-sm" placeholder="alice, bob">
-      </label>
+  <dialog id="chatMemberModal" class="modal">
+    <div class="modal-box max-w-sm">
+      <h3 class="font-bold text-lg">Add member</h3>
+      <div class="chat-new-user-wrap mt-3">
+        <input id="chatMemberUser" type="text" class="input input-bordered input-sm w-full" placeholder="Find people…" autocomplete="off">
+        <div id="chatMemberSuggest" class="menu menu-sm bg-base-100 border border-base-300 rounded-box shadow-lg hidden"></div>
+      </div>
       <div class="modal-action">
-        <button type="button" id="chatGroupCancel" class="btn btn-sm">Cancel</button>
-        <button type="button" id="chatGroupCreate" class="btn btn-sm btn-primary">Create</button>
+        <button type="button" id="chatMemberCancel" class="btn btn-sm">Cancel</button>
+        <button type="button" id="chatMemberAdd" class="btn btn-sm btn-primary">Add</button>
       </div>
     </div>
     <form method="dialog" class="modal-backdrop"><button type="submit">close</button></form>
@@ -225,8 +237,7 @@
   <script nonce="{{ csp_nonce }}" src="/static/js/components/folder-picker.js"></script>
   <script nonce="{{ csp_nonce }}" src="/static/js/chat-ws.js"></script>
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/onedrive-fe/index.js?v=20260902b"></script>
-  <script nonce="{{ csp_nonce }}" src="/static/js/chat-e2e.js?v=20260825e2e"></script>
-  <script nonce="{{ csp_nonce }}" src="/static/js/chat-key-backup.js?v=20260825e2e"></script>
-  <script nonce="{{ csp_nonce }}" src="/static/js/pages/chat.js?v=20260825e2e2"></script>
+  <script nonce="{{ csp_nonce }}" src="/static/js/chat-key-backup.js?v=20260906p"></script>
+  <script nonce="{{ csp_nonce }}" src="/static/js/pages/chat.js?v=20260906p"></script>
 </body>
 </html>

@@ -78,6 +78,12 @@
       <div class="tt-tooltip" id="transferTrackerTooltip">No transfers</div>
     </div>
 
+    <button type="button" id="airdPwaInstallBtn" class="btn btn-ghost btn-sm gap-1 hidden"
+            title="Install Aird as an app" aria-label="Install Aird">
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M5 21h14"/></svg>
+      <span class="hidden sm:inline">Install</span>
+    </button>
+
     {% if current_user %}
     <button type="button" class="btn btn-ghost btn-sm gap-1" title="Command palette (Cmd+K / Ctrl+K)"
             data-aird-cmdk aria-label="Command palette">
@@ -114,11 +120,15 @@
 
 <script src="/static/js/aird-core.js"></script>
 <script src="/static/js/transfer-tracker.js?v=20260821a"></script>
+<script src="/static/js/pwa.js" defer></script>
 <script src="/static/js/common/command-palette.js" defer></script>
 {% if current_user %}
+<script nonce="{{ csp_nonce }}">document.documentElement.dataset.airdUser = '1';</script>
 <script nonce="{{ csp_nonce }}" src="/static/js/feature-flags-live.js" defer></script>
 {% if is_chat_enabled() %}
+<script nonce="{{ csp_nonce }}">window.__AIRD_CHAT_USER__ = {% raw json_encode(current_user.get('username') if current_user else '') %};</script>
 <script nonce="{{ csp_nonce }}" src="/static/js/chat-ws.js"></script>
+<script nonce="{{ csp_nonce }}" src="/static/js/chat-e2e.js?v=20260906p"></script>
 <script nonce="{{ csp_nonce }}" src="/static/js/chat-notify.js" defer></script>
 {% end %}
 {% end %}

@@ -10,6 +10,70 @@ logger = logging.getLogger(__name__)
 PRAGMA_TABLE_INFO = "PRAGMA table_info(shares)"
 
 
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
+def _add_missing_columns(
+    conn: sqlite3.Connection, table: str, columns: dict[str, str]
+) -> None:
+    existing = _table_columns(conn, table)
+    for name, ddl in columns.items():
+        if name not in existing:
+            conn.execute(ddl)
+
+
+def _migrate_share_columns(conn: sqlite3.Connection) -> None:
+    _add_missing_columns(
+        conn,
+        "shares",
+        {
+            "allowed_users": "ALTER TABLE shares ADD COLUMN allowed_users TEXT",
+            "secret_token": "ALTER TABLE shares ADD COLUMN secret_token TEXT",
+            "share_type": "ALTER TABLE shares ADD COLUMN share_type TEXT DEFAULT 'static'",
+            "allow_list": "ALTER TABLE shares ADD COLUMN allow_list TEXT",
+            "avoid_list": "ALTER TABLE shares ADD COLUMN avoid_list TEXT",
+            "expiry_date": "ALTER TABLE shares ADD COLUMN expiry_date TEXT",
+            "modify_users": "ALTER TABLE shares ADD COLUMN modify_users TEXT",
+            "tag_name": "ALTER TABLE shares ADD COLUMN tag_name TEXT",
+            "created_by": "ALTER TABLE shares ADD COLUMN created_by TEXT",
+        },
+    )
+
+
+def _migrate_user_columns(conn: sqlite3.Connection) -> None:
+    user_columns = _table_columns(conn, "users")
+    if user_columns and "must_change_password" not in user_columns:
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"
+        )
+    _add_missing_columns(
+        conn,
+        "users",
+        {
+            "quota_bytes": "ALTER TABLE users ADD COLUMN quota_bytes INTEGER",
+            "used_bytes": "ALTER TABLE users ADD COLUMN used_bytes INTEGER NOT NULL DEFAULT 0",
+        },
+    )
+
+
+def _migrate_ranged_upload_columns(conn: sqlite3.Connection) -> None:
+    _add_missing_columns(
+        conn,
+        "ranged_upload_sessions",
+        {
+            "transfer_profile": (
+                "ALTER TABLE ranged_upload_sessions "
+                "ADD COLUMN transfer_profile TEXT NOT NULL DEFAULT 'open'"
+            ),
+            "chunk_bytes": (
+                "ALTER TABLE ranged_upload_sessions "
+                "ADD COLUMN chunk_bytes INTEGER NOT NULL DEFAULT 94371840"
+            ),
+        },
+    )
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     # Enable Write-Ahead Logging (WAL) for high concurrency
     conn.execute("PRAGMA journal_mode = WAL;")
@@ -68,34 +132,8 @@ def init_db(conn: sqlite3.Connection) -> None:
         )
         """)
 
-    cursor = conn.cursor()
-    cursor.execute(PRAGMA_TABLE_INFO)
-    columns = [column[1] for column in cursor.fetchall()]
-    if "allowed_users" not in columns:
-        cursor.execute("ALTER TABLE shares ADD COLUMN allowed_users TEXT")
-    if "secret_token" not in columns:
-        cursor.execute("ALTER TABLE shares ADD COLUMN secret_token TEXT")
-    if "share_type" not in columns:
-        cursor.execute("ALTER TABLE shares ADD COLUMN share_type TEXT DEFAULT 'static'")
-    if "allow_list" not in columns:
-        cursor.execute("ALTER TABLE shares ADD COLUMN allow_list TEXT")
-    if "avoid_list" not in columns:
-        cursor.execute("ALTER TABLE shares ADD COLUMN avoid_list TEXT")
-    if "expiry_date" not in columns:
-        cursor.execute("ALTER TABLE shares ADD COLUMN expiry_date TEXT")
-    if "modify_users" not in columns:
-        cursor.execute("ALTER TABLE shares ADD COLUMN modify_users TEXT")
-    if "tag_name" not in columns:
-        cursor.execute("ALTER TABLE shares ADD COLUMN tag_name TEXT")
-    if "created_by" not in columns:
-        cursor.execute("ALTER TABLE shares ADD COLUMN created_by TEXT")
-
-    cursor.execute("PRAGMA table_info(users)")
-    user_columns = [column[1] for column in cursor.fetchall()]
-    if user_columns and "must_change_password" not in user_columns:
-        conn.execute(
-            "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"
-        )
+    _migrate_share_columns(conn)
+    _migrate_user_columns(conn)
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS audit_log (
@@ -131,14 +169,6 @@ def init_db(conn: sqlite3.Connection) -> None:
             UNIQUE(username, file_path)
         )
         """)
-
-    user_cols = {r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()}
-    if "quota_bytes" not in user_cols:
-        conn.execute("ALTER TABLE users ADD COLUMN quota_bytes INTEGER")
-    if "used_bytes" not in user_cols:
-        conn.execute(
-            "ALTER TABLE users ADD COLUMN used_bytes INTEGER NOT NULL DEFAULT 0"
-        )
 
     # ABAC tables (additive only; safe to leave in place even when the engine is off).
     conn.execute(
@@ -226,22 +256,7 @@ def init_db(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL
         )
         """)
-    ranged_cols = {
-        row[1]
-        for row in conn.execute(
-            "PRAGMA table_info(ranged_upload_sessions)"
-        ).fetchall()
-    }
-    if "transfer_profile" not in ranged_cols:
-        conn.execute(
-            "ALTER TABLE ranged_upload_sessions "
-            "ADD COLUMN transfer_profile TEXT NOT NULL DEFAULT 'open'"
-        )
-    if "chunk_bytes" not in ranged_cols:
-        conn.execute(
-            "ALTER TABLE ranged_upload_sessions "
-            "ADD COLUMN chunk_bytes INTEGER NOT NULL DEFAULT 94371840"
-        )
+    _migrate_ranged_upload_columns(conn)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS upload_config (
             key TEXT PRIMARY KEY,
@@ -499,6 +514,21 @@ def init_db(conn: sqlite3.Connection) -> None:
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_user_path_mounts_user
         ON user_path_mounts (username)
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+            endpoint TEXT PRIMARY KEY,
+            username TEXT NOT NULL,
+            p256dh TEXT NOT NULL,
+            auth TEXT NOT NULL,
+            user_agent TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user
+        ON push_subscriptions (username)
         """)
 
     conn.commit()

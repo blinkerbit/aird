@@ -384,7 +384,7 @@ def cmd_bulk_put(args: argparse.Namespace) -> int:
         )
         print(f"Uploaded {local} → {args.remote or '/'}{args.name or local.name}")
         return 0
-    except (AirdAuthError, AirdAPIError, OSError, RuntimeError) as exc:
+    except (AirdAuthError, AirdAPIError, OSError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
@@ -401,7 +401,7 @@ def cmd_bulk_get(args: argparse.Namespace) -> int:
         n = bulk_get_file(client.http, server, args.remote, out)
         print(f"Downloaded {args.remote} ({n} bytes) → {out}")
         return 0
-    except (AirdAuthError, AirdAPIError, OSError, RuntimeError) as exc:
+    except (AirdAuthError, AirdAPIError, OSError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
 

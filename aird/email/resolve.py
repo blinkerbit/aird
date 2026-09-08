@@ -7,11 +7,24 @@ import sqlite3
 
 from aird.db.user_attributes import get_user_attributes
 
-_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_EMAIL_RE = re.compile(r"\A[^@\s]+@[^@\s]+\.[^@\s]+\Z")
 
 
 def looks_like_email(value: str) -> bool:
-    return bool(_EMAIL_RE.match((value or "").strip()))
+    text = (value or "").strip()
+    if not text or len(text) > 320 or text.count("@") != 1:
+        return False
+    local, _, domain = text.partition("@")
+    if not (1 <= len(local) <= 254):
+        return False
+    labels = domain.split(".")
+    if len(labels) < 2:
+        return False
+    if any(not (1 <= len(part) <= 63) for part in labels[:-1]):
+        return False
+    if not (2 <= len(labels[-1]) <= 63):
+        return False
+    return bool(_EMAIL_RE.match(text))
 
 
 def resolve_user_email(conn: sqlite3.Connection | None, username: str) -> str | None:

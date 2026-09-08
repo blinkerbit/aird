@@ -36,6 +36,7 @@ def register_chat(routes: list) -> None:
         ChatConversationE2EHandler,
         ChatConversationMessagesHandler,
         ChatConversationsHandler,
+        ChatE2EIdentityHandler,
         ChatE2EKeysHandler,
         ChatForwardHandler,
         ChatMembersHandler,
@@ -59,6 +60,7 @@ def register_chat(routes: list) -> None:
         [
             (r"/chat", ChatPageHandler),
             (r"/api/chat/conversations", ChatConversationsHandler),
+            (r"/api/chat/e2e/identity", ChatE2EIdentityHandler),
             (r"/api/chat/e2e/keys", ChatE2EKeysHandler),
             (rf"/api/chat/conversations/{cid}/e2e", ChatConversationE2EHandler),
             (rf"/api/chat/conversations/{cid}/messages/{mid}/file", ChatMessageFileHandler),

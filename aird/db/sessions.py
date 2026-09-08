@@ -212,7 +212,6 @@ def cleanup_expired_sessions(conn: sqlite3.Connection) -> int:
             "last_active_at": row[2],
             "expires_at": row[3],
         }
-        if _is_expired(session, now):
-            if revoke_session_by_id(conn, row[0]):
-                removed += 1
+        if _is_expired(session, now) and revoke_session_by_id(conn, row[0]):
+            removed += 1
     return removed

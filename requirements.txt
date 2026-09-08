@@ -9,3 +9,4 @@ requests>=2.31.0
 chardet>=5.0.0,<6.0.0
 pyasn1>=0.6.2
 watchdog>=4.0.0
+pywebpush>=1.14.0
