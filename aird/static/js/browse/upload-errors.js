@@ -50,13 +50,13 @@ export function friendlyUploadErrorMessage(err) {
   const raw = err?.message ? String(err.message).trim() : '';
   if (!raw || raw === 'cancelled') return raw;
   const lower = raw.toLowerCase();
-  if (lower.includes('network') || lower.includes('websocket')) {
-    return 'Upload interrupted. Check your connection and try again.';
-  }
   const fromJson = messageFromParsedJson(parseUploadErrorJson(raw));
   if (fromJson) return fromJson;
   const fromPolicy = messageFromPolicyKeywords(lower);
   if (fromPolicy) return fromPolicy;
+  if (lower.includes('network') || lower.includes('websocket')) {
+    return 'Upload interrupted. Check your connection and try again.';
+  }
   const fromSize = messageFromSizeError(raw, lower);
   if (fromSize) return fromSize;
   if (raw.length > 0 && raw.length < 500) return raw;

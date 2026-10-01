@@ -70,6 +70,22 @@ def delete_resource_tag_by_name(conn: sqlite3.Connection, tag: str) -> int:
         return 0
 
 
+def delete_resource_tag_for_path(conn: sqlite3.Connection, tag: str, glob_pattern: str) -> int:
+    """Remove one tag from one path glob. Returns rows deleted."""
+    if conn is None or not tag or not glob_pattern:
+        return 0
+    try:
+        with conn:
+            cur = conn.execute(
+                "DELETE FROM resource_tags WHERE tag = ? AND glob_pattern = ?",
+                (tag, glob_pattern),
+            )
+            return cur.rowcount
+    except sqlite3.Error as exc:
+        logger.warning("delete_resource_tag_for_path failed: %s", exc)
+        return 0
+
+
 def update_resource_tag(
     conn: sqlite3.Connection,
     tag_id: int,
@@ -104,6 +120,22 @@ def update_resource_tag(
     except sqlite3.Error as exc:
         logger.warning("update_resource_tag failed: %s", exc)
         return False
+
+
+def rename_resource_tag_name(conn: sqlite3.Connection, old_tag: str, new_tag: str) -> int:
+    """Rename every rule from old_tag to new_tag. Returns rows updated."""
+    if conn is None or not old_tag or not new_tag or old_tag == new_tag:
+        return 0
+    try:
+        with conn:
+            cur = conn.execute(
+                "UPDATE resource_tags SET tag = ? WHERE tag = ?",
+                (new_tag, old_tag),
+            )
+            return cur.rowcount
+    except sqlite3.Error as exc:
+        logger.warning("rename_resource_tag_name failed: %s", exc)
+        return 0
 
 
 def list_resource_tags(conn: sqlite3.Connection) -> list[dict]:

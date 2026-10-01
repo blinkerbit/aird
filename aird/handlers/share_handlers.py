@@ -16,6 +16,7 @@ from aird.handlers.base_handler import (
     login_matches_share_creator_field,
     require_action,
     require_db,
+    require_feature_flag,
     require_modify_access,
 )
 from aird.plugins.access import PLUGIN_CHAT, user_may_use_plugin
@@ -711,13 +712,11 @@ def _compute_share_update_fields(
 class ShareFilesHandler(BaseHandler):
     @tornado.web.authenticated
     @require_action("share.view")
+    @require_feature_flag(
+        "file_share",
+        body="Feature disabled: File sharing is currently disabled by administrator",
+    )
     def get(self):
-        if not self.require_feature(
-            "file_share",
-            True,
-            body="Feature disabled: File sharing is currently disabled by administrator",
-        ):
-            return
         self.render("share.html", shares={}, chat_enabled=is_chat_enabled() and user_may_use_plugin(PLUGIN_CHAT, get_username_string_for_db(self), self.db_conn))
 
 
@@ -744,12 +743,8 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
     @require_action("share.create")
     @require_db
     @require_modify_access()
+    @require_feature_flag("file_share", body={"error": FS_DISABLED_MSG})
     def post(self):
-        if not self.require_feature(
-            "file_share", True, body={"error": FS_DISABLED_MSG}
-        ):
-            return
-
         def action():
             data = self.parse_json_body(max_bytes=SHARE_JSON_BODY_MAX_BYTES) or {}
             vserr = validate_share_create_struct(data)
@@ -808,11 +803,8 @@ class ShareRevokeHandler(XSRFTokenMixin, BaseHandler):
     @require_action("share.revoke")
     @require_db
     @require_modify_access()
+    @require_feature_flag("file_share", body={"error": FS_DISABLED_MSG})
     def post(self):
-        if not self.require_feature(
-            "file_share", True, body={"error": FS_DISABLED_MSG}
-        ):
-            return
         sid = self.get_argument("id", "").strip()
         if not sid:
             self.set_status(400)
@@ -884,13 +876,9 @@ class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
     @tornado.web.authenticated
     @require_db
     @require_modify_access()
+    @require_feature_flag("file_share", body={"error": FS_DISABLED_MSG})
     def post(self):
         """Update share access list"""
-        if not self.require_feature(
-            "file_share", True, body={"error": FS_DISABLED_MSG}
-        ):
-            return
-
         saved_share_id = None
         saved_new_cloud_paths: list[str] = []
 

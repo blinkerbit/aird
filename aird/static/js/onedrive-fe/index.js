@@ -2,7 +2,7 @@
 
 import { clearTokens, isSignedIn, loadTokens, saveTokens } from './tokens.js';
 import { ensureSignedIn, ensureAccessToken, finishCallback, startRedirectLogin, startDeviceCode, pollDeviceCode } from './auth.js';
-import { getDefaultSave, setDefaultSave, getConflictPolicy, setConflictPolicy, getAuthMode, setAuthMode, getLocalAppConfig, setLocalAppConfig, DEFAULT_PATH } from './settings.js';
+import { getDefaultSave, setDefaultSave, getConflictPolicy, setConflictPolicy, getAuthMode, setAuthMode, getLocalAppConfig, setLocalAppConfig, clearLocalAppConfig, DEFAULT_PATH } from './settings.js';
 import {
   ensureFolderPath,
   resolveDefaultFolderId,

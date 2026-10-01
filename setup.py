@@ -23,8 +23,8 @@ extras_require = {
 
 setup(
     name="aird",
-    version="0.5.4",
-    packages=find_packages(),
+    version="0.5.6",
+    packages=find_packages(exclude=["aird.ms", "aird.ms.*"]),
     include_package_data=True,
     package_data={"aird": [
         "templates/*.html",

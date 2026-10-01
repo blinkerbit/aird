@@ -20,6 +20,9 @@ describe('friendlyUploadErrorMessage', () => {
   it('maps bare access denied to policy guidance', () => {
     expect(friendlyUploadErrorMessage(new Error('Access denied'))).toMatch(/file\.write/);
     expect(friendlyUploadErrorMessage(new Error('HTTP 403'))).toMatch(/access policy/i);
+    expect(friendlyUploadErrorMessage(new Error(
+      "Access denied: You don't have permission to perform this action",
+    ))).toMatch(/file\.write/);
   });
 
   it('maps network errors', () => {

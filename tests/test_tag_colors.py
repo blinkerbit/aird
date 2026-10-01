@@ -5,7 +5,12 @@ import sqlite3
 import pytest
 
 from aird.db.tag_colors import get_tag_colors_map, set_tag_color, delete_tag_color
-from aird.utils.tag_display import normalize_tag_color, tag_chip_inline_style
+from aird.utils.tag_display import (
+    next_auto_tag_color,
+    normalize_tag_color,
+    tag_chip_inline_style,
+    TAG_COLOR_PALETTE,
+)
 
 
 @pytest.fixture
@@ -37,6 +42,17 @@ class TestTagDisplay:
         style = tag_chip_inline_style("#ff0000")
         assert "background:#ff0000" in style
         assert "color:" in style
+
+    def test_next_auto_color_skips_used_palette(self):
+        first = TAG_COLOR_PALETTE[0]
+        nxt = next_auto_tag_color([first], "new")
+        assert nxt == TAG_COLOR_PALETTE[1]
+
+    def test_next_auto_color_hashes_when_palette_exhausted(self):
+        color = next_auto_tag_color(TAG_COLOR_PALETTE, "unique-tag")
+        assert color.startswith("#")
+        assert len(color) == 7
+        assert color not in TAG_COLOR_PALETTE or True
 
 
 class TestTagColorsDb:

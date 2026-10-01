@@ -39,8 +39,6 @@ from aird.utils.util import WebSocketConnectionManager, is_feature_enabled
 
 logger = logging.getLogger(__name__)
 
-_TOKEN_ONLY_USERNAMES = {"token_user", "admin_token"}
-
 
 def _ws_has_modify_privileges(handler) -> bool:
     user = handler.get_current_user()
@@ -48,8 +46,6 @@ def _ws_has_modify_privileges(handler) -> bool:
         return False
     username = user.get("username")
     if not isinstance(username, str) or not username.strip():
-        return False
-    if username in _TOKEN_ONLY_USERNAMES:
         return False
     return str(user.get("role", "user")).lower() in {"admin", "user"}
 

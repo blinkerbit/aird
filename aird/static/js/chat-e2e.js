@@ -1,5 +1,6 @@
 /**
- * Client-side E2E for chat. Identity private keys never leave this browser.
+ * Normal chat encryption. The private key and conversation keys are stored
+ * in the user's Aird chat folder on the server and restored from there.
  */
 (function (global) {
   'use strict';
@@ -95,11 +96,9 @@
 
   async function loadOrCreateIdentity(user, api) {
     username = user;
-    const stored = await idbGet('identity', user);
-    if (!stored?.privateJwk && api) {
+    if (api) {
       try {
-        const remote = await api('/api/chat/e2e/identity');
-        const backup = remote?.backup;
+        const backup = (await api('/api/chat/e2e/identity'))?.backup;
         if (backup?.privateJwk && backup?.publicJwk) {
           await importBackup(backup, user);
           return identity;
@@ -108,7 +107,17 @@
         console.debug('aird identity restore failed', err);
       }
     }
-    if (!(await idbGet('identity', user))?.privateJwk && global.AirdChatKeyBackup?.tryRestoreFromConfiguredPath) {
+    const stored = await idbGet('identity', user);
+    if (stored?.privateJwk && stored?.publicJwk) {
+      identity = {
+        publicJwk: stored.publicJwk,
+        privateKey: await importPrivate(stored.privateJwk),
+        privateJwk: stored.privateJwk,
+        kid: stored.kid || await fingerprint(stored.publicJwk),
+      };
+      return identity;
+    }
+    if (global.AirdChatKeyBackup?.tryRestoreFromConfiguredPath) {
       try {
         const restored = await global.AirdChatKeyBackup.tryRestoreFromConfiguredPath(user);
         if (restored) return identity;
@@ -116,21 +125,13 @@
         console.debug('onedrive identity restore failed', err);
       }
     }
-    if (stored && stored.privateJwk && stored.publicJwk) {
-      identity = {
-        publicJwk: stored.publicJwk,
-        privateKey: await importPrivate(stored.privateJwk),
-        kid: stored.kid || await fingerprint(stored.publicJwk),
-      };
-      return identity;
-    }
     const pair = await crypto.subtle.generateKey(ECDH, true, ['deriveBits']);
     const publicJwk = await exportJwk(pair.publicKey);
     const privateJwk = await exportJwk(pair.privateKey);
     delete publicJwk.d;
     const kid = await fingerprint(publicJwk);
     await idbSet('identity', user, { publicJwk, privateJwk, kid });
-    identity = { publicJwk, privateKey: pair.privateKey, kid };
+    identity = { publicJwk, privateKey: pair.privateKey, privateJwk, kid };
     return identity;
   }
 
@@ -231,7 +232,18 @@
       convFallback.set(convId, list.slice(-4));
     }
     convCache.set(convId, copy);
-    await idbSet('convKeys', convId, copy);
+  }
+
+  async function forgetLocalConvKey(convId) {
+    try {
+      const db = await openDb();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction('convKeys', 'readwrite');
+        tx.objectStore('convKeys').delete(convId);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (_) { /* browser copy is only a cache */ }
   }
 
   async function ensureConversation(api, convId, memberNames) {
@@ -305,6 +317,7 @@
       changed = true;
     }
     if (!changed && state.conv_key?.key) {
+      await forgetLocalConvKey(convId);
       return importAes(raw);
     }
     try {
@@ -315,6 +328,7 @@
           conv_key: { v: 1, conversation_id: convId, key: b64(raw) },
         }),
       });
+      await forgetLocalConvKey(convId);
       if (saved?.conv_key?.key) {
         const canonical = unb64(saved.conv_key.key);
         if (!bytesEq(raw, canonical)) {
@@ -517,7 +531,9 @@
   async function exportBackup() {
     const user = username;
     if (!user) throw new Error('Not signed in');
-    const stored = await idbGet('identity', user);
+    const stored = identity?.privateJwk
+      ? { publicJwk: identity.publicJwk, privateJwk: identity.privateJwk, kid: identity.kid }
+      : await idbGet('identity', user);
     if (!stored?.privateJwk) throw new Error('No encryption key on this device');
     return {
       v: 1,
@@ -551,6 +567,7 @@
     identity = {
       publicJwk: bundle.publicJwk,
       privateKey: await importPrivate(bundle.privateJwk),
+      privateJwk: bundle.privateJwk,
       kid: bundle.kid,
     };
     return identity;

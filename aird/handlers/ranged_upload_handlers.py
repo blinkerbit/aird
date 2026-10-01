@@ -21,7 +21,6 @@ from aird.constants.file_ops import (
     ACCESS_DENIED,
     BAD_REQUEST,
     FILE_TOO_LARGE_TEMPLATE,
-    FILE_UPLOAD_DISABLED,
     FILE_UPLOAD_DISABLED_ADMIN,
     UPLOAD_DISK_FULL,
     UPLOAD_SAVE_FAILED,
@@ -57,7 +56,7 @@ from aird.handlers.file_op_handlers import (
     finalize_upload_to_disk,
     _query_arg,
 )
-from aird.utils.util import is_feature_enabled
+from aird.utils.util import is_feature_enabled  # noqa: F401  (patched by ranged-upload tests)
 from aird.core.rate_limit import TransferRateLimiter
 
 logger = logging.getLogger(__name__)
@@ -485,10 +484,6 @@ class RangedUploadSessionHandler(BaseHandler):
     async def post(self):
         self.sync_upload_config_from_db()
         if not self.require_feature("file_upload", True, body=FILE_UPLOAD_DISABLED_ADMIN):
-            return
-        if not is_feature_enabled("file_upload", True):
-            self.set_status(403)
-            self.write({"error": FILE_UPLOAD_DISABLED})
             return
         parsed = _parse_ranged_session_request(self)
         if parsed is None:

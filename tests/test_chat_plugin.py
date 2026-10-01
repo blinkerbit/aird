@@ -877,3 +877,43 @@ def test_bind_conv_key_keeps_first_key(chat_env):
     assert kept["key"] == first["key"]
     assert load_conv_key("alice", conv)["key"] == first["key"]
     assert load_conv_key("bob", conv)["key"] == first["key"]
+
+
+def test_encrypted_read_receipt_requires_decryption_confirmation(chat_env):
+    from aird.plugins.chat import db as chat_db
+
+    alice = chat_db.resolve_user_id(chat_env, "alice")
+    bob = chat_db.resolve_user_id(chat_env, "bob")
+    conv = chat_db.create_dm_conversation(chat_env, alice, bob)
+    msg = chat_db.insert_message(
+        chat_env,
+        username="alice",
+        conversation_id=conv,
+        msg_type="text",
+        body="",
+        metadata={
+            "e2e": {
+                "v": 1,
+                "iv": _b64(b"i", 12),
+                "ct": _b64(b"ciphertext", 2),
+            }
+        },
+    )
+
+    chat_db.mark_read(
+        actor="bob",
+        conversation_id=conv,
+        message_id=msg["id"],
+        decrypted=False,
+    )
+    receipt = chat_db.list_receipts("alice", conv)[0]
+    assert receipt["decrypted"] is False
+
+    chat_db.mark_read(
+        actor="bob",
+        conversation_id=conv,
+        message_id=msg["id"],
+        decrypted=True,
+    )
+    receipt = chat_db.list_receipts("alice", conv)[0]
+    assert receipt["decrypted"] is True

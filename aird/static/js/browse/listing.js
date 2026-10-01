@@ -186,6 +186,7 @@ function buildListingRow({ name, sizeBytes, isDir, modifiedMs }) {
   const tr = document.createElement('tr');
   tr.className = 'file-row file-row--just-uploaded';
   tr.dataset.path = fullPath;
+  tr.dataset.isDir = isDir ? '1' : '0';
   tr.innerHTML =
     `<td class="name-cell" data-label="Name">`
     + `<div class="name-cell-contents">`

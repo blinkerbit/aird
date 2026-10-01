@@ -130,6 +130,32 @@ class TestFileListAPIHandler:
             payload = handler.write.call_args[0][0]
             assert payload["files"][0]["name"] == "file.txt"
 
+    def test_chat_browse_json_contract(self):
+        """Chat browse picker requires GET /api/files/ to return {files:[{name,is_dir}]}."""
+        handler = make_request_handler(FileListAPIHandler)
+        listing = [{"name": "docs", "is_dir": True}, {"name": "hi.txt", "is_dir": False}]
+        with patch("os.path.abspath", return_value="/root"), patch(
+            "aird.handlers.api_handlers.is_within_root", return_value=True
+        ), patch("os.path.isdir", return_value=True), patch(
+            "aird.handlers.api_handlers.get_files_in_directory",
+            return_value=listing,
+        ), patch(
+            "aird.handlers.api_handlers.is_video_file", return_value=False
+        ), patch(
+            "aird.handlers.api_handlers.is_audio_file", return_value=False
+        ), patch_db_conn(
+            MagicMock(), modules=["aird.handlers.api_handlers"]
+        ), patch(
+            "aird.core.browse_paths.overlay_mount_entries",
+        ):
+            handler.get("")
+            payload = handler.write.call_args[0][0]
+            assert isinstance(payload, dict)
+            assert "files" in payload
+            assert isinstance(payload["files"], list)
+            assert {row["name"] for row in payload["files"]} == {"docs", "hi.txt"}
+            assert all("is_dir" in row and "name" in row for row in payload["files"])
+
     def test_get_forbidden_path(self):
         handler = make_request_handler(FileListAPIHandler)
         handler.set_status = MagicMock()

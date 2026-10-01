@@ -4,90 +4,317 @@ import { SelectionStore } from './selection-store.js';
 import {
   getCanTag,
   getTagColors,
+  setTagColorLocal,
   escapeHtml,
   escapeAttr,
   showDialog,
   pathBasename,
+  getRecentTags,
+  noteRecentTag,
+  listenTagColorSync,
 } from './util.js';
 import {
   applyTagRules,
-  deleteTagRuleIds,
-  fetchAllTagRules,
-  tagsOnPath,
+  fetchTagCatalog,
+  putTagColor,
+  untagPath,
 } from './tag-api.js';
 
-function tagChipStyleAttr(tagName) {
-  const hex = getTagColors()[tagName];
-  if (!hex || typeof hex !== 'string') return '';
+function tagChipColors(hex) {
+  if (!hex || typeof hex !== 'string') return null;
   const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return '';
+  if (!m) return null;
   const r = Number.parseInt(m[1].slice(0, 2), 16);
   const g = Number.parseInt(m[1].slice(2, 4), 16);
   const b = Number.parseInt(m[1].slice(4, 6), 16);
   const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   const fg = lum > 0.55 ? '#111827' : '#f9fafb';
-  return ' style="background:' + hex + ';color:' + fg + ';border-color:color-mix(in oklch, '
-    + hex + ' 65%, transparent)"';
+  const norm = '#' + m[1].toLowerCase();
+  return {
+    bg: norm,
+    fg: fg,
+    border: 'color-mix(in oklch, ' + norm + ' 65%, transparent)',
+  };
+}
+
+function tagChipStyleAttr(tagName) {
+  const vars = tagChipColors(getTagColors()[tagName]);
+  if (!vars) return '';
+  return ' style="background:' + vars.bg + ';color:' + vars.fg + ';border-color:' + vars.border + '"';
+}
+
+function applyChipPaint(el, vars) {
+  el.style.background = vars.bg;
+  el.style.color = vars.fg;
+  el.style.borderColor = vars.border;
+}
+
+/** Repaint every on-page chip for this tag. No reload. */
+export function paintTagColor(tag, hex, opts) {
+  if (!tag || !hex) return null;
+  const vars = tagChipColors(hex);
+  if (!vars) return null;
+  const fromRemote = !!opts?.fromRemote;
+  setTagColorLocal(tag, vars.bg, { broadcast: !fromRemote });
+  const href = '/tagged/' + encodeURIComponent(tag);
+  document.querySelectorAll('a.file-tag-chip').forEach(function (el) {
+    if (el.dataset.tag ? el.dataset.tag !== tag : el.getAttribute('href') !== href) return;
+    applyChipPaint(el, vars);
+  });
+  document.querySelectorAll('.tag-picker-chip').forEach(function (el) {
+    const named = el.dataset.tag || el.querySelector('[data-tag]')?.dataset.tag;
+    if (named !== tag) return;
+    applyChipPaint(el, vars);
+  });
+  document.querySelectorAll('input.tag-color-btn-input').forEach(function (el) {
+    if (el.dataset.tag !== tag) return;
+    if (el.value.toLowerCase() !== vars.bg) el.value = vars.bg;
+    el.closest('.tag-color-btn')?.style.setProperty('--tag-swatch', vars.bg);
+  });
+  document.querySelectorAll('.tag-picker-suggestion-item[data-sug="' + CSS.escape(tag)
+    + '"] .tag-picker-suggestion-swatch').forEach(function (el) {
+    el.style.background = vars.bg;
+  });
+  return vars;
 }
 
 export function fileTagChipHtml(tagName) {
   // No inline onclick (CSP). Clicks are stopped via delegation in initTagsUi.
-  return '<a href="/tagged/' + encodeURIComponent(tagName) + '" class="file-tag-chip"'
+  return '<a href="/tagged/' + encodeURIComponent(tagName) + '" class="file-tag-chip" data-tag="'
+    + escapeAttr(tagName) + '"'
     + tagChipStyleAttr(tagName)
     + '>' + escapeHtml(tagName) + '</a>';
 }
 
-export function pickerTagChipHtml(t) {
-  return '<span class="tag-picker-chip">'
+const TAG_COLOR_PALETTE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
+  + ' stroke-linecap="round" stroke-linejoin="round">'
+  + '<circle cx="13.5" cy="6.5" r="0.5" fill="currentColor" />'
+  + '<circle cx="17.5" cy="10.5" r="0.5" fill="currentColor" />'
+  + '<circle cx="8.5" cy="7.5" r="0.5" fill="currentColor" />'
+  + '<circle cx="6.5" cy="12.5" r="0.5" fill="currentColor" />'
+  + '<path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />'
+  + '</svg>';
+
+function tagColorPickerBtnHtml(tag, hex) {
+  return '<label class="tag-color-btn tag-color-btn--chip" data-tag="' + escapeAttr(tag)
+    + '" style="--tag-swatch:' + escapeAttr(hex) + '" title="Change tag color">'
+    + '<span class="tag-color-btn-icon" aria-hidden="true">' + TAG_COLOR_PALETTE_ICON + '</span>'
+    + '<span class="tag-color-btn-dot"></span>'
+    + '<input type="color" class="tag-color-btn-input" data-tag="' + escapeAttr(tag)
+    + '" value="' + escapeAttr(hex) + '" aria-label="Color for ' + escapeAttr(tag) + '">'
+    + '</label>';
+}
+
+export function pickerTagChipHtml(t, { colorable = false } = {}) {
+  const hex = getTagColors()[t] || '#6366f1';
+  return '<span class="tag-picker-chip" data-tag="' + escapeAttr(t) + '"' + tagChipStyleAttr(t) + '>'
     + escapeHtml(t)
+    + (colorable ? tagColorPickerBtnHtml(t, hex) : '')
     + '<button type="button" class="tag-picker-chip-remove" data-tag="' + escapeAttr(t) + '" '
     + 'aria-label="Remove ' + escapeAttr(t) + '">×</button>'
     + '</span>';
 }
 
-function renderTagChips(chipsEl, pendingTags, onRemove) {
-  chipsEl.innerHTML = [...pendingTags].map(pickerTagChipHtml).join('');
+function bindChipColorInputs(root, onCommit, onPreview) {
+  root.querySelectorAll('input.tag-color-btn-input').forEach(function (input) {
+    input.addEventListener('input', function () {
+      paintTagColor(input.dataset.tag, input.value);
+      if (onPreview) onPreview(input.dataset.tag, input.value);
+    });
+    input.addEventListener('change', function () {
+      paintTagColor(input.dataset.tag, input.value);
+      if (onCommit) onCommit(input.dataset.tag, input.value);
+    });
+  });
+}
+
+function renderTagChips(chipsEl, pendingTags, onRemove, colorable, onColor, onPreview) {
+  chipsEl.innerHTML = [...pendingTags].map(function (t) {
+    return pickerTagChipHtml(t, { colorable: !!colorable });
+  }).join('');
   chipsEl.querySelectorAll('button[data-tag]').forEach(function (btn) {
     btn.addEventListener('click', function () { onRemove(btn.dataset.tag); });
   });
+  bindChipColorInputs(chipsEl, onColor, onPreview);
 }
 
 function commitTagInput(inputEl, pendingTags) {
   inputEl.value.split(',')
     .map(function (s) { return s.trim().toLowerCase().replaceAll(/\s+/g, '-'); })
     .filter(Boolean)
-    .forEach(function (t) { pendingTags.add(t); });
+    .forEach(function (t) {
+      pendingTags.add(t);
+      noteRecentTag(t);
+    });
   inputEl.value = '';
 }
 
-function renderTagSuggestions(inputEl, existingTagNames, pendingTags, onPick, suggestionsId = 'tagPickerSuggestions') {
+function collectKnownTagNames() {
+  const names = new Set();
+  document.querySelectorAll('.tags-cell[data-tags]').forEach(function (el) {
+    parseTagsAttr(el.dataset.tags).forEach(function (t) { names.add(t); });
+  });
+  Object.keys(getTagColors()).forEach(function (t) { if (t) names.add(t); });
+  return [...names].sort(function (a, b) { return a.localeCompare(b); });
+}
+
+function mergeTagNames(target, extra) {
+  const set = new Set(target);
+  (extra || []).forEach(function (n) { if (n) set.add(n); });
+  const sorted = [...set].sort(function (a, b) { return a.localeCompare(b); });
+  target.length = 0;
+  sorted.forEach(function (n) { target.push(n); });
+}
+
+function suggestionMatches(names, pendingTags, q, excludeSet) {
+  return names.filter(function (n) {
+    if (pendingTags.has(n) || excludeSet?.has(n)) return false;
+    return !q || n.includes(q);
+  });
+}
+
+function sortTagSuggestions(matches) {
+  const recent = getRecentTags();
+  return matches.slice().sort(function (a, b) {
+    const ai = recent.indexOf(a);
+    const bi = recent.indexOf(b);
+    if (ai !== -1 || bi !== -1) {
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    }
+    return a.localeCompare(b);
+  });
+}
+
+function renderTagSuggestions(inputEl, existingTagNames, pendingTags, onPick, suggestionsId = 'tagPickerSuggestions', excludeSet) {
   const sugId = suggestionsId;
   const q = inputEl.value.trim().toLowerCase();
-  const matches = q
-    ? existingTagNames.filter(function (n) { return n.includes(q) && !pendingTags.has(n); })
-    : existingTagNames.filter(function (n) { return !pendingTags.has(n); }).slice(0, 8);
+  let matches = suggestionMatches(existingTagNames, pendingTags, q, excludeSet);
+  if (q && !matches.length) {
+    matches = suggestionMatches(existingTagNames, pendingTags, '', excludeSet);
+  }
+  matches = sortTagSuggestions(matches);
   let sug = document.getElementById(sugId);
   if (!sug) {
     sug = document.createElement('div');
     sug.id = sugId;
     sug.className = 'tag-picker-suggestions';
+    sug.setAttribute('role', 'listbox');
     inputEl.parentNode.classList.add('tag-picker-input-wrap');
     inputEl.after(sug);
   }
+  sug.hidden = !matches.length;
   sug.innerHTML = matches.map(function (n) {
-    return '<div class="tag-picker-suggestion-item" data-sug="' + escapeAttr(n) + '">'
-      + escapeHtml(n) + '</div>';
+    const hex = getTagColors()[n];
+    const swatch = hex
+      ? '<span class="tag-picker-suggestion-swatch" style="background:' + escapeAttr(hex) + '"></span>'
+      : '';
+    return '<div class="tag-picker-suggestion-item" role="option" data-sug="' + escapeAttr(n) + '">'
+      + swatch + escapeHtml(n) + '</div>';
   }).join('');
   sug.querySelectorAll('[data-sug]').forEach(function (el) {
     el.addEventListener('mousedown', function (e) {
       e.preventDefault();
       onPick(el.dataset.sug);
-      sug.innerHTML = '';
     });
   });
   if (sugId === 'rowTagPopoverSuggestions') scheduleRowTagPopoverPosition();
 }
 
+
+function setupTagPickerListeners(inputEl, chipsEl, pendingTags, existingTagNames, suggestionsId, signal, colorOpts, excludeSet) {
+  const sugId = suggestionsId || 'tagPickerSuggestions';
+  const opts = signal ? { signal } : undefined;
+  const colorable = !!colorOpts?.colorable;
+  const onColor = colorOpts?.onColor;
+  const onPreview = colorOpts?.onPreview;
+
+  function pick(tag) {
+    pendingTags.add(tag);
+    noteRecentTag(tag);
+    inputEl.value = '';
+    refresh();
+  }
+
+  function refresh() {
+    renderTagChips(chipsEl, pendingTags, function (tag) {
+      pendingTags.delete(tag);
+      refresh();
+    }, colorable, onColor, onPreview);
+    renderTagSuggestions(inputEl, existingTagNames, pendingTags, pick, sugId, excludeSet);
+  }
+
+  inputEl.addEventListener('keydown', function (e) {
+    const sug = document.getElementById(sugId);
+    const items = sug ? [...sug.querySelectorAll('[data-sug]')] : [];
+    const active = sug?.querySelector('.is-active');
+    const idx = items.indexOf(active);
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && items.length) {
+      e.preventDefault();
+      const next = e.key === 'ArrowDown'
+        ? (idx + 1) % items.length
+        : (idx <= 0 ? items.length - 1 : idx - 1);
+      items.forEach(function (el) { el.classList.remove('is-active'); });
+      items[next].classList.add('is-active');
+      items[next].scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    if (e.key === 'Enter' && active?.dataset.sug) {
+      e.preventDefault();
+      pick(active.dataset.sug);
+      return;
+    }
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      commitTagInput(inputEl, pendingTags);
+      refresh();
+    }
+  }, opts);
+  inputEl.addEventListener('input', function () {
+    if (inputEl.value.includes(',')) {
+      commitTagInput(inputEl, pendingTags);
+      refresh();
+      return;
+    }
+    renderTagSuggestions(inputEl, existingTagNames, pendingTags, pick, sugId, excludeSet);
+  }, opts);
+  inputEl.addEventListener('focus', function () {
+    renderTagSuggestions(inputEl, existingTagNames, pendingTags, pick, sugId, excludeSet);
+  }, opts);
+  return refresh;
+}
+
+function awaitTagPickerClose(modal, inputEl, errEl, pendingTags, refresh) {
+  return new Promise(function (resolve) {
+    const apply = document.getElementById('tagPickerConfirm');
+    const remove = document.getElementById('tagPickerRemove');
+    const cancel = document.getElementById('tagPickerCancel');
+    let settled = false;
+    function done(result) {
+      if (settled) return;
+      settled = true;
+      modal.close();
+      resolve(result);
+    }
+    function collect(action) {
+      commitTagInput(inputEl, pendingTags);
+      refresh();
+      if (!pendingTags.size) {
+        errEl.textContent = 'Enter at least one tag.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      done({ tags: [...pendingTags], action: action });
+    }
+    apply.onclick = function () { collect('apply'); };
+    if (remove) remove.onclick = function () { collect('remove'); };
+    cancel.onclick = function () { done(null); };
+    modal.addEventListener('close', function () {
+      if (!settled) resolve(null);
+    }, { once: true });
+  });
+}
 
 export async function bulkAddTags() {
   const paths = SelectionStore.getAll();
@@ -104,21 +331,59 @@ export async function bulkAddTags() {
   errEl.classList.add('hidden');
 
   const pendingTags = new Set();
-  let existingTagNames = [];
+  const pendingColors = {};
+  const existingTagNames = collectKnownTagNames();
   try {
-    const rules = await fetchAllTagRules();
-    existingTagNames = [...new Set(rules.map(function (t) { return t.tag; }))].sort((a, b) => a.localeCompare(b));
+    const catalog = await fetchTagCatalog();
+    mergeTagNames(existingTagNames, catalog.names);
+    if (globalThis.__BROWSE_CONFIG) {
+      globalThis.__BROWSE_CONFIG.tagColors = {
+        ...(globalThis.__BROWSE_CONFIG.tagColors || {}),
+        ...(catalog.colors || {}),
+      };
+    }
   } catch { /* autocomplete is best-effort */ }
 
-  const refresh = setupTagPickerListeners(inputEl, chipsEl, pendingTags, existingTagNames);
+  async function onPendingColor(tag, hex) {
+    pendingColors[tag] = hex;
+    paintTagColor(tag, hex);
+  }
+
+  const refresh = setupTagPickerListeners(
+    inputEl, chipsEl, pendingTags, existingTagNames, 'tagPickerSuggestions', undefined,
+    { colorable: true, onColor: onPendingColor, onPreview: onPendingColor }
+  );
   refresh();
   modal.showModal();
 
-  const tags = await awaitTagPickerClose(modal, inputEl, errEl, pendingTags, refresh);
-  if (!tags) return;
+  const result = await awaitTagPickerClose(modal, inputEl, errEl, pendingTags, refresh);
+  if (!result?.tags?.length) return;
 
-  const { created, failed } = await applyTagRules(tags, paths);
-  const msg = created + ' tag rule(s) created for [' + tags.join(', ') + '].'
+  if (result.action === 'remove') {
+    let removed = 0;
+    for (const path of paths) {
+      const cell = document.querySelector('.tags-cell[data-path="' + CSS.escape(path) + '"]');
+      const remain = tagsCellTags(cell).filter(function (t) { return !result.tags.includes(t); });
+      for (const tag of result.tags) {
+        const untag = await untagPath(tag, path);
+        if (untag.ok) removed += untag.count || 0;
+      }
+      updateTagsCell(path, remain);
+    }
+    showDialog('Removed [' + result.tags.join(', ') + '] from ' + paths.length + ' item(s).', 'Tags');
+    return;
+  }
+
+  const { created, failed } = await applyTagRules(result.tags, paths, { colors: pendingColors });
+  result.tags.forEach(function (t) { noteRecentTag(t); });
+  Object.entries(pendingColors).forEach(function (entry) { paintTagColor(entry[0], entry[1]); });
+  for (const path of paths) {
+    const cell = document.querySelector('.tags-cell[data-path="' + CSS.escape(path) + '"]');
+    const merged = new Set(tagsCellTags(cell));
+    result.tags.forEach(function (t) { merged.add(t); });
+    updateTagsCell(path, [...merged]);
+  }
+  const msg = created + ' tag rule(s) created for [' + result.tags.join(', ') + '].'
     + (failed ? ' ' + failed + ' already existed or failed.' : '');
   showDialog(msg, 'Tags applied');
 }
@@ -155,16 +420,69 @@ function tagsCellTags(tagsCell) {
   return parseTagsAttr(tagsCell?.dataset.tags || '');
 }
 
+const TAG_FILTER_PARAM = 'tag';
+const TAG_CHIP_MAX_VISIBLE = 2;
+let _activeTagFilter = null;
+
+export function setBrowseTagFilter(tag, options) {
+  const opts = options || {};
+  _activeTagFilter = tag ? String(tag).trim() : null;
+  const table = document.getElementById('fileTable');
+  if (table) {
+    table.querySelectorAll('tr.file-row').forEach(function (row) {
+      if (!_activeTagFilter) {
+        row.hidden = false;
+        return;
+      }
+      const cell = row.querySelector('.tags-cell');
+      row.hidden = !tagsCellTags(cell).includes(_activeTagFilter);
+    });
+  }
+  const bar = document.getElementById('browseTagFilterBar');
+  if (bar) {
+    bar.hidden = !_activeTagFilter;
+    const chip = bar.querySelector('.browse-tag-filter-chip');
+    if (chip && _activeTagFilter) {
+      chip.textContent = _activeTagFilter;
+      chip.dataset.tag = _activeTagFilter;
+      const vars = tagChipColors(getTagColors()[_activeTagFilter]);
+      if (vars) applyChipPaint(chip, vars);
+    }
+  }
+  if (opts.updateUrl !== false) {
+    const url = new URL(globalThis.location.href);
+    if (_activeTagFilter) url.searchParams.set(TAG_FILTER_PARAM, _activeTagFilter);
+    else url.searchParams.delete(TAG_FILTER_PARAM);
+    globalThis.history.replaceState(null, '', url.pathname + url.search + url.hash);
+  }
+}
+
+export function initBrowseTagFilter() {
+  const param = new URLSearchParams(globalThis.location.search).get(TAG_FILTER_PARAM);
+  if (param) setBrowseTagFilter(param, { updateUrl: false });
+  document.getElementById('browseTagFilterClear')?.addEventListener('click', function () {
+    setBrowseTagFilter(null);
+  });
+}
+
+function handleTagChipClick(e, chip) {
+  if (!chip?.dataset?.tag) return;
+  if (e.ctrlKey || e.metaKey || e.button === 1) return;
+  e.preventDefault();
+  setBrowseTagFilter(chip.dataset.tag);
+}
+
 function renderTagsCellInner(tags, path) {
   let html = '';
   if (tags.length) {
-    const overflow = tags.length > 1;
+    const visible = tags.slice(0, TAG_CHIP_MAX_VISIBLE);
+    const overflow = tags.length > TAG_CHIP_MAX_VISIBLE;
     html += '<span class="file-tag-list' + (overflow ? ' file-tag-list--overflow' : '') + '">';
-    html += fileTagChipHtml(tags[0]);
+    visible.forEach(function (t) { html += fileTagChipHtml(t); });
     if (overflow) {
       html += '<button type="button" class="file-tag-more file-tag-more-trigger"'
         + ' aria-label="Show all ' + tags.length + ' tags" title="Show all tags">'
-        + '+' + (tags.length - 1) + '</button>';
+        + '+' + (tags.length - TAG_CHIP_MAX_VISIBLE) + '</button>';
     }
     html += '</span>';
   }
@@ -362,13 +680,29 @@ export function closeRowTagPopover() {
     pop.style.left = '';
     pop.style.top = '';
     const sug = document.getElementById('rowTagPopoverSuggestions');
-    if (sug) sug.remove();
-    const wrap = document.getElementById('rowTagPopoverInput')?.parentNode;
-    wrap?.classList.remove('tag-picker-input-wrap');
+    if (sug) {
+      sug.innerHTML = '';
+      sug.hidden = true;
+    }
   }
   if (backdrop) backdrop.hidden = true;
 }
 
+
+function renderExistingTagChips(existingEl, tagsOnPathMap, onRemove, onColor) {
+  const tags = [...tagsOnPathMap.keys()];
+  if (!tags.length) {
+    existingEl.innerHTML = '<span class="text-xs opacity-50">None yet</span>';
+    return;
+  }
+  existingEl.innerHTML = tags.map(function (t) {
+    return pickerTagChipHtml(t, { colorable: true });
+  }).join('');
+  existingEl.querySelectorAll('button[data-tag]').forEach(function (btn) {
+    btn.addEventListener('click', function () { onRemove(btn.dataset.tag); });
+  });
+  bindChipColorInputs(existingEl, onColor);
+}
 
 export async function openRowTagPopover(path, anchorEl) {
   if (!getCanTag()) return;
@@ -398,22 +732,32 @@ export async function openRowTagPopover(path, anchorEl) {
   fileEl.textContent = pathBasename(path);
 
   const pendingTags = new Set();
-  const allRules = await fetchAllTagRules();
-  const tagsOnPathMap = tagsOnPath(allRules, path);
-  const existingTagNames = [...new Set(allRules.map(function (t) { return t.tag; }))].sort(function (a, b) {
-    return a.localeCompare(b);
-  });
+  const pendingColors = {};
+  const tagsOnPathMap = new Map();
+  const cell = document.querySelector('.tags-cell[data-path="' + CSS.escape(path) + '"]');
+  tagsCellTags(cell).forEach(function (tag) { tagsOnPathMap.set(tag, []); });
 
   function syncTagsCellFromMap() {
     updateTagsCell(path, [...tagsOnPathMap.keys()]);
   }
 
+  async function onColor(tag, hex) {
+    pendingColors[tag] = hex;
+    paintTagColor(tag, hex);
+    const saved = await putTagColor(tag, hex);
+    if (!saved.ok) {
+      errEl.textContent = 'Could not save color for "' + tag + '".';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    errEl.classList.add('hidden');
+    paintTagColor(tag, saved.color || hex);
+  }
+
   function renderExisting() {
     renderExistingTagChips(existingEl, tagsOnPathMap, async function (tagName) {
-      const ids = tagsOnPathMap.get(tagName) || [];
-      if (!ids.length) return;
       applyBtn.disabled = true;
-      const result = await deleteTagRuleIds(ids);
+      const result = await untagPath(tagName, path);
       applyBtn.disabled = false;
       if (!result.ok) {
         errEl.textContent = 'Could not remove tag "' + tagName + '".';
@@ -425,24 +769,43 @@ export async function openRowTagPopover(path, anchorEl) {
       renderExisting();
       syncTagsCellFromMap();
       scheduleRowTagPopoverPosition();
-    });
+    }, onColor);
   }
   renderExisting();
 
+  const existingTagNames = collectKnownTagNames();
   const refresh = setupTagPickerListeners(
-    inputEl, chipsEl, pendingTags, existingTagNames, 'rowTagPopoverSuggestions', signal
+    inputEl, chipsEl, pendingTags, existingTagNames, 'rowTagPopoverSuggestions', signal,
+    {
+      colorable: true,
+      onPreview: function (tag, hex) {
+        pendingColors[tag] = hex;
+      },
+      onColor: function (tag, hex) {
+        pendingColors[tag] = hex;
+        paintTagColor(tag, hex);
+      },
+    },
+    tagsOnPathMap
   );
   refresh();
-  renderTagSuggestions(inputEl, existingTagNames, pendingTags, function (picked) {
-    pendingTags.add(picked);
-    inputEl.value = '';
-    refresh();
-  }, 'rowTagPopoverSuggestions');
 
   backdrop.hidden = false;
   positionRowTagPopover(anchorEl, pop);
   scheduleRowTagPopoverPosition();
   inputEl.focus();
+
+  fetchTagCatalog().then(function (catalog) {
+    if (signal.aborted) return;
+    mergeTagNames(existingTagNames, catalog.names);
+    if (globalThis.__BROWSE_CONFIG) {
+      globalThis.__BROWSE_CONFIG.tagColors = {
+        ...(globalThis.__BROWSE_CONFIG.tagColors || {}),
+        ...(catalog.colors || {}),
+      };
+    }
+    refresh();
+  });
 
   const onApply = async function () {
     commitTagInput(inputEl, pendingTags);
@@ -453,7 +816,9 @@ export async function openRowTagPopover(path, anchorEl) {
     }
     applyBtn.disabled = true;
     const tags = [...pendingTags];
-    const { created, failed } = await applyTagRules(tags, [path]);
+    tags.forEach(function (t) { noteRecentTag(t); });
+    const { created, failed } = await applyTagRules(tags, [path], { colors: pendingColors });
+    Object.entries(pendingColors).forEach(function (entry) { paintTagColor(entry[0], entry[1]); });
     applyBtn.disabled = false;
     if (created === 0 && failed > 0) {
       errEl.textContent = 'Could not add tag(s). They may already exist.';
@@ -487,13 +852,22 @@ export async function openRowTagPopover(path, anchorEl) {
 
 export function initTagsUi() {
   initFileTagsHoverPopover();
-  // CSP-safe: keep chip navigation without bubbling into row handlers.
+  listenTagColorSync(function (tag, hex, opts) {
+    paintTagColor(tag, hex, opts);
+  });
+  initBrowseTagFilter();
   document.getElementById('fileTable')?.addEventListener('click', function (e) {
     const chip = e.target.closest('a.file-tag-chip');
-    if (chip) e.stopPropagation();
+    if (chip) {
+      handleTagChipClick(e, chip);
+      e.stopPropagation();
+    }
   });
   document.getElementById('fileTagsHoverPopover')?.addEventListener('click', function (e) {
     const chip = e.target.closest('a.file-tag-chip');
-    if (chip) e.stopPropagation();
+    if (chip) {
+      handleTagChipClick(e, chip);
+      e.stopPropagation();
+    }
   });
 }

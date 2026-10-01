@@ -5,19 +5,17 @@ import socket
 import tempfile
 import json
 import logging
-import pathlib
-import re
 import secrets
 from collections import deque
 from urllib.parse import unquote
 import asyncio
-import aiofiles
 from typing import Protocol, Callable, Any
 
 from aird.handlers.base_handler import (
     BaseHandler,
     XSRFTokenMixin,
     require_action,
+    require_feature_flag,
     require_modify_access,
     get_user_root,
     get_username_string_for_db,
@@ -35,11 +33,7 @@ from aird.constants.input_limits import (
     REL_PATH_MAX_LEN,
     SHARE_ID_MAX_LEN,
 )
-from aird.core.security import (  # noqa: F401
-    is_within_root,
-    is_valid_websocket_origin,
-    join_path,
-)
+from aird.core.security import is_within_root
 import aird.constants as constants_module
 from aird.constants.file_ops import (
     ACCESS_DENIED,
@@ -554,10 +548,13 @@ class UploadHandler(BaseHandler):
         self.check_xsrf_cookie()
         if not self.get_current_user():
             raise tornado.web.HTTPError(403, "Authentication required")
-        if not self.has_modify_privileges():
-            raise tornado.web.HTTPError(403, ACCESS_DENIED)
 
         _init_upload_stream_state(self)
+        if not self.has_modify_privileges():
+            self._reject = True
+            self._reject_status = 403
+            self._reject_reason = ACCESS_DENIED
+            return
         content_length_value = _upload_request_content_length(self)
         self._expected_bytes = content_length_value
         if _upload_exceeds_direct_limit(self._strategy, content_length_value):
@@ -739,12 +736,8 @@ class UploadHandler(BaseHandler):
     @tornado.web.authenticated
     @require_action("file.write")
     @require_modify_access()
+    @require_feature_flag("file_upload", body=FILE_UPLOAD_DISABLED_ADMIN)
     async def post(self):
-        if not self.require_feature(
-            "file_upload", True, body=FILE_UPLOAD_DISABLED_ADMIN
-        ):
-            return
-
         if self._reject:
             self.set_status(getattr(self, "_reject_status", 400))
             self.write(self._reject_reason or BAD_REQUEST)
@@ -818,9 +811,8 @@ class CreateFolderHandler(BaseHandler):
     @tornado.web.authenticated
     @require_action("file.write")
     @require_modify_access()
+    @require_feature_flag("folder_create", body=FOLDER_CREATE_DISABLED)
     def post(self):
-        if not self.require_feature("folder_create", True, body=FOLDER_CREATE_DISABLED):
-            return
         parent = self.get_argument("parent", "").strip().strip("/")
         name = self.get_argument("name", "").strip()
         if not name or name in (".", "..") or "/" in name or "\\" in name:
@@ -856,25 +848,9 @@ class CreateFolderHandler(BaseHandler):
             self.set_status(500)
             self.write(FOLDER_CREATE_FAILED)
             return
-        username = (
-            self.get_display_username()
-            if hasattr(self, "get_display_username")
-            else None
-        )
-        self.get_service("audit_service").log(
-            self.db_conn,
-            "folder_create",
-            username=username,
-            details=path_to_rel(new_dir_abs, get_user_root(self)),
-            ip=self.request.remote_ip,
-        )
-        if self.request.headers.get("Accept") == HEADER_APPLICATION_JSON:
-            self.set_header("Content-Type", HEADER_APPLICATION_JSON)
-            self.write({"ok": True, "path": (parent + "/" + name) if parent else name})
-            return
-        self.redirect(
-            FILES_URL_STRING + ((parent + "/" + name) if parent else name) + "/"
-        )
+        rel = f"{parent}/{name}" if parent else name
+        self.audit("folder_create", path_to_rel(new_dir_abs, get_user_root(self)))
+        self.respond_mutation(FILES_URL_STRING + rel + "/", {"ok": True, "path": rel})
 
 
 def path_to_rel(abspath, root_dir=None):
@@ -900,13 +876,7 @@ class DeleteHandler(BaseHandler):
             self.write(FOLDER_NOT_EMPTY)
             return False
         shutil.rmtree(abspath)
-        self.get_service("audit_service").log(
-            self.db_conn,
-            "folder_delete",
-            username=self.get_display_username(),
-            details=path_to_rel(abspath, get_user_root(self)),
-            ip=self.request.remote_ip,
-        )
+        self.audit("folder_delete", path_to_rel(abspath, get_user_root(self)))
         return True
 
     def _delete_file(self, abspath):
@@ -919,13 +889,7 @@ class DeleteHandler(BaseHandler):
             self.get_service("quota_service").update_used_bytes(
                 self.db_conn, self.get_display_username(), -file_size
             )
-        self.get_service("audit_service").log(
-            self.db_conn,
-            "file_delete",
-            username=self.get_display_username(),
-            details=path_to_rel(abspath, get_user_root(self)),
-            ip=self.request.remote_ip,
-        )
+        self.audit("file_delete", path_to_rel(abspath, get_user_root(self)))
         return True
 
     @tornado.web.authenticated
@@ -951,21 +915,15 @@ class DeleteHandler(BaseHandler):
             self.write(FILE_OR_FOLDER_NOT_FOUND)
             return
         parent = os.path.dirname(path)
-        if self.request.headers.get("Accept") == HEADER_APPLICATION_JSON:
-            self.set_header("Content-Type", HEADER_APPLICATION_JSON)
-            self.write({"ok": True})
-            return
-        self.redirect(FILES_URL_STRING + parent if parent else FILES_URL_STRING)
+        self.respond_mutation(FILES_URL_STRING + parent if parent else FILES_URL_STRING)
 
 
 class RenameHandler(BaseHandler):
     @tornado.web.authenticated
     @require_action("file.rename")
     @require_modify_access()
+    @require_feature_flag("file_rename", body=FILE_RENAME_DISABLED)
     def post(self):
-        if not self.require_feature("file_rename", True, body=FILE_RENAME_DISABLED):
-            return
-
         path = self.get_argument("path", "").strip()
         new_name = self.get_argument("new_name", "").strip()
 
@@ -1019,19 +977,9 @@ class RenameHandler(BaseHandler):
             self.write(RENAME_FAILED)
             return
 
-        self.get_service("audit_service").log(
-            self.db_conn,
-            "rename",
-            username=self.get_display_username(),
-            details=f"{path} -> {new_name}",
-            ip=self.request.remote_ip,
-        )
+        self.audit("rename", f"{path} -> {new_name}")
         parent = os.path.dirname(path)
-        if self.request.headers.get("Accept") == HEADER_APPLICATION_JSON:
-            self.set_header("Content-Type", HEADER_APPLICATION_JSON)
-            self.write({"ok": True})
-            return
-        self.redirect(FILES_URL_STRING + parent if parent else FILES_URL_STRING)
+        self.respond_mutation(FILES_URL_STRING + parent if parent else FILES_URL_STRING)
 
 
 def _resolve_copy_move_paths(handler, path: str, dest: str) -> tuple[str, str] | None:
@@ -1070,9 +1018,8 @@ class CopyHandler(BaseHandler):
     @tornado.web.authenticated
     @require_action("file.write")
     @require_modify_access()
+    @require_feature_flag("file_rename", body=COPY_DISABLED)
     def post(self):
-        if not self.require_feature("file_rename", True, body=COPY_DISABLED):
-            return
         path = self.get_argument("path", "").strip()
         dest = self.get_argument("dest", "").strip()
         resolved = _resolve_copy_move_paths(self, path, dest)
@@ -1089,31 +1036,17 @@ class CopyHandler(BaseHandler):
             self.set_status(500)
             self.write(COPY_FAILED)
             return
-        self.get_service("audit_service").log(
-            self.db_conn,
-            "copy",
-            username=self.get_display_username(),
-            details=f"{path} -> {dest}",
-            ip=self.request.remote_ip,
-        )
-        if self.request.headers.get("Accept") == HEADER_APPLICATION_JSON:
-            self.set_header("Content-Type", HEADER_APPLICATION_JSON)
-            self.write({"ok": True})
-            return
-        self.redirect(
-            FILES_URL_STRING + os.path.dirname(dest)
-            if os.path.dirname(dest)
-            else FILES_URL_STRING
-        )
+        self.audit("copy", f"{path} -> {dest}")
+        parent = os.path.dirname(dest)
+        self.respond_mutation(FILES_URL_STRING + parent if parent else FILES_URL_STRING)
 
 
 class MoveHandler(BaseHandler):
     @tornado.web.authenticated
     @require_action("file.write")
     @require_modify_access()
+    @require_feature_flag("file_rename", body=MOVE_DISABLED)
     def post(self):
-        if not self.require_feature("file_rename", True, body=MOVE_DISABLED):
-            return
         path = self.get_argument("path", "").strip()
         dest = self.get_argument("dest", "").strip()
         resolved = _resolve_copy_move_paths(self, path, dest)
@@ -1127,22 +1060,9 @@ class MoveHandler(BaseHandler):
             self.set_status(500)
             self.write(MOVE_FAILED)
             return
-        self.get_service("audit_service").log(
-            self.db_conn,
-            "move",
-            username=self.get_display_username(),
-            details=f"{path} -> {dest}",
-            ip=self.request.remote_ip,
-        )
-        if self.request.headers.get("Accept") == HEADER_APPLICATION_JSON:
-            self.set_header("Content-Type", HEADER_APPLICATION_JSON)
-            self.write({"ok": True})
-            return
-        self.redirect(
-            FILES_URL_STRING + os.path.dirname(dest)
-            if os.path.dirname(dest)
-            else FILES_URL_STRING
-        )
+        self.audit("move", f"{path} -> {dest}")
+        parent = os.path.dirname(dest)
+        self.respond_mutation(FILES_URL_STRING + parent if parent else FILES_URL_STRING)
 
 
 class DownloadZipHandler(XSRFTokenMixin, BaseHandler):
@@ -1164,11 +1084,8 @@ class DownloadZipHandler(XSRFTokenMixin, BaseHandler):
 
     @tornado.web.authenticated
     @require_action("file.read")
+    @require_feature_flag("file_download", body="File download is disabled")
     async def post(self):
-        if not self.require_feature(
-            "file_download", True, body="File download is disabled"
-        ):
-            return
         if len(self.request.body) > MAX_BULK_JSON_BYTES:
             self.set_status(400)
             self.write(BAD_REQUEST)
@@ -1332,10 +1249,8 @@ class EditHandler(BaseHandler):
     @tornado.web.authenticated
     @require_action("file.write")
     @require_modify_access()
+    @require_feature_flag("file_edit", body=FILE_EDIT_DISABLED)
     def post(self):
-        if not self.require_feature("file_edit", True, body=FILE_EDIT_DISABLED):
-            return
-
         content_type = self.request.headers.get("Content-Type", "")
         if len(self.request.body) > EDIT_JSON_BODY_MAX_BYTES:
             self.set_status(413)
@@ -1370,12 +1285,7 @@ class EditHandler(BaseHandler):
 
         try:
             self._atomic_write(abspath, content)
-            self.get_service("audit_service").log(
-                self.db_conn, "file_edit",
-                username=self.get_display_username(),
-                details=path_to_rel(str(abspath), confine),
-                ip=self.request.remote_ip,
-            )
+            self.audit("file_edit", path_to_rel(str(abspath), confine))
             self.set_status(200)
             if self.request.headers.get("Accept") == HEADER_APPLICATION_JSON:
                 self.write({"ok": True})

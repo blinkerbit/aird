@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS receipts (
     username TEXT NOT NULL,
     last_read_id TEXT NOT NULL,
     last_read_at TEXT NOT NULL,
+    decrypted INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (conversation_id, username)
 );
 CREATE TABLE IF NOT EXISTS reactions (
@@ -125,6 +126,13 @@ def _connect(path: str) -> sqlite3.Connection:
 def init_schema(conn: sqlite3.Connection) -> bool:
     """Create tables. Return True if FTS5 is available."""
     conn.executescript(_SCHEMA)
+    receipt_columns = {
+        str(row[1]) for row in conn.execute("PRAGMA table_info(receipts)").fetchall()
+    }
+    if "decrypted" not in receipt_columns:
+        conn.execute(
+            "ALTER TABLE receipts ADD COLUMN decrypted INTEGER NOT NULL DEFAULT 0"
+        )
     fts = True
     try:
         conn.execute(

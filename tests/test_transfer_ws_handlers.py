@@ -116,7 +116,7 @@ def test_ws_helper_functions():
     assert _ws_display_username(handler) == "Guest"
 
     handler.get_current_user.return_value = {"username": "token_user", "role": "user"}
-    assert _ws_has_modify_privileges(handler) is False
+    assert _ws_has_modify_privileges(handler) is True
 
     handler.get_current_user.return_value = {"username": "alice", "role": "user"}
     assert _ws_has_modify_privileges(handler) is True

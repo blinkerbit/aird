@@ -5,7 +5,7 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261001c" />
   <link rel="stylesheet" href="/static/css/gitlab.css" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   {% include '_pwa_head.html' %}
@@ -28,15 +28,15 @@
 
     <!-- Upload Zone -->
     {% if features['file_upload'] %}
-    <div class="alert alert-neutral aird-dropzone flex flex-col items-center justify-center p-8 cursor-pointer mb-6 group" id="uploadZone">
-      <p class="inline-flex items-center gap-3 mb-1 text-lg font-bold group-hover:text-primary transition-colors">
-        <svg class="ico ico--lg" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4v12"/><polyline points="7 9 12 4 17 9"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
-        <span>Drop files here to upload</span>
-      </p>
-      <p class="text-sm opacity-60">or click to select files from your computer</p>
-      <p class="text-xs opacity-45 mt-2">Multiple files upload in parallel · open <strong>Transfers</strong> in the navbar to track or stop</p>
-      <label class="sr-only" for="fileInput">Choose files to upload</label>
-      <input type="file" id="fileInput" multiple class="hidden" aria-label="Choose files to upload" />
+    <div class="aird-dropzone mb-6 p-8 group" id="uploadZone">
+      <label for="fileInput" class="aird-dropzone-files">
+        <span class="aird-dropzone-title group-hover:text-primary">
+          <svg class="ico ico--lg" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4v12"/><polyline points="7 9 12 4 17 9"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+          Drop files or folders to upload
+        </span>
+        <span class="aird-dropzone-hint">Drop either one here, or click to choose files. You can also drop onto a folder row.</span>
+        <input type="file" id="fileInput" multiple class="sr-only" />
+      </label>
     </div>
     {% end %}
 
@@ -70,6 +70,12 @@
       {% if current_path %}
       <button type="button" id="copyPathBtn" class="ml-2 opacity-50 hover:opacity-100 hover:text-primary transition-all" title="Copy current path" aria-label="Copy current path"><svg class="ico w-4 h-4" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="3" width="11" height="14" rx="2"/><path d="M5 7v12a2 2 0 0 0 2 2h10"/></svg></button>
       {% end %}
+    </div>
+    <div id="browseTagFilterBar" class="browse-tag-filter-bar flex flex-wrap items-center gap-2 text-sm mb-2" hidden>
+      <span class="opacity-70">Showing items tagged</span>
+      <span class="file-tag-chip browse-tag-filter-chip" style="max-width:none"></span>
+      <button type="button" id="browseTagFilterClear" class="btn btn-ghost btn-xs">Clear filter</button>
+      <span class="text-xs opacity-50">Ctrl+click a tag to open its tag page</span>
     </div>
     <!-- File Listing Table -->
     <div id="browseListingPanel" class="browse-listing-panel">
@@ -123,7 +129,7 @@
       <tbody>
         <!-- File and Directory Listings -->
         {% for file in files %}
-        <tr class="file-row" data-path="{{ escape(join_path(current_path, file['name'])) }}">
+        <tr class="file-row" data-path="{{ escape(join_path(current_path, file['name'])) }}" data-is-dir="{{ '1' if file['is_dir'] else '0' }}">
           <td class="name-cell" data-label="Name">
             <div class="name-cell-contents">
             <input type="checkbox" class="row-checkbox" data-path="{{ escape(join_path(current_path, file['name'])) }}" data-is-dir="{{ '1' if file['is_dir'] else '0' }}" aria-label="Select {{ escape(file['name']) }}" />
@@ -156,13 +162,16 @@
             data-tags="{{ escape(','.join(_file_tags)) if _file_tags else '' }}">
             <div class="tags-cell-inner">
               {% if _file_tags %}
-              {% set _max_show = 1 %}
+              {% set _max_show = 2 %}
               <span class="file-tag-list{% if len(_file_tags) > _max_show %} file-tag-list--overflow{% end %}">
-                <a href="/tagged/{{ escape(_file_tags[0]) }}"
-                   class="file-tag-chip" onclick="event.stopPropagation()"{% set _tc0 = tag_colors.get(_file_tags[0]) %}{% if _tc0 %} style="{{ tag_chip_style(_tc0) }}"{% end %}>{{ escape(_file_tags[0]) }}</a>
-                {% if len(_file_tags) > 1 %}
+                {% for _t in _file_tags[:_max_show] %}
+                <a href="/tagged/{{ escape(_t) }}"
+                   class="file-tag-chip" data-tag="{{ escape(_t) }}"
+                   onclick="event.stopPropagation()"{% set _tc = tag_colors.get(_t) %}{% if _tc %} style="{{ tag_chip_style(_tc) }}"{% end %}>{{ escape(_t) }}</a>
+                {% end %}
+                {% if len(_file_tags) > _max_show %}
                 <button type="button" class="file-tag-more file-tag-more-trigger"
-                  title="Show all tags">+{{ len(_file_tags) - 1 }}<span class="sr-only"> more tags</span></button>
+                  title="Show all tags">+{{ len(_file_tags) - _max_show }}<span class="sr-only"> more tags</span></button>
                 {% end %}
               </span>
               {% end %}
@@ -318,6 +327,11 @@
         📤 Share files by tag…
       </button>
       {% end %}
+      {% if features.get('direct_messages') %}
+      <button type="button" id="bulkSendChatBtn" class="browse-drawer-btn browse-drawer-btn-secondary">
+        💬 Send selected to chat
+      </button>
+      {% end %}
       <div class="browse-drawer-btn-row">
         {% if features.get('file_delete') %}
         <button type="button" id="bulkDeleteBtn" class="browse-drawer-btn-inline browse-drawer-btn-inline--danger">Delete</button>
@@ -404,6 +418,7 @@
       wsChunkBytes: {{ ws_chunk_bytes }},
       transferStrategy: {% raw json_encode_for_script(transfer_strategy) %},
       canTag: {{ 'true' if current_user and current_user.get('role') == 'admin' else 'false' }},
+      chat: {{ 'true' if features.get('direct_messages') else 'false' }},
       tagColors: {% raw json_encode_for_script(tag_colors) %},
       features: {
         download: {{ 'true' if features.get('file_download') else 'false' }},
@@ -423,25 +438,25 @@
   <script nonce="{{ csp_nonce }}" type="importmap">
   {
     "imports": {
-      "/static/js/browse/app.js": "/static/js/browse/app.js?v=20260902d",
-      "/static/js/browse/upload.js": "/static/js/browse/upload.js?v=20260728a",
-      "/static/js/browse/listing.js": "/static/js/browse/listing.js?v=20260902a",
-      "/static/js/browse/util.js": "/static/js/browse/util.js?v=20260726d",
-      "/static/js/browse/upload-errors.js": "/static/js/browse/upload-errors.js?v=20260726d",
+      "/static/js/browse/app.js": "/static/js/browse/app.js?v=20260930h",
+      "/static/js/browse/upload.js": "/static/js/browse/upload.js?v=20261001c",
+      "/static/js/browse/listing.js": "/static/js/browse/listing.js?v=20260930a",
+      "/static/js/browse/util.js": "/static/js/browse/util.js?v=20260930h",
+      "/static/js/browse/upload-errors.js": "/static/js/browse/upload-errors.js?v=20261001d",
       "/static/js/browse/selection-ui.js": "/static/js/browse/selection-ui.js?v=20260726d",
       "/static/js/browse/selection-store.js": "/static/js/browse/selection-store.js?v=20260726d",
-      "/static/js/browse/bulk-actions.js": "/static/js/browse/bulk-actions.js?v=20260902a",
-      "/static/js/browse/tags.js": "/static/js/browse/tags.js?v=20260726d",
-      "/static/js/browse/tag-api.js": "/static/js/browse/tag-api.js?v=20260726d",
+      "/static/js/browse/bulk-actions.js": "/static/js/browse/bulk-actions.js?v=20260930h",
+      "/static/js/browse/tags.js": "/static/js/browse/tags.js?v=20260930h",
+      "/static/js/browse/tag-api.js": "/static/js/browse/tag-api.js?v=20260930h",
       "/static/js/browse/shares.js": "/static/js/browse/shares.js?v=20260726d",
-      "/static/js/browse/table-ui.js": "/static/js/browse/table-ui.js?v=20260902a",
+      "/static/js/browse/table-ui.js": "/static/js/browse/table-ui.js?v=20260930h",
       "/static/js/browse/row-more-menu.js": "/static/js/browse/row-more-menu.js?v=20260902d",
       "/static/js/browse/onedrive-fe-actions.js": "/static/js/browse/onedrive-fe-actions.js?v=20260902d",
       "/static/js/browse/gitlab-panel.js": "/static/js/browse/gitlab-panel.js?v=20260825d",
-      "/static/js/onedrive-fe/index.js": "/static/js/onedrive-fe/index.js?v=20260902c",
+      "/static/js/onedrive-fe/index.js": "/static/js/onedrive-fe/index.js?v=20260929c",
       "/static/js/onedrive-fe/auth.js": "/static/js/onedrive-fe/auth.js?v=20260902c",
       "/static/js/onedrive-fe/sign-in.js": "/static/js/onedrive-fe/sign-in.js?v=20260902c",
-      "/static/js/onedrive-fe/settings.js": "/static/js/onedrive-fe/settings.js?v=20260902c",
+      "/static/js/onedrive-fe/settings.js": "/static/js/onedrive-fe/settings.js?v=20260929c",
       "/static/js/onedrive-fe/graph.js": "/static/js/onedrive-fe/graph.js?v=20260902c",
       "/static/js/onedrive-fe/tokens.js": "/static/js/onedrive-fe/tokens.js?v=20260902a"
     }
@@ -453,7 +468,8 @@
   <script src="/static/js/transfer-manager.js?v=20260821a"></script>
   <script src="/static/js/download-manager.js?v=20260821a"></script>
   <script src="/static/js/components/folder-picker.js"></script>
-  <script type="module" src="/static/js/browse/app.js?v=20260902d"></script>
+  <script type="module" src="/static/js/browse/upload.js?v=20261001c"></script>
+  <script type="module" src="/static/js/browse/app.js?v=20260930h"></script>
   <script src="/static/js/folder-size-scan.js"></script>
 
   <!-- Hover popup: all tags for a row (overflow) -->
@@ -472,11 +488,15 @@
     <div id="rowTagPopoverExisting" class="row-tag-popover-existing flex flex-wrap gap-1 min-h-5"></div>
     <p class="row-tag-popover-section-label mt-2">Add tags</p>
     <label class="sr-only" for="rowTagPopoverInput">Tag name</label>
-    <input type="text" id="rowTagPopoverInput" class="input input-bordered input-sm w-full"
-      placeholder="Type or pick a tag…" autocomplete="off" />
+    <div class="tag-picker-input-wrap">
+      <input type="text" id="rowTagPopoverInput" class="input input-bordered input-sm w-full"
+        placeholder="Type or pick a tag…" autocomplete="off"
+        aria-autocomplete="list" aria-controls="rowTagPopoverSuggestions" />
+      <div id="rowTagPopoverSuggestions" class="tag-picker-suggestions" role="listbox" hidden></div>
+    </div>
     <div id="rowTagPopoverChips" class="flex flex-wrap gap-1 mt-1.5 min-h-5"></div>
     <p class="row-tag-popover-hint text-xs opacity-55 mt-2">
-      Click <strong>×</strong> on a current tag to remove it. Pick or type a new tag, then press <kbd class="kbd kbd-xs">Enter</kbd>.
+      Click <strong>×</strong> on a current tag to remove it. Use the color swatch to change a tag color. Pick or type a new tag, then press <kbd class="kbd kbd-xs">Enter</kbd>.
     </p>
     <p id="rowTagPopoverError" class="text-error text-xs mt-1 hidden"></p>
     <div class="row-tag-popover-actions">
@@ -491,16 +511,21 @@
       <h3 id="tagPickerTitle" class="text-lg font-bold mb-2">Tag selected files</h3>
       <p id="tagPickerDesc" class="text-sm text-base-content/70 mb-3"></p>
       <label class="label pb-1" for="tagPickerInput"><span class="label-text font-semibold text-sm">Tag names</span></label>
-      <input type="text" id="tagPickerInput" class="input input-bordered w-full"
-        placeholder="finance, pii, reports" autocomplete="off" />
+      <div class="tag-picker-input-wrap">
+        <input type="text" id="tagPickerInput" class="input input-bordered w-full"
+          placeholder="Type or pick a tag…" autocomplete="off"
+          aria-autocomplete="list" aria-controls="tagPickerSuggestions" />
+        <div id="tagPickerSuggestions" class="tag-picker-suggestions" role="listbox" hidden></div>
+      </div>
       <div id="tagPickerChips" class="flex flex-wrap gap-1.5 mt-2 min-h-6"></div>
       <p class="text-xs text-base-content/55 mt-3">
-        Type a tag and press <kbd class="kbd kbd-xs">Enter</kbd> or <kbd class="kbd kbd-xs">,</kbd> to add it. Multiple tags allowed.
+        Type a tag and press <kbd class="kbd kbd-xs">Enter</kbd> or <kbd class="kbd kbd-xs">,</kbd> to add it. Use the color swatch to set a chip color.
         Manage all rules in <a href="/admin/tags" target="_blank" class="link link-primary">Admin → Tags</a>.
       </p>
       <p id="tagPickerError" class="text-error text-sm mt-2 hidden"></p>
       <div class="flex flex-col gap-2 mt-4">
-        <button type="button" class="btn btn-primary" id="tagPickerConfirm">Apply tag</button>
+        <button type="button" class="btn btn-primary" id="tagPickerConfirm">Apply to selected</button>
+        <button type="button" class="btn btn-outline" id="tagPickerRemove">Remove from selected</button>
         <button type="button" class="btn btn-ghost btn-sm" id="tagPickerCancel">Cancel</button>
       </div>
     </div>

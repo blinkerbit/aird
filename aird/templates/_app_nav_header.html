@@ -120,7 +120,7 @@
 
 <script src="/static/js/aird-core.js"></script>
 <script src="/static/js/transfer-tracker.js?v=20260821a"></script>
-<script src="/static/js/pwa.js" defer></script>
+<script src="/static/js/pwa.js?v=20260930a" defer></script>
 <script src="/static/js/common/command-palette.js" defer></script>
 {% if current_user %}
 <script nonce="{{ csp_nonce }}">document.documentElement.dataset.airdUser = '1';</script>
@@ -128,7 +128,7 @@
 {% if is_chat_enabled() %}
 <script nonce="{{ csp_nonce }}">window.__AIRD_CHAT_USER__ = {% raw json_encode(current_user.get('username') if current_user else '') %};</script>
 <script nonce="{{ csp_nonce }}" src="/static/js/chat-ws.js"></script>
-<script nonce="{{ csp_nonce }}" src="/static/js/chat-e2e.js?v=20260906p"></script>
+<script nonce="{{ csp_nonce }}" src="/static/js/chat-e2e.js?v=20260927a"></script>
 <script nonce="{{ csp_nonce }}" src="/static/js/chat-notify.js" defer></script>
 {% end %}
 {% end %}

@@ -33,6 +33,7 @@ from aird.handlers.base_handler import (
     login_matches_share_creator_field,
     require_action,
     require_db,
+    require_feature_flag,
 )
 from aird.constants.input_limits import (
     API_LAST_N_MAX,
@@ -508,14 +509,11 @@ class FileListAPIHandler(BaseHandler):
 
 class SuperSearchHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_feature_flag(
+        "super_search",
+        body="Feature disabled: Super Search is currently disabled by administrator",
+    )
     def get(self):
-        if not self.require_feature(
-            "super_search",
-            True,
-            body="Feature disabled: Super Search is currently disabled by administrator",
-        ):
-            return
-
         # Get the current path from query parameter
         current_path = self.get_argument("path", "").strip()
         # Ensure path is safe and normalized
@@ -1000,12 +998,9 @@ def _format_share_for_path_details(handler, share: dict) -> dict | None:
 
 class ShareDetailsAPIHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_feature_flag("file_share", body={"error": FILESHARE_DISABLED_MSG})
     def get(self):
         """Get share details for a specific file"""
-        if not self.require_feature(
-            "file_share", True, body={"error": FILESHARE_DISABLED_MSG}
-        ):
-            return
 
         file_path = self.get_argument("path", "").strip()
         if not file_path:
@@ -1079,12 +1074,9 @@ def _load_share_for_details_by_id(handler, share_service, db_conn, share_id: str
 
 class ShareDetailsByIdAPIHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_feature_flag("file_share", body={"error": FILESHARE_DISABLED_MSG})
     def get(self):
         """Get share details for a specific share ID"""
-        if not self.require_feature(
-            "file_share", True, body={"error": FILESHARE_DISABLED_MSG}
-        ):
-            return
 
         share_id = self.get_argument("id", "").strip()
         if not share_id:
@@ -1152,12 +1144,8 @@ def _attach_share_capabilities(handler: BaseHandler, share: dict) -> dict:
 
 class ShareListAPIHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_feature_flag("file_share", body={"error": FILESHARE_DISABLED_MSG})
     def get(self):
-        if not self.require_feature(
-            "file_share", True, body={"error": FILESHARE_DISABLED_MSG}
-        ):
-            return
-
         db_conn = self.require_db_connection(DB_NOT_AVAILABLE_MSG)
         if not db_conn:
             return
@@ -1185,11 +1173,8 @@ class ShareListAPIHandler(BaseHandler):
 class FavoriteToggleAPIHandler(BaseHandler):
     @tornado.web.authenticated
     @require_action("favorites.toggle")
+    @require_feature_flag("favorites", body={"error": "Favorites disabled"})
     def post(self):
-        if not self.require_feature(
-            "favorites", True, body={"error": "Favorites disabled"}
-        ):
-            return
         db_conn = self.require_db_connection(DB_NOT_AVAILABLE_MSG)
         if not db_conn:
             return
@@ -1217,11 +1202,8 @@ class FavoriteToggleAPIHandler(BaseHandler):
 
 class FavoritesListAPIHandler(BaseHandler):
     @tornado.web.authenticated
+    @require_feature_flag("favorites", body={"error": "Favorites disabled"})
     def get(self):
-        if not self.require_feature(
-            "favorites", True, body={"error": "Favorites disabled"}
-        ):
-            return
         db_conn = self.require_db_connection(DB_NOT_AVAILABLE_MSG)
         if not db_conn:
             return

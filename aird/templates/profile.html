@@ -61,6 +61,21 @@
         </div>
       </div>
 
+      <div class="card bg-base-100 shadow-sm border border-base-300">
+        <div class="card-body">
+          <div class="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <h3 class="font-semibold">Tags</h3>
+              <p class="text-sm text-base-content/60 mt-1">When on, new tags get a unique color automatically. You can still change a color in Browse.</p>
+            </div>
+            <label class="label cursor-pointer gap-3 justify-end">
+              <span class="label-text">Auto-color new tags</span>
+              <input type="checkbox" id="autoTagColorToggle" class="toggle toggle-primary" checked />
+            </label>
+          </div>
+        </div>
+      </div>
+
       {% if not user %}
       <div class="alert alert-info">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="h-5 w-5 shrink-0 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
@@ -373,7 +388,7 @@
     'tenant': onedrive_browser_public_config().get('tenant') or 'common',
     'configured': onedrive_browser_public_config().get('configured', False),
   }) %};</script>
-  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/onedrive-fe/index.js?v=20260902c"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/onedrive-fe/index.js?v=20260929c"></script>
   {% end %}
   {% if is_chat_enabled() %}
   <script nonce="{{ csp_nonce }}" src="/static/js/chat-key-backup.js?v=20260906p"></script>
@@ -714,6 +729,17 @@
       });
     });
   });
+  </script>
+  <script nonce="{{ csp_nonce }}">
+  (function () {
+    var KEY = 'aird.tags.autoColor';
+    var el = document.getElementById('autoTagColorToggle');
+    if (!el) return;
+    try { el.checked = localStorage.getItem(KEY) !== '0'; } catch (e) { el.checked = true; }
+    el.addEventListener('change', function () {
+      try { localStorage.setItem(KEY, el.checked ? '1' : '0'); } catch (err) { /* ignore */ }
+    });
+  })();
   </script>
 </body>
 </html>

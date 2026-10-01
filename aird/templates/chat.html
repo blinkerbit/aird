@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/static/css/app.css" />
-  <link rel="stylesheet" href="/static/css/chat.css?v=20260906n" />
+  <link rel="stylesheet" href="/static/css/chat.css?v=20260928b" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   {% include '_pwa_head.html' %}
   <title>Chat · Aird</title>
@@ -24,7 +24,7 @@
           <button type="button" class="btn btn-ghost btn-xs" data-chat-e2e-close aria-label="Close">✕</button>
         </div>
         <div class="chat-e2e-help-body">
-          <p class="chat-e2e-disclaimer">Your private encryption key is saved in your Aird chat folder and restored on this device automatically. Starting a chat also shares the conversation key with the other people in it. OneDrive backup is optional if you want a copy off this server.</p>
+          <p class="chat-e2e-disclaimer">Normal chats are encrypted, and the keys are saved in your Aird chat folder on this server so any signed-in browser can open them. Enhanced Secure Chat is different: it starts only after the other person accepts, it runs while both people are online, its keys never leave this browser tab, and closing the tab deletes its messages.</p>
           <p class="text-sm opacity-70" data-chat-e2e-backup-status></p>
           <div class="chat-e2e-help-actions">
             <button type="button" id="chatE2eDownloadBtn" class="btn btn-outline btn-sm">Download key file</button>
@@ -121,16 +121,17 @@
               <button type="button" class="chat-toolbar-btn" data-cmd="link" title="Insert link" aria-label="Insert link">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l1.83-1.83a5 5 0 0 0-7.07-7.07L10.5 6.5"/><path d="M14 11a5 5 0 0 0-7.54-.54L4.63 12.3a5 5 0 0 0 7.07 7.07L13.5 17.5"/></svg>
               </button>
-              <details class="chat-attach-menu">
-                <summary class="chat-toolbar-btn" title="Attach" aria-label="Attach">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21.44 11.05 12.06 20.4a5.5 5.5 0 0 1-7.78-7.78l10.6-10.6a3.5 3.5 0 0 1 4.95 4.95L8.7 18.17a1.5 1.5 0 0 1-2.12-2.12l9.9-9.9"/></svg>
-                </summary>
-                <div class="chat-attach-list">
-                  <button type="button" id="chatBrowseBtn">From files</button>
-                  <label>Upload<input type="file" id="chatFileInput" class="hidden" multiple></label>
-                  <label>GIF<input type="file" id="chatGifInput" accept="image/gif,.gif" class="hidden"></label>
-                </div>
-              </details>
+              <button type="button" class="chat-toolbar-btn chat-attach-only" id="chatBrowseBtn" title="Browse files" aria-label="Browse files">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 7h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+              </button>
+              <label class="chat-toolbar-btn chat-attach-only" title="Upload" aria-label="Upload">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21.44 11.05 12.06 20.4a5.5 5.5 0 0 1-7.78-7.78l10.6-10.6a3.5 3.5 0 0 1 4.95 4.95L8.7 18.17a1.5 1.5 0 0 1-2.12-2.12l9.9-9.9"/></svg>
+                <input type="file" id="chatFileInput" class="hidden" multiple>
+              </label>
+              <label class="chat-toolbar-btn chat-attach-only" title="GIF" aria-label="GIF">
+                GIF
+                <input type="file" id="chatGifInput" accept="image/gif,.gif" class="hidden">
+              </label>
             </div>
             <div class="chat-editor-wrap">
               <div id="chatEmojiPicker" class="chat-emoji-picker hidden" hidden></div>
@@ -151,23 +152,23 @@
     </div>
   </div>
 
-  <dialog id="chatBrowseModal" class="modal">
-    <div class="modal-box max-w-lg">
-      <h3 class="font-bold text-lg">Pick files or folders</h3>
+  <dialog id="chatBrowseModal" class="chat-file-picker">
+    <div class="chat-file-picker-box">
+      <h3 class="chat-file-picker-title">Browse files</h3>
       <label class="chat-browse-path-wrap">
         <span class="sr-only">File path</span>
         <input id="chatBrowsePath" type="text" class="chat-browse-path" value="/" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="File path" aria-autocomplete="list" aria-controls="chatBrowseList" placeholder="/folder/file">
       </label>
       <p class="chat-browse-hint">Tab opens a folder · arrows move · Enter attaches the highlighted file or folder</p>
-      <div class="flex gap-2 my-2">
-        <button type="button" id="chatBrowseUp" class="btn btn-xs btn-ghost">↑ Up</button>
+      <div class="chat-file-picker-tools">
+        <button type="button" id="chatBrowseUp">↑ Up</button>
       </div>
-      <div id="chatBrowseList" class="border border-base-300 rounded-lg max-h-64 overflow-y-auto divide-y divide-base-300"></div>
-      <div class="modal-action">
-        <button type="button" id="chatBrowseClose" class="btn btn-sm">Cancel</button>
+      <div id="chatBrowseList" class="chat-file-picker-list"></div>
+      <div class="chat-file-picker-actions">
+        <button type="button" id="chatBrowseAttach">Attach</button>
+        <button type="button" id="chatBrowseClose">Cancel</button>
       </div>
     </div>
-    <form method="dialog" class="modal-backdrop"><button type="submit">close</button></form>
   </dialog>
 
   <dialog id="chatMemberModal" class="modal">
@@ -236,8 +237,9 @@
   <script nonce="{{ csp_nonce }}">globalThis.__ONEDRIVE_BROWSER_CONFIG = { enabled: {{ 'true' if is_onedrive_browser_enabled() else 'false' }} };</script>
   <script nonce="{{ csp_nonce }}" src="/static/js/components/folder-picker.js"></script>
   <script nonce="{{ csp_nonce }}" src="/static/js/chat-ws.js"></script>
-  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/onedrive-fe/index.js?v=20260902b"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/onedrive-fe/index.js?v=20260929c"></script>
   <script nonce="{{ csp_nonce }}" src="/static/js/chat-key-backup.js?v=20260906p"></script>
-  <script nonce="{{ csp_nonce }}" src="/static/js/pages/chat.js?v=20260906p"></script>
+  <script nonce="{{ csp_nonce }}" src="/static/js/chat-secret.js?v=20260927c"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/pages/chat.js?v=20260930h"></script>
 </body>
 </html>

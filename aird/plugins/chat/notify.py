@@ -96,7 +96,14 @@ def dispatch_reaction(username: str, conversation_id: str, message_id: str, reac
     )
 
 
-def dispatch_receipt(username: str, conversation_id: str, message_id: str, actor_id: int) -> None:
+def dispatch_receipt(
+    username: str,
+    conversation_id: str,
+    message_id: str,
+    actor_id: int,
+    *,
+    decrypted: bool = False,
+) -> None:
     get_chat_hub().broadcast_user_ids(
         chat_db.member_user_ids(username, conversation_id),
         {
@@ -104,6 +111,7 @@ def dispatch_receipt(username: str, conversation_id: str, message_id: str, actor
             "conversation_id": conversation_id,
             "username": username,
             "last_read_id": message_id,
+            "decrypted": decrypted,
         },
         exclude_user_id=actor_id,
     )

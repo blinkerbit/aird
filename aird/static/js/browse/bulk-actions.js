@@ -8,9 +8,11 @@ import {
   getXSRFToken,
   pathBasename,
   wireBrowseButton,
+  getChatEnabled,
 } from './util.js';
 import { closeSelectionDrawer } from './selection-ui.js';
 import { bulkCopyToDefault, bulkCopyToFolder } from './onedrive-fe-actions.js';
+import { queueBrowseAttachBatch } from '../chat-attach.js?v=20260930h';
 
 const FolderPicker = globalThis.AirdFolderPicker;
 
@@ -414,6 +416,20 @@ async function bulkOdCopyFolder() {
   closeSelectionDrawer();
 }
 
+export function bulkSendToChat() {
+  const paths = getSelectedPaths();
+  if (!paths.length) {
+    showDialog('Select files or folders to send to chat.', 'Chat');
+    return;
+  }
+  const entries = paths.map(function (path) {
+    const row = document.querySelector('tr.file-row[data-path="' + CSS.escape(path) + '"]');
+    const isDir = row?.dataset.isDir === '1';
+    return { path: path, isDir: isDir };
+  });
+  queueBrowseAttachBatch(entries);
+}
+
 export function wireBrowseBulkActions({ bulkAddTags, openShareByTag }) {
   wireBrowseButton('newFolderBtn', newFolder);
   wireBrowseButton('bulkDownloadBtn', bulkDownload);
@@ -428,4 +444,5 @@ export function wireBrowseBulkActions({ bulkAddTags, openShareByTag }) {
   }
   if (bulkAddTags) wireBrowseButton('bulkAddTagsBtn', bulkAddTags);
   if (openShareByTag) wireBrowseButton('shareByTagBtn', openShareByTag);
+  if (getChatEnabled()) wireBrowseButton('bulkSendChatBtn', bulkSendToChat);
 }

@@ -732,7 +732,13 @@ def delete_message(*, actor: str, conversation_id: str, message_id: str) -> dict
     return {"id": message_id, "conversation_id": conversation_id}
 
 
-def mark_read(*, actor: str, conversation_id: str, message_id: str) -> None:
+def mark_read(
+    *,
+    actor: str,
+    conversation_id: str,
+    message_id: str,
+    decrypted: bool = False,
+) -> None:
     msg = get_message(actor, message_id)
     if msg is None:
         return
@@ -742,20 +748,25 @@ def mark_read(*, actor: str, conversation_id: str, message_id: str) -> None:
             "SELECT last_read_id, last_read_at FROM read_state WHERE conversation_id = ?",
             (conversation_id,),
         ).fetchone()
+        same_message = False
         if cur:
             last_id, last_at = cur[0], cur[1]
-            if (msg["created_at"], message_id) <= (last_at, last_id):
+            current = (last_at, last_id)
+            incoming = (msg["created_at"], message_id)
+            if incoming < current:
                 return
-        box.conn.execute(
-            """
-            INSERT INTO read_state (conversation_id, last_read_id, last_read_at)
-            VALUES (?, ?, ?)
-            ON CONFLICT(conversation_id) DO UPDATE SET
-                last_read_id = excluded.last_read_id,
-                last_read_at = excluded.last_read_at
-            """,
-            (conversation_id, message_id, msg["created_at"]),
-        )
+            same_message = incoming == current
+        if not same_message:
+            box.conn.execute(
+                """
+                INSERT INTO read_state (conversation_id, last_read_id, last_read_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(conversation_id) DO UPDATE SET
+                    last_read_id = excluded.last_read_id,
+                    last_read_at = excluded.last_read_at
+                """,
+                (conversation_id, message_id, msg["created_at"]),
+            )
         box.conn.commit()
     members = members_of(actor, conversation_id)
 
@@ -764,13 +775,20 @@ def mark_read(*, actor: str, conversation_id: str, message_id: str) -> None:
             return
         box.conn.execute(
             """
-            INSERT INTO receipts (conversation_id, username, last_read_id, last_read_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO receipts (
+                conversation_id, username, last_read_id, last_read_at, decrypted
+            )
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(conversation_id, username) DO UPDATE SET
                 last_read_id = excluded.last_read_id,
-                last_read_at = excluded.last_read_at
+                last_read_at = excluded.last_read_at,
+                decrypted = CASE
+                    WHEN receipts.last_read_id = excluded.last_read_id
+                    THEN MAX(receipts.decrypted, excluded.decrypted)
+                    ELSE excluded.decrypted
+                END
             """,
-            (conversation_id, actor, message_id, now),
+            (conversation_id, actor, message_id, now, int(decrypted)),
         )
 
     _fanout_members(members, write)
@@ -780,12 +798,20 @@ def list_receipts(username: str, conversation_id: str) -> list[dict]:
     with mailbox(username) as box:
         rows = box.conn.execute(
             """
-            SELECT username, last_read_id, last_read_at FROM receipts
+            SELECT username, last_read_id, last_read_at, decrypted FROM receipts
             WHERE conversation_id = ?
             """,
             (conversation_id,),
         ).fetchall()
-        return [{"username": r[0], "last_read_id": r[1], "last_read_at": r[2]} for r in rows]
+        return [
+            {
+                "username": r[0],
+                "last_read_id": r[1],
+                "last_read_at": r[2],
+                "decrypted": bool(r[3]),
+            }
+            for r in rows
+        ]
 
 
 def unread_total(username: str) -> int:

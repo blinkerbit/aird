@@ -1,17 +1,18 @@
 "use strict";
 
-import { showDialog } from './util.js';
+import { showDialog, getChatEnabled } from './util.js';
 import { initUploadUi } from './upload.js';
 import { initBrowseSelectionUi } from './selection-ui.js';
 import { wireBrowseBulkActions } from './bulk-actions.js';
 import { bulkAddTags, initTagsUi } from './tags.js';
+import { initRowMoreMenus, registerRowMoreAction } from './row-more-menu.js';
+import { queueBrowseAttach } from '../chat-attach.js?v=20260930a';
 import {
   openShareByTag,
   wireSharePopupClose,
   wireShareActionDelegation,
 } from './shares.js';
 import { initOneDriveFeUi } from '../onedrive-fe/index.js';
-import { initRowMoreMenus } from './row-more-menu.js';
 import { registerOneDriveFeBrowseActions } from './onedrive-fe-actions.js';
 import { initBrowseGitlabPanel } from './gitlab-panel.js';
 import {
@@ -56,6 +57,16 @@ function runInitStep(name, fn) {
   }
 }
 
+function registerSendToChatAction() {
+  if (!getChatEnabled()) return;
+  registerRowMoreAction({
+    id: 'send-to-chat',
+    label: 'Send to chat',
+    when: (ctx) => !!ctx?.path,
+    run: (ctx) => queueBrowseAttach(ctx.path, !!ctx.isDir),
+  });
+}
+
 export function initBrowsePage() {
   if (_browseBooted) return;
   _browseBooted = true;
@@ -76,6 +87,7 @@ export function initBrowsePage() {
   runInitStep('keyboard', initBrowseKeyboardShortcuts);
   runInitStep('columnResize', initBrowseColumnResize);
   runInitStep('onedriveFeActions', registerOneDriveFeBrowseActions);
+  runInitStep('chatSend', registerSendToChatAction);
   runInitStep('rowMoreMenu', initRowMoreMenus);
   runInitStep('onedriveFe', initOneDriveFeUi);
   runInitStep('gitlabPanel', initBrowseGitlabPanel);

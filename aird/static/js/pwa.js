@@ -12,6 +12,12 @@
     return document.getElementById(id);
   }
 
+  globalThis.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    updateInstallButton();
+  });
+
   function isStandalone() {
     return (
       globalThis.matchMedia('(display-mode: standalone)').matches
@@ -198,12 +204,6 @@
     if (btn) {
       btn.addEventListener('click', () => { onInstallClick().catch(() => {}); });
     }
-
-    globalThis.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      deferredPrompt = e;
-      updateInstallButton();
-    });
 
     globalThis.addEventListener('appinstalled', () => {
       deferredPrompt = null;

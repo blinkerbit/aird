@@ -1,7 +1,7 @@
 "use strict";
 
 import { SelectionStore } from './selection-store.js';
-import { isInputKeyTarget, showDialog } from './util.js';
+import { isInputKeyTarget, showDialog, getCanTag } from './util.js';
 import { updateBulkToolbar } from './selection-ui.js';
 import { closeRowTagPopover, isRowTagPopoverOpen, openRowTagPopover } from './tags.js';
 import { closeSharePopup, showShareDetails } from './shares.js';
@@ -103,6 +103,7 @@ function showBrowseShortcutsHelp() {
     '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">n</td><td>New folder</td></tr>' +
     '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">u</td><td>Upload file</td></tr>' +
     '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Ctrl+A</td><td>Select all files</td></tr>' +
+    '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">t</td><td>Tag one selected item</td></tr>' +
     '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Delete</td><td>Delete selected files</td></tr>' +
     '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Escape</td><td>Deselect / close</td></tr>' +
     '</table>' +
@@ -181,6 +182,21 @@ function browseShortcutDelete(e) {
   return true;
 }
 
+function browseShortcutTag(e) {
+  if (e.key !== 't' && e.key !== 'T') return false;
+  if (e.ctrlKey || e.metaKey || e.altKey) return false;
+  if (!getCanTag()) return false;
+  const paths = SelectionStore.getAll();
+  if (paths.length !== 1) return false;
+  const path = paths[0];
+  const row = document.querySelector('tr.file-row[data-path="' + CSS.escape(path) + '"]');
+  const btn = row?.querySelector('.row-tag-add-btn');
+  if (!btn) return false;
+  e.preventDefault();
+  openRowTagPopover(path, btn);
+  return true;
+}
+
 export function initBrowseKeyboardShortcuts() {
   document.addEventListener('keydown', function browseGlobalKeydown(e) {
     if (e.key === 'Escape') {
@@ -193,6 +209,7 @@ export function initBrowseKeyboardShortcuts() {
     if (browseShortcutNewFolder(e)) return;
     if (browseShortcutUpload(e)) return;
     if (browseShortcutSelectAll(e)) return;
+    if (browseShortcutTag(e)) return;
     browseShortcutDelete(e);
   });
 }

@@ -242,6 +242,36 @@ def require_modify_access(
     return decorator
 
 
+def require_feature_flag(feature_key: str, default: bool = True, *, status: int = 403, body=None):
+    """Decorator: short-circuit when a feature flag is off.
+
+    Place it closest to the handler so auth and ABAC decorators still run first.
+    Async handlers stay async so ``await handler.method()`` still works.
+    """
+    import asyncio
+
+    def decorator(method):
+        if asyncio.iscoroutinefunction(method):
+
+            @functools.wraps(method)
+            async def async_wrapper(self, *args, **kwargs):
+                if not self.require_feature(feature_key, default, status=status, body=body):
+                    return None
+                return await method(self, *args, **kwargs)
+
+            return async_wrapper
+
+        @functools.wraps(method)
+        def wrapper(self, *args, **kwargs):
+            if not self.require_feature(feature_key, default, status=status, body=body):
+                return None
+            return method(self, *args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
 # ---------------------------------------------------------------------------
 # Mixin for WebSocket handlers using WebSocketConnectionManager
 # ---------------------------------------------------------------------------
@@ -606,11 +636,13 @@ class BaseHandler(tornado.web.RequestHandler):
         return user
 
     def has_modify_privileges(self) -> bool:
-        user = self.get_signed_in_user()
-        if not user:
+        user = self.get_current_user()
+        if not isinstance(user, dict):
             return False
-        role = str(user.get("role", "user")).lower()
-        return role in {"admin", "user"}
+        username = user.get("username")
+        if not isinstance(username, str) or not username.strip():
+            return False
+        return str(user.get("role", "user")).lower() in {"admin", "user"}
 
     # ------------------------------------------------------------------
     # ABAC PEP helpers
@@ -731,18 +763,6 @@ class BaseHandler(tornado.web.RequestHandler):
             raise tornado.web.HTTPError(403, decision.reason)
         return decision
 
-    def require_modify_privileges(
-        self,
-        *,
-        status: int = 403,
-        body: str = "Write access denied. Sign in with modify privileges.",
-    ) -> bool:
-        if self.has_modify_privileges():
-            return True
-        self.set_status(status)
-        self.write(body)
-        return False
-
     def write_json_error(self, status: int, message: str) -> None:
         self.set_status(status)
         self.write({"error": message})
@@ -785,6 +805,23 @@ class BaseHandler(tornado.web.RequestHandler):
         self.set_status(status)
         self.write(body if body is not None else "Feature disabled.")
         return False
+
+    def audit(self, action: str, details: str | None = None) -> None:
+        self.get_service("audit_service").log(
+            self.db_conn,
+            action,
+            username=self.get_display_username(),
+            details=details,
+            ip=self.request.remote_ip,
+        )
+
+    def respond_mutation(self, location: str, payload: dict | None = None) -> None:
+        """JSON body when Accept is application/json, otherwise redirect."""
+        if self.request.headers.get("Accept") == "application/json":
+            self.set_header("Content-Type", "application/json")
+            self.write({"ok": True} if payload is None else payload)
+            return
+        self.redirect(location)
 
     def handle_cloud_error(self, exc: Exception, log_msg: str, client_err_msg: str) -> None:
         """Helper to unify exception handling for cloud routes."""

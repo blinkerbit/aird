@@ -33,7 +33,7 @@ function getFileFromEntry(entry) {
   return new Promise((resolve, reject) => entry.file(resolve, reject));
 }
 
-async function traverseEntries(entries, pathPrefix) {
+export async function traverseEntries(entries, pathPrefix = '') {
   const result = [];
   for (const entry of entries) {
     if (entry.isFile) {
@@ -53,102 +53,221 @@ async function traverseEntries(entries, pathPrefix) {
   return result;
 }
 
+export function dropEntries(dataTransfer) {
+  return [...(dataTransfer?.items || [])]
+    .map((item) => (typeof item.webkitGetAsEntry === 'function' ? item.webkitGetAsEntry() : null))
+    .filter(Boolean);
+}
+
+/**
+ * Native pick + drop. Click-to-select must be a <label for="fileInput"> — never input.click()
+ * from a parent click handler (that cancels the OS picker).
+ */
+export function bindPickDrop(zone, input, { onFiles, onEntries } = {}) {
+  if (!zone || !input) return () => {};
+
+  function emitFiles(list) {
+    const files = [...(list || [])].filter(Boolean);
+    if (files.length) onFiles?.(files);
+  }
+
+  function onChange() {
+    emitFiles(input.files);
+    input.value = '';
+  }
+
+  function onOver(e) {
+    e.preventDefault();
+    zone.classList.add('dragover');
+  }
+
+  function onLeave() {
+    zone.classList.remove('dragover');
+  }
+
+  async function onDrop(e) {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    const entries = dropEntries(e.dataTransfer);
+    if (entries.some((ent) => ent.isDirectory) && onEntries) {
+      await onEntries(entries);
+      return;
+    }
+    emitFiles(e.dataTransfer?.files);
+  }
+
+  input.addEventListener('change', onChange);
+  zone.addEventListener('dragover', onOver);
+  zone.addEventListener('dragleave', onLeave);
+  zone.addEventListener('drop', onDrop);
+
+  return () => {
+    input.removeEventListener('change', onChange);
+    zone.removeEventListener('dragover', onOver);
+    zone.removeEventListener('dragleave', onLeave);
+    zone.removeEventListener('drop', onDrop);
+    zone.classList.remove('dragover');
+  };
+}
+
+export function splitBySize(files, maxSize) {
+  const accepted = [];
+  const rejected = [];
+  for (const file of files || []) {
+    if (file.size > maxSize) rejected.push(file.name);
+    else accepted.push(file);
+  }
+  return { accepted, rejected };
+}
+
+function transferSink() {
+  const TM = globalThis.AirdTransferManager;
+  if (!TM?.enqueueUpload || !TM?.pumpUploads) return null;
+  return TM;
+}
+
+function warnNotReady() {
+  showDialog('Transfers are not ready. Refresh the page and try again.', 'Upload');
+}
+
+export function currentUploadDir() {
+  return document.getElementById('currentPath')?.value ?? '';
+}
+
+export function folderRowFromEvent(target) {
+  const el = target && (target.nodeType === 1 ? target : target.parentElement);
+  const row = el?.closest?.('tr.file-row');
+  if (!row) return null;
+  const isDir = row.dataset.isDir === '1' || row.querySelector('.row-checkbox')?.dataset.isDir === '1';
+  return isDir ? row : null;
+}
+
+function enqueueAt(files, dir) {
+  const TM = transferSink();
+  if (!TM) {
+    warnNotReady();
+    return;
+  }
+  const { accepted, rejected } = splitBySize(files, getMaxFileSize());
+  for (const file of accepted) {
+    TM.enqueueUpload({ file, uploadDir: dir });
+  }
+  if (rejected.length) {
+    const limitGB = (getMaxFileSize() / (1024 * 1024 * 1024)).toFixed(2);
+    showDialog(`Files exceed the ${limitGB} GB limit: ${rejected.join(', ')}`, 'File Size Limit');
+  }
+  if (accepted.length) TM.pumpUploads(onUploadSuccess, onUploadError);
+}
+
+function enqueuePlain(files) {
+  enqueueAt(files, currentUploadDir());
+}
+
+async function enqueueEntriesAt(entries, baseDir) {
+  const TM = transferSink();
+  if (!TM) {
+    warnNotReady();
+    return;
+  }
+  const filesWithPaths = await traverseEntries(entries, '');
+  if (!filesWithPaths.length) return;
+  const rejected = [];
+  const maxSize = getMaxFileSize();
+  const root = baseDir ?? currentUploadDir();
+  for (const fw of filesWithPaths) {
+    if (fw.file.size > maxSize) {
+      rejected.push(fw.relativePath);
+      continue;
+    }
+    const parts = fw.relativePath.split('/');
+    const fileName = parts.pop();
+    const subDir = parts.join('/');
+    const uploadDir = subDir ? (root ? `${root}/${subDir}` : subDir) : root;
+    TM.enqueueUpload({ file: fw.file, uploadDir, uploadName: fileName });
+  }
+  if (rejected.length) {
+    const limitGB = (maxSize / (1024 * 1024 * 1024)).toFixed(2);
+    showDialog(`Files exceed the ${limitGB} GB limit: ${rejected.join(', ')}`, 'File Size Limit');
+  }
+  TM.pumpUploads(onUploadSuccess, onUploadError);
+}
+
+async function enqueueEntries(entries) {
+  await enqueueEntriesAt(entries, currentUploadDir());
+}
+
+function clearFolderDropHighlights() {
+  document.querySelectorAll('tr.file-row--drop-target').forEach((row) => {
+    row.classList.remove('file-row--drop-target');
+  });
+}
+
+export function bindFolderRowDrop(table) {
+  if (!table || table.dataset.folderDropBound === '1') return () => {};
+  table.dataset.folderDropBound = '1';
+
+  function onOver(e) {
+    const row = folderRowFromEvent(e.target);
+    if (!row) return;
+    e.preventDefault();
+    e.stopPropagation();
+    clearFolderDropHighlights();
+    row.classList.add('file-row--drop-target');
+  }
+
+  function onLeave(e) {
+    const row = folderRowFromEvent(e.target);
+    if (!row) return;
+    if (row.contains(e.relatedTarget)) return;
+    row.classList.remove('file-row--drop-target');
+  }
+
+  async function onDrop(e) {
+    const row = folderRowFromEvent(e.target);
+    if (!row) return;
+    e.preventDefault();
+    e.stopPropagation();
+    clearFolderDropHighlights();
+    const dest = row.dataset.path || '';
+    const entries = dropEntries(e.dataTransfer);
+    if (entries.some((ent) => ent.isDirectory)) {
+      await enqueueEntriesAt(entries, dest);
+      return;
+    }
+    enqueueAt([...(e.dataTransfer?.files || [])], dest);
+  }
+
+  table.addEventListener('dragover', onOver);
+  table.addEventListener('dragleave', onLeave);
+  table.addEventListener('drop', onDrop);
+  return () => {
+    table.removeEventListener('dragover', onOver);
+    table.removeEventListener('dragleave', onLeave);
+    table.removeEventListener('drop', onDrop);
+    table.dataset.folderDropBound = '';
+    clearFolderDropHighlights();
+  };
+}
+
 export function initUploadUi() {
   const uploadZone = document.getElementById('uploadZone');
   const fileInput = document.getElementById('fileInput');
-  const TM = globalThis.AirdTransferManager;
-
-  if (!uploadZone || !fileInput || !TM?.enqueueUpload) return;
-
-  function enqueueFiles(files, uploadDir, uploadName) {
-    for (const file of files) {
-      if (file.size > getMaxFileSize()) continue;
-      TM.enqueueUpload({
-        file,
-        uploadDir: uploadDir ?? document.getElementById('currentPath')?.value ?? '',
-        uploadName,
-      });
-    }
+  if (uploadZone && fileInput && uploadZone.dataset.pickBound !== '1') {
+    uploadZone.dataset.pickBound = '1';
+    bindPickDrop(uploadZone, fileInput, {
+      onFiles: enqueuePlain,
+      onEntries: enqueueEntries,
+    });
   }
+  const table = document.getElementById('fileTable');
+  if (table) bindFolderRowDrop(table);
+}
 
-  uploadZone.addEventListener('click', () => fileInput.click());
-
-  uploadZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    uploadZone.classList.add('dragover');
-  });
-
-  uploadZone.addEventListener('dragleave', () => {
-    uploadZone.classList.remove('dragover');
-  });
-
-  uploadZone.addEventListener('drop', async (e) => {
-    e.preventDefault();
-    uploadZone.classList.remove('dragover');
-    const items = e.dataTransfer.items;
-    if (items?.length > 0 && typeof items[0].webkitGetAsEntry === 'function') {
-      const entries = [];
-      for (const item of items) {
-        const entry = item.webkitGetAsEntry();
-        if (entry) entries.push(entry);
-      }
-      if (entries.some((ent) => ent.isDirectory)) {
-        const filesWithPaths = await traverseEntries(entries, '');
-        handleFilesWithPaths(filesWithPaths);
-        return;
-      }
-    }
-    handlePlainFiles(e.dataTransfer.files);
-  });
-
-  fileInput.addEventListener('change', (e) => {
-    handlePlainFiles(e.target.files);
-  });
-
-  function handleFilesWithPaths(filesWithPaths) {
-    if (filesWithPaths.length === 0) return;
-    const rejected = [];
-    for (const fw of filesWithPaths) {
-      if (fw.file.size > getMaxFileSize()) {
-        rejected.push(fw.relativePath);
-        continue;
-      }
-      const parts = fw.relativePath.split('/');
-      const fileName = parts.pop();
-      const subDir = parts.join('/');
-      let uploadDir = document.getElementById('currentPath')?.value ?? '';
-      if (subDir) uploadDir = uploadDir ? uploadDir + '/' + subDir : subDir;
-      enqueueFiles([fw.file], uploadDir, fileName);
-    }
-    if (rejected.length > 0) {
-      const limitGB = (getMaxFileSize() / (1024 * 1024 * 1024)).toFixed(2);
-      showDialog(
-        'Files exceed the ' + limitGB + ' GB limit: ' + rejected.join(', '),
-        'File Size Limit'
-      );
-    }
-    fileInput.value = '';
-    TM.pumpUploads(onUploadSuccess, onUploadError);
-  }
-
-  function handlePlainFiles(files) {
-    if (!files?.length) return;
-    const rejected = [];
-    for (const file of files) {
-      if (file.size > getMaxFileSize()) {
-        rejected.push(file.name);
-        continue;
-      }
-      enqueueFiles([file]);
-    }
-    if (rejected.length > 0) {
-      const limitGB = (getMaxFileSize() / (1024 * 1024 * 1024)).toFixed(2);
-      showDialog(
-        `Files exceed the ${limitGB} GB limit: ${rejected.join(', ')}`,
-        'File Size Limit'
-      );
-    }
-    fileInput.value = '';
-    TM.pumpUploads(onUploadSuccess, onUploadError);
+if (typeof document !== 'undefined' && document.getElementById) {
+  const boot = () => initUploadUi();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
   }
 }

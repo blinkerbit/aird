@@ -1,8 +1,27 @@
+import {
+  attachAllowed,
+  bindDropZone,
+  clipboardFiles,
+  completePath,
+  createBrowsePicker,
+  createPendingStore,
+  filesApiUrl,
+  formatRelPath,
+  joinRel,
+  looksLikePath,
+  normalizeRel,
+  parsePathInput,
+  restyleCompleted,
+  sameBrowseValue,
+  takePendingBrowseAttachAll,
+} from '../chat-attach.js?v=20260930h';
+
 (function () {
   'use strict';
 
   const REACTIONS = ['👍', '❤️', '😂', '🎉'];
   const IMAGE_EXTS = ['jpg', 'jpeg', 'jpe', 'jif', 'jfif', 'png', 'gif', 'bmp', 'webp', 'tiff', 'tif', 'svg', 'ico', 'avif', 'heic', 'heif', 'dng', 'cr2', 'nef', 'arw', 'orf', 'rw2', 'raf', 'raw'];
+  let pendingBrowseAttachQueue = takePendingBrowseAttachAll();
 
   const qs = (sel) => document.querySelector(sel);
   const convList = qs('#chatConvList');
@@ -21,6 +40,7 @@
   const browsePathEl = qs('#chatBrowsePath');
   const browseUp = qs('#chatBrowseUp');
   const browseClose = qs('#chatBrowseClose');
+  const browseAttach = qs('#chatBrowseAttach');
   const browseBtn = qs('#chatBrowseBtn');
   const replyBar = qs('#chatReplyBar');
   const replyPreview = qs('#chatReplyPreview');
@@ -58,19 +78,16 @@
 
   const me = window.__AIRD_CHAT_USER__ || '';
   let activeConvId = null;
+  let enhancedSecureView = false;
   let conversations = [];
   let pins = [];
   let receipts = [];
   let replyToId = null;
-  let browsePath = '';
-  let browseHits = [];
-  let browseActiveName = '';
-  let dirCache = new Map();
   let tabCycle = { key: '', i: -1 };
-  let browseInputTimer = null;
   let pathSuggestHits = [];
   let pathSuggestIdx = 0;
-  let pending = [];
+  const pendingStore = createPendingStore();
+  const pending = pendingStore.items;
   let userSearchTimer = null;
   let searchTimer = null;
   let pollTimer = null;
@@ -96,25 +113,26 @@
   }
 
   async function syncNewMessages() {
-    if (!activeConvId || !messagesEl) return;
+    if (enhancedSecureView || !activeConvId || !messagesEl) return;
     const afterId = lastMessageId();
     const query = afterId ? `?after_id=${encodeURIComponent(afterId)}` : '';
     const data = await api(`/api/chat/conversations/${activeConvId}/messages${query}`);
     let added = false;
-    (data.messages || []).forEach((m) => {
+    let lastReadable = null;
+    for (const m of (data.messages || [])) {
       if (!messagesEl.querySelector(`[data-msg-id="${cssEscape(m.id)}"]`)) {
-        appendMessage(m);
+        await appendMessage(m);
         added = true;
+        if (!m._e2e || m._decryptOk) lastReadable = m;
       }
-    });
+    }
     if (data.pins) {
       pins = data.pins;
       renderPins();
     }
     if (data.receipts) receipts = data.receipts;
     if (added) {
-      const last = lastMessageId();
-      if (last) markRead({ id: last });
+      if (lastReadable) markRead(lastReadable);
     }
   }
 
@@ -241,17 +259,20 @@
   }
 
   async function decryptPayload(convId, payload) {
-    if (!payload || !E2E) return '';
+    if (!payload || !E2E) return { html: '', decrypted: false };
     const tryDecrypt = async () => E2E.sanitizeHtml(await E2E.decrypt(convId, payload));
     try {
-      return await tryDecrypt();
+      return { html: await tryDecrypt(), decrypted: true };
     } catch (_) {
       try {
         const conv = conversations.find((c) => c.id === convId);
         await E2E.ensureConversation(api, convId, memberNames(conv));
-        return await tryDecrypt();
+        return { html: await tryDecrypt(), decrypted: true };
       } catch {
-        return '<em class="chat-e2e-fail">Unable to decrypt on this device</em>';
+        return {
+          html: '<em class="chat-e2e-fail">Unable to decrypt on this device</em>',
+          decrypted: false,
+        };
       }
     }
   }
@@ -260,10 +281,11 @@
     if (!msg) return msg;
     const blob = msg.metadata?.e2e;
     if (msg.e2e || blob) {
-      const html = await decryptPayload(msg.conversation_id, blob);
-      msg.body = html;
+      const result = await decryptPayload(msg.conversation_id, blob);
+      msg.body = result.html;
       msg._e2e = true;
-      e2ePlain.set(msg.id, html);
+      msg._decryptOk = result.decrypted;
+      if (result.decrypted) e2ePlain.set(msg.id, result.html);
     }
     return msg;
   }
@@ -403,12 +425,17 @@
           <summary aria-label="Conversation actions">⋯</summary>
           <div class="chat-head-menu">
             <button type="button" id="chatMuteBtn">${conv.muted ? 'Unmute' : 'Mute'}</button>
+            ${conv.kind === 'dm' && conv.peer_username ? '<button type="button" id="chatEnhancedSecureBtn">Enhanced Secure Chat</button>' : ''}
             ${groupActs}
           </div>
         </details>
       </div>`;
     qs('#chatBackBtn')?.addEventListener('click', () => setMobileView('list'));
     qs('#chatMuteBtn')?.addEventListener('click', () => toggleMute(conv).catch((e) => alert(e.message)));
+    qs('#chatEnhancedSecureBtn')?.addEventListener('click', () => {
+      qs('.chat-head-more')?.removeAttribute('open');
+      window.AirdEnhancedSecure?.start(conv.peer_username);
+    });
     qs('#chatAddMemberBtn')?.addEventListener('click', () => openAddMember());
     qs('#chatLeaveBtn')?.addEventListener('click', () => leaveGroup(conv).catch((e) => alert(e.message)));
   }
@@ -472,12 +499,13 @@
 
   function renderConvList() {
     if (!convList) return;
-    if (!conversations.length) {
+    const enhancedHtml = window.AirdEnhancedSecure?.listHtml?.() || '';
+    if (!conversations.length && !enhancedHtml) {
       convList.innerHTML = '<li class="p-3 text-sm opacity-50 text-center">No conversations yet</li>';
       return;
     }
-    convList.innerHTML = conversations.map((c) => {
-      const active = c.id === activeConvId ? ' active' : '';
+    convList.innerHTML = enhancedHtml + conversations.map((c) => {
+      const active = !enhancedSecureView && c.id === activeConvId ? ' active' : '';
       const badge = c.unread ? `<span class="badge badge-primary badge-xs">${c.unread}</span>` : '';
       const preview = esc(c.last_preview || 'No messages yet');
       const title = convTitle(c);
@@ -485,9 +513,12 @@
       const dot = on ? '<span class="chat-online-dot chat-online-dot--list"></span>' : '';
       const mute = c.muted ? ' <span class="opacity-40">🔇</span>' : '';
       const when = formatConvTime(c.updated_at);
-      return `<li><a href="#" class="chat-conv-item${active}" data-id="${esc(c.id)}">${avatarHtml(title)}${dot}<span class="chat-conv-main"><span class="chat-conv-top"><span class="chat-conv-name">${esc(title)}${mute}</span><span class="chat-conv-meta">${when}${badge}</span></span><span class="chat-conv-preview">${preview}</span></span></a></li>`;
+      const more = c.kind === 'dm' && c.peer_username
+        ? `<details class="chat-conv-more"><summary aria-label="More">⋯</summary><div class="chat-head-menu"><button type="button" data-enhanced-peer="${esc(c.peer_username)}">Enhanced Secure Chat</button></div></details>`
+        : '';
+      return `<li class="chat-conv-row"><a href="#" class="chat-conv-item${active}" data-id="${esc(c.id)}">${avatarHtml(title)}${dot}<span class="chat-conv-main"><span class="chat-conv-top"><span class="chat-conv-name">${esc(title)}${mute}</span><span class="chat-conv-meta">${when}${badge}</span></span><span class="chat-conv-preview">${preview}</span></span></a>${more}</li>`;
     }).join('');
-    convList.querySelectorAll('.chat-conv-item').forEach((el) => {
+    convList.querySelectorAll('.chat-conv-item[data-id]').forEach((el) => {
       el.addEventListener('click', (e) => {
         e.preventDefault();
         openConversation(el.dataset.id);
@@ -507,7 +538,8 @@
       if (!c.last_e2e || !E2E?.ready()) return;
       try {
         await e2eReady(c.id);
-        const html = await decryptPayload(c.id, c.last_e2e);
+        const result = await decryptPayload(c.id, c.last_e2e);
+        const html = result.html;
         const tmp = document.createElement('div');
         tmp.innerHTML = html;
         const text = (tmp.innerText || '').trim();
@@ -633,10 +665,21 @@
   function seenHtml(msg) {
     if (!msg._mine || !receipts.length) return '';
     const conv = activeConv();
-    const seen = receipts.filter((r) => r.last_read_id === msg.id || r.last_read_at >= msg.created_at);
+    const seen = receipts.filter((r) => (
+      r.last_read_id === msg.id
+      || (!msg._e2e && r.last_read_at >= msg.created_at)
+    ));
     if (!seen.length) return '';
     if (conv?.kind === 'group') {
-      return `<div class="chat-seen">Seen by ${esc(seen.map((s) => s.username).join(', '))}</div>`;
+      const names = seen.map((s) => (
+        `${s.username}${msg._e2e && s.decrypted ? ' (decrypted)' : ''}`
+      ));
+      return `<div class="chat-seen">Seen by ${esc(names.join(', '))}</div>`;
+    }
+    if (msg._e2e) {
+      return seen.some((receipt) => receipt.decrypted)
+        ? '<div class="chat-seen">Decrypted &amp; seen</div>'
+        : '';
     }
     return '<div class="chat-seen">Seen</div>';
   }
@@ -661,7 +704,21 @@
     const nameLine = msg._mine
       ? ''
       : `<div class="chat-msg-name">${esc(msg.sender_username)}</div>`;
-    return `<div class="chat-msg-row ${rowClass}" data-msg-id="${esc(msg.id)}">${avatarHtml(msg.sender_username)}<div class="chat-msg-stack">${nameLine}<div class="chat-msg-main">${hoverBarHtml(msg)}<div class="aird-chat-bubble ${bubbleClass}"><div class="aird-chat-bubble-body">${body}</div>${reactionsHtml(msg)}</div></div><div class="chat-msg-time">${esc(formatTime(msg.created_at))}</div>${seenHtml(msg)}</div></div>`;
+    return `<div class="chat-msg-row ${rowClass}" data-msg-id="${esc(msg.id)}" data-e2e="${msg._e2e ? '1' : '0'}" data-decrypt-ok="${msg._decryptOk ? '1' : '0'}" data-created-at="${esc(msg.created_at || '')}">${avatarHtml(msg.sender_username)}<div class="chat-msg-stack">${nameLine}<div class="chat-msg-main">${hoverBarHtml(msg)}<div class="aird-chat-bubble ${bubbleClass}"><div class="aird-chat-bubble-body">${body}</div>${reactionsHtml(msg)}</div></div><div class="chat-msg-time">${esc(formatTime(msg.created_at))}</div>${seenHtml(msg)}</div></div>`;
+  }
+
+  function refreshSeenIndicator(messageId) {
+    const row = messagesEl?.querySelector(`[data-msg-id="${cssEscape(messageId)}"]`);
+    const stack = row?.querySelector('.chat-msg-stack');
+    if (!row || !stack || !row.classList.contains('chat-msg-row--mine')) return;
+    stack.querySelectorAll('.chat-seen').forEach((node) => node.remove());
+    const html = seenHtml({
+      id: messageId,
+      created_at: row.dataset.createdAt || '',
+      _mine: true,
+      _e2e: row.dataset.e2e === '1',
+    });
+    if (html) stack.insertAdjacentHTML('beforeend', html);
   }
 
   function bindMessageUi(root) {
@@ -978,8 +1035,11 @@
   }
 
   async function openConversation(convId) {
+    window.AirdEnhancedSecure?.closeView?.();
+    enhancedSecureView = false;
     if (activeConvId && convId !== activeConvId) {
-      pending = [];
+      pending.forEach(function (p) { revokePendingPreview(p); });
+      pendingStore.clear();
       renderPending();
     }
     const gen = ++loadGen;
@@ -1005,25 +1065,64 @@
     if (!msgs.length) showEmptyThread();
     else msgs.forEach((m) => paintMessage(m));
     if (msgs.length) messagesEl.scrollTop = messagesEl.scrollHeight;
-    const last = msgs.slice(-1)[0];
+    const last = [...msgs].reverse().find((msg) => !msg._e2e || msg._decryptOk);
     if (last) markRead(last);
     const params = new URLSearchParams(location.search);
     params.set('c', convId);
+    params.delete('attach');
+    params.delete('attachDir');
+    params.delete('attachBatch');
     history.replaceState(null, '', `${location.pathname}?${params}`);
+    applyPendingBrowseAttach();
+  }
+
+  function applyPendingBrowseAttach() {
+    if (!pendingBrowseAttachQueue.length || !activeConvId) return;
+    const gate = canAttachFiles();
+    if (!gate.ok) {
+      setE2eStatus(gate.reason);
+      return;
+    }
+    for (const item of pendingBrowseAttachQueue) {
+      attachFromBrowse(item.path, item.isDir);
+    }
+    pendingBrowseAttachQueue = [];
+    setE2eStatus('');
   }
 
   function markRead(msg) {
     const WS = window.AirdChatWS;
-    if (!WS?.isOpen() || !activeConvId) return;
+    if (document.visibilityState !== 'visible' || !WS?.isOpen() || !activeConvId) return;
+    if (msg._e2e && !msg._decryptOk) return;
     WS.send({
       type: 'chat_read',
       conversation_id: activeConvId,
       message_id: msg.id,
+      decrypted: !!(msg._e2e && msg._decryptOk),
     });
     loadConversations();
   }
 
+  function markLatestVisibleRead() {
+    if (enhancedSecureView || document.visibilityState !== 'visible') return;
+    const rows = [...(messagesEl?.querySelectorAll('[data-msg-id]') || [])];
+    const row = rows.reverse().find((item) => (
+      item.dataset.e2e !== '1' || item.dataset.decryptOk === '1'
+    ));
+    if (!row) return;
+    markRead({
+      id: row.dataset.msgId,
+      _e2e: row.dataset.e2e === '1',
+      _decryptOk: row.dataset.decryptOk === '1',
+    });
+  }
+
   function onWsChatMessage(data) {
+    if (enhancedSecureView) {
+      loadConversations();
+      updateNavBadge();
+      return;
+    }
     if (!data.message) return;
     const msg = tagMine({ ...data.message });
     if (msg.conversation_id === activeConvId) {
@@ -1038,7 +1137,7 @@
   }
 
   function onWsTyping(data) {
-    if (data.conversation_id !== activeConvId) return;
+    if (enhancedSecureView || data.conversation_id !== activeConvId) return;
     const sub = header?.querySelector('.chat-thread-sub');
     if (!sub || data.username === me) return;
     const prev = sub.dataset.base || sub.textContent;
@@ -1051,11 +1150,12 @@
   const WS_HANDLERS = {
     chat_message: onWsChatMessage,
     chat_message_deleted: (data) => {
-      if (data.conversation_id === activeConvId) removeMessageEl(data.message_id);
+      if (!enhancedSecureView && data.conversation_id === activeConvId) removeMessageEl(data.message_id);
       loadConversations();
       updateNavBadge();
     },
     chat_message_edited: (data) => {
+      if (enhancedSecureView) return;
       if (data.message?.conversation_id === activeConvId) {
         replaceMessage(data.message).catch((err) => {
           console.debug('replaceMessage failed', err);
@@ -1063,31 +1163,37 @@
       }
     },
     chat_reaction: (data) => {
+      if (enhancedSecureView) return;
       if (data.conversation_id === activeConvId) applyReactions(data.message_id, data.reactions || []);
     },
     chat_receipt: (data) => {
-      if (data.conversation_id !== activeConvId) return;
+      if (enhancedSecureView || data.conversation_id !== activeConvId) return;
       receipts = receipts.filter((r) => r.username !== data.username);
-      receipts.push({ username: data.username, last_read_id: data.last_read_id });
+      receipts.push({
+        username: data.username,
+        last_read_id: data.last_read_id,
+        decrypted: data.decrypted === true,
+      });
+      refreshSeenIndicator(data.last_read_id);
     },
     chat_pin: (data) => {
-      if (data.conversation_id !== activeConvId) return;
+      if (enhancedSecureView || data.conversation_id !== activeConvId) return;
       pins = data.pins || [];
       renderPins();
     },
     chat_unpin: (data) => {
-      if (data.conversation_id !== activeConvId) return;
+      if (enhancedSecureView || data.conversation_id !== activeConvId) return;
       pins = data.pins || [];
       renderPins();
     },
     chat_presence: (data) => {
       presence[data.username] = !!data.online;
       renderConvList();
-      if (activeConvId) setThreadHeader(activeConv());
+      if (!enhancedSecureView && activeConvId) setThreadHeader(activeConv());
     },
     chat_notify: (data) => {
       updateNavBadge(data.unread_total);
-      if (data.conversation_id === activeConvId) {
+      if (!enhancedSecureView && data.conversation_id === activeConvId) {
         syncNewMessages().catch((err) => { console.debug('chat_notify sync failed', err); });
       }
       loadConversations();
@@ -1102,7 +1208,7 @@
       e2eReady(convId).then((ok) => {
         if (!ok) return;
         loadConversations();
-        if (convId === activeConvId && !had) reloadThreadAfterKey(convId);
+        if (convId === activeConvId && !had && !enhancedSecureView) reloadThreadAfterKey(convId);
       }).catch((err) => console.debug('e2e key ready failed', err));
     },
   };
@@ -1298,6 +1404,22 @@
   }
 
   async function sendEditorMessage() {
+    if (window.AirdEnhancedSecure?.viewing()) {
+      const text = (editor?.innerText || '').replaceAll('\u00a0', ' ').trim();
+      if (pending.length) {
+        setE2eStatus('Enhanced Secure Chat is text only.');
+        return;
+      }
+      if (!text) return;
+      try {
+        await window.AirdEnhancedSecure.sendText(text);
+        editor.innerHTML = '';
+        setE2eStatus('');
+      } catch (err) {
+        setE2eStatus(err.message || 'Could not send.');
+      }
+      return;
+    }
     if (!activeConvId || !editor) return;
     const hasText = (editor.innerText || '').replaceAll('\u00a0', ' ').trim().length > 0;
     if (!hasText && !pending.length) return;
@@ -1321,8 +1443,8 @@
         return;
       }
     }
-    const staged = pending.slice();
-    pending = [];
+    pending.forEach(function (p) { revokePendingPreview(p); });
+    const staged = pendingStore.take();
     renderPending();
     editor.innerHTML = '';
     clearReply();
@@ -1548,6 +1670,28 @@
     if (!e.target.closest('#chatEmojiPicker, #chatEmojiBtn')) hideEmojiPicker();
   });
 
+  function revokePendingPreview(item) {
+    if (item?.previewUrl) {
+      try { URL.revokeObjectURL(item.previewUrl); } catch { /* ignore */ }
+      delete item.previewUrl;
+    }
+  }
+
+  function pendingChipHtml(p) {
+    const label = esc(p.path || p.name);
+    const rm = esc(p.id);
+    if (p.file && String(p.file.type || '').startsWith('image/')) {
+      if (!p.previewUrl) p.previewUrl = URL.createObjectURL(p.file);
+      return '<span class="chat-pending-chip chat-pending-chip--image">'
+        + '<img class="chat-pending-thumb" src="' + esc(p.previewUrl) + '" alt="">'
+        + '<span class="truncate" title="' + label + '">' + esc(p.name) + '</span>'
+        + '<button type="button" data-rm="' + rm + '" aria-label="Remove ' + esc(p.name) + '">×</button></span>';
+    }
+    return '<span class="chat-pending-chip' + (p.isDir ? ' is-folder' : '') + '">'
+      + '<span class="truncate" title="' + label + '">' + esc(p.name) + '</span>'
+      + '<button type="button" data-rm="' + rm + '" aria-label="Remove ' + esc(p.name) + '">×</button></span>';
+  }
+
   function renderPending() {
     let el = document.getElementById('chatPending');
     if (!el && editor) {
@@ -1564,38 +1708,32 @@
       return;
     }
     el.hidden = false;
-    el.innerHTML = pending.map((p) =>
-      `<span class="chat-pending-chip${p.isDir ? ' is-folder' : ''}"><span class="truncate" title="${esc(p.path || p.name)}">${esc(p.name)}</span><button type="button" data-rm="${esc(p.id)}" aria-label="Remove ${esc(p.name)}">×</button></span>`
-    ).join('');
+    el.innerHTML = pending.map((p) => pendingChipHtml(p)).join('');
     el.querySelectorAll('[data-rm]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        pending = pending.filter((x) => x.id !== btn.dataset.rm);
+        const item = pending.find((p) => p.id === btn.dataset.rm);
+        revokePendingPreview(item);
+        pendingStore.remove(btn.dataset.rm);
         renderPending();
       });
     });
   }
 
   function stagePath(relativePath, opts = {}) {
-    const path = normalizeRel(relativePath);
-    if (!path) return;
-    if (pending.some((p) => p.path === path)) return;
-    if (pending.length >= 10) {
-      alert('Up to 10 files per message');
+    const result = pendingStore.stagePath(relativePath, opts);
+    if (!result.ok) {
+      setE2eStatus(result.reason);
       return;
     }
-    const isDir = !!opts.isDir;
-    const base = path.split('/').pop();
-    pending.push({ id: `p:${path}`, name: isDir ? `${base}/` : base, path, isDir });
     renderPending();
   }
 
   function stageBlob(file) {
-    if (!file) return;
-    if (pending.length >= 10) {
-      alert('Up to 10 files per message');
+    const result = pendingStore.stageBlob(file);
+    if (!result.ok) {
+      setE2eStatus(result.reason);
       return;
     }
-    pending.push({ id: `b:${Date.now()}:${file.name}`, name: file.name, file });
     renderPending();
   }
 
@@ -1614,278 +1752,36 @@
     editor?.focus();
   }
 
-  function trimBrowsePath(path) {
-    let s = String(path || '').trim().replaceAll('\\', '/');
-    while (s.startsWith('/')) s = s.slice(1);
-    while (s.endsWith('/')) s = s.slice(0, -1);
-    return s;
-  }
-
-  function normalizeRel(path) {
-    const parts = [];
-    for (const seg of trimBrowsePath(path).split('/')) {
-      if (!seg || seg === '.') continue;
-      if (seg === '..') {
-        parts.pop();
-        continue;
-      }
-      parts.push(seg);
-    }
-    return parts.join('/');
-  }
-
-  function joinRel(dir, name) {
-    const d = normalizeRel(dir);
-    const n = String(name || '').replace(/^\/+|\/+$/g, '');
-    if (!d) return n;
-    if (!n) return d;
-    return `${d}/${n}`;
-  }
-
-  function parsePathInput(raw) {
-    let s = String(raw || '').replaceAll('\\', '/').trim();
-    if (s.startsWith('~/')) s = s.slice(2);
-    while (s.startsWith('/')) s = s.slice(1);
-    const dirEnds = !s || s.endsWith('/');
-    const parts = s.split('/').filter(Boolean);
-    if (dirEnds) return { dir: parts.join('/'), prefix: '' };
-    return { dir: parts.slice(0, -1).join('/'), prefix: parts[parts.length - 1] || '' };
-  }
-
-  function formatRelPath(dir, name, isDir) {
-    const body = joinRel(dir, name);
-    if (!body) return '/';
-    return `/${body}${isDir ? '/' : ''}`;
-  }
-
-  function sameBrowseValue(a, b) {
-    const norm = (v) => {
-      const s = String(v || '').replaceAll('\\', '/').trim();
-      const slash = s.endsWith('/') && s !== '/';
-      const rel = normalizeRel(s);
-      return `${rel}${slash ? '/' : ''}`;
-    };
-    return norm(a) === norm(b);
-  }
-
-  function restyleCompleted(token, value) {
-    const body = String(value || '').replace(/^\/+/, '');
-    if (token.startsWith('./')) return `./${body}`;
-    if (token.startsWith('/')) return `/${body}`;
-    return body;
-  }
-
-  function commonPrefix(names) {
-    if (!names.length) return '';
-    let p = names[0];
-    for (const n of names.slice(1)) {
-      let i = 0;
-      const max = Math.min(p.length, n.length);
-      while (i < max && p[i].toLowerCase() === n[i].toLowerCase()) i += 1;
-      p = p.slice(0, i);
-    }
-    return p;
-  }
-
-  function matchFiles(files, prefix) {
-    const q = String(prefix || '').toLowerCase();
-    return files
-      .filter((f) => !q || f.name.toLowerCase().startsWith(q))
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-  }
-
-  function looksLikePath(token) {
-    const t = String(token || '').trim();
-    if (!t || t.startsWith('@') || /^[a-z]+:\/\//i.test(t) || t.startsWith('mailto:')) return false;
-    if (t.includes('/') || t.includes('\\')) return true;
-    if (t.startsWith('./') || t.startsWith('../')) return true;
-    if (/^\.[A-Za-z0-9._-]+/.test(t)) return true;
-    return false;
+  function canAttachFiles() {
+    return attachAllowed({
+      enhanced: !!(enhancedSecureView || window.AirdEnhancedSecure?.viewing()),
+      convId: activeConvId,
+    });
   }
 
   async function listDir(relPath) {
-    const key = normalizeRel(relPath);
-    const hit = dirCache.get(key);
-    if (hit && Date.now() - hit.ts < 8000) return hit.files;
-    const url = key ? `/api/files/${key.split('/').map(encodeURIComponent).join('/')}` : '/api/files/';
-    try {
-      const data = await api(url);
-      const files = data.files || [];
-      dirCache.set(key, { files, ts: Date.now() });
-      return files;
-    } catch (_) {
-      return [];
-    }
+    const data = await api(filesApiUrl(relPath));
+    if (!Array.isArray(data?.files)) throw new Error('Could not list files');
+    return data.files;
   }
 
   async function bashComplete(raw) {
     const parsed = parsePathInput(raw);
-    const dir = normalizeRel(parsed.dir);
-    const files = await listDir(dir);
-    const hits = matchFiles(files, parsed.prefix);
-    if (!hits.length) return { dir, prefix: parsed.prefix, hits, value: raw, unique: false };
-    const labels = hits.map((f) => `${f.name}${f.is_dir ? '/' : ''}`);
-    let filled = parsed.prefix;
-    if (hits.length === 1) filled = labels[0];
-    else {
-      const common = commonPrefix(labels);
-      if (common.length > parsed.prefix.length) filled = common;
-    }
-    const dirSlash = filled.endsWith('/');
-    const body = joinRel(dir, filled.replace(/\/+$/, ''));
-    const value = body ? `/${body}${dirSlash ? '/' : ''}` : '/';
-    return { dir, prefix: parsed.prefix, hits, value, unique: hits.length === 1 };
+    const files = await listDir(parsed.dir);
+    return completePath(raw, files);
   }
 
-  function setBrowsePathValue(path, isDir) {
-    if (!browsePathEl) return;
-    const rel = normalizeRel(path);
-    browsePathEl.value = rel ? `/${rel}${isDir ? '/' : ''}` : '/';
-  }
-
-  function renderBrowseList(files, dir, activeName) {
-    if (!browseList) return;
-    browseHits = files.slice();
-    if (!files.length) {
-      browseActiveName = '';
-      browseList.innerHTML = '<p class="p-4 text-sm opacity-50 text-center">No matches</p>';
-      return;
-    }
-    if (!activeName) activeName = files[0].name;
-    browseActiveName = activeName;
-    browseList.innerHTML = files.map((f) => {
-      const full = joinRel(dir, f.name);
-      const icon = f.is_dir ? '📁' : '📄';
-      const active = activeName && f.name === activeName ? ' is-active' : '';
-      const share = f.is_dir
-        ? `<button type="button" class="chat-browse-share" data-path="${esc(full)}" data-dir="1">Share</button>`
-        : '';
-      return `<div class="chat-browse-row flex items-center gap-2 px-3 py-2${active}" data-action="${f.is_dir ? 'dir' : 'file'}" data-path="${esc(full)}"><span>${icon}</span><span class="truncate">${esc(f.name)}${f.is_dir ? '/' : ''}</span>${share}</div>`;
-    }).join('');
-    browseList.querySelectorAll('.chat-browse-row').forEach((row) => {
-      row.addEventListener('click', (e) => {
-        if (e.target.closest('.chat-browse-share')) return;
-        const p = row.dataset.path || '';
-        const name = p.split('/').filter(Boolean).pop() || '';
-        if (row.dataset.action === 'dir') {
-          browseActiveName = name;
-          browseList.querySelectorAll('.chat-browse-row').forEach((r) => {
-            r.classList.toggle('is-active', r === row);
-          });
-          if (browsePathEl) browsePathEl.value = formatRelPath(browsePath, name, false);
-          return;
-        }
-        attachFromBrowse(p, false);
-      });
-      row.addEventListener('dblclick', (e) => {
-        if (e.target.closest('.chat-browse-share')) return;
-        if (row.dataset.action === 'dir') {
-          loadBrowseDir(row.dataset.path || '').catch((err) => alert(err.message));
-        }
-      });
-    });
-    browseList.querySelectorAll('.chat-browse-share').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        attachFromBrowse(btn.dataset.path || '', true);
-      });
-    });
-    browseList.querySelector('.is-active')?.scrollIntoView({ block: 'nearest' });
-  }
-
-  async function loadBrowseDir(path, opts = {}) {
-    browsePath = normalizeRel(path);
-    if (!opts.keepInput) setBrowsePathValue(browsePath, true);
-    const files = await listDir(browsePath);
-    const hits = matchFiles(files, opts.filter || '');
-    renderBrowseList(hits, browsePath, opts.activeName || (hits[0] && hits[0].name) || '');
-  }
-
-  function bellPathInput() {
-    if (!browsePathEl) return;
-    browsePathEl.classList.remove('chat-browse-path--miss');
-    browsePathEl.getBoundingClientRect();
-    browsePathEl.classList.add('chat-browse-path--miss');
-  }
-
-  async function onBrowseTab(shift) {
-    if (!browsePathEl) return;
-    const raw = browsePathEl.value;
-    const result = await bashComplete(raw);
-    if (!result.hits.length) {
-      bellPathInput();
-      return;
-    }
-    if (result.unique) {
-      tabCycle = { key: '', i: -1 };
-      const hit = result.hits[0];
-      const full = joinRel(result.dir, hit.name);
-      if (hit.is_dir) {
-        await loadBrowseDir(full);
-        setBrowsePathValue(full, true);
-      } else {
-        browsePathEl.value = result.value;
-        await loadBrowseDir(result.dir, { keepInput: true, filter: hit.name });
-      }
-      return;
-    }
-    if (sameBrowseValue(raw, result.value)) {
-      const delta = shift ? -1 : 1;
-      let steps = 0;
-      let hit = result.hits[0];
-      do {
-        tabCycle.i = (tabCycle.i + delta + result.hits.length) % result.hits.length;
-        hit = result.hits[tabCycle.i];
-        steps += 1;
-      } while (steps < result.hits.length && sameBrowseValue(formatRelPath(result.dir, hit.name, false), raw));
-      browsePathEl.value = formatRelPath(result.dir, hit.name, false);
-      renderBrowseList(result.hits, result.dir, hit.name);
-      return;
-    }
-    tabCycle = { key: '', i: -1 };
-    browsePathEl.value = result.value;
-    await loadBrowseDir(result.dir, { keepInput: true, filter: parsePathInput(result.value).prefix });
-  }
-
-  function moveBrowseSelection(delta) {
-    if (!browseHits.length) return;
-    let i = browseHits.findIndex((f) => f.name === browseActiveName);
-    if (i < 0) i = 0;
-    i = (i + delta + browseHits.length) % browseHits.length;
-    const hit = browseHits[i];
-    renderBrowseList(browseHits, browsePath, hit.name);
-    if (browsePathEl) browsePathEl.value = formatRelPath(browsePath, hit.name, false);
-  }
-
-  async function onBrowseEnter() {
-    const active = browseList?.querySelector('.chat-browse-row.is-active');
-    if (active?.dataset.path) {
-      attachFromBrowse(active.dataset.path, active.dataset.action === 'dir');
-      return;
-    }
-    if (!browsePathEl) return;
-    const parsed = parsePathInput(browsePathEl.value);
-    const dir = normalizeRel(parsed.dir);
-    const files = await listDir(dir);
-    const exact = parsed.prefix
-      ? files.find((f) => f.name.toLowerCase() === parsed.prefix.toLowerCase())
-      : null;
-    const hits = matchFiles(files, parsed.prefix);
-    const pick = exact || hits[0];
-    if (!pick) {
-      bellPathInput();
-      return;
-    }
-    attachFromBrowse(joinRel(dir, pick.name), !!pick.is_dir);
-  }
-
-  async function onBrowseInput() {
-    tabCycle = { key: '', i: -1 };
-    const parsed = parsePathInput(browsePathEl.value);
-    const dir = normalizeRel(parsed.dir);
-    await loadBrowseDir(dir, { keepInput: true, filter: parsed.prefix });
-  }
+  const filePicker = createBrowsePicker({
+    modal: browseModal,
+    list: browseList,
+    pathInput: browsePathEl,
+    upBtn: browseUp,
+    closeBtn: browseClose,
+    attachBtn: browseAttach,
+    listDir,
+    onAttach: attachFromBrowse,
+    onError: (msg) => setE2eStatus(msg),
+  });
 
   function caretPathToken() {
     if (!editor) return null;
@@ -2081,61 +1977,15 @@
     if (next) renderPathSuggest(next);
   }
 
-  function closeAttachMenu() {
-    qs('.chat-attach-menu')?.removeAttribute('open');
-  }
-
-  fileInput?.addEventListener('change', () => {
-    closeAttachMenu();
-    attachUpload(fileInput);
-  });
-  gifInput?.addEventListener('change', () => {
-    closeAttachMenu();
-    attachUpload(gifInput);
-  });
+  fileInput?.addEventListener('change', () => attachUpload(fileInput));
+  gifInput?.addEventListener('change', () => attachUpload(gifInput));
   browseBtn?.addEventListener('click', () => {
-    if (!activeConvId) return;
-    closeAttachMenu();
-    dirCache.clear();
-    browseModal?.showModal();
-    loadBrowseDir('').then(() => {
-      browsePathEl?.focus();
-      browsePathEl?.select();
-    }).catch((err) => alert(err.message));
-  });
-  browseUp?.addEventListener('click', () => {
-    if (!browsePath) return;
-    const parts = browsePath.split('/').filter(Boolean);
-    parts.pop();
-    loadBrowseDir(parts.join('/')).catch((err) => alert(err.message));
-  });
-  browseClose?.addEventListener('click', () => browseModal?.close());
-  browsePathEl?.addEventListener('keydown', (e) => {
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      onBrowseTab(e.shiftKey).catch((err) => alert(err.message));
+    const gate = canAttachFiles();
+    if (!gate.ok) {
+      setE2eStatus(gate.reason);
       return;
     }
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      moveBrowseSelection(1);
-      return;
-    }
-    if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      moveBrowseSelection(-1);
-      return;
-    }
-    if (e.key === 'Enter' || e.key === 'NumpadEnter') {
-      e.preventDefault();
-      onBrowseEnter().catch((err) => alert(err.message));
-    }
-  });
-  browsePathEl?.addEventListener('input', () => {
-    clearTimeout(browseInputTimer);
-    browseInputTimer = setTimeout(() => {
-      onBrowseInput().catch((err) => { console.debug('browse input failed', err); });
-    }, 80);
+    filePicker.open();
   });
   startBtn?.addEventListener('click', () => startConversation().catch((err) => alert(err.message)));
   newBtn?.addEventListener('click', () => setNewPanel(newPanel?.hidden !== false));
@@ -2177,25 +2027,31 @@
   qs('#chatForwardSend')?.addEventListener('click', () => sendForward().catch((e) => alert(e.message)));
   qs('#chatLightboxClose')?.addEventListener('click', () => qs('#chatLightbox')?.close());
 
-  const dropTarget = qs('.chat-thread-panel');
-  dropTarget?.addEventListener('dragover', (e) => { e.preventDefault(); dropTarget.classList.add('chat-drop'); });
-  dropTarget?.addEventListener('dragleave', () => dropTarget.classList.remove('chat-drop'));
-  dropTarget?.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropTarget.classList.remove('chat-drop');
-    const files = [...(e.dataTransfer?.files || [])];
-    files.forEach((file) => attachFileBlob(file));
+  bindDropZone(qs('.chat-thread-panel'), {
+    canAttach: canAttachFiles,
+    onFiles(files) {
+      const before = pending.length;
+      files.forEach((file) => attachFileBlob(file));
+      if (pending.length > before) {
+        setE2eStatus('');
+        editor?.focus();
+      }
+    },
+    onBlocked: setE2eStatus,
   });
   editor?.addEventListener('paste', (e) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    for (const item of items) {
-      if (item.type.startsWith('image/')) {
-        e.preventDefault();
-        const file = item.getAsFile();
-        if (file) attachFileBlob(file);
-        return;
-      }
+    const files = clipboardFiles(e.clipboardData);
+    if (!files.length) return;
+    e.preventDefault();
+    const gate = canAttachFiles();
+    if (!gate.ok) {
+      setE2eStatus(gate.reason);
+      return;
+    }
+    files.forEach((file) => attachFileBlob(file));
+    if (files.length) {
+      setE2eStatus('');
+      editor?.focus();
     }
   });
 
@@ -2215,6 +2071,56 @@
     } catch (err) { console.debug('nav badge unread fetch failed', err); }
   }
 
+  globalThis.AirdChatPage = {
+    refreshList: () => renderConvList(),
+    showList: () => setMobileView('list'),
+    enterEnhancedSecure() {
+      enhancedSecureView = true;
+      composer?.classList.remove('hidden');
+      composer?.classList.add('chat-composer--enhanced');
+      qs('#chatPinBar')?.setAttribute('hidden', '');
+      qs('#chatReplyBar')?.classList.add('hidden');
+      setMobileView('thread');
+      setPollEnabled(false);
+    },
+    leaveEnhancedSecure() {
+      enhancedSecureView = false;
+      composer?.classList.remove('chat-composer--enhanced');
+    },
+  };
+
+  convList?.addEventListener('click', (e) => {
+    const peerBtn = e.target.closest('[data-enhanced-peer]');
+    if (peerBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      peerBtn.closest('details')?.removeAttribute('open');
+      window.AirdEnhancedSecure?.start(peerBtn.dataset.enhancedPeer);
+      return;
+    }
+    const acceptBtn = e.target.closest('[data-enhanced-accept]');
+    if (acceptBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      window.AirdEnhancedSecure?.accept(acceptBtn.dataset.enhancedAccept);
+      return;
+    }
+    const declineBtn = e.target.closest('[data-enhanced-decline]');
+    if (declineBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      window.AirdEnhancedSecure?.decline(declineBtn.dataset.enhancedDecline);
+      return;
+    }
+    const roomEl = e.target.closest('[data-enhanced-room]');
+    if (roomEl) {
+      e.preventDefault();
+      window.AirdEnhancedSecure?.show(roomEl.dataset.enhancedRoom);
+    }
+  });
+
+  document.addEventListener('visibilitychange', markLatestVisibleRead);
+
   function boot() {
     globalThis.AirdFolderPicker?.init?.();
     const WS = window.AirdChatWS;
@@ -2228,6 +2134,13 @@
       }
       await loadConversations();
       const initialConv = new URLSearchParams(location.search).get('c');
+      if (pendingBrowseAttachQueue.length && !initialConv) {
+        const first = pendingBrowseAttachQueue[0];
+        const label = first.path.split('/').pop() || first.path;
+        const extra = pendingBrowseAttachQueue.length > 1
+          ? ` (+${pendingBrowseAttachQueue.length - 1} more)` : '';
+        setE2eStatus('Pick a conversation to attach ' + label + extra);
+      }
       if (initialConv) await openConversation(initialConv);
     };
     start().catch((err) => {

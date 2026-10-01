@@ -12,6 +12,7 @@ from aird.handlers.base_handler import (
     get_username_string_for_db,
     get_user_root,
     require_action,
+    require_feature_flag,
     resolve_handler_rel,
 )
 from aird.utils.tag_display import tag_chip_inline_style
@@ -450,13 +451,11 @@ class MainHandler(BaseHandler):
 class EditViewHandler(BaseHandler):
     @tornado.web.authenticated
     @require_action("file.write", resource_arg="path")
+    @require_feature_flag(
+        "file_edit",
+        body="Feature disabled: File editing is currently disabled by administrator",
+    )
     async def get(self, path):
-        if not self.require_feature(
-            "file_edit",
-            True,
-            body="Feature disabled: File editing is currently disabled by administrator",
-        ):
-            return
 
         from aird.core.browse_paths import mounts_for_username, write_blocked_reason
 
