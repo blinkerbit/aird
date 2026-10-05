@@ -270,7 +270,7 @@ async function revokeShare(shareId) {
       return;
     }
 
-    loadActiveShares();
+    void loadActiveShares();
   } catch (error) {
     console.error('Error revoking share:', error);
     showDialog('Failed to revoke share', 'Error');

@@ -39,7 +39,7 @@ export async function renameItem(filepath) {
         SelectionStore.remove(filepath);
         globalThis.location.reload();
       } else {
-        res.text().then((t) => showDialog("Rename failed: " + t, "Error"));
+        res.text().then((t) => showDialog("Rename failed: " + t, "Error")).catch(() => {});
       }
     })
     .catch((err) => showDialog("Rename failed: " + err.message, "Error"));
@@ -67,7 +67,7 @@ export async function deleteItem(filepath, isFolder) {
         SelectionStore.remove(filepath);
         globalThis.location.reload();
       } else {
-        res.text().then((t) => showDialog("Delete failed: " + t, "Error"));
+        res.text().then((t) => showDialog("Delete failed: " + t, "Error")).catch(() => {});
       }
     })
     .catch((err) => showDialog("Delete failed: " + err.message, "Error"));

@@ -242,6 +242,40 @@ def run_stdio() -> None:
             sys.stdout.flush()
 
 
+def _trusted_gitlab_hosts() -> set[str]:
+    hosts = {"gitlab.com"}
+    try:
+        import aird.constants as constants_module
+
+        conn = constants_module.DB_CONN
+        if conn is None:
+            return hosts
+        rows = conn.execute("SELECT DISTINCT gitlab_host FROM gitlab_bindings").fetchall()
+    except Exception:
+        return hosts
+    for row in rows:
+        base = _https_gitlab_base(str(row[0] or ""), hosts | {"*"})
+        if base:
+            hostname = urllib.parse.urlparse(base).hostname
+            if hostname:
+                hosts.add(hostname.lower())
+    return hosts
+
+
+def _https_gitlab_base(host: str, allowed: set[str]) -> str | None:
+    parsed = urllib.parse.urlparse((host or "").strip())
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    if parsed.scheme != "https" or not hostname or parsed.username or parsed.password:
+        return None
+    if "*" not in allowed and hostname not in allowed and not hostname.endswith(".gitlab.com"):
+        return None
+    if hostname.endswith(".gitlab.com"):
+        return f"https://{hostname}"
+    if hostname in allowed or "*" in allowed:
+        return f"https://{hostname}"
+    return None
+
+
 class _BridgeHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args) -> None:
         sys.stderr.write("bridge: " + (fmt % args) + "\n")
@@ -269,9 +303,26 @@ class _BridgeHandler(BaseHTTPRequestHandler):
             os.environ.get("USER") or "", "https://gitlab.com"
         )
         host = (self.headers.get("X-Gitlab-Host") or "https://gitlab.com").rstrip("/")
-        target = host + self.path
+        allowed = _trusted_gitlab_hosts()
+        base = _https_gitlab_base(host, allowed)
+        if not base or not self.path.startswith("/") or self.path.startswith("//"):
+            self.send_response(400)
+            self._cors()
+            self.end_headers()
+            self.wfile.write(b"unsupported gitlab host")
+            return
+        approved = (urllib.parse.urlparse(base).hostname or "").lower()
+        if approved:
+            allowed.add(approved)
+        target = base + self.path
         length = int(self.headers.get("Content-Length") or 0)
         payload = self.rfile.read(length) if length else None
+        parsed = urllib.parse.urlparse(target)
+        if parsed.scheme != "https" or (parsed.hostname or "").lower() not in allowed:
+            self.send_response(400)
+            self._cors()
+            self.end_headers()
+            return
         req = urllib.request.Request(
             target,
             data=payload,

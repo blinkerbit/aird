@@ -32,11 +32,7 @@ export async function loadTokens() {
     });
     if (fromIdb) return fromIdb;
   } catch { /* */ }
-  try {
-    return JSON.parse(localStorage.getItem(LS_MIRROR) || 'null');
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 export async function saveTokens(tokens) {
@@ -47,9 +43,6 @@ export async function saveTokens(tokens) {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
-  try {
-    localStorage.setItem(LS_MIRROR, JSON.stringify(tokens));
-  } catch { /* */ }
 }
 
 export async function clearTokens() {

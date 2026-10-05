@@ -101,6 +101,7 @@ async function openOrFocus(url) {
 }
 
 globalThis.addEventListener('message', (event) => {
+  if (event.origin !== globalThis.location.origin) return;
   const data = event.data || {};
   if (data.type === 'aird-skip-waiting') {
     globalThis.skipWaiting();

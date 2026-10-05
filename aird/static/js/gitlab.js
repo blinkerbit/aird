@@ -41,8 +41,19 @@ async function aird(method, url, body) {
   return data;
 }
 
+function trimSlashes(value) {
+  let text = String(value || "");
+  while (text.startsWith("/")) text = text.slice(1);
+  while (text.endsWith("/")) text = text.slice(0, -1);
+  return text;
+}
+
 function hostKey(host) {
-  return (host || "https://gitlab.com").replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  try {
+    return new URL(host || "https://gitlab.com").host;
+  } catch {
+    return "gitlab.com";
+  }
 }
 
 function viewerToken(host) {
@@ -66,7 +77,7 @@ async function glFetch(host, token, path, { method = "GET", body } = {}) {
   const url = `${apiRoot(host)}/${String(path).replace(/^\//, "")}`;
   const headers = { Accept: "application/json", "PRIVATE-TOKEN": token };
   if (body) headers["Content-Type"] = "application/json";
-  if (bridgeHost(host)) headers["X-Gitlab-Host"] = (host || "https://gitlab.com").replace(/\/$/, "");
+  if (bridgeHost()) headers["X-Gitlab-Host"] = (host || "https://gitlab.com").replace(/\/$/, "");
   const resp = await fetch(url, {
     method,
     headers,
@@ -169,7 +180,7 @@ async function loadDashboard() {
     </div>`;
   if (meta) meta.textContent = formatCacheAge(_dashboard.cache?.refreshed_at);
   grid.querySelectorAll(".gitlab-dash-mr").forEach((btn) => {
-    btn.addEventListener("click", () => openMr(btn.dataset.iid));
+    btn.addEventListener("click", () => void openMr(btn.dataset.iid));
   });
 }
 
@@ -257,7 +268,7 @@ async function loadCi() {
 }
 
 function parentPath(dir) {
-  const parts = String(dir || "").replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+  const parts = trimSlashes(dir).split("/").filter(Boolean);
   parts.pop();
   return parts.join("/");
 }
@@ -269,7 +280,7 @@ function navigateTo(path) {
   if (rel) url.searchParams.set("path", rel);
   else url.searchParams.delete("path");
   history.replaceState(null, "", url);
-  bootGitlab();
+  void bootGitlab();
 }
 
 function renderPathBar() {
@@ -299,7 +310,7 @@ function commentLabel(count, issues) {
 }
 
 function joinRel(dir, name) {
-  const base = (dir || "").replace(/^\/+|\/+$/g, "");
+  const base = trimSlashes(dir);
   return base ? `${base}/${name}` : name;
 }
 
@@ -375,14 +386,14 @@ async function loadFolderFiles() {
     btn.addEventListener("click", () => navigateTo(btn.dataset.path || ""));
   });
   list.querySelectorAll(".gitlab-open-file").forEach((btn) => {
-    btn.addEventListener("click", () => openCommentsPanel(btn.dataset.path, btn.dataset.name, false));
+    btn.addEventListener("click", () => void openCommentsPanel(btn.dataset.path, btn.dataset.name, false));
   });
   list.querySelectorAll(".gitlab-open-comments").forEach((btn) => {
     btn.addEventListener("click", (ev) => {
       ev.stopPropagation();
       const row = btn.closest(".gitlab-file-row");
       const isDir = row?.querySelector(".gitlab-open-dir") != null;
-      openCommentsPanel(btn.dataset.path, btn.dataset.name, isDir);
+      void openCommentsPanel(btn.dataset.path, btn.dataset.name, isDir);
     });
   });
   renderPathBar();
@@ -459,7 +470,7 @@ function openViewerToken() {
     if (bridge) localStorage.setItem(BRIDGE_KEY, bridge);
     else localStorage.removeItem(BRIDGE_KEY);
     closePanel();
-    loadCi();
+    void loadCi();
   });
 }
 
@@ -511,7 +522,7 @@ async function openCommentsPanel(fullPath, name, isDir = false) {
     const body = new FormData(ev.target).get("body");
     try {
       await aird("POST", `/api/gitlab/comments?${q}`, { body, gitlab_issue_iid: issues[0]?.iid });
-      openCommentsPanel(fullPath, name, isDir);
+      void openCommentsPanel(fullPath, name, isDir);
     } catch (err) {
       alert(err.message);
     }
@@ -538,7 +549,7 @@ async function openCommentsPanel(fullPath, name, isDir = false) {
             gitlab_note_id: note.id,
           });
         }
-        openCommentsPanel(fullPath, name, isDir);
+        void openCommentsPanel(fullPath, name, isDir);
       } catch (err) {
         alert(err.message);
       }
@@ -557,7 +568,7 @@ function connectCommentsWs(rel) {
       const msg = JSON.parse(ev.data);
       if (msg.type && msg.type.startsWith("comment_") && _panelTarget) {
         const { fullPath, name, isDir } = _panelTarget;
-        openCommentsPanel(fullPath, name, isDir);
+        void openCommentsPanel(fullPath, name, isDir);
       }
     } catch (_) { /* ignore */ }
   };
@@ -579,7 +590,7 @@ async function openMrs() {
     ).join("") || "<p>No open MRs</p>";
     setHtml(panelEl().querySelector(".gitlab-panel-body"), html);
     panelEl().querySelectorAll(".gitlab-mr").forEach((btn) => {
-      btn.addEventListener("click", () => openMr(btn.dataset.iid));
+      btn.addEventListener("click", () => void openMr(btn.dataset.iid));
     });
   } catch (err) {
     setHtml(panelEl().querySelector(".gitlab-panel-body"), `<p class="text-error">${escapeHtml(err.message)}</p>`);
@@ -627,7 +638,7 @@ async function openMr(iid) {
             { method: "POST", body: { body } }
           );
         }
-        openMr(iid);
+        void openMr(iid);
       } catch (err) {
         alert(err.message);
       }
@@ -697,7 +708,7 @@ export async function bootGitlab() {
     return;
   }
   renderStrip();
-  await Promise.all([loadCi(), loadDashboard()]);
+  await Promise.all([void loadCi(), loadDashboard()]);
   await loadFolderFiles();
 }
 
@@ -710,5 +721,5 @@ export function initGitlabUi() {
     setCurrentPath(document.getElementById("gitlabPath")?.value);
     navigateTo(currentPath());
   });
-  bootGitlab();
+  void bootGitlab();
 }

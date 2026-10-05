@@ -356,11 +356,10 @@
   <script src="/static/js/theme.js"></script>
   {% if is_gitlab_enabled() %}
   <input type="hidden" id="currentPath" value="" />
-  <script nonce="{{ csp_nonce }}" type="module">
+  <script nonce="{{ csp_nonce }}">
     globalThis.__GITLAB_CONFIG = { enabled: true, shareId: '{{ share_id }}' };
-    import { initGitlabUi } from '/static/js/gitlab.js?v=20260825c';
-    initGitlabUi();
   </script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/gitlab-boot.js?v=20261005b"></script>
   {% end %}
 </body>
 </html>

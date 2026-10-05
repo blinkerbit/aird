@@ -1185,8 +1185,9 @@ pytest-xdist==3.8.0 \
     --hash=sha256:202ca578cfeb7370784a8c33d6d05bc6e13b4f25b5053c30a152269fd10f0b88 \
     --hash=sha256:7e578125ec9bc6050861aa93f2d59f1d8d085595d6551c2c90b6f4fad8d3a9f1
     # via -r requirements-ci.in
-pywebpush==2.0.1 \
-    --hash=sha256:72e3586aec89a06373c0585e6f97c6fd0b81519e41f32896a3639909ecf45db0
+pywebpush==2.0.3 \
+    --hash=sha256:04666441715bc547918d7668b2ac7ad5c4b5de7d0a6cf528daf61e0c4bc5431c \
+    --hash=sha256:584878e3c243e873a22db8895505d95715bc796ef74cc1b8fe99f596174161e3
     # via -r requirements-ci.in
 requests==2.32.4 \
     --hash=sha256:27babd3cda2a6d50b30443204ee89830707d396671944c998b5975b031ac2b2c \

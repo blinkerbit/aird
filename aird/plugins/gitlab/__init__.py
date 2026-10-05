@@ -19,8 +19,6 @@ def is_gitlab_enabled() -> bool:
 
 
 def register_gitlab(routes: list) -> None:
-    if not gitlab_library_available():
-        return
     from aird.plugins.gitlab.handlers import (
         GitlabBindingHandler,
         GitlabBoardHandler,

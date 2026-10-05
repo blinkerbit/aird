@@ -193,7 +193,7 @@ function browseShortcutTag(e) {
   const btn = row?.querySelector('.row-tag-add-btn');
   if (!btn) return false;
   e.preventDefault();
-  openRowTagPopover(path, btn);
+  void openRowTagPopover(path, btn);
   return true;
 }
 
@@ -369,33 +369,33 @@ export function wireBrowseTableDelegation() {
     if (shareEl?.closest('#fileTable')) {
       e.stopPropagation();
       e.preventDefault();
-      showShareDetails(shareEl.dataset.sharePath);
+      void showShareDetails(shareEl.dataset.sharePath);
       return;
     }
     const renameEl = e.target.closest('[data-rename-path]');
     if (renameEl?.closest('#fileTable')) {
       e.preventDefault();
-      renameItem(renameEl.dataset.renamePath);
+      void renameItem(renameEl.dataset.renamePath);
       return;
     }
     const deleteEl = e.target.closest('[data-delete-path]');
     if (deleteEl?.closest('#fileTable')) {
       e.preventDefault();
-      deleteItem(deleteEl.dataset.deletePath, deleteEl.dataset.isDir === '1');
+      void deleteItem(deleteEl.dataset.deletePath, deleteEl.dataset.isDir === '1');
       return;
     }
     const dl = e.target.closest('.download-btn');
     if (dl) {
       e.preventDefault();
       const path = dl.dataset.downloadPath || dl.closest('tr.file-row')?.dataset.path;
-      if (path) downloadFileViaHttp(path);
+      if (path) void downloadFileViaHttp(path);
       return;
     }
     const tagBtn = e.target.closest('.row-tag-add-btn');
     if (!tagBtn) return;
     e.preventDefault();
     e.stopPropagation();
-    openRowTagPopover(tagBtn.dataset.path, tagBtn);
+    void openRowTagPopover(tagBtn.dataset.path, tagBtn);
   });
 }
 

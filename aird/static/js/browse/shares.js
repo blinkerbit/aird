@@ -240,7 +240,7 @@ export function wireShareActionDelegation() {
       openShare(el.dataset.url);
     } else if (action === 'revokeShare') {
       e.preventDefault();
-      revokeShare(el.dataset.id);
+      void revokeShare(el.dataset.id);
     }
   });
 }

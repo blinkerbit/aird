@@ -37,14 +37,6 @@ async function aird(method, url, body) {
   return data;
 }
 
-function escapeHtml(s) {
-  return String(s ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 function collectFileNames() {
   return [...document.querySelectorAll("#fileTable .file-row")]
     .map((row) => {
@@ -109,6 +101,52 @@ async function refreshBrowseGitlab() {
   }
 }
 
+function note(text) {
+  const node = document.createElement("p");
+  node.className = "text-xs opacity-60";
+  node.textContent = text;
+  return node;
+}
+
+function safeTicketUrl(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}
+
+function issueBlock(name, issues) {
+  const wrap = document.createElement("div");
+  wrap.className = "browse-gitlab-file";
+  const title = document.createElement("strong");
+  title.textContent = name;
+  const list = document.createElement("div");
+  list.className = "browse-gitlab-issues";
+  issues.forEach((iss) => {
+    const href = safeTicketUrl(iss.web_url);
+    const label = `#${iss.iid} ${iss.title || ""}`;
+    if (!href) {
+      const span = document.createElement("span");
+      span.className = "text-sm";
+      span.textContent = label;
+      list.appendChild(span);
+      return;
+    }
+    const link = document.createElement("a");
+    link.className = "link text-sm";
+    link.href = href;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = label;
+    list.appendChild(link);
+  });
+  wrap.append(title, list);
+  return wrap;
+}
+
 async function loadBrowseGitlab() {
   if (!cfg().enabled) return;
   const panel = ensurePanel();
@@ -134,7 +172,7 @@ async function loadBrowseGitlab() {
   }
   const names = collectFileNames().slice(0, 40);
   if (!names.length) {
-    body.innerHTML = `<p class="text-xs opacity-60">No files in this folder.</p>`;
+    body.replaceChildren(note("No files in this folder."));
     return;
   }
   try {
@@ -143,25 +181,21 @@ async function loadBrowseGitlab() {
     const mapped = data.issues_by_name || {};
     const withIssues = names.filter((n) => (mapped[n] || []).length);
     if (!withIssues.length) {
-      body.innerHTML = `<p class="text-xs opacity-60">No cached ticket references for files here. Hit Refresh after linking this folder to GitLab.</p>`;
+      body.replaceChildren(note("No cached ticket references for files here. Hit Refresh after linking this folder to GitLab."));
       return;
     }
-    body.innerHTML = withIssues.map((name) => {
-      const issues = mapped[name] || [];
-      const items = issues.map((iss) =>
-        `<a class="link text-sm" href="${escapeHtml(iss.web_url)}" target="_blank">#${iss.iid} ${escapeHtml(iss.title)}</a>`
-      ).join("");
-      return `<div class="browse-gitlab-file"><strong>${escapeHtml(name)}</strong><div class="browse-gitlab-issues">${items}</div></div>`;
-    }).join("");
+    body.replaceChildren(...withIssues.map((name) => issueBlock(name, mapped[name] || [])));
   } catch (err) {
-    body.innerHTML = `<p class="text-error text-sm">${escapeHtml(err.message)}</p>`;
+    const errNode = note(err.message || "GitLab lookup failed");
+    errNode.classList.add("text-error");
+    body.replaceChildren(errNode);
   }
 }
 
 export function initBrowseGitlabPanel() {
   if (!cfg().enabled) return;
-  loadBrowseGitlab();
-  const observer = new MutationObserver(() => loadBrowseGitlab());
+  void loadBrowseGitlab();
+  const observer = new MutationObserver(() => void loadBrowseGitlab());
   const table = document.getElementById("fileTable");
   if (table) observer.observe(table.querySelector("tbody") || table, { childList: true, subtree: true });
 }

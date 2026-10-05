@@ -37,8 +37,33 @@ function loadTokens() {
   }
 }
 
+function msTokenUrl(tenant) {
+  const raw = String(tenant || "common");
+  const known = raw === "common" || raw === "organizations" || raw === "consumers";
+  const segment = known ? raw : encodeURIComponent(raw);
+  return `https://login.microsoftonline.com/${segment}/oauth2/v2.0/token`;
+}
+
+function appReturnPath(value) {
+  const fallback = "/files/";
+  try {
+    const url = new URL(value || fallback, globalThis.location.origin);
+    if (url.origin !== globalThis.location.origin || !url.pathname.startsWith("/")) return fallback;
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return fallback;
+  }
+}
+
 function saveTokens(tokens) {
-  sessionStorage.setItem(STORE, JSON.stringify(tokens));
+  const access = typeof tokens?.access_token === "string" ? tokens.access_token : "";
+  const refresh = typeof tokens?.refresh_token === "string" ? tokens.refresh_token : "";
+  if (!access) return;
+  sessionStorage.setItem(STORE, JSON.stringify({
+    access_token: access,
+    refresh_token: refresh,
+    expires_at: Number(tokens.expires_at) || 0,
+  }));
 }
 
 function clearTokens() {
@@ -110,7 +135,7 @@ async function exchangeCode(code, verifier, clientId, tenant) {
     code_verifier: verifier,
     scope: SCOPES,
   });
-  const res = await fetch(`https://login.microsoftonline.com/${tenant || "common"}/oauth2/v2.0/token`, {
+  const res = await fetch(msTokenUrl(tenant), {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
@@ -132,7 +157,7 @@ async function refreshTokens(tokens, clientId, tenant) {
     refresh_token: tokens.refresh_token,
     scope: SCOPES,
   });
-  const res = await fetch(`https://login.microsoftonline.com/${tenant || "common"}/oauth2/v2.0/token`, {
+  const res = await fetch(msTokenUrl(tenant), {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
@@ -172,7 +197,11 @@ async function ensureAccessToken() {
   const verifier = b64url(randomBytes(32));
   const challenge = await sha256b64url(verifier);
   const state = b64url(randomBytes(16));
-  sessionStorage.setItem(PKCE, JSON.stringify({ verifier, state, returnTo: globalThis.location.href }));
+  sessionStorage.setItem(PKCE, JSON.stringify({
+    verifier,
+    state,
+    returnTo: appReturnPath(globalThis.location.href),
+  }));
   globalThis.location.assign(authorizeUrl(publicCfg.clientId, publicCfg.tenant, challenge, state));
   return null;
 }
@@ -196,7 +225,8 @@ async function finishCallback() {
   const publicCfg = await loadPublicConfig();
   const tokens = await exchangeCode(code, pkce.verifier, publicCfg.clientId, publicCfg.tenant);
   saveTokens(tokens);
-  globalThis.location.replace(pkce.returnTo || "/files/");
+  const next = appReturnPath(pkce.returnTo);
+  if (next.startsWith("/")) globalThis.location.replace(next);
 }
 
 async function graph(token, path, opts = {}) {
@@ -325,7 +355,7 @@ function showPicker({ token, onPick, title }) {
         up.type = "button";
         up.className = "btn btn-ghost btn-sm w-full justify-start";
         up.textContent = "← Up";
-        up.addEventListener("click", () => { stack.pop(); render(); });
+        up.addEventListener("click", () => { stack.pop(); void render(); });
         listEl.append(up);
       }
       folders.forEach((folder) => {
@@ -333,7 +363,7 @@ function showPicker({ token, onPick, title }) {
         btn.type = "button";
         btn.className = "btn btn-ghost btn-sm w-full justify-start";
         btn.textContent = `📁 ${folder.name}`;
-        btn.addEventListener("click", () => { stack.push({ id: folder.id, name: folder.name }); render(); });
+        btn.addEventListener("click", () => { stack.push({ id: folder.id, name: folder.name }); void render(); });
         listEl.append(btn);
       });
       if (!folders.length) {
@@ -370,7 +400,7 @@ function showPicker({ token, onPick, title }) {
       say(err.message, true);
     }
   });
-  render();
+  void render();
 }
 
 export async function savePathsToOneDrive(items, opts = {}) {
@@ -501,7 +531,7 @@ function showFilePicker({ token, title, filter, onPick }) {
         up.type = "button";
         up.className = "btn btn-ghost btn-sm w-full justify-start";
         up.textContent = "← Up";
-        up.addEventListener("click", () => { stack.pop(); render(); });
+        up.addEventListener("click", () => { stack.pop(); void render(); });
         listEl.append(up);
       }
       folders.forEach((folder) => {
@@ -509,7 +539,7 @@ function showFilePicker({ token, title, filter, onPick }) {
         btn.type = "button";
         btn.className = "btn btn-ghost btn-sm w-full justify-start";
         btn.textContent = `📁 ${folder.name}`;
-        btn.addEventListener("click", () => { stack.push({ id: folder.id, name: folder.name }); render(); });
+        btn.addEventListener("click", () => { stack.push({ id: folder.id, name: folder.name }); void render(); });
         listEl.append(btn);
       });
       files.forEach((file) => {
@@ -542,7 +572,7 @@ function showFilePicker({ token, title, filter, onPick }) {
 
   overlay.querySelector(".od-pick-close").addEventListener("click", () => overlay.remove());
   overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
-  render();
+  void render();
 }
 
 async function ensureFolderPath(token, parts) {

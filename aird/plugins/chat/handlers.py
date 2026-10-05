@@ -10,6 +10,7 @@ import os
 import secrets
 import tempfile
 
+import aiofiles
 import tornado.web
 
 from aird.constants import CHAT_STORE_FOLDER, CHUNK_SIZE
@@ -834,9 +835,9 @@ class ChatAttachHandler(BaseHandler, XSRFTokenMixin):
 
 
 async def _stream_file_chunks(handler: BaseHandler, path: str) -> None:
-    with open(path, "rb") as fh:
+    async with aiofiles.open(path, "rb") as fh:
         while True:
-            chunk = fh.read(CHUNK_SIZE)
+            chunk = await fh.read(CHUNK_SIZE)
             if not chunk:
                 break
             handler.write(chunk)

@@ -89,6 +89,17 @@ export async function resumePendingAction() {
   return copyToDefault(pending.items, pending.opts);
 }
 
+function appReturnPath(value) {
+  const fallback = '/files/';
+  try {
+    const url = new URL(value || fallback, globalThis.location.origin);
+    if (url.origin !== globalThis.location.origin || !url.pathname.startsWith('/')) return fallback;
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function runWithAuth(action, items, opts = {}) {
   savePendingAction({ action, items, opts });
   try {
@@ -107,7 +118,8 @@ export async function initOneDriveFeUi() {
   if (globalThis.location.pathname === '/onedrive-browser/callback') {
     try {
       const returnTo = await finishCallback();
-      globalThis.location.replace(returnTo || '/files/');
+      const next = appReturnPath(returnTo);
+      if (next.startsWith('/')) globalThis.location.replace(next);
     } catch (err) {
       const msg = document.getElementById('odCbMsg');
       if (msg) msg.textContent = err.message || 'OneDrive sign-in failed';

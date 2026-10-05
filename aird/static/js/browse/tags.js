@@ -805,7 +805,7 @@ export async function openRowTagPopover(path, anchorEl) {
       };
     }
     refresh();
-  });
+  }).catch(function () {});
 
   const onApply = async function () {
     commitTagInput(inputEl, pendingTags);

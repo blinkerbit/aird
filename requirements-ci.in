@@ -21,4 +21,4 @@ chardet==5.2.0
 pyasn1==0.6.4
 webauthn==2.5.0
 watchdog==6.0.0
-pywebpush==2.0.1
+pywebpush==2.0.3

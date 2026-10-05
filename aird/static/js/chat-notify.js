@@ -88,7 +88,7 @@
       if (String(params.get('c')) === String(payload.conversation_id)) return;
     }
     updateBadge(payload.unread_total ?? null);
-    if (payload.unread_total == null) refreshUnread();
+    if (payload.unread_total == null) void refreshUnread();
     showToast(payload);
     maybeBrowserNotify(payload);
   }
@@ -98,9 +98,9 @@
     if (data.type === 'chat_notify') {
       onNotify(data);
     } else if (data.type === 'chat_message') {
-      refreshUnread();
+      void refreshUnread();
     } else if (data.type === 'chat_message_deleted') {
-      refreshUnread();
+      void refreshUnread();
     }
   }
 
@@ -109,7 +109,7 @@
         && !document.querySelector('a[href="/chat"]')) {
       return;
     }
-    refreshUnread();
+    void refreshUnread();
     const WS = window.AirdChatWS;
     if (!WS) return;
     WS.connect();

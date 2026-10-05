@@ -77,6 +77,13 @@ function authorizeUrl(clientId, tenant, challenge, state) {
   return u.toString();
 }
 
+function msTokenUrl(tenant) {
+  const raw = String(tenant || 'common');
+  const known = raw === 'common' || raw === 'organizations' || raw === 'consumers';
+  const segment = known ? raw : encodeURIComponent(raw);
+  return `https://login.microsoftonline.com/${segment}/oauth2/v2.0/token`;
+}
+
 async function exchangeCode(code, verifier, clientId, tenant) {
   const body = new URLSearchParams({
     client_id: clientId,
@@ -86,7 +93,7 @@ async function exchangeCode(code, verifier, clientId, tenant) {
     code_verifier: verifier,
     scope: SCOPES,
   });
-  const res = await fetch(`https://login.microsoftonline.com/${tenant || 'common'}/oauth2/v2.0/token`, {
+  const res = await fetch(msTokenUrl(tenant), {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
@@ -108,7 +115,7 @@ async function refreshTokens(tokens, clientId, tenant) {
     refresh_token: tokens.refresh_token,
     scope: SCOPES,
   });
-  const res = await fetch(`https://login.microsoftonline.com/${tenant || 'common'}/oauth2/v2.0/token`, {
+  const res = await fetch(msTokenUrl(tenant), {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,

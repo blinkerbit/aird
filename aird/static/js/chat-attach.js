@@ -25,9 +25,16 @@ export function normalizeRel(path) {
   return parts.join('/');
 }
 
+function trimSlashes(value) {
+  let text = String(value || '');
+  while (text.startsWith('/')) text = text.slice(1);
+  while (text.endsWith('/')) text = text.slice(0, -1);
+  return text;
+}
+
 export function joinRel(dir, name) {
   const d = normalizeRel(dir);
-  const n = String(name || '').replace(/^\/+|\/+$/g, '');
+  const n = trimSlashes(name);
   if (!d) return n;
   if (!n) return d;
   return `${d}/${n}`;
@@ -247,7 +254,9 @@ export function completePath(raw, files) {
     if (common.length > parsed.prefix.length) filled = common;
   }
   const dirSlash = filled.endsWith('/');
-  const body = joinRel(dir, filled.replace(/\/+$/, ''));
+  let filledPath = filled;
+  while (filledPath.endsWith('/')) filledPath = filledPath.slice(0, -1);
+  const body = joinRel(dir, filledPath);
   const value = body ? `/${body}${dirSlash ? '/' : ''}` : '/';
   return { dir, prefix: parsed.prefix, hits, value, unique: hits.length === 1 };
 }

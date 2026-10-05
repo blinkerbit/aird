@@ -169,7 +169,7 @@ export function showFolderPicker({ token, title, onPick }) {
           up.type = 'button';
           up.className = 'btn btn-ghost btn-sm w-full justify-start';
           up.textContent = '← Up';
-          up.addEventListener('click', () => { stack.pop(); render(); });
+          up.addEventListener('click', () => { stack.pop(); void render(); });
           listEl.append(up);
         }
         folders.forEach((folder) => {
@@ -177,7 +177,7 @@ export function showFolderPicker({ token, title, onPick }) {
           btn.type = 'button';
           btn.className = 'btn btn-ghost btn-sm w-full justify-start';
           btn.textContent = `📁 ${folder.name}`;
-          btn.addEventListener('click', () => { stack.push({ id: folder.id, name: folder.name }); render(); });
+          btn.addEventListener('click', () => { stack.push({ id: folder.id, name: folder.name }); void render(); });
           listEl.append(btn);
         });
         if (!folders.length) {
@@ -216,7 +216,7 @@ export function showFolderPicker({ token, title, onPick }) {
         reject(err);
       }
     });
-    render();
+    void render();
   });
 }
 
@@ -269,7 +269,7 @@ export function showFilePicker({ token, title, filter, onPick }) {
           up.type = 'button';
           up.className = 'btn btn-ghost btn-sm w-full justify-start';
           up.textContent = '← Up';
-          up.addEventListener('click', () => { stack.pop(); render(); });
+          up.addEventListener('click', () => { stack.pop(); void render(); });
           listEl.append(up);
         }
         folders.forEach((folder) => {
@@ -277,7 +277,7 @@ export function showFilePicker({ token, title, filter, onPick }) {
           btn.type = 'button';
           btn.className = 'btn btn-ghost btn-sm w-full justify-start';
           btn.textContent = `📁 ${folder.name}`;
-          btn.addEventListener('click', () => { stack.push({ id: folder.id, name: folder.name }); render(); });
+          btn.addEventListener('click', () => { stack.push({ id: folder.id, name: folder.name }); void render(); });
           listEl.append(btn);
         });
         files.forEach((file) => {
@@ -312,6 +312,6 @@ export function showFilePicker({ token, title, filter, onPick }) {
 
     overlay.querySelector('.od-fe-pick-close').addEventListener('click', () => overlay.remove());
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-    render();
+    void render();
   });
 }
