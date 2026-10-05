@@ -84,7 +84,7 @@ def resolve_rel(
         return abspath, host
 
     abspath = join_user_rel(data_root, norm)
-    confine = confine_root_for_rel(data_root, norm)
+    confine = os.path.abspath(confine_root_for_rel(data_root, norm))
     if not is_within_root(abspath, confine):
         return None, None
     return abspath, confine

@@ -642,6 +642,7 @@ def test_e2e_stores_ciphertext_not_plaintext(chat_env):
     a = chat_db.resolve_user_id(chat_env, "alice")
     b = chat_db.resolve_user_id(chat_env, "bob")
     conv = chat_db.create_dm_conversation(chat_env, a, b)
+    chat_db.respond_to_request(actor="bob", conversation_id=conv, action="accept")
     payload = {"v": 1, "iv": _b64(b"\x01", 12), "ct": _b64(b"\xab", 40)}
     msg = chat_db.insert_message(
         chat_env,
@@ -917,3 +918,56 @@ def test_encrypted_read_receipt_requires_decryption_confirmation(chat_env):
     )
     receipt = chat_db.list_receipts("alice", conv)[0]
     assert receipt["decrypted"] is True
+
+
+def test_dm_stays_closed_until_peer_accepts(chat_env):
+    from aird.plugins.chat import db as chat_db
+
+    alice = chat_db.resolve_user_id(chat_env, "alice")
+    bob = chat_db.resolve_user_id(chat_env, "bob")
+    conv = chat_db.create_dm_conversation(chat_env, alice, bob)
+    alice_row = next(c for c in chat_db.list_conversations(chat_env, "alice") if c["id"] == conv)
+    bob_row = next(c for c in chat_db.list_conversations(chat_env, "bob") if c["id"] == conv)
+    assert alice_row["request"] == "outgoing"
+    assert bob_row["request"] == "incoming"
+    assert chat_db.exchange_open("alice", conv) is False
+    assert chat_db.exchange_open("bob", conv) is False
+    chat_db.respond_to_request(actor="bob", conversation_id=conv, action="accept")
+    assert chat_db.exchange_open("alice", conv) is True
+    assert chat_db.exchange_open("bob", conv) is True
+
+
+def test_group_creator_can_talk_before_invitees_accept(chat_env):
+    from aird.plugins.chat import db as chat_db
+
+    conv = chat_db.create_group_conversation(
+        chat_env, creator_username="alice", title="Team", member_usernames=["bob", "carol"]
+    )
+    assert chat_db.exchange_open("alice", conv) is True
+    assert chat_db.exchange_open("bob", conv) is False
+    chat_db.respond_to_request(actor="bob", conversation_id=conv, action="decline")
+    assert chat_db.user_in_conversation("bob", conv) is False
+    assert chat_db.exchange_open("alice", conv) is True
+
+
+def test_decline_dm_removes_it(chat_env):
+    from aird.plugins.chat import db as chat_db
+
+    alice = chat_db.resolve_user_id(chat_env, "alice")
+    bob = chat_db.resolve_user_id(chat_env, "bob")
+    conv = chat_db.create_dm_conversation(chat_env, alice, bob)
+    chat_db.respond_to_request(actor="bob", conversation_id=conv, action="decline")
+    assert chat_db.get_conversation("alice", conv) is None
+    assert chat_db.get_conversation("bob", conv) is None
+
+
+def test_put_path_drops_stored_conv_key(chat_env):
+    from aird.plugins.chat import db as chat_db
+    from aird.plugins.chat.e2e import delete_stored_conv_keys, load_conv_key, save_conv_key
+
+    alice = chat_db.resolve_user_id(chat_env, "alice")
+    bob = chat_db.resolve_user_id(chat_env, "bob")
+    conv = chat_db.create_dm_conversation(chat_env, alice, bob)
+    save_conv_key("alice", conv, {"v": 1, "conversation_id": conv, "key": _b64(b"\x11", 32)})
+    delete_stored_conv_keys(["alice", "bob"], conv)
+    assert load_conv_key("alice", conv) is None

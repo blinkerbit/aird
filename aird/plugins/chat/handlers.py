@@ -42,15 +42,13 @@ from aird.plugins.chat.notify import (
     dispatch_message_edited,
     dispatch_pin,
     dispatch_reaction,
+    dispatch_chat_request,
     dispatch_e2e_key_ready,
 )
 from aird.plugins.chat.e2e import (
     get_identity_keys,
     is_e2e_meta,
-    adopt_conv_key,
-    bind_conv_key,
-    load_conv_key,
-    recover_conv_key,
+    delete_stored_conv_keys,
     load_identity_backup,
     metadata_from_e2e_request,
     put_identity_key,
@@ -217,6 +215,14 @@ def _ensure_chat_folder_share(
         )
         return share_url
     return None
+
+
+def _exchange_blocked(handler: BaseHandler, name: str, conversation_id: str) -> bool:
+    if chat_db.exchange_open(name, conversation_id):
+        return False
+    handler.set_status(403)
+    handler.write({"error": "Chat request not accepted yet"})
+    return True
 
 
 def _mark_members_online(members: list, online: set) -> None:
@@ -518,6 +524,8 @@ def _forward_message_to_targets(
         dest_id = str(dest)
         if not chat_db.user_in_conversation(name, dest_id):
             continue
+        if not chat_db.exchange_open(name, dest_id):
+            continue
         msg = chat_db.insert_message(
             handler.db_conn,
             username=name,
@@ -585,6 +593,9 @@ class ChatConversationMessagesHandler(BaseHandler, XSRFTokenMixin):
             self.set_status(403)
             self.write({"error": "Forbidden"})
             return
+        if not chat_db.exchange_open(name, conversation_id):
+            self.write({"messages": [], "pins": [], "receipts": []})
+            return
         messages = chat_db.list_messages(
             name,
             conversation_id,
@@ -607,6 +618,8 @@ class ChatConversationMessagesHandler(BaseHandler, XSRFTokenMixin):
         if uid is None or not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
             self.write({"error": "Forbidden"})
+            return
+        if _exchange_blocked(self, name, conversation_id):
             return
         try:
             body = self.parse_json_body()
@@ -663,6 +676,8 @@ class ChatMessageHandler(BaseHandler, XSRFTokenMixin):
         if not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
             self.write({"error": "Forbidden"})
+            return
+        if _exchange_blocked(self, name, conversation_id):
             return
         try:
             body = self.parse_json_body()
@@ -774,6 +789,8 @@ class ChatAttachHandler(BaseHandler, XSRFTokenMixin):
         if uid is None or not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
             self.write({"error": "Forbidden"})
+            return
+        if _exchange_blocked(self, name, conversation_id):
             return
         caption = sanitize_chat_html(self.get_argument("caption", "") or self.get_argument("body", ""))
         reply_to = str(self.get_argument("reply_to_id", "") or "") or None
@@ -1144,6 +1161,47 @@ class ChatMuteHandler(BaseHandler, XSRFTokenMixin):
         self.write({"muted": muted})
 
 
+class ChatRequestHandler(BaseHandler, XSRFTokenMixin):
+    @tornado.web.authenticated
+    @require_db
+    def post(self, conversation_id: str):
+        if not _require_chat(self):
+            return
+        self.check_xsrf_cookie()
+        name = _username(self)
+        if not chat_db.user_in_conversation(name, conversation_id):
+            self.set_status(403)
+            self.write({"error": "Forbidden"})
+            return
+        try:
+            body = self.parse_json_body()
+        except tornado.web.HTTPError:
+            return
+        action = str(body.get("action") or "")
+        conv = chat_db.get_conversation(name, conversation_id) or {}
+        user_ids = [m["user_id"] for m in conv.get("members") or []]
+        try:
+            result = chat_db.respond_to_request(
+                actor=name, conversation_id=conversation_id, action=action
+            )
+        except ValueError as exc:
+            self.set_status(400)
+            self.write({"error": str(exc)})
+            return
+        if action == "decline":
+            names = (
+                [m["username"] for m in conv.get("members") or []]
+                if conv.get("kind") == "dm"
+                else [name]
+            )
+            delete_stored_conv_keys(names, conversation_id)
+        try:
+            dispatch_chat_request(user_ids, conversation_id)
+        except Exception:
+            logger.debug("chat request dispatch failed", exc_info=True)
+        self.write({"ok": True, "conversation": result})
+
+
 class ChatSearchHandler(BaseHandler):
     @tornado.web.authenticated
     @require_db
@@ -1276,27 +1334,19 @@ class ChatConversationE2EHandler(BaseHandler, XSRFTokenMixin):
             self.set_status(403)
             self.write({"error": "Forbidden"})
             return
-        conv = chat_db.get_conversation(name, conversation_id)
-        members = [m["username"] for m in (conv or {}).get("members") or []]
+        conv = chat_db.get_conversation(name, conversation_id) or {}
+        members = conv.get("members") or []
+        if conv.get("request") == "incoming":
+            self.set_header("Cache-Control", "no-store, no-cache, must-revalidate")
+            self.write({"wraps": {}, "keys": {}})
+            return
+        accepted = [m["username"] for m in members if int(m.get("accepted", 1))]
         wraps = chat_db.get_e2e_wraps(name, conversation_id)
-        conv_key = None
-        try:
-            conv_key = adopt_conv_key(name, conversation_id, members)
-        except OSError:
-            logger.warning("e2e conv key adopt failed", exc_info=True)
-            conv_key = load_conv_key(name, conversation_id)
-        if not conv_key:
-            try:
-                conv_key = recover_conv_key(conversation_id, members, wraps)
-            except OSError:
-                logger.warning("e2e conv key recover failed", exc_info=True)
-                conv_key = load_conv_key(name, conversation_id)
         self.set_header("Cache-Control", "no-store, no-cache, must-revalidate")
         self.write(
             {
-                "wraps": wraps,
-                "keys": get_identity_keys(self.db_conn, members),
-                "conv_key": conv_key,
+                "wraps": {k: v for k, v in wraps.items() if k in accepted},
+                "keys": get_identity_keys(self.db_conn, accepted),
             }
         )
 
@@ -1316,34 +1366,42 @@ class ChatConversationE2EHandler(BaseHandler, XSRFTokenMixin):
         except tornado.web.HTTPError:
             return
         wraps_in = body.get("wraps") if isinstance(body.get("wraps"), dict) else {}
-        conv_key_in = body.get("conv_key")
-        if not wraps_in and not conv_key_in:
+        if not wraps_in:
             self.set_status(400)
-            self.write({"error": "wraps or conv_key required"})
+            self.write({"error": "wraps required"})
             return
-        conv = chat_db.get_conversation(name, conversation_id)
-        members = [m["username"] for m in (conv or {}).get("members") or []]
+        conv = chat_db.get_conversation(name, conversation_id) or {}
+        if conv.get("request") == "incoming":
+            self.set_status(403)
+            self.write({"error": "Chat request not accepted yet"})
+            return
+        accepted = {
+            m["username"]
+            for m in (conv.get("members") or [])
+            if int(m.get("accepted", 1))
+        }
+        wraps_in = {k: v for k, v in wraps_in.items() if k in accepted}
+        if not wraps_in:
+            self.set_status(400)
+            self.write({"error": "wraps required"})
+            return
+        members = [m["username"] for m in (conv.get("members") or [])]
         try:
-            wraps = (
-                chat_db.put_e2e_wraps(actor=name, conversation_id=conversation_id, wraps=wraps_in)
-                if wraps_in
-                else chat_db.get_e2e_wraps(name, conversation_id)
+            wraps = chat_db.put_e2e_wraps(
+                actor=name, conversation_id=conversation_id, wraps=wraps_in
             )
-            shared = None
-            if conv_key_in:
-                shared = bind_conv_key(members, conversation_id, conv_key_in)
+            delete_stored_conv_keys(members, conversation_id)
         except ValueError as exc:
             self.set_status(400)
             self.write({"error": str(exc)})
             return
         except OSError:
-            logger.warning("e2e conv key write failed", exc_info=True)
+            logger.warning("e2e wrap write failed", exc_info=True)
             self.set_status(503)
             self.write({"error": "Could not save encryption key"})
             return
-        if conv_key_in:
-            try:
-                dispatch_e2e_key_ready(name, conversation_id)
-            except Exception:
-                logger.debug("e2e key ready dispatch failed", exc_info=True)
-        self.write({"wraps": wraps, "conv_key": shared or load_conv_key(name, conversation_id)})
+        try:
+            dispatch_e2e_key_ready(name, conversation_id)
+        except Exception:
+            logger.debug("e2e key ready dispatch failed", exc_info=True)
+        self.write({"wraps": {k: v for k, v in wraps.items() if k in accepted}})

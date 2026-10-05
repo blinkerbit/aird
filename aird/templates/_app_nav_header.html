@@ -128,7 +128,7 @@
 {% if is_chat_enabled() %}
 <script nonce="{{ csp_nonce }}">window.__AIRD_CHAT_USER__ = {% raw json_encode(current_user.get('username') if current_user else '') %};</script>
 <script nonce="{{ csp_nonce }}" src="/static/js/chat-ws.js"></script>
-<script nonce="{{ csp_nonce }}" src="/static/js/chat-e2e.js?v=20260927a"></script>
+<script nonce="{{ csp_nonce }}" src="/static/js/chat-e2e.js?v=20261005a"></script>
 <script nonce="{{ csp_nonce }}" src="/static/js/chat-notify.js" defer></script>
 {% end %}
 {% end %}

@@ -264,16 +264,11 @@
     const keys = state.keys || {};
     const local = asBytes(await loadConvRaw(convId));
     let raw = null;
-    if (state.conv_key?.key) {
-      try { raw = unb64(state.conv_key.key); } catch (_) { raw = null; }
-    }
     const mine = wraps[username];
-    if (!raw && mine) {
+    if (mine) {
       try {
         raw = await unwrapForMe(mine, convId);
-      } catch (_) {
-        raw = null;
-      }
+      } catch (_) { /* try the identity backup next */ }
       if (!raw) {
         try {
           const backup = (await api('/api/chat/e2e/identity'))?.backup;
@@ -287,7 +282,7 @@
       }
     }
     if (!raw) raw = local;
-    const hasExisting = !!(Object.keys(wraps).length || state.conv_key);
+    const hasExisting = Object.keys(wraps).length > 0;
     if (!raw) {
       if (hasExisting) return null;
       raw = crypto.getRandomValues(new Uint8Array(32));
@@ -316,43 +311,11 @@
       next[name] = await wrapFor(raw, pub, convId);
       changed = true;
     }
-    if (!changed && state.conv_key?.key) {
-      await forgetLocalConvKey(convId);
-      return importAes(raw);
-    }
-    try {
-      const saved = await api(`/api/chat/conversations/${encodeURIComponent(convId)}/e2e`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          wraps: next,
-          conv_key: { v: 1, conversation_id: convId, key: b64(raw) },
-        }),
-      });
-      await forgetLocalConvKey(convId);
-      if (saved?.conv_key?.key) {
-        const canonical = unb64(saved.conv_key.key);
-        if (!bytesEq(raw, canonical)) {
-          raw = canonical;
-          await saveConvRaw(convId, raw);
-          const repaired = {};
-          for (const name of names) {
-            const pub = keys[name];
-            if (!pub) continue;
-            repaired[name] = await wrapFor(raw, pub, convId);
-          }
-          await api(`/api/chat/conversations/${encodeURIComponent(convId)}/e2e`, {
-            method: 'PUT',
-            body: JSON.stringify({
-              wraps: repaired,
-              conv_key: { v: 1, conversation_id: convId, key: b64(raw) },
-            }),
-          });
-        }
-      }
-    } catch (err) {
-      if (changed) throw err;
-      console.debug('e2e share persist failed', err);
-    }
+    if (!changed) return importAes(raw);
+    await api(`/api/chat/conversations/${encodeURIComponent(convId)}/e2e`, {
+      method: 'PUT',
+      body: JSON.stringify({ wraps: next }),
+    });
     return importAes(raw);
   }
 

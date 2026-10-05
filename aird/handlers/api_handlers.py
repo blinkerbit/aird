@@ -98,6 +98,15 @@ class FeatureFlagSocketHandler(
         cls.connection_manager.broadcast_message(json.dumps(current_flags))
 
 
+def _push_feature_flag_sockets() -> None:
+    FeatureFlagSocketHandler.send_updates()
+
+
+from aird.services.config_service import register_feature_flag_broadcaster
+
+register_feature_flag_broadcaster(_push_feature_flag_sockets)
+
+
 class FeatureFlagAPIHandler(BaseHandler):
     """GET /api/features — lightweight JSON endpoint for on-demand flag checks."""
 

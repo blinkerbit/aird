@@ -296,6 +296,19 @@ def conv_key_path(username: str, conversation_id: str) -> str:
     return os.path.join(_chat_account_dir(username), "c", conversation_id, CONV_KEY_FILENAME)
 
 
+def delete_stored_conv_keys(usernames: list[str], conversation_id: str) -> None:
+    """Remove raw conversation-key files. Live chats keep wraps only."""
+    for name in usernames:
+        if not name:
+            continue
+        try:
+            os.remove(conv_key_path(name, conversation_id))
+        except FileNotFoundError:
+            continue
+        except OSError:
+            logger.debug("e2e conv key delete failed for %s", name, exc_info=True)
+
+
 def load_conv_key(username: str, conversation_id: str) -> dict | None:
     try:
         data = _read_json(conv_key_path(username, conversation_id))

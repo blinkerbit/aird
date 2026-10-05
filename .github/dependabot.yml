@@ -1,0 +1,34 @@
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    exclude-paths:
+      # Hashed lockfile; bump pins in requirements-ci.in then recompile:
+      #   uv pip compile --generate-hashes -o requirements-ci.txt requirements-ci.in
+      - requirements-ci.txt
+
+  - package-ecosystem: cargo
+    directory: /native/aird_transfer
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10

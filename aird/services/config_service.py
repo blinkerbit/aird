@@ -24,6 +24,21 @@ from aird.db.config import (
 
 logger = logging.getLogger(__name__)
 
+_feature_flag_broadcasters: list = []
+
+
+def register_feature_flag_broadcaster(callback) -> None:
+    if callback not in _feature_flag_broadcasters:
+        _feature_flag_broadcasters.append(callback)
+
+
+def _notify_feature_flag_listeners() -> None:
+    for callback in list(_feature_flag_broadcasters):
+        try:
+            callback()
+        except Exception:
+            logger.debug("feature flag live broadcast failed", exc_info=True)
+
 
 class ConfigService:
     def seed_defaults(self, conn: Any) -> None:
@@ -199,12 +214,7 @@ class ConfigService:
             if persisted:
                 constants.FEATURE_FLAGS.update(persisted)
         invalidate_feature_flags_cache()
-        try:
-            from aird.handlers.api_handlers import FeatureFlagSocketHandler
-
-            FeatureFlagSocketHandler.send_updates()
-        except Exception:
-            logger.debug("feature flag live broadcast failed", exc_info=True)
+        _notify_feature_flag_listeners()
         return {
             "ok": True,
             "flag": key,

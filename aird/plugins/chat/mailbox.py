@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS members (
     username TEXT NOT NULL,
     user_id INTEGER NOT NULL,
     joined_at TEXT NOT NULL,
+    accepted INTEGER NOT NULL DEFAULT 1,
     PRIMARY KEY (conversation_id, username)
 );
 CREATE TABLE IF NOT EXISTS messages (
@@ -132,6 +133,13 @@ def init_schema(conn: sqlite3.Connection) -> bool:
     if "decrypted" not in receipt_columns:
         conn.execute(
             "ALTER TABLE receipts ADD COLUMN decrypted INTEGER NOT NULL DEFAULT 0"
+        )
+    member_columns = {
+        str(row[1]) for row in conn.execute("PRAGMA table_info(members)").fetchall()
+    }
+    if member_columns and "accepted" not in member_columns:
+        conn.execute(
+            "ALTER TABLE members ADD COLUMN accepted INTEGER NOT NULL DEFAULT 1"
         )
     fts = True
     try:

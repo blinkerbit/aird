@@ -116,12 +116,41 @@ def maybe_migrate_user(central: sqlite3.Connection | None, username: str) -> Non
 def _members_local(conn: sqlite3.Connection, conversation_id: str) -> list[dict]:
     rows = conn.execute(
         """
-        SELECT username, user_id, joined_at FROM members
+        SELECT username, user_id, joined_at, accepted FROM members
         WHERE conversation_id = ? ORDER BY username
         """,
         (conversation_id,),
     ).fetchall()
-    return [{"username": r[0], "user_id": int(r[1]), "joined_at": r[2]} for r in rows]
+    return [
+        {
+            "username": r[0],
+            "user_id": int(r[1]),
+            "joined_at": r[2],
+            "accepted": int(r[3] if r[3] is not None else 1),
+        }
+        for r in rows
+    ]
+
+
+def request_state(kind: str, members: list[dict], username: str) -> str | None:
+    """incoming: this user has not accepted. outgoing: a DM peer has not."""
+    me = next((m for m in members if m["username"] == username), None)
+    if me is None:
+        return None
+    if not int(me.get("accepted", 1)):
+        return "incoming"
+    if kind == "dm" and any(
+        not int(m.get("accepted", 1)) for m in members if m["username"] != username
+    ):
+        return "outgoing"
+    return None
+
+
+def exchange_open(username: str, conversation_id: str) -> bool:
+    conv = get_conversation(username, conversation_id)
+    if conv is None:
+        return False
+    return request_state(conv["kind"], conv["members"], username) is None
 
 
 def members_of(username: str, conversation_id: str) -> list[dict]:
@@ -155,6 +184,7 @@ def get_conversation(username: str, conversation_id: str) -> dict | None:
             "created_at": row[4],
             "updated_at": row[5],
             "members": members,
+            "request": request_state(row[1], members, username),
         }
 
 
@@ -191,11 +221,17 @@ def _write_conversation(box, *, conv_id: str, kind: str, title: str, now: str, m
     for m in members:
         box.conn.execute(
             """
-            INSERT INTO members (conversation_id, username, user_id, joined_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO members (conversation_id, username, user_id, joined_at, accepted)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(conversation_id, username) DO NOTHING
             """,
-            (conv_id, m["username"], m["user_id"], m.get("joined_at") or now),
+            (
+                conv_id,
+                m["username"],
+                m["user_id"],
+                m.get("joined_at") or now,
+                1 if int(m.get("accepted", 1)) else 0,
+            ),
         )
 
 
@@ -230,8 +266,8 @@ def create_dm_conversation(central: sqlite3.Connection, user_a_id: int, user_b_i
     now = _now_iso()
     conv_id = _new_id()
     members = [
-        {"username": name_a, "user_id": user_a_id, "joined_at": now},
-        {"username": name_b, "user_id": user_b_id, "joined_at": now},
+        {"username": name_a, "user_id": user_a_id, "joined_at": now, "accepted": 1},
+        {"username": name_b, "user_id": user_b_id, "joined_at": now, "accepted": 0},
     ]
 
     def write(box, _m):
@@ -271,7 +307,15 @@ def create_group_conversation(
         raise ValueError(f"Group cannot exceed {MAX_GROUP_MEMBERS} members")
     now = _now_iso()
     conv_id = _new_id()
-    members = [{"username": n["username"], "user_id": n["id"], "joined_at": now} for n in names]
+    members = [
+        {
+            "username": n["username"],
+            "user_id": n["id"],
+            "joined_at": now,
+            "accepted": 1 if n["username"] == creator_username else 0,
+        }
+        for n in names
+    ]
     clean_title = (title or "").strip()[:80] or "Group"
 
     def write(box, _m):
@@ -297,7 +341,7 @@ def add_member(central: sqlite3.Connection, *, actor: str, conversation_id: str,
         raise ValueError(f"Group cannot exceed {MAX_GROUP_MEMBERS} members")
     maybe_migrate_user(central, rec["username"])
     now = _now_iso()
-    new_m = {"username": rec["username"], "user_id": rec["id"], "joined_at": now}
+    new_m = {"username": rec["username"], "user_id": rec["id"], "joined_at": now, "accepted": 0}
     updated = current + [new_m]
 
     def write(box, _m):
@@ -337,6 +381,50 @@ def remove_member(*, actor: str, conversation_id: str, username: str) -> None:
         box.conn.execute("UPDATE conversations SET updated_at = ? WHERE id = ?", (now, conversation_id))
 
     _fanout_members(conv["members"], write)
+
+
+def delete_conversation(actor: str, conversation_id: str) -> None:
+    conv = get_conversation(actor, conversation_id)
+    if conv is None:
+        raise ValueError("Conversation not found")
+
+    def write(box, _m):
+        box.conn.execute("DELETE FROM members WHERE conversation_id = ?", (conversation_id,))
+        box.conn.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation_id,))
+        box.conn.execute("DELETE FROM e2e_wraps WHERE conversation_id = ?", (conversation_id,))
+        box.conn.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
+
+    _fanout_members(conv["members"], write)
+
+
+def respond_to_request(*, actor: str, conversation_id: str, action: str) -> dict:
+    conv = get_conversation(actor, conversation_id)
+    if conv is None:
+        raise ValueError("Conversation not found")
+    me = next((m for m in conv["members"] if m["username"] == actor), None)
+    if me is None:
+        raise ValueError("Conversation not found")
+    if action == "accept":
+        if int(me.get("accepted", 1)):
+            return conv
+
+        def write(box, _m):
+            box.conn.execute(
+                "UPDATE members SET accepted = 1 WHERE conversation_id = ? AND username = ?",
+                (conversation_id, actor),
+            )
+
+        _fanout_members(conv["members"], write)
+        return get_conversation(actor, conversation_id) or conv
+    if action == "decline":
+        if int(me.get("accepted", 1)):
+            raise ValueError("Already accepted")
+        if conv["kind"] == "dm":
+            delete_conversation(actor, conversation_id)
+        else:
+            remove_member(actor=actor, conversation_id=conversation_id, username=actor)
+        return {"id": conversation_id, "declined": True}
+    raise ValueError("action must be accept or decline")
 
 
 def set_muted(username: str, conversation_id: str, muted: bool) -> None:
@@ -414,6 +502,11 @@ def list_conversations(central: sqlite3.Connection, username: str) -> list[dict]
                 else:
                     preview = f"Shared {meta.get('original_name') or 'a file'}"
             peer = _peer_name(members, username) if kind == "dm" else None
+            state = request_state(kind, members, username)
+            if state == "incoming":
+                preview = "Chat request"
+            elif state == "outgoing":
+                preview = "Waiting for acceptance"
             out.append(
                 {
                     "id": conv_id,
@@ -421,6 +514,7 @@ def list_conversations(central: sqlite3.Connection, username: str) -> list[dict]
                     "title": title or "",
                     "peer_username": peer or (title or "Group"),
                     "members": members,
+                    "request": state,
                     "muted": bool(muted),
                     "updated_at": updated_at,
                     "unread": _unread_count(box.conn, conv_id, username),

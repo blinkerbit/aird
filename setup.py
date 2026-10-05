@@ -1,14 +1,16 @@
 from setuptools import setup, find_packages
 
 install_requires = [
-    "tornado>=6.5.1",
+    "tornado>=6.5.9",
     "uvloop>=0.19.0; sys_platform == 'linux'",
     "ldap3>=2.9.1",
     "aiofiles>=23.0.0",
     "argon2-cffi>=23.1.0",
-    "requests>=2.31.0",
+    "requests>=2.32.4",
+    "urllib3>=2.8.0",
+    "cryptography>=50.0.0",
     "chardet>=5.0.0,<6.0.0",
-    "pyasn1>=0.6.2",
+    "pyasn1>=0.6.4",
     "webauthn>=2.0.0",
     "watchdog>=4.0.0",
     "pywebpush>=1.14.0",

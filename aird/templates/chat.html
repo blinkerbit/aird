@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/static/css/app.css" />
-  <link rel="stylesheet" href="/static/css/chat.css?v=20260928b" />
+  <link rel="stylesheet" href="/static/css/chat.css?v=20261005a" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   {% include '_pwa_head.html' %}
   <title>Chat · Aird</title>
@@ -24,7 +24,7 @@
           <button type="button" class="btn btn-ghost btn-xs" data-chat-e2e-close aria-label="Close">✕</button>
         </div>
         <div class="chat-e2e-help-body">
-          <p class="chat-e2e-disclaimer">Normal chats are encrypted, and the keys are saved in your Aird chat folder on this server so any signed-in browser can open them. Enhanced Secure Chat is different: it starts only after the other person accepts, it runs while both people are online, its keys never leave this browser tab, and closing the tab deletes its messages.</p>
+          <p class="chat-e2e-disclaimer">A chat starts after the other person accepts. The conversation key stays on this device and is only shared as a wrap for each member. Enhanced Secure Chat is different: it starts only after the other person accepts, it runs while both people are online, its keys never leave this browser tab, and closing the tab deletes its messages.</p>
           <p class="text-sm opacity-70" data-chat-e2e-backup-status></p>
           <div class="chat-e2e-help-actions">
             <button type="button" id="chatE2eDownloadBtn" class="btn btn-outline btn-sm">Download key file</button>
@@ -98,6 +98,13 @@
         </div>
         <div id="chatPinBar" class="chat-pin-bar" hidden></div>
         <div id="chatE2eStatus" class="chat-e2e-status" hidden></div>
+        <div id="chatRequest" class="chat-request hidden">
+          <p id="chatRequestText"></p>
+          <div id="chatRequestActions" class="chat-request-actions">
+            <button type="button" id="chatRequestAccept" class="btn btn-primary btn-sm">Accept</button>
+            <button type="button" id="chatRequestDecline" class="btn btn-ghost btn-sm">Decline</button>
+          </div>
+        </div>
         <div class="chat-thread-body">
           <div id="chatMessages">
             <div class="chat-empty" id="chatEmptyState">
@@ -240,6 +247,6 @@
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/onedrive-fe/index.js?v=20260929c"></script>
   <script nonce="{{ csp_nonce }}" src="/static/js/chat-key-backup.js?v=20260906p"></script>
   <script nonce="{{ csp_nonce }}" src="/static/js/chat-secret.js?v=20260927c"></script>
-  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/pages/chat.js?v=20260930h"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/pages/chat.js?v=20261005a"></script>
 </body>
 </html>

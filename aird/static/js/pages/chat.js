@@ -192,8 +192,40 @@ import {
   const E2E = window.AirdChatE2E;
   const e2ePlain = new Map();
 
+  function memberAccepted(member) {
+    return member?.accepted !== 0 && member?.accepted !== false;
+  }
+
   function memberNames(conv) {
-    return (conv?.members || []).map((m) => m.username).filter(Boolean);
+    return (conv?.members || []).filter(memberAccepted).map((m) => m.username).filter(Boolean);
+  }
+
+  function hideRequest() {
+    qs('#chatRequest')?.classList.add('hidden');
+  }
+
+  function showRequest(conv) {
+    const box = qs('#chatRequest');
+    const text = qs('#chatRequestText');
+    const actions = qs('#chatRequestActions');
+    if (!box || !conv?.request) {
+      hideRequest();
+      return false;
+    }
+    box.classList.remove('hidden');
+    composer?.classList.add('hidden');
+    setE2eStatus('');
+    stopKeyWait();
+    if (conv.request === 'incoming') {
+      text.textContent = conv.kind === 'dm'
+        ? `${conv.peer_username || 'Someone'} wants to chat.`
+        : `You were added to ${convTitle(conv)}.`;
+      actions?.classList.remove('hidden');
+    } else {
+      text.textContent = `Waiting for ${conv.peer_username || 'them'} to accept.`;
+      actions?.classList.add('hidden');
+    }
+    return true;
   }
 
   async function e2eReady(convId) {
@@ -211,7 +243,7 @@ import {
     }
     E2E.requestKeyShare?.(convId);
     startKeyWait(convId);
-    setE2eStatus('Setting up encryption…');
+    setE2eStatus('Waiting for the chat key…');
     return false;
   }
 
@@ -507,7 +539,11 @@ import {
     convList.innerHTML = enhancedHtml + conversations.map((c) => {
       const active = !enhancedSecureView && c.id === activeConvId ? ' active' : '';
       const badge = c.unread ? `<span class="badge badge-primary badge-xs">${c.unread}</span>` : '';
-      const preview = esc(c.last_preview || 'No messages yet');
+      const preview = c.request === 'incoming'
+        ? 'Chat request'
+        : c.request === 'outgoing'
+          ? 'Waiting for acceptance'
+          : esc(c.last_preview || 'No messages yet');
       const title = convTitle(c);
       const on = c.kind === 'dm' && isOnlineUser(c.peer_username);
       const dot = on ? '<span class="chat-online-dot chat-online-dot--list"></span>' : '';
@@ -535,7 +571,7 @@ import {
       });
     });
     await Promise.all(conversations.map(async (c) => {
-      if (!c.last_e2e || !E2E?.ready()) return;
+      if (!c.last_e2e || c.request || !E2E?.ready()) return;
       try {
         await e2eReady(c.id);
         const result = await decryptPayload(c.id, c.last_e2e);
@@ -849,9 +885,9 @@ import {
         return;
       }
       try {
-        if (!E2E?.ready()) throw new Error('Setting up encryption…');
+        if (!E2E?.ready()) throw new Error('Waiting for the chat key…');
         const ok = await e2eReady(activeConvId);
-        if (!ok) throw new Error('Setting up encryption…');
+        if (!ok) throw new Error('Waiting for the chat key…');
         const e2e = await E2E.encrypt(activeConvId, E2E.sanitizeHtml(textEl.innerHTML || next));
         const data = await api(`/api/chat/conversations/${activeConvId}/messages/${messageId}`, {
           method: 'PATCH',
@@ -929,12 +965,12 @@ import {
       || messagesEl?.querySelector(`[data-msg-id="${cssEscape(forwardMsgId)}"] .chat-msg-text`)?.innerHTML
       || '';
     if (isE2e) {
-      if (!E2E?.ready()) throw new Error('Setting up encryption…');
+      if (!E2E?.ready()) throw new Error('Waiting for the chat key…');
       if (plain.includes('chat-e2e-fail')) throw new Error('Cannot forward a message that did not decrypt on this device');
       const html = E2E.sanitizeHtml(plain);
       for (const id of ids) {
         const ok = await e2eReady(id);
-        if (!ok) throw new Error('Setting up encryption…');
+        if (!ok) throw new Error('Waiting for the chat key…');
         const e2e = await E2E.encrypt(id, html);
         await api(`/api/chat/conversations/${id}/messages`, {
           method: 'POST',
@@ -1047,11 +1083,24 @@ import {
     loadingOlder = false;
     const conv = conversations.find((c) => c.id === convId);
     setThreadHeader(conv || null);
-    composer.classList.remove('hidden');
+    hideRequest();
+    composer.classList.add('hidden');
     messagesEl.innerHTML = '<div class="chat-empty"><p>Loading…</p></div>';
     renderConvList();
     setPollEnabled(true);
     setMobileView('thread');
+    if (showRequest(conv)) {
+      if (conv.request === 'outgoing') {
+        try { await e2eReady(convId); } catch (err) { console.debug('e2e ready on request failed', err); }
+      }
+      clearMessagesView();
+      messagesEl.innerHTML = '';
+      const params = new URLSearchParams(location.search);
+      params.set('c', convId);
+      history.replaceState(null, '', `${location.pathname}?${params}`);
+      return;
+    }
+    composer.classList.remove('hidden');
     try { await e2eReady(convId); } catch (err) { console.debug('e2e ready on openConversation failed', err); }
     const data = await api(`/api/chat/conversations/${convId}/messages?limit=50`);
     if (gen !== loadGen) return;
@@ -1210,6 +1259,16 @@ import {
         loadConversations();
         if (convId === activeConvId && !had && !enhancedSecureView) reloadThreadAfterKey(convId);
       }).catch((err) => console.debug('e2e key ready failed', err));
+    },
+    chat_request: (data) => {
+      const convId = data.conversation_id;
+      loadConversations().then(() => {
+        const conv = conversations.find((c) => c.id === convId);
+        if (conv && !conv.request) {
+          e2eReady(convId).catch((err) => console.debug('e2e ready after accept failed', err));
+        }
+        if (convId && convId === activeConvId && !enhancedSecureView) openConversation(convId);
+      }).catch((err) => console.debug('chat request refresh failed', err));
     },
   };
 
@@ -1429,7 +1488,7 @@ import {
     let mentions = [];
     if (hasText) {
       if (!E2E?.ready()) {
-        setE2eStatus('Setting up encryption…');
+        setE2eStatus('Waiting for the chat key…');
         return;
       }
       try {
@@ -2119,9 +2178,36 @@ import {
     }
   });
 
+  async function respondRequest(action) {
+    const id = activeConvId;
+    if (!id) return;
+    await api(`/api/chat/conversations/${id}/request`, {
+      method: 'POST',
+      body: JSON.stringify({ action }),
+    });
+    if (action === 'decline') {
+      activeConvId = '';
+      hideRequest();
+      composer?.classList.add('hidden');
+      setThreadHeader(null);
+      if (messagesEl) messagesEl.innerHTML = '';
+      history.replaceState(null, '', location.pathname);
+      await loadConversations();
+      return;
+    }
+    await loadConversations();
+    await openConversation(id);
+  }
+
   document.addEventListener('visibilitychange', markLatestVisibleRead);
 
   function boot() {
+    qs('#chatRequestAccept')?.addEventListener('click', () => {
+      respondRequest('accept').catch((err) => setE2eStatus(err.message || 'Could not accept'));
+    });
+    qs('#chatRequestDecline')?.addEventListener('click', () => {
+      respondRequest('decline').catch((err) => setE2eStatus(err.message || 'Could not decline'));
+    });
     globalThis.AirdFolderPicker?.init?.();
     const WS = window.AirdChatWS;
     if (WS) {

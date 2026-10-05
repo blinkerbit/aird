@@ -100,12 +100,25 @@ def get_user_root(handler) -> str:
     )
 
 
+def _handler_db_conn(handler):
+    """DB handle for request handlers and websockets that are not BaseHandler."""
+    if isinstance(getattr(type(handler), "db_conn", None), property):
+        return handler.db_conn
+    settings = getattr(handler, "settings", None)
+    if not hasattr(settings, "get"):
+        return None
+    app_ctx = settings.get("app_context")
+    if app_ctx is not None:
+        return getattr(app_ctx, "db_conn", None)
+    return settings.get("db_conn")
+
+
 def resolve_handler_rel(handler, rel: str) -> tuple[str | None, str | None]:
     """Resolve a browse-relative path for the current user (mounts + personal data)."""
     from aird.core.browse_paths import resolve_for_user
 
     username = get_username_string_for_db(handler) or ""
-    return resolve_for_user(username, rel, get_user_root(handler), handler.db_conn)
+    return resolve_for_user(username, rel, get_user_root(handler), _handler_db_conn(handler))
 
 
 # ---------------------------------------------------------------------------

@@ -156,6 +156,13 @@ def dispatch_e2e_need_key(username: str, conversation_id: str, actor_id: int) ->
     )
 
 
+def dispatch_chat_request(user_ids: list[int], conversation_id: str) -> None:
+    get_chat_hub().broadcast_user_ids(
+        user_ids,
+        {"type": "chat_request", "conversation_id": conversation_id},
+    )
+
+
 def dispatch_e2e_key_ready(username: str, conversation_id: str) -> None:
     get_chat_hub().broadcast_user_ids(
         chat_db.member_user_ids(username, conversation_id),

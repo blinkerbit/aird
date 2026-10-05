@@ -137,7 +137,7 @@ def install():
 
 def test(verbose=False, quick=False):
     """Run tests using pytest."""
-    cmd = [sys.executable, "-m", "pytest", "tests/", "-n", "auto"]
+    cmd = [sys.executable, "-m", "pytest", "tests/", "-n", "18"]
     if quick:
         cmd.extend(["-q", "--no-header"])
     elif verbose:

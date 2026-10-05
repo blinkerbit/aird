@@ -1,19 +1,13 @@
 name: wheels
 
-# Build binary wheels for aird-transfer (Rust) and a pure-Python aird wheel.
-# Publish to PyPI on tags:
-#   aird-transfer-v0.1.0  → uploads aird-transfer only
-#   v0.4.25               → uploads aird (and aird-transfer if matrix built)
-#
-# PyPI: set repository secret PYPI_API_TOKEN (pypi.org → Account → API tokens).
+# Binary wheels for aird-transfer. The aird package is published by ci.yml:
+# main → patch, rc → release candidate, feature branches → dev.
 
 on:
   workflow_dispatch:
   push:
     tags:
-      - "v*"
       - "aird-transfer-v*"
-      - "*-dev*"
 
 jobs:
   aird-transfer:
@@ -47,38 +41,12 @@ jobs:
           working-directory: native/aird_transfer
           command: sdist
           args: --out dist
+          sccache: "true"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: aird-transfer-${{ matrix.os }}
           path: native/aird_transfer/dist/*
-
-  aird:
-    name: aird (pure Python)
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
-        with:
-          python-version: "3.12"
-
-      - name: Build share UI bundle
-        run: |
-          npm ci --ignore-scripts
-          npm run js:share
-
-      - name: Build sdist + wheel
-        run: |
-          python -m pip install --require-hashes --only-binary=:all: -r requirements-ci.txt
-          python -m build --sdist --wheel -o dist
-
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: aird-python
-          path: dist/*
 
   publish-aird-transfer:
     name: Publish aird-transfer to PyPI
@@ -92,25 +60,6 @@ jobs:
         with:
           pattern: aird-transfer-*
           merge-multiple: true
-          path: dist
-
-      - name: Publish
-        uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # v1.12.4
-        with:
-          packages-dir: dist/
-          password: ${{ secrets.PYPI_API_TOKEN }}
-
-  publish-aird:
-    name: Publish aird to PyPI
-    needs: [aird]
-    if: startsWith(github.ref, 'refs/tags/v') || contains(github.ref, '-dev')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
-        with:
-          name: aird-python
           path: dist
 
       - name: Publish

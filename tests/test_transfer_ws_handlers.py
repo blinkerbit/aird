@@ -75,7 +75,7 @@ async def test_download_streams_file(tmp_path):
         yield b"abc123"
 
     with patch(
-        "aird.handlers.transfer_ws_handlers.get_user_root", return_value=str(tmp_path)
+        "aird.handlers.base_handler.get_user_root", return_value=str(tmp_path)
     ), patch(
         "aird.handlers.transfer_ws_handlers.is_feature_enabled", return_value=True
     ), patch(

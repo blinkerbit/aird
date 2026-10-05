@@ -52,6 +52,7 @@ from aird.core.browse_paths import (
     resolve_rel,
     resolve_share_rel,
 )
+from aird.core.share_root import filesystem_root_for_share
 from aird.db.shares import list_files_for_tag_share, share_covers_relative_path
 from aird import constants as constants_module
 from aird.cloud import CloudProviderError
