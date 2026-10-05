@@ -42,7 +42,11 @@ jobs:
           npm run js:share
 
       - name: Run tests
-        run: python -m pytest tests/ -q --tb=no
+        run: |
+          # Reuse the wheel from "Install package" so slow packaging tests skip a second build.
+          export AIRD_TEST_WHEEL="$(pwd)/$(ls dist/aird-*.whl | head -1)"
+          # Include @pytest.mark.slow; pytest.ini defaults to -m "not slow" for local smoke.
+          python -m pytest tests/ -q --tb=no -m "slow or not slow"
 
   release:
     name: Publish

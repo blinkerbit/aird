@@ -1,7 +1,13 @@
-"""Ensure release wheels ship all package data and template-referenced static assets."""
+"""Ensure release wheels ship all package data and template-referenced static assets.
+
+Marked slow: the default fixture runs ``npm run js:share`` and ``python -m build``.
+Local/default pytest excludes ``slow`` (see pytest.ini). CI re-enables them and can
+pass ``AIRD_TEST_WHEEL`` to reuse the wheel already built in the workflow.
+"""
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -13,6 +19,8 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.slow
 
 ROOT = Path(__file__).resolve().parents[1]
 PKG = ROOT / "aird"
@@ -106,8 +114,23 @@ def _build_lock(path: Path):
             pass
 
 
+def _reuse_prebuilt_wheel() -> Path | None:
+    """Reuse only when AIRD_TEST_WHEEL is set (CI); never auto-pick stale dist/."""
+    raw = (os.environ.get("AIRD_TEST_WHEEL") or "").strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    if path.is_file():
+        return path
+    pytest.fail(f"AIRD_TEST_WHEEL is set but not a file: {path}")
+
+
 @pytest.fixture(scope="module")
 def built_wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    reused = _reuse_prebuilt_wheel()
+    if reused is not None:
+        return reused
+
     pytest.importorskip("build")
     lock = Path(tempfile.gettempdir()) / "aird-pytest-wheel.lockdir"
     with _build_lock(lock):

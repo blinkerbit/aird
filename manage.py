@@ -135,9 +135,15 @@ def install():
     )
 
 
-def test(verbose=False, quick=False):
-    """Run tests using pytest."""
+def test(verbose=False, quick=False, all_tests=False):
+    """Run tests using pytest.
+
+    Default matches pytest.ini: parallel unit suite, skip @pytest.mark.slow
+    (wheel/npm packaging). Pass all_tests=True / --all to include slow tests.
+    """
     cmd = [sys.executable, "-m", "pytest", "tests/", "-n", "18"]
+    if all_tests:
+        cmd.extend(["-m", "slow or not slow"])
     if quick:
         cmd.extend(["-q", "--no-header"])
     elif verbose:
@@ -301,7 +307,13 @@ def main():
 
     test_parser = subparsers.add_parser("test", help="Run tests")
     test_parser.add_argument("--verbose", action="store_true", help="Verbose output")
-    test_parser.add_argument("--quick", action="store_true", help="Quick run")
+    test_parser.add_argument("--quick", action="store_true", help="Quieter pytest output")
+    test_parser.add_argument(
+        "--all",
+        action="store_true",
+        dest="all_tests",
+        help="Include slow packaging/wheel tests (default skips them)",
+    )
 
     release_parser = subparsers.add_parser("release", help="Bump version and publish stable")
     release_parser.add_argument(
@@ -340,7 +352,7 @@ def main():
     elif args.command == "lint":
         lint()
     elif args.command == "test":
-        test(verbose=args.verbose, quick=args.quick)
+        test(verbose=args.verbose, quick=args.quick, all_tests=args.all_tests)
     elif args.command == "release":
         release(args.part)
     elif args.command == "release-dev":
