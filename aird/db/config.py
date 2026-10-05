@@ -67,7 +67,7 @@ def load_json_server_config(conn: sqlite3.Connection, key: str) -> dict:
         return {}
     try:
         data = json.loads(raw)
-    except (TypeError, ValueError, json.JSONDecodeError):
+    except (TypeError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
 

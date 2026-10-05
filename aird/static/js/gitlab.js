@@ -4,8 +4,8 @@ const TOKEN_KEY = (host) => `aird.gitlab.token.${host || "gitlab.com"}`;
 const BRIDGE_KEY = "aird.gitlab.bridge";
 
 function xsrf() {
-  const m = document.cookie.match(/(?:^|; )_xsrf=([^;]+)/);
-  return m ? decodeURIComponent(m[1]) : "";
+  const match = /(?:^|; )_xsrf=([^;]+)/.exec(document.cookie);
+  return match ? decodeURIComponent(match[1]) : "";
 }
 
 function currentPath() {
@@ -66,18 +66,57 @@ function setViewerToken(host, token) {
   else localStorage.removeItem(key);
 }
 
-function apiRoot(host) {
-  const bridge = localStorage.getItem(BRIDGE_KEY);
-  const base = (host || "https://gitlab.com").replace(/\/$/, "");
-  if (bridge) return `${bridge.replace(/\/$/, "")}/api/v4`;
-  return `${base}/api/v4`;
+const GITLAB_API = "https://gitlab.com/api/v4";
+const LOCAL_BRIDGES = ["http://127.0.0.1:8765", "http://localhost:8765"];
+
+function bridgeBase() {
+  const stored = String(localStorage.getItem(BRIDGE_KEY) || "").replace(/\/$/, "");
+  return LOCAL_BRIDGES.includes(stored) ? stored : "";
+}
+
+function gitlabHttpsOrigin(host) {
+  const base = String(host || "https://gitlab.com").replace(/\/$/, "");
+  if (base === "https://gitlab.com") return "https://gitlab.com";
+  try {
+    const parsed = new URL(base);
+    const name = parsed.hostname.toLowerCase();
+    const safe = parsed.protocol === "https:" && !parsed.username && !parsed.password && !parsed.port
+      && /^[a-z0-9.-]+$/.test(name);
+    const allowed = safe ? ["https://gitlab.com", `https://${name}`] : ["https://gitlab.com"];
+    if (allowed.includes(base)) return base;
+  } catch {
+    /* fall through */
+  }
+  return "https://gitlab.com";
+}
+
+function gitlabApiRoot(host) {
+  const bridge = bridgeBase();
+  if (LOCAL_BRIDGES.includes(bridge)) return `${bridge}/api/v4`;
+  const origin = gitlabHttpsOrigin(host);
+  if (origin === "https://gitlab.com") return GITLAB_API;
+  return `${origin}/api/v4`;
+}
+
+function gitlabRequestUrl(host, path) {
+  const root = gitlabApiRoot(host);
+  const raw = String(path || "").replace(/^\//, "");
+  const queryAt = raw.indexOf("?");
+  const pathname = queryAt === -1 ? raw : raw.slice(0, queryAt);
+  const query = queryAt === -1 ? "" : raw.slice(queryAt + 1);
+  const segments = pathname.split("/").filter(Boolean).map((part) => encodeURIComponent(part));
+  const url = new URL(root.endsWith("/") ? root : `${root}/`);
+  url.pathname = `${url.pathname.replace(/\/$/, "")}/${segments.join("/")}`;
+  if (query) url.search = `?${query}`;
+  if (url.origin !== new URL(root).origin) throw new Error("Unsupported GitLab host");
+  return url;
 }
 
 async function glFetch(host, token, path, { method = "GET", body } = {}) {
-  const url = `${apiRoot(host)}/${String(path).replace(/^\//, "")}`;
+  const url = gitlabRequestUrl(host, path);
   const headers = { Accept: "application/json", "PRIVATE-TOKEN": token };
   if (body) headers["Content-Type"] = "application/json";
-  if (bridgeHost()) headers["X-Gitlab-Host"] = (host || "https://gitlab.com").replace(/\/$/, "");
+  if (bridgeBase()) headers["X-Gitlab-Host"] = gitlabHttpsOrigin(host);
   const resp = await fetch(url, {
     method,
     headers,
@@ -88,10 +127,6 @@ async function glFetch(host, token, path, { method = "GET", body } = {}) {
   return data;
 }
 
-function bridgeHost() {
-  return Boolean(localStorage.getItem(BRIDGE_KEY));
-}
-
 function encProject(project) {
   return encodeURIComponent(project || "");
 }
@@ -100,16 +135,89 @@ function panelEl() {
   return document.getElementById("gitlabPanel");
 }
 
-function setHtml(el, html) {
-  if (el) el.innerHTML = html;
+function panelBodyEl() {
+  return panelEl()?.querySelector(".gitlab-panel-body") ?? null;
 }
 
-function escapeHtml(s) {
-  return String(s ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+function externalLink(href, text) {
+  const link = document.createElement("a");
+  link.className = "link";
+  const safe = httpsUrl(href);
+  if (safe) {
+    link.href = safe;
+    link.target = "_blank";
+    link.rel = "noopener";
+  }
+  link.textContent = text;
+  return link;
+}
+
+function formField(labelText, input) {
+  const label = document.createElement("label");
+  label.append(document.createTextNode(`${labelText} `), input);
+  return label;
+}
+
+function textInput(name, value, opts = {}) {
+  const input = document.createElement("input");
+  input.name = name;
+  input.value = String(value ?? "");
+  if (opts.placeholder) input.placeholder = opts.placeholder;
+  if (opts.type) input.type = opts.type;
+  return input;
+}
+
+function httpsUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    return url.protocol === "https:" ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function dashCard(label, body, wide) {
+  const card = document.createElement("div");
+  card.className = wide ? "gitlab-dash-card gitlab-dash-card--wide" : "gitlab-dash-card";
+  const lab = document.createElement("div");
+  lab.className = "gitlab-dash-label";
+  lab.textContent = label;
+  card.append(lab);
+  if (body instanceof Node) card.append(body);
+  else {
+    const val = document.createElement("div");
+    val.className = "gitlab-dash-value";
+    val.textContent = body;
+    card.append(val);
+  }
+  return card;
+}
+
+function listNote(list, className, text) {
+  const note = document.createElement("p");
+  note.className = className;
+  note.textContent = text;
+  list.replaceChildren(note);
+}
+
+function fileRow(className, full, name, icon, text) {
+  const li = document.createElement("li");
+  li.className = "gitlab-file-row";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = className;
+  btn.dataset.path = full;
+  if (name) btn.dataset.name = name;
+  const iconEl = document.createElement("span");
+  iconEl.className = "gitlab-file-icon";
+  iconEl.setAttribute("aria-hidden", "true");
+  iconEl.textContent = icon;
+  const nameEl = document.createElement("span");
+  if (name) nameEl.className = "gitlab-file-name";
+  nameEl.textContent = text;
+  btn.append(iconEl, nameEl);
+  li.append(btn);
+  return { li, btn };
 }
 
 function badgeClass(status) {
@@ -156,32 +264,75 @@ async function loadDashboard() {
   const users = _dashboard.active_users || [];
   const issues = _dashboard.open_issues || [];
   const mrs = _dashboard.merge_requests || [];
-  const userHtml = user
-    ? `<div class="gitlab-dash-card"><div class="gitlab-dash-label">Signed in</div><div class="gitlab-dash-value">${escapeHtml(user.name || user.username)}</div></div>`
-    : `<div class="gitlab-dash-card"><div class="gitlab-dash-label">Signed in</div><div class="gitlab-dash-value opacity-60">Token required</div></div>`;
-  const teamHtml = users.length
-    ? `<div class="gitlab-dash-card gitlab-dash-card--wide"><div class="gitlab-dash-label">Active on board</div><div class="gitlab-dash-users">${users.map((u) => `<span class="gitlab-dash-user">${escapeHtml(u.name || u.username)}</span>`).join("")}</div></div>`
-    : "";
-  grid.innerHTML = `${userHtml}
-    <div class="gitlab-dash-card"><div class="gitlab-dash-label">Open issues</div><div class="gitlab-dash-value">${_dashboard.open_issue_count ?? issues.length}</div></div>
-    <div class="gitlab-dash-card"><div class="gitlab-dash-label">Open MRs</div><div class="gitlab-dash-value">${_dashboard.open_mr_count ?? mrs.length}</div></div>
-    ${teamHtml}
-    <div class="gitlab-dash-card gitlab-dash-card--wide">
-      <div class="gitlab-dash-label">Recent issues</div>
-      <div class="gitlab-dash-list">${issues.slice(0, 8).map((iss) =>
-        `<a class="link text-sm" href="${escapeHtml(iss.web_url || "#")}" target="_blank">#${iss.iid} ${escapeHtml(iss.title)}</a>`
-      ).join("") || "<span class='text-xs opacity-60'>Refresh to load cached tickets</span>"}</div>
-    </div>
-    <div class="gitlab-dash-card gitlab-dash-card--wide">
-      <div class="gitlab-dash-label">Open merge requests</div>
-      <div class="gitlab-dash-list">${mrs.slice(0, 6).map((mr) =>
-        `<button type="button" class="link text-sm gitlab-dash-mr" data-iid="${mr.iid}">!${mr.iid} ${escapeHtml(mr.title)}</button>`
-      ).join("") || "<span class='text-xs opacity-60'>None</span>"}</div>
-    </div>`;
+  const signed = document.createElement("div");
+  signed.className = user ? "gitlab-dash-value" : "gitlab-dash-value opacity-60";
+  signed.textContent = user ? (user.name || user.username || "") : "Token required";
+  const cards = [
+    dashCard("Signed in", signed),
+    dashCard("Open issues", String(_dashboard.open_issue_count ?? issues.length)),
+    dashCard("Open MRs", String(_dashboard.open_mr_count ?? mrs.length)),
+  ];
+  if (users.length) {
+    const people = document.createElement("div");
+    people.className = "gitlab-dash-users";
+    users.forEach((person) => {
+      const span = document.createElement("span");
+      span.className = "gitlab-dash-user";
+      span.textContent = person.name || person.username || "";
+      people.append(span);
+    });
+    cards.push(dashCard("Active on board", people, true));
+  }
+  cards.push(dashCard("Recent issues", issueLinks(issues), true), dashCard("Open merge requests", mrButtons(mrs), true));
+  grid.replaceChildren(...cards);
   if (meta) meta.textContent = formatCacheAge(_dashboard.cache?.refreshed_at);
-  grid.querySelectorAll(".gitlab-dash-mr").forEach((btn) => {
-    btn.addEventListener("click", () => void openMr(btn.dataset.iid));
+}
+
+function issueLinks(issues) {
+  const list = document.createElement("div");
+  list.className = "gitlab-dash-list";
+  if (!issues.length) {
+    const empty = document.createElement("span");
+    empty.className = "text-xs opacity-60";
+    empty.textContent = "Refresh to load cached tickets";
+    list.append(empty);
+    return list;
+  }
+  issues.slice(0, 8).forEach((iss) => {
+    const link = document.createElement("a");
+    link.className = "link text-sm";
+    const href = httpsUrl(iss.web_url);
+    if (href) {
+      link.href = href;
+      link.target = "_blank";
+      link.rel = "noopener";
+    }
+    link.textContent = `#${iss.iid} ${iss.title || ""}`;
+    list.append(link);
   });
+  return list;
+}
+
+function mrButtons(mrs) {
+  const list = document.createElement("div");
+  list.className = "gitlab-dash-list";
+  if (!mrs.length) {
+    const empty = document.createElement("span");
+    empty.className = "text-xs opacity-60";
+    empty.textContent = "None";
+    list.append(empty);
+    return list;
+  }
+  mrs.slice(0, 6).forEach((mr) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "link text-sm gitlab-dash-mr";
+    btn.dataset.iid = String(mr.iid ?? "");
+    btn.textContent = `!${mr.iid} ${mr.title || ""}`;
+    btn.addEventListener("click", () => void openMr(btn.dataset.iid));
+    list.append(btn);
+  });
+  return list;
 }
 
 async function refreshTickets() {
@@ -213,21 +364,44 @@ function renderStrip() {
   const strip = document.getElementById("gitlabStrip");
   if (!strip || !_status) return;
   const b = _status.binding;
-  const bits = [];
-  bits.push(`<button type="button" class="btn btn-ghost btn-xs" id="gitlabBindBtn">${b ? "GitLab settings" : "Link GitLab"}</button>`);
+  const bindBtn = document.createElement("button");
+  bindBtn.type = "button";
+  bindBtn.className = "btn btn-ghost btn-xs";
+  bindBtn.id = "gitlabBindBtn";
+  bindBtn.textContent = b ? "GitLab settings" : "Link GitLab";
+  bindBtn.addEventListener("click", openBind);
+  strip.replaceChildren(bindBtn);
   if (_status.is_self) {
-    bits.push(`<span class="text-xs opacity-60">${_status.token_configured ? "Token ready" : "Token missing — set in Admin → Plugins"}</span>`);
+    const hint = document.createElement("span");
+    hint.className = "text-xs opacity-60";
+    hint.textContent = _status.token_configured ? "Token ready" : "Token missing — set in Admin → Plugins";
+    strip.append(hint);
   } else {
-    bits.push(`<button type="button" class="btn btn-ghost btn-xs" id="gitlabViewerTokenBtn">Browser GitLab token</button>`);
+    const viewerBtn = document.createElement("button");
+    viewerBtn.type = "button";
+    viewerBtn.className = "btn btn-ghost btn-xs";
+    viewerBtn.id = "gitlabViewerTokenBtn";
+    viewerBtn.textContent = "Browser GitLab token";
+    viewerBtn.addEventListener("click", openViewerToken);
+    strip.append(viewerBtn);
   }
-  bits.push(`<button type="button" class="btn btn-ghost btn-xs" id="gitlabMrsBtn">MRs</button>`);
-  bits.push(`<button type="button" class="btn btn-ghost btn-xs" id="gitlabBoardBtn">Board</button>`);
-  bits.push(`<span id="gitlabCiBadge" class="gitlab-badge">CI …</span>`);
-  strip.innerHTML = bits.join("");
-  strip.querySelector("#gitlabBindBtn")?.addEventListener("click", openBind);
-  strip.querySelector("#gitlabViewerTokenBtn")?.addEventListener("click", openViewerToken);
-  strip.querySelector("#gitlabMrsBtn")?.addEventListener("click", openMrs);
-  strip.querySelector("#gitlabBoardBtn")?.addEventListener("click", openBoard);
+  const mrsBtn = document.createElement("button");
+  mrsBtn.type = "button";
+  mrsBtn.className = "btn btn-ghost btn-xs";
+  mrsBtn.id = "gitlabMrsBtn";
+  mrsBtn.textContent = "MRs";
+  mrsBtn.addEventListener("click", openMrs);
+  const boardBtn = document.createElement("button");
+  boardBtn.type = "button";
+  boardBtn.className = "btn btn-ghost btn-xs";
+  boardBtn.id = "gitlabBoardBtn";
+  boardBtn.textContent = "Board";
+  boardBtn.addEventListener("click", openBoard);
+  const ciBadge = document.createElement("span");
+  ciBadge.id = "gitlabCiBadge";
+  ciBadge.className = "gitlab-badge";
+  ciBadge.textContent = "CI …";
+  strip.append(mrsBtn, boardBtn, ciBadge);
 }
 
 async function loadCi() {
@@ -288,12 +462,26 @@ function renderPathBar() {
   if (!bar) return;
   const dir = currentPath();
   const parts = dir.split("/").filter(Boolean);
-  const crumbs = ['<a href="#" class="gitlab-path-crumb" data-path="">Home</a>'];
+  const nodes = [];
+  const home = document.createElement("a");
+  home.href = "#";
+  home.className = "gitlab-path-crumb";
+  home.dataset.path = "";
+  home.textContent = "Home";
+  nodes.push(home);
   parts.forEach((part, i) => {
-    const partial = parts.slice(0, i + 1).join("/");
-    crumbs.push(`<span class="opacity-40">/</span><a href="#" class="gitlab-path-crumb" data-path="${escapeHtml(partial)}">${escapeHtml(part)}</a>`);
+    const sep = document.createElement("span");
+    sep.className = "opacity-40";
+    sep.textContent = "/";
+    nodes.push(sep);
+    const link = document.createElement("a");
+    link.href = "#";
+    link.className = "gitlab-path-crumb";
+    link.dataset.path = parts.slice(0, i + 1).join("/");
+    link.textContent = part;
+    nodes.push(link);
   });
-  bar.innerHTML = crumbs.join(" ");
+  bar.replaceChildren(...nodes);
   bar.querySelectorAll(".gitlab-path-crumb").forEach((link) => {
     link.addEventListener("click", (ev) => {
       ev.preventDefault();
@@ -327,7 +515,7 @@ async function loadFolderFiles() {
   if (!list || !_status) return;
   const dir = currentPath();
   const enc = dir.split("/").filter(Boolean).map(encodeURIComponent).join("/");
-  list.innerHTML = `<p class="text-sm opacity-60">Loading files…</p>`;
+  listNote(list, "text-sm opacity-60", "Loading files…");
   let files = [];
   try {
     const res = await fetch(enc ? `/api/files/${enc}` : "/api/files/", { credentials: "same-origin" });
@@ -335,7 +523,7 @@ async function loadFolderFiles() {
     if (!res.ok) throw new Error(data.error || res.statusText || "Could not list folder");
     files = data.files || [];
   } catch (err) {
-    list.innerHTML = `<p class="text-error text-sm">${escapeHtml(err.message)}</p>`;
+    listNote(list, "text-error text-sm", err.message || "Could not list folder");
     return;
   }
   const names = files.map((f) => f.name).filter(Boolean);
@@ -354,57 +542,60 @@ async function loadFolderFiles() {
     } catch (_) { /* ignore */ }
   }
   if (!files.length && !dir) {
-    list.innerHTML = `<p class="text-sm opacity-60">This folder is empty.</p>`;
+    listNote(list, "text-sm opacity-60", "This folder is empty.");
     return;
   }
   const rows = [];
   if (dir) {
-    rows.push(`<li class="gitlab-file-row">
-      <button type="button" class="gitlab-file-link gitlab-open-dir" data-path="${escapeHtml(parentPath(dir))}">
-        <span class="gitlab-file-icon" aria-hidden="true">📁</span>
-        <span>..</span>
-      </button>
-    </li>`);
+    const up = fileRow("gitlab-file-link gitlab-open-dir", parentPath(dir), "", "📁", "..");
+    up.btn.addEventListener("click", () => navigateTo(up.btn.dataset.path || ""));
+    rows.push(up.li);
   }
   files.forEach((f) => {
     const full = joinRel(dir, f.name);
-    const n = counts[f.name] || 0;
-    const issues = issuesBy[f.name] || [];
-    const label = commentLabel(n, issues);
-    const icon = f.is_dir ? "📁" : "📄";
+    const label = commentLabel(counts[f.name] || 0, issuesBy[f.name] || []);
     const linkClass = f.is_dir ? "gitlab-file-link gitlab-open-dir" : "gitlab-file-link gitlab-open-file";
-    rows.push(`<li class="gitlab-file-row">
-      <button type="button" class="${linkClass}" data-path="${escapeHtml(full)}" data-name="${escapeHtml(f.name)}" data-is-dir="${f.is_dir ? "1" : "0"}">
-        <span class="gitlab-file-icon" aria-hidden="true">${icon}</span>
-        <span class="gitlab-file-name">${escapeHtml(f.name)}</span>
-      </button>
-      <button type="button" class="btn btn-ghost btn-xs gitlab-open-comments" data-path="${escapeHtml(full)}" data-name="${escapeHtml(f.name)}">${escapeHtml(label)}</button>
-    </li>`);
-  });
-  list.innerHTML = rows.join("");
-  list.querySelectorAll(".gitlab-open-dir").forEach((btn) => {
-    btn.addEventListener("click", () => navigateTo(btn.dataset.path || ""));
-  });
-  list.querySelectorAll(".gitlab-open-file").forEach((btn) => {
-    btn.addEventListener("click", () => void openCommentsPanel(btn.dataset.path, btn.dataset.name, false));
-  });
-  list.querySelectorAll(".gitlab-open-comments").forEach((btn) => {
-    btn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      const row = btn.closest(".gitlab-file-row");
-      const isDir = row?.querySelector(".gitlab-open-dir") != null;
-      void openCommentsPanel(btn.dataset.path, btn.dataset.name, isDir);
+    const row = fileRow(linkClass, full, f.name, f.is_dir ? "📁" : "📄", f.name);
+    row.btn.addEventListener("click", () => {
+      if (f.is_dir) navigateTo(full);
+      else void openCommentsPanel(full, f.name, false);
     });
+    const comments = document.createElement("button");
+    comments.type = "button";
+    comments.className = "btn btn-ghost btn-xs gitlab-open-comments";
+    comments.textContent = label;
+    comments.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      void openCommentsPanel(full, f.name, !!f.is_dir);
+    });
+    row.li.append(comments);
+    rows.push(row.li);
   });
+  list.replaceChildren(...rows);
   renderPathBar();
 }
 
-function openPanel(title, html) {
+function openPanel(title, content) {
   const panel = panelEl();
   if (!panel) return;
   panel.hidden = false;
   panel.querySelector(".gitlab-panel-title").textContent = title;
-  setHtml(panel.querySelector(".gitlab-panel-body"), html);
+  const body = panel.querySelector(".gitlab-panel-body");
+  if (!body) return;
+  if (content instanceof Node) body.replaceChildren(content);
+  else {
+    const p = document.createElement("p");
+    p.className = "text-sm";
+    p.textContent = String(content);
+    body.replaceChildren(p);
+  }
+}
+
+function setPanelError(message) {
+  const p = document.createElement("p");
+  p.className = "text-error";
+  p.textContent = message || "";
+  panelBodyEl()?.replaceChildren(p);
 }
 
 function closePanel() {
@@ -419,20 +610,33 @@ function closePanel() {
 
 function openBind() {
   const b = _status?.binding || {};
-  openPanel(
-    "Link GitLab",
-    `<form class="gitlab-form" id="gitlabBindForm">
-      <label>GitLab host <input name="gitlab_host" value="${escapeHtml(b.gitlab_host || "https://gitlab.com")}" /></label>
-      <label>Code project (CI / MRs) <input name="code_project" value="${escapeHtml(b.code_project || "")}" placeholder="group/app" /></label>
-      <label>Issues / board project <input name="issues_project" value="${escapeHtml(b.issues_project || "")}" placeholder="group/scrum" /></label>
-      <label>Board id <input name="board_iid" value="${escapeHtml(b.board_iid || "")}" /></label>
-      <label>Repo path prefix <input name="repo_path_prefix" value="${escapeHtml(b.repo_path_prefix || "")}" /></label>
-      <div class="mt-3 flex gap-2">
-        <button class="btn btn-primary btn-sm" type="submit">Save</button>
-        ${b.code_project ? '<button class="btn btn-ghost btn-sm" type="button" id="gitlabUnbind">Remove</button>' : ""}
-      </div>
-    </form>`
+  const form = document.createElement("form");
+  form.className = "gitlab-form";
+  form.id = "gitlabBindForm";
+  form.append(
+    formField("GitLab host", textInput("gitlab_host", b.gitlab_host || "https://gitlab.com")),
+    formField("Code project (CI / MRs)", textInput("code_project", b.code_project || "", { placeholder: "group/app" })),
+    formField("Issues / board project", textInput("issues_project", b.issues_project || "", { placeholder: "group/scrum" })),
+    formField("Board id", textInput("board_iid", b.board_iid || "")),
+    formField("Repo path prefix", textInput("repo_path_prefix", b.repo_path_prefix || "")),
   );
+  const actions = document.createElement("div");
+  actions.className = "mt-3 flex gap-2";
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "btn btn-primary btn-sm";
+  saveBtn.type = "submit";
+  saveBtn.textContent = "Save";
+  actions.append(saveBtn);
+  if (b.code_project) {
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "btn btn-ghost btn-sm";
+    removeBtn.type = "button";
+    removeBtn.id = "gitlabUnbind";
+    removeBtn.textContent = "Remove";
+    actions.append(removeBtn);
+  }
+  form.append(actions);
+  openPanel("Link GitLab", form);
   document.getElementById("gitlabBindForm")?.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const fd = new FormData(ev.target);
@@ -453,31 +657,118 @@ function openBind() {
 
 function openViewerToken() {
   const host = _status?.binding?.gitlab_host || "https://gitlab.com";
-  openPanel(
-    "Your GitLab token (browser only)",
-    `<p class="text-sm opacity-70">Never sent to Aird. Needed to see live GitLab data on a share.</p>
-     <form class="gitlab-form" id="gitlabVTok">
-       <label>Token <input name="token" type="password" value="${escapeHtml(viewerToken(host))}" /></label>
-       <label>CORS bridge (optional) <input name="bridge" placeholder="http://127.0.0.1:8765" value="${escapeHtml(localStorage.getItem(BRIDGE_KEY) || "")}" /></label>
-       <button class="btn btn-primary btn-sm mt-2" type="submit">Save in this browser</button>
-     </form>`
+  const wrap = document.createDocumentFragment();
+  const intro = document.createElement("p");
+  intro.className = "text-sm opacity-70";
+  intro.textContent = "Never sent to Aird. Needed to see live GitLab data on a share.";
+  const form = document.createElement("form");
+  form.className = "gitlab-form";
+  form.id = "gitlabVTok";
+  form.append(
+    formField("Token", textInput("token", viewerToken(host), { type: "password" })),
+    formField(
+      "CORS bridge (optional)",
+      textInput("bridge", localStorage.getItem(BRIDGE_KEY) || "", { placeholder: "http://127.0.0.1:8765" }),
+    ),
   );
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "btn btn-primary btn-sm mt-2";
+  saveBtn.type = "submit";
+  saveBtn.textContent = "Save in this browser";
+  form.append(saveBtn);
+  wrap.append(intro, form);
+  openPanel("Your GitLab token (browser only)", wrap);
   document.getElementById("gitlabVTok")?.addEventListener("submit", (ev) => {
     ev.preventDefault();
     const fd = new FormData(ev.target);
     setViewerToken(host, fd.get("token"));
-    const bridge = String(fd.get("bridge") || "").trim();
-    if (bridge) localStorage.setItem(BRIDGE_KEY, bridge);
+    const bridgeField = fd.get("bridge");
+    const bridge = (typeof bridgeField === "string" ? bridgeField : "").trim().replace(/\/$/, "");
+    if (LOCAL_BRIDGES.includes(bridge)) localStorage.setItem(BRIDGE_KEY, bridge);
     else localStorage.removeItem(BRIDGE_KEY);
     closePanel();
     void loadCi();
   });
 }
 
+function buildCommentsPanelBody(issues, comments, canWrite, target) {
+  const body = document.createDocumentFragment();
+  if (issues.length) {
+    const issueHead = document.createElement("h4");
+    issueHead.className = "font-semibold text-sm mt-2";
+    issueHead.textContent = "Linked issues";
+    body.append(issueHead);
+    issues.forEach((iss) => {
+      const row = document.createElement("div");
+      row.append(externalLink(iss.web_url, `#${iss.iid} ${iss.title || ""}`));
+      body.append(row);
+    });
+  } else {
+    const emptyIssues = document.createElement("p");
+    emptyIssues.className = "text-xs opacity-60";
+    emptyIssues.textContent = `No GitLab issue mentions for this ${target}.`;
+    body.append(emptyIssues);
+  }
+  const commentsHead = document.createElement("h4");
+  commentsHead.className = "font-semibold text-sm mt-3";
+  commentsHead.textContent = "Aird comments";
+  body.append(commentsHead);
+  if (!comments.length) {
+    const emptyComments = document.createElement("p");
+    emptyComments.className = "text-xs opacity-60";
+    emptyComments.textContent = "No comments yet.";
+    body.append(emptyComments);
+  } else {
+    comments.forEach((c) => {
+      const block = document.createElement("div");
+      block.className = "gitlab-comment";
+      block.dataset.id = String(c.id ?? "");
+      const meta = document.createElement("div");
+      meta.className = "gitlab-comment-meta";
+      meta.textContent = `${c.author_username || ""} · ${c.created_at || ""}${c.gitlab_note_id ? " · promoted" : ""}`;
+      const text = document.createElement("div");
+      text.textContent = c.body || "";
+      block.append(meta, text);
+      if (canWrite && !c.gitlab_note_id && issues[0]) {
+        const promote = document.createElement("button");
+        promote.type = "button";
+        promote.className = "btn btn-ghost btn-xs gitlab-promote";
+        promote.dataset.id = String(c.id ?? "");
+        promote.dataset.iid = String(issues[0].iid ?? "");
+        promote.textContent = "Promote";
+        block.append(promote);
+      }
+      body.append(block);
+    });
+  }
+  if (canWrite) {
+    const form = document.createElement("form");
+    form.id = "gitlabCommentForm";
+    form.className = "gitlab-form mt-3";
+    const area = document.createElement("textarea");
+    area.name = "body";
+    area.className = "textarea textarea-bordered w-full";
+    area.rows = 3;
+    form.append(formField("Comment", area));
+    const postBtn = document.createElement("button");
+    postBtn.className = "btn btn-primary btn-sm mt-2";
+    postBtn.type = "submit";
+    postBtn.textContent = "Post";
+    form.append(postBtn);
+    body.append(form);
+  } else {
+    const ro = document.createElement("p");
+    ro.className = "text-xs opacity-60";
+    ro.textContent = "Read-only share — you can view comments.";
+    body.append(ro);
+  }
+  return body;
+}
+
 async function openCommentsPanel(fullPath, name, isDir = false) {
   const rel = (fullPath || "").replace(/^\/+/, "");
   _panelTarget = { fullPath, name, isDir };
-  openPanel(name || rel, `<p class="text-sm">Loading…</p>`);
+  openPanel(name || rel, "Loading…");
   const q = qs({ path: rel });
   let comments = [];
   let canWrite = false;
@@ -486,7 +777,7 @@ async function openCommentsPanel(fullPath, name, isDir = false) {
     comments = data.comments || [];
     canWrite = data.can_write;
   } catch (err) {
-    setHtml(panelEl().querySelector(".gitlab-panel-body"), `<p class="text-error">${escapeHtml(err.message)}</p>`);
+    setPanelError(err.message);
     return;
   }
   let issues = [];
@@ -497,26 +788,7 @@ async function openCommentsPanel(fullPath, name, isDir = false) {
     }
   } catch (_) { /* ignore */ }
   const target = isDir ? "folder" : "file";
-  const issueHtml = issues.length
-    ? `<h4 class="font-semibold text-sm mt-2">Linked issues</h4>` +
-      issues.map((iss) => `<div><a class="link" href="${escapeHtml(iss.web_url)}" target="_blank">#${iss.iid} ${escapeHtml(iss.title)}</a></div>`).join("")
-    : `<p class="text-xs opacity-60">No GitLab issue mentions for this ${target}.</p>`;
-  const commentsHtml = comments.map((c) => `
-    <div class="gitlab-comment" data-id="${escapeHtml(c.id)}">
-      <div class="gitlab-comment-meta">${escapeHtml(c.author_username)} · ${escapeHtml(c.created_at || "")}${c.gitlab_note_id ? " · promoted" : ""}</div>
-      <div>${escapeHtml(c.body)}</div>
-      ${canWrite && !c.gitlab_note_id && issues[0] ? `<button type="button" class="btn btn-ghost btn-xs gitlab-promote" data-id="${escapeHtml(c.id)}" data-iid="${issues[0].iid}">Promote</button>` : ""}
-    </div>`).join("") || "<p class='text-xs opacity-60'>No comments yet.</p>";
-  const form = canWrite
-    ? `<form id="gitlabCommentForm" class="gitlab-form mt-3">
-         <label>Comment <textarea name="body" class="textarea textarea-bordered w-full" rows="3"></textarea></label>
-         <button class="btn btn-primary btn-sm mt-2" type="submit">Post</button>
-       </form>`
-    : `<p class="text-xs opacity-60">Read-only share — you can view comments.</p>`;
-  setHtml(
-    panelEl().querySelector(".gitlab-panel-body"),
-    `${issueHtml}<h4 class="font-semibold text-sm mt-3">Aird comments</h4>${commentsHtml}${form}`
-  );
+  panelBodyEl()?.replaceChildren(buildCommentsPanelBody(issues, comments, canWrite, target));
   document.getElementById("gitlabCommentForm")?.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const body = new FormData(ev.target).get("body");
@@ -566,7 +838,7 @@ function connectCommentsWs(rel) {
   _ws.onmessage = (ev) => {
     try {
       const msg = JSON.parse(ev.data);
-      if (msg.type && msg.type.startsWith("comment_") && _panelTarget) {
+      if (msg.type?.startsWith("comment_") && _panelTarget) {
         const { fullPath, name, isDir } = _panelTarget;
         void openCommentsPanel(fullPath, name, isDir);
       }
@@ -584,16 +856,31 @@ async function openMrs() {
       const host = _status.binding.gitlab_host;
       mrs = await glFetch(host, viewerToken(host), `projects/${encProject(_status.binding.code_project)}/merge_requests?state=opened`);
     }
-    const html = (mrs || []).map((mr) =>
-      `<div class="gitlab-card"><button type="button" class="link gitlab-mr" data-iid="${mr.iid}">!${mr.iid} ${escapeHtml(mr.title)}</button>
-       <div class="text-xs opacity-60">${escapeHtml(mr.merge_status || mr.detailed_merge_status || "")}</div></div>`
-    ).join("") || "<p>No open MRs</p>";
-    setHtml(panelEl().querySelector(".gitlab-panel-body"), html);
-    panelEl().querySelectorAll(".gitlab-mr").forEach((btn) => {
-      btn.addEventListener("click", () => void openMr(btn.dataset.iid));
-    });
+    const list = document.createDocumentFragment();
+    if (!(mrs || []).length) {
+      const empty = document.createElement("p");
+      empty.textContent = "No open MRs";
+      list.append(empty);
+    } else {
+      mrs.forEach((mr) => {
+        const card = document.createElement("div");
+        card.className = "gitlab-card";
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "link gitlab-mr";
+        btn.dataset.iid = String(mr.iid ?? "");
+        btn.textContent = `!${mr.iid} ${mr.title || ""}`;
+        btn.addEventListener("click", () => void openMr(btn.dataset.iid));
+        const status = document.createElement("div");
+        status.className = "text-xs opacity-60";
+        status.textContent = mr.merge_status || mr.detailed_merge_status || "";
+        card.append(btn, status);
+        list.append(card);
+      });
+    }
+    panelBodyEl()?.replaceChildren(list);
   } catch (err) {
-    setHtml(panelEl().querySelector(".gitlab-panel-body"), `<p class="text-error">${escapeHtml(err.message)}</p>`);
+    setPanelError(err.message);
   }
 }
 
@@ -612,17 +899,42 @@ async function openMr(iid) {
       mr = await glFetch(host, token, `projects/${project}/merge_requests/${iid}`);
       notes = await glFetch(host, token, `projects/${project}/merge_requests/${iid}/notes?sort=asc`);
     }
-    const noteHtml = (notes || []).filter((n) => !n.system).map((n) =>
-      `<div class="gitlab-comment"><div class="gitlab-comment-meta">${escapeHtml(n.author?.username || "")}</div>${escapeHtml(n.body)}</div>`
-    ).join("");
-    setHtml(
-      panelEl().querySelector(".gitlab-panel-body"),
-      `<p>${escapeHtml(mr.title)}</p><p class="text-sm">${escapeHtml(mr.description || "")}</p>
-       <p class="text-xs opacity-60">Pipeline: ${escapeHtml(mr.head_pipeline?.status || "—")}</p>
-       ${noteHtml}
-       <form id="gitlabMrNote" class="gitlab-form"><label>Comment <textarea name="body" class="textarea textarea-bordered w-full" rows="2"></textarea></label>
-       <button class="btn btn-primary btn-sm mt-2" type="submit">Comment</button></form>`
-    );
+    const body = document.createDocumentFragment();
+    const title = document.createElement("p");
+    title.textContent = mr.title || "";
+    const desc = document.createElement("p");
+    desc.className = "text-sm";
+    desc.textContent = mr.description || "";
+    const pipe = document.createElement("p");
+    pipe.className = "text-xs opacity-60";
+    pipe.textContent = `Pipeline: ${mr.head_pipeline?.status || "—"}`;
+    body.append(title, desc, pipe);
+    (notes || []).filter((n) => !n.system).forEach((n) => {
+      const block = document.createElement("div");
+      block.className = "gitlab-comment";
+      const meta = document.createElement("div");
+      meta.className = "gitlab-comment-meta";
+      meta.textContent = n.author?.username || "";
+      const text = document.createElement("div");
+      text.textContent = n.body || "";
+      block.append(meta, text);
+      body.append(block);
+    });
+    const form = document.createElement("form");
+    form.id = "gitlabMrNote";
+    form.className = "gitlab-form";
+    const area = document.createElement("textarea");
+    area.name = "body";
+    area.className = "textarea textarea-bordered w-full";
+    area.rows = 2;
+    form.append(formField("Comment", area));
+    const commentBtn = document.createElement("button");
+    commentBtn.className = "btn btn-primary btn-sm mt-2";
+    commentBtn.type = "submit";
+    commentBtn.textContent = "Comment";
+    form.append(commentBtn);
+    body.append(form);
+    panelBodyEl()?.replaceChildren(body);
     document.getElementById("gitlabMrNote")?.addEventListener("submit", async (ev) => {
       ev.preventDefault();
       const body = new FormData(ev.target).get("body");
@@ -644,7 +956,7 @@ async function openMr(iid) {
       }
     });
   } catch (err) {
-    setHtml(panelEl().querySelector(".gitlab-panel-body"), `<p class="text-error">${escapeHtml(err.message)}</p>`);
+    setPanelError(err.message);
   }
 }
 
@@ -666,36 +978,76 @@ async function openBoard() {
       payload = { board, lists: board?.lists || [], issues, busyness: null };
     }
     const busy = payload.busyness?.users || [];
-    const busyHtml = busy.map((u) => {
-      const pct = Math.min(100, (u.load_ratio || 0) * 100);
-      return `<div class="gitlab-busy">${escapeHtml(u.username)} · ${u.allocated_hours}h / ${u.capacity_hours}h free ${u.free_hours}h
-        <div class="gitlab-busy-bar"><span style="width:${pct}%"></span></div></div>`;
-    }).join("");
+    const body = document.createDocumentFragment();
+    const busyWrap = document.createElement("div");
+    if (!busy.length) {
+      const hint = document.createElement("p");
+      hint.className = "text-xs opacity-60";
+      hint.textContent = "Busyness available for folder owner.";
+      busyWrap.append(hint);
+    } else {
+      busy.forEach((u) => {
+        const row = document.createElement("div");
+        row.className = "gitlab-busy";
+        row.textContent = `${u.username || ""} · ${u.allocated_hours}h / ${u.capacity_hours}h free ${u.free_hours}h `;
+        const bar = document.createElement("div");
+        bar.className = "gitlab-busy-bar";
+        const fill = document.createElement("span");
+        fill.style.width = `${Math.min(100, (u.load_ratio || 0) * 100)}%`;
+        bar.append(fill);
+        row.append(bar);
+        busyWrap.append(row);
+      });
+    }
+    body.append(busyWrap);
+    const boardRow = document.createElement("div");
+    boardRow.className = "gitlab-board-row mt-2";
     const lists = payload.lists || [];
     const issues = payload.issues || [];
-    const lanes = lists.map((lane) => {
-      const label = lane.label?.name || lane.list_type || "Open";
-      const cards = issues.filter((iss) => {
-        const labels = (iss.labels || []).map((x) => (typeof x === "string" ? x : x.name));
-        return labels.includes(label) || (!lane.label && !labels.length);
+    if (!lists.length) {
+      const empty = document.createElement("p");
+      empty.textContent = "No board lists";
+      boardRow.append(empty);
+    } else {
+      lists.forEach((lane) => {
+        const label = lane.label?.name || lane.list_type || "Open";
+        const laneEl = document.createElement("div");
+        laneEl.className = "gitlab-board-lane";
+        const strong = document.createElement("strong");
+        strong.textContent = label;
+        laneEl.append(strong);
+        const cards = issues.filter((iss) => {
+          const labels = (iss.labels || []).map((x) => (typeof x === "string" ? x : x.name));
+          return labels.includes(label) || (!lane.label && !labels.length);
+        });
+        if (!cards.length) {
+          const emptyLane = document.createElement("p");
+          emptyLane.className = "text-xs opacity-50";
+          emptyLane.textContent = "Empty";
+          laneEl.append(emptyLane);
+        } else {
+          cards.forEach((iss) => {
+            const stale = (iss.days_since_comment || 0) >= 3;
+            const card = document.createElement("div");
+            card.className = stale ? "gitlab-card gitlab-card--stale" : "gitlab-card";
+            card.append(externalLink(iss.web_url, `#${iss.iid} ${iss.title || ""}`));
+            const meta = document.createElement("div");
+            meta.className = "text-xs opacity-60";
+            const bits = [];
+            if (iss.days_in_lane != null) bits.push(`${Number(iss.days_in_lane).toFixed(1)}d in lane`);
+            if (iss.days_since_comment != null) bits.push(`last comment ${Number(iss.days_since_comment).toFixed(1)}d`);
+            meta.textContent = bits.join(" · ");
+            card.append(meta);
+            laneEl.append(card);
+          });
+        }
+        boardRow.append(laneEl);
       });
-      const cardsHtml = cards.map((iss) => {
-        const stale = (iss.days_since_comment || 0) >= 3;
-        return `<div class="gitlab-card${stale ? " gitlab-card--stale" : ""}">
-          <a class="link" href="${escapeHtml(iss.web_url || "#")}" target="_blank">#${iss.iid} ${escapeHtml(iss.title)}</a>
-          <div class="text-xs opacity-60">${iss.days_in_lane != null ? `${Number(iss.days_in_lane).toFixed(1)}d in lane` : ""}
-            ${iss.days_since_comment != null ? ` · last comment ${Number(iss.days_since_comment).toFixed(1)}d` : ""}</div>
-        </div>`;
-      }).join("");
-      return `<div class="gitlab-board-lane"><strong>${escapeHtml(label)}</strong>${cardsHtml || "<p class='text-xs opacity-50'>Empty</p>"}</div>`;
-    }).join("");
-    setHtml(
-      panelEl().querySelector(".gitlab-panel-body"),
-      `<div>${busyHtml || "<p class='text-xs opacity-60'>Busyness available for folder owner.</p>"}</div>
-       <div class="gitlab-board-row mt-2">${lanes || "<p>No board lists</p>"}</div>`
-    );
+    }
+    body.append(boardRow);
+    panelBodyEl()?.replaceChildren(body);
   } catch (err) {
-    setHtml(panelEl().querySelector(".gitlab-panel-body"), `<p class="text-error">${escapeHtml(err.message)}</p>`);
+    setPanelError(err.message);
   }
 }
 
@@ -708,7 +1060,7 @@ export async function bootGitlab() {
     return;
   }
   renderStrip();
-  await Promise.all([void loadCi(), loadDashboard()]);
+  await Promise.all([loadCi(), loadDashboard()]);
   await loadFolderFiles();
 }
 

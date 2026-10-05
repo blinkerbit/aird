@@ -17,6 +17,34 @@ def _norm(path: str) -> str:
     return (path or "").replace("\\", "/").strip("/")
 
 
+def _comment_from_row(row) -> dict:
+    return {
+        "id": row[0],
+        "owner_username": row[1],
+        "file_rel_path": row[2],
+        "author_username": row[3],
+        "body": row[4],
+        "created_at": row[5],
+        "edited_at": row[6],
+        "gitlab_issue_iid": row[7],
+        "gitlab_note_id": row[8],
+    }
+
+
+def _binding_from_row(row) -> dict:
+    return {
+        "owner_username": row[0],
+        "folder_rel_path": row[1],
+        "gitlab_host": row[2],
+        "code_project": row[3],
+        "issues_project": row[4],
+        "board_iid": row[5],
+        "repo_path_prefix": row[6],
+        "updated_by": row[7],
+        "updated_at": row[8],
+    }
+
+
 def get_binding(
     conn: sqlite3.Connection, owner_username: str, folder_rel_path: str
 ) -> dict | None:
@@ -32,18 +60,7 @@ def get_binding(
     ).fetchone()
     if not row:
         return None
-    keys = (
-        "owner_username",
-        "folder_rel_path",
-        "gitlab_host",
-        "code_project",
-        "issues_project",
-        "board_iid",
-        "repo_path_prefix",
-        "updated_by",
-        "updated_at",
-    )
-    return dict(zip(keys, row))
+    return _binding_from_row(row)
 
 
 def resolve_binding(
@@ -131,28 +148,22 @@ def list_comments(
         """,
         (owner_username, _norm(file_rel_path)),
     ).fetchall()
-    keys = (
-        "id",
-        "owner_username",
-        "file_rel_path",
-        "author_username",
-        "body",
-        "created_at",
-        "edited_at",
-        "gitlab_issue_iid",
-        "gitlab_note_id",
-    )
-    return [dict(zip(keys, row)) for row in rows]
+    return [_comment_from_row(row) for row in rows]
 
 
-def comment_counts(
-    conn: sqlite3.Connection, owner_username: str, folder_rel_path: str, names: list[str]
-) -> dict[str, int]:
-    folder = _norm(folder_rel_path)
-    counts = {name: 0 for name in names}
-    if not names:
-        return counts
+def _exact_paths_for_names(folder: str, names: list[str]) -> set[str]:
     prefix = f"{folder}/" if folder else ""
+    return {_norm(f"{prefix}{name}" if prefix else name) for name in names}
+
+
+def _apply_exact_comment_counts(
+    conn: sqlite3.Connection,
+    owner_username: str,
+    *,
+    prefix: str,
+    names: list[str],
+    counts: dict[str, int],
+) -> None:
     for name in names:
         exact = f"{prefix}{name}" if prefix else name
         row = conn.execute(
@@ -164,6 +175,16 @@ def comment_counts(
         ).fetchone()
         if row:
             counts[name] += int(row[0] or 0)
+
+
+def _apply_nested_comment_counts(
+    conn: sqlite3.Connection,
+    owner_username: str,
+    *,
+    prefix: str,
+    exact_paths: set[str],
+    counts: dict[str, int],
+) -> None:
     rows = conn.execute(
         """
         SELECT file_rel_path, COUNT(*) FROM file_comments
@@ -174,12 +195,32 @@ def comment_counts(
     ).fetchall()
     for rel, count in rows:
         rel_n = _norm(rel)
-        if rel_n in {_norm(f"{prefix}{n}" if prefix else n) for n in names}:
+        if rel_n in exact_paths:
             continue
         child = rel_n[len(prefix) :] if prefix and rel_n.startswith(prefix) else rel_n
         first = child.split("/", 1)[0]
         if first in counts:
             counts[first] += int(count)
+
+
+def comment_counts(
+    conn: sqlite3.Connection, owner_username: str, folder_rel_path: str, names: list[str]
+) -> dict[str, int]:
+    folder = _norm(folder_rel_path)
+    counts = dict.fromkeys(names, 0)
+    if not names:
+        return counts
+    prefix = f"{folder}/" if folder else ""
+    _apply_exact_comment_counts(
+        conn, owner_username, prefix=prefix, names=names, counts=counts
+    )
+    _apply_nested_comment_counts(
+        conn,
+        owner_username,
+        prefix=prefix,
+        exact_paths=_exact_paths_for_names(folder, names),
+        counts=counts,
+    )
     return counts
 
 
@@ -223,18 +264,7 @@ def get_comment(conn: sqlite3.Connection, comment_id: str) -> dict | None:
     ).fetchone()
     if not row:
         return None
-    keys = (
-        "id",
-        "owner_username",
-        "file_rel_path",
-        "author_username",
-        "body",
-        "created_at",
-        "edited_at",
-        "gitlab_issue_iid",
-        "gitlab_note_id",
-    )
-    return dict(zip(keys, row))
+    return _comment_from_row(row)
 
 
 def update_comment(

@@ -48,7 +48,7 @@ function redirectUri() {
 
 function b64url(bytes) {
   let bin = '';
-  bytes.forEach((b) => { bin += String.fromCharCode(b); });
+  bytes.forEach((b) => { bin += String.fromCodePoint(b); });
   return btoa(bin).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
 }
 
@@ -64,8 +64,38 @@ async function sha256b64url(text) {
   return b64url(new Uint8Array(hash));
 }
 
+function msTokenUrl(tenant) {
+  if (tenant === 'organizations') {
+    return 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token';
+  }
+  if (tenant === 'consumers') {
+    return 'https://login.microsoftonline.com/consumers/oauth2/v2.0/token';
+  }
+  return 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
+}
+
+function msAuthorizeUrl(tenant) {
+  if (tenant === 'organizations') {
+    return 'https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize';
+  }
+  if (tenant === 'consumers') {
+    return 'https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize';
+  }
+  return 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize';
+}
+
+function msDeviceUrl(tenant) {
+  if (tenant === 'organizations') {
+    return 'https://login.microsoftonline.com/organizations/oauth2/v2.0/devicecode';
+  }
+  if (tenant === 'consumers') {
+    return 'https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode';
+  }
+  return 'https://login.microsoftonline.com/common/oauth2/v2.0/devicecode';
+}
+
 function authorizeUrl(clientId, tenant, challenge, state) {
-  const u = new URL(`https://login.microsoftonline.com/${tenant || 'common'}/oauth2/v2.0/authorize`);
+  const u = new URL(msAuthorizeUrl(tenant));
   u.searchParams.set('client_id', clientId);
   u.searchParams.set('response_type', 'code');
   u.searchParams.set('redirect_uri', redirectUri());
@@ -75,13 +105,6 @@ function authorizeUrl(clientId, tenant, challenge, state) {
   u.searchParams.set('code_challenge_method', 'S256');
   u.searchParams.set('state', state);
   return u.toString();
-}
-
-function msTokenUrl(tenant) {
-  const raw = String(tenant || 'common');
-  const known = raw === 'common' || raw === 'organizations' || raw === 'consumers';
-  const segment = known ? raw : encodeURIComponent(raw);
-  return `https://login.microsoftonline.com/${segment}/oauth2/v2.0/token`;
 }
 
 async function exchangeCode(code, verifier, clientId, tenant) {
@@ -161,7 +184,7 @@ export async function finishCallback() {
   const state = params.get('state');
   const pkce = JSON.parse(sessionStorage.getItem(PKCE) || 'null');
   sessionStorage.removeItem(PKCE);
-  if (!code || !pkce || pkce.state !== state) throw new Error('OneDrive sign-in was cancelled.');
+  if (!code || pkce?.state !== state) throw new Error('OneDrive sign-in was cancelled.');
   const publicCfg = await loadPublicConfig();
   if (!publicCfg?.clientId) throw new Error('Azure application ID is required.');
   const tokens = await exchangeCode(code, pkce.verifier, publicCfg.clientId, publicCfg.tenant);
@@ -176,7 +199,7 @@ export async function startDeviceCode() {
     client_id: publicCfg.clientId,
     scope: SCOPES,
   });
-  const res = await fetch(`https://login.microsoftonline.com/${publicCfg.tenant || 'common'}/oauth2/v2.0/devicecode`, {
+  const res = await fetch(msDeviceUrl(publicCfg.tenant), {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
@@ -204,7 +227,7 @@ export async function pollDeviceCode(deviceCode) {
     grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
     device_code: code,
   });
-  const res = await fetch(`https://login.microsoftonline.com/${publicCfg.tenant || 'common'}/oauth2/v2.0/token`, {
+  const res = await fetch(msTokenUrl(publicCfg.tenant), {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,

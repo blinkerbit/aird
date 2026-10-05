@@ -182,7 +182,8 @@ async function enqueueEntriesAt(entries, baseDir) {
     const parts = fw.relativePath.split('/');
     const fileName = parts.pop();
     const subDir = parts.join('/');
-    const uploadDir = subDir ? (root ? `${root}/${subDir}` : subDir) : root;
+    let uploadDir = root;
+    if (subDir) uploadDir = root ? `${root}/${subDir}` : subDir;
     TM.enqueueUpload({ file: fw.file, uploadDir, uploadName: fileName });
   }
   if (rejected.length) {

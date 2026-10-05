@@ -5,12 +5,14 @@ import { getConflictPolicy, graphConflictBehavior, getDefaultSave, setDefaultSav
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
 export async function graph(token, path, opts = {}) {
-  const res = await fetch(`${GRAPH}${path}`, Object.assign({
-    headers: Object.assign(
-      { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-      opts.headers || {},
-    ),
-  }, opts));
+  const res = await fetch(`${GRAPH}${path}`, {
+    ...opts,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+      ...(opts.headers || {}),
+    },
+  });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error?.message || data.error || res.statusText);
   return data;
@@ -82,7 +84,9 @@ export async function uploadBlob(token, parentId, filename, blob, onProgress) {
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     if (policy === 'rename' && res.status === 409) {
-      const alt = `${filename.replace(/(\.[^.]+)?$/, '')}-${Date.now()}${(filename.match(/\.[^.]+$/) || [''])[0]}`;
+      const extMatch = /\.[^.]+$/.exec(filename);
+      const ext = extMatch ? extMatch[0] : '';
+      const alt = `${filename.replaceAll(/(\.[^.]+)?$/g, '')}-${Date.now()}${ext}`;
       return uploadBlob(token, parentId, alt, blob, onProgress);
     }
     throw new Error(data.error?.message || 'Upload failed');
@@ -129,6 +133,71 @@ export async function uploadTree(token, parentId, relPath, isDir, onProgress) {
   return count;
 }
 
+function pickerSay(msgEl, text, err) {
+  msgEl.textContent = text || '';
+  msgEl.style.color = err ? 'var(--color-error,#b91c1c)' : '';
+}
+
+function bindPickerUpBtn(up, stack, render) {
+  up.addEventListener('click', () => {
+    stack.pop();
+    void render();
+  });
+}
+
+function bindPickerFolderBtn(btn, folder, stack, render) {
+  btn.addEventListener('click', () => {
+    stack.push({ id: folder.id, name: folder.name });
+    void render();
+  });
+}
+
+function appendPickerUpRow(listEl, stack, render) {
+  if (stack.length <= 1) return;
+  const up = document.createElement('button');
+  up.type = 'button';
+  up.className = 'btn btn-ghost btn-sm w-full justify-start';
+  up.textContent = '← Up';
+  bindPickerUpBtn(up, stack, render);
+  listEl.append(up);
+}
+
+function appendPickerFolderRows(listEl, folders, stack, render) {
+  for (const folder of folders) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-ghost btn-sm w-full justify-start';
+    btn.textContent = `📁 ${folder.name}`;
+    bindPickerFolderBtn(btn, folder, stack, render);
+    listEl.append(btn);
+  }
+}
+
+function bindPickerFileBtn(btn, file, ctx) {
+  btn.addEventListener('click', async () => {
+    try {
+      ctx.say('Loading…');
+      await ctx.onPick(file);
+      ctx.overlay.remove();
+      ctx.resolve();
+    } catch (err) {
+      ctx.say(err.message, true);
+      ctx.reject(err);
+    }
+  });
+}
+
+function appendPickerFileRows(listEl, files, ctx) {
+  for (const file of files) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-ghost btn-sm w-full justify-start';
+    btn.textContent = `📄 ${file.name}`;
+    bindPickerFileBtn(btn, file, ctx);
+    listEl.append(btn);
+  }
+}
+
 export function showFolderPicker({ token, title, onPick }) {
   return new Promise((resolve, reject) => {
     const overlay = document.createElement('div');
@@ -153,33 +222,14 @@ export function showFolderPicker({ token, title, onPick }) {
     const crumbEl = overlay.querySelector('.od-fe-pick-crumbs');
     const msgEl = overlay.querySelector('.od-fe-pick-msg');
 
-    function say(text, err) {
-      msgEl.textContent = text || '';
-      msgEl.style.color = err ? 'var(--color-error,#b91c1c)' : '';
-    }
-
     async function render() {
       crumbEl.textContent = stack.map((s) => s.name).join(' / ');
       listEl.textContent = 'Loading…';
       try {
         const folders = await listFolders(token, stack.at(-1).id);
         listEl.innerHTML = '';
-        if (stack.length > 1) {
-          const up = document.createElement('button');
-          up.type = 'button';
-          up.className = 'btn btn-ghost btn-sm w-full justify-start';
-          up.textContent = '← Up';
-          up.addEventListener('click', () => { stack.pop(); void render(); });
-          listEl.append(up);
-        }
-        folders.forEach((folder) => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'btn btn-ghost btn-sm w-full justify-start';
-          btn.textContent = `📁 ${folder.name}`;
-          btn.addEventListener('click', () => { stack.push({ id: folder.id, name: folder.name }); void render(); });
-          listEl.append(btn);
-        });
+        appendPickerUpRow(listEl, stack, render);
+        appendPickerFolderRows(listEl, folders, stack, render);
         if (!folders.length) {
           const empty = document.createElement('p');
           empty.className = 'text-sm opacity-60 px-2';
@@ -188,7 +238,7 @@ export function showFolderPicker({ token, title, onPick }) {
         }
       } catch (err) {
         listEl.textContent = '';
-        say(err.message, true);
+        pickerSay(msgEl, err.message, true);
       }
     }
 
@@ -202,17 +252,17 @@ export function showFolderPicker({ token, title, onPick }) {
         stack.push({ id: created.id, name: created.name || name.trim() });
         await render();
       } catch (err) {
-        say(err.message, true);
+        pickerSay(msgEl, err.message, true);
       }
     });
     overlay.querySelector('.od-fe-pick-save').addEventListener('click', async () => {
       try {
-        say('Working…');
+        pickerSay(msgEl, 'Working…');
         const result = await onPick(stack.at(-1).id, stack.map((s) => s.name));
         overlay.remove();
         resolve(result);
       } catch (err) {
-        say(err.message, true);
+        pickerSay(msgEl, err.message, true);
         reject(err);
       }
     });
@@ -251,10 +301,13 @@ export function showFilePicker({ token, title, filter, onPick }) {
     const crumbEl = overlay.querySelector('.od-fe-pick-crumbs');
     const msgEl = overlay.querySelector('.od-fe-pick-msg');
 
-    function say(text, err) {
-      msgEl.textContent = text || '';
-      msgEl.style.color = err ? 'var(--color-error,#b91c1c)' : '';
-    }
+    const filePickCtx = {
+      overlay,
+      resolve,
+      reject,
+      onPick,
+      say: (text, err) => pickerSay(msgEl, text, err),
+    };
 
     async function render() {
       crumbEl.textContent = stack.map((s) => s.name).join(' / ');
@@ -264,40 +317,9 @@ export function showFilePicker({ token, title, filter, onPick }) {
         const folders = items.filter((item) => item.folder);
         const files = items.filter((item) => item.file && (!filter || filter(item)));
         listEl.innerHTML = '';
-        if (stack.length > 1) {
-          const up = document.createElement('button');
-          up.type = 'button';
-          up.className = 'btn btn-ghost btn-sm w-full justify-start';
-          up.textContent = '← Up';
-          up.addEventListener('click', () => { stack.pop(); void render(); });
-          listEl.append(up);
-        }
-        folders.forEach((folder) => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'btn btn-ghost btn-sm w-full justify-start';
-          btn.textContent = `📁 ${folder.name}`;
-          btn.addEventListener('click', () => { stack.push({ id: folder.id, name: folder.name }); void render(); });
-          listEl.append(btn);
-        });
-        files.forEach((file) => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'btn btn-ghost btn-sm w-full justify-start';
-          btn.textContent = `📄 ${file.name}`;
-          btn.addEventListener('click', async () => {
-            try {
-              say('Loading…');
-              await onPick(file);
-              overlay.remove();
-              resolve();
-            } catch (err) {
-              say(err.message, true);
-              reject(err);
-            }
-          });
-          listEl.append(btn);
-        });
+        appendPickerUpRow(listEl, stack, render);
+        appendPickerFolderRows(listEl, folders, stack, render);
+        appendPickerFileRows(listEl, files, filePickCtx);
         if (!folders.length && !files.length) {
           const empty = document.createElement('p');
           empty.className = 'text-sm opacity-60 px-2';
@@ -306,7 +328,7 @@ export function showFilePicker({ token, title, filter, onPick }) {
         }
       } catch (err) {
         listEl.textContent = '';
-        say(err.message, true);
+        pickerSay(msgEl, err.message, true);
       }
     }
 

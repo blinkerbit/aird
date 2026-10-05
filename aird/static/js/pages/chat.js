@@ -57,6 +57,12 @@ import {
   const memberUserInput = qs('#chatMemberUser');
   const memberSuggest = qs('#chatMemberSuggest');
 
+  function runAsync(task, label) {
+    Promise.resolve(typeof task === 'function' ? task() : task).catch((err) => {
+      console.debug(label || 'chat async failed', err);
+    });
+  }
+
   function getPathSuggest() {
     let el = document.getElementById('chatPathSuggest');
     if (el) return el;
@@ -83,7 +89,6 @@ import {
   let pins = [];
   let receipts = [];
   let replyToId = null;
-  let tabCycle = { key: '', i: -1 };
   let pathSuggestHits = [];
   let pathSuggestIdx = 0;
   const pendingStore = createPendingStore();
@@ -269,20 +274,25 @@ import {
     keyWaitConv = '';
   }
 
+  function onKeyWaitReady(ok) {
+    if (!ok || !keyWaitConv) return;
+    runAsync(() => reloadThreadAfterKey(keyWaitConv), 'reloadThreadAfterKey');
+  }
+
+  function onKeyWaitTick(watchConvId) {
+    if (watchConvId !== activeConvId) {
+      stopKeyWait();
+      return;
+    }
+    E2E.requestKeyShare?.(watchConvId);
+    e2eReady(watchConvId).then(onKeyWaitReady).catch((err) => console.debug('e2e wait retry failed', err));
+  }
+
   function startKeyWait(convId) {
     if (keyWaitConv === convId && keyWaitTimer) return;
     stopKeyWait();
     keyWaitConv = convId;
-    keyWaitTimer = setInterval(() => {
-      if (convId !== activeConvId) {
-        stopKeyWait();
-        return;
-      }
-      E2E.requestKeyShare?.(convId);
-      e2eReady(convId).then((ok) => {
-        if (ok) void reloadThreadAfterKey(convId);
-      }).catch((err) => console.debug('e2e wait retry failed', err));
-    }, 2500);
+    keyWaitTimer = setInterval(() => onKeyWaitTick(convId), 2500);
   }
 
   async function reloadThreadAfterKey(convId) {
@@ -297,7 +307,8 @@ import {
     const tryDecrypt = async () => E2E.sanitizeHtml(await E2E.decrypt(convId, payload));
     try {
       return { html: await tryDecrypt(), decrypted: true };
-    } catch (_) {
+    } catch (err) {
+      console.debug('decrypt failed, retrying with ensureConversation', err);
       try {
         const conv = conversations.find((c) => c.id === convId);
         await E2E.ensureConversation(api, convId, memberNames(conv));
@@ -531,6 +542,17 @@ import {
     messagesEl.innerHTML = '';
   }
 
+  function convListPreview(c) {
+    if (c.request === 'incoming') return 'Chat request';
+    if (c.request === 'outgoing') return 'Waiting for acceptance';
+    return esc(c.last_preview || 'No messages yet');
+  }
+
+  function handleConvItemClick(e) {
+    e.preventDefault();
+    runAsync(() => openConversation(e.currentTarget.dataset.id), 'openConversation');
+  }
+
   function renderConvList() {
     if (!convList) return;
     const enhancedHtml = window.AirdEnhancedSecure?.listHtml?.() || '';
@@ -541,11 +563,7 @@ import {
     convList.innerHTML = enhancedHtml + conversations.map((c) => {
       const active = !enhancedSecureView && c.id === activeConvId ? ' active' : '';
       const badge = c.unread ? `<span class="badge badge-primary badge-xs">${c.unread}</span>` : '';
-      const preview = c.request === 'incoming'
-        ? 'Chat request'
-        : c.request === 'outgoing'
-          ? 'Waiting for acceptance'
-          : esc(c.last_preview || 'No messages yet');
+      const preview = convListPreview(c);
       const title = convTitle(c);
       const on = c.kind === 'dm' && isOnlineUser(c.peer_username);
       const dot = on ? '<span class="chat-online-dot chat-online-dot--list"></span>' : '';
@@ -557,21 +575,20 @@ import {
       return `<li class="chat-conv-row"><a href="#" class="chat-conv-item${active}" data-id="${esc(c.id)}">${avatarHtml(title)}${dot}<span class="chat-conv-main"><span class="chat-conv-top"><span class="chat-conv-name">${esc(title)}${mute}</span><span class="chat-conv-meta">${when}${badge}</span></span><span class="chat-conv-preview">${preview}</span></span></a>${more}</li>`;
     }).join('');
     convList.querySelectorAll('.chat-conv-item[data-id]').forEach((el) => {
-      el.addEventListener('click', (e) => {
-        e.preventDefault();
-        void openConversation(el.dataset.id);
-      });
+      el.addEventListener('click', handleConvItemClick);
     });
+  }
+
+  function mergeConvMemberPresence(conv) {
+    for (const m of conv.members || []) {
+      if (typeof m.online === 'boolean') presence[m.username] = m.online;
+    }
   }
 
   async function loadConversations() {
     const data = await api('/api/chat/conversations');
     conversations = data.conversations || [];
-    conversations.forEach((c) => {
-      (c.members || []).forEach((m) => {
-        if (typeof m.online === 'boolean') presence[m.username] = m.online;
-      });
-    });
+    conversations.forEach(mergeConvMemberPresence);
     await Promise.all(conversations.map(async (c) => {
       if (!c.last_e2e || c.request || !E2E?.ready()) return;
       try {
@@ -585,7 +602,7 @@ import {
       } catch (err) { console.debug('conv preview decrypt failed', err); }
     }));
     renderConvList();
-    void updateNavBadge();
+    runAsync(() => updateNavBadge(), 'updateNavBadge');
   }
 
   function attOpenUrl(att, msg, index) {
@@ -617,12 +634,6 @@ import {
     const name = String(att?.original_name || '').toLowerCase();
     const ext = name.split('.').pop();
     return IMAGE_EXTS.includes(ext);
-  }
-
-  function isImageMsg(msg) {
-    const atts = msgAttachments(msg);
-    if (atts.length) return atts.every((a) => isImageAtt(a, msg));
-    return isImageAtt(msg.metadata || {}, msg);
   }
 
   function highlightMentions(html) {
@@ -759,6 +770,18 @@ import {
     if (html) stack.insertAdjacentHTML('beforeend', html);
   }
 
+  function handleSaveCopyClick(e) {
+    const btn = e.currentTarget;
+    saveCopy(btn.dataset.id, btn.dataset.i).catch((err) => alert(err.message));
+  }
+
+  function handleReactClick(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    react(btn.dataset.id, btn.dataset.emoji).catch((err) => alert(err.message));
+  }
+
   function bindMessageUi(root) {
     const scope = root || messagesEl;
     if (!scope) return;
@@ -769,17 +792,13 @@ import {
       btn.addEventListener('click', () => window.open(btn.dataset.url, '_blank', 'noopener'));
     });
     scope.querySelectorAll('[data-att="save"]').forEach((btn) => {
-      btn.addEventListener('click', () => saveCopy(btn.dataset.id, btn.dataset.i).catch((e) => alert(e.message)));
+      btn.addEventListener('click', handleSaveCopyClick);
     });
     scope.querySelectorAll('[data-act]').forEach((btn) => {
       btn.addEventListener('click', () => onMsgAction(btn.dataset.act, btn.dataset.id));
     });
     scope.querySelectorAll('.chat-react-chip, .chat-react-emoji').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        react(btn.dataset.id, btn.dataset.emoji).catch((err) => alert(err.message));
-      });
+      btn.addEventListener('click', handleReactClick);
     });
     scope.querySelectorAll('.chat-quote').forEach((btn) => {
       btn.addEventListener('click', () => jumpTo(btn.dataset.jump));
@@ -898,7 +917,11 @@ import {
             mentions: extractMentions(textEl.innerHTML || next, activeConv()),
           }),
         });
-        if (data.message) void replaceMessage(await prepareMessage(data.message));
+        if (data.message) {
+          replaceMessage(await prepareMessage(data.message)).catch((err) => {
+            console.debug('replaceMessage after edit failed', err);
+          });
+        }
       } catch (err) {
         textEl.innerHTML = originalHtml;
         setE2eStatus(err.message);
@@ -910,10 +933,10 @@ import {
         textEl.blur();
       } else if (e.key === 'Escape') {
         e.preventDefault();
-        void finish(false);
+        runAsync(() => finish(false), 'editMessage finish cancel');
       }
     };
-    const onBlur = () => void finish(true);
+    const onBlur = () => runAsync(() => finish(true), 'editMessage finish save');
     textEl.addEventListener('keydown', onKey);
     textEl.addEventListener('blur', onBlur);
   }
@@ -943,8 +966,13 @@ import {
     ).join('');
     pinBar.querySelectorAll('.chat-pin-item').forEach((btn) => btn.addEventListener('click', () => jumpTo(btn.dataset.id)));
     pinBar.querySelectorAll('[data-unpin]').forEach((btn) => {
-      btn.addEventListener('click', () => unpinMessage(btn.dataset.unpin).catch((e) => alert(e.message)));
+      btn.addEventListener('click', handleUnpinClick);
     });
+  }
+
+  function handleUnpinClick(e) {
+    const id = e.currentTarget.dataset.unpin;
+    unpinMessage(id).catch((err) => alert(err.message));
   }
 
   function openForward(messageId) {
@@ -1008,7 +1036,7 @@ import {
     tagMine(msg);
     const el = messagesEl?.querySelector(`[data-msg-id="${cssEscape(msg.id)}"]`);
     if (!el) {
-      void appendMessage(msg);
+      runAsync(() => appendMessage(msg), 'appendMessage');
       return;
     }
     el.outerHTML = messageHtml(msg);
@@ -1151,7 +1179,7 @@ import {
       message_id: msg.id,
       decrypted: !!(msg._e2e && msg._decryptOk),
     });
-    void loadConversations();
+    runAsync(() => loadConversations(), 'loadConversations');
   }
 
   function markLatestVisibleRead() {
@@ -1170,21 +1198,21 @@ import {
 
   function onWsChatMessage(data) {
     if (enhancedSecureView) {
-      void loadConversations();
-      void updateNavBadge();
+      runAsync(() => loadConversations(), 'loadConversations');
+      runAsync(() => updateNavBadge(), 'updateNavBadge');
       return;
     }
     if (!data.message) return;
     const msg = tagMine({ ...data.message });
     if (msg.conversation_id === activeConvId) {
       if (!messagesEl?.querySelector(`[data-msg-id="${cssEscape(msg.id)}"]`)) {
-        void appendMessage(msg).then(() => markRead(msg)).catch((err) => {
+        appendMessage(msg).then(() => markRead(msg)).catch((err) => {
           console.debug('appendMessage failed', err);
         });
       }
     }
-    void loadConversations();
-    void updateNavBadge();
+    runAsync(() => loadConversations(), 'loadConversations');
+    runAsync(() => updateNavBadge(), 'updateNavBadge');
   }
 
   function onWsTyping(data) {
@@ -1202,8 +1230,8 @@ import {
     chat_message: onWsChatMessage,
     chat_message_deleted: (data) => {
       if (!enhancedSecureView && data.conversation_id === activeConvId) removeMessageEl(data.message_id);
-      void loadConversations();
-      void updateNavBadge();
+      runAsync(() => loadConversations(), 'loadConversations');
+      runAsync(() => updateNavBadge(), 'updateNavBadge');
     },
     chat_message_edited: (data) => {
       if (enhancedSecureView) return;
@@ -1243,11 +1271,11 @@ import {
       if (!enhancedSecureView && activeConvId) setThreadHeader(activeConv());
     },
     chat_notify: (data) => {
-      void updateNavBadge(data.unread_total);
+      runAsync(() => updateNavBadge(data.unread_total), 'updateNavBadge');
       if (!enhancedSecureView && data.conversation_id === activeConvId) {
         syncNewMessages().catch((err) => { console.debug('chat_notify sync failed', err); });
       }
-      void loadConversations();
+      runAsync(() => loadConversations(), 'loadConversations');
     },
     chat_ws_close: () => setPollEnabled(true),
     chat_ws_open: () => setPollEnabled(!!activeConvId),
@@ -1258,18 +1286,22 @@ import {
       const had = E2E?.hasConvKey?.(convId);
       e2eReady(convId).then((ok) => {
         if (!ok) return;
-        void loadConversations();
-        if (convId === activeConvId && !had && !enhancedSecureView) void reloadThreadAfterKey(convId);
+        runAsync(() => loadConversations(), 'loadConversations');
+        if (convId === activeConvId && !had && !enhancedSecureView) {
+          runAsync(() => reloadThreadAfterKey(convId), 'reloadThreadAfterKey');
+        }
       }).catch((err) => console.debug('e2e key ready failed', err));
     },
     chat_request: (data) => {
       const convId = data.conversation_id;
-      void loadConversations().then(() => {
+      loadConversations().then(() => {
         const conv = conversations.find((c) => c.id === convId);
         if (conv && !conv.request) {
           e2eReady(convId).catch((err) => console.debug('e2e ready after accept failed', err));
         }
-        if (convId && convId === activeConvId && !enhancedSecureView) void openConversation(convId);
+        if (convId && convId === activeConvId && !enhancedSecureView) {
+          runAsync(() => openConversation(convId), 'openConversation');
+        }
       }).catch((err) => console.debug('chat request refresh failed', err));
     },
   };
@@ -1291,7 +1323,13 @@ import {
     setNewPanel(false);
     await loadConversations();
     const id = data.conversation?.id;
-    if (id) void openConversation(id);
+    if (id) runAsync(() => openConversation(id), 'openConversation');
+  }
+
+  function handleGroupChipRemove(e) {
+    const rm = e.currentTarget.dataset.rm;
+    groupPicks = groupPicks.filter((x) => x !== rm);
+    renderGroupChips();
   }
 
   function renderGroupChips() {
@@ -1306,10 +1344,7 @@ import {
       `<span class="chat-chip">${esc(u)}<button type="button" data-rm="${esc(u)}" aria-label="Remove ${esc(u)}">×</button></span>`
     ).join('');
     groupChipsEl.querySelectorAll('[data-rm]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        groupPicks = groupPicks.filter((x) => x !== btn.dataset.rm);
-        renderGroupChips();
-      });
+      btn.addEventListener('click', handleGroupChipRemove);
     });
   }
 
@@ -1362,7 +1397,7 @@ import {
     if (qs('#chatGroupTitle')) qs('#chatGroupTitle').value = '';
     setNewPanel(false);
     await loadConversations();
-    if (data.conversation?.id) void openConversation(data.conversation.id);
+    if (data.conversation?.id) runAsync(() => openConversation(data.conversation.id), 'openConversation');
   }
 
   async function deleteMessage(messageId) {
@@ -1371,6 +1406,13 @@ import {
     await api(`/api/chat/conversations/${activeConvId}/messages/${messageId}`, { method: 'DELETE' });
     removeMessageEl(messageId);
     await loadConversations();
+  }
+
+  function handleUserSuggestPick(e, onPick) {
+    const name = e.currentTarget.dataset.user || '';
+    if (onPick) onPick(name);
+    else if (newMode === 'group') addGroupPick(name);
+    else startConversation(name).catch((err) => alert(err.message));
   }
 
   async function searchUsers(q, suggestEl, onPick) {
@@ -1395,12 +1437,7 @@ import {
       ).join('');
       box.classList.remove('hidden');
       box.querySelectorAll('[data-user]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const name = btn.dataset.user || '';
-          if (onPick) onPick(name);
-          else if (newMode === 'group') addGroupPick(name);
-          else startConversation(name).catch((err) => alert(err.message));
-        });
+        btn.addEventListener('click', (e) => handleUserSuggestPick(e, onPick));
       });
     } catch (err) {
       console.debug('user search failed', err);
@@ -1443,7 +1480,9 @@ import {
 
   newUserInput?.addEventListener('input', () => {
     clearTimeout(userSearchTimer);
-    userSearchTimer = setTimeout(() => void searchUsers(newUserInput.value), 250);
+    userSearchTimer = setTimeout(() => {
+      searchUsers(newUserInput.value).catch((err) => console.debug('searchUsers failed', err));
+    }, 250);
   });
   searchInput?.addEventListener('input', () => {
     clearTimeout(searchTimer);
@@ -1464,21 +1503,71 @@ import {
     return stored === null ? true : stored === '1';
   }
 
+  async function sendEnhancedSecureEditorMessage() {
+    const text = (editor?.innerText || '').replaceAll('\u00a0', ' ').trim();
+    if (pending.length) {
+      setE2eStatus('Enhanced Secure Chat is text only.');
+      return;
+    }
+    if (!text) return;
+    try {
+      await window.AirdEnhancedSecure.sendText(text);
+      editor.innerHTML = '';
+      setE2eStatus('');
+    } catch (err) {
+      setE2eStatus(err.message || 'Could not send.');
+    }
+  }
+
+  async function encryptOutgoingBody(body) {
+    if (!E2E?.ready()) {
+      setE2eStatus('Waiting for the chat key…');
+      return null;
+    }
+    const ok = await e2eReady(activeConvId);
+    if (!ok) return null;
+    const html = E2E.sanitizeHtml(body);
+    const e2e = await E2E.encrypt(activeConvId, html);
+    const mentions = extractMentions(html, activeConv());
+    return { e2e, mentions };
+  }
+
+  async function postStagedAttachments(staged, { e2e, mentions, hasText, body, reply }) {
+    const fd = new FormData();
+    if (e2e) {
+      fd.append('e2e', JSON.stringify(e2e));
+      fd.append('mentions', JSON.stringify(mentions));
+    } else if (hasText) {
+      fd.append('caption', body);
+    }
+    if (reply) fd.append('reply_to_id', reply);
+    for (const item of staged) {
+      if (item.path) fd.append('source_path', item.path);
+      else fd.append('file', item.file, item.file.name);
+    }
+    await api(`/api/chat/conversations/${activeConvId}/attach`, { method: 'POST', body: fd });
+    await openConversation(activeConvId);
+    await loadConversations();
+  }
+
+  async function sendTextOverWire({ e2e, mentions, body, reply }) {
+    const payload = e2e
+      ? { type: 'chat_send', conversation_id: activeConvId, e2e, mentions, reply_to_id: reply }
+      : { type: 'chat_send', conversation_id: activeConvId, body, reply_to_id: reply };
+    const WS = window.AirdChatWS;
+    if (WS?.isOpen() && WS.send(payload)) return false;
+    await api(`/api/chat/conversations/${activeConvId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(e2e
+        ? { type: 'text', e2e, mentions, reply_to_id: reply }
+        : { type: 'text', body, reply_to_id: reply }),
+    });
+    return true;
+  }
+
   async function sendEditorMessage() {
     if (window.AirdEnhancedSecure?.viewing()) {
-      const text = (editor?.innerText || '').replaceAll('\u00a0', ' ').trim();
-      if (pending.length) {
-        setE2eStatus('Enhanced Secure Chat is text only.');
-        return;
-      }
-      if (!text) return;
-      try {
-        await window.AirdEnhancedSecure.sendText(text);
-        editor.innerHTML = '';
-        setE2eStatus('');
-      } catch (err) {
-        setE2eStatus(err.message || 'Could not send.');
-      }
+      await sendEnhancedSecureEditorMessage();
       return;
     }
     if (!activeConvId || !editor) return;
@@ -1489,16 +1578,11 @@ import {
     let e2e = null;
     let mentions = [];
     if (hasText) {
-      if (!E2E?.ready()) {
-        setE2eStatus('Waiting for the chat key…');
-        return;
-      }
       try {
-        const ok = await e2eReady(activeConvId);
-        if (!ok) return;
-        const html = E2E.sanitizeHtml(body);
-        e2e = await E2E.encrypt(activeConvId, html);
-        mentions = extractMentions(html, activeConv());
+        const encrypted = await encryptOutgoingBody(body);
+        if (!encrypted) return;
+        e2e = encrypted.e2e;
+        mentions = encrypted.mentions;
       } catch (err) {
         setE2eStatus(err.message || 'Could not encrypt this message.');
         return;
@@ -1511,39 +1595,11 @@ import {
     clearReply();
     hidePathSuggest();
     if (staged.length) {
-      const fd = new FormData();
-      if (e2e) {
-        fd.append('e2e', JSON.stringify(e2e));
-        fd.append('mentions', JSON.stringify(mentions));
-      } else if (hasText) {
-        fd.append('caption', body);
-      }
-      if (reply) fd.append('reply_to_id', reply);
-      for (const item of staged) {
-        if (item.path) fd.append('source_path', item.path);
-        else fd.append('file', item.file, item.file.name);
-      }
-      await api(`/api/chat/conversations/${activeConvId}/attach`, { method: 'POST', body: fd });
-      await openConversation(activeConvId);
-      await loadConversations();
+      await postStagedAttachments(staged, { e2e, mentions, hasText, body, reply });
       return;
     }
-    let sentHttp = false;
-    if (hasText) {
-      const payload = e2e
-        ? { type: 'chat_send', conversation_id: activeConvId, e2e, mentions, reply_to_id: reply }
-        : { type: 'chat_send', conversation_id: activeConvId, body, reply_to_id: reply };
-      const WS = window.AirdChatWS;
-      if (!(WS?.isOpen() && WS.send(payload))) {
-        await api(`/api/chat/conversations/${activeConvId}/messages`, {
-          method: 'POST',
-          body: JSON.stringify(e2e
-            ? { type: 'text', e2e, mentions, reply_to_id: reply }
-            : { type: 'text', body, reply_to_id: reply }),
-        });
-        sentHttp = true;
-      }
-    }
+    if (!hasText) return;
+    const sentHttp = await sendTextOverWire({ e2e, mentions, body, reply });
     if (sentHttp) {
       await openConversation(activeConvId);
       await loadConversations();
@@ -1577,46 +1633,49 @@ import {
     return true;
   }
 
+  function handleEditorPathKeys(e, tokenInfo) {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      e.stopPropagation();
+      const info = tokenInfo || caretPathToken();
+      const hit = pathSuggestHits[pathSuggestIdx];
+      if (hit?.is_dir && !e.shiftKey && info) {
+        applyPathHit(info, hit).catch((err) => alert(err.message));
+        return true;
+      }
+      completeComposerPath(info, e.shiftKey).catch((err) => alert(err.message));
+      return true;
+    }
+    if (e.key === 'ArrowDown' && pathSuggestHits.length) {
+      e.preventDefault();
+      pathSuggestIdx = (pathSuggestIdx + 1) % pathSuggestHits.length;
+      renderPathSuggest(tokenInfo);
+      return true;
+    }
+    if (e.key === 'ArrowUp' && pathSuggestHits.length) {
+      e.preventDefault();
+      pathSuggestIdx = (pathSuggestIdx - 1 + pathSuggestHits.length) % pathSuggestHits.length;
+      renderPathSuggest(tokenInfo);
+      return true;
+    }
+    if ((e.key === 'Enter' || e.key === 'NumpadEnter') && !e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      attachComposerSelection(tokenInfo).catch((err) => alert(err.message));
+      return true;
+    }
+    if (e.key === 'Escape' && (pathSuggestHits.length || pathPopupVisible())) {
+      e.preventDefault();
+      hidePathSuggest();
+      return true;
+    }
+    return false;
+  }
+
   editor?.addEventListener('keydown', (e) => {
     const tokenInfo = caretPathToken();
     const pathMode = (tokenInfo && looksLikePath(tokenInfo.token)) || pathPopupVisible();
-    if (pathMode) {
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        e.stopPropagation();
-        const info = tokenInfo || caretPathToken();
-        const hit = pathSuggestHits[pathSuggestIdx];
-        if (hit?.is_dir && !e.shiftKey && info) {
-          applyPathHit(info, hit).catch((err) => alert(err.message));
-          return;
-        }
-        completeComposerPath(info, e.shiftKey).catch((err) => alert(err.message));
-        return;
-      }
-      if (e.key === 'ArrowDown' && pathSuggestHits.length) {
-        e.preventDefault();
-        pathSuggestIdx = (pathSuggestIdx + 1) % pathSuggestHits.length;
-        renderPathSuggest(tokenInfo);
-        return;
-      }
-      if (e.key === 'ArrowUp' && pathSuggestHits.length) {
-        e.preventDefault();
-        pathSuggestIdx = (pathSuggestIdx - 1 + pathSuggestHits.length) % pathSuggestHits.length;
-        renderPathSuggest(tokenInfo);
-        return;
-      }
-      if ((e.key === 'Enter' || e.key === 'NumpadEnter') && !e.shiftKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        attachComposerSelection(tokenInfo).catch((err) => alert(err.message));
-        return;
-      }
-      if (e.key === 'Escape' && (pathSuggestHits.length || pathPopupVisible())) {
-        e.preventDefault();
-        hidePathSuggest();
-        return;
-      }
-    }
+    if (pathMode && handleEditorPathKeys(e, tokenInfo)) return;
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && enterToSendEnabled()) {
       e.preventDefault();
       sendEditorMessage().catch((err) => alert(err.message));
@@ -1644,14 +1703,7 @@ import {
           mentionSuggest.innerHTML = hits.map((m) => `<button type="button" data-user="${esc(m.username)}">@${esc(m.username)}</button>`).join('');
           mentionSuggest.classList.remove('hidden');
           mentionSuggest.querySelectorAll('[data-user]').forEach((btn) => {
-            btn.addEventListener('click', () => {
-              const html = editor.innerHTML;
-              const at = html.lastIndexOf('@');
-              const prefix = at >= 0 ? html.slice(0, at) : html;
-              editor.innerHTML = prefix + '@' + btn.dataset.user + '&nbsp;';
-              mentionSuggest.classList.add('hidden');
-              editor.focus();
-            });
+            btn.addEventListener('click', handleMentionPick);
           });
           return;
         }
@@ -1659,6 +1711,16 @@ import {
       mentionSuggest?.classList.add('hidden');
     });
   });
+
+  function handleMentionPick(e) {
+    const username = e.currentTarget.dataset.user || '';
+    const html = editor.innerHTML;
+    const at = html.lastIndexOf('@');
+    const prefix = at >= 0 ? html.slice(0, at) : html;
+    editor.innerHTML = `${prefix}@${username}&nbsp;`;
+    mentionSuggest.classList.add('hidden');
+    editor.focus();
+  }
 
   // document.execCommand is deprecated but remains the most reliable option for
   // contenteditable toolbar formatting across browsers.
@@ -1773,13 +1835,16 @@ import {
     el.hidden = false;
     el.innerHTML = pending.map((p) => pendingChipHtml(p)).join('');
     el.querySelectorAll('[data-rm]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const item = pending.find((p) => p.id === btn.dataset.rm);
-        revokePendingPreview(item);
-        pendingStore.remove(btn.dataset.rm);
-        renderPending();
-      });
+      btn.addEventListener('click', handlePendingRemoveClick);
     });
+  }
+
+  function handlePendingRemoveClick(e) {
+    const id = e.currentTarget.dataset.rm;
+    const item = pending.find((p) => p.id === id);
+    revokePendingPreview(item);
+    pendingStore.remove(id);
+    renderPending();
   }
 
   function stagePath(relativePath, opts = {}) {
@@ -1856,7 +1921,8 @@ import {
       try {
         pre.setEnd(sel.anchorNode, sel.anchorOffset);
         left = pre.toString();
-      } catch (_) {
+      } catch (err) {
+        console.debug('caretPathToken range failed', err);
         left = '';
       }
     }
@@ -1931,6 +1997,37 @@ import {
     box.innerHTML = '';
   }
 
+  function preventPathHitMouseDown(e) {
+    e.preventDefault();
+  }
+
+  function handlePathHitClick(e, info) {
+    const btn = e.currentTarget;
+    const i = Number(btn.dataset.i);
+    const hit = pathSuggestHits[i];
+    if (!hit) return;
+    const box = getPathSuggest();
+    if (hit.is_dir) {
+      pathSuggestIdx = i;
+      box?.querySelectorAll('.chat-path-hit').forEach((b) => {
+        b.classList.toggle('is-active', Number(b.dataset.i) === i);
+      });
+      return;
+    }
+    applyPathHit(info, hit).catch((err) => alert(err.message));
+  }
+
+  function handlePathHitDblClick(e, info) {
+    const hit = pathSuggestHits[Number(e.currentTarget.dataset.i)];
+    if (hit?.is_dir) applyPathHit(info, hit).catch((err) => alert(err.message));
+  }
+
+  function wirePathSuggestBtn(btn, info) {
+    btn.addEventListener('mousedown', preventPathHitMouseDown);
+    btn.addEventListener('click', (e) => handlePathHitClick(e, info));
+    btn.addEventListener('dblclick', (e) => handlePathHitDblClick(e, info));
+  }
+
   function renderPathSuggest(info) {
     const box = getPathSuggest();
     if (!box) return;
@@ -1946,26 +2043,7 @@ import {
       return `<button type="button" class="chat-path-hit${on}" data-i="${i}"><span class="chat-path-hit-icon">${icon}</span><span class="truncate">${esc(label)}</span></button>`;
     }).join('');
     box.hidden = false;
-    box.querySelectorAll('[data-i]').forEach((btn) => {
-      btn.addEventListener('mousedown', (e) => e.preventDefault());
-      btn.addEventListener('click', () => {
-        const i = Number(btn.dataset.i);
-        const hit = pathSuggestHits[i];
-        if (!hit) return;
-        if (hit.is_dir) {
-          pathSuggestIdx = i;
-          box.querySelectorAll('.chat-path-hit').forEach((b) => {
-            b.classList.toggle('is-active', Number(b.dataset.i) === i);
-          });
-          return;
-        }
-        applyPathHit(info, hit).catch((err) => alert(err.message));
-      });
-      btn.addEventListener('dblclick', () => {
-        const hit = pathSuggestHits[Number(btn.dataset.i)];
-        if (hit?.is_dir) applyPathHit(info, hit).catch((err) => alert(err.message));
-      });
-    });
+    box.querySelectorAll('[data-i]').forEach((btn) => wirePathSuggestBtn(btn, info));
     box.querySelector('.is-active')?.scrollIntoView({ block: 'nearest' });
   }
 
@@ -1995,7 +2073,7 @@ import {
   }
 
   let pathSuggestTimer = null;
-  async function updateComposerPathSuggest(info) {
+  async function updateComposerPathSuggest(_info) {
     clearTimeout(pathSuggestTimer);
     await new Promise((resolve) => {
       pathSuggestTimer = setTimeout(resolve, 40);
@@ -2033,7 +2111,6 @@ import {
       renderPathSuggest(caretPathToken() || info);
       return;
     }
-    tabCycle = { key: '', i: -1 };
     replaceCaretToken(info, shown);
     const next = caretPathToken();
     pathSuggestHits = result.hits.slice(0, 12);
@@ -2063,12 +2140,15 @@ import {
     if (newMode === 'group') addGroupPick(newUserInput.value);
     else startConversation().catch((err) => alert(err.message));
   });
+  function pickMemberFromSearch(name) {
+    addMember(activeConv(), name).catch((err) => alert(err.message));
+  }
+
   memberUserInput?.addEventListener('input', () => {
     clearTimeout(userSearchTimer);
     userSearchTimer = setTimeout(() => {
-      void searchUsers(memberUserInput.value, memberSuggest, (name) => {
-        addMember(activeConv(), name).catch((err) => alert(err.message));
-      });
+      searchUsers(memberUserInput.value, memberSuggest, pickMemberFromSearch)
+        .catch((err) => console.debug('member searchUsers failed', err));
     }, 250);
   });
   qs('#chatMemberCancel')?.addEventListener('click', () => memberModal?.close());
@@ -2084,7 +2164,9 @@ import {
     }
   });
   messagesEl?.addEventListener('scroll', () => {
-    if (messagesEl.scrollTop < 64) void loadOlderMessages();
+    if (messagesEl.scrollTop < 64) {
+      runAsync(() => loadOlderMessages(), 'loadOlderMessages');
+    }
   });
   qs('#chatReplyCancel')?.addEventListener('click', clearReply);
   qs('#chatForwardCancel')?.addEventListener('click', () => qs('#chatForwardModal')?.close());
@@ -2131,7 +2213,7 @@ import {
     }
     try {
       const data = await api('/api/chat/unread');
-      void updateNavBadge(data.total || 0);
+      await updateNavBadge(data.total || 0);
     } catch (err) { console.debug('nav badge unread fetch failed', err); }
   }
 

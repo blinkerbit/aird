@@ -80,6 +80,73 @@ def _entries(conn: sqlite3.Connection) -> list[tuple[str, str, str]]:
     return out
 
 
+def _refresh_device_token(conn: sqlite3.Connection, token: str) -> str:
+    try:
+        from aird.plugins.onedrive.settings import get_settings as od_settings
+        from aird.plugins.onedrive.settings import resolve_access_token
+
+        settings = od_settings(conn)
+        if settings.get("auth_source") == "device":
+            return resolve_access_token(conn) or token
+    except Exception:
+        logger.debug("token refresh", exc_info=True)
+    return token
+
+
+def _file_unchanged(stored, st) -> bool:
+    return bool(
+        stored and stored[1] == st.st_size and abs(stored[0] - st.st_mtime) < 1e-6
+    )
+
+
+def _sync_one_entry(
+    provider: OneDriveProvider,
+    conn: sqlite3.Connection,
+    *,
+    username: str,
+    abs_path: str,
+    arcname: str,
+    root_base: str,
+    conflict: str,
+) -> tuple[str, str | None]:
+    """Returns ('uploaded'|'skipped'|'failed', error_or_none)."""
+    host_status.enqueue_paths([arcname])
+    try:
+        st = os.stat(abs_path)
+    except OSError:
+        host_status.finish_path(arcname, ok=False, error="missing")
+        return "failed", None
+    stored = od_db.get_file_state(conn, username, arcname)
+    if _file_unchanged(stored, st):
+        host_status.finish_path(arcname, ok=True)
+        return "skipped", None
+    remote = f"{user_remote_root(root_base, username)}/{arcname}"
+    safe_conflict = conflict if conflict in {"replace", "rename", "fail"} else "replace"
+    try:
+        with open(abs_path, "rb") as fh:
+            uploaded_file = provider.upload_file_at_path(
+                fh,
+                drive_path=remote,
+                size=st.st_size,
+                conflict=safe_conflict,
+            )
+        od_db.set_file_state(
+            conn,
+            username,
+            arcname,
+            local_mtime=st.st_mtime,
+            local_size=st.st_size,
+            remote_item_id=uploaded_file.id,
+        )
+        host_status.finish_path(arcname, ok=True)
+        return "uploaded", None
+    except (OSError, CloudProviderError) as exc:
+        err = str(exc)
+        host_status.finish_path(arcname, ok=False, error=err)
+        logger.warning("host sync failed %s", arcname, exc_info=True)
+        return "failed", err
+
+
 def sync_host(conn: sqlite3.Connection | None) -> dict:
     result = {"ok": False, "uploaded": 0, "skipped": 0, "failed": 0, "error": None}
     if conn is None:
@@ -93,16 +160,7 @@ def sync_host(conn: sqlite3.Connection | None) -> dict:
     if not token:
         result["error"] = "OneDrive host token is not configured"
         return result
-    try:
-        from aird.plugins.onedrive.settings import get_settings as od_settings
-
-        settings = od_settings(conn)
-        if settings.get("auth_source") == "device" and conn is not None:
-            from aird.plugins.onedrive.settings import resolve_access_token
-
-            token = resolve_access_token(conn) or token
-    except Exception:
-        logger.debug("token refresh", exc_info=True)
+    token = _refresh_device_token(conn, token)
 
     entries = _entries(conn)
     if not entries:
@@ -116,42 +174,19 @@ def sync_host(conn: sqlite3.Connection | None) -> dict:
     last_error = None
 
     for username, abs_path, arcname in entries:
-        host_status.enqueue_paths([arcname])
-        try:
-            st = os.stat(abs_path)
-        except OSError:
-            failed += 1
-            host_status.finish_path(arcname, ok=False, error="missing")
-            continue
-        stored = od_db.get_file_state(conn, username, arcname)
-        if stored and stored[1] == st.st_size and abs(stored[0] - st.st_mtime) < 1e-6:
-            skipped += 1
-            host_status.finish_path(arcname, ok=True)
-            continue
-        remote = f"{user_remote_root(root_base, username)}/{arcname}"
-        try:
-            with open(abs_path, "rb") as fh:
-                uploaded_file = provider.upload_file_at_path(
-                    fh,
-                    drive_path=remote,
-                    size=st.st_size,
-                    conflict=conflict if conflict in {"replace", "rename", "fail"} else "replace",
-                )
-            od_db.set_file_state(
-                conn,
-                username,
-                arcname,
-                local_mtime=st.st_mtime,
-                local_size=st.st_size,
-                remote_item_id=uploaded_file.id,
-            )
+        outcome, err = _sync_one_entry(
+            provider, conn,
+            username=username, abs_path=abs_path, arcname=arcname,
+            root_base=root_base, conflict=conflict,
+        )
+        if outcome == "uploaded":
             uploaded += 1
-            host_status.finish_path(arcname, ok=True)
-        except (OSError, CloudProviderError) as exc:
+        elif outcome == "skipped":
+            skipped += 1
+        else:
             failed += 1
-            last_error = str(exc)
-            host_status.finish_path(arcname, ok=False, error=last_error)
-            logger.warning("host sync failed %s", arcname, exc_info=True)
+            if err:
+                last_error = err
 
     result.update(
         ok=failed == 0,

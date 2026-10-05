@@ -18,6 +18,8 @@ from aird.core.user_storage import (
 )
 from aird.core.zip_download import MAX_ZIP_UNCOMPRESSED_BYTES
 
+_ERR_INVALID_FILENAME = "Invalid filename"
+
 
 def media_kind_for_name(filename: str) -> str:
     ext = os.path.splitext(filename or "")[1].lower()
@@ -124,7 +126,7 @@ def store_upload(*, sender_username: str, conversation_id: str, source_abs: str,
         raise FileNotFoundError("Source file not found")
     name = os.path.basename((original_name or os.path.basename(source_abs)).replace("\\", "/"))
     if not name or name in (".", ".."):
-        raise ValueError("Invalid filename")
+        raise ValueError(_ERR_INVALID_FILENAME)
     home = user_home_for_username(sender_username)
     ensure_user_home_layout(home)
     rel_hint = f"{CHAT_STORE_FOLDER}/c/{conversation_id}/{name}"
@@ -163,7 +165,7 @@ def save_copy_to_data(
         raise FileNotFoundError("Source not found")
     name = os.path.basename((original_name or os.path.basename(source_abs.rstrip("/\\"))).replace("\\", "/"))
     if not name or name in (".", ".."):
-        raise ValueError("Invalid filename")
+        raise ValueError(_ERR_INVALID_FILENAME)
     data = user_data_dir_for_username(recipient_username)
     dest_rel = normalize_dest_dir(dest_dir, data)
     rel_hint = f"{dest_rel}/{name}" if dest_rel else name
@@ -244,7 +246,7 @@ def chat_share_rel_path(peer_username: str, filename: str) -> str:
         raise ValueError("Invalid peer username")
     base = os.path.basename(filename.replace("\\", "/"))
     if not base or base in (".", ".."):
-        raise ValueError("Invalid filename")
+        raise ValueError(_ERR_INVALID_FILENAME)
     return f"{CHAT_STORE_FOLDER}/{safe_peer}/{base}"
 
 

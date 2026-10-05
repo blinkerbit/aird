@@ -13,7 +13,7 @@ function cfg() {
 
 function b64url(bytes) {
   let bin = "";
-  bytes.forEach((b) => { bin += String.fromCharCode(b); });
+  bytes.forEach((b) => { bin += String.fromCodePoint(b); });
   return btoa(bin).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 }
 
@@ -38,10 +38,29 @@ function loadTokens() {
 }
 
 function msTokenUrl(tenant) {
-  const raw = String(tenant || "common");
-  const known = raw === "common" || raw === "organizations" || raw === "consumers";
-  const segment = known ? raw : encodeURIComponent(raw);
-  return `https://login.microsoftonline.com/${segment}/oauth2/v2.0/token`;
+  if (tenant === "organizations") {
+    return "https://login.microsoftonline.com/organizations/oauth2/v2.0/token";
+  }
+  if (tenant === "consumers") {
+    return "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
+  }
+  return "https://login.microsoftonline.com/common/oauth2/v2.0/token";
+}
+
+function msAuthorizeUrl(tenant) {
+  if (tenant === "organizations") {
+    return "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize";
+  }
+  if (tenant === "consumers") {
+    return "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
+  }
+  return "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
+}
+
+function storedSecret(value) {
+  const text = typeof value === "string" ? value : "";
+  const match = /^[A-Za-z0-9._~+/-]{1,8192}$/.exec(text);
+  return match ? match[0] : "";
 }
 
 function appReturnPath(value) {
@@ -56,13 +75,14 @@ function appReturnPath(value) {
 }
 
 function saveTokens(tokens) {
-  const access = typeof tokens?.access_token === "string" ? tokens.access_token : "";
-  const refresh = typeof tokens?.refresh_token === "string" ? tokens.refresh_token : "";
+  const access = storedSecret(tokens?.access_token);
+  const refresh = storedSecret(tokens?.refresh_token);
   if (!access) return;
+  const expires = Number(tokens?.expires_at);
   sessionStorage.setItem(STORE, JSON.stringify({
     access_token: access,
     refresh_token: refresh,
-    expires_at: Number(tokens.expires_at) || 0,
+    expires_at: Number.isFinite(expires) ? expires : 0,
   }));
 }
 
@@ -114,7 +134,7 @@ function redirectUri() {
 }
 
 function authorizeUrl(clientId, tenant, challenge, state) {
-  const u = new URL(`https://login.microsoftonline.com/${tenant || "common"}/oauth2/v2.0/authorize`);
+  const u = new URL(msAuthorizeUrl(tenant));
   u.searchParams.set("client_id", clientId);
   u.searchParams.set("response_type", "code");
   u.searchParams.set("redirect_uri", redirectUri());
@@ -218,7 +238,7 @@ async function finishCallback() {
   const state = params.get("state");
   const pkce = JSON.parse(sessionStorage.getItem(PKCE) || "null");
   sessionStorage.removeItem(PKCE);
-  if (!code || !pkce || pkce.state !== state) {
+  if (!code || pkce?.state !== state) {
     if (msg) msg.textContent = "OneDrive sign-in was cancelled.";
     return;
   }
@@ -230,12 +250,15 @@ async function finishCallback() {
 }
 
 async function graph(token, path, opts = {}) {
-  const res = await fetch(`${GRAPH}${path}`, Object.assign({
-    headers: Object.assign(
-      { Authorization: `Bearer ${token}`, Accept: "application/json" },
-      opts.headers || {},
-    ),
-  }, opts));
+  const { headers: extraHeaders, ...rest } = opts;
+  const res = await fetch(`${GRAPH}${path}`, {
+    ...rest,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      ...(extraHeaders || {}),
+    },
+  });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error?.message || data.error || res.statusText);
   return data;
@@ -298,7 +321,7 @@ async function listAirdDir(relPath) {
 }
 
 async function uploadTree(token, parentId, relPath, isDir) {
-  const name = relPath.split("/").filter(Boolean).pop() || relPath;
+  const name = relPath.split("/").findLast(Boolean) || relPath;
   if (!isDir) {
     const blob = await fetchAirdBlob(relPath);
     await uploadBlob(token, parentId, name, blob);
@@ -310,7 +333,7 @@ async function uploadTree(token, parentId, relPath, isDir) {
   });
   if (!folder?.id) throw new Error("Could not create OneDrive folder");
   const children = await listAirdDir(relPath);
-  for (const child of children) {
+  for await (const child of children) {
     const childPath = relPath ? `${relPath}/${child.name}` : child.name;
     await uploadTree(token, folder.id, childPath, !!child.is_dir);
   }
@@ -421,7 +444,7 @@ export async function savePathsToOneDrive(items, opts = {}) {
   }
 
   if (folderId) {
-    for (const item of items) {
+    for await (const item of items) {
       await uploadTree(token, folderId, item.path, !!item.isDir);
     }
     return { folderId, usedDefault: true };
@@ -432,7 +455,7 @@ export async function savePathsToOneDrive(items, opts = {}) {
       token,
       title: opts.title || "Save to OneDrive",
       onPick: async (pickedId, names) => {
-        for (const item of items) {
+        for await (const item of items) {
           await uploadTree(token, pickedId, item.path, !!item.isDir);
         }
         if (opts.rememberAsDefault) {
@@ -577,7 +600,7 @@ function showFilePicker({ token, title, filter, onPick }) {
 
 async function ensureFolderPath(token, parts) {
   let parentId = "root";
-  for (const name of parts) {
+  for await (const name of parts) {
     const kids = await listChildren(token, parentId);
     let folder = kids.find((k) => k.folder && k.name === name);
     if (!folder) {

@@ -54,6 +54,11 @@ from aird.plugins.gitlab.token import (
 
 logger = logging.getLogger(__name__)
 _TOKEN_ONLY = frozenset({"token_user", "admin_token"})
+_ERR_ACCESS_DENIED = "Access denied"
+_ERR_NO_BINDING = "No GitLab binding for this folder"
+_ERR_NO_TOKEN = "Configure a GitLab token for this account"
+_ERR_BINDING_OR_TOKEN = "GitLab binding or token missing"
+_ERR_COMMENT_NOT_FOUND = "Comment not found"
 
 
 def _require_gitlab(handler: BaseHandler) -> bool:
@@ -91,7 +96,7 @@ def _need_access(handler: BaseHandler, *, write: bool = False, owner_proxy: bool
     if access is None:
         if handler.get_status() == 200:
             handler.set_status(403)
-            handler.write({"error": "Access denied"})
+            handler.write({"error": _ERR_ACCESS_DENIED})
         return None
     if write and not access.can_write:
         handler.set_status(403)
@@ -120,6 +125,149 @@ def _binding_and_token(handler: BaseHandler, access: PathAccess):
         else None
     )
     return binding, token
+
+
+def _parse_board_iid(raw) -> tuple[int | None, str | None]:
+    if raw in (None, ""):
+        return None, None
+    try:
+        board_iid = int(raw)
+    except (TypeError, ValueError):
+        return None, "board_iid must be an integer"
+    if board_iid < 1 or board_iid > GITLAB_BOARD_ID_MAX:
+        return None, "board_iid out of range"
+    return board_iid, None
+
+
+def _binding_fields_from_body(body: dict) -> tuple[dict | None, str | None]:
+    host = str(body.get("gitlab_host") or "https://gitlab.com").strip()
+    code = str(body.get("code_project") or "").strip()
+    issues = str(body.get("issues_project") or code).strip()
+    prefix = str(body.get("repo_path_prefix") or "").strip()
+    if len(host) > GITLAB_HOST_MAX_LEN or len(code) > GITLAB_PROJECT_PATH_MAX_LEN:
+        return None, "GitLab host or project path is too long"
+    if not code:
+        return None, "code_project is required"
+    board_iid, board_err = _parse_board_iid(body.get("board_iid"))
+    if board_err:
+        return None, board_err
+    return {
+        "gitlab_host": host,
+        "code_project": code,
+        "issues_project": issues,
+        "board_iid": board_iid,
+        "repo_path_prefix": prefix,
+    }, None
+
+
+def _dashboard_empty_payload(admin_cfg: dict) -> dict:
+    boards = admin_cfg.get("boards") or []
+    return {
+        "binding": None,
+        "boards": boards,
+        "gitlab_user": None,
+        "open_issues": [],
+        "merge_requests": [],
+        "active_users": [],
+        "cache": None,
+    }
+
+
+def _dashboard_user_host(binding, boards, admin_cfg: dict) -> str | None:
+    return (
+        (binding or {}).get("gitlab_host")
+        or (boards[0]["gitlab_host"] if boards else None)
+        or admin_cfg.get("default_host")
+    )
+
+
+def _dashboard_issues_and_mrs(
+    handler: BaseHandler,
+    *,
+    access: PathAccess,
+    host: str,
+    token: str,
+    issues_project: str,
+    code_project: str,
+) -> tuple[list[dict], list[dict], dict | None] | None:
+    key = gitlab_cache.project_key(host, issues_project)
+    cache_meta = gitlab_cache.cache_meta(handler.db_conn, access.owner_username, key)
+    open_issues = gitlab_cache.list_cached_issues(
+        handler.db_conn, access.owner_username, key
+    )
+    mrs = _gl_call(handler, list_mrs, host, token, code_project)
+    if mrs is None:
+        return None
+    return open_issues, mrs, cache_meta
+
+
+def _enrich_board_issue(
+    *,
+    host: str,
+    token: str,
+    project: str,
+    issue: dict,
+    aird_comments: list[dict],
+) -> dict:
+    iid = issue.get("iid")
+    notes = []
+    events = []
+    if iid:
+        notes = list_issue_notes(host, token, project, int(iid)) or []
+        events = list_label_events(host, token, project, int(iid)) or []
+    labels = [
+        (lab.get("name") if isinstance(lab, dict) else str(lab))
+        for lab in (issue.get("labels") or [])
+    ]
+    last_gl = last_comment_at(notes)
+    aird_last = next(
+        (c.get("created_at") for c in aird_comments if c.get("gitlab_issue_iid") == iid),
+        None,
+    )
+    last = last_gl or aird_last
+    return {
+        "iid": iid,
+        "title": issue.get("title"),
+        "web_url": issue.get("web_url"),
+        "assignees": issue.get("assignees") or [],
+        "labels": labels,
+        "weight": issue.get("weight"),
+        "time_stats": issue.get("time_stats"),
+        "created_at": issue.get("created_at"),
+        "last_comment_at": last,
+        "days_since_comment": days_since(last),
+        "days_in_lane": days_in_lane(
+            events, labels, fallback_created_at=issue.get("created_at")
+        ),
+    }
+
+
+def _refresh_other_board_caches(
+    conn,
+    *,
+    owner_username: str,
+    token: str,
+    primary_host: str,
+    primary_project: str,
+    admin_boards: list[dict],
+) -> list:
+    extra = []
+    for board in admin_boards:
+        if board.get("issues_project") == primary_project and board.get("gitlab_host") == primary_host:
+            continue
+        try:
+            extra.append(
+                gitlab_cache.refresh_project_cache(
+                    conn,
+                    owner_username=owner_username,
+                    host=board["gitlab_host"],
+                    issues_project=board["issues_project"],
+                    token=token,
+                )
+            )
+        except Exception as exc:
+            logger.warning("GitLab board cache refresh failed: %s", exc)
+    return extra
 
 
 def _gl_call(handler: BaseHandler, fn, *args, **kwargs):
@@ -228,40 +376,20 @@ class GitlabBindingHandler(BaseHandler, XSRFTokenMixin):
             body = self.parse_json_body()
         except tornado.web.HTTPError:
             return
-        host = str(body.get("gitlab_host") or "https://gitlab.com").strip()
-        code = str(body.get("code_project") or "").strip()
-        issues = str(body.get("issues_project") or code).strip()
-        prefix = str(body.get("repo_path_prefix") or "").strip()
-        board_raw = body.get("board_iid")
-        if len(host) > GITLAB_HOST_MAX_LEN or len(code) > GITLAB_PROJECT_PATH_MAX_LEN:
+        fields, err = _binding_fields_from_body(body)
+        if err:
             self.set_status(400)
-            self.write({"error": "GitLab host or project path is too long"})
+            self.write({"error": err})
             return
-        if not code:
-            self.set_status(400)
-            self.write({"error": "code_project is required"})
-            return
-        board_iid = None
-        if board_raw not in (None, ""):
-            try:
-                board_iid = int(board_raw)
-            except (TypeError, ValueError):
-                self.set_status(400)
-                self.write({"error": "board_iid must be an integer"})
-                return
-            if board_iid < 1 or board_iid > GITLAB_BOARD_ID_MAX:
-                self.set_status(400)
-                self.write({"error": "board_iid out of range"})
-                return
         binding = gitlab_db.upsert_binding(
             self.db_conn,
             owner_username=access.owner_username,
             folder_rel_path=access.rel_path,
-            gitlab_host=host,
-            code_project=code,
-            issues_project=issues,
-            board_iid=board_iid,
-            repo_path_prefix=prefix,
+            gitlab_host=fields["gitlab_host"],
+            code_project=fields["code_project"],
+            issues_project=fields["issues_project"],
+            board_iid=fields["board_iid"],
+            repo_path_prefix=fields["repo_path_prefix"],
             updated_by=_username(self),
         )
         self.write({"binding": binding})
@@ -317,11 +445,11 @@ class GitlabPipelinesHandler(BaseHandler):
         binding, token = _binding_and_token(self, access)
         if not binding:
             self.set_status(404)
-            self.write({"error": "No GitLab binding for this folder"})
+            self.write({"error": _ERR_NO_BINDING})
             return
         if not token:
             self.set_status(401)
-            self.write({"error": "Configure a GitLab token for this account"})
+            self.write({"error": _ERR_NO_TOKEN})
             return
         pipes = _gl_call(
             self, list_pipelines, binding["gitlab_host"], token, binding["code_project"]
@@ -365,11 +493,11 @@ class GitlabIssuesForPathHandler(BaseHandler):
         binding, token, mapped = _issues_mentioning(self, access, names)
         if not binding:
             self.set_status(404)
-            self.write({"error": "No GitLab binding for this folder"})
+            self.write({"error": _ERR_NO_BINDING})
             return
         if not token:
             self.set_status(401)
-            self.write({"error": "Configure a GitLab token for this account"})
+            self.write({"error": _ERR_NO_TOKEN})
             return
         self.write({"issues_by_name": mapped, "cache": gitlab_cache.cache_meta(
             self.db_conn,
@@ -390,11 +518,11 @@ class GitlabCachedIssuesHandler(BaseHandler):
         binding, token = _binding_and_token(self, access)
         if not binding:
             self.set_status(404)
-            self.write({"error": "No GitLab binding for this folder"})
+            self.write({"error": _ERR_NO_BINDING})
             return
         if not token:
             self.set_status(401)
-            self.write({"error": "Configure a GitLab token for this account"})
+            self.write({"error": _ERR_NO_TOKEN})
             return
         project = binding.get("issues_project") or binding.get("code_project")
         key = gitlab_cache.project_key(binding["gitlab_host"], project)
@@ -437,11 +565,11 @@ class GitlabRefreshHandler(BaseHandler, XSRFTokenMixin):
         binding, token = _binding_and_token(self, access)
         if not binding:
             self.set_status(404)
-            self.write({"error": "No GitLab binding for this folder"})
+            self.write({"error": _ERR_NO_BINDING})
             return
         if not token:
             self.set_status(401)
-            self.write({"error": "Configure a GitLab token for this account"})
+            self.write({"error": _ERR_NO_TOKEN})
             return
         host = binding["gitlab_host"]
         project = binding.get("issues_project") or binding.get("code_project")
@@ -453,22 +581,14 @@ class GitlabRefreshHandler(BaseHandler, XSRFTokenMixin):
             token=token,
         )
         admin_boards = gitlab_settings.get_settings(self.db_conn).get("boards") or []
-        extra = []
-        for board in admin_boards:
-            if board.get("issues_project") == project and board.get("gitlab_host") == host:
-                continue
-            try:
-                extra.append(
-                    gitlab_cache.refresh_project_cache(
-                        self.db_conn,
-                        owner_username=access.owner_username,
-                        host=board["gitlab_host"],
-                        issues_project=board["issues_project"],
-                        token=token,
-                    )
-                )
-            except Exception as exc:
-                logger.warning("GitLab board cache refresh failed: %s", exc)
+        extra = _refresh_other_board_caches(
+            self.db_conn,
+            owner_username=access.owner_username,
+            token=token,
+            primary_host=host,
+            primary_project=project,
+            admin_boards=admin_boards,
+        )
         self.write({"ok": True, "primary": result, "boards": extra})
 
 
@@ -485,28 +605,14 @@ class GitlabDashboardHandler(BaseHandler):
         admin_cfg = gitlab_settings.get_settings(self.db_conn)
         boards = admin_cfg.get("boards") or []
         if not binding and not boards:
-            self.write(
-                {
-                    "binding": None,
-                    "boards": boards,
-                    "gitlab_user": None,
-                    "open_issues": [],
-                    "merge_requests": [],
-                    "active_users": [],
-                    "cache": None,
-                }
-            )
+            self.write(_dashboard_empty_payload(admin_cfg))
             return
         gitlab_user = None
         open_issues: list[dict] = []
         merge_requests: list[dict] = []
         cache_meta = None
         if token:
-            user_host = (
-                (binding or {}).get("gitlab_host")
-                or (boards[0]["gitlab_host"] if boards else None)
-                or admin_cfg.get("default_host")
-            )
+            user_host = _dashboard_user_host(binding, boards, admin_cfg)
             gitlab_user = _gl_call(self, get_current_user, user_host, token)
             if gitlab_user is None:
                 return
@@ -514,28 +620,32 @@ class GitlabDashboardHandler(BaseHandler):
             host = binding["gitlab_host"]
             code = binding.get("code_project")
             issues_project = binding.get("issues_project") or code
-            key = gitlab_cache.project_key(host, issues_project)
-            cache_meta = gitlab_cache.cache_meta(self.db_conn, access.owner_username, key)
-            open_issues = gitlab_cache.list_cached_issues(
-                self.db_conn, access.owner_username, key
+            loaded = _dashboard_issues_and_mrs(
+                self,
+                access=access,
+                host=host,
+                token=token,
+                issues_project=issues_project,
+                code_project=code,
             )
-            mrs = _gl_call(self, list_mrs, host, token, code)
-            if mrs is None:
+            if loaded is None:
                 return
-            merge_requests = mrs
+            open_issues, merge_requests, cache_meta = loaded
         elif token and boards:
             host = boards[0]["gitlab_host"]
             issues_project = boards[0]["issues_project"]
-            key = gitlab_cache.project_key(host, issues_project)
-            cache_meta = gitlab_cache.cache_meta(self.db_conn, access.owner_username, key)
-            open_issues = gitlab_cache.list_cached_issues(
-                self.db_conn, access.owner_username, key
-            )
             code = boards[0].get("code_project") or issues_project
-            mrs = _gl_call(self, list_mrs, host, token, code)
-            if mrs is None:
+            loaded = _dashboard_issues_and_mrs(
+                self,
+                access=access,
+                host=host,
+                token=token,
+                issues_project=issues_project,
+                code_project=code,
+            )
+            if loaded is None:
                 return
-            merge_requests = mrs
+            open_issues, merge_requests, cache_meta = loaded
         self.write(
             {
                 "binding": binding,
@@ -563,7 +673,7 @@ class GitlabMrsHandler(BaseHandler):
         binding, token = _binding_and_token(self, access)
         if not binding or not token:
             self.set_status(404 if not binding else 401)
-            self.write({"error": "GitLab binding or token missing"})
+            self.write({"error": _ERR_BINDING_OR_TOKEN})
             return
         data = _gl_call(
             self, list_mrs, binding["gitlab_host"], token, binding["code_project"]
@@ -585,7 +695,7 @@ class GitlabMrItemHandler(BaseHandler):
         binding, token = _binding_and_token(self, access)
         if not binding or not token:
             self.set_status(404 if not binding else 401)
-            self.write({"error": "GitLab binding or token missing"})
+            self.write({"error": _ERR_BINDING_OR_TOKEN})
             return
         try:
             mr_iid = int(iid)
@@ -624,7 +734,7 @@ class GitlabMrNotesHandler(BaseHandler, XSRFTokenMixin):
         binding, token = _binding_and_token(self, access)
         if not binding or not token:
             self.set_status(404 if not binding else 401)
-            self.write({"error": "GitLab binding or token missing"})
+            self.write({"error": _ERR_BINDING_OR_TOKEN})
             return
         try:
             body = self.parse_json_body()
@@ -664,7 +774,7 @@ class GitlabBoardHandler(BaseHandler):
         binding, token = _binding_and_token(self, access)
         if not binding or not token:
             self.set_status(404 if not binding else 401)
-            self.write({"error": "GitLab binding or token missing"})
+            self.write({"error": _ERR_BINDING_OR_TOKEN})
             return
         host = binding["gitlab_host"]
         project = binding.get("issues_project") or binding["code_project"]
@@ -688,44 +798,19 @@ class GitlabBoardHandler(BaseHandler):
             label = lane.get("label") or {}
             if label.get("name"):
                 label_names.append(label["name"])
-        enriched = []
-        for issue in issues:
-            iid = issue.get("iid")
-            notes = []
-            events = []
-            if iid:
-                notes = list_issue_notes(host, token, project, int(iid)) or []
-                events = list_label_events(host, token, project, int(iid)) or []
-            labels = [
-                (lab.get("name") if isinstance(lab, dict) else str(lab))
-                for lab in (issue.get("labels") or [])
-            ]
-            last_gl = last_comment_at(notes)
-            aird_comments = gitlab_db.list_comments(
-                self.db_conn, access.owner_username, access.rel_path
+        aird_comments = gitlab_db.list_comments(
+            self.db_conn, access.owner_username, access.rel_path
+        )
+        enriched = [
+            _enrich_board_issue(
+                host=host,
+                token=token,
+                project=project,
+                issue=issue,
+                aird_comments=aird_comments,
             )
-            aird_last = None
-            for c in aird_comments:
-                if c.get("gitlab_issue_iid") == iid:
-                    aird_last = c.get("created_at")
-            last = last_gl or aird_last
-            enriched.append(
-                {
-                    "iid": iid,
-                    "title": issue.get("title"),
-                    "web_url": issue.get("web_url"),
-                    "assignees": issue.get("assignees") or [],
-                    "labels": labels,
-                    "weight": issue.get("weight"),
-                    "time_stats": issue.get("time_stats"),
-                    "created_at": issue.get("created_at"),
-                    "last_comment_at": last,
-                    "days_since_comment": days_since(last),
-                    "days_in_lane": days_in_lane(
-                        events, labels, fallback_created_at=issue.get("created_at")
-                    ),
-                }
-            )
+            for issue in issues
+        ]
         self.write(
             {
                 "board": board,
@@ -805,7 +890,7 @@ class GitlabCommentItemHandler(BaseHandler, XSRFTokenMixin):
         comment = gitlab_db.get_comment(self.db_conn, comment_id)
         if not comment:
             self.set_status(404)
-            self.write({"error": "Comment not found"})
+            self.write({"error": _ERR_COMMENT_NOT_FOUND})
             return
         access = resolve_access(
             self,
@@ -814,7 +899,7 @@ class GitlabCommentItemHandler(BaseHandler, XSRFTokenMixin):
         )
         if not access or not access.can_write:
             self.set_status(403)
-            self.write({"error": "Access denied"})
+            self.write({"error": _ERR_ACCESS_DENIED})
             return
         try:
             body = self.parse_json_body()
@@ -857,7 +942,7 @@ class GitlabCommentItemHandler(BaseHandler, XSRFTokenMixin):
         comment = gitlab_db.get_comment(self.db_conn, comment_id)
         if not comment:
             self.set_status(404)
-            self.write({"error": "Comment not found"})
+            self.write({"error": _ERR_COMMENT_NOT_FOUND})
             return
         access = resolve_access(
             self,
@@ -867,7 +952,7 @@ class GitlabCommentItemHandler(BaseHandler, XSRFTokenMixin):
         author = _username(self)
         if not access or not access.can_write:
             self.set_status(403)
-            self.write({"error": "Access denied"})
+            self.write({"error": _ERR_ACCESS_DENIED})
             return
         if comment["author_username"] != author and not access.is_self:
             self.set_status(403)
@@ -892,7 +977,7 @@ class GitlabPromoteHandler(BaseHandler, XSRFTokenMixin):
         comment = gitlab_db.get_comment(self.db_conn, comment_id)
         if not comment:
             self.set_status(404)
-            self.write({"error": "Comment not found"})
+            self.write({"error": _ERR_COMMENT_NOT_FOUND})
             return
         access = resolve_access(
             self,
@@ -913,7 +998,7 @@ class GitlabPromoteHandler(BaseHandler, XSRFTokenMixin):
         binding, token = _binding_and_token(self, access)
         if not binding or not token:
             self.set_status(401)
-            self.write({"error": "GitLab binding or token missing"})
+            self.write({"error": _ERR_BINDING_OR_TOKEN})
             return
         project = binding.get("issues_project") or binding.get("code_project")
         note_body = f"**Aird comment** on `{comment['file_rel_path']}` by {comment['author_username']}:\n\n{comment['body']}"

@@ -45,6 +45,31 @@ def last_comment_at(notes: list[dict[str, Any]] | None) -> str | None:
     return latest
 
 
+def _label_event_name(event: dict[str, Any]) -> str:
+    label = event.get("label") or {}
+    return str(label.get("name") or event.get("label_name") or "").lower()
+
+
+def _latest_add_label_at(
+    label_events: list[dict[str, Any]] | None,
+    labels: set[str],
+) -> datetime | None:
+    moved_at = None
+    for event in label_events or []:
+        action = str(event.get("action") or "").lower()
+        if action not in {"add", "added"}:
+            continue
+        name = _label_event_name(event)
+        if labels and name not in labels:
+            continue
+        dt = _parse_ts(event.get("created_at"))
+        if dt is None:
+            continue
+        if moved_at is None or dt > moved_at:
+            moved_at = dt
+    return moved_at
+
+
 def days_in_lane(
     label_events: list[dict[str, Any]] | None,
     current_labels: list[str] | None,
@@ -54,21 +79,7 @@ def days_in_lane(
 ) -> float | None:
     """Age of the current board list, using the last matching add-label event."""
     labels = {str(x).lower() for x in (current_labels or []) if x}
-    moved_at = None
-    for event in label_events or []:
-        action = str(event.get("action") or "").lower()
-        if action not in {"add", "added"}:
-            continue
-        label = event.get("label") or {}
-        name = str(label.get("name") or event.get("label_name") or "").lower()
-        if labels and name not in labels:
-            continue
-        created = event.get("created_at")
-        dt = _parse_ts(created)
-        if dt is None:
-            continue
-        if moved_at is None or dt > moved_at:
-            moved_at = dt
+    moved_at = _latest_add_label_at(label_events, labels)
     if moved_at is None:
         return days_since(fallback_created_at, now=now)
     current = now or datetime.now(timezone.utc)

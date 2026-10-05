@@ -37,7 +37,7 @@ def get_settings(conn: sqlite3.Connection | None) -> dict:
         return defaults
     try:
         data = json.loads(raw)
-    except (TypeError, ValueError, json.JSONDecodeError):
+    except (TypeError, ValueError):
         return defaults
     if not isinstance(data, dict):
         return defaults

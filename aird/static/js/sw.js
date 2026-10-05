@@ -75,7 +75,7 @@ async function handlePush(event) {
 
 globalThis.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const target = (event.notification.data && event.notification.data.url) || '/files/';
+  const target = event.notification.data?.url || '/files/';
   event.waitUntil(openOrFocus(target));
 });
 

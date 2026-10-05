@@ -376,7 +376,7 @@ def _save_gitlab_plugin_settings(handler: BaseHandler, conn) -> None:
     boards_raw = handler.get_argument("gitlab_boards_json", "") or "[]"
     try:
         boards = normalize_boards(_json.loads(boards_raw))
-    except (TypeError, ValueError, _json.JSONDecodeError):
+    except (TypeError, ValueError):
         boards = []
     save_gitlab_settings(
         conn,

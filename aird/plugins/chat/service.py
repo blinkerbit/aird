@@ -104,25 +104,23 @@ def get_chat_hub() -> ChatHub:
     return _chat_hub
 
 
-def message_preview(msg: dict) -> str:
-    from aird.plugins.chat.e2e import ENCRYPTED_PREVIEW, is_e2e_meta
-
-    meta = msg.get("metadata") or {}
-    if is_e2e_meta(meta) or msg.get("e2e"):
-        return ENCRYPTED_PREVIEW
+def _attachment_names(meta: dict) -> list[str]:
     names = [str(a.get("original_name") or "") for a in attachment_entries(meta)]
-    names = [n for n in names if n]
-    body = plain_preview(msg.get("body") or "")
-    if names and body:
+    return [n for n in names if n]
+
+
+def _preview_with_attachments(body: str, names: list[str], meta: dict) -> str:
+    if body:
         if len(names) == 1:
             return f"{body} · {names[0]}"
         return f"{body} · {len(names)} files"
-    if names:
-        if len(names) == 1:
-            folder = (attachment_entries(meta)[0] or {}).get("media_kind") == "folder"
-            return f"Shared {names[0]}{'/' if folder else ''}"
-        return f"Shared {len(names)} files"
-    msg_type = msg.get("msg_type")
+    if len(names) == 1:
+        folder = (attachment_entries(meta)[0] or {}).get("media_kind") == "folder"
+        return f"Shared {names[0]}{'/' if folder else ''}"
+    return f"Shared {len(names)} files"
+
+
+def _preview_by_msg_type(msg_type: str | None, body: str) -> str:
     if msg_type == "text":
         return body
     if msg_type == "gif":
@@ -130,3 +128,16 @@ def message_preview(msg: dict) -> str:
     if msg_type == "file":
         return "Shared a file"
     return "New message"
+
+
+def message_preview(msg: dict) -> str:
+    from aird.plugins.chat.e2e import ENCRYPTED_PREVIEW, is_e2e_meta
+
+    meta = msg.get("metadata") or {}
+    if is_e2e_meta(meta) or msg.get("e2e"):
+        return ENCRYPTED_PREVIEW
+    names = _attachment_names(meta)
+    body = plain_preview(msg.get("body") or "")
+    if names:
+        return _preview_with_attachments(body, names, meta)
+    return _preview_by_msg_type(msg.get("msg_type"), body)

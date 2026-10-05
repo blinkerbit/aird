@@ -8,17 +8,18 @@ from urllib.parse import unquote, urlparse
 _BACKTICK = re.compile(r"`([^`\n]{1,512})`")
 _MD_LINK = re.compile(r"\[[^\]]{0,256}\]\(([^)]{1,512})\)")
 _BARE_FILE = re.compile(
-    r"(?<![A-Za-z0-9_])((?:[\w.-]+/){1,24}[\w.-]+\.[A-Za-z0-9]{1,12})"
+    r"(?<!\w)((?:[\w.-]+/){1,24}[\w.-]+\.\w{1,12})"
 )
 _GITLAB_BLOB = re.compile(
-    r"/(?:-/)?blob/[^/]+/(.+?)(?:#|\?|$)",
+    r"/(?:-/)?blob/[^/]+/([^#?]+)",
     re.IGNORECASE,
 )
 _GITLAB_TREE = re.compile(
-    r"/(?:-/)?tree/[^/]+/(.+?)(?:#|\?|$)",
+    r"/(?:-/)?tree/[^/]+/([^#?]+)",
     re.IGNORECASE,
 )
-_SKIP_SCHEMES = ("http://", "https://", "mailto:", "#")
+_WEB_SCHEMES = frozenset({"http", "https"})
+_URL_TOKEN = re.compile(r"https?://[^\s)>\"']+")
 
 
 def _clean_candidate(raw: str) -> str:
@@ -34,7 +35,9 @@ def _looks_like_path(text: str) -> bool:
     if not text or len(text) > 512:
         return False
     lower = text.lower()
-    if any(lower.startswith(s) for s in _SKIP_SCHEMES):
+    if lower.startswith("#") or lower.startswith("mailto:"):
+        return False
+    if urlparse(text).scheme.lower() in _WEB_SCHEMES:
         return False
     if " " in text or "\n" in text:
         return False
@@ -45,33 +48,50 @@ def _looks_like_path(text: str) -> bool:
     return True
 
 
-def _path_from_gitlab_url(url: str, *, host: str = "", project: str = "") -> str | None:
-    text = unquote((url or "").strip())
-    if not text:
-        return None
+def _host_without_web_scheme(host: str) -> str:
+    text = (host or "").strip()
+    lowered = text.lower()
+    for prefix in ("https://", "http://"):
+        if lowered.startswith(prefix):
+            text = text[len(prefix) :]
+            break
+    return text.strip("/")
+
+
+def _path_from_regex_match(text: str) -> str | None:
     for rx in (_GITLAB_BLOB, _GITLAB_TREE):
         match = rx.search(text)
         if match:
             cand = _clean_candidate(match.group(1))
             return cand if _looks_like_path(cand) else None
+    return None
+
+
+def _url_matches_project(path: str, project: str) -> bool:
+    if not project:
+        return True
+    proj = project.strip("/")
+    marker = f"/{proj}/-/"
+    return marker in path or f"/{proj}/" in path
+
+
+def _path_from_gitlab_url(url: str, *, host: str = "", project: str = "") -> str | None:
+    text = unquote((url or "").strip())
+    if not text:
+        return None
+    direct = _path_from_regex_match(text)
+    if direct:
+        return direct
     parsed = urlparse(text)
-    if parsed.scheme not in ("http", "https"):
+    if parsed.scheme not in _WEB_SCHEMES:
         return None
     path = parsed.path or ""
-    host_bits = (host or "").replace("https://", "").replace("http://", "").strip("/")
+    host_bits = _host_without_web_scheme(host)
     if host_bits and host_bits not in (parsed.netloc or ""):
         return None
-    if project:
-        proj = project.strip("/")
-        marker = f"/{proj}/-/"
-        if marker not in path and f"/{proj}/" not in path:
-            return None
-    for rx in (_GITLAB_BLOB, _GITLAB_TREE):
-        match = rx.search(path)
-        if match:
-            cand = _clean_candidate(match.group(1))
-            return cand if _looks_like_path(cand) else None
-    return None
+    if not _url_matches_project(path, project):
+        return None
+    return _path_from_regex_match(path)
 
 
 def extract_file_paths(markdown: str | None) -> list[str]:
@@ -101,7 +121,7 @@ def collect_paths_from_text(
     for rx in (_BACKTICK, _MD_LINK, _BARE_FILE):
         for match in rx.finditer(markdown):
             add(match.group(1))
-    for token in re.findall(r"https?://[^\s)>\"']+", markdown):
+    for token in _URL_TOKEN.findall(markdown):
         from_url = _path_from_gitlab_url(token, host=host, project=project)
         if from_url:
             add(from_url)

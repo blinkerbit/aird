@@ -5,11 +5,11 @@ function cfg() {
 }
 
 function currentPath() {
-  return (document.getElementById("currentPath")?.value || "").replace(/^\/+/, "");
+  return (document.getElementById("currentPath")?.value || "").replaceAll(/^\/+/g, "");
 }
 
 function xsrf() {
-  const m = document.cookie.match(/(?:^|; )_xsrf=([^;]+)/);
+  const m = /(?:^|; )_xsrf=([^;]+)/.exec(document.cookie);
   return m ? decodeURIComponent(m[1]) : "";
 }
 
@@ -156,7 +156,8 @@ async function loadBrowseGitlab() {
   let status;
   try {
     status = await aird("GET", `/api/gitlab/status?${qs()}`);
-  } catch (_) {
+  } catch (err) {
+    console.debug("gitlab status failed", err);
     panel.hidden = true;
     return;
   }

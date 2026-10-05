@@ -1,7 +1,7 @@
 "use strict";
 
 import { SelectionStore } from './selection-store.js';
-import { isInputKeyTarget, showDialog, getCanTag } from './util.js';
+import { isInputKeyTarget, getCanTag } from './util.js';
 import { updateBulkToolbar } from './selection-ui.js';
 import { closeRowTagPopover, isRowTagPopoverOpen, openRowTagPopover } from './tags.js';
 import { closeSharePopup, showShareDetails } from './shares.js';

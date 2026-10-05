@@ -173,6 +173,12 @@ function suggestionMatches(names, pendingTags, q, excludeSet) {
   });
 }
 
+function nextSuggestionIndex(idx, len, key) {
+  if (key === 'ArrowDown') return (idx + 1) % len;
+  if (idx <= 0) return len - 1;
+  return idx - 1;
+}
+
 function sortTagSuggestions(matches) {
   const recent = getRecentTags();
   return matches.slice().sort(function (a, b) {
@@ -200,7 +206,6 @@ function renderTagSuggestions(inputEl, existingTagNames, pendingTags, onPick, su
     sug = document.createElement('div');
     sug.id = sugId;
     sug.className = 'tag-picker-suggestions';
-    sug.setAttribute('role', 'listbox');
     inputEl.parentNode.classList.add('tag-picker-input-wrap');
     inputEl.after(sug);
   }
@@ -252,9 +257,7 @@ function setupTagPickerListeners(inputEl, chipsEl, pendingTags, existingTagNames
     const idx = items.indexOf(active);
     if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && items.length) {
       e.preventDefault();
-      const next = e.key === 'ArrowDown'
-        ? (idx + 1) % items.length
-        : (idx <= 0 ? items.length - 1 : idx - 1);
+      const next = nextSuggestionIndex(idx, items.length, e.key);
       items.forEach(function (el) { el.classList.remove('is-active'); });
       items[next].classList.add('is-active');
       items[next].scrollIntoView({ block: 'nearest' });
@@ -316,6 +319,46 @@ function awaitTagPickerClose(modal, inputEl, errEl, pendingTags, refresh) {
   });
 }
 
+async function mergeTagCatalogIntoNames(existingTagNames) {
+  try {
+    const catalog = await fetchTagCatalog();
+    mergeTagNames(existingTagNames, catalog.names);
+    if (globalThis.__BROWSE_CONFIG) {
+      globalThis.__BROWSE_CONFIG.tagColors = {
+        ...(globalThis.__BROWSE_CONFIG.tagColors || {}),
+        ...(catalog.colors || {}),
+      };
+    }
+  } catch { /* autocomplete is best-effort */ }
+}
+
+async function bulkRemoveTagsFromPaths(paths, tags) {
+  for (const path of paths) {
+    const cell = document.querySelector('.tags-cell[data-path="' + CSS.escape(path) + '"]');
+    const remain = tagsCellTags(cell).filter(function (t) { return !tags.includes(t); });
+    for (const tag of tags) {
+      await untagPath(tag, path);
+    }
+    updateTagsCell(path, remain);
+  }
+  showDialog('Removed [' + tags.join(', ') + '] from ' + paths.length + ' item(s).', 'Tags');
+}
+
+async function bulkApplyTagsToPaths(paths, tags, pendingColors) {
+  const { created, failed } = await applyTagRules(tags, paths, { colors: pendingColors });
+  tags.forEach(function (t) { noteRecentTag(t); });
+  Object.entries(pendingColors).forEach(function (entry) { paintTagColor(entry[0], entry[1]); });
+  for (const path of paths) {
+    const cell = document.querySelector('.tags-cell[data-path="' + CSS.escape(path) + '"]');
+    const merged = new Set(tagsCellTags(cell));
+    tags.forEach(function (t) { merged.add(t); });
+    updateTagsCell(path, [...merged]);
+  }
+  const msg = created + ' tag rule(s) created for [' + tags.join(', ') + '].'
+    + (failed ? ' ' + failed + ' already existed or failed.' : '');
+  showDialog(msg, 'Tags applied');
+}
+
 export async function bulkAddTags() {
   const paths = SelectionStore.getAll();
   if (!paths.length) { showDialog('No files selected.', 'Info'); return; }
@@ -333,16 +376,7 @@ export async function bulkAddTags() {
   const pendingTags = new Set();
   const pendingColors = {};
   const existingTagNames = collectKnownTagNames();
-  try {
-    const catalog = await fetchTagCatalog();
-    mergeTagNames(existingTagNames, catalog.names);
-    if (globalThis.__BROWSE_CONFIG) {
-      globalThis.__BROWSE_CONFIG.tagColors = {
-        ...(globalThis.__BROWSE_CONFIG.tagColors || {}),
-        ...(catalog.colors || {}),
-      };
-    }
-  } catch { /* autocomplete is best-effort */ }
+  await mergeTagCatalogIntoNames(existingTagNames);
 
   async function onPendingColor(tag, hex) {
     pendingColors[tag] = hex;
@@ -360,32 +394,11 @@ export async function bulkAddTags() {
   if (!result?.tags?.length) return;
 
   if (result.action === 'remove') {
-    let removed = 0;
-    for (const path of paths) {
-      const cell = document.querySelector('.tags-cell[data-path="' + CSS.escape(path) + '"]');
-      const remain = tagsCellTags(cell).filter(function (t) { return !result.tags.includes(t); });
-      for (const tag of result.tags) {
-        const untag = await untagPath(tag, path);
-        if (untag.ok) removed += untag.count || 0;
-      }
-      updateTagsCell(path, remain);
-    }
-    showDialog('Removed [' + result.tags.join(', ') + '] from ' + paths.length + ' item(s).', 'Tags');
+    await bulkRemoveTagsFromPaths(paths, result.tags);
     return;
   }
 
-  const { created, failed } = await applyTagRules(result.tags, paths, { colors: pendingColors });
-  result.tags.forEach(function (t) { noteRecentTag(t); });
-  Object.entries(pendingColors).forEach(function (entry) { paintTagColor(entry[0], entry[1]); });
-  for (const path of paths) {
-    const cell = document.querySelector('.tags-cell[data-path="' + CSS.escape(path) + '"]');
-    const merged = new Set(tagsCellTags(cell));
-    result.tags.forEach(function (t) { merged.add(t); });
-    updateTagsCell(path, [...merged]);
-  }
-  const msg = created + ' tag rule(s) created for [' + result.tags.join(', ') + '].'
-    + (failed ? ' ' + failed + ' already existed or failed.' : '');
-  showDialog(msg, 'Tags applied');
+  await bulkApplyTagsToPaths(paths, result.tags, pendingColors);
 }
 
 let _rowTagPopoverAbort = null;
@@ -795,17 +808,20 @@ export async function openRowTagPopover(path, anchorEl) {
   scheduleRowTagPopoverPosition();
   inputEl.focus();
 
-  fetchTagCatalog().then(function (catalog) {
-    if (signal.aborted) return;
-    mergeTagNames(existingTagNames, catalog.names);
-    if (globalThis.__BROWSE_CONFIG) {
-      globalThis.__BROWSE_CONFIG.tagColors = {
-        ...(globalThis.__BROWSE_CONFIG.tagColors || {}),
-        ...(catalog.colors || {}),
-      };
-    }
-    refresh();
-  }).catch(function () {});
+  (async function loadRowTagCatalog() {
+    try {
+      const catalog = await fetchTagCatalog();
+      if (signal.aborted) return;
+      mergeTagNames(existingTagNames, catalog.names);
+      if (globalThis.__BROWSE_CONFIG) {
+        globalThis.__BROWSE_CONFIG.tagColors = {
+          ...(globalThis.__BROWSE_CONFIG.tagColors || {}),
+          ...(catalog.colors || {}),
+        };
+      }
+      refresh();
+    } catch { /* autocomplete is best-effort */ }
+  })();
 
   const onApply = async function () {
     commitTagInput(inputEl, pendingTags);

@@ -363,6 +363,7 @@ body.chat-page {
   align-items: center;
   gap: 0.75rem;
   min-height: 3.25rem;
+  position: relative;
 }
 
 .chat-thread-head .chat-avatar {
@@ -1004,10 +1005,6 @@ body.chat-page {
   position: absolute;
   margin-left: 1.7rem;
   margin-top: 1.7rem;
-}
-
-.chat-thread-head {
-  position: relative;
 }
 
 .chat-thread-head-main {

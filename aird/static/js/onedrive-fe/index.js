@@ -1,6 +1,6 @@
 'use strict';
 
-import { clearTokens, isSignedIn, loadTokens, saveTokens } from './tokens.js';
+import { clearTokens, isSignedIn, loadTokens } from './tokens.js';
 import { ensureSignedIn, ensureAccessToken, finishCallback, startRedirectLogin, startDeviceCode, pollDeviceCode } from './auth.js';
 import { getDefaultSave, setDefaultSave, getConflictPolicy, setConflictPolicy, getAuthMode, setAuthMode, getLocalAppConfig, setLocalAppConfig, clearLocalAppConfig, DEFAULT_PATH } from './settings.js';
 import {

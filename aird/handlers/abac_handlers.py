@@ -73,6 +73,28 @@ def _bool_arg(value: str | None) -> bool:
     return str(value).strip().lower() in {"1", "true", "on", "yes"}
 
 
+def _parse_import_tag_row(row: object) -> tuple[str, str, int] | None:
+    if not isinstance(row, dict):
+        return None
+    tag = str(row.get("tag") or "").strip()
+    glob_pattern = str(row.get("glob_pattern") or "").strip()
+    priority = int(row.get("priority") or 0)
+    if not tag or not glob_pattern:
+        return None
+    try:
+        validate_abac_tag_rule(tag, glob_pattern)
+    except InputTooLongError:
+        return None
+    return tag, glob_pattern, priority
+
+
+def _apply_import_tag_colors(conn, colors: dict) -> None:
+    for tag_name, color_raw in colors.items():
+        tag_name = str(tag_name or "").strip()
+        if tag_name and normalize_tag_color(color_raw):
+            set_tag_color(conn, tag_name, str(color_raw))
+
+
 def _parse_actions(raw: str) -> list[str]:
     """Accept comma-separated or JSON-array strings; return normalised list."""
     if not raw:
@@ -252,6 +274,23 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
             "color": assigned,
         })
 
+    def _import_one_tag_rule(
+        self, tag: str, glob_pattern: str, priority: int, colors: dict
+    ) -> bool:
+        new_id = insert_resource_tag(
+            self.db_conn,
+            tag,
+            glob_pattern,
+            priority=priority,
+            created_by=self.get_display_username(),
+        )
+        if new_id is None:
+            return False
+        color_raw = colors.get(tag)
+        if color_raw:
+            set_tag_color(self.db_conn, tag, str(color_raw))
+        return True
+
     def _import_snapshot(self, payload: dict) -> None:
         rules = payload.get("tags")
         if not isinstance(rules, list):
@@ -262,38 +301,16 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
         created = 0
         skipped = 0
         for row in rules:
-            if not isinstance(row, dict):
+            parsed = _parse_import_tag_row(row)
+            if parsed is None:
                 skipped += 1
                 continue
-            tag = str(row.get("tag") or "").strip()
-            glob_pattern = str(row.get("glob_pattern") or "").strip()
-            priority = int(row.get("priority") or 0)
-            if not tag or not glob_pattern:
+            tag, glob_pattern, priority = parsed
+            if self._import_one_tag_rule(tag, glob_pattern, priority, colors):
+                created += 1
+            else:
                 skipped += 1
-                continue
-            try:
-                validate_abac_tag_rule(tag, glob_pattern)
-            except InputTooLongError:
-                skipped += 1
-                continue
-            new_id = insert_resource_tag(
-                self.db_conn,
-                tag,
-                glob_pattern,
-                priority=priority,
-                created_by=self.get_display_username(),
-            )
-            if new_id is None:
-                skipped += 1
-                continue
-            created += 1
-            color_raw = colors.get(tag)
-            if color_raw:
-                set_tag_color(self.db_conn, tag, str(color_raw))
-        for tag_name, color_raw in colors.items():
-            tag_name = str(tag_name or "").strip()
-            if tag_name and normalize_tag_color(color_raw):
-                set_tag_color(self.db_conn, tag_name, str(color_raw))
+        _apply_import_tag_colors(self.db_conn, colors)
         self._invalidate_caches()
         self._audit("abac_tag_import", f"created={created} skipped={skipped}")
         self.write({"ok": True, "created": created, "skipped": skipped})

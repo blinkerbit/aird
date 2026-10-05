@@ -29,6 +29,9 @@ from aird.plugins.chat.sanitize import plain_preview
 logger = logging.getLogger(__name__)
 
 _MENTION_RE = re.compile(r"@([A-Za-z0-9_.\-@]+)")
+_ERR_CONVERSATION_NOT_FOUND = "Conversation not found"
+_SQL_TOUCH_CONVERSATION = "UPDATE conversations SET updated_at = ? WHERE id = ?"
+_SQL_SET_MESSAGE_METADATA = "UPDATE messages SET metadata_json = ? WHERE id = ?"
 
 
 def _now_iso() -> str:
@@ -331,7 +334,7 @@ def add_member(central: sqlite3.Connection, *, actor: str, conversation_id: str,
         raise ValueError("User not found")
     conv = get_conversation(actor, conversation_id)
     if conv is None:
-        raise ValueError("Conversation not found")
+        raise ValueError(_ERR_CONVERSATION_NOT_FOUND)
     if conv["kind"] != "group":
         raise ValueError("Can only add members to a group")
     current = conv["members"]
@@ -354,7 +357,7 @@ def add_member(central: sqlite3.Connection, *, actor: str, conversation_id: str,
             members=updated,
         )
         box.conn.execute(
-            "UPDATE conversations SET updated_at = ? WHERE id = ?",
+            _SQL_TOUCH_CONVERSATION,
             (now, conversation_id),
         )
 
@@ -365,7 +368,7 @@ def add_member(central: sqlite3.Connection, *, actor: str, conversation_id: str,
 def remove_member(*, actor: str, conversation_id: str, username: str) -> None:
     conv = get_conversation(actor, conversation_id)
     if conv is None:
-        raise ValueError("Conversation not found")
+        raise ValueError(_ERR_CONVERSATION_NOT_FOUND)
     if conv["kind"] != "group":
         raise ValueError("Can only remove members from a group")
     remaining = [m for m in conv["members"] if m["username"] != username]
@@ -378,7 +381,7 @@ def remove_member(*, actor: str, conversation_id: str, username: str) -> None:
             box.conn.execute("DELETE FROM members WHERE conversation_id = ? AND username = ?", (conversation_id, username))
             return
         box.conn.execute("DELETE FROM members WHERE conversation_id = ? AND username = ?", (conversation_id, username))
-        box.conn.execute("UPDATE conversations SET updated_at = ? WHERE id = ?", (now, conversation_id))
+        box.conn.execute(_SQL_TOUCH_CONVERSATION, (now, conversation_id))
 
     _fanout_members(conv["members"], write)
 
@@ -386,7 +389,7 @@ def remove_member(*, actor: str, conversation_id: str, username: str) -> None:
 def delete_conversation(actor: str, conversation_id: str) -> None:
     conv = get_conversation(actor, conversation_id)
     if conv is None:
-        raise ValueError("Conversation not found")
+        raise ValueError(_ERR_CONVERSATION_NOT_FOUND)
 
     def write(box, _m):
         box.conn.execute("DELETE FROM members WHERE conversation_id = ?", (conversation_id,))
@@ -400,10 +403,10 @@ def delete_conversation(actor: str, conversation_id: str) -> None:
 def respond_to_request(*, actor: str, conversation_id: str, action: str) -> dict:
     conv = get_conversation(actor, conversation_id)
     if conv is None:
-        raise ValueError("Conversation not found")
+        raise ValueError(_ERR_CONVERSATION_NOT_FOUND)
     me = next((m for m in conv["members"] if m["username"] == actor), None)
     if me is None:
-        raise ValueError("Conversation not found")
+        raise ValueError(_ERR_CONVERSATION_NOT_FOUND)
     if action == "accept":
         if int(me.get("accepted", 1)):
             return conv
@@ -439,6 +442,96 @@ def set_muted(username: str, conversation_id: str, muted: bool) -> None:
 def is_muted(username: str, conversation_id: str) -> bool:
     conv = get_conversation(username, conversation_id)
     return bool(conv and conv.get("muted"))
+
+
+def _conversation_list_preview(
+    last,
+    *,
+    kind: str,
+    members: list[dict],
+    username: str,
+) -> tuple[str, str | None, dict | None]:
+    preview = ""
+    last_type = None
+    last_e2e = None
+    if not last:
+        state = request_state(kind, members, username)
+        if state == "incoming":
+            preview = "Chat request"
+        elif state == "outgoing":
+            preview = "Waiting for acceptance"
+        return preview, last_type, last_e2e
+    last_type = last[2]
+    meta = _loads(last[4])
+    if is_e2e_meta(meta):
+        preview = ENCRYPTED_PREVIEW
+        last_e2e = meta.get("e2e")
+    elif last[2] == "text":
+        preview = plain_preview(last[3] or "")
+    else:
+        preview = f"Shared {meta.get('original_name') or 'a file'}"
+    state = request_state(kind, members, username)
+    if state == "incoming":
+        preview = "Chat request"
+    elif state == "outgoing":
+        preview = "Waiting for acceptance"
+    return preview, last_type, last_e2e
+
+
+def _filter_mentions(names: Iterable[str], allowed: set[str]) -> list[str]:
+    clean: list[str] = []
+    for name in names:
+        name = str(name or "")
+        if name in allowed and name not in clean:
+            clean.append(name)
+    return clean
+
+
+def _insert_message_fields(
+    *,
+    body: str | None,
+    metadata: dict | None,
+    member_names: list[str],
+) -> tuple[str, dict, list[str], str]:
+    meta = dict(metadata or {})
+    if is_e2e_meta(meta):
+        meta["e2e"] = parse_e2e_payload(meta.get("e2e"))
+        mentions = _filter_mentions(meta.get("mentions") or [], set(member_names))
+        meta["mentions"] = mentions
+        return "", meta, mentions, ""
+    mentions = extract_mentions(body or "", member_names)
+    if mentions:
+        meta["mentions"] = mentions
+    return body or "", meta, mentions, body or ""
+
+
+def _shared_with_me_entry(
+    row: tuple,
+    att: dict,
+    *,
+    index: int,
+    meta: dict,
+) -> dict:
+    msg_id, conv_id, sender, _, created_at = row[0], row[1], row[2], row[3], row[4]
+    share_url = att.get("share_url") or (meta.get("share_url") if index == 0 else None)
+    file_url = share_url or f"/api/chat/conversations/{conv_id}/messages/{msg_id}/file"
+    if not share_url and index:
+        file_url = f"{file_url}?i={index}"
+    return {
+        "id": msg_id,
+        "conversation_id": conv_id,
+        "sender_username": sender,
+        "original_name": att.get("original_name") or "file",
+        "relative_path": att.get("owner_rel"),
+        "size_bytes": att.get("size_bytes") or 0,
+        "created_at": created_at,
+        "file_url": file_url,
+        "share_url": share_url,
+        "share_id": att.get("share_id") or (meta.get("share_id") if index == 0 else None),
+        "media_kind": att.get("media_kind"),
+        "saved_rel": att.get("saved_rel"),
+        "index": index,
+    }
 
 
 def _last_message(conn: sqlite3.Connection, conversation_id: str):
@@ -488,25 +581,11 @@ def list_conversations(central: sqlite3.Connection, username: str) -> list[dict]
         for conv_id, kind, title, muted, updated_at in rows:
             members = _members_local(box.conn, conv_id)
             last = _last_message(box.conn, conv_id)
-            preview = ""
-            last_type = None
-            last_e2e = None
-            if last:
-                last_type = last[2]
-                meta = _loads(last[4])
-                if is_e2e_meta(meta):
-                    preview = ENCRYPTED_PREVIEW
-                    last_e2e = meta.get("e2e")
-                elif last[2] == "text":
-                    preview = plain_preview(last[3] or "")
-                else:
-                    preview = f"Shared {meta.get('original_name') or 'a file'}"
+            preview, last_type, last_e2e = _conversation_list_preview(
+                last, kind=kind, members=members, username=username
+            )
             peer = _peer_name(members, username) if kind == "dm" else None
             state = request_state(kind, members, username)
-            if state == "incoming":
-                preview = "Chat request"
-            elif state == "outgoing":
-                preview = "Waiting for acceptance"
             out.append(
                 {
                     "id": conv_id,
@@ -581,6 +660,60 @@ def _reactions_map(conn: sqlite3.Connection, ids: list[str]) -> dict[str, list[d
     return out
 
 
+_MSG_SELECT = """
+    SELECT id, conversation_id, sender_username, sender_id, msg_type, body,
+           metadata_json, reply_to_id, edited_at, created_at
+    FROM messages
+"""
+
+
+def _list_message_rows(
+    conn: sqlite3.Connection,
+    conversation_id: str,
+    *,
+    before_id: str | None,
+    after_id: str | None,
+    limit: int,
+) -> list:
+    if after_id:
+        ts = _message_created(conn, after_id)
+        if ts is None:
+            return []
+        return conn.execute(
+            f"""
+            {_MSG_SELECT}
+            WHERE conversation_id = ? AND (created_at > ? OR (created_at = ? AND id > ?))
+            ORDER BY created_at ASC, id ASC
+            LIMIT ?
+            """,
+            (conversation_id, ts, ts, after_id, limit),
+        ).fetchall()
+    if before_id:
+        ts = _message_created(conn, before_id)
+        if ts is None:
+            return []
+        rows = conn.execute(
+            f"""
+            {_MSG_SELECT}
+            WHERE conversation_id = ? AND (created_at < ? OR (created_at = ? AND id < ?))
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (conversation_id, ts, ts, before_id, limit),
+        ).fetchall()
+        return list(reversed(rows))
+    rows = conn.execute(
+        f"""
+        {_MSG_SELECT}
+        WHERE conversation_id = ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?
+        """,
+        (conversation_id, limit),
+    ).fetchall()
+    return list(reversed(rows))
+
+
 def list_messages(
     username: str,
     conversation_id: str,
@@ -591,52 +724,13 @@ def list_messages(
 ) -> list[dict]:
     limit = max(1, min(100, int(limit)))
     with mailbox(username) as box:
-        params: list[Any]
-        if after_id:
-            ts = _message_created(box.conn, after_id)
-            if ts is None:
-                return []
-            rows = box.conn.execute(
-                """
-                SELECT id, conversation_id, sender_username, sender_id, msg_type, body,
-                       metadata_json, reply_to_id, edited_at, created_at
-                FROM messages
-                WHERE conversation_id = ? AND (created_at > ? OR (created_at = ? AND id > ?))
-                ORDER BY created_at ASC, id ASC
-                LIMIT ?
-                """,
-                (conversation_id, ts, ts, after_id, limit),
-            ).fetchall()
-        elif before_id:
-            ts = _message_created(box.conn, before_id)
-            if ts is None:
-                rows = []
-            else:
-                rows = box.conn.execute(
-                    """
-                    SELECT id, conversation_id, sender_username, sender_id, msg_type, body,
-                           metadata_json, reply_to_id, edited_at, created_at
-                    FROM messages
-                    WHERE conversation_id = ? AND (created_at < ? OR (created_at = ? AND id < ?))
-                    ORDER BY created_at DESC, id DESC
-                    LIMIT ?
-                    """,
-                    (conversation_id, ts, ts, before_id, limit),
-                ).fetchall()
-                rows = list(reversed(rows))
-        else:
-            rows = box.conn.execute(
-                """
-                SELECT id, conversation_id, sender_username, sender_id, msg_type, body,
-                       metadata_json, reply_to_id, edited_at, created_at
-                FROM messages
-                WHERE conversation_id = ?
-                ORDER BY created_at DESC, id DESC
-                LIMIT ?
-                """,
-                (conversation_id, limit),
-            ).fetchall()
-            rows = list(reversed(rows))
+        rows = _list_message_rows(
+            box.conn,
+            conversation_id,
+            before_id=before_id,
+            after_id=after_id,
+            limit=limit,
+        )
         ids = [r[0] for r in rows]
         rmap = _reactions_map(box.conn, ids)
         return [_row_to_message(r, reactions=rmap.get(r[0], [])) for r in rows]
@@ -684,28 +778,14 @@ def insert_message(
         raise ValueError("Unknown sender")
     conv = get_conversation(username, conversation_id)
     if conv is None:
-        raise ValueError("Conversation not found")
+        raise ValueError(_ERR_CONVERSATION_NOT_FOUND)
     members = conv["members"]
     now = _now_iso()
     mid = message_id or _new_id()
-    meta = dict(metadata or {})
     member_names = [m["username"] for m in members if m["username"] != username]
-    if is_e2e_meta(meta):
-        meta["e2e"] = parse_e2e_payload(meta.get("e2e"))
-        body = ""
-        allowed = set(member_names)
-        mentions = []
-        for name in meta.get("mentions") or []:
-            name = str(name or "")
-            if name in allowed and name not in mentions:
-                mentions.append(name)
-        meta["mentions"] = mentions
-        fts_body = ""
-    else:
-        mentions = extract_mentions(body or "", member_names)
-        if mentions:
-            meta["mentions"] = mentions
-        fts_body = body or ""
+    body, meta, mentions, fts_body = _insert_message_fields(
+        body=body, metadata=metadata, member_names=member_names
+    )
     meta_json = json.dumps(meta)
     original = _meta_name(meta)
 
@@ -730,7 +810,7 @@ def insert_message(
             ),
         )
         box.conn.execute(
-            "UPDATE conversations SET updated_at = ? WHERE id = ?",
+            _SQL_TOUCH_CONVERSATION,
             (now, conversation_id),
         )
         _fts_upsert(box, mid, fts_body, original)
@@ -763,13 +843,7 @@ def edit_message(
     if e2e is not None:
         meta["e2e"] = parse_e2e_payload(e2e)
         body = ""
-        allowed = set(member_names)
-        clean: list[str] = []
-        for name in mentions or []:
-            name = str(name or "")
-            if name in allowed and name not in clean:
-                clean.append(name)
-        meta["mentions"] = clean
+        meta["mentions"] = _filter_mentions(mentions or [], set(member_names))
         fts_body = ""
     else:
         mentions = extract_mentions(body, member_names)
@@ -1025,42 +1099,44 @@ def unpin_message(*, actor: str, conversation_id: str, message_id: str) -> list[
     return list_pins(actor, conversation_id)
 
 
+def _search_message_rows(conn: sqlite3.Connection, *, fts_enabled: bool, q: str, limit: int):
+    if fts_enabled:
+        try:
+            return conn.execute(
+                """
+                SELECT m.id, m.conversation_id, m.sender_username, m.sender_id, m.msg_type, m.body,
+                       m.metadata_json, m.reply_to_id, m.edited_at, m.created_at
+                FROM messages_fts f
+                JOIN messages m ON m.id = f.message_id
+                WHERE messages_fts MATCH ?
+                ORDER BY m.created_at DESC
+                LIMIT ?
+                """,
+                (q, limit),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            pass
+    like = f"%{q}%"
+    return conn.execute(
+        """
+        SELECT id, conversation_id, sender_username, sender_id, msg_type, body,
+               metadata_json, reply_to_id, edited_at, created_at
+        FROM messages
+        WHERE body LIKE ? OR metadata_json LIKE ?
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (like, like, limit),
+    ).fetchall()
+
+
 def search_messages(username: str, query: str, *, limit: int = 40) -> list[dict]:
     q = (query or "").strip()
     if len(q) < 2:
         return []
     limit = max(1, min(50, int(limit)))
     with mailbox(username) as box:
-        rows = []
-        if box.fts:
-            try:
-                rows = box.conn.execute(
-                    """
-                    SELECT m.id, m.conversation_id, m.sender_username, m.sender_id, m.msg_type, m.body,
-                           m.metadata_json, m.reply_to_id, m.edited_at, m.created_at
-                    FROM messages_fts f
-                    JOIN messages m ON m.id = f.message_id
-                    WHERE messages_fts MATCH ?
-                    ORDER BY m.created_at DESC
-                    LIMIT ?
-                    """,
-                    (q, limit),
-                ).fetchall()
-            except sqlite3.OperationalError:
-                rows = []
-        if not rows:
-            like = f"%{q}%"
-            rows = box.conn.execute(
-                """
-                SELECT id, conversation_id, sender_username, sender_id, msg_type, body,
-                       metadata_json, reply_to_id, edited_at, created_at
-                FROM messages
-                WHERE body LIKE ? OR metadata_json LIKE ?
-                ORDER BY created_at DESC
-                LIMIT ?
-                """,
-                (like, like, limit),
-            ).fetchall()
+        rows = _search_message_rows(box.conn, fts_enabled=box.fts, q=q, limit=limit)
         results = []
         for r in rows:
             msg = _row_to_message(r)
@@ -1092,27 +1168,7 @@ def list_shared_with_me(central: sqlite3.Connection, username: str) -> list[dict
             if not entries:
                 continue
             for i, att in enumerate(entries):
-                share_url = att.get("share_url") or (meta.get("share_url") if i == 0 else None)
-                file_url = share_url or f"/api/chat/conversations/{r[1]}/messages/{r[0]}/file"
-                if not share_url and i:
-                    file_url = f"{file_url}?i={i}"
-                out.append(
-                    {
-                        "id": r[0],
-                        "conversation_id": r[1],
-                        "sender_username": r[2],
-                        "original_name": att.get("original_name") or "file",
-                        "relative_path": att.get("owner_rel"),
-                        "size_bytes": att.get("size_bytes") or 0,
-                        "created_at": r[4],
-                        "file_url": file_url,
-                        "share_url": share_url,
-                        "share_id": att.get("share_id") or (meta.get("share_id") if i == 0 else None),
-                        "media_kind": att.get("media_kind"),
-                        "saved_rel": att.get("saved_rel"),
-                        "index": i,
-                    }
-                )
+                out.append(_shared_with_me_entry(r, att, index=i, meta=meta))
         return out
 
 
@@ -1161,7 +1217,7 @@ def patch_attachment_share(
 
     def write(box, _m):
         box.conn.execute(
-            "UPDATE messages SET metadata_json = ? WHERE id = ?",
+            _SQL_SET_MESSAGE_METADATA,
             (meta_json, message_id),
         )
 
@@ -1178,7 +1234,7 @@ def hide_shared_item(username: str, message_id: str) -> dict | None:
     meta["hidden"] = True
     with mailbox(username) as box:
         box.conn.execute(
-            "UPDATE messages SET metadata_json = ? WHERE id = ?",
+            _SQL_SET_MESSAGE_METADATA,
             (json.dumps(meta), message_id),
         )
         box.conn.commit()
@@ -1199,7 +1255,7 @@ def set_saved_rel(username: str, message_id: str, saved_rel: str, index: int = 0
         meta["saved_rel"] = saved_rel
     with mailbox(username) as box:
         box.conn.execute(
-            "UPDATE messages SET metadata_json = ? WHERE id = ?",
+            _SQL_SET_MESSAGE_METADATA,
             (json.dumps(meta), message_id),
         )
         box.conn.commit()
@@ -1232,7 +1288,7 @@ def get_e2e_wraps(username: str, conversation_id: str) -> dict[str, dict]:
         for name, raw in rows:
             try:
                 out[str(name)] = parse_wrap(json.loads(raw) if isinstance(raw, str) else raw)
-            except (ValueError, json.JSONDecodeError, TypeError):
+            except (ValueError, TypeError):
                 continue
         return out
 
@@ -1240,7 +1296,7 @@ def get_e2e_wraps(username: str, conversation_id: str) -> dict[str, dict]:
 def put_e2e_wraps(*, actor: str, conversation_id: str, wraps: dict) -> dict[str, dict]:
     conv = get_conversation(actor, conversation_id)
     if conv is None:
-        raise ValueError("Conversation not found")
+        raise ValueError(_ERR_CONVERSATION_NOT_FOUND)
     members = conv["members"]
     allowed = {m["username"] for m in members}
     if not isinstance(wraps, dict) or not wraps:

@@ -257,7 +257,8 @@ export function completePath(raw, files) {
   let filledPath = filled;
   while (filledPath.endsWith('/')) filledPath = filledPath.slice(0, -1);
   const body = joinRel(dir, filledPath);
-  const value = body ? `/${body}${dirSlash ? '/' : ''}` : '/';
+  let value = '/';
+  if (body) value = `/${body}${dirSlash ? '/' : ''}`;
   return { dir, prefix: parsed.prefix, hits, value, unique: hits.length === 1 };
 }
 
@@ -281,7 +282,8 @@ export function openDialog(dialog) {
   if (typeof dialog.showModal === 'function') {
     try {
       if (!dialog.open) dialog.showModal();
-    } catch (_) {
+    } catch (err) {
+      console.debug('showModal failed', err);
       dialog.setAttribute('open', '');
     }
   } else {
@@ -294,7 +296,10 @@ export function closeDialog(dialog) {
   if (!dialog) return;
   dialog.classList.remove('is-open');
   if (typeof dialog.close === 'function' && dialog.open) {
-    try { dialog.close(); } catch (_) { dialog.removeAttribute('open'); }
+    try { dialog.close(); } catch (err) {
+      console.debug('dialog.close failed', err);
+      dialog.removeAttribute('open');
+    }
     return;
   }
   dialog.removeAttribute('open');
@@ -393,14 +398,50 @@ export function createBrowsePicker({
     return files;
   }
 
+  function onBrowseShareClick(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    attach(btn.dataset.path || '', true);
+  }
+
+  function onBrowseRowClick(e) {
+    const row = e.currentTarget;
+    if (e.target.closest('.chat-browse-share')) return;
+    const p = row.dataset.path || '';
+    if (row.dataset.action === 'dir') {
+      const name = p.split('/').filter(Boolean).pop() || '';
+      browseActiveName = name;
+      list.querySelectorAll('.chat-browse-row').forEach((el) => {
+        el.classList.toggle('is-active', el === row);
+      });
+      if (pathInput) pathInput.value = formatRelPath(browsePath, name, false);
+      return;
+    }
+    attach(p, false);
+  }
+
+  function onBrowseRowDblClick(e) {
+    const row = e.currentTarget;
+    if (e.target.closest('.chat-browse-share')) return;
+    if (row.dataset.action === 'dir') {
+      load(row.dataset.path || '').catch((err) => onError?.(err.message));
+    }
+  }
+
+  function wireBrowseRow(row) {
+    row.addEventListener('click', onBrowseRowClick);
+    row.addEventListener('dblclick', onBrowseRowDblClick);
+  }
+
   function paint(files, dir, activeName) {
     browseHits = files.slice();
     const rows = renderBrowseRows(files, dir, activeName);
     browseActiveName = rows.find((r) => r.active)?.name || '';
-    if (!list) return rows;
+    if (!list) return;
     if (!rows.length) {
       list.innerHTML = '<p class="chat-file-picker-empty">No matches</p>';
-      return rows;
+      return;
     }
     list.innerHTML = rows.map((r) => {
       const share = r.isDir
@@ -408,34 +449,10 @@ export function createBrowsePicker({
         : '';
       return `<div role="option" class="chat-browse-row${r.active ? ' is-active' : ''}" data-action="${r.isDir ? 'dir' : 'file'}" data-path="${escapeAttr(r.path)}"><span>${r.isDir ? '📁' : '📄'}</span><span class="truncate">${escapeText(r.name)}${r.isDir ? '/' : ''}</span>${share}</div>`;
     }).join('');
-    list.querySelectorAll('.chat-browse-row').forEach((row) => {
-      row.addEventListener('click', (e) => {
-        if (e.target.closest('.chat-browse-share')) return;
-        const p = row.dataset.path || '';
-        if (row.dataset.action === 'dir') {
-          const name = p.split('/').filter(Boolean).pop() || '';
-          browseActiveName = name;
-          list.querySelectorAll('.chat-browse-row').forEach((el) => {
-            el.classList.toggle('is-active', el === row);
-          });
-          if (pathInput) pathInput.value = formatRelPath(browsePath, name, false);
-          return;
-        }
-        attach(p, false);
-      });
-      row.addEventListener('dblclick', (e) => {
-        if (e.target.closest('.chat-browse-share')) return;
-        if (row.dataset.action === 'dir') load(row.dataset.path || '').catch((err) => onError?.(err.message));
-      });
-    });
+    list.querySelectorAll('.chat-browse-row').forEach(wireBrowseRow);
     list.querySelectorAll('.chat-browse-share').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        attach(btn.dataset.path || '', true);
-      });
+      btn.addEventListener('click', onBrowseShareClick);
     });
-    return rows;
   }
 
   function attach(path, isDir) {
@@ -454,7 +471,8 @@ export function createBrowsePicker({
     if (!opts.keepInput && pathInput) pathInput.value = formatRelPath(browsePath, '', true);
     const files = await filesFor(browsePath);
     const hits = matchFiles(files, opts.filter || '');
-    return paint(hits, browsePath, opts.activeName || (hits[0] && hits[0].name) || '');
+    paint(hits, browsePath, opts.activeName || (hits[0] && hits[0].name) || '');
+    return browseHits;
   }
 
   async function open() {

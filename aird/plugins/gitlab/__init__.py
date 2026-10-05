@@ -15,7 +15,7 @@ def gitlab_library_available() -> bool:
 def is_gitlab_enabled() -> bool:
     from aird.utils.util import is_feature_enabled
 
-    return gitlab_library_available() and is_feature_enabled("gitlab_integration", False)
+    return is_feature_enabled("gitlab_integration", False)
 
 
 def register_gitlab(routes: list) -> None:

@@ -394,6 +394,8 @@ def _try_admin_token_login(handler, token):
 # Helpers for ProfileHandler
 # ---------------------------------------------------------------------------
 
+_TOKEN_ONLY_PROFILE_USERNAMES = frozenset({"token_user", "admin_token"})
+
 
 def _profile_username(user) -> str:
     if isinstance(user, dict):
@@ -432,6 +434,13 @@ def _profile_shared_with_me(handler, user):
     if not user or not handler.db_conn:
         return []
     return list_shares_accessible_to_user(handler.db_conn, _profile_username(user))
+
+
+def _profile_display_user(user):
+    """Hide token-only sessions from profile UI (no created_at / quota metadata)."""
+    if isinstance(user, dict) and user.get("username", "") in _TOKEN_ONLY_PROFILE_USERNAMES:
+        return None
+    return user
 
 
 def _profile_render(handler, user, error=None, success=None, ldap_enabled=None, passkeys=None):
@@ -860,9 +869,6 @@ class LogoutHandler(XSRFTokenMixin, BaseHandler):
         self.redirect(LOGIN_URL)
 
 
-_TOKEN_ONLY_PROFILE_USERNAMES = {"token_user", "admin_token"}
-
-
 def _session_public_view(session: dict, current_session_id: str | None) -> dict:
     return {
         "id": session["id"],
@@ -928,49 +934,10 @@ class ProfileHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
         ldap_enabled = self.settings.get("ldap_server") is not None
-        quota = {"quota_bytes": None, "used_bytes": 0}
-        user = self.current_user
-        shared_with_me: list = []
-        # Token-authenticated users don't have full profile data (created_at, active, etc.)
-        # so pass user=None to show the "not available" message instead of crashing.
-        if isinstance(user, dict) and user.get("username", "") in (
-            "token_user",
-            "admin_token",
-        ):
-            user = None
-        if user and self.db_conn:
-            username = user.get("username", "") if isinstance(user, dict) else str(user)
-            quota = self.get_service("user_service").get_user_quota(
-                self.db_conn, username
-            )
-            shared_with_me = list_shares_accessible_to_user(self.db_conn, username)
-        passkeys = []
-        if user and self.db_conn:
-            from aird.utils.util import is_feature_enabled
-            from aird.db import webauthn as webauthn_db
-
-            uname = user.get("username", "") if isinstance(user, dict) else str(user)
-            if is_feature_enabled("webauthn", False) and uname not in (
-                "token_user",
-                "admin_token",
-            ):
-                passkeys = webauthn_db.list_credentials(self.db_conn, uname)
-        user_plugins = []
-        if user:
-            from aird.plugins.access import user_facing_plugins
-
-            uname = user.get("username", "") if isinstance(user, dict) else str(user)
-            user_plugins = user_facing_plugins(uname, self.db_conn)
-        self.render(
-            PROFILE_TEMPLATE,
-            user=user,
-            error=None,
-            success=None,
+        _profile_render(
+            self,
+            _profile_display_user(self.current_user),
             ldap_enabled=ldap_enabled,
-            quota=quota,
-            shared_with_me=shared_with_me,
-            passkeys=passkeys,
-            user_plugins=user_plugins,
         )
 
     @tornado.web.authenticated
@@ -978,10 +945,7 @@ class ProfileHandler(BaseHandler):
         ldap_enabled = self.settings.get("ldap_server") is not None
         # Token-authenticated users cannot change their password via this form.
         current_user = self.current_user
-        if isinstance(current_user, dict) and current_user.get("username", "") in (
-            "token_user",
-            "admin_token",
-        ):
+        if _profile_display_user(current_user) is None:
             _profile_render(
                 self,
                 None,

@@ -397,43 +397,60 @@ def list_files_for_tag_share(
     return filter_files_by_patterns(matched, allow_list, avoid_list)
 
 
+def _dynamic_share_path_matches(
+    *,
+    root_dir: str,
+    folder_path: str,
+    rel_path: str,
+    allow_list,
+    avoid_list,
+    mounts,
+) -> bool:
+    from aird.core.browse_paths import resolve_rel
+
+    try:
+        full_folder_path, folder_confine = resolve_rel(
+            root_dir, folder_path, mounts or []
+        )
+        full_file_path, file_confine = resolve_rel(root_dir, rel_path, mounts or [])
+        if (
+            not full_folder_path
+            or not folder_confine
+            or not full_file_path
+            or not file_confine
+            or not is_within_root(full_file_path, file_confine)
+        ):
+            return False
+        if not filter_files_by_patterns([rel_path], allow_list, avoid_list):
+            return False
+        if os.path.isdir(full_folder_path) and is_within_root(
+            full_file_path, full_folder_path
+        ):
+            return True
+        return (
+            os.path.isfile(full_folder_path)
+            and folder_path.replace("\\", "/") == rel_path.replace("\\", "/")
+        )
+    except Exception:
+        return False
+
+
 def _share_covers_dynamic_path(
     share: dict, rel_path: str, root_dir: str, mounts=None
 ) -> bool:
     """Check if rel_path is covered by a dynamic share."""
-    from aird.core.browse_paths import resolve_rel
-
     allow_list = share.get("allow_list", [])
     avoid_list = share.get("avoid_list", [])
     for folder_path in share.get("paths") or []:
-        try:
-            full_folder_path, folder_confine = resolve_rel(
-                root_dir, folder_path, mounts or []
-            )
-            full_file_path, file_confine = resolve_rel(
-                root_dir, rel_path, mounts or []
-            )
-            if (
-                not full_folder_path
-                or not folder_confine
-                or not full_file_path
-                or not file_confine
-                or not is_within_root(full_file_path, file_confine)
-            ):
-                continue
-            if os.path.isdir(full_folder_path) and is_within_root(
-                full_file_path, full_folder_path
-            ):
-                if filter_files_by_patterns([rel_path], allow_list, avoid_list):
-                    return True
-            elif (
-                os.path.isfile(full_folder_path)
-                and folder_path.replace("\\", "/") == rel_path.replace("\\", "/")
-                and filter_files_by_patterns([rel_path], allow_list, avoid_list)
-            ):
-                return True
-        except Exception:
-            continue
+        if _dynamic_share_path_matches(
+            root_dir=root_dir,
+            folder_path=folder_path,
+            rel_path=rel_path,
+            allow_list=allow_list,
+            avoid_list=avoid_list,
+            mounts=mounts,
+        ):
+            return True
     return False
 
 

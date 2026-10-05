@@ -3,7 +3,7 @@
 import { getXSRFToken, isAutoColorEnabled, setTagColorLocal } from './util.js';
 
 export function normalizeRelPath(path) {
-  return String(path || '').replaceAll('\\', '/').replace(/^\/+/, '');
+  return String(path || '').replaceAll('\\', '/').replaceAll(/^\/+/g, '');
 }
 
 export function pathToGlob(path) {
@@ -112,8 +112,14 @@ function escapeGlobChar(ch) {
   return ch.replaceAll(/[.+^${}()|[\]\\]/g, String.raw`\$&`);
 }
 
+function trimTrailingSlashes(value) {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') end -= 1;
+  return end === value.length ? value : value.slice(0, end);
+}
+
 export function globPatternToRegex(pattern) {
-  let p = String(pattern).replaceAll('\\', '/').replace(/^\/+/, '').replace(/\/$/, '');
+  let p = trimTrailingSlashes(String(pattern).replaceAll('\\', '/').replaceAll(/^\/+/g, ''));
   if (!p) return null;
   let out = '';
   for (let i = 0; i < p.length; i += 1) {
@@ -161,16 +167,25 @@ export function tagsOnPath(rules, path) {
 
 export async function applyTagRules(tags, paths, { colors = {} } = {}) {
   const autoColor = isAutoColorEnabled();
-  let created = 0;
-  let failed = 0;
+  const jobs = [];
   for (const path of paths) {
     const glob = pathToGlob(path);
     for (const tag of tags) {
-      try {
-        const result = await postTagRule(tag, glob, { color: colors[tag], autoColor });
-        if (result.ok) { created++; } else { failed++; }
-      } catch { failed++; }
+      jobs.push({ tag, glob });
     }
+  }
+  const outcomes = await Promise.all(jobs.map(async ({ tag, glob }) => {
+    try {
+      return await postTagRule(tag, glob, { color: colors[tag], autoColor });
+    } catch {
+      return { ok: false };
+    }
+  }));
+  let created = 0;
+  let failed = 0;
+  for (const result of outcomes) {
+    if (result.ok) created++;
+    else failed++;
   }
   return { created, failed };
 }

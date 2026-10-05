@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import logging
 import mimetypes
 import os
 
-from aird.cloud import CloudProviderError, OneDriveProvider
+from aird.cloud import OneDriveProvider
 from aird.plugins.onedrive.settings import get_settings, normalize_root_path
-
-logger = logging.getLogger(__name__)
 
 
 def _guess_type(path: str) -> str:
@@ -59,6 +56,34 @@ def _upload_tree(
     return uploaded
 
 
+def _validate_browse_rel(rel: str) -> None:
+    if not rel or ".." in rel.split("/"):
+        raise ValueError(f"Invalid path: {rel!r}")
+
+
+def _resolve_is_dir(item: dict, local_abs: str) -> bool:
+    is_dir = bool(item.get("is_dir") or item.get("isDir"))
+    if not is_dir and os.path.isdir(local_abs):
+        return True
+    return is_dir
+
+
+def _upload_browse_item(
+    provider: OneDriveProvider,
+    *,
+    local_abs: str,
+    remote_path: str,
+    is_dir: bool,
+) -> int:
+    if is_dir:
+        provider.ensure_folder_path(remote_path)
+        return _upload_tree(provider, local_abs, remote_path, is_dir=True)
+    parent = "/".join(remote_path.split("/")[:-1])
+    if parent:
+        provider.ensure_folder_path(parent)
+    return _upload_tree(provider, local_abs, remote_path, is_dir=False)
+
+
 def save_browse_items(
     provider: OneDriveProvider,
     *,
@@ -73,21 +98,13 @@ def save_browse_items(
     uploaded = 0
     for item in items:
         rel = str(item.get("path") or "").strip().lstrip("/")
-        if not rel or ".." in rel.split("/"):
-            raise ValueError(f"Invalid path: {rel!r}")
+        _validate_browse_rel(rel)
         local_abs = resolve_local(rel)
         if not local_abs:
             raise FileNotFoundError(rel)
-        is_dir = bool(item.get("is_dir") or item.get("isDir"))
-        if not is_dir and os.path.isdir(local_abs):
-            is_dir = True
+        is_dir = _resolve_is_dir(item, local_abs)
         remote_path = f"{browse_base}/{rel}"
-        if is_dir:
-            provider.ensure_folder_path(remote_path)
-            uploaded += _upload_tree(provider, local_abs, remote_path, is_dir=True)
-        else:
-            parent = "/".join(remote_path.split("/")[:-1])
-            if parent:
-                provider.ensure_folder_path(parent)
-            uploaded += _upload_tree(provider, local_abs, remote_path, is_dir=False)
+        uploaded += _upload_browse_item(
+            provider, local_abs=local_abs, remote_path=remote_path, is_dir=is_dir,
+        )
     return {"ok": True, "uploaded": uploaded, "remote_base": browse_base}

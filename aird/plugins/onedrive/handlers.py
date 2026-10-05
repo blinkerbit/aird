@@ -36,6 +36,7 @@ from aird.plugins.onedrive.token import (
 
 logger = logging.getLogger(__name__)
 _TOKEN_ONLY = frozenset({"token_user", "admin_token"})
+_ERR_TOKEN_NOT_CONFIGURED = "OneDrive token is not configured."
 
 
 def _require_onedrive(handler: BaseHandler) -> bool:
@@ -278,7 +279,7 @@ class OneDriveBackupsHandler(BaseHandler):
         provider = _provider(name, conn=self.db_conn)
         if provider is None:
             self.set_status(400)
-            self.write({"error": "OneDrive token is not configured."})
+            self.write({"error": _ERR_TOKEN_NOT_CONFIGURED})
             return
         root = get_settings(self.db_conn)["root_path"]
         try:
@@ -305,7 +306,7 @@ class OneDriveBackupHandler(BaseHandler, XSRFTokenMixin):
         provider = _provider(name, conn=self.db_conn)
         if provider is None:
             self.set_status(400)
-            self.write({"error": "OneDrive token is not configured."})
+            self.write({"error": _ERR_TOKEN_NOT_CONFIGURED})
             return
         from aird.plugins.onedrive.sync import _entries_for_user
 
@@ -362,7 +363,7 @@ class OneDriveRestoreHandler(BaseHandler, XSRFTokenMixin):
         provider = _provider(name, conn=self.db_conn)
         if provider is None:
             self.set_status(400)
-            self.write({"error": "OneDrive token is not configured."})
+            self.write({"error": _ERR_TOKEN_NOT_CONFIGURED})
             return
         try:
             download = provider.download_file(item_id)

@@ -95,6 +95,37 @@ def _walk_tree(entries, seen, abs_dir: str, arc_prefix: str, stats) -> None:
             return
 
 
+def _collect_path_entry(
+    entries: list[tuple[str, str]],
+    seen: set[str],
+    stats: dict,
+    data: str,
+    rel: str,
+    arc_prefix: str,
+) -> None:
+    abs_path = os.path.abspath(os.path.join(data, rel.replace("/", os.sep)))
+    if not is_within_root(abs_path, data) or not os.path.exists(abs_path):
+        return
+    arc = f"{arc_prefix}/{rel}" if arc_prefix else rel
+    if os.path.isdir(abs_path) and not os.path.islink(abs_path):
+        _walk_tree(entries, seen, abs_path, arc, stats)
+    elif os.path.isfile(abs_path) and not os.path.islink(abs_path):
+        _walk_file(entries, seen, abs_path, arc, stats)
+
+
+def _collect_untracked_entries(
+    entries: list[tuple[str, str]],
+    seen: set[str],
+    stats: dict,
+    data: str,
+) -> None:
+    for rel in _git_untracked(data):
+        abs_path = os.path.abspath(os.path.join(data, rel.replace("/", os.sep)))
+        if not is_within_root(abs_path, data) or not os.path.isfile(abs_path):
+            continue
+        _walk_file(entries, seen, abs_path, f"files/{rel}", stats)
+
+
 def collect_backup_entries(
     username: str,
     *,
@@ -109,20 +140,10 @@ def collect_backup_entries(
     stats = {"files": 0, "bytes": 0}
 
     for rel in paths:
-        abs_path = os.path.abspath(os.path.join(data, rel.replace("/", os.sep)))
-        if not is_within_root(abs_path, data) or not os.path.exists(abs_path):
-            continue
-        if os.path.isdir(abs_path) and not os.path.islink(abs_path):
-            _walk_tree(entries, seen, abs_path, f"files/{rel}", stats)
-        elif os.path.isfile(abs_path) and not os.path.islink(abs_path):
-            _walk_file(entries, seen, abs_path, f"files/{rel}", stats)
+        _collect_path_entry(entries, seen, stats, data, rel, "files")
 
     if include_untracked:
-        for rel in _git_untracked(data):
-            abs_path = os.path.abspath(os.path.join(data, rel.replace("/", os.sep)))
-            if not is_within_root(abs_path, data) or not os.path.isfile(abs_path):
-                continue
-            _walk_file(entries, seen, abs_path, f"files/{rel}", stats)
+        _collect_untracked_entries(entries, seen, stats, data)
 
     if include_aird_config:
         aird_dir = os.path.join(home, AIRD_META_FOLDER)
@@ -191,6 +212,84 @@ def _rel_inside(folder_rel: str, file_rel: str) -> str | None:
     return None
 
 
+def _map_arcname(remote: str, inner: str) -> str:
+    return f"{remote}/{inner}" if remote else inner
+
+
+def _collect_map_single_file(
+    entries: list[tuple[str, str]],
+    seen: set[str],
+    stats: dict,
+    *,
+    data: str,
+    folder_rel: str,
+    remote: str,
+    folder_abs: str,
+    matcher,
+) -> list[tuple[str, str]]:
+    inner = os.path.basename(folder_abs)
+    if matcher.ignored(inner, is_dir=False):
+        return []
+    git_rels = _git_untracked_under(data, folder_rel)
+    file_rel = folder_rel.replace("\\", "/")
+    if git_rels is not None and file_rel not in git_rels:
+        return []
+    _walk_file(entries, seen, folder_abs, _map_arcname(remote, inner), stats)
+    return entries
+
+
+def _collect_map_git_rels(
+    entries: list[tuple[str, str]],
+    seen: set[str],
+    stats: dict,
+    *,
+    data: str,
+    folder_rel: str,
+    remote: str,
+    folder_abs: str,
+    matcher,
+    git_rels: list[str],
+) -> None:
+    for rel in git_rels:
+        inner = _rel_inside(folder_rel, rel)
+        if inner is None or matcher.ignored(inner, is_dir=False):
+            continue
+        abs_path = os.path.abspath(os.path.join(data, rel.replace("/", os.sep)))
+        if not is_within_root(abs_path, folder_abs) or not os.path.isfile(abs_path):
+            continue
+        _walk_file(entries, seen, abs_path, _map_arcname(remote, inner), stats)
+
+
+def _walk_map_dir(
+    entries: list[tuple[str, str]],
+    seen: set[str],
+    stats: dict,
+    *,
+    remote: str,
+    matcher,
+    abs_dir: str,
+    inner_prefix: str,
+) -> None:
+    try:
+        names = os.listdir(abs_dir)
+    except OSError:
+        return
+    for name in names:
+        if name in SKIP_DIR_NAMES:
+            continue
+        child = os.path.join(abs_dir, name)
+        inner = f"{inner_prefix}/{name}" if inner_prefix else name
+        if matcher.ignored(inner, is_dir=os.path.isdir(child)):
+            continue
+        if os.path.isdir(child) and not os.path.islink(child):
+            _walk_map_dir(
+                entries, seen, stats,
+                remote=remote, matcher=matcher, abs_dir=child, inner_prefix=inner,
+            )
+        elif os.path.isfile(child) and not os.path.islink(child):
+            _walk_file(entries, seen, child, _map_arcname(remote, inner), stats)
+
+
 def collect_map_entries(
     username: str,
     *,
@@ -216,54 +315,27 @@ def collect_map_entries(
     stats = {"files": 0, "bytes": 0}
 
     if os.path.isfile(folder_abs) and not os.path.islink(folder_abs):
-        inner = os.path.basename(folder_abs)
-        if matcher.ignored(inner, is_dir=False):
-            return []
-        git_rels = _git_untracked_under(data, folder_rel)
-        file_rel = folder_rel.replace("\\", "/")
-        if git_rels is not None and file_rel not in git_rels:
-            return []
-        arc = f"{remote}/{inner}" if remote else inner
-        _walk_file(entries, seen, folder_abs, arc, stats)
-        return entries
+        return _collect_map_single_file(
+            entries, seen, stats,
+            data=data, folder_rel=folder_rel, remote=remote, folder_abs=folder_abs, matcher=matcher,
+        )
 
     if not os.path.isdir(folder_abs):
         return []
 
     git_rels = _git_untracked_under(data, folder_rel)
     if git_rels is not None:
-        for rel in git_rels:
-            inner = _rel_inside(folder_rel, rel)
-            if inner is None:
-                continue
-            if matcher.ignored(inner, is_dir=False):
-                continue
-            abs_path = os.path.abspath(os.path.join(data, rel.replace("/", os.sep)))
-            if not is_within_root(abs_path, folder_abs) or not os.path.isfile(abs_path):
-                continue
-            arc = f"{remote}/{inner}" if remote else inner
-            _walk_file(entries, seen, abs_path, arc, stats)
+        _collect_map_git_rels(
+            entries, seen, stats,
+            data=data, folder_rel=folder_rel, remote=remote, folder_abs=folder_abs,
+            matcher=matcher, git_rels=git_rels,
+        )
         return entries
 
-    def walk(abs_dir: str, inner_prefix: str) -> None:
-        try:
-            names = os.listdir(abs_dir)
-        except OSError:
-            return
-        for name in names:
-            if name in SKIP_DIR_NAMES:
-                continue
-            child = os.path.join(abs_dir, name)
-            inner = f"{inner_prefix}/{name}" if inner_prefix else name
-            if matcher.ignored(inner, is_dir=os.path.isdir(child)):
-                continue
-            if os.path.isdir(child) and not os.path.islink(child):
-                walk(child, inner)
-            elif os.path.isfile(child) and not os.path.islink(child):
-                arc = f"{remote}/{inner}" if remote else inner
-                _walk_file(entries, seen, child, arc, stats)
-
-    walk(folder_abs, "")
+    _walk_map_dir(
+        entries, seen, stats,
+        remote=remote, matcher=matcher, abs_dir=folder_abs, inner_prefix="",
+    )
     return entries
 
 

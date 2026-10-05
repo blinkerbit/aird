@@ -33,7 +33,7 @@ def register_feature_flag_broadcaster(callback) -> None:
 
 
 def _notify_feature_flag_listeners() -> None:
-    for callback in list(_feature_flag_broadcasters):
+    for callback in tuple(_feature_flag_broadcasters):
         try:
             callback()
         except Exception:

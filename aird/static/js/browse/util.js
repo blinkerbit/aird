@@ -137,7 +137,11 @@ export function createEl(tag, props, text) {
   if (props) {
     for (const key of Object.keys(props)) {
       if (key === 'className') el.className = props[key];
-      else if (key === 'dataset') Object.assign(el.dataset, props[key]);
+      else if (key === 'dataset') {
+        for (const [dk, dv] of Object.entries(props[key])) {
+          el.dataset[dk] = dv;
+        }
+      }
       else el.setAttribute(key, props[key]);
     }
   }

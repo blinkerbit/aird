@@ -410,20 +410,21 @@ async def _commit_uploaded_chunk_range(
     start: int,
     end: int,
 ) -> None:
+    del session
     lock = _session_lock(upload_id)
     async with lock:
-        session = get_session(handler.db_conn, upload_id)
-        if not session:
+        stored = get_session(handler.db_conn, upload_id)
+        if not stored:
             handler.set_status(404)
             handler.write({"error": _SESSION_NOT_FOUND})
             return
-        new_ranges = merge_ranges(session["ranges"] + [ByteRange(start, end)])
+        new_ranges = merge_ranges(stored["ranges"] + [ByteRange(start, end)])
         update_ranges(handler.db_conn, upload_id, new_ranges)
         if await _finalize_ranged_upload_if_complete(
-            handler, upload_id, session, session["temp_path"], new_ranges
+            handler, upload_id, stored, stored["temp_path"], new_ranges
         ):
             return
-        _chunk_received_response(handler, session, new_ranges)
+        _chunk_received_response(handler, stored, new_ranges)
 
 
 def _parse_ranged_session_request(

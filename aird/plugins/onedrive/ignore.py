@@ -30,26 +30,29 @@ def _match_segment(name: str, pat: str) -> bool:
     return fnmatch(name, pat)
 
 
+def _match_globstar(rel: str, left: str, right: str) -> bool:
+    if left and not (rel == left or rel.startswith(left + "/")):
+        return False
+    rest = rel[len(left) :].lstrip("/") if left else rel
+    if not right:
+        return True
+    if fnmatch(rest, right) or fnmatch(os.path.basename(rel), right):
+        return True
+    for i, ch in enumerate(rest):
+        if ch == "/" and fnmatch(rest[i + 1 :], right):
+            return True
+    return fnmatch(rest, right)
+
+
 def _match_path(rel: str, pattern: str) -> bool:
     rel = rel.replace("\\", "/").strip("/")
     pat = pattern.replace("\\", "/").strip("/")
     if not pat:
         return False
     if "**" in pat:
-        parts = pat.split("**")
+        parts = pat.split("**", 1)
         if len(parts) == 2:
-            left, right = parts[0].strip("/"), parts[1].strip("/")
-            if left and not (rel == left or rel.startswith(left + "/")):
-                return False
-            rest = rel[len(left) :].lstrip("/") if left else rel
-            if not right:
-                return True
-            if fnmatch(rest, right) or fnmatch(os.path.basename(rel), right):
-                return True
-            for i, _ch in enumerate(rest):
-                if rest[i] == "/" and fnmatch(rest[i + 1 :], right):
-                    return True
-            return fnmatch(rest, right)
+            return _match_globstar(rel, parts[0].strip("/"), parts[1].strip("/"))
     if "/" in pat.strip("/"):
         return fnmatch(rel, pat) or rel == pat
     base = os.path.basename(rel)
@@ -95,21 +98,32 @@ class IgnoreMatcher:
         return ignored
 
 
-def matcher_for_folder(folder: str, extra_text: str | None = None) -> IgnoreMatcher:
-    lines = load_gitignore_file(os.path.join(folder, ".gitignore"))
-    lines.extend(parse_ignore_lines(extra_text))
+_GITIGNORE_NAME = ".gitignore"
+_SKIP_WALK_DIRS = frozenset({".git", "__pycache__", "node_modules"})
+
+
+def _nested_gitignore_lines(folder: str) -> list[str]:
     nested: list[str] = []
     try:
         for root, dirs, files in os.walk(folder):
-            dirs[:] = [d for d in dirs if d not in {".git", "__pycache__", "node_modules"}]
-            if ".gitignore" in files and os.path.normpath(root) != os.path.normpath(folder):
-                rel_base = os.path.relpath(root, folder).replace("\\", "/")
-                for pat in load_gitignore_file(os.path.join(root, ".gitignore")):
-                    if pat.startswith("!"):
-                        nested.append("!" + rel_base + "/" + pat[1:].lstrip("/"))
-                    else:
-                        nested.append(rel_base + "/" + pat.lstrip("/"))
+            dirs[:] = [d for d in dirs if d not in _SKIP_WALK_DIRS]
+            if _GITIGNORE_NAME not in files:
+                continue
+            if os.path.normpath(root) == os.path.normpath(folder):
+                continue
+            rel_base = os.path.relpath(root, folder).replace("\\", "/")
+            for pat in load_gitignore_file(os.path.join(root, _GITIGNORE_NAME)):
+                if pat.startswith("!"):
+                    nested.append("!" + rel_base + "/" + pat[1:].lstrip("/"))
+                else:
+                    nested.append(rel_base + "/" + pat.lstrip("/"))
     except OSError:
-        pass
-    lines.extend(nested)
+        return []
+    return nested
+
+
+def matcher_for_folder(folder: str, extra_text: str | None = None) -> IgnoreMatcher:
+    lines = load_gitignore_file(os.path.join(folder, _GITIGNORE_NAME))
+    lines.extend(parse_ignore_lines(extra_text))
+    lines.extend(_nested_gitignore_lines(folder))
     return IgnoreMatcher.from_lines(lines)

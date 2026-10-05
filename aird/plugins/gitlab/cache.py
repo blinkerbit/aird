@@ -40,27 +40,44 @@ def _issue_refs(text: str | None) -> list[int]:
     return out
 
 
-def _gather_issue_text(host: str, token: str, project: str, issue: dict) -> str:
-    parts = [issue.get("title") or "", issue.get("description") or ""]
-    iid = issue.get("iid")
-    if not iid:
-        return "\n".join(parts)
-    notes = list_issue_notes(host, token, project, int(iid)) or []
+def _append_note_bodies(parts: list[str], notes: list[dict]) -> None:
     for note in notes:
         if note.get("system"):
             continue
         parts.append(str(note.get("body") or ""))
-    for ref in _issue_refs("\n".join(parts))[:12]:
+
+
+def _append_linked_issues(
+    parts: list[str], host: str, token: str, project: str, iid: int, blob: str,
+) -> None:
+    for ref in _issue_refs(blob)[:12]:
         if ref == iid:
             continue
         linked = get_issue(host, token, project, ref)
         if linked:
             parts.append(linked.get("title") or "")
             parts.append(linked.get("description") or "")
-    links = list_issue_links(host, token, project, int(iid)) or []
+
+
+def _append_issue_links(
+    parts: list[str], host: str, token: str, project: str, iid: int,
+) -> None:
+    links = list_issue_links(host, token, project, iid) or []
     for link in links:
         parts.append(str(link.get("title") or ""))
         parts.append(str(link.get("description") or ""))
+
+
+def _gather_issue_text(host: str, token: str, project: str, issue: dict) -> str:
+    parts = [issue.get("title") or "", issue.get("description") or ""]
+    iid = issue.get("iid")
+    if not iid:
+        return "\n".join(parts)
+    iid_int = int(iid)
+    notes = list_issue_notes(host, token, project, iid_int) or []
+    _append_note_bodies(parts, notes)
+    _append_linked_issues(parts, host, token, project, iid_int, "\n".join(parts))
+    _append_issue_links(parts, host, token, project, iid_int)
     return "\n".join(parts)
 
 
@@ -140,6 +157,27 @@ def cache_meta(conn: sqlite3.Connection | None, owner_username: str, project_key
     }
 
 
+def _json_list(raw: str | None) -> list:
+    try:
+        value = json.loads(raw or "[]")
+    except json.JSONDecodeError:
+        return []
+    return value if isinstance(value, list) else []
+
+
+def _cached_issue_row(row: tuple) -> dict:
+    return {
+        "iid": row[0],
+        "title": row[1],
+        "web_url": row[2],
+        "state": row[3],
+        "paths": _json_list(row[4]),
+        "assignees": _json_list(row[5]),
+        "labels": _json_list(row[6]),
+        "updated_at": row[7],
+    }
+
+
 def list_cached_issues(
     conn: sqlite3.Connection | None,
     owner_username: str,
@@ -156,33 +194,7 @@ def list_cached_issues(
         """,
         (owner_username, project_key),
     ).fetchall()
-    out: list[dict] = []
-    for row in rows:
-        try:
-            paths = json.loads(row[4] or "[]")
-        except json.JSONDecodeError:
-            paths = []
-        try:
-            assignees = json.loads(row[5] or "[]")
-        except json.JSONDecodeError:
-            assignees = []
-        try:
-            labels = json.loads(row[6] or "[]")
-        except json.JSONDecodeError:
-            labels = []
-        out.append(
-            {
-                "iid": row[0],
-                "title": row[1],
-                "web_url": row[2],
-                "state": row[3],
-                "paths": paths if isinstance(paths, list) else [],
-                "assignees": assignees if isinstance(assignees, list) else [],
-                "labels": labels if isinstance(labels, list) else [],
-                "updated_at": row[7],
-            }
-        )
-    return out
+    return [_cached_issue_row(row) for row in rows]
 
 
 def issues_for_names(

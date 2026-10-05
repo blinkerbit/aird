@@ -22,6 +22,9 @@ from aird.plugins.gitlab.client import (
 from aird.plugins.gitlab.paths import extract_file_paths
 from aird.plugins.gitlab.token import load_owner_token
 
+_JSON = "application/json"
+_GITLAB = "https://gitlab.com"
+
 TOOLS = [
     {
         "name": "list_file_comments",
@@ -115,13 +118,13 @@ def _aird_token() -> str:
 def _aird(method: str, path: str, body: dict | None = None) -> Any:
     url = _aird_url() + path
     data = None
-    headers = {"Accept": "application/json"}
+    headers = {"Accept": _JSON}
     token = _aird_token()
     if token:
         headers["Authorization"] = f"Bearer {token}"
     if body is not None:
         data = json.dumps(body).encode("utf-8")
-        headers["Content-Type"] = "application/json"
+        headers["Content-Type"] = _JSON
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
@@ -136,49 +139,61 @@ def _q(path: str) -> str:
     return urllib.parse.quote(path or "", safe="/")
 
 
-def _call_tool(name: str, args: dict) -> str:
-    path = str(args.get("path") or "")
+def _dump(payload: Any) -> str:
+    return json.dumps(payload)
+
+
+def _local_tool(name: str, path: str, args: dict) -> str | None:
     if name == "list_file_comments":
-        return json.dumps(_aird("GET", f"/api/gitlab/comments?path={_q(path)}"))
+        return _dump(_aird("GET", f"/api/gitlab/comments?path={_q(path)}"))
     if name == "add_file_comment":
-        return json.dumps(
-            _aird(
-                "POST",
-                f"/api/gitlab/comments?path={_q(path)}",
-                {"body": args.get("body")},
-            )
+        return _dump(
+            _aird("POST", f"/api/gitlab/comments?path={_q(path)}", {"body": args.get("body")})
         )
     if name == "list_binding":
-        return json.dumps(_aird("GET", f"/api/gitlab/bindings?path={_q(path)}"))
+        return _dump(_aird("GET", f"/api/gitlab/bindings?path={_q(path)}"))
+    return None
+
+
+def _file_issue_hits(issues: list, filename: str) -> list:
+    hits = []
+    for issue in issues:
+        blob = f"{issue.get('title') or ''}\n{issue.get('description') or ''}"
+        if filename and filename in extract_file_paths(blob) or filename in blob:
+            hits.append(issue)
+    return hits
+
+
+def _bound_tool(name: str, path: str, args: dict) -> str:
     status = _aird("GET", f"/api/gitlab/status?path={_q(path)}")
     binding = (status or {}).get("binding") or {}
-    host = binding.get("gitlab_host") or "https://gitlab.com"
+    host = binding.get("gitlab_host") or _GITLAB
     username = status.get("owner_username") or os.environ.get("USER") or ""
     token = load_owner_token(username, host)
     if not token:
-        return json.dumps({"error": "GitLab token not configured on this machine"})
+        return _dump({"error": "GitLab token not configured on this machine"})
+    project = binding.get("code_project") or ""
     if name == "pipeline_status":
-        return json.dumps(
-            list_pipelines(host, token, binding.get("code_project") or "")
-        )
+        return _dump(list_pipelines(host, token, project))
     if name == "list_mrs":
-        return json.dumps(list_mrs(host, token, binding.get("code_project") or ""))
-    if name in {"board_snapshot", "assignee_load", "list_issues_for_file"}:
-        issues = list_open_issues(
-            host, token, binding.get("issues_project") or binding.get("code_project") or ""
-        )
-        if name == "assignee_load":
-            return json.dumps(busyness_for_issues(issues))
-        if name == "list_issues_for_file":
-            filename = args.get("name") or path.rsplit("/", 1)[-1]
-            hits = []
-            for issue in issues:
-                blob = f"{issue.get('title') or ''}\n{issue.get('description') or ''}"
-                if filename and filename in extract_file_paths(blob) or filename in blob:
-                    hits.append(issue)
-            return json.dumps(hits)
-        return json.dumps(issues)
-    raise RuntimeError(f"Unknown tool {name}")
+        return _dump(list_mrs(host, token, project))
+    if name not in {"board_snapshot", "assignee_load", "list_issues_for_file"}:
+        raise RuntimeError(f"Unknown tool {name}")
+    issues = list_open_issues(host, token, binding.get("issues_project") or project)
+    if name == "assignee_load":
+        return _dump(busyness_for_issues(issues))
+    if name == "list_issues_for_file":
+        filename = str(args.get("name") or path.rsplit("/", 1)[-1])
+        return _dump(_file_issue_hits(issues, filename))
+    return _dump(issues)
+
+
+def _call_tool(name: str, args: dict) -> str:
+    path = str(args.get("path") or "")
+    local = _local_tool(name, path, args)
+    if local is not None:
+        return local
+    return _bound_tool(name, path, args)
 
 
 def _handle_rpc(msg: dict) -> dict | None:
@@ -276,6 +291,39 @@ def _https_gitlab_base(host: str, allowed: set[str]) -> str | None:
     return None
 
 
+def _quoted_api_path(raw: str) -> str | None:
+    if not raw.startswith("/") or raw.startswith("//") or "\\" in raw or "\x00" in raw or ".." in raw:
+        return None
+    path, _, query = raw.partition("?")
+    parts: list[str] = []
+    for part in path.split("/"):
+        if part in ("", "."):
+            continue
+        decoded = urllib.parse.unquote(part)
+        if decoded in (".", "..") or "/" in decoded or "\\" in decoded:
+            return None
+        parts.append(urllib.parse.quote(decoded, safe=""))
+    safe = "/" + "/".join(parts)
+    return f"{safe}?{query}" if query else safe
+
+
+def _bridge_target(host: str, raw_path: str) -> str | None:
+    allowed = _trusted_gitlab_hosts()
+    base = _https_gitlab_base(host, allowed)
+    safe_path = _quoted_api_path(raw_path)
+    if not base or not safe_path:
+        return None
+    approved = (urllib.parse.urlparse(base).hostname or "").lower()
+    if approved not in allowed and not approved.endswith(".gitlab.com"):
+        return None
+    path_only, _, query = safe_path.partition("?")
+    target = urllib.parse.urlunparse(("https", approved, path_only, "", query, ""))
+    parsed = urllib.parse.urlparse(target)
+    if parsed.scheme != "https" or (parsed.hostname or "").lower() != approved:
+        return None
+    return target
+
+
 class _BridgeHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args) -> None:
         sys.stderr.write("bridge: " + (fmt % args) + "\n")
@@ -298,43 +346,45 @@ class _BridgeHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         self._proxy()
 
+    def _send_proxy_error(self, code: int, message: bytes = b"") -> None:
+        self.send_response(code)
+        self._cors()
+        self.end_headers()
+        if message:
+            self.wfile.write(message)
+
     def _proxy(self) -> None:
         token = self.headers.get("PRIVATE-TOKEN") or load_owner_token(
-            os.environ.get("USER") or "", "https://gitlab.com"
+            os.environ.get("USER") or "", _GITLAB
         )
-        host = (self.headers.get("X-Gitlab-Host") or "https://gitlab.com").rstrip("/")
-        allowed = _trusted_gitlab_hosts()
-        base = _https_gitlab_base(host, allowed)
-        if not base or not self.path.startswith("/") or self.path.startswith("//"):
-            self.send_response(400)
-            self._cors()
-            self.end_headers()
-            self.wfile.write(b"unsupported gitlab host")
+        host = (self.headers.get("X-Gitlab-Host") or _GITLAB).rstrip("/")
+        target = _bridge_target(host, self.path)
+        if not target:
+            self._send_proxy_error(400, b"unsupported gitlab host")
             return
-        approved = (urllib.parse.urlparse(base).hostname or "").lower()
-        if approved:
-            allowed.add(approved)
-        target = base + self.path
         length = int(self.headers.get("Content-Length") or 0)
         payload = self.rfile.read(length) if length else None
+        self._forward(target, token or "", payload)
+
+    def _forward(self, target: str, token: str, payload: bytes | None) -> None:
         parsed = urllib.parse.urlparse(target)
-        if parsed.scheme != "https" or (parsed.hostname or "").lower() not in allowed:
-            self.send_response(400)
-            self._cors()
-            self.end_headers()
+        if parsed.scheme != "https":
+            self._send_proxy_error(400)
             return
         req = urllib.request.Request(
-            target,
+            urllib.parse.urlunparse(
+                ("https", parsed.hostname, parsed.path, "", parsed.query, "")
+            ),
             data=payload,
             method=self.command,
-            headers={"PRIVATE-TOKEN": token or "", "Accept": "application/json"},
+            headers={"PRIVATE-TOKEN": token, "Accept": _JSON},
         )
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 body = resp.read()
                 self.send_response(resp.status)
                 self._cors()
-                self.send_header("Content-Type", resp.headers.get("Content-Type") or "application/json")
+                self.send_header("Content-Type", resp.headers.get("Content-Type") or _JSON)
                 self.end_headers()
                 self.wfile.write(body)
         except urllib.error.HTTPError as exc:
@@ -343,29 +393,25 @@ class _BridgeHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(exc.read())
         except OSError as exc:
-            self.send_response(502)
-            self._cors()
-            self.end_headers()
-            self.wfile.write(str(exc).encode("utf-8"))
+            self._send_proxy_error(502, str(exc).encode("utf-8"))
 
 
 def run_bridge(port: int) -> None:
     server = ThreadingHTTPServer(("127.0.0.1", port), _BridgeHandler)
-    sys.stderr.write(f"aird gitlab bridge on http://127.0.0.1:{port}\n")
+    sys.stderr.write(f"aird gitlab bridge listening on 127.0.0.1:{port}\n")
     server.serve_forever()
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="aird-gitlab-mcp")
     parser.add_argument("--bridge", action="store_true")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args(argv)
     if args.bridge:
         run_bridge(args.port)
-        return 0
+        return
     run_stdio()
-    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

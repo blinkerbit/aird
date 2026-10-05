@@ -81,39 +81,53 @@ def delete_user_token(
         pass
 
 
-def _read_glab_token(host: str) -> str | None:
-    candidates = []
+def _glab_config_paths() -> list[Path]:
+    candidates: list[Path] = []
     appdata = os.environ.get("APPDATA") or os.environ.get("XDG_CONFIG_HOME")
     if appdata:
         candidates.append(Path(appdata) / "glab-cli" / "config.yml")
     candidates.append(Path.home() / ".config" / "glab-cli" / "config.yml")
-    host_key = (host or "gitlab.com").replace("https://", "").replace("http://", "").split("/")[0]
-    for path in candidates:
+    return candidates
+
+
+def _normalize_glab_host_key(host: str) -> str:
+    return (host or "gitlab.com").replace("https://", "").replace("http://", "").split("/")[0]
+
+
+def _token_from_glab_yaml(text: str, host_key: str) -> str | None:
+    in_hosts = False
+    in_host = False
+    for raw in text.splitlines():
+        stripped = raw.rstrip().strip()
+        if stripped.startswith("hosts:"):
+            in_hosts = True
+            in_host = False
+            continue
+        if not in_hosts:
+            continue
+        if stripped.endswith(":") and not stripped.startswith("token"):
+            name = stripped[:-1].strip().strip("'\"")
+            in_host = name == host_key or name.endswith(host_key)
+            continue
+        if in_host and stripped.startswith("token:"):
+            value = stripped.split(":", 1)[1].strip().strip("'\"")
+            if value:
+                return value
+    return None
+
+
+def _read_glab_token(host: str) -> str | None:
+    host_key = _normalize_glab_host_key(host)
+    for path in _glab_config_paths():
         if not path.is_file():
             continue
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        in_hosts = False
-        in_host = False
-        for raw in text.splitlines():
-            line = raw.rstrip()
-            stripped = line.strip()
-            if stripped.startswith("hosts:"):
-                in_hosts = True
-                in_host = False
-                continue
-            if not in_hosts:
-                continue
-            if stripped.endswith(":") and not stripped.startswith("token"):
-                name = stripped[:-1].strip().strip("'\"")
-                in_host = name == host_key or name.endswith(host_key)
-                continue
-            if in_host and stripped.startswith("token:"):
-                value = stripped.split(":", 1)[1].strip().strip("'\"")
-                if value:
-                    return value
+        token = _token_from_glab_yaml(text, host_key)
+        if token:
+            return token
     return None
 
 

@@ -25,7 +25,7 @@ TOKEN_SOURCE_STORED = "stored"
 TOKEN_SOURCES = frozenset({TOKEN_SOURCE_ENV, TOKEN_SOURCE_STORED})
 MAX_BOARDS = 20
 MAX_BOARD_LABEL = 80
-_ENV_VAR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+_ENV_VAR_RE = re.compile(r"^[A-Za-z_]\w{0,63}$")
 _FALLBACK_ENV_VARS = ("GITLAB_TOKEN", "GL_TOKEN", "GITLAB_PRIVATE_TOKEN")
 
 
@@ -150,7 +150,7 @@ def resolve_server_token(conn: sqlite3.Connection | None) -> str | None:
     return _env_token(settings["token_env_var"])
 
 
-def _base_settings(conn: sqlite3.Connection | None, data: dict | None = None) -> dict:
+def _base_settings(data: dict | None = None) -> dict:
     parsed = data if isinstance(data, dict) else {}
     return {
         "default_host": _host(str(parsed.get("default_host") or DEFAULT_HOST)),
@@ -161,7 +161,7 @@ def _base_settings(conn: sqlite3.Connection | None, data: dict | None = None) ->
 
 
 def token_status(conn: sqlite3.Connection | None, settings: dict | None = None) -> dict:
-    cfg = settings or _base_settings(conn, {})
+    cfg = settings or _base_settings({})
     if cfg["token_source"] == TOKEN_SOURCE_STORED:
         configured = bool(load_stored_token(conn))
         detail = "Stored in Aird" if configured else "No token saved"
@@ -180,7 +180,7 @@ def token_status(conn: sqlite3.Connection | None, settings: dict | None = None) 
 
 
 def get_settings(conn: sqlite3.Connection | None) -> dict:
-    defaults = _base_settings(None, {})
+    defaults = _base_settings({})
     if conn is None:
         return {**defaults, **token_status(None, defaults)}
     raw = load_server_config(conn).get(CONFIG_KEY)
@@ -190,9 +190,9 @@ def get_settings(conn: sqlite3.Connection | None) -> dict:
             parsed = json.loads(raw)
             if isinstance(parsed, dict):
                 data = parsed
-        except (TypeError, ValueError, json.JSONDecodeError):
+        except (TypeError, ValueError):
             data = {}
-    settings = _base_settings(conn, data)
+    settings = _base_settings(data)
     return {**settings, **token_status(conn, settings)}
 
 
@@ -211,9 +211,9 @@ def save_settings(
             parsed = json.loads(raw)
             if isinstance(parsed, dict):
                 data = parsed
-        except (TypeError, ValueError, json.JSONDecodeError):
+        except (TypeError, ValueError):
             data = {}
-    current = _base_settings(conn, data)
+    current = _base_settings(data)
     if default_host is not None:
         current["default_host"] = _host(default_host)
     if boards is not None:

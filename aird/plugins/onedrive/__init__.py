@@ -11,4 +11,3 @@ def is_onedrive_enabled() -> bool:
 
 def register_onedrive(routes: list) -> None:
     """Deprecated: routes registered via onedrive_host."""
-    return

@@ -18,6 +18,7 @@ import time
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
+_ERR_INVALID_WRAP = "Invalid wrap"
 
 ENCRYPTED_PREVIEW = "Encrypted message"
 IDENTITY_FILENAME = "e2e-identity.json"
@@ -86,16 +87,16 @@ def parse_e2e_payload(raw) -> dict:
 
 def parse_wrap(raw) -> dict:
     if not isinstance(raw, dict):
-        raise ValueError("Invalid wrap")
+        raise ValueError(_ERR_INVALID_WRAP)
     blob = json.dumps(raw, separators=(",", ":"))
     if len(blob) > _MAX_WRAP_CHARS:
         raise ValueError("Wrap too large")
     epk = validate_public_jwk(raw.get("epk"))
     iv, ct, kid = raw.get("iv"), raw.get("ct"), raw.get("kid")
     if raw.get("v") != 1 or not _b64_ok(iv, min_len=8, max_len=64) or not _b64_ok(ct, min_len=8, max_len=1024):
-        raise ValueError("Invalid wrap")
+        raise ValueError(_ERR_INVALID_WRAP)
     if not isinstance(kid, str) or not (8 <= len(kid) <= 128) or not _B64_RE.match(kid):
-        raise ValueError("Invalid wrap")
+        raise ValueError(_ERR_INVALID_WRAP)
     return {"v": 1, "kid": kid, "epk": epk, "iv": str(iv), "ct": str(ct)}
 
 

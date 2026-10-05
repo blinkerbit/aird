@@ -26,7 +26,7 @@
       </header>
 
       {% if saved %}
-      <div class="alert alert-success mb-4" role="status"><span>Plugin settings saved.</span></div>
+      <output class="alert alert-success mb-4">Plugin settings saved.</output>
       {% end %}
 
       <form method="post" id="adminPluginsForm" class="space-y-4">
@@ -200,7 +200,7 @@
                     <span id="onedriveDeviceStatus" class="text-xs opacity-70"></span>
                   </div>
                   <div id="onedriveDevicePrompt" class="text-sm hidden">
-                    <p>Go to <a id="onedriveDeviceUrl" href="#" target="_blank" rel="noopener" class="link"></a> and enter code <strong id="onedriveDeviceCode"></strong></p>
+                    <p>Go to <a id="onedriveDeviceUrl" href="https://microsoft.com/devicelogin" target="_blank" rel="noopener" class="link">microsoft.com/devicelogin</a> and enter code <strong id="onedriveDeviceCode"></strong></p>
                   </div>
                 </div>
                 <div id="onedriveEnvBlock" class="space-y-2 mb-3"{% if onedrive_settings['auth_source'] != 'env' %} hidden{% end %}>

@@ -103,7 +103,7 @@ class EnhancedSecureHub:
     def drop_user(self, username: str) -> list[tuple[str, str]]:
         with self._lock:
             ended: list[tuple[str, str]] = []
-            for room in list(self._rooms.values()):
+            for room in tuple(self._rooms.values()):
                 if room.has(username):
                     ended.append((room.room_id, room.other(username)))
                     self._forget(room)
@@ -148,7 +148,7 @@ class EnhancedSecureHub:
 
     def _sweep_waiting(self) -> None:
         now = time.monotonic()
-        for room in list(self._rooms.values()):
+        for room in tuple(self._rooms.values()):
             if not room.ready() and (now - room.created) > _WAIT_SEC:
                 self._forget(room)
 

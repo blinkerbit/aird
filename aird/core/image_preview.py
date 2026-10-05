@@ -37,9 +37,10 @@ def embedded_jpeg_preview(abspath: str) -> bytes | None:
         size = os.path.getsize(abspath)
         if size < _MIN_PREVIEW_BYTES:
             return None
-        with open(abspath, "rb") as fh:
-            with mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-                return _largest_jpeg(mm)
+        with open(abspath, "rb") as fh, mmap.mmap(
+            fh.fileno(), 0, access=mmap.ACCESS_READ
+        ) as mm:
+            return _largest_jpeg(mm)
     except (OSError, ValueError):
         try:
             with open(abspath, "rb") as fh:

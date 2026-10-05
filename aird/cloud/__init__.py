@@ -575,17 +575,25 @@ class OneDriveProvider(CloudProvider):
             parent_id = last.id
         return last
 
-    def ensure_folder(self, name: str, parent_id: Optional[str] = None) -> CloudFile:
+    def _find_named_folder(
+        self, parent_id: Optional[str], name: str
+    ) -> Optional[CloudFile]:
         for item in self.list_files(parent_id):
             if item.is_dir and item.name == name:
                 return item
+        return None
+
+    def _onedrive_children_url(self, parent_id: Optional[str]) -> str:
         if not parent_id or parent_id == "root":
-            url = f"{self._base_url}/root/children"
-        else:
-            url = f"{self._base_url}/items/{parent_id}/children"
+            return f"{self._base_url}/root/children"
+        return f"{self._base_url}/items/{parent_id}/children"
+
+    def _create_onedrive_folder(
+        self, name: str, parent_id: Optional[str]
+    ) -> CloudFile:
         try:
             response = requests.post(
-                url,
+                self._onedrive_children_url(parent_id),
                 headers=self._headers(),
                 json={
                     "name": name,
@@ -599,12 +607,18 @@ class OneDriveProvider(CloudProvider):
         if response.status_code in (200, 201):
             return self._file_from_payload(response.json(), default_name=name)
         if response.status_code == 409:
-            for item in self.list_files(parent_id):
-                if item.is_dir and item.name == name:
-                    return item
+            existing = self._find_named_folder(parent_id, name)
+            if existing is not None:
+                return existing
         raise CloudProviderError(
             f"OneDrive folder create failed ({response.status_code}): {response.text[:200]}"
         )
+
+    def ensure_folder(self, name: str, parent_id: Optional[str] = None) -> CloudFile:
+        existing = self._find_named_folder(parent_id, name)
+        if existing is not None:
+            return existing
+        return self._create_onedrive_folder(name, parent_id)
 
     def download_file(self, file_id: str) -> CloudDownload:
         try:
@@ -677,81 +691,105 @@ class OneDriveProvider(CloudProvider):
 
         return self._file_from_payload(response.json(), default_name=name)
 
-    def _upload_chunked_onedrive(
-        self, stream, name, parent_id, mime_type, size, conflict: str = "rename"
-    ) -> CloudFile:
-        safe_name = quote(name, safe="")
-        if not parent_id or parent_id == "root":
-            session_url = f"{self._base_url}/root:/{safe_name}:/createUploadSession"
-        else:
-            session_url = (
-                f"{self._base_url}/items/{parent_id}:/{safe_name}:/createUploadSession"
-            )
+    @staticmethod
+    def _onedrive_conflict_behavior(conflict: str) -> str:
+        return conflict if conflict in {"rename", "replace", "fail"} else "rename"
 
+    def _onedrive_upload_session_url(
+        self, safe_name: str, parent_id: Optional[str]
+    ) -> str:
+        if not parent_id or parent_id == "root":
+            return f"{self._base_url}/root:/{safe_name}:/createUploadSession"
+        return (
+            f"{self._base_url}/items/{parent_id}:/{safe_name}:/createUploadSession"
+        )
+
+    def _start_onedrive_upload_session(
+        self, name: str, parent_id: Optional[str], conflict: str
+    ) -> str:
+        safe_name = quote(name, safe="")
         try:
             session_resp = requests.post(
-                session_url,
+                self._onedrive_upload_session_url(safe_name, parent_id),
                 headers=self._headers(),
                 json={
                     "item": {
-                        "@microsoft.graph.conflictBehavior": conflict
-                        if conflict in {"rename", "replace", "fail"}
-                        else "rename"
+                        "@microsoft.graph.conflictBehavior": self._onedrive_conflict_behavior(
+                            conflict
+                        )
                     }
                 },
                 timeout=60,
             )
         except requests.RequestException as exc:
             raise CloudProviderError(f"OneDrive upload session failed: {exc}") from exc
-
         if session_resp.status_code not in (200, 201):
             raise CloudProviderError(
                 f"OneDrive upload session failed ({session_resp.status_code}): {session_resp.text[:200]}"
             )
-
         upload_url = session_resp.json().get("uploadUrl")
         if not upload_url:
             raise CloudProviderError("OneDrive did not provide an upload URL")
+        return upload_url
 
+    def _put_onedrive_upload_chunk(
+        self,
+        upload_url: str,
+        stream,
+        offset: int,
+        chunk_size: int,
+        size: int,
+        mime_type: str,
+        name: str,
+    ) -> tuple[Optional[CloudFile], int]:
+        stream.seek(offset)
+        chunk = stream.read(min(chunk_size, size - offset))
+        if not chunk:
+            return None, offset
+        end = offset + len(chunk) - 1
+        chunk_headers = {
+            "Content-Length": str(len(chunk)),
+            "Content-Range": f"bytes {offset}-{end}/{size}",
+            "Content-Type": mime_type,
+        }
+        try:
+            upload_resp = requests.put(
+                upload_url,
+                headers=chunk_headers,
+                data=chunk,
+                timeout=120,
+            )
+        except requests.RequestException as exc:
+            raise CloudProviderError(f"OneDrive chunk upload failed: {exc}") from exc
+        if upload_resp.status_code in (200, 201):
+            return self._file_from_payload(upload_resp.json(), default_name=name), offset
+        if upload_resp.status_code in (202, 204):
+            return None, end + 1
+        raise CloudProviderError(
+            f"OneDrive upload failed ({upload_resp.status_code}): {upload_resp.text[:200]}"
+        )
+
+    def _upload_chunked_onedrive(
+        self, stream, name, parent_id, mime_type, size, conflict: str = "rename"
+    ) -> CloudFile:
+        upload_url = self._start_onedrive_upload_session(name, parent_id, conflict)
         chunk_size = 327680 * 10  # 3.125 MiB
         offset = 0
-
         while offset < size:
-            stream.seek(offset)
-            chunk = stream.read(min(chunk_size, size - offset))
-            if not chunk:
-                break
-
-            end = offset + len(chunk) - 1
-            chunk_headers = {
-                "Content-Length": str(len(chunk)),
-                "Content-Range": f"bytes {offset}-{end}/{size}",
-                "Content-Type": mime_type,
-            }
-
-            try:
-                upload_resp = requests.put(
-                    upload_url,
-                    headers=chunk_headers,
-                    data=chunk,
-                    timeout=120,
-                )
-            except requests.RequestException as exc:
-                raise CloudProviderError(
-                    f"OneDrive chunk upload failed: {exc}"
-                ) from exc
-
-            if upload_resp.status_code in (200, 201):
-                return self._file_from_payload(upload_resp.json(), default_name=name)
-
-            if upload_resp.status_code in (202, 204):
-                offset = end + 1
-                continue
-
-            raise CloudProviderError(
-                f"OneDrive upload failed ({upload_resp.status_code}): {upload_resp.text[:200]}"
+            finished, next_offset = self._put_onedrive_upload_chunk(
+                upload_url,
+                stream,
+                offset,
+                chunk_size,
+                size,
+                mime_type,
+                name,
             )
-
+            if finished is not None:
+                return finished
+            if next_offset == offset:
+                break
+            offset = next_offset
         raise CloudProviderError("OneDrive upload did not complete successfully")
 
     def upload_file(

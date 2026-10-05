@@ -73,6 +73,7 @@
               <button type="button" class="chat-new-tab" data-new="group" role="tab" aria-selected="false">Group</button>
             </div>
             <div id="chatNewGroupFields" class="chat-new-group" hidden>
+              <label class="sr-only" for="chatGroupTitle">Group name</label>
               <input id="chatGroupTitle" type="text" class="input input-bordered input-sm w-full" maxlength="80" placeholder="Group name" autocomplete="off">
               <div id="chatGroupChips" class="chat-chips" hidden></div>
             </div>
@@ -84,6 +85,7 @@
               <div id="chatUserSuggest" class="menu menu-sm bg-base-100 border border-base-300 rounded-box shadow-lg hidden"></div>
             </div>
           </div>
+          <label class="sr-only" for="chatSearch">Search messages</label>
           <input id="chatSearch" type="search" class="input input-bordered input-sm w-full" placeholder="Search messages…" autocomplete="off">
           <div id="chatSearchResults" class="chat-search-results hidden"></div>
           <ul id="chatConvList"></ul>
@@ -182,6 +184,7 @@
     <div class="modal-box max-w-sm">
       <h3 class="font-bold text-lg">Add member</h3>
       <div class="chat-new-user-wrap mt-3">
+        <label class="sr-only" for="chatMemberUser">Find user</label>
         <input id="chatMemberUser" type="text" class="input input-bordered input-sm w-full" placeholder="Find people…" autocomplete="off">
         <div id="chatMemberSuggest" class="menu menu-sm bg-base-100 border border-base-300 rounded-box shadow-lg hidden"></div>
       </div>

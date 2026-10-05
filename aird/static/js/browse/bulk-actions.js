@@ -26,23 +26,25 @@ export async function renameItem(filepath) {
   const formData = new URLSearchParams();
   formData.append("path", filepath);
   formData.append("new_name", newName);
-  fetch("/rename", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "X-XSRFToken": getXSRFToken(),
-    },
-    body: formData.toString(),
-  })
-    .then((res) => {
-      if (res.ok) {
-        SelectionStore.remove(filepath);
-        globalThis.location.reload();
-      } else {
-        res.text().then((t) => showDialog("Rename failed: " + t, "Error")).catch(() => {});
-      }
-    })
-    .catch((err) => showDialog("Rename failed: " + err.message, "Error"));
+  try {
+    const res = await fetch("/rename", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-XSRFToken": getXSRFToken(),
+      },
+      body: formData.toString(),
+    });
+    if (res.ok) {
+      SelectionStore.remove(filepath);
+      globalThis.location.reload();
+      return;
+    }
+    const t = await res.text().catch(() => "");
+    showDialog("Rename failed: " + t, "Error");
+  } catch (err) {
+    showDialog("Rename failed: " + err.message, "Error");
+  }
 }
 
 export async function deleteItem(filepath, isFolder) {
@@ -54,23 +56,25 @@ export async function deleteItem(filepath, isFolder) {
   const formData = new URLSearchParams();
   formData.append("path", filepath);
   if (isFolder) formData.append("recursive", "1");
-  fetch("/delete", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "X-XSRFToken": getXSRFToken(),
-    },
-    body: formData.toString(),
-  })
-    .then((res) => {
-      if (res.ok) {
-        SelectionStore.remove(filepath);
-        globalThis.location.reload();
-      } else {
-        res.text().then((t) => showDialog("Delete failed: " + t, "Error")).catch(() => {});
-      }
-    })
-    .catch((err) => showDialog("Delete failed: " + err.message, "Error"));
+  try {
+    const res = await fetch("/delete", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-XSRFToken": getXSRFToken(),
+      },
+      body: formData.toString(),
+    });
+    if (res.ok) {
+      SelectionStore.remove(filepath);
+      globalThis.location.reload();
+      return;
+    }
+    const t = await res.text().catch(() => "");
+    showDialog("Delete failed: " + t, "Error");
+  } catch (err) {
+    showDialog("Delete failed: " + err.message, "Error");
+  }
 }
 
 export async function newFolder() {
@@ -123,9 +127,12 @@ export async function downloadFileViaHttp(filePath) {
   await batch.run();
 }
 
+function stripLeadingSlashes(value) {
+  return String(value || '').replaceAll(/^\/+/g, '');
+}
+
 async function listDirectoryForDownload(remotePath) {
-  const enc = String(remotePath || '')
-    .replace(/^\/+/, '')
+  const enc = stripLeadingSlashes(remotePath)
     .split('/')
     .filter(Boolean)
     .map(encodeURIComponent)
@@ -155,7 +162,7 @@ export async function expandSelectionToFiles(paths) {
   const seen = new Set();
   const listFn = listDirectoryForDownload;
   for (const raw of paths) {
-    const p = String(raw || '').trim().replace(/^\/+/, '');
+    const p = stripLeadingSlashes(String(raw || '').trim());
     if (!p) continue;
     const entries = await listFn(p);
     if (entries === null) {
@@ -172,8 +179,7 @@ export async function expandSelectionToFiles(paths) {
 }
 
 function filesDownloadUrl(path) {
-  const enc = String(path || '')
-    .replace(/^\/+/, '')
+  const enc = stripLeadingSlashes(path)
     .split('/')
     .filter(Boolean)
     .map(encodeURIComponent)

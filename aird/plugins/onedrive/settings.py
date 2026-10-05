@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -13,6 +14,8 @@ from aird.constants.input_limits import ONEDRIVE_TOKEN_MAX_LEN
 from aird.core.secret_storage import decrypt_secret, encrypt_secret
 from aird.db.config import load_server_config, save_server_config
 from aird.plugins.onedrive.auth import OneDriveAuthError, refresh_access_token
+
+logger = logging.getLogger(__name__)
 
 CONFIG_KEY = "onedrive_plugin"
 TOKEN_CONFIG_KEY = "onedrive_plugin_token"
@@ -29,7 +32,7 @@ AUTH_SOURCES = frozenset({AUTH_SOURCE_DEVICE, AUTH_SOURCE_ENV, AUTH_SOURCE_STORE
 DEFAULT_AUTH_SOURCE = AUTH_SOURCE_DEVICE
 DEFAULT_ENV_VAR = "ONEDRIVE_TOKEN"
 _CLIENT_RE = re.compile(r"^[0-9a-fA-F-]{8,80}$")
-_ENV_VAR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+_ENV_VAR_RE = re.compile(r"^[A-Za-z_]\w{0,63}$")
 _FALLBACK_ENV_VARS = ("ONEDRIVE_TOKEN", "GRAPH_ACCESS_TOKEN", "MS_GRAPH_TOKEN")
 
 
@@ -92,7 +95,7 @@ def _load_json_config(conn: sqlite3.Connection | None) -> dict:
         return {}
     try:
         data = json.loads(raw)
-    except (TypeError, ValueError, json.JSONDecodeError):
+    except (TypeError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
 
@@ -120,7 +123,7 @@ def _load_token_blob(conn: sqlite3.Connection | None) -> dict:
     try:
         text = decrypt_secret(raw)
         data = json.loads(text)
-    except (TypeError, ValueError, json.JSONDecodeError):
+    except (TypeError, ValueError):
         return {"access_token": text} if text else {}
     return data if isinstance(data, dict) else {}
 
@@ -161,7 +164,7 @@ def load_device_pending(conn: sqlite3.Connection | None) -> dict:
         return {}
     try:
         data = json.loads(raw)
-    except (TypeError, ValueError, json.JSONDecodeError):
+    except (TypeError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
 
@@ -230,30 +233,31 @@ def resolve_access_token(conn: sqlite3.Connection | None) -> str | None:
     return None
 
 
-def auth_status(conn: sqlite3.Connection | None, settings: dict | None = None) -> dict:
-    cfg = settings or _base_settings(_load_json_config(conn))
+def _auth_token_status(cfg: dict, blob: dict, conn: sqlite3.Connection | None) -> tuple[bool, str]:
     source = cfg["auth_source"]
-    blob = _load_token_blob(conn)
     if source == AUTH_SOURCE_ENV:
         var = cfg["token_env_var"]
         configured = bool(_env_token(var))
         detail = f"{var} is set" if configured else f"{var} not set in environment"
-    elif source == AUTH_SOURCE_STORED:
+        return configured, detail
+    if source == AUTH_SOURCE_STORED:
         configured = bool((blob.get("access_token") or "").strip())
-        detail = "Stored in Aird" if configured else "No token saved"
-    else:
-        configured = bool((blob.get("refresh_token") or "").strip()) or bool(
-            resolve_access_token(conn)
-        )
-        if configured:
-            detail = "Device login complete"
-        elif cfg.get("client_id"):
-            detail = "Run device login"
-        else:
-            detail = "Azure client ID required"
+        return configured, "Stored in Aird" if configured else "No token saved"
+    configured = bool((blob.get("refresh_token") or "").strip()) or bool(resolve_access_token(conn))
+    if configured:
+        return True, "Device login complete"
+    if cfg.get("client_id"):
+        return False, "Run device login"
+    return False, "Azure client ID required"
+
+
+def auth_status(conn: sqlite3.Connection | None, settings: dict | None = None) -> dict:
+    cfg = settings or _base_settings(_load_json_config(conn))
+    blob = _load_token_blob(conn)
+    configured, detail = _auth_token_status(cfg, blob, conn)
     pending = load_device_pending(conn)
     return {
-        "auth_source": source,
+        "auth_source": cfg["auth_source"],
         "client_id": cfg["client_id"],
         "tenant": cfg["tenant"],
         "token_env_var": cfg["token_env_var"],

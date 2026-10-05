@@ -63,6 +63,11 @@ logger = logging.getLogger(__name__)
 
 _TOKEN_ONLY = frozenset({"token_user", "admin_token"})
 _ERR_USER_NOT_FOUND = "User not found"
+_ERR_NO_ATTACHMENT = "No attachment"
+_ERR_MESSAGE_NOT_FOUND = "Message not found"
+_CACHE_PRIVATE_60 = "private, max-age=60"
+_CACHE_NO_STORE = "no-store, no-cache, must-revalidate"
+_ERR_FORBIDDEN = "Forbidden"
 
 
 def _reject_user_not_found(handler: BaseHandler, *, status: int = 403) -> None:
@@ -322,7 +327,7 @@ def _parse_chat_attach_e2e(handler: BaseHandler) -> tuple[dict | None, str | Non
         except json.JSONDecodeError:
             mentions = []
         return metadata_from_e2e_request({"e2e": parsed, "mentions": mentions}), None
-    except (ValueError, json.JSONDecodeError) as exc:
+    except ValueError as exc:
         return None, str(exc)
 
 
@@ -462,7 +467,7 @@ def _save_copy_attachment(
     att = _att_at(msg, idx)
     if not att:
         handler.set_status(404)
-        handler.write({"error": "No attachment"})
+        handler.write({"error": _ERR_NO_ATTACHMENT})
         return None
     if att.get("owner_username") == name:
         return {"saved_rel": att.get("owner_rel"), "already_owner": True}
@@ -503,6 +508,48 @@ def _save_copy_attachment(
     _quota_bump(handler, name, size)
     chat_db.set_saved_rel(name, message_id, saved_rel, index=idx)
     return {"saved_rel": saved_rel, "size_bytes": size}
+
+
+def _patch_conversation_message(
+    handler: BaseHandler,
+    *,
+    name: str,
+    conversation_id: str,
+    message_id: str,
+    body: dict,
+) -> tuple[dict | None, bool]:
+    """Return (message, unchanged). On error, writes response and returns (None, False)."""
+    try:
+        e2e_meta = _e2e_from_body(body)
+    except ValueError as exc:
+        handler.set_status(400)
+        handler.write({"error": str(exc)})
+        return None, False
+    if e2e_meta:
+        edited = chat_db.edit_message(
+            actor=name,
+            conversation_id=conversation_id,
+            message_id=message_id,
+            body="",
+            e2e=e2e_meta["e2e"],
+            mentions=e2e_meta.get("mentions"),
+        )
+        return edited, False
+    text = sanitize_chat_html(body.get("body") or "")
+    if not text:
+        handler.set_status(400)
+        handler.write({"error": "Empty message"})
+        return None, False
+    current = chat_db.get_message(name, message_id)
+    if current is not None:
+        from aird.plugins.chat.sanitize import plain_preview
+
+        if plain_preview(current.get("body") or "", 10000) == plain_preview(text, 10000):
+            return current, True
+    edited = chat_db.edit_message(
+        actor=name, conversation_id=conversation_id, message_id=message_id, body=text
+    )
+    return edited, False
 
 
 def _forward_message_to_targets(
@@ -592,7 +639,7 @@ class ChatConversationMessagesHandler(BaseHandler, XSRFTokenMixin):
         name = _username(self)
         if not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
-            self.write({"error": "Forbidden"})
+            self.write({"error": _ERR_FORBIDDEN})
             return
         if not chat_db.exchange_open(name, conversation_id):
             self.write({"messages": [], "pins": [], "receipts": []})
@@ -618,7 +665,7 @@ class ChatConversationMessagesHandler(BaseHandler, XSRFTokenMixin):
         uid = _uid(self)
         if uid is None or not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
-            self.write({"error": "Forbidden"})
+            self.write({"error": _ERR_FORBIDDEN})
             return
         if _exchange_blocked(self, name, conversation_id):
             return
@@ -676,7 +723,7 @@ class ChatMessageHandler(BaseHandler, XSRFTokenMixin):
         name = _username(self)
         if not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
-            self.write({"error": "Forbidden"})
+            self.write({"error": _ERR_FORBIDDEN})
             return
         if _exchange_blocked(self, name, conversation_id):
             return
@@ -684,40 +731,20 @@ class ChatMessageHandler(BaseHandler, XSRFTokenMixin):
             body = self.parse_json_body()
         except tornado.web.HTTPError:
             return
-        try:
-            e2e_meta = _e2e_from_body(body)
-        except ValueError as exc:
-            self.set_status(400)
-            self.write({"error": str(exc)})
-            return
-        if e2e_meta:
-            msg = chat_db.edit_message(
-                actor=name,
-                conversation_id=conversation_id,
-                message_id=message_id,
-                body="",
-                e2e=e2e_meta["e2e"],
-                mentions=e2e_meta.get("mentions"),
-            )
-        else:
-            text = sanitize_chat_html(body.get("body") or "")
-            if not text:
-                self.set_status(400)
-                self.write({"error": "Empty message"})
-                return
-            current = chat_db.get_message(name, message_id)
-            if current is not None:
-                from aird.plugins.chat.sanitize import plain_preview
-
-                if plain_preview(current.get("body") or "", 10000) == plain_preview(text, 10000):
-                    self.write({"message": current})
-                    return
-            msg = chat_db.edit_message(
-                actor=name, conversation_id=conversation_id, message_id=message_id, body=text
-            )
+        msg, unchanged = _patch_conversation_message(
+            self,
+            name=name,
+            conversation_id=conversation_id,
+            message_id=message_id,
+            body=body,
+        )
         if msg is None:
-            self.set_status(404)
-            self.write({"error": "Message not found or not editable"})
+            if self.get_status() == 200:
+                self.set_status(404)
+                self.write({"error": "Message not found or not editable"})
+            return
+        if unchanged:
+            self.write({"message": msg})
             return
         dispatch_message_edited(name, msg)
         self.write({"message": msg})
@@ -731,7 +758,7 @@ class ChatMessageHandler(BaseHandler, XSRFTokenMixin):
         name = _username(self)
         if not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
-            self.write({"error": "Forbidden"})
+            self.write({"error": _ERR_FORBIDDEN})
             return
         deleted = chat_db.delete_message(
             actor=name, conversation_id=conversation_id, message_id=message_id
@@ -789,7 +816,7 @@ class ChatAttachHandler(BaseHandler, XSRFTokenMixin):
         uid = _uid(self)
         if uid is None or not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
-            self.write({"error": "Forbidden"})
+            self.write({"error": _ERR_FORBIDDEN})
             return
         if _exchange_blocked(self, name, conversation_id):
             return
@@ -861,7 +888,7 @@ async def _serve_chat_folder_zip(handler: BaseHandler, owner: str, rel: str) -> 
     filename = f"{os.path.basename(rel.rstrip('/')) or 'folder'}.zip"
     try:
         handler.set_header("Content-Type", "application/zip")
-        handler.set_header("Cache-Control", "private, max-age=60")
+        handler.set_header("Cache-Control", _CACHE_PRIVATE_60)
         handler.set_header("Content-Length", str(os.path.getsize(zip_path)))
         handler.set_header("Content-Disposition", f'attachment; filename="{filename}"')
         await _stream_file_chunks(handler, zip_path)
@@ -880,14 +907,14 @@ async def _serve_chat_file_attachment(
     if preview:
         data, mime = preview
         handler.set_header("Content-Type", mime)
-        handler.set_header("Cache-Control", "private, max-age=60")
+        handler.set_header("Cache-Control", _CACHE_PRIVATE_60)
         handler.set_header("Content-Length", str(len(data)))
         handler.set_header("Content-Disposition", f'inline; filename="{filename}"')
         handler.write(data)
         return
     mime, _ = mimetypes.guess_type(filename)
     handler.set_header("Content-Type", mime or "application/octet-stream")
-    handler.set_header("Cache-Control", "private, max-age=60")
+    handler.set_header("Cache-Control", _CACHE_PRIVATE_60)
     handler.set_header("Content-Length", str(os.path.getsize(abs_path)))
     handler.set_header("Content-Disposition", f'inline; filename="{filename}"')
     await _stream_file_chunks(handler, abs_path)
@@ -902,12 +929,12 @@ class ChatMessageFileHandler(BaseHandler):
         name = _username(self)
         if not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
-            self.write({"error": "Forbidden"})
+            self.write({"error": _ERR_FORBIDDEN})
             return
         msg = chat_db.get_message(name, message_id)
         if msg is None or msg["conversation_id"] != conversation_id:
             self.set_status(404)
-            self.write({"error": "Message not found"})
+            self.write({"error": _ERR_MESSAGE_NOT_FOUND})
             return
         try:
             idx = int(self.get_argument("i", "0") or 0)
@@ -916,13 +943,13 @@ class ChatMessageFileHandler(BaseHandler):
         att = _att_at(msg, idx)
         if not att:
             self.set_status(404)
-            self.write({"error": "No attachment"})
+            self.write({"error": _ERR_NO_ATTACHMENT})
             return
         owner = att.get("owner_username")
         rel = att.get("owner_rel")
         if not owner or not rel:
             self.set_status(404)
-            self.write({"error": "No attachment"})
+            self.write({"error": _ERR_NO_ATTACHMENT})
             return
         try:
             abs_path = owner_abs_path(owner, rel)
@@ -963,12 +990,12 @@ class ChatSaveCopyHandler(BaseHandler, XSRFTokenMixin):
         name = _username(self)
         if not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
-            self.write({"error": "Forbidden"})
+            self.write({"error": _ERR_FORBIDDEN})
             return
         msg = chat_db.get_message(name, message_id)
         if msg is None:
             self.set_status(404)
-            self.write({"error": "Message not found"})
+            self.write({"error": _ERR_MESSAGE_NOT_FOUND})
             return
         try:
             idx = int(self.get_argument("i", "0") or 0)
@@ -991,7 +1018,7 @@ class ChatReactionHandler(BaseHandler, XSRFTokenMixin):
         name = _username(self)
         if not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
-            self.write({"error": "Forbidden"})
+            self.write({"error": _ERR_FORBIDDEN})
             return
         try:
             body = self.parse_json_body()
@@ -1022,7 +1049,7 @@ class ChatPinHandler(BaseHandler, XSRFTokenMixin):
         name = _username(self)
         if not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
-            self.write({"error": "Forbidden"})
+            self.write({"error": _ERR_FORBIDDEN})
             return
         try:
             pins = chat_db.pin_message(actor=name, conversation_id=conversation_id, message_id=message_id)
@@ -1042,7 +1069,7 @@ class ChatPinHandler(BaseHandler, XSRFTokenMixin):
         name = _username(self)
         if not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
-            self.write({"error": "Forbidden"})
+            self.write({"error": _ERR_FORBIDDEN})
             return
         pins = chat_db.unpin_message(actor=name, conversation_id=conversation_id, message_id=message_id)
         dispatch_pin(name, conversation_id, pins, pinned=False)
@@ -1060,12 +1087,12 @@ class ChatForwardHandler(BaseHandler, XSRFTokenMixin):
         uid = _uid(self)
         if uid is None or not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
-            self.write({"error": "Forbidden"})
+            self.write({"error": _ERR_FORBIDDEN})
             return
         src = chat_db.get_message(name, message_id)
         if src is None:
             self.set_status(404)
-            self.write({"error": "Message not found"})
+            self.write({"error": _ERR_MESSAGE_NOT_FOUND})
             return
         if is_e2e_meta(src.get("metadata")) or src.get("e2e"):
             self.set_status(400)
@@ -1101,7 +1128,7 @@ class ChatMembersHandler(BaseHandler, XSRFTokenMixin):
         name = _username(self)
         if not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
-            self.write({"error": "Forbidden"})
+            self.write({"error": _ERR_FORBIDDEN})
             return
         try:
             body = self.parse_json_body()
@@ -1129,7 +1156,7 @@ class ChatMembersHandler(BaseHandler, XSRFTokenMixin):
         name = _username(self)
         if not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
-            self.write({"error": "Forbidden"})
+            self.write({"error": _ERR_FORBIDDEN})
             return
         target = self.get_argument("username", "") or _username(self)
         try:
@@ -1151,7 +1178,7 @@ class ChatMuteHandler(BaseHandler, XSRFTokenMixin):
         name = _username(self)
         if not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
-            self.write({"error": "Forbidden"})
+            self.write({"error": _ERR_FORBIDDEN})
             return
         try:
             body = self.parse_json_body()
@@ -1172,7 +1199,7 @@ class ChatRequestHandler(BaseHandler, XSRFTokenMixin):
         name = _username(self)
         if not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
-            self.write({"error": "Forbidden"})
+            self.write({"error": _ERR_FORBIDDEN})
             return
         try:
             body = self.parse_json_body()
@@ -1265,7 +1292,7 @@ class ChatE2EKeysHandler(BaseHandler, XSRFTokenMixin):
         names = [n.strip() for n in raw.split(",") if n.strip()][:50]
         if not names:
             names = [_username(self)]
-        self.set_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        self.set_header("Cache-Control", _CACHE_NO_STORE)
         self.write({"keys": get_identity_keys(self.db_conn, names)})
 
     @tornado.web.authenticated
@@ -1297,7 +1324,7 @@ class ChatE2EIdentityHandler(BaseHandler, XSRFTokenMixin):
         if not _require_chat(self):
             return
         name = _username(self)
-        self.set_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        self.set_header("Cache-Control", _CACHE_NO_STORE)
         self.write({"backup": load_identity_backup(name)})
 
     @tornado.web.authenticated
@@ -1333,17 +1360,17 @@ class ChatConversationE2EHandler(BaseHandler, XSRFTokenMixin):
         name = _username(self)
         if not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
-            self.write({"error": "Forbidden"})
+            self.write({"error": _ERR_FORBIDDEN})
             return
         conv = chat_db.get_conversation(name, conversation_id) or {}
         members = conv.get("members") or []
         if conv.get("request") == "incoming":
-            self.set_header("Cache-Control", "no-store, no-cache, must-revalidate")
+            self.set_header("Cache-Control", _CACHE_NO_STORE)
             self.write({"wraps": {}, "keys": {}})
             return
         accepted = [m["username"] for m in members if int(m.get("accepted", 1))]
         wraps = chat_db.get_e2e_wraps(name, conversation_id)
-        self.set_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        self.set_header("Cache-Control", _CACHE_NO_STORE)
         self.write(
             {
                 "wraps": {k: v for k, v in wraps.items() if k in accepted},
@@ -1360,7 +1387,7 @@ class ChatConversationE2EHandler(BaseHandler, XSRFTokenMixin):
         name = _username(self)
         if not chat_db.user_in_conversation(name, conversation_id):
             self.set_status(403)
-            self.write({"error": "Forbidden"})
+            self.write({"error": _ERR_FORBIDDEN})
             return
         try:
             body = self.parse_json_body()

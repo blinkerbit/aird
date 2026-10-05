@@ -198,8 +198,8 @@
       const selectAll = document.getElementById('selectAllFiles');
       const Dl = globalThis.AirdDownloadManager;
       if (!Dl?.DownloadBatch) {
-        for (let i = 0; i < paths.length; i++) {
-          downloadFileViaLink(paths[i]);
+        for await (const [i, filePath] of paths.entries()) {
+          downloadFileViaLink(filePath);
           if (i < paths.length - 1) {
             await new Promise((resolve) => setTimeout(resolve, 450));
           }

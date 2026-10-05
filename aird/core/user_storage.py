@@ -48,6 +48,31 @@ def _settings(*, root_dir: str | None = None, multi_user: bool | None = None) ->
     return root, mu
 
 
+def _ensure_share_and_chat_dirs(home: str) -> None:
+    shares = os.path.join(home, USER_SHARES_DIRNAME)
+    chats = os.path.join(home, USER_CHATS_DIRNAME)
+    try:
+        os.makedirs(shares, exist_ok=True)
+        os.makedirs(chats, exist_ok=True)
+    except OSError:
+        if not os.path.isdir(shares) or not os.path.isdir(chats):
+            logger.exception("Could not create chat/share folders under %s", home)
+
+
+def _migrate_home_entries_into_data(home: str, data: str) -> None:
+    try:
+        for name in os.listdir(home):
+            if name in _RESERVED_HOME_NAMES:
+                continue
+            src = os.path.join(home, name)
+            dest = os.path.join(data, name)
+            if os.path.exists(dest):
+                continue
+            shutil.move(src, dest)
+    except OSError:
+        logger.exception("Failed to migrate user files into data/ under %s", home)
+
+
 def user_home_for_username(
     username: str,
     *,
@@ -89,14 +114,7 @@ def ensure_user_home_layout(
     into ``data/`` (except reserved names).
     """
     root, mu = _settings(root_dir=root_dir, multi_user=multi_user)
-    shares = os.path.join(home, USER_SHARES_DIRNAME)
-    chats = os.path.join(home, USER_CHATS_DIRNAME)
-    try:
-        os.makedirs(shares, exist_ok=True)
-        os.makedirs(chats, exist_ok=True)
-    except OSError:
-        if not os.path.isdir(shares) or not os.path.isdir(chats):
-            logger.exception("Could not create chat/share folders under %s", home)
+    _ensure_share_and_chat_dirs(home)
 
     if not mu or os.path.normpath(home) == os.path.normpath(root):
         return home
@@ -104,17 +122,7 @@ def ensure_user_home_layout(
     data = os.path.join(home, USER_DATA_DIRNAME)
     if not os.path.isdir(data):
         os.makedirs(data, exist_ok=True)
-        try:
-            for name in os.listdir(home):
-                if name in _RESERVED_HOME_NAMES:
-                    continue
-                src = os.path.join(home, name)
-                dest = os.path.join(data, name)
-                if os.path.exists(dest):
-                    continue
-                shutil.move(src, dest)
-        except OSError:
-            logger.exception("Failed to migrate user files into data/ under %s", home)
+        _migrate_home_entries_into_data(home, data)
     else:
         os.makedirs(data, exist_ok=True)
     return data

@@ -59,6 +59,7 @@ from aird.db.tag_colors import get_tag_colors_map
 DOWNLOAD_DISABLED_MSG = (
     "Feature disabled: File download is currently disabled by administrator"
 )
+_ACCESS_DENIED = "Access denied: You don't have permission to perform this action"
 
 
 async def _serve_download(handler, abspath, filename):
@@ -371,16 +372,12 @@ class MainHandler(BaseHandler):
         abspath, confine = resolve_handler_rel(self, path)
         if not abspath or not confine:
             self.set_status(403)
-            self.write(
-                "Access denied: You don't have permission to perform this action"
-            )
+            self.write(_ACCESS_DENIED)
             return
 
         if not is_within_root(abspath, confine):
             self.set_status(403)
-            self.write(
-                "Access denied: You don't have permission to perform this action"
-            )
+            self.write(_ACCESS_DENIED)
             return
 
         if os.path.isdir(abspath):
@@ -464,16 +461,12 @@ class EditViewHandler(BaseHandler):
             mounts_for_username(self.db_conn, get_username_string_for_db(self) or ""),
         ):
             self.set_status(403)
-            self.write(
-                "Access denied: You don't have permission to perform this action"
-            )
+            self.write(_ACCESS_DENIED)
             return
         abspath, confine = resolve_handler_rel(self, path)
         if not abspath or not confine or not is_within_root(abspath, confine):
             self.set_status(403)
-            self.write(
-                "Access denied: You don't have permission to perform this action"
-            )
+            self.write(_ACCESS_DENIED)
             return
         if not os.path.isfile(abspath):
             self.set_status(404)
@@ -502,9 +495,10 @@ class EditViewHandler(BaseHandler):
             if MMapFileHandler.should_use_mmap(file_size):
                 # For large files, still use mmap but in a thread to avoid blocking
                 def read_mmap():
-                    with open(abspath, "rb") as f:
-                        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-                            return mm[:].decode("utf-8", errors="replace")
+                    with open(abspath, "rb") as f, mmap.mmap(
+                        f.fileno(), 0, access=mmap.ACCESS_READ
+                    ) as mm:
+                        return mm[:].decode("utf-8", errors="replace")
 
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     full_file_content = await asyncio.get_event_loop().run_in_executor(

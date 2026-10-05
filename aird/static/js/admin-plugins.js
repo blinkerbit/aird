@@ -31,9 +31,9 @@ function boardRow(board, index) {
 
 function escapeAttr(s) {
   return String(s ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;");
+    .replaceAll("&", "&amp;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("<", "&lt;");
 }
 
 function collectBoards() {
@@ -144,13 +144,13 @@ document.addEventListener("DOMContentLoaded", () => {
   let _odPollTimer = null;
 
   function xsrf() {
-    const m = document.cookie.match(/(?:^|; )_xsrf=([^;]+)/);
+    const m = /(?:^|; )_xsrf=([^;]+)/.exec(document.cookie);
     return m ? decodeURIComponent(m[1]) : "";
   }
 
   async function odAdminApi(url, opts = {}) {
-    const headers = Object.assign({ Accept: "application/json", "X-XSRFToken": xsrf() }, opts.headers || {});
-    const res = await fetch(url, Object.assign({ credentials: "same-origin", method: "POST" }, opts, { headers }));
+    const headers = { Accept: "application/json", "X-XSRFToken": xsrf(), ...(opts.headers || {}) };
+    const res = await fetch(url, { credentials: "same-origin", method: "POST", ...opts, headers });
     const data = await res.json().catch(() => ({}));
     if (!res.ok && !data.pending) throw new Error(data.error || res.statusText);
     return data;
@@ -202,9 +202,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function odHostApi(url, opts = {}) {
     const method = opts.method || "GET";
-    const headers = Object.assign({ Accept: "application/json", "X-XSRFToken": xsrf() }, opts.headers || {});
+    const headers = { Accept: "application/json", "X-XSRFToken": xsrf(), ...(opts.headers || {}) };
     if (opts.body) headers["Content-Type"] = "application/json";
-    const res = await fetch(url, Object.assign({ credentials: "same-origin", method }, opts, { headers }));
+    const res = await fetch(url, { credentials: "same-origin", method, ...opts, headers });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || res.statusText);
     return data;
@@ -243,7 +243,7 @@ document.addEventListener("DOMContentLoaded", () => {
       parts.push(rt.paused ? "Paused" : "Running");
       if (rt.in_progress?.length) parts.push(`${rt.in_progress.length} in progress`);
       if (rt.queued?.length) parts.push(`${rt.queued.length} queued`);
-      if (run.last_finished_at) parts.push(`Last: ${String(run.last_finished_at).replace("T", " ").slice(0, 19)} UTC`);
+      if (run.last_finished_at) parts.push(`Last: ${String(run.last_finished_at).replaceAll("T", " ").slice(0, 19)} UTC`);
       line.textContent = parts.join(" · ") || "Idle";
       if (pauseBtn) pauseBtn.textContent = rt.paused ? "Resume sync" : "Pause sync";
       if (failed) {

@@ -63,7 +63,7 @@ def clear_failed() -> None:
 
 def retry_failed() -> list[str]:
     with _lock:
-        paths = [f["path"] for f in list(_failed) if f.get("path")]
+        paths = [f["path"] for f in _failed if f.get("path")]
         _failed.clear()
         for p in reversed(paths):
             if p not in _queue:
