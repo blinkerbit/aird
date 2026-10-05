@@ -592,6 +592,19 @@ class GitlabRefreshHandler(BaseHandler, XSRFTokenMixin):
         self.write({"ok": True, "primary": result, "boards": extra})
 
 
+def _dashboard_project_pair(binding, boards) -> tuple[str, str, str] | None:
+    if binding:
+        host = binding["gitlab_host"]
+        code = binding.get("code_project")
+        return host, binding.get("issues_project") or code, code
+    if boards:
+        host = boards[0]["gitlab_host"]
+        issues_project = boards[0]["issues_project"]
+        code = boards[0].get("code_project") or issues_project
+        return host, issues_project, code
+    return None
+
+
 class GitlabDashboardHandler(BaseHandler):
     @tornado.web.authenticated
     @require_db
@@ -616,36 +629,20 @@ class GitlabDashboardHandler(BaseHandler):
             gitlab_user = _gl_call(self, get_current_user, user_host, token)
             if gitlab_user is None:
                 return
-        if binding and token:
-            host = binding["gitlab_host"]
-            code = binding.get("code_project")
-            issues_project = binding.get("issues_project") or code
-            loaded = _dashboard_issues_and_mrs(
-                self,
-                access=access,
-                host=host,
-                token=token,
-                issues_project=issues_project,
-                code_project=code,
-            )
-            if loaded is None:
-                return
-            open_issues, merge_requests, cache_meta = loaded
-        elif token and boards:
-            host = boards[0]["gitlab_host"]
-            issues_project = boards[0]["issues_project"]
-            code = boards[0].get("code_project") or issues_project
-            loaded = _dashboard_issues_and_mrs(
-                self,
-                access=access,
-                host=host,
-                token=token,
-                issues_project=issues_project,
-                code_project=code,
-            )
-            if loaded is None:
-                return
-            open_issues, merge_requests, cache_meta = loaded
+            pair = _dashboard_project_pair(binding, boards)
+            if pair:
+                host, issues_project, code = pair
+                loaded = _dashboard_issues_and_mrs(
+                    self,
+                    access=access,
+                    host=host,
+                    token=token,
+                    issues_project=issues_project,
+                    code_project=code,
+                )
+                if loaded is None:
+                    return
+                open_issues, merge_requests, cache_meta = loaded
         self.write(
             {
                 "binding": binding,
@@ -762,6 +759,15 @@ class GitlabMrNotesHandler(BaseHandler, XSRFTokenMixin):
         self.write({"note": note})
 
 
+def _resolve_board(handler, host: str, token: str, project: str, board_id) -> dict | None:
+    if board_id:
+        return _gl_call(handler, get_board, host, token, project, int(board_id))
+    boards = _gl_call(handler, list_boards, host, token, project)
+    if boards is None:
+        return None
+    return boards[0] if boards else {}
+
+
 class GitlabBoardHandler(BaseHandler):
     @tornado.web.authenticated
     @require_db
@@ -778,26 +784,13 @@ class GitlabBoardHandler(BaseHandler):
             return
         host = binding["gitlab_host"]
         project = binding.get("issues_project") or binding["code_project"]
-        board_id = binding.get("board_iid")
-        board = None
-        if board_id:
-            board = _gl_call(self, get_board, host, token, project, int(board_id))
-            if board is None:
-                return
-        else:
-            boards = _gl_call(self, list_boards, host, token, project)
-            if boards is None:
-                return
-            board = boards[0] if boards else None
+        board = _resolve_board(self, host, token, project, binding.get("board_iid"))
+        if board is None:
+            return
         issues = _gl_call(self, list_open_issues, host, token, project)
         if issues is None:
             return
         lists = (board or {}).get("lists") or []
-        label_names = []
-        for lane in lists:
-            label = lane.get("label") or {}
-            if label.get("name"):
-                label_names.append(label["name"])
         aird_comments = gitlab_db.list_comments(
             self.db_conn, access.owner_username, access.rel_path
         )
@@ -813,7 +806,7 @@ class GitlabBoardHandler(BaseHandler):
         ]
         self.write(
             {
-                "board": board,
+                "board": board or None,
                 "lists": lists,
                 "issues": enriched,
                 "busyness": busyness_for_issues(issues),

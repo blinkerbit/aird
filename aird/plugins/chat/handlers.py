@@ -127,6 +127,57 @@ def _chat_peer_usernames(sender: str, conversation_id: str) -> list[str]:
     ]
 
 
+def _chat_share_allowed(handler: BaseHandler, rel: str, actor: str, creator: str) -> bool:
+    if creator != actor:
+        return True
+    decision = handler.check_access("share.create", resource_path=rel)
+    return decision is None or not decision.is_deny
+
+
+def _persist_chat_share(
+    handler: BaseHandler,
+    *,
+    rel: str,
+    allowed_users: list[str],
+    creator: str,
+    root_dir: str | None,
+) -> tuple[str | None, str | None]:
+    from aird.handlers.share_handlers import _create_share_record, _resolve_share_paths
+
+    sid = secrets.token_urlsafe(64)
+    final_paths, err = _resolve_share_paths(
+        [rel], "static", sid, root_dir=root_dir or get_user_root(handler)
+    )
+    if err or not final_paths:
+        return None, None
+    success, _token = _create_share_record(
+        handler,
+        handler.db_conn,
+        sid,
+        final_paths,
+        allowed_users,
+        True,
+        "static",
+        None,
+        None,
+        None,
+        created_by=creator,
+    )
+    if not success:
+        return None, None
+    try:
+        handler.get_service("audit_service").log(
+            handler.db_conn,
+            "share_create",
+            username=handler.get_display_username(),
+            details=f"share_id={sid} chat_attach",
+            ip=handler.request.remote_ip,
+        )
+    except Exception:
+        logger.debug("chat share audit failed", exc_info=True)
+    return sid, f"/shared/{sid}"
+
+
 def _try_create_chat_share(
     handler: BaseHandler,
     *,
@@ -144,44 +195,11 @@ def _try_create_chat_share(
     actor = get_username_string_for_db(handler)
     creator = created_by or actor
     try:
-        if creator == actor:
-            decision = handler.check_access("share.create", resource_path=rel)
-            if decision is not None and decision.is_deny:
-                return None, None
-        from aird.handlers.share_handlers import _create_share_record, _resolve_share_paths
-
-        sid = secrets.token_urlsafe(64)
-        final_paths, err = _resolve_share_paths(
-            [rel], "static", sid, root_dir=root_dir or get_user_root(handler)
-        )
-        if err or not final_paths:
+        if not _chat_share_allowed(handler, rel, actor, creator):
             return None, None
-        success, _token = _create_share_record(
-            handler,
-            handler.db_conn,
-            sid,
-            final_paths,
-            allowed_users,
-            True,
-            "static",
-            None,
-            None,
-            None,
-            created_by=creator,
+        return _persist_chat_share(
+            handler, rel=rel, allowed_users=allowed_users, creator=creator, root_dir=root_dir
         )
-        if not success:
-            return None, None
-        try:
-            handler.get_service("audit_service").log(
-                handler.db_conn,
-                "share_create",
-                username=handler.get_display_username(),
-                details=f"share_id={sid} chat_attach",
-                ip=handler.request.remote_ip,
-            )
-        except Exception:
-            logger.debug("chat share audit failed", exc_info=True)
-        return sid, f"/shared/{sid}"
     except Exception:
         logger.exception("chat static share failed for %s", rel)
         return None, None
@@ -1378,6 +1396,54 @@ class ChatConversationE2EHandler(BaseHandler, XSRFTokenMixin):
             }
         )
 
+    def _accepted_member_names(self, conv: dict) -> set[str]:
+        return {
+            m["username"]
+            for m in (conv.get("members") or [])
+            if int(m.get("accepted", 1))
+        }
+
+    def _parse_e2e_wraps(self, name: str, conversation_id: str):
+        try:
+            body = self.parse_json_body()
+        except tornado.web.HTTPError:
+            return None, None, None
+        wraps_in = body.get("wraps") if isinstance(body.get("wraps"), dict) else {}
+        if not wraps_in:
+            self.set_status(400)
+            self.write({"error": "wraps required"})
+            return None, None, None
+        conv = chat_db.get_conversation(name, conversation_id) or {}
+        if conv.get("request") == "incoming":
+            self.set_status(403)
+            self.write({"error": "Chat request not accepted yet"})
+            return None, None, None
+        accepted = self._accepted_member_names(conv)
+        wraps_in = {k: v for k, v in wraps_in.items() if k in accepted}
+        if not wraps_in:
+            self.set_status(400)
+            self.write({"error": "wraps required"})
+            return None, None, None
+        members = [m["username"] for m in (conv.get("members") or [])]
+        return wraps_in, accepted, members
+
+    def _store_e2e_wraps(self, name: str, conversation_id: str, wraps_in: dict, members: list[str]):
+        try:
+            wraps = chat_db.put_e2e_wraps(
+                actor=name, conversation_id=conversation_id, wraps=wraps_in
+            )
+            delete_stored_conv_keys(members, conversation_id)
+            return wraps
+        except ValueError as exc:
+            self.set_status(400)
+            self.write({"error": str(exc)})
+            return None
+        except OSError:
+            logger.warning("e2e wrap write failed", exc_info=True)
+            self.set_status(503)
+            self.write({"error": "Could not save encryption key"})
+            return None
+
     @tornado.web.authenticated
     @require_db
     def put(self, conversation_id: str):
@@ -1389,44 +1455,11 @@ class ChatConversationE2EHandler(BaseHandler, XSRFTokenMixin):
             self.set_status(403)
             self.write({"error": _ERR_FORBIDDEN})
             return
-        try:
-            body = self.parse_json_body()
-        except tornado.web.HTTPError:
+        wraps_in, accepted, members = self._parse_e2e_wraps(name, conversation_id)
+        if wraps_in is None:
             return
-        wraps_in = body.get("wraps") if isinstance(body.get("wraps"), dict) else {}
-        if not wraps_in:
-            self.set_status(400)
-            self.write({"error": "wraps required"})
-            return
-        conv = chat_db.get_conversation(name, conversation_id) or {}
-        if conv.get("request") == "incoming":
-            self.set_status(403)
-            self.write({"error": "Chat request not accepted yet"})
-            return
-        accepted = {
-            m["username"]
-            for m in (conv.get("members") or [])
-            if int(m.get("accepted", 1))
-        }
-        wraps_in = {k: v for k, v in wraps_in.items() if k in accepted}
-        if not wraps_in:
-            self.set_status(400)
-            self.write({"error": "wraps required"})
-            return
-        members = [m["username"] for m in (conv.get("members") or [])]
-        try:
-            wraps = chat_db.put_e2e_wraps(
-                actor=name, conversation_id=conversation_id, wraps=wraps_in
-            )
-            delete_stored_conv_keys(members, conversation_id)
-        except ValueError as exc:
-            self.set_status(400)
-            self.write({"error": str(exc)})
-            return
-        except OSError:
-            logger.warning("e2e wrap write failed", exc_info=True)
-            self.set_status(503)
-            self.write({"error": "Could not save encryption key"})
+        wraps = self._store_e2e_wraps(name, conversation_id, wraps_in, members)
+        if wraps is None:
             return
         try:
             dispatch_e2e_key_ready(name, conversation_id)
