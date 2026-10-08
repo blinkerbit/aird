@@ -20,7 +20,7 @@
     "@tailwindcss/cli": "^4",
     "daisyui": "^5",
     "esbuild": "^0.25.12",
-    "eslint": "^9",
+    "eslint": "^10",
     "eslint-plugin-sonarjs": "^4.0.3",
     "fflate": "^0.8.2",
     "globals": "^15",
