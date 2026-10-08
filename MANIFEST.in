@@ -6,6 +6,7 @@ recursive-include aird/static/img *
 include aird/static/favicon.png
 include aird/static/favicon.ico
 include aird/static/favicon.svg
+include aird/static/manifest.webmanifest
 
 # Native extension sources (built/published separately as aird-transfer;
 # shipped in the aird sdist so contributors can build from one tarball).

@@ -15,8 +15,8 @@ import tornado.websocket
 
 import aird.config as config_module
 from aird.core.auth_secrets import verify_auth_secret
+from aird.core.csp import connect_src
 import aird.constants as constants_module
-from aird.core.security import legacy_folder_name, sanitize_username_for_folder
 from aird.db import get_user_attributes, get_user_by_username
 from aird.domain.models import (
     AccessDecision,
@@ -74,18 +74,14 @@ _TOKEN_ONLY_USERNAMES = {"token_user", "admin_token"}
 
 
 def get_user_root(handler) -> str:
-    """Return the effective root directory for the current user.
+    """Return the browsable directory for the current user.
 
-    In single-user mode (default), this simply returns ``constants.ROOT_DIR``.
-    In multi-user mode, each authenticated user gets a private subdirectory
-    under ``ROOT_DIR`` named after their sanitised username.
-
-    Falls back to ``ROOT_DIR`` when:
-    - Multi-user mode is disabled
-    - The user is not authenticated
-    - The user is a token-only user (no personal folder)
-    - The username cannot be sanitised to a safe folder name
+    In single-user mode this is ``ROOT_DIR``. In multi-user mode it is
+    ``ROOT_DIR/{username}/data`` (account folder also holds ``.aird-shares``
+    and ``.aird-chats`` beside ``data``).
     """
+    from aird.core.user_storage import user_data_dir_for_username
+
     if not constants_module.MULTI_USER:
         return constants_module.ROOT_DIR
 
@@ -97,24 +93,32 @@ def get_user_root(handler) -> str:
     if not username or username in _TOKEN_ONLY_USERNAMES:
         return constants_module.ROOT_DIR
 
-    safe_name = sanitize_username_for_folder(username)
-    if not safe_name:
-        logger.warning(
-            "Cannot create safe folder for username %r, using global root", username
-        )
-        return constants_module.ROOT_DIR
+    return user_data_dir_for_username(
+        username,
+        root_dir=constants_module.ROOT_DIR,
+        multi_user=True,
+    )
 
-    user_root = os.path.join(constants_module.ROOT_DIR, safe_name)
-    # Legacy: pre-hash folders used plain 20-char truncation
-    if constants_module.MULTI_USER and not os.path.isdir(user_root):
-        legacy = legacy_folder_name(username)
-        if legacy and legacy != safe_name:
-            legacy_root = os.path.join(constants_module.ROOT_DIR, legacy)
-            if os.path.isdir(legacy_root):
-                user_root = legacy_root
 
-    os.makedirs(user_root, exist_ok=True)
-    return user_root
+def _handler_db_conn(handler):
+    """DB handle for request handlers and websockets that are not BaseHandler."""
+    if isinstance(getattr(type(handler), "db_conn", None), property):
+        return handler.db_conn
+    settings = getattr(handler, "settings", None)
+    if not hasattr(settings, "get"):
+        return None
+    app_ctx = settings.get("app_context")
+    if app_ctx is not None:
+        return getattr(app_ctx, "db_conn", None)
+    return settings.get("db_conn")
+
+
+def resolve_handler_rel(handler, rel: str) -> tuple[str | None, str | None]:
+    """Resolve a browse-relative path for the current user (mounts + personal data)."""
+    from aird.core.browse_paths import resolve_for_user
+
+    username = get_username_string_for_db(handler) or ""
+    return resolve_for_user(username, rel, get_user_root(handler), _handler_db_conn(handler))
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +249,36 @@ def require_modify_access(
             self.set_status(deny_status)
             self.write(deny_body)
             return None
+
+        return wrapper
+
+    return decorator
+
+
+def require_feature_flag(feature_key: str, default: bool = True, *, status: int = 403, body=None):
+    """Decorator: short-circuit when a feature flag is off.
+
+    Place it closest to the handler so auth and ABAC decorators still run first.
+    Async handlers stay async so ``await handler.method()`` still works.
+    """
+    import asyncio
+
+    def decorator(method):
+        if asyncio.iscoroutinefunction(method):
+
+            @functools.wraps(method)
+            async def async_wrapper(self, *args, **kwargs):
+                if not self.require_feature(feature_key, default, status=status, body=body):
+                    return None
+                return await method(self, *args, **kwargs)
+
+            return async_wrapper
+
+        @functools.wraps(method)
+        def wrapper(self, *args, **kwargs):
+            if not self.require_feature(feature_key, default, status=status, body=body):
+                return None
+            return method(self, *args, **kwargs)
 
         return wrapper
 
@@ -615,11 +649,13 @@ class BaseHandler(tornado.web.RequestHandler):
         return user
 
     def has_modify_privileges(self) -> bool:
-        user = self.get_signed_in_user()
-        if not user:
+        user = self.get_current_user()
+        if not isinstance(user, dict):
             return False
-        role = str(user.get("role", "user")).lower()
-        return role in {"admin", "user"}
+        username = user.get("username")
+        if not isinstance(username, str) or not username.strip():
+            return False
+        return str(user.get("role", "user")).lower() in {"admin", "user"}
 
     # ------------------------------------------------------------------
     # ABAC PEP helpers
@@ -740,18 +776,6 @@ class BaseHandler(tornado.web.RequestHandler):
             raise tornado.web.HTTPError(403, decision.reason)
         return decision
 
-    def require_modify_privileges(
-        self,
-        *,
-        status: int = 403,
-        body: str = "Write access denied. Sign in with modify privileges.",
-    ) -> bool:
-        if self.has_modify_privileges():
-            return True
-        self.set_status(status)
-        self.write(body)
-        return False
-
     def write_json_error(self, status: int, message: str) -> None:
         self.set_status(status)
         self.write({"error": message})
@@ -794,6 +818,23 @@ class BaseHandler(tornado.web.RequestHandler):
         self.set_status(status)
         self.write(body if body is not None else "Feature disabled.")
         return False
+
+    def audit(self, action: str, details: str | None = None) -> None:
+        self.get_service("audit_service").log(
+            self.db_conn,
+            action,
+            username=self.get_display_username(),
+            details=details,
+            ip=self.request.remote_ip,
+        )
+
+    def respond_mutation(self, location: str, payload: dict | None = None) -> None:
+        """JSON body when Accept is application/json, otherwise redirect."""
+        if self.request.headers.get("Accept") == "application/json":
+            self.set_header("Content-Type", "application/json")
+            self.write({"ok": True} if payload is None else payload)
+            return
+        self.redirect(location)
 
     def handle_cloud_error(self, exc: Exception, log_msg: str, client_err_msg: str) -> None:
         """Helper to unify exception handling for cloud routes."""
@@ -972,13 +1013,14 @@ class BaseHandler(tornado.web.RequestHandler):
         """Set CSP header with the request-specific nonce."""
         nonce = self.get_csp_nonce()
         # Use nonce for scripts, keep unsafe-inline for styles (inline style attributes are common)
+        connect = connect_src()
         csp = (
             f"default-src 'self'; "
             f"script-src 'self' 'nonce-{nonce}'; "
             f"style-src 'self' 'unsafe-inline'; "
             f"font-src 'self' data:; "
-            f"img-src 'self' data: blob:; "
-            f"connect-src 'self'; "
+            f"img-src 'self' data: blob: https:; "
+            f"connect-src {connect}; "
             f"worker-src 'self'; "
             f"frame-src 'self' blob:; "
             f"object-src 'self' blob:; "
@@ -996,15 +1038,16 @@ class BaseHandler(tornado.web.RequestHandler):
         namespace = super().get_template_namespace()
         namespace["csp_nonce"] = self.get_csp_nonce()
         namespace["is_feature_enabled"] = is_feature_enabled
-        from aird.plugins.chat import is_chat_enabled
+        from aird.plugins.access import bind_template_plugin_checks
 
-        namespace["is_chat_enabled"] = is_chat_enabled
+        username = get_username_string_for_db(self)
+        namespace.update(bind_template_plugin_checks(username, getattr(self, "db_conn", None)))
         namespace["json_encode_for_script"] = json_encode_for_script
         # _app_nav_header.html expects these; missing keys raise when Super Search link renders.
         namespace.setdefault("nav_search_path", "")
         namespace.setdefault("nav_title", "")
-        namespace.setdefault("show_admin_link", False)
         namespace.setdefault("ldap_enabled", self.settings.get("ldap_server") is not None)
+        namespace["is_admin_user"] = self.is_admin_user()
         return namespace
 
     def get_current_user(self):

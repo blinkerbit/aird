@@ -50,14 +50,14 @@
     ws.onmessage = (ev) => {
       try { emit(JSON.parse(ev.data)); } catch (_) { /* */ }
     };
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       ws = null;
       emit({ type: 'chat_ws_close' });
+      // 1008 = auth/policy rejection — do not reconnect storm.
+      if (event && event.code === 1008) return;
       scheduleReconnect();
     };
-    ws.onerror = () => {
-      try { ws?.close(); } catch (_) { /* */ }
-    };
+    ws.onerror = () => { /* onclose carries the close code */ };
   }
 
   function send(payload) {

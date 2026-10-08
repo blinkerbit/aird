@@ -10,8 +10,11 @@ HTTP_INTERNAL_ERROR = 500
 URL_ADMIN = "/admin"
 URL_ADMIN_LOGIN = "/admin/login"
 URL_ADMIN_USERS = "/admin/users"
+URL_ADMIN_PLUGINS = "/admin/plugins"
+URL_ADMIN_FEATURE_FLAGS = "/admin/api/feature-flags"
 URL_ADMIN_LDAP = "/admin/ldap"
 URL_ADMIN_NETWORK_SHARES = "/admin/network-shares"
+URL_ADMIN_PATHS = "/admin/paths"
 # Network share error query params (URL-encoded)
 ERR_DB_UNAVAILABLE = "Database+unavailable"
 ERR_ALL_FIELDS_REQUIRED = "All+fields+are+required"

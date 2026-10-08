@@ -1,14 +1,16 @@
 {# Admin sub-page tab bar. Set `admin_active_tab` before including.
-   Values: overview, users, ldap, audit, network-shares, tags, policies, user-attributes
+   Values: overview, users, ldap, audit, network-shares, paths, tags, policies, user-attributes
    Must sit inside the same .aird-shell as the top nav (no nested container). #}
 <nav class="aird-admin-tabs" role="tablist" aria-label="Admin sections">
   <a role="tab" href="/admin" class="aird-admin-tab{% if admin_active_tab == 'overview' %} aird-admin-tab--active{% end %}"{% if admin_active_tab == 'overview' %} aria-current="page"{% end %}>Overview</a>
   <a role="tab" href="/admin/users" class="aird-admin-tab{% if admin_active_tab == 'users' %} aird-admin-tab--active{% end %}"{% if admin_active_tab == 'users' %} aria-current="page"{% end %}>Users</a>
+  <a role="tab" href="/admin/plugins" class="aird-admin-tab{% if admin_active_tab == 'plugins' %} aird-admin-tab--active{% end %}"{% if admin_active_tab == 'plugins' %} aria-current="page"{% end %}>Plugins</a>
   {% if ldap_enabled %}
   <a role="tab" href="/admin/ldap" class="aird-admin-tab{% if admin_active_tab == 'ldap' %} aird-admin-tab--active{% end %}"{% if admin_active_tab == 'ldap' %} aria-current="page"{% end %}>LDAP</a>
   {% end %}
   <a role="tab" href="/admin/audit" class="aird-admin-tab{% if admin_active_tab == 'audit' %} aird-admin-tab--active{% end %}"{% if admin_active_tab == 'audit' %} aria-current="page"{% end %}>Audit log</a>
   <a role="tab" href="/admin/network-shares" class="aird-admin-tab{% if admin_active_tab == 'network-shares' %} aird-admin-tab--active{% end %}"{% if admin_active_tab == 'network-shares' %} aria-current="page"{% end %}>Network shares</a>
+  <a role="tab" href="/admin/paths" class="aird-admin-tab{% if admin_active_tab == 'paths' %} aird-admin-tab--active{% end %}"{% if admin_active_tab == 'paths' %} aria-current="page"{% end %}>User paths</a>
   <a role="tab" href="/admin/tags" class="aird-admin-tab{% if admin_active_tab == 'tags' %} aird-admin-tab--active{% end %}"{% if admin_active_tab == 'tags' %} aria-current="page"{% end %}>Tags</a>
   <a role="tab" href="/admin/policies" class="aird-admin-tab{% if admin_active_tab == 'policies' %} aird-admin-tab--active{% end %}"{% if admin_active_tab == 'policies' %} aria-current="page"{% end %}>Policies</a>
   <a role="tab" href="/admin/user-attributes" class="aird-admin-tab{% if admin_active_tab == 'user-attributes' %} aird-admin-tab--active{% end %}"{% if admin_active_tab == 'user-attributes' %} aria-current="page"{% end %}>User Attributes</a>

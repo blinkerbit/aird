@@ -28,9 +28,22 @@
 
   function refresh() {
     if (_inflight) return _inflight;
-    _inflight = fetch('/api/features', { credentials: 'same-origin', cache: 'no-store' })
-      .then(function (r) { return r.ok ? r.json() : {}; })
-      .then(function (flags) { applyFlags(flags); return flags; })
+    _inflight = fetch('/api/features', {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      redirect: 'manual',
+    })
+      .then(function (r) {
+        // Avoid following auth redirects to /login (spam + HTML body).
+        if (r.type === 'opaqueredirect' || r.status === 401 || r.status === 403) {
+          return null;
+        }
+        return r.ok ? r.json() : {};
+      })
+      .then(function (flags) {
+        if (flags) applyFlags(flags);
+        return flags || _cache || {};
+      })
       .catch(function () { return _cache || {}; })
       .finally(function () { _inflight = null; });
     return _inflight;
@@ -40,21 +53,28 @@
     if (socket && (socket.readyState === WebSocket.OPEN
       || socket.readyState === WebSocket.CONNECTING)) return;
     const scheme = global.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let opened = false;
+    let gotPayload = false;
     socket = new WebSocket(`${scheme}//${global.location.host}/features`);
-    socket.onopen = function () { refresh(); };
+    socket.onopen = function () {
+      opened = true;
+      refresh();
+    };
     socket.onmessage = function (event) {
+      gotPayload = true;
       try {
         applyFlags(JSON.parse(event.data));
       } catch (err) {
         console.debug('Invalid feature flag message', err);
       }
     };
-    socket.onclose = function () {
+    socket.onclose = function (event) {
       socket = null;
+      // Auth/policy reject, or opened then kicked before any payload.
+      if ((event && event.code === 1008) || (opened && !gotPayload)) return;
       clearTimeout(reconnectTimer);
       reconnectTimer = setTimeout(connect, 3000);
     };
-    socket.onerror = function () { socket?.close(); };
   }
 
   function isEnabled(key, fallback) {
@@ -67,4 +87,4 @@
   connect();
 
   global.AirdFeatures = { refresh: refresh, isEnabled: isEnabled, applyFlags: applyFlags };
-}(globalThis));
+}(globalThis));

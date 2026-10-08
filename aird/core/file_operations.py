@@ -22,21 +22,21 @@ def get_all_files_recursive(root_path: str, base_path: str = "") -> list:
             if rel_dir in (".", ""):
                 rel_dir = ""
             for name in filenames:
-                if rel_dir:
-                    relative = (
-                        os.path.join(base_path, rel_dir, name)
-                        if base_path
-                        else os.path.join(rel_dir, name)
-                    )
-                else:
-                    relative = (
-                        os.path.join(base_path, name) if base_path else name
-                    )
-                all_files.append(relative)
+                all_files.append(_join_walk_relative(base_path, rel_dir, name))
     except OSError as e:
         logger.warning("Error scanning directory %s: %s", root_path, e)
 
     return all_files
+
+
+def _join_walk_relative(base_path: str, rel_dir: str, name: str) -> str:
+    if rel_dir:
+        return (
+            os.path.join(base_path, rel_dir, name)
+            if base_path
+            else os.path.join(rel_dir, name)
+        )
+    return os.path.join(base_path, name) if base_path else name
 
 
 @functools.lru_cache(maxsize=512)

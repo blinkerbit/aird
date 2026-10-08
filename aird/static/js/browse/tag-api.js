@@ -1,14 +1,51 @@
 "use strict";
 
-import { getXSRFToken } from '/static/js/browse/util.js';
+import { getXSRFToken, isAutoColorEnabled, setTagColorLocal } from './util.js';
 
-export async function postTagRule(tag, globPattern) {
+export function normalizeRelPath(path) {
+  return String(path || '').replaceAll('\\', '/').replaceAll(/^\/+/g, '');
+}
+
+export function pathToGlob(path) {
+  const rel = normalizeRelPath(path);
+  return rel ? `/${rel}` : '/';
+}
+
+export async function fetchTagCatalog() {
+  try {
+    const res = await fetch('/api/tags', { headers: { Accept: 'application/json' } });
+    if (!res.ok) return { names: [], colors: {} };
+    const data = await res.json();
+    return { names: Array.isArray(data.names) ? data.names : [], colors: data.colors || {} };
+  } catch {
+    return { names: [], colors: {} };
+  }
+}
+
+export async function postTagRule(tag, globPattern, { color, autoColor } = {}) {
+  const body = { tag, glob_pattern: globPattern };
+  if (color) body.color = color;
+  body.auto_color = autoColor ?? isAutoColorEnabled();
   const res = await fetch('/admin/api/abac/tags', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
-    body: JSON.stringify({ tag, glob_pattern: globPattern }),
+    body: JSON.stringify(body),
   });
-  return res.ok || res.status === 409;
+  const data = await res.json().catch(function () { return {}; });
+  const ok = res.ok || res.status === 409;
+  if (ok && data.color) setTagColorLocal(tag, data.color);
+  return { ok, created: res.status === 201, color: data.color || '' };
+}
+
+export async function putTagColor(tag, color) {
+  const res = await fetch('/admin/api/abac/tag-colors', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
+    body: JSON.stringify({ tag, color }),
+  });
+  const data = await res.json().catch(function () { return {}; });
+  if (res.ok && data.color) setTagColorLocal(tag, data.color);
+  return { ok: res.ok, color: data.color || color };
 }
 
 export async function deleteTagRuleIds(ids) {
@@ -23,6 +60,17 @@ export async function deleteTagRuleIds(ids) {
   return { ok: true, deleted: data.ids || [] };
 }
 
+export async function untagPath(tag, path) {
+  const res = await fetch('/admin/api/abac/tags', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
+    body: JSON.stringify({ tag, glob_pattern: pathToGlob(path) }),
+  });
+  if (!res.ok) return { ok: false, count: 0 };
+  const data = await res.json().catch(function () { return {}; });
+  return { ok: true, count: data.count || 0 };
+}
+
 export async function fetchAllTagRules() {
   try {
     const res = await fetch('/admin/api/abac/tags', { headers: { 'X-XSRFToken': getXSRFToken() } });
@@ -34,16 +82,44 @@ export async function fetchAllTagRules() {
   }
 }
 
-export function normalizeRelPath(p) {
-  return String(p).replaceAll('\\', '/').replace(/^\/+/, '');
+export async function renameTag(oldTag, newTag) {
+  const res = await fetch('/admin/api/abac/tag-rename', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
+    body: JSON.stringify({ old_tag: oldTag, new_tag: newTag }),
+  });
+  const data = await res.json().catch(function () { return {}; });
+  return { ok: res.ok, data: data };
+}
+
+export async function importTagSnapshot(snapshot) {
+  const res = await fetch('/admin/api/abac/tags', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
+    body: JSON.stringify({ import_snapshot: true, ...snapshot }),
+  });
+  const data = await res.json().catch(function () { return {}; });
+  return { ok: res.ok, data: data };
+}
+
+export async function fetchTagExport() {
+  const res = await fetch('/admin/api/abac/tags', { headers: { 'X-XSRFToken': getXSRFToken() } });
+  if (!res.ok) return { tags: [], colors: {} };
+  return res.json();
 }
 
 function escapeGlobChar(ch) {
   return ch.replaceAll(/[.+^${}()|[\]\\]/g, String.raw`\$&`);
 }
 
+function trimTrailingSlashes(value) {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') end -= 1;
+  return end === value.length ? value : value.slice(0, end);
+}
+
 export function globPatternToRegex(pattern) {
-  let p = String(pattern).replaceAll('\\', '/').replace(/^\/+/, '').replace(/\/$/, '');
+  let p = trimTrailingSlashes(String(pattern).replaceAll('\\', '/').replaceAll(/^\/+/g, ''));
   if (!p) return null;
   let out = '';
   for (let i = 0; i < p.length; i += 1) {
@@ -89,16 +165,27 @@ export function tagsOnPath(rules, path) {
   return byTag;
 }
 
-export async function applyTagRules(tags, paths) {
+export async function applyTagRules(tags, paths, { colors = {} } = {}) {
+  const autoColor = isAutoColorEnabled();
+  const jobs = [];
+  for (const path of paths) {
+    const glob = pathToGlob(path);
+    for (const tag of tags) {
+      jobs.push({ tag, glob });
+    }
+  }
+  const outcomes = await Promise.all(jobs.map(async ({ tag, glob }) => {
+    try {
+      return await postTagRule(tag, glob, { color: colors[tag], autoColor });
+    } catch {
+      return { ok: false };
+    }
+  }));
   let created = 0;
   let failed = 0;
-  for (const path of paths) {
-    const norm = path.startsWith('/') ? path : '/' + path.replace(/^\/+/, '');
-    for (const tag of tags) {
-      try {
-        if (await postTagRule(tag, norm)) { created++; } else { failed++; }
-      } catch { failed++; }
-    }
+  for (const result of outcomes) {
+    if (result.ok) created++;
+    else failed++;
   }
   return { created, failed };
 }

@@ -303,7 +303,7 @@
   async function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return false;
     try {
-      const reg = await navigator.serviceWorker.register('/sw-transfer.js', {
+      const reg = await navigator.serviceWorker.register('/sw.js', {
         scope: '/',
         updateViaCache: 'none',
       });

@@ -16,8 +16,10 @@ from aird.handlers.base_handler import (
     login_matches_share_creator_field,
     require_action,
     require_db,
+    require_feature_flag,
     require_modify_access,
 )
+from aird.plugins.access import PLUGIN_CHAT, user_may_use_plugin
 from aird.plugins.chat import is_chat_enabled
 from aird.core.events import ShareCreatedEvent, now_ts
 from aird.domain.contracts import ShareCreateRequest, ShareCreateResponse
@@ -43,6 +45,12 @@ from aird.handlers.constants import (
     ACCESS_TOKEN_INVALID_OR_EXPIRED,
     INVALID_SHARE_LINK,
     CLOUD_DOWNLOAD_FAILED,
+)
+from aird.core.browse_paths import (
+    mounts_for_share_creator,
+    mounts_for_username,
+    resolve_rel,
+    resolve_share_rel,
 )
 from aird.core.share_root import filesystem_root_for_share
 from aird.db.shares import list_files_for_tag_share, share_covers_relative_path
@@ -92,25 +100,40 @@ def _add_local_path(ap, path_str, share_type, valid_paths, dynamic_folders):
                 logging.exception("Error scanning directory %s", path_str)
 
 
-def _collect_paths_from_request(paths, share_type, root_dir=None):
+def _append_request_path_entry(
+    entry, share_type, root_dir, mounts, valid_paths, dynamic_folders, remote_items
+) -> None:
+    path_str, is_cloud = _normalize_path_entry(entry)
+    if is_cloud:
+        if isinstance(entry, dict):
+            remote_items.append(entry)
+        return
+    if not path_str:
+        return
+    ap, confine = resolve_rel(root_dir, path_str, mounts)
+    if not ap or not confine or not is_within_root(ap, confine):
+        return
+    _add_local_path(ap, path_str, share_type, valid_paths, dynamic_folders)
+
+
+def _collect_paths_from_request(paths, share_type, root_dir=None, mounts=None):
     """Parse paths from request; return (valid_paths, dynamic_folders, remote_items)."""
     if root_dir is None:
         root_dir = constants_module.ROOT_DIR
     valid_paths = []
     dynamic_folders = []
     remote_items = []
+    mount_list = mounts or []
     for entry in paths:
-        path_str, is_cloud = _normalize_path_entry(entry)
-        if is_cloud:
-            if isinstance(entry, dict):
-                remote_items.append(entry)
-            continue
-        if not path_str:
-            continue
-        ap = os.path.abspath(os.path.join(root_dir, path_str))
-        if not is_within_root(ap, root_dir):
-            continue
-        _add_local_path(ap, path_str, share_type, valid_paths, dynamic_folders)
+        _append_request_path_entry(
+            entry,
+            share_type,
+            root_dir,
+            mount_list,
+            valid_paths,
+            dynamic_folders,
+            remote_items,
+        )
     return valid_paths, dynamic_folders, remote_items
 
 
@@ -154,9 +177,9 @@ def _resolve_final_paths_static(valid_paths, remote_items, sid):
     return (final_paths, None)
 
 
-def _resolve_share_paths(paths, share_type, sid, root_dir=None):
+def _resolve_share_paths(paths, share_type, sid, root_dir=None, mounts=None):
     valid_paths, dynamic_folders, remote_items = _collect_paths_from_request(
-        paths, share_type, root_dir
+        paths, share_type, root_dir, mounts
     )
     if share_type == "dynamic":
         return _resolve_final_paths_dynamic(dynamic_folders, remote_items, sid)
@@ -301,10 +324,11 @@ def _append_share_path_files(
     rel_path: str,
     *,
     include_missing_files: bool,
+    mounts=None,
 ) -> None:
     """Append file paths for a single share path entry to *collected*."""
-    full_path = os.path.abspath(os.path.join(root, rel_path))
-    if not is_within_root(full_path, root):
+    full_path, confine = resolve_rel(root, rel_path, mounts or [])
+    if not full_path or not confine or not is_within_root(full_path, confine):
         return
     if os.path.isdir(full_path):
         for sub in get_all_files_recursive(full_path, rel_path):
@@ -325,13 +349,19 @@ def _dedupe_paths(paths: list[str]) -> list[str]:
     return unique
 
 
-def _collect_files_for_share_paths(root: str, paths: list, *, include_missing_files: bool) -> list[str]:
+def _collect_files_for_share_paths(
+    root: str, paths: list, *, include_missing_files: bool, mounts=None
+) -> list[str]:
     """Resolve share path entries to relative file paths under *root*."""
     collected: list[str] = []
     for rel_path in paths or []:
         try:
             _append_share_path_files(
-                collected, root, rel_path, include_missing_files=include_missing_files
+                collected,
+                root,
+                rel_path,
+                include_missing_files=include_missing_files,
+                mounts=mounts,
             )
         except Exception:
             logging.debug("Skipping share path %r", rel_path, exc_info=True)
@@ -344,6 +374,7 @@ def _get_share_file_list(share, db_conn=None):
     allow_list = share.get("allow_list", [])
     avoid_list = share.get("avoid_list", [])
     root = _root_dir_for_share(share)
+    mounts = mounts_for_share_creator(db_conn, share)
 
     if share_type == "tag":
         return list_files_for_tag_share(
@@ -352,17 +383,22 @@ def _get_share_file_list(share, db_conn=None):
 
     paths = share.get("paths") or []
     if share_type == "dynamic":
-        resolved = _collect_files_for_share_paths(root, paths, include_missing_files=False)
+        resolved = _collect_files_for_share_paths(
+            root, paths, include_missing_files=False, mounts=mounts
+        )
         return filter_files_by_patterns(resolved, allow_list, avoid_list)
 
-    resolved = _collect_files_for_share_paths(root, paths, include_missing_files=True)
+    resolved = _collect_files_for_share_paths(
+        root, paths, include_missing_files=True, mounts=mounts
+    )
     return filter_files_by_patterns(resolved, allow_list, avoid_list)
 
 
 def _is_path_in_share(share, path, db_conn=None):
     """Return True if path is allowed for this share (dynamic, static, or tag-based)."""
     root = _root_dir_for_share(share)
-    return share_covers_relative_path(db_conn, share, path, root)
+    mounts = mounts_for_share_creator(db_conn, share)
+    return share_covers_relative_path(db_conn, share, path, root, mounts)
 
 
 # ---------------------------------------------------------------------------
@@ -422,23 +458,38 @@ def _parse_paths_for_update(paths, share_id, requested_share_type, current_paths
     return (deduped_paths, new_cloud_paths, removed_via_override, None)
 
 
+def _validate_update_local_path_entry(
+    share_id, path_str, share_type: str, root_dir, mounts
+) -> tuple[int, dict] | None:
+    if is_cloud_relative_path(share_id, path_str):
+        return None
+    ap, confine = resolve_rel(root_dir, path_str, mounts)
+    if not ap or not confine or not is_within_root(ap, confine):
+        return (400, {"error": f"Invalid path: {path_str}"})
+    if share_type == "dynamic":
+        if not os.path.isdir(ap):
+            return (
+                400,
+                {"error": "Dynamic share paths must be existing directories"},
+            )
+        return None
+    if not (os.path.isfile(ap) or os.path.isdir(ap)):
+        return (400, {"error": f"Path not found: {path_str}"})
+    return None
+
+
 def _validate_update_local_paths(handler, share_id, path_strings, share_type: str):
     """Ensure local path strings exist under the user's root. Return (status, body) or None."""
     root_dir = get_user_root(handler)
+    mounts = mounts_for_username(
+        handler.db_conn, get_username_string_for_db(handler) or ""
+    )
     for path_str in path_strings:
-        if is_cloud_relative_path(share_id, path_str):
-            continue
-        ap = os.path.abspath(os.path.join(root_dir, path_str))
-        if not is_within_root(ap, root_dir):
-            return (400, {"error": f"Invalid path: {path_str}"})
-        if share_type == "dynamic":
-            if not os.path.isdir(ap):
-                return (
-                    400,
-                    {"error": "Dynamic share paths must be existing directories"},
-                )
-        elif not (os.path.isfile(ap) or os.path.isdir(ap)):
-            return (400, {"error": f"Path not found: {path_str}"})
+        err = _validate_update_local_path_entry(
+            share_id, path_str, share_type, root_dir, mounts
+        )
+        if err is not None:
+            return err
     return None
 
 
@@ -662,14 +713,12 @@ def _compute_share_update_fields(
 class ShareFilesHandler(BaseHandler):
     @tornado.web.authenticated
     @require_action("share.view")
+    @require_feature_flag(
+        "file_share",
+        body="Feature disabled: File sharing is currently disabled by administrator",
+    )
     def get(self):
-        if not self.require_feature(
-            "file_share",
-            True,
-            body="Feature disabled: File sharing is currently disabled by administrator",
-        ):
-            return
-        self.render("share.html", shares={}, chat_enabled=is_chat_enabled())
+        self.render("share.html", shares={}, chat_enabled=is_chat_enabled() and user_may_use_plugin(PLUGIN_CHAT, get_username_string_for_db(self), self.db_conn))
 
 
 class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
@@ -681,7 +730,13 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
                 return None, (400, {"error": "tag_name is required for tag shares"})
             return [], None
         final_paths, err = _resolve_share_paths(
-            req.paths, req.share_type, sid, root_dir=get_user_root(self)
+            req.paths,
+            req.share_type,
+            sid,
+            root_dir=get_user_root(self),
+            mounts=mounts_for_username(
+                self.db_conn, get_username_string_for_db(self) or ""
+            ),
         )
         return final_paths, err
 
@@ -689,12 +744,8 @@ class ShareCreateHandler(XSRFTokenMixin, BaseHandler):
     @require_action("share.create")
     @require_db
     @require_modify_access()
+    @require_feature_flag("file_share", body={"error": FS_DISABLED_MSG})
     def post(self):
-        if not self.require_feature(
-            "file_share", True, body={"error": FS_DISABLED_MSG}
-        ):
-            return
-
         def action():
             data = self.parse_json_body(max_bytes=SHARE_JSON_BODY_MAX_BYTES) or {}
             vserr = validate_share_create_struct(data)
@@ -753,11 +804,8 @@ class ShareRevokeHandler(XSRFTokenMixin, BaseHandler):
     @require_action("share.revoke")
     @require_db
     @require_modify_access()
+    @require_feature_flag("file_share", body={"error": FS_DISABLED_MSG})
     def post(self):
-        if not self.require_feature(
-            "file_share", True, body={"error": FS_DISABLED_MSG}
-        ):
-            return
         sid = self.get_argument("id", "").strip()
         if not sid:
             self.set_status(400)
@@ -829,13 +877,9 @@ class ShareUpdateHandler(XSRFTokenMixin, BaseHandler):
     @tornado.web.authenticated
     @require_db
     @require_modify_access()
+    @require_feature_flag("file_share", body={"error": FS_DISABLED_MSG})
     def post(self):
         """Update share access list"""
-        if not self.require_feature(
-            "file_share", True, body={"error": FS_DISABLED_MSG}
-        ):
-            return
-
         saved_share_id = None
         saved_new_cloud_paths: list[str] = []
 
@@ -995,51 +1039,66 @@ class SharedListHandler(BaseHandler):
         )
 
 
+def _deny_shared_file_access(handler, share, sid, path) -> bool:
+    """Return True when an error response was written."""
+    if not share:
+        handler.set_status(404)
+        handler.write(INVALID_SHARE_LINK)
+        return True
+    if handler.get_service("share_service").is_expired(share.get("expiry_date")):
+        handler.set_status(410)
+        handler.write("Share expired: This share is no longer available")
+        return True
+    allowed_ok, redirect_to_verify, user_err = _check_share_access(
+        share, sid, handler.request, handler.get_cookie, handler.get_secure_cookie
+    )
+    if not allowed_ok:
+        if redirect_to_verify:
+            handler.set_status(403)
+            handler.write(ACCESS_TOKEN_INVALID_OR_EXPIRED)
+        else:
+            handler.set_status(user_err[0])
+            handler.write(user_err[1])
+        return True
+    if not _is_path_in_share(share, path, handler.db_conn):
+        handler.set_status(403)
+        handler.write("Access denied: This file is not part of the share")
+        return True
+    return False
+
+
+def _resolve_shared_file_abspath(handler, share, path):
+    """Return abspath when allowed, else write error and return None."""
+    rel = path.replace("\\", "/").lstrip("/")
+    norm = posixpath.normpath(rel)
+    if norm.startswith("..") or os.path.isabs(norm):
+        handler.set_status(403)
+        handler.write("Access denied: Invalid path")
+        return None
+    if norm != rel and not _is_path_in_share(share, norm, handler.db_conn):
+        handler.set_status(403)
+        handler.write("Access denied: This file is not part of the share")
+        return None
+    abspath, confine = resolve_share_rel(share, norm, handler.db_conn)
+    if not abspath or not confine or not is_within_root(abspath, confine):
+        handler.set_status(403)
+        handler.write("Access denied: Path outside share root")
+        return None
+    if not os.path.isfile(abspath):
+        handler.set_status(404)
+        return None
+    return abspath
+
+
 class SharedFileHandler(BaseHandler):
     @require_db
     async def get(self, sid, path):
         share = self.get_service("share_service").get_share(self.db_conn, sid)
-        if not share:
-            self.set_status(404)
-            self.write(INVALID_SHARE_LINK)
+        if _deny_shared_file_access(self, share, sid, path):
             return
-        if self.get_service("share_service").is_expired(share.get("expiry_date")):
-            self.set_status(410)
-            self.write("Share expired: This share is no longer available")
+        abspath = _resolve_shared_file_abspath(self, share, path)
+        if abspath is None:
             return
-        allowed_ok, redirect_to_verify, user_err = _check_share_access(share, sid, self.request, self.get_cookie, self.get_secure_cookie)
-        if not allowed_ok:
-            if redirect_to_verify:
-                self.set_status(403)
-                self.write(ACCESS_TOKEN_INVALID_OR_EXPIRED)
-            else:
-                self.set_status(user_err[0])
-                self.write(user_err[1])
-            return
-        if not _is_path_in_share(share, path, self.db_conn):
-            self.set_status(403)
-            self.write("Access denied: This file is not part of the share")
-            return
-        rel = path.replace("\\", "/").lstrip("/")
-        norm = posixpath.normpath(rel)
-        if norm.startswith("..") or os.path.isabs(norm):
-            self.set_status(403)
-            self.write("Access denied: Invalid path")
-            return
-        if norm != rel and not _is_path_in_share(share, norm, self.db_conn):
-            self.set_status(403)
-            self.write("Access denied: This file is not part of the share")
-            return
-        root = _root_dir_for_share(share)
-        abspath = os.path.abspath(os.path.join(root, norm))
-        if not is_within_root(abspath, root):
-            self.set_status(403)
-            self.write("Access denied: Path outside share root")
-            return
-        if not os.path.isfile(abspath):
-            self.set_status(404)
-            return
-        # Track download for analytics
         if self.db_conn:
             try:
                 self.get_service("audit_service").log(

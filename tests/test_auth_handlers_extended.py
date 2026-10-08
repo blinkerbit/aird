@@ -461,6 +461,7 @@ class TestProfileHandlerExtended:
                 quota=ANY,
                 passkeys=ANY,
                 shared_with_me=ANY,
+                user_plugins=ANY,
             )
 
     def test_post_password_mismatch(self):
@@ -497,6 +498,7 @@ class TestProfileHandlerExtended:
                 quota=ANY,
                 passkeys=ANY,
                 shared_with_me=ANY,
+                user_plugins=ANY,
             )
 
 

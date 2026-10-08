@@ -1,10 +1,10 @@
 "use strict";
 
-import { SelectionStore } from '/static/js/browse/selection-store.js';
+import { SelectionStore } from './selection-store.js';
 import {
   escapeHtml,
   wireBrowseButton,
-} from '/static/js/browse/util.js';
+} from './util.js';
 
 let _selectionDrawerIsOpen = false;
 
@@ -168,7 +168,7 @@ export function initBrowseSelectionUi() {
   }
   document.getElementById('fileTable')?.addEventListener('change', function (e) {
     const cb = e.target.closest('.row-checkbox');
-    if (!cb || !cb.closest('#fileTable')) return;
+    if (!cb?.closest('#fileTable')) return;
     syncCheckboxToStore(cb);
     updateBulkToolbar();
   });

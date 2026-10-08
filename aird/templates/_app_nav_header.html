@@ -1,5 +1,5 @@
-{# Main app header: Aird + profile + Browse + feature nav + theme selector.
-   Optional overrides: nav_title, nav_search_path, show_admin_link (BaseHandler defaults).
+{# Main app header: Aird + settings + Browse + feature nav + theme selector.
+   Optional overrides: nav_search_path, nav_title.
    Layout: place this include inside the same outer wrapper as page content, e.g.
    <div class="container mx-auto p-4"> …header… …content… </div> (same as browse/share/search). #}
 <div class="navbar aird-nav bg-base-200 shadow-sm rounded-box mb-4 flex-wrap gap-2">
@@ -12,9 +12,9 @@
   </div>
   <div class="flex items-center gap-1 flex-wrap">
     {% if current_user %}
-    <a href="/profile" class="btn btn-ghost btn-sm gap-1" title="Profile settings">
-      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
-      <span class="hidden sm:inline">{{ handler.get_display_username() }}</span>
+    <a href="/profile" class="btn btn-ghost btn-sm gap-1 max-w-[10rem] sm:max-w-[14rem]" title="User settings">
+      <svg class="hdr-ico shrink-0" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+      <span class="truncate font-medium">{{ escape(handler.get_display_username()) }}</span>
     </a>
     {% else %}
     <span class="btn btn-ghost btn-sm gap-1 no-animation cursor-default">
@@ -48,10 +48,12 @@
     </a>
     {% end %}
     {% if is_chat_enabled() %}
-    <a href="/chat" class="btn btn-ghost btn-sm gap-1 relative" title="Direct messages">
-      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    <a href="/chat" class="btn btn-ghost btn-sm gap-1" title="Direct messages">
+      <span class="chat-nav-ico">
+        <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span id="chatUnreadBadge" class="badge badge-primary badge-xs chat-nav-badge hidden">0</span>
+      </span>
       <span class="hidden sm:inline">Chat</span>
-      <span id="chatUnreadBadge" class="badge badge-primary badge-xs absolute -top-1 -right-1 hidden min-w-[1.1rem]">0</span>
     </a>
     {% end %}
     {% if is_feature_enabled('p2p_transfer', True) %}
@@ -59,14 +61,6 @@
       <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
       <span class="hidden sm:inline">P2P</span>
     </a>
-    {% end %}
-    {% if show_admin_link %}
-    {% if current_user and current_user.get("role") == "admin" %}
-    <a href="/admin" class="btn btn-primary btn-sm gap-1" title="Administration">
-      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      <span class="hidden sm:inline">Admin</span>
-    </a>
-    {% end %}
     {% end %}
     <!-- Transfer progress indicator (hidden when idle) -->
     <div class="transfer-tracker-wrap" id="transferTrackerWrap">
@@ -83,6 +77,12 @@
       </button>
       <div class="tt-tooltip" id="transferTrackerTooltip">No transfers</div>
     </div>
+
+    <button type="button" id="airdPwaInstallBtn" class="btn btn-ghost btn-sm gap-1 hidden"
+            title="Install Aird as an app" aria-label="Install Aird">
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M5 21h14"/></svg>
+      <span class="hidden sm:inline">Install</span>
+    </button>
 
     {% if current_user %}
     <button type="button" class="btn btn-ghost btn-sm gap-1" title="Command palette (Cmd+K / Ctrl+K)"
@@ -120,11 +120,15 @@
 
 <script src="/static/js/aird-core.js"></script>
 <script src="/static/js/transfer-tracker.js?v=20260821a"></script>
+<script src="/static/js/pwa.js?v=20260930a" defer></script>
 <script src="/static/js/common/command-palette.js" defer></script>
 {% if current_user %}
+<script nonce="{{ csp_nonce }}">document.documentElement.dataset.airdUser = '1';</script>
 <script nonce="{{ csp_nonce }}" src="/static/js/feature-flags-live.js" defer></script>
 {% if is_chat_enabled() %}
+<script nonce="{{ csp_nonce }}">window.__AIRD_CHAT_USER__ = {% raw json_encode(current_user.get('username') if current_user else '') %};</script>
 <script nonce="{{ csp_nonce }}" src="/static/js/chat-ws.js"></script>
+<script nonce="{{ csp_nonce }}" src="/static/js/chat-e2e.js?v=20261005a"></script>
 <script nonce="{{ csp_nonce }}" src="/static/js/chat-notify.js" defer></script>
 {% end %}
 {% end %}

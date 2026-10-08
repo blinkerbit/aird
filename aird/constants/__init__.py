@@ -48,10 +48,15 @@ FEATURE_FLAGS = {
     "smb_server": False,
     "webdav_server": False,
     "direct_messages": False,
+    "gitlab_integration": False,
+    "onedrive_backup": False,
+    "onedrive_browser": False,
     "transfer_sendfile": True,
 }
 
 CHAT_SHARE_FOLDER = ".aird-shares"
+CHAT_STORE_FOLDER = ".aird-chats"
+AIRD_META_FOLDER = ".aird"
 
 # WebSocket connection configuration
 WEBSOCKET_CONFIG = {
@@ -63,6 +68,8 @@ WEBSOCKET_CONFIG = {
     "search_idle_timeout": 180,  # 3 minutes
     "chat_max_connections": 100,
     "chat_idle_timeout": 600,  # 10 minutes
+    "file_comments_max_connections": 100,
+    "file_comments_idle_timeout": 600,
 }
 
 # Upload configuration (admin-configurable, persisted to database)
@@ -157,42 +164,43 @@ def apply_transfer_profile_defaults(profile: object) -> str:
     return normalized
 
 
-def get_effective_transfer_strategy() -> dict:
-    """Return a fresh browser/server strategy snapshot for new transfers."""
-    profile = TRANSFER_PROFILE
-    preset = TRANSFER_PROFILE_PRESETS[profile]
-    max_mb = max(1, int(UPLOAD_CONFIG.get("max_file_size_mb", 10240)))
+def _direct_upload_mb_for_profile(profile: str, max_mb: int) -> int:
     if profile == "wireguard":
-        direct_mb = max_mb
-    elif profile == "cloudflare":
-        direct_mb = min(max_mb, 90)
-    else:
-        configured_direct_mb = int(
-            UPLOAD_CONFIG.get("single_request_max_mb", 0) or 0
-        )
-        direct_mb = min(
-            max_mb,
-            configured_direct_mb
-            if configured_direct_mb > 0
-            else _DEFAULT_PARALLEL_THRESHOLD_MB,
-        )
+        return max_mb
+    if profile == "cloudflare":
+        return min(max_mb, 90)
+    configured_direct_mb = int(UPLOAD_CONFIG.get("single_request_max_mb", 0) or 0)
+    return min(
+        max_mb,
+        configured_direct_mb
+        if configured_direct_mb > 0
+        else _DEFAULT_PARALLEL_THRESHOLD_MB,
+    )
 
+
+def _range_upload_limits_for_profile(profile: str, preset: dict) -> tuple[int, int]:
     if profile == "cloudflare":
         chunk_mb = min(90, max(4, int(UPLOAD_CONFIG.get("range_chunk_mb", 90) or 90)))
         upload_concurrency = min(
             8, max(1, int(UPLOAD_CONFIG.get("range_upload_concurrency", 8) or 8))
         )
-    elif profile == "wireguard":
-        chunk_mb = int(preset["range_chunk_mb"])
-        upload_concurrency = int(preset["range_upload_concurrency"])
-    elif profile == "open":
+        return chunk_mb, upload_concurrency
+    if profile == "open":
         chunk_mb = max(4, min(200, int(UPLOAD_CONFIG.get("range_chunk_mb", 32) or 32)))
         upload_concurrency = max(
             1, min(16, int(UPLOAD_CONFIG.get("range_upload_concurrency", 8) or 8))
         )
-    else:
-        chunk_mb = int(preset["range_chunk_mb"])
-        upload_concurrency = int(preset["range_upload_concurrency"])
+        return chunk_mb, upload_concurrency
+    return int(preset["range_chunk_mb"]), int(preset["range_upload_concurrency"])
+
+
+def get_effective_transfer_strategy() -> dict:
+    """Return a fresh browser/server strategy snapshot for new transfers."""
+    profile = TRANSFER_PROFILE
+    preset = TRANSFER_PROFILE_PRESETS[profile]
+    max_mb = max(1, int(UPLOAD_CONFIG.get("max_file_size_mb", 10240)))
+    direct_mb = _direct_upload_mb_for_profile(profile, max_mb)
+    chunk_mb, upload_concurrency = _range_upload_limits_for_profile(profile, preset)
 
     strategy = {
         "profile": profile,
@@ -280,17 +288,18 @@ def refresh_upload_derived_constants() -> None:
 def merge_persisted_upload_config(persisted_upload: dict | None) -> None:
     """Apply upload settings from DB under the runtime config lock."""
     with _RUNTIME_CONFIG_LOCK:
-        if persisted_upload:
-            for key, value in persisted_upload.items():
-                UPLOAD_CONFIG[key] = int(value)
-        if "single_request_max_mb" not in (persisted_upload or {}):
+        persisted = persisted_upload or {}
+        for key, value in persisted.items():
+            UPLOAD_CONFIG[key] = int(value)
+        if "single_request_max_mb" not in persisted:
             UPLOAD_CONFIG["single_request_max_mb"] = 100
-        if "range_chunk_mb" not in (persisted_upload or {}):
-            UPLOAD_CONFIG.setdefault("range_chunk_mb", 90)
-        if "range_upload_concurrency" not in (persisted_upload or {}):
-            UPLOAD_CONFIG.setdefault("range_upload_concurrency", 16)
-        if "ws_chunk_mb" not in (persisted_upload or {}):
-            UPLOAD_CONFIG.setdefault("ws_chunk_mb", 90)
+        for key, default in (
+            ("range_chunk_mb", 90),
+            ("range_upload_concurrency", 16),
+            ("ws_chunk_mb", 90),
+        ):
+            if key not in persisted:
+                UPLOAD_CONFIG.setdefault(key, default)
         _refresh_upload_derived_constants_impl()
 
 

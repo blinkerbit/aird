@@ -20,7 +20,7 @@
       if (!res.ok) return;
       const data = await res.json();
       updateBadge(data.total || 0);
-    } catch (_) { /* */ }
+    } catch (err) { console.debug('unread refresh failed', err); }
   }
 
   function showToast(payload) {
@@ -50,42 +50,57 @@
   }
 
   function escapeHtml(s) {
-    return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return String(s ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
   }
 
   function maybeBrowserNotify(payload) {
     if (!document.hidden) return;
     if (localStorage.getItem('aird.chat.browserNotify') === '0') return;
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    // Prefer service-worker notifications (required for installed PWAs / mobile).
+    if (globalThis.AirdPwa?.showViaServiceWorker) {
+      globalThis.AirdPwa.showViaServiceWorker(payload).then((ok) => {
+        if (ok) return;
+        tryPageNotification(payload);
+      }).catch(() => tryPageNotification(payload));
+      return;
+    }
+    tryPageNotification(payload);
+  }
+
+  function tryPageNotification(payload) {
     try {
-      new Notification(`${payload.sender || 'Aird'}`, {
+      const n = new Notification(`${payload.sender || 'Aird'}`, {
         body: payload.preview || 'New message',
+        icon: '/static/img/pwa-icon-192.png',
         tag: `aird-chat-${payload.conversation_id}`,
-      }).onclick = () => {
+      });
+      n.onclick = () => {
+        window.focus();
         location.href = `/chat?c=${encodeURIComponent(payload.conversation_id)}`;
       };
-    } catch (_) { /* */ }
+    } catch (err) { console.debug('browser notify failed', err); }
   }
 
   function onNotify(payload) {
     if (location.pathname === '/chat') {
       const params = new URLSearchParams(location.search);
-      if (Number(params.get('c')) === Number(payload.conversation_id)) return;
+      if (String(params.get('c')) === String(payload.conversation_id)) return;
     }
     updateBadge(payload.unread_total ?? null);
-    if (payload.unread_total == null) refreshUnread();
+    if (payload.unread_total == null) void refreshUnread();
     showToast(payload);
     maybeBrowserNotify(payload);
   }
 
   function onChatEvent(data) {
-    if (!data || !data.type) return;
+    if (!data?.type) return;
     if (data.type === 'chat_notify') {
       onNotify(data);
     } else if (data.type === 'chat_message') {
-      refreshUnread();
+      void refreshUnread();
     } else if (data.type === 'chat_message_deleted') {
-      refreshUnread();
+      void refreshUnread();
     }
   }
 
@@ -94,7 +109,7 @@
         && !document.querySelector('a[href="/chat"]')) {
       return;
     }
-    refreshUnread();
+    void refreshUnread();
     const WS = window.AirdChatWS;
     if (!WS) return;
     WS.connect();

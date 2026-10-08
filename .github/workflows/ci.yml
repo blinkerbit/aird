@@ -1,40 +1,142 @@
 name: ci
 
+# main push → patch release (0.5.6 → 0.5.7)
+# rc push → release candidate (0.5.7rcN)
+# feat/, feature/, and fix/ pushes → dev release (0.5.7.devN)
+# The version commit message includes [skip ci] so it does not publish again.
+
 on:
   push:
-    branches: [main]
+    branches: [main, rc, "feat/**", "feature/**", "fix/**"]
   pull_request:
-    branches: [main]
-
-permissions:
-  contents: read
+    branches: [main, rc]
 
 jobs:
   test:
     name: pytest
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
           python-version: "3.12"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
-
-      - name: Install package with chat extra
-        run: |
-          python -m pip install "pip==25.2"
-          python -m pip install --only-binary=:all: build
-          python -m pip install --only-binary=:all: -r requirements-test.txt
-          pip install -e ".[chat]"
 
       - name: Build share UI bundle
         run: |
           npm ci --ignore-scripts
           npm run js:share
 
+      - name: Install package with chat extra
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: --no-binary=http-ece -r requirements-ci.txt
+          # Build after js:share so aird/static/js/share/app.js is inside the wheel.
+          python -m build --wheel -o dist
+          WHEEL=$(ls dist/*.whl | head -1)
+          # Runtime deps already installed from hashed lockfile; install local wheel only.
+          python -m pip install --no-deps --only-binary=:all: "${WHEEL}"
+
       - name: Run tests
-        run: python -m pytest tests/ -q --tb=no
+        run: |
+          # Reuse the post-npm wheel; packaging tests skip a second build.
+          export AIRD_TEST_WHEEL="$(pwd)/$(ls dist/aird-*.whl | head -1)"
+          # Include @pytest.mark.slow; pytest.ini defaults to -m "not slow" for local smoke.
+          python -m pytest tests/ -q --tb=no -m "slow or not slow"
+
+  release:
+    name: Publish
+    needs: test
+    if: >-
+      github.event_name == 'push' &&
+      github.repository == 'blinkerbit/aird' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/rc' ||
+       startsWith(github.ref, 'refs/heads/feat/') ||
+       startsWith(github.ref, 'refs/heads/feature/') ||
+       startsWith(github.ref, 'refs/heads/fix/'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      - name: Choose version
+        id: version
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+            CHANNEL=main
+            SEQ=0
+          elif [ "${GITHUB_REF}" = "refs/heads/rc" ]; then
+            CHANNEL=rc
+            PROBE=$(python scripts/release_version.py --channel rc --seq 1)
+            BASE=${PROBE%rc*}
+            COUNT=$(git tag -l "v${BASE}rc*" | wc -l | tr -d ' ')
+            SEQ=$((COUNT + 1))
+          else
+            CHANNEL=dev
+            SEQ="${GITHUB_RUN_ID}"
+          fi
+          VERSION=$(python scripts/release_version.py --channel "$CHANNEL" --seq "$SEQ" --write)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
+
+      - name: Build share UI bundle
+        run: |
+          npm ci --ignore-scripts
+          npm run js:share
+
+      - name: Build sdist + wheel
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: --no-binary=http-ece -r requirements-ci.txt
+          python -m build --sdist --wheel -o dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # v1.12.4
+        with:
+          packages-dir: dist/
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Tag release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          CHANNEL: ${{ steps.version.outputs.channel }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ "$CHANNEL" = "main" ] || [ "$CHANNEL" = "rc" ]; then
+            git add setup.py
+            git commit -m "Release ${VERSION} [skip ci]"
+            git tag "v${VERSION}"
+            git push origin HEAD
+            git push origin "v${VERSION}"
+          else
+            git tag "v${VERSION}"
+            git push origin "v${VERSION}"
+          fi
+          if [ "$CHANNEL" = "main" ]; then
+            gh release create "v${VERSION}" --title "v${VERSION}" --notes "Patch release ${VERSION}."
+          elif [ "$CHANNEL" = "rc" ]; then
+            gh release create "v${VERSION}" --prerelease --title "v${VERSION}" --notes "Release candidate ${VERSION}."
+          else
+            gh release create "v${VERSION}" --prerelease --title "v${VERSION}" --notes "Dev release ${VERSION}."
+          fi
+

@@ -44,6 +44,7 @@ def test_handler_cross_feature_imports_are_controlled():
         "ranged_upload_handlers.py": ["from aird.handlers.file_op_handlers import"],
         "transfer_ws_handlers.py": ["from aird.handlers.file_op_handlers import"],
         "webauthn_handlers.py": ["from aird.handlers.auth_handlers import"],
+        "health_handler.py": ["from aird.handlers.pwa_handlers import"],
     }
     offenders: list[str] = []
     for path in _py_files(HANDLERS_DIR):

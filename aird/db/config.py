@@ -1,15 +1,87 @@
 """Configuration database operations (feature flags, upload, websocket, extensions)."""
 
+from __future__ import annotations
+
+import json
 import logging
 import sqlite3
 
 logger = logging.getLogger(__name__)
 
+_TRANSFER_CONFIG_KEY = "transfer_config"
+_COMPRESSION_CONFIG_KEY = "compression_config"
+
+
+_INT_SEED_SQL = {
+    "feature_flags": "INSERT OR IGNORE INTO feature_flags (key, value) VALUES (?, ?)",
+    "websocket_config": "INSERT OR IGNORE INTO websocket_config (key, value) VALUES (?, ?)",
+    "upload_config": "INSERT OR IGNORE INTO upload_config (key, value) VALUES (?, ?)",
+}
+
+
+def _seed_int_rows(conn: sqlite3.Connection, table: str, defaults: dict) -> None:
+    sql = _INT_SEED_SQL.get(table)
+    if not sql:
+        raise ValueError(f"Unknown config table {table}")
+    with conn:
+        for key, value in defaults.items():
+            conn.execute(sql, (str(key), int(value)))
+
+
+def seed_runtime_defaults(
+    conn: sqlite3.Connection,
+    *,
+    feature_flags: dict,
+    websocket_config: dict,
+    upload_config: dict,
+    transfer_config: dict | None = None,
+    compression_config: dict | None = None,
+    hosting_profile: str = "open",
+) -> None:
+    """Write missing keys only so existing DB values stay the source of truth."""
+    try:
+        _seed_int_rows(
+            conn,
+            "feature_flags",
+            {k: (1 if v else 0) for k, v in feature_flags.items()},
+        )
+        _seed_int_rows(conn, "websocket_config", websocket_config)
+        _seed_int_rows(conn, "upload_config", upload_config)
+        existing = load_server_config(conn)
+        to_write: dict[str, object] = {}
+        if "hosting_profile" not in existing:
+            to_write["hosting_profile"] = hosting_profile
+        if transfer_config is not None and _TRANSFER_CONFIG_KEY not in existing:
+            to_write[_TRANSFER_CONFIG_KEY] = json.dumps(transfer_config)
+        if compression_config is not None and _COMPRESSION_CONFIG_KEY not in existing:
+            to_write[_COMPRESSION_CONFIG_KEY] = json.dumps(compression_config)
+        if to_write:
+            save_server_config(conn, to_write, bump_revision=False)
+    except Exception:
+        logger.warning("seed_runtime_defaults failed", exc_info=True)
+
+
+def load_json_server_config(conn: sqlite3.Connection, key: str) -> dict:
+    raw = load_server_config(conn).get(key)
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _as_bool(value) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() not in {"0", "false", "off", "no", ""}
+    return bool(value)
+
 
 def load_feature_flags(conn: sqlite3.Connection) -> dict:
     try:
         rows = conn.execute("SELECT key, value FROM feature_flags").fetchall()
-        return {k: bool(v) for (k, v) in rows}
+        return {k: _as_bool(v) for (k, v) in rows}
     except Exception:
         return {}
 
@@ -23,7 +95,7 @@ def save_feature_flags(conn: sqlite3.Connection, flags: dict) -> None:
                     (k, 1 if v else 0),
                 )
     except Exception:
-        logger.debug("save_feature_flags failed", exc_info=True)
+        logger.warning("save_feature_flags failed", exc_info=True)
 
 
 def load_upload_config(conn: sqlite3.Connection) -> dict:
@@ -131,3 +203,14 @@ def save_websocket_config(conn: sqlite3.Connection, config: dict) -> None:
                 )
     except Exception:
         logger.debug("save_websocket_config failed", exc_info=True)
+
+
+def save_json_server_config(conn: sqlite3.Connection, key: str, payload: dict) -> None:
+    if not isinstance(payload, dict):
+        return
+    try:
+        encoded = json.dumps(payload)
+    except (TypeError, ValueError):
+        logger.warning("save_json_server_config skipped unserializable %s", key)
+        return
+    save_server_config(conn, {key: encoded}, bump_revision=False)

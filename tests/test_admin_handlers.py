@@ -13,6 +13,7 @@ from tests.handler_helpers import authenticate, patch_db_conn, _default_services
 
 from aird.handlers.admin_handlers import (
     AdminHandler,
+    AdminFeatureFlagAPIHandler,
     WebSocketStatsHandler,
     AdminUsersHandler,
     UserCreateHandler,
@@ -125,7 +126,8 @@ class TestAdminHandler:
         ), patch.object(handler, "is_admin_user", return_value=True), patch_db_conn(
             None
         ), patch(
-            "aird.handlers.admin_handlers.FEATURE_FLAGS", in_memory_flags
+            "aird.handlers.admin_handlers.get_current_feature_flags",
+            return_value=in_memory_flags,
         ), patch(
             "aird.utils.util.get_current_websocket_config", return_value={}
         ), patch.object(
@@ -140,6 +142,30 @@ class TestAdminHandler:
                 args, kwargs = call_args
                 assert args[0] == "admin.html"
                 assert kwargs["features"] == in_memory_flags
+
+    def test_get_uses_db_p2p_flag_not_memory(
+        self, mock_tornado_app, mock_tornado_request
+    ):
+        """Admin GET must show SQLite flags so a disabled P2P toggle survives refresh."""
+        handler = AdminHandler(mock_tornado_app, mock_tornado_request)
+        db_flags = {"p2p_transfer": False, "file_share": True}
+
+        with patch.object(
+            handler,
+            "get_current_user",
+            return_value={"username": "admin", "role": "admin"},
+        ), patch.object(handler, "is_admin_user", return_value=True), patch(
+            "aird.handlers.admin_handlers.get_current_feature_flags",
+            return_value=db_flags,
+        ), patch(
+            "aird.utils.util.get_current_websocket_config", return_value={}
+        ), patch.object(
+            handler, "render"
+        ) as mock_render:
+            handler.get()
+            kwargs = mock_render.call_args.kwargs
+            assert kwargs["features"]["p2p_transfer"] is False
+            assert kwargs["features"]["file_share"] is True
 
     def test_get_admin_user_with_ldap_enabled(
         self, mock_tornado_app, mock_tornado_request
@@ -837,6 +863,67 @@ class TestAdminHandlerUploadConfig:
             handler.post()
 
             assert upload_config["max_file_size_mb"] == 10240
+
+
+@pytest.mark.skipif(
+    not AIRD_AVAILABLE, reason="aird.handlers.admin_handlers module not available"
+)
+class TestAdminFeatureFlagAPIHandler:
+    def test_post_saves_known_flag(self, mock_tornado_app, mock_tornado_request, mock_db_conn):
+        handler = AdminFeatureFlagAPIHandler(mock_tornado_app, mock_tornado_request)
+        handler.request.body = b'{"flag":"p2p_transfer","enabled":false}'
+        handler.request.headers = {"X-XSRFToken": "tok"}
+
+        with patch.object(
+            handler,
+            "get_current_user",
+            return_value={"username": "admin", "role": "admin"},
+        ), patch.object(handler, "is_admin_user", return_value=True), patch.object(
+            handler, "check_xsrf_cookie"
+        ), patch.object(
+            handler, "get_service"
+        ) as mock_svc, patch.object(
+            handler, "write"
+        ) as mock_write:
+            mock_svc.return_value.apply_feature_flag.return_value = {
+                "ok": True,
+                "flag": "p2p_transfer",
+                "enabled": False,
+                "notice": "",
+            }
+            handler.post()
+            mock_svc.return_value.apply_feature_flag.assert_called_once()
+            mock_write.assert_called_once()
+            payload = mock_write.call_args[0][0]
+            assert payload["enabled"] is False
+
+    def test_post_rejects_unknown_flag(
+        self, mock_tornado_app, mock_tornado_request, mock_db_conn
+    ):
+        handler = AdminFeatureFlagAPIHandler(mock_tornado_app, mock_tornado_request)
+        handler.request.body = b'{"flag":"not_a_real_flag","enabled":true}'
+        handler.request.headers = {"X-XSRFToken": "tok"}
+
+        with patch.object(
+            handler,
+            "get_current_user",
+            return_value={"username": "admin", "role": "admin"},
+        ), patch.object(handler, "is_admin_user", return_value=True), patch.object(
+            handler, "check_xsrf_cookie"
+        ), patch.object(
+            handler, "get_service"
+        ) as mock_svc, patch.object(
+            handler, "set_status"
+        ) as mock_status, patch.object(
+            handler, "write"
+        ):
+            mock_svc.return_value.apply_feature_flag.return_value = {
+                "ok": False,
+                "error": "Unknown feature flag",
+                "status": 400,
+            }
+            handler.post()
+            mock_status.assert_called_once_with(400)
 
 
 @pytest.mark.skipif(

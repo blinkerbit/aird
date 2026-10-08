@@ -1,9 +1,12 @@
 "use strict";
 
-import { escapeAttr, escapeHtml, getCanTag } from '/static/js/browse/util.js';
+import { escapeAttr, escapeHtml, getCanTag } from './util.js';
+import { buildMoreMenuHtml } from './row-more-menu.js';
 
 const MEDIA_EXTS = new Set([
-  'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tif', 'tiff', 'pdf',
+  'jpg', 'jpeg', 'jpe', 'jif', 'jfif', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico',
+  'tif', 'tiff', 'pdf', 'avif', 'heic', 'heif', 'dng', 'cr2', 'nef', 'arw', 'orf',
+  'rw2', 'raf', 'raw',
 ]);
 
 const ACTION_SVGS = {
@@ -28,15 +31,20 @@ const ACTION_SVGS = {
     '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">'
     + '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/>'
     + '<circle cx="19" cy="12" r="1.5"/></svg>',
+  onedrive: '☁',
 };
 
 function normalizePath(p) {
-  return String(p || '').replace(/^\/+|\/+$/g, '');
+  let s = String(p || '');
+  while (s.startsWith('/')) s = s.slice(1);
+  while (s.endsWith('/')) s = s.slice(0, -1);
+  return s;
 }
 
 function joinBrowsePath(dir, name) {
   const d = normalizePath(dir);
-  const n = String(name || '').replace(/^\/+/g, '');
+  let n = String(name || '');
+  while (n.startsWith('/')) n = n.slice(1);
   return d ? `${d}/${n}` : n;
 }
 
@@ -60,7 +68,7 @@ function formatListingModified(tsMs) {
 function fileIconForName(name) {
   const lower = String(name || '').toLowerCase();
   const ext = lower.includes('.') ? lower.split('.').pop() : '';
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) return '🖼️';
+  if (['jpg', 'jpeg', 'jpe', 'jif', 'jfif', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tif', 'tiff', 'avif', 'heic', 'heif', 'dng', 'cr2', 'nef', 'arw', 'orf', 'rw2', 'raf', 'raw'].includes(ext)) return '🖼️';
   if (ext === 'pdf') return '📕';
   if (['mp4', 'mov', 'mkv', 'webm', 'avi'].includes(ext)) return '🎬';
   if (['mp3', 'wav', 'flac', 'ogg', 'm4a'].includes(ext)) return '🎵';
@@ -122,6 +130,7 @@ function buildActionsHtml(fullPath, name, isDir, features) {
       ACTION_SVGS.delete,
     ));
   }
+  parts.push(buildMoreMenuHtml());
   return (
     `<td class="actions-cell" data-label="Actions">`
     + `<button type="button" class="mobile-actions-toggle" aria-label="Show actions for ${nameAttr}" aria-expanded="false">`
@@ -177,6 +186,7 @@ function buildListingRow({ name, sizeBytes, isDir, modifiedMs }) {
   const tr = document.createElement('tr');
   tr.className = 'file-row file-row--just-uploaded';
   tr.dataset.path = fullPath;
+  tr.dataset.isDir = isDir ? '1' : '0';
   tr.innerHTML =
     `<td class="name-cell" data-label="Name">`
     + `<div class="name-cell-contents">`
@@ -218,7 +228,7 @@ function updateExistingRow(row, { sizeBytes, isDir, modifiedMs }) {
   }
   row.classList.remove('file-row--just-uploaded');
   // force reflow so animation can replay
-  void row.offsetWidth;
+  row.getBoundingClientRect();
   row.classList.add('file-row--just-uploaded');
 }
 
@@ -270,7 +280,7 @@ export function reflectUploadInListing(item) {
   if (!underCurrent) return false;
 
   const rest = current === '' ? uploadDir : uploadDir.slice(current.length + 1);
-  const top = rest.split('/').filter(Boolean)[0];
+  const top = rest.split('/').find(Boolean);
   if (!top) return false;
   return upsertListingEntry({
     name: top,

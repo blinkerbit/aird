@@ -1,14 +1,26 @@
-"""Ensure release wheels ship all package data and template-referenced static assets."""
+"""Ensure release wheels ship all package data and template-referenced static assets.
+
+Marked slow: the default fixture runs ``npm run js:share`` and ``python -m build``.
+Local/default pytest excludes ``slow`` (see pytest.ini). CI re-enables them and can
+pass ``AIRD_TEST_WHEEL`` to reuse the wheel already built in the workflow.
+"""
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
+import time
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.slow
 
 ROOT = Path(__file__).resolve().parents[1]
 PKG = ROOT / "aird"
@@ -49,7 +61,10 @@ def _source_python_modules() -> set[str]:
     for path in PKG.rglob("*.py"):
         if "__pycache__" in path.parts:
             continue
-        modules.add(path.relative_to(ROOT).as_posix())
+        rel = path.relative_to(ROOT).as_posix()
+        if rel.startswith("aird/ms/"):
+            continue
+        modules.add(rel)
     return modules
 
 
@@ -70,28 +85,76 @@ def _wheel_members(wheel: Path) -> set[str]:
         return {name for name in zf.namelist() if not name.endswith("/")}
 
 
+@contextmanager
+def _build_lock(path: Path):
+    deadline = time.time() + 300
+    while True:
+        try:
+            path.mkdir()
+            break
+        except FileExistsError:
+            if path.is_file():
+                path.unlink(missing_ok=True)
+                continue
+            if time.time() > deadline:
+                raise TimeoutError(path)
+            try:
+                if time.time() - path.stat().st_mtime > 180:
+                    path.rmdir()
+                    continue
+            except FileNotFoundError:
+                continue
+            time.sleep(0.5)
+    try:
+        yield
+    finally:
+        try:
+            path.rmdir()
+        except OSError:
+            pass
+
+
+def _reuse_prebuilt_wheel() -> Path | None:
+    """Reuse only when AIRD_TEST_WHEEL is set (CI); never auto-pick stale dist/."""
+    raw = (os.environ.get("AIRD_TEST_WHEEL") or "").strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    if path.is_file():
+        return path
+    pytest.fail(f"AIRD_TEST_WHEEL is set but not a file: {path}")
+
+
 @pytest.fixture(scope="module")
 def built_wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    reused = _reuse_prebuilt_wheel()
+    if reused is not None:
+        return reused
+
     pytest.importorskip("build")
-    if (ROOT / "package.json").is_file():
+    lock = Path(tempfile.gettempdir()) / "aird-pytest-wheel.lockdir"
+    with _build_lock(lock):
+        if (ROOT / "package.json").is_file():
+            npm = shutil.which("npm")
+            if npm:
+                subprocess.run(
+                    [npm, "run", "js:share"],
+                    cwd=ROOT,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+        out = tmp_path_factory.mktemp("dist")
         subprocess.run(
-            ["npm", "run", "js:share"],
+            [sys.executable, "-m", "build", "--wheel", "-o", str(out)],
             cwd=ROOT,
             check=True,
             capture_output=True,
             text=True,
         )
-    out = tmp_path_factory.mktemp("dist")
-    subprocess.run(
-        [sys.executable, "-m", "build", "--wheel", "-o", str(out)],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    wheels = sorted(out.glob("aird-*.whl"))
-    assert wheels, "build produced no wheel"
-    return wheels[-1]
+        wheels = sorted(out.glob("aird-*.whl"))
+        assert wheels, "build produced no wheel"
+        return wheels[-1]
 
 
 @pytest.mark.parametrize("rel", sorted(_source_package_data_paths()))

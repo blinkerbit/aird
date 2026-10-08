@@ -121,7 +121,10 @@
     .browse-listing-panel.browse-listing--compact .file-table .size-cell,
     .browse-listing-panel.browse-listing--compact .file-table .modified-cell,
     .browse-listing-panel.browse-listing--compact .file-table th[data-sort-column="2"],
-    .browse-listing-panel.browse-listing--compact .file-table th[data-sort-column="3"] {
+    .browse-listing-panel.browse-listing--compact .file-table th[data-sort-column="3"],
+    .browse-listing-panel.browse-listing--compact .file-table .file-col-tags,
+    .browse-listing-panel.browse-listing--compact .file-table .file-col-size,
+    .browse-listing-panel.browse-listing--compact .file-table .file-col-modified {
       display: none !important;
     }
 
@@ -243,20 +246,40 @@
       text-overflow: ellipsis;
     }
 
+    .file-table .file-col-name,
     .name-col {
-      width: 50%;
+      width: auto;
     }
 
+    .file-table .file-col-tags {
+      width: 7rem;
+    }
+
+    .file-table .file-col-size,
     .size-col {
-      width: 15%;
+      width: 8rem;
     }
 
+    .file-table .file-col-modified,
     .modified-col {
-      width: 20%;
+      width: 12rem;
     }
 
-    .actions-col {
-      width: 15%;
+    .file-table .file-col-actions,
+    .file-table th.actions-col,
+    .file-table td.actions-cell {
+      width: 14.5rem;
+    }
+
+    .file-table th.actions-col,
+    .file-table td.actions-cell {
+      text-align: right;
+      overflow: visible;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    .actions-cell {
       text-align: right;
     }
 
@@ -308,10 +331,6 @@
       font-size: 0.65rem;
       line-height: 1;
       vertical-align: middle;
-    }
-
-    .actions-cell {
-      text-align: right;
     }
 
     .modified-cell {
@@ -600,6 +619,7 @@
       border: 1px solid var(--color-base-300);
       background: var(--color-base-100);
       box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+      overflow: visible;
     }
 
     .row-tag-popover-title {
@@ -684,7 +704,6 @@
     .action-link {
       color: var(--ds-text-muted);
       text-decoration: none;
-      margin-right: 4px;
       padding: 6px 8px;
       border: 1px solid var(--ds-border-muted);
       background: var(--ds-bg-muted);
@@ -1648,25 +1667,155 @@
       line-height: 1;
     }
 
+    .tag-picker-color {
+      width: 1.05rem;
+      height: 1.05rem;
+      padding: 0;
+      border: 1px solid color-mix(in oklch, currentColor 45%, transparent);
+      border-radius: 9999px;
+      cursor: pointer;
+      background: transparent;
+    }
+
+    .tag-color-btn {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.45rem;
+      height: 1.45rem;
+      margin: 0;
+      border-radius: 9999px;
+      border: 1px solid color-mix(in oklch, var(--color-base-content) 16%, transparent);
+      background: var(--color-base-100);
+      color: var(--color-base-content);
+      opacity: 0.7;
+      cursor: pointer;
+      flex: none;
+      transition: opacity 140ms, background 140ms, border-color 140ms, transform 140ms;
+    }
+
+    .tag-color-btn:hover,
+    .tag-color-btn:focus-within {
+      opacity: 1;
+      background: var(--color-base-200);
+      border-color: color-mix(in oklch, var(--color-base-content) 32%, transparent);
+    }
+
+    .tag-color-btn-icon {
+      width: 0.82rem;
+      height: 0.82rem;
+      display: block;
+      pointer-events: none;
+    }
+
+    .tag-color-btn-icon svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .tag-color-btn-dot {
+      position: absolute;
+      right: 1px;
+      bottom: 1px;
+      width: 0.38rem;
+      height: 0.38rem;
+      border-radius: 999px;
+      background: var(--tag-swatch, var(--color-primary));
+      box-shadow: 0 0 0 1.5px var(--color-base-100);
+      pointer-events: none;
+    }
+
+    .tag-color-btn-input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+      border: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .tag-picker-chip .tag-color-btn--chip {
+      width: 1.22rem;
+      height: 1.22rem;
+      margin-left: 0.05rem;
+      background: color-mix(in oklch, currentColor 10%, transparent);
+      border-color: color-mix(in oklch, currentColor 30%, transparent);
+    }
+
+    .tag-picker-chip .tag-color-btn--chip .tag-color-btn-icon {
+      width: 0.72rem;
+      height: 0.72rem;
+    }
+
+    .tag-picker-chip .tag-color-btn--chip .tag-color-btn-dot {
+      width: 0.32rem;
+      height: 0.32rem;
+    }
+
+    .browse-tag-filter-bar {
+      padding: 0.35rem 0.5rem;
+      border-radius: 0.45rem;
+      border: 1px dashed var(--color-base-300);
+      background: color-mix(in oklch, var(--color-primary) 6%, transparent);
+    }
+
+    .file-row--drop-target {
+      outline: 2px dashed var(--color-primary);
+      background: color-mix(in oklch, var(--color-primary) 12%, transparent);
+    }
+
     .tag-picker-input-wrap {
       position: relative;
     }
 
     .tag-picker-suggestions {
       position: absolute;
-      z-index: 100;
+      left: 0;
+      right: 0;
+      top: calc(100% + 2px);
+      z-index: 30;
       background: var(--color-base-100);
       border: 1px solid var(--color-base-300);
       border-radius: 0.375rem;
-      max-height: 8rem;
+      max-height: 10.5rem;
       overflow-y: auto;
       font-size: 0.8rem;
       width: 100%;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.14);
+    }
+
+    .tag-picker-suggestions:empty,
+    .tag-picker-suggestions[hidden] {
+      display: none;
     }
 
     .tag-picker-suggestion-item {
-      padding: 0.3rem 0.6rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.35rem 0.6rem;
       cursor: pointer;
+    }
+
+    .tag-picker-suggestion-item:hover,
+    .tag-picker-suggestion-item.is-active {
+      background: color-mix(in oklch, var(--color-primary) 14%, transparent);
+    }
+
+    .tag-picker-suggestion-swatch {
+      width: 0.65rem;
+      height: 0.65rem;
+      border-radius: 999px;
+      flex: none;
+      border: 1px solid color-mix(in oklch, var(--color-base-content) 18%, transparent);
     }
 
     .aird-feature-off {
@@ -1890,3 +2039,165 @@
         min-height: 48px;
       }
     }
+
+/* Row more menu (Browse) */
+.row-more-wrap {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.row-more-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 40;
+  min-width: 12rem;
+  margin-top: 4px;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--ds-border, oklch(var(--b3)));
+  background: var(--ds-surface, oklch(var(--b1)));
+  box-shadow: 0 8px 24px oklch(var(--bc) / 0.12);
+}
+
+.row-more-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  color: inherit;
+}
+
+.row-more-item:hover {
+  background: var(--ds-bg-muted, oklch(var(--b2)));
+}
+
+/* OneDrive FE folder/file picker */
+.od-fe-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 16px;
+}
+
+.od-fe-picker-panel {
+  width: min(28rem, 92vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background: oklch(var(--b1));
+  color: inherit;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+  border: 1px solid oklch(var(--b3));
+}
+
+.od-fe-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid oklch(var(--b3));
+}
+
+.od-fe-pick-list {
+  overflow: auto;
+  padding: 8px 12px;
+  min-height: 12rem;
+  flex: 1;
+}
+
+.od-fe-picker-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid oklch(var(--b3));
+}
+
+/* OneDrive FE sign-in dialog */
+.od-fe-signin-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 16px;
+}
+
+.od-fe-signin-panel {
+  width: min(26rem, 92vw);
+  padding: 20px;
+  border-radius: 12px;
+  background: oklch(var(--b1));
+  border: 1px solid oklch(var(--b3));
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+}
+
+.od-fe-signin-panel h3 {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.od-fe-signin-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.od-fe-signin-mode {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid oklch(var(--b3));
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.od-fe-signin-mode:has(input:checked) {
+  border-color: oklch(var(--p));
+  background: oklch(var(--b2) / 0.5);
+}
+
+.od-fe-signin-mode span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.od-fe-signin-mode small {
+  opacity: 0.7;
+  font-size: 12px;
+}
+
+.od-fe-signin-device {
+  margin: 12px 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: oklch(var(--b2) / 0.5);
+  border: 1px solid oklch(var(--b3));
+}
+
+.od-fe-signin-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}

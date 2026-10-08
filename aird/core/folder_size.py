@@ -62,15 +62,18 @@ def norm_rel_path(rel_path: str) -> str:
     return rel_path.replace("\\", "/").strip().strip("/")
 
 
-def resolve_folder_abspath(user_root: str, rel_path: str) -> str | None:
+def resolve_folder_abspath(user_root: str, rel_path: str, mounts=None) -> str | None:
     """Return absolute folder path or None if invalid / not a directory."""
+    from aird.core.browse_paths import resolve_rel
     from aird.core.security import is_within_root
 
     rel = norm_rel_path(rel_path)
     if not rel or ".." in rel.split("/"):
         return None
-    abs_path = os.path.abspath(os.path.join(user_root, rel))
-    if not is_within_root(abs_path, user_root) or not os.path.isdir(abs_path):
+    abs_path, confine = resolve_rel(user_root, rel, mounts or [])
+    if not abs_path or not confine or not is_within_root(abs_path, confine):
+        return None
+    if not os.path.isdir(abs_path):
         return None
     return abs_path
 

@@ -6,7 +6,7 @@ import {
   escapeAttr,
   showDialog,
   getXSRFToken,
-} from '/static/js/browse/util.js';
+} from './util.js';
 
 function formatShareAccessLabel(share) {
   const users = share.allowed_users;
@@ -240,7 +240,7 @@ export function wireShareActionDelegation() {
       openShare(el.dataset.url);
     } else if (action === 'revokeShare') {
       e.preventDefault();
-      revokeShare(el.dataset.id);
+      void revokeShare(el.dataset.id);
     }
   });
 }

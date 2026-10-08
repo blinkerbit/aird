@@ -1,0 +1,24 @@
+# CI / test locked deps (generate hashes via: uv pip compile --generate-hashes -o requirements-ci.txt requirements-ci.in)
+build==1.5.0
+coverage==7.14.3
+mock==5.2.0
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pytest-cov==7.1.0
+pytest-mock==3.14.0
+pytest-xdist==3.8.0
+zipp==3.23.0
+bleach==6.4.0
+# aird install_requires (pinned for hashed CI install; wheel installed --no-deps)
+tornado==6.5.10
+ldap3==2.9.1
+aiofiles==24.1.0
+argon2-cffi==25.1.0
+requests==2.32.4
+urllib3==2.8.0
+cryptography==50.0.0
+chardet==5.2.0
+pyasn1==0.6.4
+webauthn==2.5.0
+watchdog==6.0.0
+pywebpush==2.0.3

@@ -1,11 +1,11 @@
 "use strict";
 
-import { SelectionStore } from '/static/js/browse/selection-store.js';
-import { isInputKeyTarget } from '/static/js/browse/util.js';
-import { updateBulkToolbar } from '/static/js/browse/selection-ui.js';
-import { closeRowTagPopover, isRowTagPopoverOpen, openRowTagPopover } from '/static/js/browse/tags.js';
-import { closeSharePopup, showShareDetails } from '/static/js/browse/shares.js';
-import { renameItem, deleteItem, downloadFileViaHttp } from '/static/js/browse/bulk-actions.js';
+import { SelectionStore } from './selection-store.js';
+import { isInputKeyTarget, getCanTag } from './util.js';
+import { updateBulkToolbar } from './selection-ui.js';
+import { closeRowTagPopover, isRowTagPopoverOpen, openRowTagPopover } from './tags.js';
+import { closeSharePopup, showShareDetails } from './shares.js';
+import { renameItem, deleteItem, downloadFileViaHttp } from './bulk-actions.js';
 
 const FolderPicker = globalThis.AirdFolderPicker;
 const FILE_VIEW_STORAGE_KEY = 'aird-browse-file-view';
@@ -60,7 +60,7 @@ function closeMobileActionMenus(exceptCell) {
 export function initMobileActionMenus() {
   document.getElementById('fileTable')?.addEventListener('click', function (e) {
     const btn = e.target.closest('.mobile-actions-toggle');
-    if (!btn || !btn.closest('#fileTable')) return;
+    if (!btn?.closest('#fileTable')) return;
     e.preventDefault();
     e.stopPropagation();
     const cell = btn.closest('.actions-cell');
@@ -103,6 +103,7 @@ function showBrowseShortcutsHelp() {
     '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">n</td><td>New folder</td></tr>' +
     '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">u</td><td>Upload file</td></tr>' +
     '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Ctrl+A</td><td>Select all files</td></tr>' +
+    '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">t</td><td>Tag one selected item</td></tr>' +
     '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Delete</td><td>Delete selected files</td></tr>' +
     '<tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Escape</td><td>Deselect / close</td></tr>' +
     '</table>' +
@@ -181,6 +182,21 @@ function browseShortcutDelete(e) {
   return true;
 }
 
+function browseShortcutTag(e) {
+  if (e.key !== 't' && e.key !== 'T') return false;
+  if (e.ctrlKey || e.metaKey || e.altKey) return false;
+  if (!getCanTag()) return false;
+  const paths = SelectionStore.getAll();
+  if (paths.length !== 1) return false;
+  const path = paths[0];
+  const row = document.querySelector('tr.file-row[data-path="' + CSS.escape(path) + '"]');
+  const btn = row?.querySelector('.row-tag-add-btn');
+  if (!btn) return false;
+  e.preventDefault();
+  void openRowTagPopover(path, btn);
+  return true;
+}
+
 export function initBrowseKeyboardShortcuts() {
   document.addEventListener('keydown', function browseGlobalKeydown(e) {
     if (e.key === 'Escape') {
@@ -193,6 +209,7 @@ export function initBrowseKeyboardShortcuts() {
     if (browseShortcutNewFolder(e)) return;
     if (browseShortcutUpload(e)) return;
     if (browseShortcutSelectAll(e)) return;
+    if (browseShortcutTag(e)) return;
     browseShortcutDelete(e);
   });
 }
@@ -235,7 +252,7 @@ export function initBrowseColumnResize() {
   const resizers = table.querySelectorAll('.col-resizer');
   if (!resizers.length) return;
 
-  const STORAGE_KEY = 'aird_browse_col_widths';
+  const STORAGE_KEY = 'aird_browse_col_widths_v2';
   const ths = Array.from(table.querySelectorAll('thead th'));
 
   function saveWidths() {
@@ -349,36 +366,36 @@ export function wireBrowseRowActions() {
 export function wireBrowseTableDelegation() {
   document.getElementById('fileTable')?.addEventListener('click', function (e) {
     const shareEl = e.target.closest('[data-share-path]');
-    if (shareEl && shareEl.closest('#fileTable')) {
+    if (shareEl?.closest('#fileTable')) {
       e.stopPropagation();
       e.preventDefault();
-      showShareDetails(shareEl.dataset.sharePath);
+      void showShareDetails(shareEl.dataset.sharePath);
       return;
     }
     const renameEl = e.target.closest('[data-rename-path]');
-    if (renameEl && renameEl.closest('#fileTable')) {
+    if (renameEl?.closest('#fileTable')) {
       e.preventDefault();
-      renameItem(renameEl.dataset.renamePath);
+      void renameItem(renameEl.dataset.renamePath);
       return;
     }
     const deleteEl = e.target.closest('[data-delete-path]');
-    if (deleteEl && deleteEl.closest('#fileTable')) {
+    if (deleteEl?.closest('#fileTable')) {
       e.preventDefault();
-      deleteItem(deleteEl.dataset.deletePath, deleteEl.dataset.isDir === '1');
+      void deleteItem(deleteEl.dataset.deletePath, deleteEl.dataset.isDir === '1');
       return;
     }
     const dl = e.target.closest('.download-btn');
     if (dl) {
       e.preventDefault();
       const path = dl.dataset.downloadPath || dl.closest('tr.file-row')?.dataset.path;
-      if (path) downloadFileViaHttp(path);
+      if (path) void downloadFileViaHttp(path);
       return;
     }
     const tagBtn = e.target.closest('.row-tag-add-btn');
     if (!tagBtn) return;
     e.preventDefault();
     e.stopPropagation();
-    openRowTagPopover(tagBtn.dataset.path, tagBtn);
+    void openRowTagPopover(tagBtn.dataset.path, tagBtn);
   });
 }
 

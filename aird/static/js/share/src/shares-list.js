@@ -10,19 +10,21 @@ function _formatBytes(n) {
 
 function _renderSenderGroup(group, idx) {
   const sender = escapeHtml(group.sender_username || 'unknown');
-  const browseUrl = `/files/${encodeURI(group.folder_path || '')}`;
   const files = Array.isArray(group.files) ? group.files : [];
   const count = files.length;
   const collapseId = `fromChatCollapse${idx}`;
+  const firstShare = files.find((item) => item.share_url)?.share_url;
+  const browseUrl = firstShare || `/files/${encodeURI(group.folder_path || '')}`;
   const fileRows = files.map((item) => {
-    const fileUrl = `/files/${encodeURI(item.relative_path)}`;
+    const fileUrl = item.share_url || item.file_url || `/files/${encodeURI(item.relative_path || '')}`;
     const when = item.created_at ? new Date(item.created_at).toLocaleString() : '—';
     const size = _formatBytes(item.size_bytes);
+    const openBlank = item.share_url ? '' : ' target="_blank" rel="noopener"';
     return `<tr>
       <td class="align-middle">${escapeHtml(item.original_name || item.relative_path)}</td>
       <td class="align-middle text-sm opacity-70">${escapeHtml(when)}${size ? ` · ${escapeHtml(size)}` : ''}</td>
       <td class="align-middle text-right whitespace-nowrap">
-        <a class="btn btn-sm btn-primary btn-outline" href="${escapeAttr(fileUrl)}" target="_blank" rel="noopener">Open</a>
+        <a class="btn btn-sm btn-primary btn-outline" href="${escapeAttr(fileUrl)}"${openBlank}>Open</a>
         <button type="button" class="btn btn-sm btn-ghost text-error" data-action="deleteChatShare" data-id="${escapeAttr(String(item.id))}" title="Remove from my workspace">Delete</button>
       </td>
     </tr>`;
@@ -268,7 +270,7 @@ async function revokeShare(shareId) {
       return;
     }
 
-    loadActiveShares();
+    void loadActiveShares();
   } catch (error) {
     console.error('Error revoking share:', error);
     showDialog('Failed to revoke share', 'Error');

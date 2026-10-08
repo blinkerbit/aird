@@ -29,6 +29,17 @@ _STATUS_NAMES = {
     6: "auth error",
 }
 
+_WS_ACCEPT_SALT = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+
+def _websocket_accept_digest(sec_websocket_key: str) -> str:
+    """RFC 6455 Sec-WebSocket-Accept value (SHA-1 required by protocol, not security)."""
+    digest = hashlib.sha1(
+        (sec_websocket_key + _WS_ACCEPT_SALT).encode("ascii"),
+        usedforsecurity=False,
+    ).digest()
+    return base64.b64encode(digest).decode("ascii")
+
 
 def _xsrf_header(session: requests.Session) -> dict[str, str]:
     tok = session.cookies.get("_xsrf", "")
@@ -130,11 +141,8 @@ class _WsBinaryClient:
                 raise ConnectionError(
                     f"WebSocket upgrade failed: {status_line.decode('latin1', 'replace')}"
                 )
-            expected = base64.b64encode(
-                hashlib.sha1(
-                    (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")
-                ).digest()
-            ).decode("ascii")
+            # RFC 6455 mandates SHA-1 for the Sec-WebSocket-Accept handshake value.
+            expected = _websocket_accept_digest(key)
             if expected.encode("ascii") not in header:
                 raise ConnectionError("WebSocket accept key mismatch")
             leftover = header.split(b"\r\n\r\n", 1)[1]
@@ -179,28 +187,37 @@ class _WsBinaryClient:
         del self._buf[:n]
         return out
 
+    def _ws_extended_payload_length(self, plen: int) -> int:
+        if plen == 126:
+            (plen,) = struct.unpack(">H", self._recv_exact(2))
+        elif plen == 127:
+            (plen,) = struct.unpack(">Q", self._recv_exact(8))
+        return plen
+
+    @staticmethod
+    def _ws_unmask_payload(payload: bytearray, mask: bytes) -> bytes:
+        if mask:
+            for i in range(len(payload)):
+                payload[i] ^= mask[i % 4]
+        return bytes(payload)
+
     def recv_binary(self) -> bytes:
         while True:
             b0, b1 = self._recv_exact(2)
             opcode = b0 & 0x0F
             masked = bool(b1 & 0x80)
-            plen = b1 & 0x7F
-            if plen == 126:
-                (plen,) = struct.unpack(">H", self._recv_exact(2))
-            elif plen == 127:
-                (plen,) = struct.unpack(">Q", self._recv_exact(8))
+            plen = self._ws_extended_payload_length(b1 & 0x7F)
             mask = self._recv_exact(4) if masked else b""
-            payload = bytearray(self._recv_exact(plen))
-            if masked:
-                for i in range(len(payload)):
-                    payload[i] ^= mask[i % 4]
+            payload = self._ws_unmask_payload(
+                bytearray(self._recv_exact(plen)), mask
+            )
             if opcode == 0x8:
                 raise ConnectionError("WebSocket closed by server")
             if opcode == 0x9:  # ping
-                self._send_frame(0xA, bytes(payload))
+                self._send_frame(0xA, payload)
                 continue
             if opcode in (0x1, 0x2, 0x0):
-                return bytes(payload)
+                return payload
 
     def close(self) -> None:
         try:

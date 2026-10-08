@@ -462,15 +462,17 @@ class AirdClient:
         r = self.http.get(self._url(f"/shared/{quote(share_id)}"), timeout=60)
         if r.status_code >= 400:
             raise AirdAPIError(f"Share not found (HTTP {r.status_code})", r.status_code)
-        m = re.search(
-            r'<script[^>]+id="files-json"[^>]*>(.*?)</script>',
-            r.text,
-            re.DOTALL,
-        )
-        if not m:
+        marker = 'id="files-json"'
+        start = r.text.find(marker)
+        if start < 0:
             return []
+        gt = r.text.find(">", start)
+        end = r.text.find("</script>", gt)
+        if gt < 0 or end < 0:
+            return []
+        raw = r.text[gt + 1 : end].strip()
         try:
-            data = json.loads(m.group(1).strip())
+            data = json.loads(raw)
         except json.JSONDecodeError:
             return []
         if isinstance(data, list):

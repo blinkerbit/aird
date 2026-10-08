@@ -60,29 +60,36 @@ class _ZipEntryCollector:
 
 
 def _collect_dir_zip_entries(
-    collector: _ZipEntryCollector, abspath: str, root_dir: str
+    collector: _ZipEntryCollector, abspath: str, arc_prefix: str
 ) -> None:
     for dirpath, _dirnames, filenames in os.walk(abspath):
         for fname in filenames:
             full = os.path.join(dirpath, fname)
             if not os.path.isfile(full):
                 continue
-            file_rel = os.path.relpath(full, root_dir).replace("\\", "/")
-            collector.add_file(full, _safe_arcname(file_rel))
+            inner = os.path.relpath(full, abspath).replace("\\", "/")
+            arc = f"{arc_prefix}/{inner}" if arc_prefix else inner
+            collector.add_file(full, _safe_arcname(arc))
 
 
-def _resolve_zip_path(root_dir: str, rel: str) -> tuple[str, str]:
-    abspath = os.path.realpath(os.path.join(root_dir, rel))
-    if not is_within_root(abspath, root_dir):
+def _resolve_zip_path(
+    root_dir: str, rel: str, mounts: list | None = None
+) -> tuple[str, str]:
+    from aird.core.browse_paths import resolve_rel
+
+    abspath, confine = resolve_rel(root_dir, rel, mounts or [])
+    if not abspath or not confine or not is_within_root(abspath, confine):
         raise ZipDownloadError("Access denied", 403)
+    abspath = os.path.realpath(abspath)
     if not os.path.exists(abspath):
         raise ZipDownloadError(f"Not found: {rel}", 404)
     return rel, abspath
 
 
-def collect_zip_entries(root_dir: str, paths: Iterable[str]) -> list[tuple[str, str]]:
+def collect_zip_entries(
+    root_dir: str, paths: Iterable[str], mounts: list | None = None
+) -> list[tuple[str, str]]:
     """Return (absolute_path, archive_name) pairs for all files under *paths*."""
-    root_dir = os.path.realpath(root_dir)
     collector = _ZipEntryCollector()
 
     for raw in paths:
@@ -91,14 +98,14 @@ def collect_zip_entries(root_dir: str, paths: Iterable[str]) -> list[tuple[str, 
         rel = _normalise_rel_path(raw)
         if not rel:
             continue
-        rel, abspath = _resolve_zip_path(root_dir, rel)
+        rel, abspath = _resolve_zip_path(root_dir, rel, mounts)
 
         if os.path.isfile(abspath):
             collector.add_file(abspath, _safe_arcname(rel))
             continue
 
         if os.path.isdir(abspath):
-            _collect_dir_zip_entries(collector, abspath, root_dir)
+            _collect_dir_zip_entries(collector, abspath, rel)
             continue
 
         raise ZipDownloadError(f"Not a file or folder: {rel}", 400)

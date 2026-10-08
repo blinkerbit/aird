@@ -5,34 +5,89 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/static/css/app.css" />
-  <link rel="stylesheet" href="/static/css/chat.css" />
+  <link rel="stylesheet" href="/static/css/chat.css?v=20261005a" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
+  {% include '_pwa_head.html' %}
   <title>Chat · Aird</title>
 </head>
-<body>
-  <div class="aird-shell aird-shell--wide">
+<body class="chat-page">
+  <div class="aird-shell aird-shell--wide aird-shell--chat">
 {% set nav_title = "Aird" %}
 {% set nav_search_path = "" %}
 {% set show_admin_link = False %}
 {% include '_app_nav_header.html' %}
 
-    <header class="mb-4">
-      <h1 class="aird-page-title">Direct messages</h1>
-      <p class="aird-page-lead">Chat with other users. Share files from your workspace or upload attachments.</p>
-    </header>
+    <dialog id="chatE2eHelpDialog" class="chat-e2e-help-dialog">
+      <form method="dialog" class="chat-e2e-help-panel">
+        <div class="chat-e2e-help-head">
+          <h2>Encryption key backup</h2>
+          <button type="button" class="btn btn-ghost btn-xs" data-chat-e2e-close aria-label="Close">✕</button>
+        </div>
+        <div class="chat-e2e-help-body">
+          <p class="chat-e2e-disclaimer">A chat starts after the other person accepts. The conversation key stays on this device and is only shared as a wrap for each member. Enhanced Secure Chat is different: it starts only after the other person accepts, it runs while both people are online, its keys never leave this browser tab, and closing the tab deletes its messages.</p>
+          <p class="text-sm opacity-70" data-chat-e2e-backup-status></p>
+          <div class="chat-e2e-help-actions">
+            <button type="button" id="chatE2eDownloadBtn" class="btn btn-outline btn-sm">Download key file</button>
+            <div data-chat-e2e-od-section class="chat-e2e-od-actions">
+              <button type="button" id="chatE2eBackupOdBtn" class="btn btn-primary btn-sm">Back up to OneDrive</button>
+              <button type="button" id="chatE2eBackupOdPickBtn" class="btn btn-ghost btn-sm">Choose OneDrive folder…</button>
+            </div>
+          </div>
+          <div class="chat-e2e-help-restore">
+            <h3>Restore key</h3>
+            <p class="text-sm opacity-70">Use this after switching browsers or clearing site data.</p>
+            <div class="chat-e2e-help-actions">
+              <button type="button" id="chatE2eRestoreMappedBtn" class="btn btn-outline btn-sm" hidden>Restore from mapped OneDrive folder</button>
+              <button type="button" id="chatE2eRestoreOdBtn" class="btn btn-outline btn-sm" data-chat-e2e-od-section>Browse OneDrive for key file</button>
+              <label class="btn btn-ghost btn-sm">
+                Upload key file
+                <input type="file" id="chatE2eKeyFileInput" accept="application/json,.json" class="hidden">
+              </label>
+            </div>
+          </div>
+          <p id="chatE2eKeyStatus" class="chat-e2e-key-status text-sm" hidden></p>
+        </div>
+        <div class="chat-e2e-help-foot">
+          <button type="button" class="btn btn-ghost btn-sm" data-chat-e2e-close>Close</button>
+        </div>
+      </form>
+    </dialog>
 
-    <div class="chat-layout">
+    <div class="chat-layout chat-layout--list" id="chatLayout">
       <aside class="chat-sidebar">
         <div class="chat-sidebar-head">
-          <h2>Conversations</h2>
+          <h2>Messages</h2>
+          <div class="chat-sidebar-tools">
+            <button type="button" id="chatE2eHelpBtn" class="chat-tool-btn" aria-label="Encryption key help" title="Encryption key">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+            </button>
+            <button type="button" id="chatNewBtn" class="chat-tool-btn chat-tool-btn--accent" aria-label="New conversation" title="New conversation">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+          </div>
         </div>
         <div class="chat-sidebar-body">
-          <div class="chat-new-user-wrap">
-            <label for="chatNewUser" class="sr-only">Find user</label>
-            <input id="chatNewUser" type="text" class="input input-bordered input-sm flex-1" placeholder="Find user…" autocomplete="off" aria-autocomplete="list" aria-controls="chatUserSuggest">
-            <button type="button" id="chatStartBtn" class="btn btn-primary btn-sm">Start</button>
-            <div id="chatUserSuggest" class="menu menu-sm bg-base-100 border border-base-300 rounded-box shadow-lg hidden"></div>
+          <div id="chatNewPanel" class="chat-new-panel" hidden>
+            <div class="chat-new-tabs" role="tablist">
+              <button type="button" class="chat-new-tab is-on" data-new="dm" role="tab" aria-selected="true">Direct</button>
+              <button type="button" class="chat-new-tab" data-new="group" role="tab" aria-selected="false">Group</button>
+            </div>
+            <div id="chatNewGroupFields" class="chat-new-group" hidden>
+              <label class="sr-only" for="chatGroupTitle">Group name</label>
+              <input id="chatGroupTitle" type="text" class="input input-bordered input-sm w-full" maxlength="80" placeholder="Group name" autocomplete="off">
+              <div id="chatGroupChips" class="chat-chips" hidden></div>
+            </div>
+            <div class="chat-new-user-wrap">
+              <label for="chatNewUser" class="sr-only">Find user</label>
+              <input id="chatNewUser" type="text" class="input input-bordered input-sm flex-1" placeholder="Find people…" autocomplete="off" aria-autocomplete="list" aria-controls="chatUserSuggest">
+              <button type="button" id="chatStartBtn" class="btn btn-primary btn-sm">Chat</button>
+              <button type="button" id="chatGroupCreate" class="btn btn-primary btn-sm" hidden>Create</button>
+              <div id="chatUserSuggest" class="menu menu-sm bg-base-100 border border-base-300 rounded-box shadow-lg hidden"></div>
+            </div>
           </div>
+          <label class="sr-only" for="chatSearch">Search messages</label>
+          <input id="chatSearch" type="search" class="input input-bordered input-sm w-full" placeholder="Search messages…" autocomplete="off">
+          <div id="chatSearchResults" class="chat-search-results hidden"></div>
           <ul id="chatConvList"></ul>
         </div>
       </aside>
@@ -43,31 +98,62 @@
             <p>Select a conversation</p>
           </div>
         </div>
+        <div id="chatPinBar" class="chat-pin-bar" hidden></div>
+        <div id="chatE2eStatus" class="chat-e2e-status" hidden></div>
+        <div id="chatRequest" class="chat-request hidden">
+          <p id="chatRequestText"></p>
+          <div id="chatRequestActions" class="chat-request-actions">
+            <button type="button" id="chatRequestAccept" class="btn btn-primary btn-sm">Accept</button>
+            <button type="button" id="chatRequestDecline" class="btn btn-ghost btn-sm">Decline</button>
+          </div>
+        </div>
         <div class="chat-thread-body">
           <div id="chatMessages">
             <div class="chat-empty" id="chatEmptyState">
-              <div class="chat-empty-icon" aria-hidden="true">💬</div>
-              <p>Pick someone from the list or start a new chat.</p>
+              <div class="chat-empty-icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              </div>
+              <p>Your messages</p>
+              <p class="chat-empty-hint">Pick someone from the list or start a new chat.</p>
             </div>
           </div>
+          <div id="chatReplyBar" class="chat-reply-bar hidden">
+            <span id="chatReplyPreview" class="chat-reply-preview"></span>
+            <button type="button" id="chatReplyCancel" class="btn btn-ghost btn-xs" aria-label="Cancel reply">×</button>
+          </div>
+          <div id="chatMentionSuggest" class="menu menu-sm bg-base-100 border border-base-300 rounded-box shadow-lg hidden"></div>
           <form id="chatComposer" class="chat-composer hidden">
             <div class="chat-toolbar">
-              <button type="button" class="chat-toolbar-btn" data-cmd="bold" title="Bold"><strong>B</strong></button>
-              <button type="button" class="chat-toolbar-btn" data-cmd="italic" title="Italic"><em>I</em></button>
-              <button type="button" class="chat-toolbar-btn" data-cmd="link" title="Insert link">Link</button>
-              <button type="button" id="chatBrowseBtn" class="chat-toolbar-btn" title="Attach from browse">Browse</button>
-              <label class="chat-toolbar-btn" title="Upload file">
-                Upload
-                <input type="file" id="chatFileInput" class="hidden">
+              <button type="button" class="chat-toolbar-btn" data-cmd="bold" title="Bold" aria-label="Bold"><strong>B</strong></button>
+              <button type="button" class="chat-toolbar-btn" data-cmd="italic" title="Italic" aria-label="Italic"><em>I</em></button>
+              <button type="button" class="chat-toolbar-btn" id="chatEmojiBtn" title="Emoji" aria-label="Emoji">😊</button>
+              <button type="button" class="chat-toolbar-btn" data-cmd="link" title="Insert link" aria-label="Insert link">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l1.83-1.83a5 5 0 0 0-7.07-7.07L10.5 6.5"/><path d="M14 11a5 5 0 0 0-7.54-.54L4.63 12.3a5 5 0 0 0 7.07 7.07L13.5 17.5"/></svg>
+              </button>
+              <button type="button" class="chat-toolbar-btn chat-attach-only" id="chatBrowseBtn" title="Browse files" aria-label="Browse files">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 7h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+              </button>
+              <label class="chat-toolbar-btn chat-attach-only" title="Upload" aria-label="Upload">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21.44 11.05 12.06 20.4a5.5 5.5 0 0 1-7.78-7.78l10.6-10.6a3.5 3.5 0 0 1 4.95 4.95L8.7 18.17a1.5 1.5 0 0 1-2.12-2.12l9.9-9.9"/></svg>
+                <input type="file" id="chatFileInput" class="hidden" multiple>
               </label>
-              <label class="chat-toolbar-btn" title="Upload GIF">
+              <label class="chat-toolbar-btn chat-attach-only" title="GIF" aria-label="GIF">
                 GIF
                 <input type="file" id="chatGifInput" accept="image/gif,.gif" class="hidden">
               </label>
             </div>
-            <div id="chatEditor" contenteditable="true" data-placeholder="Write a message…" aria-label="Write a message" aria-multiline="true"></div>
-            <div class="chat-composer-actions">
-              <button type="submit" class="btn btn-primary btn-sm px-5">Send</button>
+            <div class="chat-editor-wrap">
+              <div id="chatEmojiPicker" class="chat-emoji-picker hidden" hidden></div>
+              <div id="chatPathSuggest" class="chat-path-suggest" hidden></div>
+              <div class="chat-composer-row">
+                <div class="chat-composer-field">
+                  <div id="chatPending" class="chat-pending" hidden></div>
+                  <div id="chatEditor" contenteditable="true" data-placeholder="Write a message…" aria-label="Write a message" aria-multiline="true" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
+                </div>
+                <button type="submit" class="chat-send-btn" title="Send" aria-label="Send">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3.4 20.6 21 12 3.4 3.4 3 10.2 15 12 3 13.8z"/></svg>
+                </button>
+              </div>
             </div>
           </form>
         </div>
@@ -75,16 +161,58 @@
     </div>
   </div>
 
-  <dialog id="chatBrowseModal" class="modal">
-    <div class="modal-box max-w-lg">
-      <h3 class="font-bold text-lg">Pick a file from your workspace</h3>
-      <p class="text-sm opacity-60 mt-1">Path: <span id="chatBrowsePath">/</span></p>
-      <div class="flex gap-2 my-3">
-        <button type="button" id="chatBrowseUp" class="btn btn-xs btn-ghost">↑ Up</button>
+  <dialog id="chatBrowseModal" class="chat-file-picker">
+    <div class="chat-file-picker-box">
+      <h3 class="chat-file-picker-title">Browse files</h3>
+      <label class="chat-browse-path-wrap">
+        <span class="sr-only">File path</span>
+        <input id="chatBrowsePath" type="text" class="chat-browse-path" value="/" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="File path" aria-autocomplete="list" aria-controls="chatBrowseList" placeholder="/folder/file">
+      </label>
+      <p class="chat-browse-hint">Tab opens a folder · arrows move · Enter attaches the highlighted file or folder</p>
+      <div class="chat-file-picker-tools">
+        <button type="button" id="chatBrowseUp">↑ Up</button>
       </div>
-      <div id="chatBrowseList" class="border border-base-300 rounded-lg max-h-64 overflow-y-auto divide-y divide-base-300"></div>
+      <div id="chatBrowseList" class="chat-file-picker-list"></div>
+      <div class="chat-file-picker-actions">
+        <button type="button" id="chatBrowseAttach">Attach</button>
+        <button type="button" id="chatBrowseClose">Cancel</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="chatMemberModal" class="modal">
+    <div class="modal-box max-w-sm">
+      <h3 class="font-bold text-lg">Add member</h3>
+      <div class="chat-new-user-wrap mt-3">
+        <label class="sr-only" for="chatMemberUser">Find user</label>
+        <input id="chatMemberUser" type="text" class="input input-bordered input-sm w-full" placeholder="Find people…" autocomplete="off">
+        <div id="chatMemberSuggest" class="menu menu-sm bg-base-100 border border-base-300 rounded-box shadow-lg hidden"></div>
+      </div>
       <div class="modal-action">
-        <button type="button" id="chatBrowseClose" class="btn btn-sm">Cancel</button>
+        <button type="button" id="chatMemberCancel" class="btn btn-sm">Cancel</button>
+        <button type="button" id="chatMemberAdd" class="btn btn-sm btn-primary">Add</button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button type="submit">close</button></form>
+  </dialog>
+
+  <dialog id="chatForwardModal" class="modal">
+    <div class="modal-box max-w-md">
+      <h3 class="font-bold text-lg">Forward message</h3>
+      <div id="chatForwardList" class="mt-3 max-h-64 overflow-y-auto divide-y divide-base-300"></div>
+      <div class="modal-action">
+        <button type="button" id="chatForwardCancel" class="btn btn-sm">Cancel</button>
+        <button type="button" id="chatForwardSend" class="btn btn-sm btn-primary">Forward</button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button type="submit">close</button></form>
+  </dialog>
+
+  <dialog id="chatLightbox" class="modal">
+    <div class="modal-box max-w-4xl p-2 bg-base-200">
+      <img id="chatLightboxImg" alt="" class="w-full max-h-[80vh] object-contain rounded">
+      <div class="modal-action mt-2">
+        <button type="button" id="chatLightboxClose" class="btn btn-sm">Close</button>
       </div>
     </div>
     <form method="dialog" class="modal-backdrop"><button type="submit">close</button></form>
@@ -92,9 +220,36 @@
 
   <div id="chatToastHost" class="toast toast-top toast-end z-50"></div>
 
+  <div class="folder-picker-overlay" id="folderPickerOverlay">
+    <div class="folder-picker">
+      <div class="fp-header">
+        <h3 id="fpTitle">Save a copy to…</h3>
+        <button type="button" class="fp-close" id="fpCloseBtn" aria-label="Close">&times;</button>
+      </div>
+      <div class="fp-breadcrumb" id="fpBreadcrumb"></div>
+      <div class="fp-new-folder">
+        <button type="button" id="fpNewFolderBtn">📁 New folder</button>
+      </div>
+      <div class="fp-body" id="fpBody">
+        <div class="fp-loading">Loading...</div>
+      </div>
+      <div class="fp-footer">
+        <div class="fp-dest-path">Destination: <code id="fpDestDisplay">/</code></div>
+        <div class="fp-footer-actions">
+          <button type="button" class="fp-cancel-btn" id="fpCancelBtn">Cancel</button>
+          <button type="button" class="fp-confirm-btn" id="fpConfirmBtn">Save here</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script nonce="{{ csp_nonce }}">window.__AIRD_CHAT_USER__ = {% raw json_encode(current_user.get('username') if current_user else '') %};</script>
+  <script nonce="{{ csp_nonce }}">globalThis.__ONEDRIVE_BROWSER_CONFIG = { enabled: {{ 'true' if is_onedrive_browser_enabled() else 'false' }} };</script>
+  <script nonce="{{ csp_nonce }}" src="/static/js/components/folder-picker.js"></script>
   <script nonce="{{ csp_nonce }}" src="/static/js/chat-ws.js"></script>
-  <script nonce="{{ csp_nonce }}" src="/static/js/pages/chat.js"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/onedrive-fe/index.js?v=20260929c"></script>
+  <script nonce="{{ csp_nonce }}" src="/static/js/chat-key-backup.js?v=20260906p"></script>
+  <script nonce="{{ csp_nonce }}" src="/static/js/chat-secret.js?v=20260927c"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/pages/chat.js?v=20261005a"></script>
 </body>
 </html>
-

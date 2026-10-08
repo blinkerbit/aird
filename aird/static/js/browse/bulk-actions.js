@@ -1,6 +1,6 @@
 "use strict";
 
-import { SelectionStore } from '/static/js/browse/selection-store.js';
+import { SelectionStore } from './selection-store.js';
 import {
   escapeHtml,
   escapeAttr,
@@ -8,8 +8,11 @@ import {
   getXSRFToken,
   pathBasename,
   wireBrowseButton,
-} from '/static/js/browse/util.js';
-import { closeSelectionDrawer } from '/static/js/browse/selection-ui.js';
+  getChatEnabled,
+} from './util.js';
+import { closeSelectionDrawer } from './selection-ui.js';
+import { bulkCopyToDefault, bulkCopyToFolder } from './onedrive-fe-actions.js';
+import { queueBrowseAttachBatch } from '../chat-attach.js?v=20260930h';
 
 const FolderPicker = globalThis.AirdFolderPicker;
 
@@ -23,23 +26,25 @@ export async function renameItem(filepath) {
   const formData = new URLSearchParams();
   formData.append("path", filepath);
   formData.append("new_name", newName);
-  fetch("/rename", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "X-XSRFToken": getXSRFToken(),
-    },
-    body: formData.toString(),
-  })
-    .then((res) => {
-      if (res.ok) {
-        SelectionStore.remove(filepath);
-        globalThis.location.reload();
-      } else {
-        res.text().then((t) => showDialog("Rename failed: " + t, "Error"));
-      }
-    })
-    .catch((err) => showDialog("Rename failed: " + err.message, "Error"));
+  try {
+    const res = await fetch("/rename", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-XSRFToken": getXSRFToken(),
+      },
+      body: formData.toString(),
+    });
+    if (res.ok) {
+      SelectionStore.remove(filepath);
+      globalThis.location.reload();
+      return;
+    }
+    const t = await res.text().catch(() => "");
+    showDialog("Rename failed: " + t, "Error");
+  } catch (err) {
+    showDialog("Rename failed: " + err.message, "Error");
+  }
 }
 
 export async function deleteItem(filepath, isFolder) {
@@ -51,23 +56,25 @@ export async function deleteItem(filepath, isFolder) {
   const formData = new URLSearchParams();
   formData.append("path", filepath);
   if (isFolder) formData.append("recursive", "1");
-  fetch("/delete", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "X-XSRFToken": getXSRFToken(),
-    },
-    body: formData.toString(),
-  })
-    .then((res) => {
-      if (res.ok) {
-        SelectionStore.remove(filepath);
-        globalThis.location.reload();
-      } else {
-        res.text().then((t) => showDialog("Delete failed: " + t, "Error"));
-      }
-    })
-    .catch((err) => showDialog("Delete failed: " + err.message, "Error"));
+  try {
+    const res = await fetch("/delete", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-XSRFToken": getXSRFToken(),
+      },
+      body: formData.toString(),
+    });
+    if (res.ok) {
+      SelectionStore.remove(filepath);
+      globalThis.location.reload();
+      return;
+    }
+    const t = await res.text().catch(() => "");
+    showDialog("Delete failed: " + t, "Error");
+  } catch (err) {
+    showDialog("Delete failed: " + err.message, "Error");
+  }
 }
 
 export async function newFolder() {
@@ -120,9 +127,12 @@ export async function downloadFileViaHttp(filePath) {
   await batch.run();
 }
 
+function stripLeadingSlashes(value) {
+  return String(value || '').replaceAll(/^\/+/g, '');
+}
+
 async function listDirectoryForDownload(remotePath) {
-  const enc = String(remotePath || '')
-    .replace(/^\/+/, '')
+  const enc = stripLeadingSlashes(remotePath)
     .split('/')
     .filter(Boolean)
     .map(encodeURIComponent)
@@ -134,43 +144,52 @@ async function listDirectoryForDownload(remotePath) {
   return Array.isArray(data.files) ? data.files : [];
 }
 
-async function walkDownloadTree(dir, dirEntries, listFn, seen, files) {
-  for (const entry of dirEntries) {
-    const child = dir ? `${dir}/${entry.name}` : entry.name;
-    if (entry.is_dir) {
-      const sub = await listFn(child);
-      if (sub?.length) await walkDownloadTree(child, sub, listFn, seen, files);
-    } else if (!seen.has(child)) {
-      seen.add(child);
-      files.push(child);
-    }
+async function walkDownloadTreeEntry(dir, entry, listFn, seen, files) {
+  const child = dir ? `${dir}/${entry.name}` : entry.name;
+  if (entry.is_dir) {
+    const sub = await listFn(child);
+    if (sub?.length) await walkDownloadTree(child, sub, listFn, seen, files);
+    return;
   }
+  if (!seen.has(child)) {
+    seen.add(child);
+    files.push(child);
+  }
+}
+
+async function walkDownloadTree(dir, dirEntries, listFn, seen, files) {
+  for await (const entry of dirEntries) {
+    await walkDownloadTreeEntry(dir, entry, listFn, seen, files);
+  }
+}
+
+async function expandSelectionPath(raw, listFn, seen, files) {
+  const p = stripLeadingSlashes(String(raw || '').trim());
+  if (!p) return;
+  const entries = await listFn(p);
+  if (entries === null) {
+    if (!seen.has(p)) {
+      seen.add(p);
+      files.push(p);
+    }
+    return;
+  }
+  if (!entries.length) return;
+  await walkDownloadTree(p, entries, listFn, seen, files);
 }
 
 export async function expandSelectionToFiles(paths) {
   const files = [];
   const seen = new Set();
   const listFn = listDirectoryForDownload;
-  for (const raw of paths) {
-    const p = String(raw || '').trim().replace(/^\/+/, '');
-    if (!p) continue;
-    const entries = await listFn(p);
-    if (entries === null) {
-      if (!seen.has(p)) {
-        seen.add(p);
-        files.push(p);
-      }
-      continue;
-    }
-    if (!entries.length) continue;
-    await walkDownloadTree(p, entries, listFn, seen, files);
+  for await (const raw of paths) {
+    await expandSelectionPath(raw, listFn, seen, files);
   }
   return files;
 }
 
 function filesDownloadUrl(path) {
-  const enc = String(path || '')
-    .replace(/^\/+/, '')
+  const enc = stripLeadingSlashes(path)
     .split('/')
     .filter(Boolean)
     .map(encodeURIComponent)
@@ -299,7 +318,7 @@ export async function bulkCopy() {
   const destDir = await FolderPicker.open('copy');
   if (destDir == null) return;
   let failed = 0;
-  for (const path of paths) {
+  async function copyOne(path) {
     const base = pathBasename(path);
     const fullDest = destDir ? destDir + '/' + base : base;
     const formData = new URLSearchParams();
@@ -307,6 +326,9 @@ export async function bulkCopy() {
     formData.append('dest', fullDest);
     const res = await fetch('/copy', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRFToken': getXSRFToken() }, body: formData.toString() });
     if (!res.ok) failed++;
+  }
+  for await (const path of paths) {
+    await copyOne(path);
   }
   if (failed === 0) { SelectionStore.clear(); globalThis.location.reload(); }
   else showDialog(failed + ' of ' + paths.length + ' copy operation(s) failed.', 'Copy');
@@ -323,7 +345,7 @@ export async function bulkMove() {
   const destDir = await FolderPicker.open('move');
   if (destDir == null) return;
   let failed = 0;
-  for (const path of paths) {
+  async function moveOne(path) {
     const base = pathBasename(path);
     const fullDest = destDir ? destDir + '/' + base : base;
     const formData = new URLSearchParams();
@@ -331,6 +353,9 @@ export async function bulkMove() {
     formData.append('dest', fullDest);
     const res = await fetch('/move', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRFToken': getXSRFToken() }, body: formData.toString() });
     if (!res.ok) failed++;
+  }
+  for await (const path of paths) {
+    await moveOne(path);
   }
   if (failed === 0) { SelectionStore.clear(); globalThis.location.reload(); }
   else showDialog(failed + ' of ' + paths.length + ' move operation(s) failed.', 'Move');
@@ -391,6 +416,42 @@ export async function bulkAddToShare() {
   }
 }
 
+async function bulkOdCopyDefault() {
+  const paths = getSelectedPaths();
+  if (!paths.length) {
+    showDialog('Select files or folders to copy to OneDrive.', 'OneDrive');
+    return;
+  }
+  await bulkCopyToDefault(paths);
+  SelectionStore.clear();
+  closeSelectionDrawer();
+}
+
+async function bulkOdCopyFolder() {
+  const paths = getSelectedPaths();
+  if (!paths.length) {
+    showDialog('Select files or folders to copy to OneDrive.', 'OneDrive');
+    return;
+  }
+  await bulkCopyToFolder(paths);
+  SelectionStore.clear();
+  closeSelectionDrawer();
+}
+
+export function bulkSendToChat() {
+  const paths = getSelectedPaths();
+  if (!paths.length) {
+    showDialog('Select files or folders to send to chat.', 'Chat');
+    return;
+  }
+  const entries = paths.map(function (path) {
+    const row = document.querySelector('tr.file-row[data-path="' + CSS.escape(path) + '"]');
+    const isDir = row?.dataset.isDir === '1';
+    return { path: path, isDir: isDir };
+  });
+  queueBrowseAttachBatch(entries);
+}
+
 export function wireBrowseBulkActions({ bulkAddTags, openShareByTag }) {
   wireBrowseButton('newFolderBtn', newFolder);
   wireBrowseButton('bulkDownloadBtn', bulkDownload);
@@ -399,6 +460,11 @@ export function wireBrowseBulkActions({ bulkAddTags, openShareByTag }) {
   wireBrowseButton('bulkMoveBtn', bulkMove);
   wireBrowseButton('bulkAddToShareBtn', bulkAddToShare);
   wireBrowseButton('bulkCreateShareBtn', bulkCreateShare);
+  if (globalThis.__ONEDRIVE_BROWSER_CONFIG?.enabled) {
+    wireBrowseButton('bulkOdCopyBtn', bulkOdCopyDefault);
+    wireBrowseButton('bulkOdFolderBtn', bulkOdCopyFolder);
+  }
   if (bulkAddTags) wireBrowseButton('bulkAddTagsBtn', bulkAddTags);
   if (openShareByTag) wireBrowseButton('shareByTagBtn', openShareByTag);
+  if (getChatEnabled()) wireBrowseButton('bulkSendChatBtn', bulkSendToChat);
 }

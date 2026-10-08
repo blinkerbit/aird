@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  {% include '_theme_early.html' %}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OneDrive sign-in · Aird</title>
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body class="min-h-screen bg-base-200 flex items-center justify-center p-6">
+  <p class="text-sm text-base-content/70" id="odCbMsg">Finishing OneDrive sign-in…</p>
+  <script nonce="{{ csp_nonce }}">
+    globalThis.__ONEDRIVE_BROWSER_CONFIG = {
+      enabled: true,
+      clientId: {% raw json_encode_for_script(od_browser['client_id']) %},
+      tenant: {% raw json_encode_for_script(od_browser['tenant']) %}
+    };
+  </script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/onedrive-fe/index.js?v=20260929c"></script>
+</body>
+</html>

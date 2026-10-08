@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from unittest.mock import MagicMock, mock_open, patch
 
@@ -196,7 +197,7 @@ class TestShareRoot:
           constants, "ROOT_DIR", temp_dir
       ):
           root = filesystem_root_for_share({"created_by": "alice (User)"})
-          assert root.endswith("alice")
+          assert root.endswith(os.path.join("alice", "data"))
           assert filesystem_root_for_share({"created_by": "token_user"}) == temp_dir
 
 
@@ -369,21 +370,56 @@ class TestServices:
       orig_upload = copy.deepcopy(constants.UPLOAD_CONFIG)
       orig_max = constants.MAX_FILE_SIZE
       orig_ext = set(constants.UPLOAD_ALLOWED_EXTENSIONS)
+      orig_flags = copy.deepcopy(constants.FEATURE_FLAGS)
+      orig_ws = copy.deepcopy(constants.WEBSOCKET_CONFIG)
+      orig_transfer = copy.deepcopy(constants.TRANSFER_CONFIG)
+      orig_compression = copy.deepcopy(constants.COMPRESSION_CONFIG)
       try:
-          save_feature_flags(db_conn, {"favorites": 1})
+          constants.FEATURE_FLAGS["p2p_transfer"] = True
+          save_feature_flags(db_conn, {"favorites": 1, "p2p_transfer": 0})
           save_upload_config(db_conn, {"max_file_size_mb": 10})
           save_allowed_extensions(db_conn, {".txt"})
           svc = ConfigService()
           svc.merge_from_db(db_conn)
           assert constants.FEATURE_FLAGS["favorites"] is True
+          assert constants.FEATURE_FLAGS["p2p_transfer"] is False
           assert constants.MAX_FILE_SIZE == 10 * 1024 * 1024
           assert ".txt" in constants.UPLOAD_ALLOWED_EXTENSIONS
       finally:
+          constants.FEATURE_FLAGS.clear()
+          constants.FEATURE_FLAGS.update(orig_flags)
+          constants.WEBSOCKET_CONFIG.clear()
+          constants.WEBSOCKET_CONFIG.update(orig_ws)
+          constants.TRANSFER_CONFIG.clear()
+          constants.TRANSFER_CONFIG.update(orig_transfer)
+          constants.COMPRESSION_CONFIG.clear()
+          constants.COMPRESSION_CONFIG.update(orig_compression)
           constants.UPLOAD_CONFIG.clear()
           constants.UPLOAD_CONFIG.update(orig_upload)
           constants.MAX_FILE_SIZE = orig_max
           constants.UPLOAD_ALLOWED_EXTENSIONS = orig_ext
           constants.refresh_upload_derived_constants()
+
+  def test_apply_feature_flag_persists_p2p(self, db_conn):
+      import copy
+
+      import aird.constants as constants
+      from aird.db.config import load_feature_flags
+
+      orig_flags = copy.deepcopy(constants.FEATURE_FLAGS)
+      try:
+          constants.FEATURE_FLAGS["p2p_transfer"] = True
+          svc = ConfigService()
+          result = svc.apply_feature_flag(db_conn, "p2p_transfer", False)
+          assert result["ok"] is True
+          assert result["enabled"] is False
+          assert load_feature_flags(db_conn)["p2p_transfer"] is False
+          unknown = svc.apply_feature_flag(db_conn, "not_a_real_flag", True)
+          assert unknown["ok"] is False
+          assert unknown["status"] == 400
+      finally:
+          constants.FEATURE_FLAGS.clear()
+          constants.FEATURE_FLAGS.update(orig_flags)
 
   def test_network_share_service(self, db_conn):
       svc = NetworkShareService()

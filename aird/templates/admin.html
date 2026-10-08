@@ -28,13 +28,22 @@
       Direct messages requires the chat extra: <code>pip install 'aird[chat]'</code>
     </div>
     {% end %}
+    {% if admin_notice == 'gitlab_package_required' %}
+    <div class="alert alert-warning mb-4">
+      GitLab plugin is not available on this install.
+    </div>
+    {% end %}
     <form method="POST" class="space-y-6">
       {% raw xsrf_form_html() %}
 
       <!-- Feature flags -->
       <div class="card bg-base-100 shadow-sm border border-base-300 aird-admin-card">
         <div class="card-body">
-          <h2 class="card-title text-base">Feature flags</h2>
+          <h2 class="card-title text-base">
+            Feature flags
+            <span id="airdFlagSaveStatus" class="text-xs font-normal text-base-content/50 ml-2" aria-live="polite"></span>
+          </h2>
+          <p class="text-xs text-base-content/50 mt-1">Toggles save as soon as you click them.</p>
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-2">
             <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
               <input type="checkbox" name="file_upload" class="toggle toggle-primary toggle-sm" {% if features.get('file_upload') %}checked{% end %}>
@@ -77,6 +86,22 @@
               <span class="label-text">P2P transfer</span>
             </label>
             <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
+              <input type="checkbox" name="favorites" class="toggle toggle-primary toggle-sm" {% if features.get('favorites') %}checked{% end %}>
+              <span class="label-text">Favorites</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
+              <input type="checkbox" name="storage_quotas" class="toggle toggle-primary toggle-sm" {% if features.get('storage_quotas') %}checked{% end %}>
+              <span class="label-text">Storage quotas</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
+              <input type="checkbox" name="email_notifications" class="toggle toggle-primary toggle-sm" {% if features.get('email_notifications') %}checked{% end %}>
+              <span class="label-text">Email notifications</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
+              <input type="checkbox" name="transfer_sendfile" class="toggle toggle-primary toggle-sm" {% if features.get('transfer_sendfile') %}checked{% end %}>
+              <span class="label-text">Sendfile transfers</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
               <input type="checkbox" name="compression" class="toggle toggle-primary toggle-sm" {% if features.get('compression') %}checked{% end %}>
               <span class="label-text">Gzip compression</span>
             </label>
@@ -96,10 +121,6 @@
               <input type="checkbox" name="webauthn" class="toggle toggle-primary toggle-sm" {% if features.get('webauthn') %}checked{% end %}>
               <span class="label-text">WebAuthn passkeys (optional login)</span>
             </label>
-            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive{% if not chat_library_available %} opacity-60{% end %}">
-              <input type="checkbox" name="direct_messages" class="toggle toggle-primary toggle-sm" {% if features.get('direct_messages') %}checked{% end %}{% if not chat_library_available %} disabled{% end %}>
-              <span class="label-text">Direct messages{% if not chat_library_available %} <span class="text-xs text-base-content/50">(install pip install aird[chat])</span>{% end %}</span>
-            </label>
             <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive{% if not webdav_library_available %} opacity-60{% end %}">
               <input type="checkbox" name="webdav_server" class="toggle toggle-primary toggle-sm" {% if features.get('webdav_server') %}checked{% end %}{% if not webdav_library_available %} disabled{% end %}>
               <span class="label-text">WebDAV network shares{% if not webdav_library_available %} <span class="text-xs text-base-content/50">(install wsgidav, cheroot)</span>{% end %}</span>
@@ -107,6 +128,31 @@
             <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive{% if not smb_library_available %} opacity-60{% end %}">
               <input type="checkbox" name="smb_server" class="toggle toggle-primary toggle-sm" {% if features.get('smb_server') %}checked{% end %}{% if not smb_library_available %} disabled{% end %}>
               <span class="label-text">SMB network shares{% if not smb_library_available %} <span class="text-xs text-base-content/50">(install pysmbserver)</span>{% end %}</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="card bg-base-100 shadow-sm border border-base-300 aird-admin-card">
+        <div class="card-body">
+          <h2 class="card-title text-base">Plugins <span class="badge badge-warning badge-sm">Experimental</span></h2>
+          <p class="text-sm text-base-content/70 mt-1">Optional features. Off by default. Enable only what you need. Assign who can use them under <a href="/admin/plugins" class="link">Plugins</a>. Toggles save immediately.</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive{% if not chat_library_available %} opacity-60{% end %}">
+              <input type="checkbox" name="direct_messages" class="toggle toggle-primary toggle-sm" {% if features.get('direct_messages') %}checked{% end %}{% if not chat_library_available %} disabled{% end %}>
+              <span class="label-text">Direct messages <span class="badge badge-ghost badge-xs">Experimental</span>{% if not chat_library_available %} <span class="text-xs text-base-content/50">(pip install aird[chat])</span>{% end %}</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive{% if not gitlab_library_available %} opacity-60{% end %}">
+              <input type="checkbox" name="gitlab_integration" class="toggle toggle-primary toggle-sm" {% if features.get('gitlab_integration') %}checked{% end %}{% if not gitlab_library_available %} disabled{% end %}>
+              <span class="label-text">GitLab <span class="badge badge-ghost badge-xs">Experimental</span></span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
+              <input type="checkbox" name="onedrive_backup" class="toggle toggle-primary toggle-sm" {% if features.get('onedrive_backup') %}checked{% end %}>
+              <span class="label-text">OneDrive host backup <span class="badge badge-ghost badge-xs">Experimental</span></span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
+              <input type="checkbox" name="onedrive_browser" class="toggle toggle-primary toggle-sm" {% if features.get('onedrive_browser') %}checked{% end %}>
+              <span class="label-text">OneDrive browser SSO <span class="badge badge-ghost badge-xs">Experimental</span></span>
             </label>
           </div>
         </div>
@@ -279,6 +325,71 @@
           section.style.display = this.checked ? 'none' : 'block';
         });
       }
+
+      var statusEl = document.getElementById('airdFlagSaveStatus');
+      var inflight = {};
+      function setStatus(text, ok) {
+        if (!statusEl) return;
+        statusEl.textContent = text || '';
+        statusEl.className = 'text-xs font-normal ml-2 ' + (ok ? 'text-success' : 'text-error');
+      }
+      function xsrf() {
+        return (globalThis.AirdCore && globalThis.AirdCore.getXSRFToken)
+          ? globalThis.AirdCore.getXSRFToken()
+          : '';
+      }
+      var notices = {
+        chat_package_required: 'Chat extra required (pip install aird[chat])',
+        gitlab_package_required: 'GitLab plugin is not available',
+        webdav_package_required: 'WebDAV libraries are not installed',
+        smb_package_required: 'SMB libraries are not installed'
+      };
+      document.querySelectorAll('form input.toggle[name]').forEach(function (el) {
+        if (el.disabled) return;
+        el.addEventListener('change', function () {
+          var key = el.name;
+          var enabled = el.checked;
+          if (inflight[key]) return;
+          inflight[key] = true;
+          setStatus('Saving…', true);
+          fetch('/admin/api/feature-flags', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-XSRFToken': xsrf()
+            },
+            body: JSON.stringify({ flag: key, enabled: enabled })
+          }).then(function (res) {
+            return res.json().then(function (data) {
+              return { res: res, data: data || {} };
+            }).catch(function () {
+              return { res: res, data: {} };
+            });
+          }).then(function (out) {
+            var data = out.data;
+            if (!out.res.ok || data.ok === false) {
+              el.checked = !enabled;
+              setStatus(data.error || 'Save failed', false);
+              return;
+            }
+            el.checked = !!data.enabled;
+            if (data.notice && notices[data.notice]) {
+              setStatus(notices[data.notice], false);
+            } else {
+              setStatus('Saved', true);
+            }
+            if (globalThis.AirdFeatures && globalThis.AirdFeatures.refresh) {
+              globalThis.AirdFeatures.refresh();
+            }
+          }).catch(function () {
+            el.checked = !enabled;
+            setStatus('Save failed', false);
+          }).finally(function () {
+            inflight[key] = false;
+          });
+        });
+      });
     })();
   </script>
   <script src="/static/js/theme.js"></script>

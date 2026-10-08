@@ -13,6 +13,7 @@ from aird.handlers.abac_handlers import (
     AdminTagAPIHandler,
     AdminUserAttributeAPIHandler,
     PolicyDecisionsAPIHandler,
+    TagCatalogAPIHandler,
     _bool_arg,
     _parse_actions,
     _parse_condition,
@@ -109,6 +110,7 @@ class TestAdminTagAPIHandler:
             handler.post()
             handler.set_status.assert_called_with(201)
             tag_id = handler.write.call_args[0][0]["id"]
+            assert handler.write.call_args[0][0]["color"]
 
             admin_request.body = json.dumps(
                 {"id": tag_id, "glob_pattern": "*.classified"}
@@ -131,6 +133,63 @@ class TestAdminTagAPIHandler:
             admin_request.body = json.dumps({"ids": []}).encode()
             handler.delete()
             handler.set_status.assert_called_with(400)
+
+
+class TestTagCatalogAndUntag:
+    def test_catalog_is_available_to_non_admin(self, admin_app, admin_request, db_conn):
+        from aird.db.resource_tags import insert_resource_tag
+
+        insert_resource_tag(db_conn, "finance", "/docs/q1.pdf", created_by="admin")
+        handler = TagCatalogAPIHandler(admin_app, admin_request)
+        authenticate(handler, role="user")
+        handler.get_current_admin = MagicMock(return_value=None)
+        with patch_db_conn(db_conn):
+            handler.get()
+        payload = handler.write.call_args[0][0]
+        assert payload["names"] == ["finance"]
+        assert "tags" not in payload
+        assert "glob_pattern" not in str(payload)
+
+    def test_untag_path_deletes_only_that_rule(self, admin_app, admin_request, db_conn):
+        from aird.db.resource_tags import insert_resource_tag, list_resource_tags
+
+        insert_resource_tag(db_conn, "pii", "/a.txt", created_by="admin")
+        insert_resource_tag(db_conn, "pii", "/b.txt", created_by="admin")
+        handler = AdminTagAPIHandler(admin_app, admin_request)
+        authenticate(handler)
+        with patch_db_conn(db_conn):
+            admin_request.body = json.dumps({"tag": "pii", "glob_pattern": "/a.txt"}).encode()
+            handler.delete()
+        assert handler.write.call_args[0][0]["count"] == 1
+        remaining = list_resource_tags(db_conn)
+        assert [r["glob_pattern"] for r in remaining] == ["/b.txt"]
+
+    def test_new_tag_gets_auto_color(self, admin_app, admin_request, db_conn):
+        handler = AdminTagAPIHandler(admin_app, admin_request)
+        authenticate(handler)
+        with patch_db_conn(db_conn):
+            admin_request.body = json.dumps(
+                {"tag": "fresh", "glob_pattern": "/a.txt"}
+            ).encode()
+            handler.post()
+        payload = handler.write.call_args[0][0]
+        assert payload["color"]
+        from aird.db.tag_colors import get_tag_colors_map
+
+        assert get_tag_colors_map(db_conn)["fresh"] == payload["color"]
+
+    def test_auto_color_can_be_disabled(self, admin_app, admin_request, db_conn):
+        handler = AdminTagAPIHandler(admin_app, admin_request)
+        authenticate(handler)
+        with patch_db_conn(db_conn):
+            admin_request.body = json.dumps(
+                {"tag": "plain", "glob_pattern": "/b.txt", "auto_color": False}
+            ).encode()
+            handler.post()
+        from aird.db.tag_colors import get_tag_colors_map
+
+        assert "plain" not in get_tag_colors_map(db_conn)
+        assert handler.write.call_args[0][0].get("color") in (None, "")
 
 
 class TestAdminPolicyAPIHandler:

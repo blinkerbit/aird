@@ -50,63 +50,75 @@ def _bulk_engine(handler):
     return engine
 
 
+def _parse_bulk_ticket_body(handler: BaseHandler, data: dict) -> tuple[str, int, str]:
+    if not is_feature_enabled("file_upload", True):
+        raise tornado.web.HTTPError(403, "Upload disabled")
+
+    op = str(data.get("op", "")).upper()
+    if op not in ("PUT", "GET"):
+        raise tornado.web.HTTPError(400, "op must be PUT or GET")
+
+    try:
+        size = int(data.get("size", 0))
+    except (TypeError, ValueError):
+        raise tornado.web.HTTPError(400, "Invalid size")
+    if size < 0 or size > constants_module.MAX_FILE_SIZE:
+        raise tornado.web.HTTPError(400, "Invalid size")
+
+    username = get_username_string_for_db(handler)
+    if not username or username in _TOKEN_ONLY_USERNAMES:
+        raise tornado.web.HTTPError(403, AUTH_REQUIRED)
+    return op, size, username
+
+
+def _bulk_put_claims(handler: BaseHandler, data: dict, username: str, size: int) -> BulkTicketClaims:
+    if not handler.has_modify_privileges():
+        raise tornado.web.HTTPError(403, "Modify access required")
+    upload_dir = str(data.get("upload_dir", "") or "")
+    filename = str(data.get("filename", "") or "")
+    if not filename:
+        raise tornado.web.HTTPError(400, "filename required")
+    if len(filename) > 255 or len(upload_dir) > REL_PATH_MAX_LEN:
+        raise tornado.web.HTTPError(400, "path too long")
+    return BulkTicketClaims(
+        op="PUT",
+        username=username,
+        size=size,
+        exp=default_expiry(),
+        upload_dir=upload_dir,
+        filename=filename,
+        remote_ip=handler.request.remote_ip,
+    )
+
+
+def _bulk_get_claims(handler: BaseHandler, data: dict, username: str, size: int) -> BulkTicketClaims:
+    relpath = str(data.get("relpath", "") or "").strip().strip("/")
+    if not relpath or len(relpath) > REL_PATH_MAX_LEN:
+        raise tornado.web.HTTPError(400, "relpath required")
+    return BulkTicketClaims(
+        op="GET",
+        username=username,
+        size=size,
+        exp=default_expiry(),
+        relpath=relpath,
+        remote_ip=handler.request.remote_ip,
+    )
+
+
 class BulkTicketHandler(BaseHandler):
     """Mint short-lived HMAC tickets for bulk TCP/WS transfers."""
 
     @tornado.web.authenticated
     def post(self):
-        if not is_feature_enabled("file_upload", True):
-            raise tornado.web.HTTPError(403, "Upload disabled")
         try:
             data = json.loads(self.request.body.decode("utf-8", errors="replace") or "{}")
         except json.JSONDecodeError:
             raise tornado.web.HTTPError(400, "Invalid JSON")
-
-        op = str(data.get("op", "")).upper()
-        if op not in ("PUT", "GET"):
-            raise tornado.web.HTTPError(400, "op must be PUT or GET")
-
-        try:
-            size = int(data.get("size", 0))
-        except (TypeError, ValueError):
-            raise tornado.web.HTTPError(400, "Invalid size")
-        if size < 0 or size > constants_module.MAX_FILE_SIZE:
-            raise tornado.web.HTTPError(400, "Invalid size")
-
-        username = get_username_string_for_db(self)
-        if not username or username in _TOKEN_ONLY_USERNAMES:
-            raise tornado.web.HTTPError(403, AUTH_REQUIRED)
-
+        op, size, username = _parse_bulk_ticket_body(self, data)
         if op == "PUT":
-            if not self.has_modify_privileges():
-                raise tornado.web.HTTPError(403, "Modify access required")
-            upload_dir = str(data.get("upload_dir", "") or "")
-            filename = str(data.get("filename", "") or "")
-            if not filename:
-                raise tornado.web.HTTPError(400, "filename required")
-            if len(filename) > 255 or len(upload_dir) > REL_PATH_MAX_LEN:
-                raise tornado.web.HTTPError(400, "path too long")
-            claims = BulkTicketClaims(
-                op="PUT",
-                username=username,
-                size=size,
-                exp=default_expiry(),
-                upload_dir=upload_dir,
-                filename=filename,
-                remote_ip=self.request.remote_ip,
-            )
+            claims = _bulk_put_claims(self, data, username, size)
         else:
-            relpath = str(data.get("relpath", "") or "").strip().strip("/")
-            if not relpath or len(relpath) > REL_PATH_MAX_LEN:
-                raise tornado.web.HTTPError(400, "relpath required")
-            claims = BulkTicketClaims(
-                op="GET",
-                username=username,
-                size=size,
-                exp=default_expiry(),
-                relpath=relpath,
-                remote_ip=self.request.remote_ip,
-            )
+            claims = _bulk_get_claims(self, data, username, size)
 
         ticket = mint_bulk_ticket(_bulk_ticket_secret(self), claims)
         port = get_bulk_tcp_port()

@@ -21,11 +21,13 @@ from aird.db.policy_decisions import get_policy_decisions
 from aird.db.resource_tags import (
     delete_resource_tag,
     delete_resource_tag_by_name,
+    delete_resource_tag_for_path,
     insert_resource_tag,
     list_resource_tags,
+    rename_resource_tag_name,
     update_resource_tag,
 )
-from aird.db.tag_colors import delete_tag_color, get_tag_colors_map, set_tag_color
+from aird.db.tag_colors import delete_tag_color, get_tag_colors_map, rename_tag_color, set_tag_color
 from aird.db.user_attributes import (
     delete_user_attribute,
     list_all_user_attributes,
@@ -45,7 +47,11 @@ from aird.constants.input_limits import (
     InputTooLongError,
     RESOURCE_TAG_MAX_LEN,
 )
-from aird.utils.tag_display import tag_chip_inline_style
+from aird.utils.tag_display import (
+    next_auto_tag_color,
+    normalize_tag_color,
+    tag_chip_inline_style,
+)
 from aird.core.input_validation import (
     validate_abac_tag_rule,
     validate_policy_payload as check_policy_payload_sizes,
@@ -65,6 +71,28 @@ def _bool_arg(value: str | None) -> bool:
     if value is None:
         return False
     return str(value).strip().lower() in {"1", "true", "on", "yes"}
+
+
+def _parse_import_tag_row(row: object) -> tuple[str, str, int] | None:
+    if not isinstance(row, dict):
+        return None
+    tag = str(row.get("tag") or "").strip()
+    glob_pattern = str(row.get("glob_pattern") or "").strip()
+    priority = int(row.get("priority") or 0)
+    if not tag or not glob_pattern:
+        return None
+    try:
+        validate_abac_tag_rule(tag, glob_pattern)
+    except InputTooLongError:
+        return None
+    return tag, glob_pattern, priority
+
+
+def _apply_import_tag_colors(conn, colors: dict) -> None:
+    for tag_name, color_raw in colors.items():
+        tag_name = str(tag_name or "").strip()
+        if tag_name and normalize_tag_color(color_raw):
+            set_tag_color(conn, tag_name, str(color_raw))
 
 
 def _parse_actions(raw: str) -> list[str]:
@@ -105,6 +133,19 @@ class AdminTagsHandler(BaseHandler):
         )
 
 
+class TagCatalogAPIHandler(XSRFTokenMixin, BaseHandler):
+    """Tag names and colors for any signed-in user. Does not expose glob rules."""
+
+    @tornado.web.authenticated
+    def get(self) -> None:
+        conn = self.db_conn
+        rules = list_resource_tags(conn) if conn is not None else []
+        names = sorted({str(r.get("tag") or "") for r in rules if r.get("tag")})
+        colors = get_tag_colors_map(conn) if conn is not None else {}
+        self.set_header("Content-Type", CONTENT_TYPE_JSON)
+        self.write({"names": names, "colors": colors})
+
+
 class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
     """JSON CRUD for tag rules."""
 
@@ -119,6 +160,31 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
             )
         except Exception:
             logger.debug(AUDIT_LOG_FAILED_MSG, exc_info=True)
+
+    @staticmethod
+    def _wants_auto_color(raw) -> bool:
+        if raw is None:
+            return True
+        if isinstance(raw, bool):
+            return raw
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _assign_tag_color(self, tag: str, color_raw, auto_raw):
+        """Set a color for a new tag. Returns hex, None, or False on invalid explicit color."""
+        colors = get_tag_colors_map(self.db_conn)
+        existing = colors.get(tag)
+        if existing:
+            return existing
+        if color_raw is not None and str(color_raw).strip():
+            if not set_tag_color(self.db_conn, tag, str(color_raw)):
+                return False
+            return get_tag_colors_map(self.db_conn).get(tag)
+        if self._wants_auto_color(auto_raw):
+            nxt = next_auto_tag_color(colors.values(), tag)
+            if not set_tag_color(self.db_conn, tag, nxt):
+                return None
+            return nxt
+        return None
 
     def _invalidate_caches(self) -> None:
         try:
@@ -150,6 +216,9 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
     @require_db
     def post(self) -> None:
         payload = self.parse_json_body() or {}
+        if payload.get("import_snapshot"):
+            self._import_snapshot(payload)
+            return
         tag = str(payload.get("tag", "")).strip()
         glob_pattern = str(payload.get("glob_pattern", "")).strip()
         priority = int(payload.get("priority") or 0)
@@ -165,8 +234,6 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
             return
         color_raw = payload.get("color")
         if color_raw is not None and str(color_raw).strip():
-            from aird.utils.tag_display import normalize_tag_color
-
             if normalize_tag_color(color_raw) is None:
                 self.set_status(400)
                 self.write({"error": "Invalid tag color"})
@@ -178,23 +245,75 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
             priority=priority,
             created_by=self.get_display_username(),
         )
+        assigned = self._assign_tag_color(tag, color_raw, payload.get("auto_color"))
+        if assigned is False:
+            if new_id is not None:
+                delete_resource_tag(self.db_conn, int(new_id))
+            self.set_status(400)
+            self.write({"error": "Invalid tag color"})
+            return
         if new_id is None:
             self.set_status(409)
-            self.write({"error": "Tag rule already exists or could not be created"})
+            self.write({
+                "error": "Tag rule already exists or could not be created",
+                "tag": tag,
+                "color": assigned,
+            })
             return
-        if color_raw is not None and str(color_raw).strip():
-            if not set_tag_color(self.db_conn, tag, str(color_raw)):
-                delete_resource_tag(self.db_conn, int(new_id))
-                self.set_status(400)
-                self.write({"error": "Invalid tag color"})
-                return
         self._invalidate_caches()
         self._audit(
             "abac_tag_create",
-            f"id={new_id} tag={tag} glob={glob_pattern} priority={priority}",
+            f"id={new_id} tag={tag} glob={glob_pattern} priority={priority} color={assigned}",
         )
         self.set_status(201)
-        self.write({"id": new_id, "tag": tag, "glob_pattern": glob_pattern, "priority": priority})
+        self.write({
+            "id": new_id,
+            "tag": tag,
+            "glob_pattern": glob_pattern,
+            "priority": priority,
+            "color": assigned,
+        })
+
+    def _import_one_tag_rule(
+        self, tag: str, glob_pattern: str, priority: int, colors: dict
+    ) -> bool:
+        new_id = insert_resource_tag(
+            self.db_conn,
+            tag,
+            glob_pattern,
+            priority=priority,
+            created_by=self.get_display_username(),
+        )
+        if new_id is None:
+            return False
+        color_raw = colors.get(tag)
+        if color_raw:
+            set_tag_color(self.db_conn, tag, str(color_raw))
+        return True
+
+    def _import_snapshot(self, payload: dict) -> None:
+        rules = payload.get("tags")
+        if not isinstance(rules, list):
+            self.set_status(400)
+            self.write({"error": "tags must be a list"})
+            return
+        colors = payload.get("colors") if isinstance(payload.get("colors"), dict) else {}
+        created = 0
+        skipped = 0
+        for row in rules:
+            parsed = _parse_import_tag_row(row)
+            if parsed is None:
+                skipped += 1
+                continue
+            tag, glob_pattern, priority = parsed
+            if self._import_one_tag_rule(tag, glob_pattern, priority, colors):
+                created += 1
+            else:
+                skipped += 1
+        _apply_import_tag_colors(self.db_conn, colors)
+        self._invalidate_caches()
+        self._audit("abac_tag_import", f"created={created} skipped={skipped}")
+        self.write({"ok": True, "created": created, "skipped": skipped})
 
     @tornado.web.authenticated
     @require_admin(deny_status=403, deny_body="Access denied")
@@ -245,12 +364,26 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
         self._audit("abac_tag_delete", f"id={tag_id}")
         self.write({"deleted": True, "id": int(tag_id)})
 
+    def _delete_for_path(self, tag_name: str, glob_pattern: str) -> None:
+        tn = str(tag_name).strip()
+        glob_pattern = str(glob_pattern).strip()
+        if not tn or not glob_pattern:
+            self.set_status(400)
+            self.write({"error": "tag and glob_pattern are required"})
+            return
+        count = delete_resource_tag_for_path(self.db_conn, tn, glob_pattern)
+        self._invalidate_caches()
+        self._audit("abac_tag_untag_path", f"tag={tn} glob={glob_pattern} count={count}")
+        self.write({"deleted": True, "tag": tn, "glob_pattern": glob_pattern, "count": count})
+
     @tornado.web.authenticated
     @require_admin(deny_status=403, deny_body="Access denied")
     @require_db
     def delete(self) -> None:
         payload = self.parse_json_body() or {}
-        if "tag" in payload:
+        if payload.get("tag") and payload.get("glob_pattern"):
+            self._delete_for_path(payload["tag"], payload["glob_pattern"])
+        elif "tag" in payload:
             self._delete_by_name(payload["tag"])
         elif "ids" in payload:
             self._delete_bulk(payload["ids"])
@@ -292,6 +425,61 @@ class AdminTagAPIHandler(XSRFTokenMixin, BaseHandler):
         self._invalidate_caches()
         self._audit("abac_tag_update", f"id={tag_id} tag={tag} glob={glob_pattern} priority={priority}")
         self.write({"updated": True, "id": int(tag_id)})
+
+
+class AdminTagRenameAPIHandler(XSRFTokenMixin, BaseHandler):
+    """Rename a tag across all rules and migrate its color."""
+
+    def _audit(self, action: str, details: str) -> None:
+        try:
+            self.get_service("audit_service").log(
+                self.db_conn,
+                action,
+                username=self.get_display_username(),
+                details=details,
+                ip=self.request.remote_ip,
+            )
+        except Exception:
+            logger.debug(AUDIT_LOG_FAILED_MSG, exc_info=True)
+
+    def _invalidate_caches(self) -> None:
+        try:
+            from aird.db.shares import clear_tag_file_cache
+
+            clear_tag_file_cache()
+        except Exception:
+            logger.debug("clear_tag_file_cache failed", exc_info=True)
+
+    @tornado.web.authenticated
+    @require_admin(deny_status=403, deny_body="Access denied")
+    @require_db
+    def post(self) -> None:
+        payload = self.parse_json_body() or {}
+        old_tag = str(payload.get("old_tag") or "").strip()
+        new_tag = str(payload.get("new_tag") or "").strip()
+        if not old_tag or not new_tag:
+            self.set_status(400)
+            self.write({"error": "old_tag and new_tag are required"})
+            return
+        if old_tag == new_tag:
+            self.write({"ok": True, "old_tag": old_tag, "new_tag": new_tag, "rules_updated": 0})
+            return
+        try:
+            validate_abac_tag_rule(new_tag, "/rename-check")
+        except InputTooLongError:
+            self.set_status(400)
+            self.write({"error": "new_tag exceeds maximum length"})
+            return
+        count = rename_resource_tag_name(self.db_conn, old_tag, new_tag)
+        if count == 0:
+            self.set_status(404)
+            self.write({"error": "Tag not found"})
+            return
+        rename_tag_color(self.db_conn, old_tag, new_tag)
+        self._invalidate_caches()
+        self._audit("abac_tag_rename", f"{old_tag} -> {new_tag} rules={count}")
+        self.set_header("Content-Type", CONTENT_TYPE_JSON)
+        self.write({"ok": True, "old_tag": old_tag, "new_tag": new_tag, "rules_updated": count})
 
 
 class AdminTagColorAPIHandler(XSRFTokenMixin, BaseHandler):

@@ -23,6 +23,13 @@
         <h1 class="aird-page-title">Resource tags</h1>
         <p class="aird-page-lead">Glob patterns map files to ABAC tags consumed by policies.</p>
       </div>
+      <div class="flex flex-wrap gap-2">
+        <button type="button" id="tagExportBtn" class="btn btn-sm btn-ghost border border-base-300">Export JSON</button>
+        <label class="btn btn-sm btn-ghost border border-base-300 cursor-pointer">
+          Import JSON
+          <input type="file" id="tagImportFile" class="hidden" accept="application/json,.json" />
+        </label>
+      </div>
     </header>
 
     {% if error %}
@@ -74,13 +81,16 @@
           <div class="rounded-lg border border-base-300 bg-base-200/50 p-3 flex flex-col gap-2">
             <div class="flex items-center gap-2 flex-wrap">
               {% set _chip_color = tag_colors.get(utag) %}
-              <a href="/tagged/{{ escape(utag) }}" class="file-tag-chip"{% if _chip_color %} style="{{ tag_chip_style(_chip_color) }}"{% end %}>{{ escape(utag) }}</a>
-              <label class="flex items-center gap-1 text-xs text-base-content/70" title="Tag color">
-                <span class="sr-only">Color for {{ escape(utag) }}</span>
-                <input type="color" class="tag-color-input w-8 h-8 p-0 border border-base-300 rounded cursor-pointer"
-                       data-tag="{{ escape(utag) }}"
-                       value="{{ tag_colors.get(utag, '#6366f1') }}" />
+              <a href="/tagged/{{ escape(utag) }}" class="file-tag-chip" data-tag="{{ escape(utag) }}"{% if _chip_color %} style="{{ tag_chip_style(_chip_color) }}"{% end %}>{{ escape(utag) }}</a>
+              <label class="tag-color-btn tag-color-btn--chip" for="tagColorInput-{{ loop.index }}"
+                style="--tag-swatch: {{ escape(_chip_color or '#6366f1') }}" title="Change tag color">
+                <span class="tag-color-btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="0.5" fill="currentColor"/><circle cx="17.5" cy="10.5" r="0.5" fill="currentColor"/><circle cx="8.5" cy="7.5" r="0.5" fill="currentColor"/><circle cx="6.5" cy="12.5" r="0.5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg></span>
+                <span class="tag-color-btn-dot"></span>
+                <input type="color" class="tag-color-btn-input" id="tagColorInput-{{ loop.index }}"
+                  data-tag="{{ escape(utag) }}" value="{{ escape(_chip_color or '#6366f1') }}"
+                  aria-label="Color for {{ escape(utag) }}" />
               </label>
+              <button type="button" class="btn btn-xs btn-ghost rename-tag-btn" data-tag="{{ escape(utag) }}">Rename</button>
               <span class="text-xs text-base-content/50">{{ len([t for t in tags if t['tag'] == utag]) }} pattern(s)</span>
             </div>
             <div class="flex gap-2 flex-wrap">
@@ -225,27 +235,128 @@
       });
     }
 
-    document.querySelectorAll('.tag-color-input').forEach(function (input) {
+    function tagChipColors(hex) {
+      if (!hex || typeof hex !== 'string') return null;
+      const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
+      if (!m) return null;
+      const r = Number.parseInt(m[1].slice(0, 2), 16);
+      const g = Number.parseInt(m[1].slice(2, 4), 16);
+      const b = Number.parseInt(m[1].slice(4, 6), 16);
+      const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+      const norm = '#' + m[1].toLowerCase();
+      return {
+        bg: norm,
+        fg: lum > 0.55 ? '#111827' : '#f9fafb',
+        border: 'color-mix(in oklch, ' + norm + ' 65%, transparent)',
+      };
+    }
+
+    function paintTagColor(tag, hex) {
+      const vars = tagChipColors(hex);
+      if (!vars) return;
+      document.querySelectorAll('.file-tag-chip[data-tag="' + CSS.escape(tag) + '"]').forEach(function (chip) {
+        chip.style.background = vars.bg;
+        chip.style.color = vars.fg;
+        chip.style.borderColor = vars.border;
+      });
+      document.querySelectorAll('input.tag-color-btn-input[data-tag="' + CSS.escape(tag) + '"]').forEach(function (input) {
+        input.value = vars.bg;
+        input.closest('.tag-color-btn')?.style.setProperty('--tag-swatch', vars.bg);
+      });
+    }
+
+    function broadcastTagColor(tag, hex) {
+      if (typeof BroadcastChannel === 'undefined') return;
+      try {
+        const bc = new BroadcastChannel('aird.tag-color.v1');
+        bc.postMessage({ tag: tag, hex: hex });
+        bc.close();
+      } catch { /* ignore */ }
+    }
+
+    document.querySelectorAll('input.tag-color-btn-input').forEach(function (input) {
+      input.addEventListener('input', function () {
+        paintTagColor(input.dataset.tag, input.value);
+      });
       input.addEventListener('change', async function () {
         const tag = input.dataset.tag;
         const color = input.value;
+        paintTagColor(tag, color);
         try {
           const res = await colorApi(tag, color);
           if (!res.ok) {
             const b = await res.json().catch(() => ({}));
             throw new Error(b.error || 'HTTP ' + res.status);
           }
-          const chip = input.closest('.flex')?.querySelector('.file-tag-chip');
-          if (chip) {
-            chip.style.cssText = '';
-            chip.style.background = color;
-            chip.style.borderColor = color;
-            chip.style.color = '#111827';
-          }
+          const body = await res.json().catch(() => ({}));
+          const saved = body.color || color;
+          paintTagColor(tag, saved);
+          broadcastTagColor(tag, saved);
         } catch (err) {
           globalThis.alert('Failed to save tag color: ' + (err.message || err));
         }
       });
+    });
+
+    document.getElementById('tagExportBtn')?.addEventListener('click', async function () {
+      try {
+        const res = await fetch('/admin/api/abac/tags', { headers: { 'X-XSRFToken': xsrfToken } });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'aird-tags-export.json';
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert('Export failed: ' + (err.message || err));
+      }
+    });
+
+    document.getElementById('tagImportFile')?.addEventListener('change', async function () {
+      const file = this.files?.[0];
+      this.value = '';
+      if (!file) return;
+      if (!confirm('Import tag rules from file? Existing rules with the same glob are skipped (duplicates).')) return;
+      try {
+        const text = await file.text();
+        const snapshot = JSON.parse(text);
+        const res = await fetch('/admin/api/abac/tags', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-XSRFToken': xsrfToken },
+          body: JSON.stringify({ import_snapshot: true, tags: snapshot.tags || [], colors: snapshot.colors || {} }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || 'HTTP ' + res.status);
+        alert('Import complete: ' + (body.created || 0) + ' created, ' + (body.skipped || 0) + ' skipped.');
+        globalThis.location.reload();
+      } catch (err) {
+        alert('Import failed: ' + (err.message || err));
+      }
+    });
+
+    document.addEventListener('click', async function (ev) {
+      const btn = ev.target.closest('.rename-tag-btn');
+      if (!btn) return;
+      const oldTag = btn.dataset.tag || '';
+      const newTag = globalThis.prompt('Rename tag "' + oldTag + '" to:', oldTag);
+      if (newTag == null) return;
+      const trimmed = newTag.trim();
+      if (!trimmed || trimmed === oldTag) return;
+      try {
+        const res = await fetch('/admin/api/abac/tag-rename', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-XSRFToken': xsrfToken },
+          body: JSON.stringify({ old_tag: oldTag, new_tag: trimmed }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || 'HTTP ' + res.status);
+        globalThis.location.reload();
+      } catch (err) {
+        alert('Rename failed: ' + (err.message || err));
+      }
     });
 
     // ── Create ────────────────────────────────────────────────────────────────

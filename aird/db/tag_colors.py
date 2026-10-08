@@ -44,6 +44,20 @@ def delete_tag_color(conn: sqlite3.Connection | None, tag: str) -> bool:
         return False
 
 
+def rename_tag_color(conn: sqlite3.Connection | None, old_tag: str, new_tag: str) -> bool:
+    if conn is None or not old_tag or not new_tag or old_tag == new_tag:
+        return False
+    colors = get_tag_colors_map(conn)
+    old_hex = colors.get(old_tag)
+    if not old_hex:
+        delete_tag_color(conn, old_tag)
+        return True
+    if new_tag not in colors:
+        set_tag_color(conn, new_tag, old_hex)
+    delete_tag_color(conn, old_tag)
+    return True
+
+
 def get_tag_colors_map(conn: sqlite3.Connection | None) -> dict[str, str]:
     """Map tag name → #rrggbb color."""
     if conn is None:

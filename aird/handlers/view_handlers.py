@@ -12,6 +12,8 @@ from aird.handlers.base_handler import (
     get_username_string_for_db,
     get_user_root,
     require_action,
+    require_feature_flag,
+    resolve_handler_rel,
 )
 from aird.utils.tag_display import tag_chip_inline_style
 from aird.utils.util import (
@@ -29,6 +31,7 @@ from aird.core.security import (  # noqa: F401
     is_valid_websocket_origin,
     join_path,
 )
+from aird.core.image_preview import inline_preview_payload
 from aird.core.mmap_handler import MMapFileHandler
 from aird.config import (
     MAX_READABLE_FILE_SIZE,
@@ -56,6 +59,7 @@ from aird.db.tag_colors import get_tag_colors_map
 DOWNLOAD_DISABLED_MSG = (
     "Feature disabled: File download is currently disabled by administrator"
 )
+_ACCESS_DENIED = "Access denied: You don't have permission to perform this action"
 
 
 async def _serve_download(handler, abspath, filename):
@@ -206,6 +210,15 @@ def _raw_mode_allows_same_origin_frame(mime_type: str, abspath: str) -> bool:
 async def _serve_raw_mode(handler, abspath):
     """Serve raw file content (inline) for client-side consumption."""
     try:
+        preview = inline_preview_payload(abspath)
+        if preview:
+            data, mime_type = preview
+            handler.set_header("Content-Type", mime_type)
+            handler.set_header("Content-Disposition", "inline")
+            handler.set_header("X-Frame-Options", "SAMEORIGIN")
+            handler.set_header("Content-Length", str(len(data)))
+            handler.write(data)
+            return
         mime_type = APPLICATION_OCTET_STREAM
         try:
             guessed_type, _ = mimetypes.guess_type(abspath)
@@ -243,10 +256,9 @@ def _request_file_base(handler) -> str:
     return handler.request.path.split("?", 1)[0]
 
 
-def _serve_file_view(handler, abspath, filename, user_root):
+def _serve_file_view(handler, abspath, filename, rel_path):
     """Render file view template (client-side fetch)."""
     file_size = get_file_size_safe(abspath)
-    rel_path = os.path.relpath(abspath, user_root).replace("\\", "/")
     handler.render(
         "file.html",
         filename=filename,
@@ -259,10 +271,9 @@ def _serve_file_view(handler, abspath, filename, user_root):
     )
 
 
-def _serve_media_view(handler, abspath, filename, user_root, media_kind: str):
+def _serve_media_view(handler, abspath, filename, rel_path, media_kind: str):
     """Render inline image/PDF viewer (browser-native display via ?mode=raw)."""
     file_size = get_file_size_safe(abspath)
-    rel_path = os.path.relpath(abspath, user_root).replace("\\", "/")
     base = _request_file_base(handler)
     media_src = f"{base}?mode=raw"
     download_href = f"{base}?download=1"
@@ -291,6 +302,14 @@ class MainHandler(BaseHandler):
             return
 
         files = get_files_in_directory(abspath)
+        from aird.core.browse_paths import mounts_for_username, overlay_mount_entries
+
+        if not path:
+            overlay_mount_entries(
+                files,
+                mounts_for_username(self.db_conn, get_username_string_for_db(self) or ""),
+                path,
+            )
 
         db_conn = self.db_conn
         user_root = get_user_root(self)
@@ -350,14 +369,15 @@ class MainHandler(BaseHandler):
         )
 
     async def _handle_file_path(self, path: str) -> None:
-        user_root = get_user_root(self)
-        abspath = os.path.abspath(os.path.join(user_root, path))
-
-        if not is_within_root(abspath, user_root):
+        abspath, confine = resolve_handler_rel(self, path)
+        if not abspath or not confine:
             self.set_status(403)
-            self.write(
-                "Access denied: You don't have permission to perform this action"
-            )
+            self.write(_ACCESS_DENIED)
+            return
+
+        if not is_within_root(abspath, confine):
+            self.set_status(403)
+            self.write(_ACCESS_DENIED)
             return
 
         if os.path.isdir(abspath):
@@ -369,7 +389,7 @@ class MainHandler(BaseHandler):
             return
 
         if os.path.isfile(abspath):
-            await self.serve_file(self, abspath, user_root)
+            await self.serve_file(self, abspath, virtual_rel=path)
             return
 
         self.set_status(404)
@@ -386,11 +406,13 @@ class MainHandler(BaseHandler):
         await self._handle_file_path(path)
 
     @staticmethod
-    async def serve_file(handler, abspath, user_root=None):
-        if user_root is None:
-            user_root = get_user_root(handler)
+    async def serve_file(handler, abspath, user_root=None, virtual_rel=None):
         filename = os.path.basename(abspath)
-        rel_path = os.path.relpath(abspath, user_root).replace("\\", "/")
+        rel_path = (virtual_rel or "").replace("\\", "/").strip("/")
+        if not rel_path:
+            if user_root is None:
+                user_root = get_user_root(handler)
+            rel_path = os.path.relpath(abspath, user_root).replace("\\", "/")
         file_size = get_file_size_safe(abspath)
 
         if handler.get_argument("download", None):
@@ -418,29 +440,33 @@ class MainHandler(BaseHandler):
             return
         media_kind = browser_media_kind(filename)
         if media_kind:
-            _serve_media_view(handler, abspath, filename, user_root, media_kind)
+            _serve_media_view(handler, abspath, filename, rel_path, media_kind)
             return
-        _serve_file_view(handler, abspath, filename, user_root)
+        _serve_file_view(handler, abspath, filename, rel_path)
 
 
 class EditViewHandler(BaseHandler):
     @tornado.web.authenticated
     @require_action("file.write", resource_arg="path")
+    @require_feature_flag(
+        "file_edit",
+        body="Feature disabled: File editing is currently disabled by administrator",
+    )
     async def get(self, path):
-        if not self.require_feature(
-            "file_edit",
-            True,
-            body="Feature disabled: File editing is currently disabled by administrator",
-        ):
-            return
 
-        user_root = get_user_root(self)
-        abspath = os.path.abspath(os.path.join(user_root, path))
-        if not is_within_root(abspath, user_root):
+        from aird.core.browse_paths import mounts_for_username, write_blocked_reason
+
+        if write_blocked_reason(
+            path,
+            mounts_for_username(self.db_conn, get_username_string_for_db(self) or ""),
+        ):
             self.set_status(403)
-            self.write(
-                "Access denied: You don't have permission to perform this action"
-            )
+            self.write(_ACCESS_DENIED)
+            return
+        abspath, confine = resolve_handler_rel(self, path)
+        if not abspath or not confine or not is_within_root(abspath, confine):
+            self.set_status(403)
+            self.write(_ACCESS_DENIED)
             return
         if not os.path.isfile(abspath):
             self.set_status(404)
@@ -469,9 +495,10 @@ class EditViewHandler(BaseHandler):
             if MMapFileHandler.should_use_mmap(file_size):
                 # For large files, still use mmap but in a thread to avoid blocking
                 def read_mmap():
-                    with open(abspath, "rb") as f:
-                        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-                            return mm[:].decode("utf-8", errors="replace")
+                    with open(abspath, "rb") as f, mmap.mmap(
+                        f.fileno(), 0, access=mmap.ACCESS_READ
+                    ) as mm:
+                        return mm[:].decode("utf-8", errors="replace")
 
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     full_file_content = await asyncio.get_event_loop().run_in_executor(

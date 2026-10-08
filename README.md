@@ -125,6 +125,29 @@ Logged-in DB/LDAP users only (not token-only sessions).
 
 ---
 
+## GitLab (experimental)
+
+Enable under **Admin → Plugins (experimental)**. Flag `gitlab_integration`.
+
+- Bind a folder to a **code** project (CI, MRs) and a possibly different **issues** project (board, tickets).
+- Folder owner: save a PAT on the machine (`{home}/.aird/secrets/gitlab_token`) or use `GITLAB_TOKEN` / `glab`. Aird calls GitLab on the server.
+- Share viewers: their PAT stays in the **browser** (`localStorage`). Aird never uses the owner token for them.
+- File comments are stored in Aird and visible to anyone who can see the file. Promote a comment onto a GitLab issue.
+- Copilot MCP: `aird-gitlab-mcp` (stdio). Set `AIRD_URL` and `AIRD_TOKEN`. Optional CORS helper: `aird-gitlab-mcp --bridge` on `127.0.0.1:8765`.
+
+```json
+{
+  "mcpServers": {
+    "aird-gitlab": {
+      "command": "aird-gitlab-mcp",
+      "env": { "AIRD_URL": "http://127.0.0.1:8000", "AIRD_TOKEN": "…" }
+    }
+  }
+}
+```
+
+---
+
 ## Configuration
 
 ### `config.json`
@@ -147,6 +170,7 @@ Logged-in DB/LDAP users only (not token-only sessions).
     "file_upload": true,
     "super_search": true,
     "direct_messages": false,
+    "gitlab_integration": false,
     "abac_engine": false
   }
 }
@@ -222,6 +246,7 @@ Authentication: session cookie after `/login`, bearer token, or `Authorization` 
 | Log stream | WebSocket `/stream/{path}` |
 | Shares | `POST /share/create`, `GET /share/list`, … |
 | Chat (optional) | `GET /chat`, `GET/POST /api/chat/conversations`, WebSocket `/ws/chat` |
+| GitLab (optional) | `/api/gitlab/*`, WebSocket `/ws/file-comments` |
 | Health | `GET /health` |
 
 Page-level UI contracts and routes are documented under [`docs/`](docs/README.md).

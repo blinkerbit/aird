@@ -20,6 +20,7 @@ INVALID_JSON_MSG = "Invalid JSON."
 ACCESS_DENIED_MSG = "Access denied"
 
 FILES_BASE_URL = "/files/"
+LOGIN_URL = "/login"
 LOGIN_HTML = "login.html"
 TOO_MANY_LOGIN_ATTEMPTS_MSG = "Too many login attempts. Please try again later."
 INVALID_INPUT_LENGTH_MSG = "Invalid input length."

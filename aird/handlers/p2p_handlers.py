@@ -10,7 +10,12 @@ from typing import Dict, Optional
 import tornado.web
 import tornado.websocket
 
-from aird.handlers.base_handler import BaseHandler, authenticate_handler, require_action
+from aird.handlers.base_handler import (
+    BaseHandler,
+    authenticate_handler,
+    require_action,
+    require_feature_flag,
+)
 import aird.constants as constants_module
 from aird.core.events import TransferStartedEvent, now_ts
 from aird.core.security import is_valid_websocket_origin
@@ -210,13 +215,11 @@ class P2PTransferHandler(BaseHandler):
             room_join_error=room_join_error,
         )
 
+    @require_feature_flag(
+        "p2p_transfer",
+        body="Feature disabled: P2P Transfer is currently disabled by administrator",
+    )
     def get(self):
-        if not self.require_feature(
-            "p2p_transfer",
-            True,
-            body="Feature disabled: P2P Transfer is currently disabled by administrator",
-        ):
-            return
 
         room_id = self.get_argument("room", None)
         current_user = self.get_current_user()

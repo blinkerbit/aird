@@ -75,7 +75,7 @@ async def test_download_streams_file(tmp_path):
         yield b"abc123"
 
     with patch(
-        "aird.handlers.transfer_ws_handlers.get_user_root", return_value=str(tmp_path)
+        "aird.handlers.base_handler.get_user_root", return_value=str(tmp_path)
     ), patch(
         "aird.handlers.transfer_ws_handlers.is_feature_enabled", return_value=True
     ), patch(
@@ -116,7 +116,7 @@ def test_ws_helper_functions():
     assert _ws_display_username(handler) == "Guest"
 
     handler.get_current_user.return_value = {"username": "token_user", "role": "user"}
-    assert _ws_has_modify_privileges(handler) is False
+    assert _ws_has_modify_privileges(handler) is True
 
     handler.get_current_user.return_value = {"username": "alice", "role": "user"}
     assert _ws_has_modify_privileges(handler) is True

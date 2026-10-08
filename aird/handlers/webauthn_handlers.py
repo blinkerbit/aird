@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import functools
 import json
 import logging
 from typing import Any
@@ -48,6 +50,34 @@ def _webauthn_enabled() -> bool:
     return is_feature_enabled("webauthn", False)
 
 
+def _require_webauthn(method):
+    """404 when the webauthn feature flag is off."""
+
+    def _disabled(self) -> None:
+        self.set_status(404)
+        self.finish()
+
+    if asyncio.iscoroutinefunction(method):
+
+        @functools.wraps(method)
+        async def async_wrapper(self, *args, **kwargs):
+            if not _webauthn_enabled():
+                _disabled(self)
+                return None
+            return await method(self, *args, **kwargs)
+
+        return async_wrapper
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        if not _webauthn_enabled():
+            _disabled(self)
+            return None
+        return method(self, *args, **kwargs)
+
+    return wrapper
+
+
 def _write_json(handler: BaseHandler, payload: dict[str, Any], *, status: int | None = None) -> None:
     if status is not None:
         handler.set_status(status)
@@ -87,22 +117,16 @@ def _decode_challenge_from_credential(credential) -> bytes | None:
 class WebAuthnStatusHandler(BaseHandler):
     """Public status for client feature detection."""
 
+    @_require_webauthn
     def get(self):
-        if not _webauthn_enabled():
-            self.set_status(404)
-            self.finish()
-            return
         rp_id, _, _ = resolve_webauthn_config(self)
         _write_json(self, {"enabled": True, "rpId": rp_id})
 
 
 class WebAuthnRegisterOptionsHandler(BaseHandler):
     @tornado.web.authenticated
+    @_require_webauthn
     async def post(self):
-        if not _webauthn_enabled():
-            self.set_status(404)
-            self.finish()
-            return
         user = self.current_user
         if not isinstance(user, dict) or not user.get("username"):
             _write_json_error(self, 403, "Passkeys require a full user account.")
@@ -198,11 +222,8 @@ def _verify_registration(db_conn, username: str, body: dict[str, Any], credentia
 
 class WebAuthnRegisterVerifyHandler(BaseHandler):
     @tornado.web.authenticated
+    @_require_webauthn
     async def post(self):
-        if not _webauthn_enabled():
-            self.set_status(404)
-            self.finish()
-            return
         user = self.current_user
         if not isinstance(user, dict) or not user.get("username"):
             _write_json_error(self, 403, "Forbidden")
@@ -239,12 +260,8 @@ class WebAuthnRegisterVerifyHandler(BaseHandler):
 
 
 class WebAuthnAuthOptionsHandler(BaseHandler):
+    @_require_webauthn
     async def post(self):
-        if not _webauthn_enabled():
-            self.set_status(404)
-            self.finish()
-            return
-
         db_conn = _require_db_conn(self)
         if not db_conn:
             return
@@ -283,11 +300,8 @@ class WebAuthnAuthOptionsHandler(BaseHandler):
 
 
 class WebAuthnAuthVerifyHandler(BaseHandler):
+    @_require_webauthn
     async def post(self):
-        if not _webauthn_enabled():
-            self.set_status(404)
-            self.finish()
-            return
 
         if not check_login_rate_limit(self.request.remote_ip):
             _write_json_error(self, 429, "Too many login attempts.")
@@ -362,11 +376,8 @@ class WebAuthnAuthVerifyHandler(BaseHandler):
 
 class WebAuthnCredentialDeleteHandler(BaseHandler):
     @tornado.web.authenticated
+    @_require_webauthn
     async def delete(self, cred_id):
-        if not _webauthn_enabled():
-            self.set_status(404)
-            self.finish()
-            return
         user = self.current_user
         if not isinstance(user, dict) or not user.get("username"):
             self.set_status(403)

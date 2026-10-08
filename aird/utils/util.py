@@ -15,7 +15,7 @@ from aird.constants import (
 from aird.constants.media import (
     VIDEO_EXTENSIONS,
     AUDIO_EXTENSIONS,
-    IMAGE_BROWSER_EXTENSIONS,
+    IMAGE_VIEWER_EXTENSIONS,
     PDF_BROWSER_EXTENSION,
     SPECIAL_FILENAMES,
     EXTENSION_ICONS,
@@ -310,12 +310,14 @@ def _format_child_count(count: int) -> str:
 
 def is_upload_staging_filename(name: str) -> bool:
     """Temp files created during in-progress uploads — never show in browse."""
-    return (
-        name.startswith(".aird_up_")
-        or name.startswith(".aird_range_")
-        or name.startswith(".aird_bulk_")
-        or name.startswith("aird_range_request_")
-        or name.startswith("aird_ws_upload_")
+    return name.startswith(
+        (
+            ".aird_up_",
+            ".aird_range_",
+            ".aird_bulk_",
+            "aird_range_request_",
+            "aird_ws_upload_",
+        )
     )
 
 
@@ -324,12 +326,12 @@ def get_files_in_directory(path="."):
     # Materialize once so we can skip per-dir child counts on large listings.
     entries = list(os.scandir(path))
     skip_child_counts = len(entries) > 80
-    from aird.constants import CHAT_SHARE_FOLDER
+    from aird.constants import AIRD_META_FOLDER, CHAT_SHARE_FOLDER, CHAT_STORE_FOLDER
 
     for entry in entries:
         if is_upload_staging_filename(entry.name):
             continue
-        if entry.name == CHAT_SHARE_FOLDER:
+        if entry.name in (CHAT_SHARE_FOLDER, CHAT_STORE_FOLDER, AIRD_META_FOLDER):
             continue
         stat = entry.stat()
         is_dir = entry.is_dir()
@@ -374,9 +376,9 @@ def is_audio_file(filename):
 
 
 def is_image_file(filename):
-    """True when the file can be shown inline in the browser as an image."""
+    """True when the file should open in the image viewer (including camera RAW)."""
     ext = os.path.splitext(filename)[1].lower()
-    return ext in IMAGE_BROWSER_EXTENSIONS
+    return ext in IMAGE_VIEWER_EXTENSIONS
 
 
 def is_pdf_file(filename):

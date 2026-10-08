@@ -2,11 +2,13 @@
  * Web Worker entry for Aird transfer engine.
  */
 importScripts(
-  '/static/js/transfer-engine/hasher.js?v=20260724a',
-  '/static/js/transfer-engine/worker-lib.js?v=20260725c'
+  './hasher.js?v=20260724a',
+  './worker-lib.js?v=20260725c'
 );
 
 globalThis.onmessage = (ev) => {
+  // DedicatedWorkers report empty origin; reject only cross-origin messages.
+  if (ev.origin && ev.origin !== globalThis.location.origin) return;
   const data = ev.data || {};
   const { type, jobId } = data;
 

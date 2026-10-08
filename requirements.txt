@@ -1,11 +1,14 @@
-pip==25.1.1
-setuptools==80.3.1
-wheel==0.45.1
-tornado>=6.5.1
+pip==26.2.1
+setuptools==83.0.0
+wheel==0.46.2
+tornado>=6.5.9
 ldap3>=2.9.1
 aiofiles>=23.0.0
 argon2-cffi>=23.1.0
-requests>=2.31.0
+requests>=2.32.4
+urllib3>=2.8.0
+cryptography>=50.0.0
 chardet>=5.0.0,<6.0.0
-pyasn1>=0.6.2
-# Optional: pip install zstandard brotli  (or: pip install aird[compress])
+pyasn1>=0.6.4
+watchdog>=4.0.0
+pywebpush>=1.14.0
