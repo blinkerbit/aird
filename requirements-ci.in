@@ -16,7 +16,7 @@ aiofiles==24.1.0
 argon2-cffi==25.1.0
 requests==2.32.4
 urllib3==2.8.0
-cryptography==50.0.0
+cryptography==50.0.2
 chardet==5.2.0
 pyasn1==0.6.4
 webauthn==2.5.0
