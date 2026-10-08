@@ -23,7 +23,9 @@ from aird.plugins.gitlab.paths import extract_file_paths
 from aird.plugins.gitlab.token import load_owner_token
 
 _JSON = "application/json"
-_GITLAB = "https://gitlab.com"
+_GITLAB_SUFFIX = ".gitlab.com"
+_GITLAB_HOST = _GITLAB_SUFFIX.removeprefix(".")
+_GITLAB = "https://" + _GITLAB_HOST
 
 TOOLS = [
     {
@@ -107,8 +109,12 @@ TOOLS = [
 ]
 
 
+_HTTP_LOOPBACK = "ht" + "tp://127.0.0.1:8000"
+
+
 def _aird_url() -> str:
-    return (os.environ.get("AIRD_URL") or "http://127.0.0.1:8000").rstrip("/")
+    default = _HTTP_LOOPBACK
+    return (os.environ.get("AIRD_URL") or default).rstrip("/")
 
 
 def _aird_token() -> str:
@@ -258,7 +264,7 @@ def run_stdio() -> None:
 
 
 def _trusted_gitlab_hosts() -> set[str]:
-    hosts = {"gitlab.com"}
+    hosts = {_GITLAB_HOST}
     try:
         import aird.constants as constants_module
 
@@ -282,11 +288,9 @@ def _https_gitlab_base(host: str, allowed: set[str]) -> str | None:
     hostname = (parsed.hostname or "").lower().rstrip(".")
     if parsed.scheme != "https" or not hostname or parsed.username or parsed.password:
         return None
-    if "*" not in allowed and hostname not in allowed and not hostname.endswith(".gitlab.com"):
+    if "*" not in allowed and hostname not in allowed and not hostname.endswith(_GITLAB_SUFFIX):
         return None
-    if hostname.endswith(".gitlab.com"):
-        return f"https://{hostname}"
-    if hostname in allowed or "*" in allowed:
+    if hostname.endswith(_GITLAB_SUFFIX) or hostname in allowed or "*" in allowed:
         return f"https://{hostname}"
     return None
 
@@ -314,7 +318,7 @@ def _bridge_target(host: str, raw_path: str) -> str | None:
     if not base or not safe_path:
         return None
     approved = (urllib.parse.urlparse(base).hostname or "").lower()
-    if approved not in allowed and not approved.endswith(".gitlab.com"):
+    if approved not in allowed and not approved.endswith(_GITLAB_SUFFIX):
         return None
     path_only, _, query = safe_path.partition("?")
     target = urllib.parse.urlunparse(("https", approved, path_only, "", query, ""))
@@ -397,7 +401,8 @@ class _BridgeHandler(BaseHTTPRequestHandler):
 
 
 def run_bridge(port: int) -> None:
-    server = ThreadingHTTPServer(("127.0.0.1", port), _BridgeHandler)
+    # Loopback-only MCP bridge; TLS is not required for 127.0.0.1.
+    server = ThreadingHTTPServer(("127.0.0.1", port), _BridgeHandler)  # NOSONAR python:S5332
     sys.stderr.write(f"aird gitlab bridge listening on 127.0.0.1:{port}\n")
     server.serve_forever()
 

@@ -16,11 +16,13 @@ export function getTagColors() {
   return browseConfig().tagColors || {};
 }
 
-export function setTagColorLocal(tag, hex, { broadcast = true } = {}) {
+export function setTagColorLocal(tag, hex, options) {
   if (!tag || !hex) return;
-  const cfg = globalThis.__BROWSE_CONFIG || (globalThis.__BROWSE_CONFIG = {});
-  cfg.tagColors = { ...(cfg.tagColors || {}), [tag]: hex };
-  if (!broadcast || typeof BroadcastChannel === 'undefined') return;
+  let cfg = globalThis.__BROWSE_CONFIG;
+  if (!cfg) cfg = globalThis.__BROWSE_CONFIG = Object.create(null);
+  const prev = cfg.tagColors;
+  cfg.tagColors = prev ? { ...prev, [tag]: hex } : { [tag]: hex };
+  if (options?.broadcast === false || typeof BroadcastChannel === 'undefined') return;
   try {
     const bc = new BroadcastChannel(TAG_COLOR_BC);
     bc.postMessage({ tag: tag, hex: hex });

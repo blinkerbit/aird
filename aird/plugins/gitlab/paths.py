@@ -38,7 +38,7 @@ def _looks_like_path(text: str) -> bool:
     if not text or len(text) > 512:
         return False
     lower = text.lower()
-    if lower.startswith("#") or lower.startswith("mailto:"):
+    if lower.startswith(("#", "mailto:")):
         return False
     if urlparse(text).scheme.lower() in _WEB_SCHEMES:
         return False
@@ -127,6 +127,28 @@ def collect_paths_from_text(
     return found
 
 
+def _strip_path_prefix(path: str, prefix: str) -> str:
+    if prefix and path.startswith(prefix + "/"):
+        return path[len(prefix) + 1 :]
+    return path
+
+
+def _mention_refers_to_name(rel: str, name: str) -> bool:
+    base = rel.split("/")[-1] if "/" in rel else rel
+    return name == base or name == rel or rel.endswith("/" + name)
+
+
+def _normalize_bind_path(mention: str, prefix: str, folder: str) -> str:
+    rel = mention.replace("\\", "/").strip("/")
+    rel = _strip_path_prefix(rel, prefix)
+    return _strip_path_prefix(rel, folder)
+
+
+def _record_bind_hit(hits: dict[str, list[str]], name: str, mention: str) -> None:
+    if mention not in hits[name]:
+        hits[name].append(mention)
+
+
 def bind_matches_name(
     names: list[str],
     mentioned: list[str],
@@ -139,14 +161,8 @@ def bind_matches_name(
     folder = (folder_rel or "").replace("\\", "/").strip("/")
     hits: dict[str, list[str]] = {n: [] for n in names}
     for mention in mentioned:
-        m = mention.replace("\\", "/").strip("/")
-        if prefix and m.startswith(prefix + "/"):
-            m = m[len(prefix) + 1 :]
-        if folder and m.startswith(folder + "/"):
-            m = m[len(folder) + 1 :]
-        base = m.split("/")[-1] if "/" in m else m
+        rel = _normalize_bind_path(mention, prefix, folder)
         for name in names:
-            if name == base or name == m or m.endswith("/" + name):
-                if mention not in hits[name]:
-                    hits[name].append(mention)
+            if _mention_refers_to_name(rel, name):
+                _record_bind_hit(hits, name, mention)
     return hits

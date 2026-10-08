@@ -2,7 +2,15 @@
 
 import { clearTokens, isSignedIn, loadTokens } from './tokens.js';
 import { ensureSignedIn, ensureAccessToken, finishCallback, startRedirectLogin, startDeviceCode, pollDeviceCode } from './auth.js';
-import { getDefaultSave, setDefaultSave, getConflictPolicy, setConflictPolicy, getAuthMode, setAuthMode, getLocalAppConfig, setLocalAppConfig, clearLocalAppConfig, DEFAULT_PATH } from './settings.js';
+import {
+  getDefaultSave,
+  setDefaultSave,
+  getConflictPolicy,
+  setConflictPolicy,
+  getLocalAppConfig,
+  setLocalAppConfig,
+  DEFAULT_PATH,
+} from './settings.js';
 import {
   ensureFolderPath,
   resolveDefaultFolderId,
@@ -10,7 +18,6 @@ import {
   showFolderPicker,
   listChildren,
   downloadItemText,
-  listFolders,
   uploadBlob,
   showFilePicker,
 } from './graph.js';
@@ -39,11 +46,19 @@ function reportProgress(onProgress, info) {
   if (TT?.updateOneDriveCopy) TT.updateOneDriveCopy(info);
 }
 
-export async function copyItems(items, { folderId, onProgress } = {}) {
+async function* eachCopyItem(items) {
+  for (const item of items) {
+    yield item;
+  }
+}
+
+export async function copyItems(items, opts) {
+  const folderId = opts?.folderId;
+  const onProgress = opts?.onProgress;
   const token = await ensureSignedIn({ returnTo: globalThis.location.href });
   if (!token) return null;
   let uploaded = 0;
-  for (const item of items) {
+  for await (const item of eachCopyItem(items)) {
     uploaded += await uploadTree(token, folderId, item.path, !!item.isDir, (info) => {
       reportProgress(onProgress, { ...info, item: item.path });
     });
@@ -154,14 +169,15 @@ function isSignedInSync() {
   }
 }
 
+export { isSignedIn, loadTokens } from './tokens.js';
 export {
-  isSignedIn,
-  loadTokens,
   ensureAccessToken,
   ensureSignedIn,
   startRedirectLogin,
   startDeviceCode,
   pollDeviceCode,
+} from './auth.js';
+export {
   getDefaultSave,
   setDefaultSave,
   getConflictPolicy,
@@ -171,13 +187,15 @@ export {
   getLocalAppConfig,
   setLocalAppConfig,
   clearLocalAppConfig,
+  DEFAULT_PATH,
+} from './settings.js';
+export {
   showFolderPicker,
   ensureFolderPath,
   listChildren,
   downloadItemText,
   listFolders,
-  DEFAULT_PATH,
-};
+} from './graph.js';
 
 globalThis.AirdOneDriveFe = {
   copyToDefault,

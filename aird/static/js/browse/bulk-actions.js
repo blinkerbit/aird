@@ -144,36 +144,46 @@ async function listDirectoryForDownload(remotePath) {
   return Array.isArray(data.files) ? data.files : [];
 }
 
-async function walkDownloadTree(dir, dirEntries, listFn, seen, files) {
-  for (const entry of dirEntries) {
-    const child = dir ? `${dir}/${entry.name}` : entry.name;
-    if (entry.is_dir) {
-      const sub = await listFn(child);
-      if (sub?.length) await walkDownloadTree(child, sub, listFn, seen, files);
-    } else if (!seen.has(child)) {
-      seen.add(child);
-      files.push(child);
-    }
+async function walkDownloadTreeEntry(dir, entry, listFn, seen, files) {
+  const child = dir ? `${dir}/${entry.name}` : entry.name;
+  if (entry.is_dir) {
+    const sub = await listFn(child);
+    if (sub?.length) await walkDownloadTree(child, sub, listFn, seen, files);
+    return;
   }
+  if (!seen.has(child)) {
+    seen.add(child);
+    files.push(child);
+  }
+}
+
+async function walkDownloadTree(dir, dirEntries, listFn, seen, files) {
+  for await (const entry of dirEntries) {
+    await walkDownloadTreeEntry(dir, entry, listFn, seen, files);
+  }
+}
+
+async function expandSelectionPath(raw, listFn, seen, files) {
+  const p = stripLeadingSlashes(String(raw || '').trim());
+  if (!p) return;
+  const entries = await listFn(p);
+  if (entries === null) {
+    if (!seen.has(p)) {
+      seen.add(p);
+      files.push(p);
+    }
+    return;
+  }
+  if (!entries.length) return;
+  await walkDownloadTree(p, entries, listFn, seen, files);
 }
 
 export async function expandSelectionToFiles(paths) {
   const files = [];
   const seen = new Set();
   const listFn = listDirectoryForDownload;
-  for (const raw of paths) {
-    const p = stripLeadingSlashes(String(raw || '').trim());
-    if (!p) continue;
-    const entries = await listFn(p);
-    if (entries === null) {
-      if (!seen.has(p)) {
-        seen.add(p);
-        files.push(p);
-      }
-      continue;
-    }
-    if (!entries.length) continue;
-    await walkDownloadTree(p, entries, listFn, seen, files);
+  for await (const raw of paths) {
+    await expandSelectionPath(raw, listFn, seen, files);
   }
   return files;
 }
@@ -308,7 +318,7 @@ export async function bulkCopy() {
   const destDir = await FolderPicker.open('copy');
   if (destDir == null) return;
   let failed = 0;
-  for (const path of paths) {
+  async function copyOne(path) {
     const base = pathBasename(path);
     const fullDest = destDir ? destDir + '/' + base : base;
     const formData = new URLSearchParams();
@@ -316,6 +326,9 @@ export async function bulkCopy() {
     formData.append('dest', fullDest);
     const res = await fetch('/copy', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRFToken': getXSRFToken() }, body: formData.toString() });
     if (!res.ok) failed++;
+  }
+  for await (const path of paths) {
+    await copyOne(path);
   }
   if (failed === 0) { SelectionStore.clear(); globalThis.location.reload(); }
   else showDialog(failed + ' of ' + paths.length + ' copy operation(s) failed.', 'Copy');
@@ -332,7 +345,7 @@ export async function bulkMove() {
   const destDir = await FolderPicker.open('move');
   if (destDir == null) return;
   let failed = 0;
-  for (const path of paths) {
+  async function moveOne(path) {
     const base = pathBasename(path);
     const fullDest = destDir ? destDir + '/' + base : base;
     const formData = new URLSearchParams();
@@ -340,6 +353,9 @@ export async function bulkMove() {
     formData.append('dest', fullDest);
     const res = await fetch('/move', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRFToken': getXSRFToken() }, body: formData.toString() });
     if (!res.ok) failed++;
+  }
+  for await (const path of paths) {
+    await moveOne(path);
   }
   if (failed === 0) { SelectionStore.clear(); globalThis.location.reload(); }
   else showDialog(failed + ' of ' + paths.length + ' move operation(s) failed.', 'Move');

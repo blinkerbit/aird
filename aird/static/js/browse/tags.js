@@ -105,7 +105,8 @@ function tagColorPickerBtnHtml(tag, hex) {
     + '</label>';
 }
 
-export function pickerTagChipHtml(t, { colorable = false } = {}) {
+export function pickerTagChipHtml(t, options) {
+  const colorable = !!options?.colorable;
   const hex = getTagColors()[t] || '#6366f1';
   return '<span class="tag-picker-chip" data-tag="' + escapeAttr(t) + '"' + tagChipStyleAttr(t) + '>'
     + escapeHtml(t)
@@ -193,8 +194,8 @@ function sortTagSuggestions(matches) {
   });
 }
 
-function renderTagSuggestions(inputEl, existingTagNames, pendingTags, onPick, suggestionsId = 'tagPickerSuggestions', excludeSet) {
-  const sugId = suggestionsId;
+function renderTagSuggestions(inputEl, existingTagNames, pendingTags, onPick, excludeSet, suggestionsId) {
+  const sugId = suggestionsId ?? 'tagPickerSuggestions';
   const q = inputEl.value.trim().toLowerCase();
   let matches = suggestionMatches(existingTagNames, pendingTags, q, excludeSet);
   if (q && !matches.length) {
@@ -228,8 +229,12 @@ function renderTagSuggestions(inputEl, existingTagNames, pendingTags, onPick, su
 }
 
 
-function setupTagPickerListeners(inputEl, chipsEl, pendingTags, existingTagNames, suggestionsId, signal, colorOpts, excludeSet) {
-  const sugId = suggestionsId || 'tagPickerSuggestions';
+function setupTagPickerListeners(inputEl, chipsEl, pendingTags, existingTagNames, options) {
+  const suggestionsId = options?.suggestionsId ?? 'tagPickerSuggestions';
+  const signal = options?.signal;
+  const colorOpts = options?.colorOpts;
+  const excludeSet = options?.excludeSet;
+  const sugId = suggestionsId;
   const opts = signal ? { signal } : undefined;
   const colorable = !!colorOpts?.colorable;
   const onColor = colorOpts?.onColor;
@@ -247,7 +252,7 @@ function setupTagPickerListeners(inputEl, chipsEl, pendingTags, existingTagNames
       pendingTags.delete(tag);
       refresh();
     }, colorable, onColor, onPreview);
-    renderTagSuggestions(inputEl, existingTagNames, pendingTags, pick, sugId, excludeSet);
+    renderTagSuggestions(inputEl, existingTagNames, pendingTags, pick, excludeSet, sugId);
   }
 
   inputEl.addEventListener('keydown', function (e) {
@@ -280,10 +285,10 @@ function setupTagPickerListeners(inputEl, chipsEl, pendingTags, existingTagNames
       refresh();
       return;
     }
-    renderTagSuggestions(inputEl, existingTagNames, pendingTags, pick, sugId, excludeSet);
+    renderTagSuggestions(inputEl, existingTagNames, pendingTags, pick, excludeSet, sugId);
   }, opts);
   inputEl.addEventListener('focus', function () {
-    renderTagSuggestions(inputEl, existingTagNames, pendingTags, pick, sugId, excludeSet);
+    renderTagSuggestions(inputEl, existingTagNames, pendingTags, pick, excludeSet, sugId);
   }, opts);
   return refresh;
 }
@@ -324,21 +329,21 @@ async function mergeTagCatalogIntoNames(existingTagNames) {
     const catalog = await fetchTagCatalog();
     mergeTagNames(existingTagNames, catalog.names);
     if (globalThis.__BROWSE_CONFIG) {
+      const prev = globalThis.__BROWSE_CONFIG.tagColors;
+      const next = catalog.colors;
       globalThis.__BROWSE_CONFIG.tagColors = {
-        ...(globalThis.__BROWSE_CONFIG.tagColors || {}),
-        ...(catalog.colors || {}),
+        ...(prev && typeof prev === 'object' ? prev : undefined),
+        ...(next && typeof next === 'object' ? next : undefined),
       };
     }
   } catch { /* autocomplete is best-effort */ }
 }
 
 async function bulkRemoveTagsFromPaths(paths, tags) {
-  for (const path of paths) {
+  for await (const path of paths) {
     const cell = document.querySelector('.tags-cell[data-path="' + CSS.escape(path) + '"]');
     const remain = tagsCellTags(cell).filter(function (t) { return !tags.includes(t); });
-    for (const tag of tags) {
-      await untagPath(tag, path);
-    }
+    await Promise.all(tags.map(function (tag) { return untagPath(tag, path); }));
     updateTagsCell(path, remain);
   }
   showDialog('Removed [' + tags.join(', ') + '] from ' + paths.length + ' item(s).', 'Tags');
@@ -383,10 +388,10 @@ export async function bulkAddTags() {
     paintTagColor(tag, hex);
   }
 
-  const refresh = setupTagPickerListeners(
-    inputEl, chipsEl, pendingTags, existingTagNames, 'tagPickerSuggestions', undefined,
-    { colorable: true, onColor: onPendingColor, onPreview: onPendingColor }
-  );
+  const refresh = setupTagPickerListeners(inputEl, chipsEl, pendingTags, existingTagNames, {
+    suggestionsId: 'tagPickerSuggestions',
+    colorOpts: { colorable: true, onColor: onPendingColor, onPreview: onPendingColor },
+  });
   refresh();
   modal.showModal();
 
@@ -438,7 +443,6 @@ const TAG_CHIP_MAX_VISIBLE = 2;
 let _activeTagFilter = null;
 
 export function setBrowseTagFilter(tag, options) {
-  const opts = options || {};
   _activeTagFilter = tag ? String(tag).trim() : null;
   const table = document.getElementById('fileTable');
   if (table) {
@@ -462,7 +466,7 @@ export function setBrowseTagFilter(tag, options) {
       if (vars) applyChipPaint(chip, vars);
     }
   }
-  if (opts.updateUrl !== false) {
+  if (options?.updateUrl !== false) {
     const url = new URL(globalThis.location.href);
     if (_activeTagFilter) url.searchParams.set(TAG_FILTER_PARAM, _activeTagFilter);
     else url.searchParams.delete(TAG_FILTER_PARAM);
@@ -787,9 +791,10 @@ export async function openRowTagPopover(path, anchorEl) {
   renderExisting();
 
   const existingTagNames = collectKnownTagNames();
-  const refresh = setupTagPickerListeners(
-    inputEl, chipsEl, pendingTags, existingTagNames, 'rowTagPopoverSuggestions', signal,
-    {
+  const refresh = setupTagPickerListeners(inputEl, chipsEl, pendingTags, existingTagNames, {
+    suggestionsId: 'rowTagPopoverSuggestions',
+    signal,
+    colorOpts: {
       colorable: true,
       onPreview: function (tag, hex) {
         pendingColors[tag] = hex;
@@ -799,8 +804,8 @@ export async function openRowTagPopover(path, anchorEl) {
         paintTagColor(tag, hex);
       },
     },
-    tagsOnPathMap
-  );
+    excludeSet: tagsOnPathMap,
+  });
   refresh();
 
   backdrop.hidden = false;
@@ -808,15 +813,17 @@ export async function openRowTagPopover(path, anchorEl) {
   scheduleRowTagPopoverPosition();
   inputEl.focus();
 
-  (async function loadRowTagCatalog() {
+  void (async function loadRowTagCatalog() {
     try {
       const catalog = await fetchTagCatalog();
       if (signal.aborted) return;
       mergeTagNames(existingTagNames, catalog.names);
       if (globalThis.__BROWSE_CONFIG) {
+        const prev = globalThis.__BROWSE_CONFIG.tagColors;
+        const next = catalog.colors;
         globalThis.__BROWSE_CONFIG.tagColors = {
-          ...(globalThis.__BROWSE_CONFIG.tagColors || {}),
-          ...(catalog.colors || {}),
+          ...(prev && typeof prev === 'object' ? prev : undefined),
+          ...(next && typeof next === 'object' ? next : undefined),
         };
       }
       refresh();

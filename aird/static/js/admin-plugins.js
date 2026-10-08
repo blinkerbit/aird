@@ -1,7 +1,7 @@
 "use strict";
 
 function boardRow(board, index) {
-  const b = board || {};
+  const b = board && typeof board === "object" ? board : Object.create(null);
   return `<div class="board-row" data-index="${index}">
     <div class="board-row-grid">
       <label class="form-control">
@@ -34,6 +34,35 @@ function escapeAttr(s) {
     .replaceAll("&", "&amp;")
     .replaceAll("\"", "&quot;")
     .replaceAll("<", "&lt;");
+}
+
+function mapRow(map, index) {
+  const m = map && typeof map === "object" ? map : Object.create(null);
+  return `<div class="od-host-map-row border border-base-300 rounded-lg p-3 space-y-2" data-map-id="${escapeAttr(m.id || "")}" data-index="${index}">
+      <div class="grid gap-2 md:grid-cols-2">
+        <label class="form-control"><span class="label-text text-xs">Username</span>
+          <input type="text" class="input input-bordered input-xs map-username" value="${escapeAttr(m.username || "admin")}"></label>
+        <label class="form-control"><span class="label-text text-xs">Local path</span>
+          <input type="text" class="input input-bordered input-xs map-local" value="${escapeAttr(m.local_path || "")}" placeholder="Documents"></label>
+        <label class="form-control"><span class="label-text text-xs">Remote path</span>
+          <input type="text" class="input input-bordered input-xs map-remote" value="${escapeAttr(m.remote_path || "")}" placeholder="backup/docs"></label>
+        <label class="form-control"><span class="label-text text-xs">Ignore patterns (optional)</span>
+          <input type="text" class="input input-bordered input-xs map-ignore" value="${escapeAttr(m.ignore_extra || "")}"></label>
+      </div>
+      <div class="flex gap-2">
+        <button type="button" class="btn btn-primary btn-xs map-save">Save</button>
+        <button type="button" class="btn btn-ghost btn-xs map-delete">Delete</button>
+      </div>
+    </div>`;
+}
+
+function mergeFetchHeaders(base, extra) {
+  if (!extra) return base;
+  return { ...base, ...extra };
+}
+
+function jsonParseFallback() {
+  return { pending: false };
 }
 
 function collectBoards() {
@@ -85,8 +114,7 @@ function selectPlugin(id) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  const cfg = globalThis.__ADMIN_PLUGINS || {};
-  renderBoards(cfg.gitlabBoards || []);
+  renderBoards(globalThis.__ADMIN_PLUGINS?.gitlabBoards || []);
 
   document.getElementById("gitlabAddBoardBtn")?.addEventListener("click", () => {
     const list = document.getElementById("gitlabBoardsList");
@@ -148,10 +176,10 @@ document.addEventListener("DOMContentLoaded", () => {
     return m ? decodeURIComponent(m[1]) : "";
   }
 
-  async function odAdminApi(url, opts = {}) {
-    const headers = { Accept: "application/json", "X-XSRFToken": xsrf(), ...(opts.headers || {}) };
+  async function odAdminApi(url, opts) {
+    const headers = mergeFetchHeaders({ Accept: "application/json", "X-XSRFToken": xsrf() }, opts?.headers);
     const res = await fetch(url, { credentials: "same-origin", method: "POST", ...opts, headers });
-    const data = await res.json().catch(() => ({}));
+    const data = await res.json().catch(jsonParseFallback);
     if (!res.ok && !data.pending) throw new Error(data.error || res.statusText);
     return data;
   }
@@ -200,34 +228,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  async function odHostApi(url, opts = {}) {
-    const method = opts.method || "GET";
-    const headers = { Accept: "application/json", "X-XSRFToken": xsrf(), ...(opts.headers || {}) };
-    if (opts.body) headers["Content-Type"] = "application/json";
+  async function odHostApi(url, opts) {
+    const method = opts?.method || "GET";
+    const headers = mergeFetchHeaders({ Accept: "application/json", "X-XSRFToken": xsrf() }, opts?.headers);
+    if (opts?.body) headers["Content-Type"] = "application/json";
     const res = await fetch(url, { credentials: "same-origin", method, ...opts, headers });
-    const data = await res.json().catch(() => ({}));
+    const data = await res.json().catch(jsonParseFallback);
     if (!res.ok) throw new Error(data.error || res.statusText);
     return data;
-  }
-
-  function mapRow(map, index) {
-    const m = map || {};
-    return `<div class="od-host-map-row border border-base-300 rounded-lg p-3 space-y-2" data-map-id="${escapeAttr(m.id || "")}" data-index="${index}">
-      <div class="grid gap-2 md:grid-cols-2">
-        <label class="form-control"><span class="label-text text-xs">Username</span>
-          <input type="text" class="input input-bordered input-xs map-username" value="${escapeAttr(m.username || "admin")}"></label>
-        <label class="form-control"><span class="label-text text-xs">Local path</span>
-          <input type="text" class="input input-bordered input-xs map-local" value="${escapeAttr(m.local_path || "")}" placeholder="Documents"></label>
-        <label class="form-control"><span class="label-text text-xs">Remote path</span>
-          <input type="text" class="input input-bordered input-xs map-remote" value="${escapeAttr(m.remote_path || "")}" placeholder="backup/docs"></label>
-        <label class="form-control"><span class="label-text text-xs">Ignore patterns (optional)</span>
-          <input type="text" class="input input-bordered input-xs map-ignore" value="${escapeAttr(m.ignore_extra || "")}"></label>
-      </div>
-      <div class="flex gap-2">
-        <button type="button" class="btn btn-primary btn-xs map-save">Save</button>
-        <button type="button" class="btn btn-ghost btn-xs map-delete">Delete</button>
-      </div>
-    </div>`;
   }
 
   async function refreshOdHostStatus() {
@@ -237,17 +245,17 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!line) return;
     try {
       const data = await odHostApi("/api/onedrive-host/status");
-      const rt = data.runtime || {};
-      const run = data.last_run || {};
+      const rt = data.runtime;
+      const run = data.last_run;
       const parts = [];
-      parts.push(rt.paused ? "Paused" : "Running");
-      if (rt.in_progress?.length) parts.push(`${rt.in_progress.length} in progress`);
-      if (rt.queued?.length) parts.push(`${rt.queued.length} queued`);
-      if (run.last_finished_at) parts.push(`Last: ${String(run.last_finished_at).replaceAll("T", " ").slice(0, 19)} UTC`);
+      parts.push(rt?.paused ? "Paused" : "Running");
+      if (rt?.in_progress?.length) parts.push(`${rt.in_progress.length} in progress`);
+      if (rt?.queued?.length) parts.push(`${rt.queued.length} queued`);
+      if (run?.last_finished_at) parts.push(`Last: ${String(run.last_finished_at).replaceAll("T", " ").slice(0, 19)} UTC`);
       line.textContent = parts.join(" · ") || "Idle";
-      if (pauseBtn) pauseBtn.textContent = rt.paused ? "Resume sync" : "Pause sync";
+      if (pauseBtn) pauseBtn.textContent = rt?.paused ? "Resume sync" : "Pause sync";
       if (failed) {
-        const items = (rt.failed || []).slice(0, 8);
+        const items = (rt?.failed || []).slice(0, 8);
         failed.innerHTML = items.length
           ? `<strong>Failed:</strong> ${items.map((f) => escapeAttr(f.path || "?")).join(", ")}`
           : "";

@@ -47,7 +47,7 @@ export function parsePathInput(raw) {
   const dirEnds = !s || s.endsWith('/');
   const parts = s.split('/').filter(Boolean);
   if (dirEnds) return { dir: parts.join('/'), prefix: '' };
-  return { dir: parts.slice(0, -1).join('/'), prefix: parts[parts.length - 1] || '' };
+  return { dir: parts.slice(0, -1).join('/'), prefix: parts.at(-1) || '' };
 }
 
 export function formatRelPath(dir, name, isDir) {
@@ -264,7 +264,7 @@ export function completePath(raw, files) {
 
 export function renderBrowseRows(files, dir, activeName) {
   const rows = files || [];
-  const active = activeName || (rows[0] && rows[0].name) || '';
+  const active = activeName || rows[0]?.name || '';
   return rows.map((f) => {
     const full = joinRel(dir, f.name);
     return {
@@ -410,7 +410,7 @@ export function createBrowsePicker({
     if (e.target.closest('.chat-browse-share')) return;
     const p = row.dataset.path || '';
     if (row.dataset.action === 'dir') {
-      const name = p.split('/').filter(Boolean).pop() || '';
+      const name = p.split('/').findLast(Boolean) || '';
       browseActiveName = name;
       list.querySelectorAll('.chat-browse-row').forEach((el) => {
         el.classList.toggle('is-active', el === row);
@@ -471,7 +471,7 @@ export function createBrowsePicker({
     if (!opts.keepInput && pathInput) pathInput.value = formatRelPath(browsePath, '', true);
     const files = await filesFor(browsePath);
     const hits = matchFiles(files, opts.filter || '');
-    paint(hits, browsePath, opts.activeName || (hits[0] && hits[0].name) || '');
+    paint(hits, browsePath, opts.activeName || hits[0]?.name || '');
     return browseHits;
   }
 

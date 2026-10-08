@@ -20,7 +20,7 @@ import {
   'use strict';
 
   const REACTIONS = ['👍', '❤️', '😂', '🎉'];
-  const IMAGE_EXTS = ['jpg', 'jpeg', 'jpe', 'jif', 'jfif', 'png', 'gif', 'bmp', 'webp', 'tiff', 'tif', 'svg', 'ico', 'avif', 'heic', 'heif', 'dng', 'cr2', 'nef', 'arw', 'orf', 'rw2', 'raf', 'raw'];
+  const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'jpe', 'jif', 'jfif', 'png', 'gif', 'bmp', 'webp', 'tiff', 'tif', 'svg', 'ico', 'avif', 'heic', 'heif', 'dng', 'cr2', 'nef', 'arw', 'orf', 'rw2', 'raf', 'raw']);
   let pendingBrowseAttachQueue = takePendingBrowseAttachAll();
 
   const qs = (sel) => document.querySelector(sel);
@@ -71,14 +71,14 @@ import {
     if (!wrap) {
       wrap = document.createElement('div');
       wrap.className = 'chat-editor-wrap';
-      editor.parentNode.insertBefore(wrap, editor);
+      editor.before(wrap);
       wrap.appendChild(editor);
     }
     el = document.createElement('div');
     el.id = 'chatPathSuggest';
     el.className = 'chat-path-suggest';
     el.hidden = true;
-    wrap.insertBefore(el, editor);
+    editor.before(el);
     return el;
   }
 
@@ -124,7 +124,7 @@ import {
     const data = await api(`/api/chat/conversations/${activeConvId}/messages${query}`);
     let added = false;
     let lastReadable = null;
-    for (const m of (data.messages || [])) {
+    for await (const m of (data.messages || [])) {
       if (!messagesEl.querySelector(`[data-msg-id="${cssEscape(m.id)}"]`)) {
         await appendMessage(m);
         added = true;
@@ -142,7 +142,8 @@ import {
   }
 
   function cssEscape(s) {
-    return String(s).replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+    const text = String(s);
+    return text.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
   }
 
   function setPollEnabled(on) {
@@ -433,7 +434,7 @@ import {
   }
 
   function isOnlineUser(username) {
-    if (Object.prototype.hasOwnProperty.call(presence, username)) return presence[username];
+    if (Object.hasOwn(presence, username)) return presence[username];
     const conv = conversations.find((c) => (c.members || []).some((m) => m.username === username && m.online));
     return !!conv?.members?.some((m) => m.username === username && m.online);
   }
@@ -610,10 +611,9 @@ import {
     return fileUrl(msg, index);
   }
 
-  function fileUrl(msg, index) {
+  function fileUrl(msg, index = 0) {
     const base = msg.file_url || `/api/chat/conversations/${msg.conversation_id}/messages/${msg.id}/file`;
-    const i = index || 0;
-    return i ? `${base}?i=${i}` : base;
+    return index ? `${base}?i=${index}` : base;
   }
 
   function msgAttachments(msg) {
@@ -633,7 +633,7 @@ import {
     if (kind === 'image' || kind === 'gif') return true;
     const name = String(att?.original_name || '').toLowerCase();
     const ext = name.split('.').pop();
-    return IMAGE_EXTS.includes(ext);
+    return IMAGE_EXTS.has(ext);
   }
 
   function highlightMentions(html) {
@@ -998,7 +998,7 @@ import {
       if (!E2E?.ready()) throw new Error('Waiting for the chat key…');
       if (plain.includes('chat-e2e-fail')) throw new Error('Cannot forward a message that did not decrypt on this device');
       const html = E2E.sanitizeHtml(plain);
-      for (const id of ids) {
+      for await (const id of ids) {
         const ok = await e2eReady(id);
         if (!ok) throw new Error('Waiting for the chat key…');
         const e2e = await E2E.encrypt(id, html);
@@ -1072,7 +1072,7 @@ import {
       const msgs = data.messages || [];
       hasOlder = msgs.length >= 50;
       if (!msgs.length) return;
-      for (const m of msgs) await prepareMessage(m);
+      for await (const m of msgs) await prepareMessage(m);
       const firstDay = messagesEl.querySelector('.chat-day');
       const frag = document.createElement('div');
       let prevDay = '';
@@ -1085,10 +1085,11 @@ import {
         }
         frag.insertAdjacentHTML('beforeend', messageHtml(m));
       });
-      if (firstDay && firstDay.dataset.day === prevDay) firstDay.remove();
+      if (firstDay?.dataset.day === prevDay) firstDay.remove();
       const nodes = [...frag.childNodes];
       const first = messagesEl.firstChild;
-      nodes.forEach((n) => messagesEl.insertBefore(n, first));
+      if (first) first.before(...nodes);
+      else nodes.forEach((n) => messagesEl.append(n));
       nodes.forEach((n) => {
         if (n.nodeType === 1 && n.matches?.('[data-msg-id]')) bindMessageUi(n);
       });
@@ -1140,11 +1141,11 @@ import {
     renderPins();
     const msgs = data.messages || [];
     hasOlder = msgs.length >= 50;
-    for (const m of msgs) await prepareMessage(m);
+    for await (const m of msgs) await prepareMessage(m);
     if (!msgs.length) showEmptyThread();
     else msgs.forEach((m) => paintMessage(m));
     if (msgs.length) messagesEl.scrollTop = messagesEl.scrollHeight;
-    const last = [...msgs].reverse().find((msg) => !msg._e2e || msg._decryptOk);
+    const last = msgs.toReversed().find((msg) => !msg._e2e || msg._decryptOk);
     if (last) markRead(last);
     const params = new URLSearchParams(location.search);
     params.set('c', convId);
@@ -1185,7 +1186,7 @@ import {
   function markLatestVisibleRead() {
     if (enhancedSecureView || document.visibilityState !== 'visible') return;
     const rows = [...(messagesEl?.querySelectorAll('[data-msg-id]') || [])];
-    const row = rows.reverse().find((item) => (
+    const row = rows.toReversed().find((item) => (
       item.dataset.e2e !== '1' || item.dataset.decryptOk === '1'
     ));
     if (!row) return;
@@ -1292,23 +1293,30 @@ import {
         }
       }).catch((err) => console.debug('e2e key ready failed', err));
     },
-    chat_request: (data) => {
+    chat_request: async (data) => {
       const convId = data.conversation_id;
-      loadConversations().then(() => {
+      try {
+        await loadConversations();
         const conv = conversations.find((c) => c.id === convId);
         if (conv && !conv.request) {
-          e2eReady(convId).catch((err) => console.debug('e2e ready after accept failed', err));
+          try {
+            await e2eReady(convId);
+          } catch (err) {
+            console.debug('e2e ready after accept failed', err);
+          }
         }
         if (convId && convId === activeConvId && !enhancedSecureView) {
           runAsync(() => openConversation(convId), 'openConversation');
         }
-      }).catch((err) => console.debug('chat request refresh failed', err));
+      } catch (err) {
+        console.debug('chat request refresh failed', err);
+      }
     },
   };
 
   function handleWsEvent(data) {
     const handler = data?.type && WS_HANDLERS[data.type];
-    if (handler) handler(data);
+    if (handler) void Promise.resolve(handler(data));
   }
 
   async function startConversation(username) {
@@ -1722,10 +1730,33 @@ import {
     editor.focus();
   }
 
-  // document.execCommand is deprecated but remains the most reliable option for
-  // contenteditable toolbar formatting across browsers.
+  function wrapEditorSelection(tagName, attrs = {}) {
+    const sel = window.getSelection();
+    if (!sel?.rangeCount || !editor?.contains(sel.anchorNode)) return;
+    const range = sel.getRangeAt(0);
+    if (range.collapsed) return;
+    const el = document.createElement(tagName);
+    Object.entries(attrs).forEach(([key, val]) => el.setAttribute(key, val));
+    try {
+      range.surroundContents(el);
+    } catch {
+      const fragment = range.extractContents();
+      el.appendChild(fragment);
+      range.insertNode(el);
+    }
+    sel.removeAllRanges();
+    const next = document.createRange();
+    next.selectNodeContents(el);
+    next.collapse(false);
+    sel.addRange(next);
+  }
+
   function execEditorCommand(cmd, value) {
-    document.execCommand(cmd, false, value ?? null);
+    if (cmd === 'bold') wrapEditorSelection('strong');
+    else if (cmd === 'italic') wrapEditorSelection('em');
+    else if (cmd === 'createLink' && value) {
+      wrapEditorSelection('a', { href: value, rel: 'noopener noreferrer', target: '_blank' });
+    }
   }
 
   function insertTextAtCaret(text) {
@@ -1824,7 +1855,7 @@ import {
       el = document.createElement('div');
       el.id = 'chatPending';
       el.className = 'chat-pending';
-      wrap.insertBefore(el, editor);
+      editor.before(el);
     }
     if (!el) return;
     if (!pending.length) {
@@ -1965,7 +1996,7 @@ import {
   function replaceCaretToken(info, next) {
     const sel = window.getSelection();
     const node = sel?.anchorNode;
-    if (node && node.nodeType === Node.TEXT_NODE && editor.contains(node)) {
+    if (node?.nodeType === Node.TEXT_NODE && editor.contains(node)) {
       const text = node.textContent || '';
       const offset = sel.anchorOffset;
       const left = text.slice(0, offset);

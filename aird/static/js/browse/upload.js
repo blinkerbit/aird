@@ -19,13 +19,21 @@ function onUploadError(_job, err) {
   showDialog(friendlyUploadErrorMessage(err), 'Upload failed');
 }
 
+async function* readEntryBatches(reader) {
+  async function* pullBatches() {
+    const batch = await new Promise((res) => reader.readEntries(res));
+    if (!batch.length) return;
+    yield batch;
+    yield* pullBatches();
+  }
+  yield* pullBatches();
+}
+
 async function readAllEntries(reader) {
   const results = [];
-  let batch;
-  do {
-    batch = await new Promise((res) => reader.readEntries(res));
+  for await (const batch of readEntryBatches(reader)) {
     results.push(...batch);
-  } while (batch.length > 0);
+  }
   return results;
 }
 
@@ -33,22 +41,27 @@ function getFileFromEntry(entry) {
   return new Promise((resolve, reject) => entry.file(resolve, reject));
 }
 
+async function traverseOneEntry(entry, pathPrefix, result) {
+  if (entry.isFile) {
+    try {
+      const file = await getFileFromEntry(entry);
+      result.push({ file, relativePath: pathPrefix + file.name });
+    } catch (e) {
+      console.warn('Skipping unreadable entry:', e);
+    }
+    return;
+  }
+  if (!entry.isDirectory) return;
+  const reader = entry.createReader();
+  const children = await readAllEntries(reader);
+  const sub = await traverseEntries(children, pathPrefix + entry.name + '/');
+  result.push(...sub);
+}
+
 export async function traverseEntries(entries, pathPrefix = '') {
   const result = [];
-  for (const entry of entries) {
-    if (entry.isFile) {
-      try {
-        const file = await getFileFromEntry(entry);
-        result.push({ file, relativePath: pathPrefix + file.name });
-      } catch (e) {
-        console.warn('Skipping unreadable entry:', e);
-      }
-    } else if (entry.isDirectory) {
-      const reader = entry.createReader();
-      const children = await readAllEntries(reader);
-      const sub = await traverseEntries(children, pathPrefix + entry.name + '/');
-      result.push(...sub);
-    }
+  for await (const entry of entries) {
+    await traverseOneEntry(entry, pathPrefix, result);
   }
   return result;
 }
@@ -59,12 +72,54 @@ export function dropEntries(dataTransfer) {
     .filter(Boolean);
 }
 
+function pickDropOnOver(zone, e) {
+  e.preventDefault();
+  zone.classList.add('dragover');
+}
+
+function pickDropOnLeave(zone) {
+  zone.classList.remove('dragover');
+}
+
+async function pickDropOnDrop(zone, e, onFiles, onEntries) {
+  e.preventDefault();
+  zone.classList.remove('dragover');
+  const entries = dropEntries(e.dataTransfer);
+  if (entries.some((ent) => ent.isDirectory) && onEntries) {
+    await onEntries(entries);
+    return;
+  }
+  const files = [...(e.dataTransfer?.files || [])].filter(Boolean);
+  if (files.length) onFiles?.(files);
+}
+
+const pickDropBindings = new WeakMap();
+
+function bindPickDropDragOver(e) {
+  pickDropOnOver(e.currentTarget, e);
+}
+
+function bindPickDropDragLeave(e) {
+  pickDropOnLeave(e.currentTarget);
+}
+
+function bindPickDropDrop(e) {
+  const zone = e.currentTarget;
+  const binding = pickDropBindings.get(zone);
+  if (!binding) return;
+  void pickDropOnDrop(zone, e, binding.onFiles, binding.onEntries);
+}
+
 /**
  * Native pick + drop. Click-to-select must be a <label for="fileInput"> — never input.click()
  * from a parent click handler (that cancels the OS picker).
  */
-export function bindPickDrop(zone, input, { onFiles, onEntries } = {}) {
+export function bindPickDrop(zone, input, opts) {
   if (!zone || !input) return () => {};
+
+  const onFiles = opts?.onFiles;
+  const onEntries = opts?.onEntries;
+  pickDropBindings.set(zone, { onFiles: onFiles, onEntries: onEntries });
 
   function emitFiles(list) {
     const files = [...(list || [])].filter(Boolean);
@@ -76,36 +131,17 @@ export function bindPickDrop(zone, input, { onFiles, onEntries } = {}) {
     input.value = '';
   }
 
-  function onOver(e) {
-    e.preventDefault();
-    zone.classList.add('dragover');
-  }
-
-  function onLeave() {
-    zone.classList.remove('dragover');
-  }
-
-  async function onDrop(e) {
-    e.preventDefault();
-    zone.classList.remove('dragover');
-    const entries = dropEntries(e.dataTransfer);
-    if (entries.some((ent) => ent.isDirectory) && onEntries) {
-      await onEntries(entries);
-      return;
-    }
-    emitFiles(e.dataTransfer?.files);
-  }
-
   input.addEventListener('change', onChange);
-  zone.addEventListener('dragover', onOver);
-  zone.addEventListener('dragleave', onLeave);
-  zone.addEventListener('drop', onDrop);
+  zone.addEventListener('dragover', bindPickDropDragOver);
+  zone.addEventListener('dragleave', bindPickDropDragLeave);
+  zone.addEventListener('drop', bindPickDropDrop);
 
   return () => {
     input.removeEventListener('change', onChange);
-    zone.removeEventListener('dragover', onOver);
-    zone.removeEventListener('dragleave', onLeave);
-    zone.removeEventListener('drop', onDrop);
+    zone.removeEventListener('dragover', bindPickDropDragOver);
+    zone.removeEventListener('dragleave', bindPickDropDragLeave);
+    zone.removeEventListener('drop', bindPickDropDrop);
+    pickDropBindings.delete(zone);
     zone.classList.remove('dragover');
   };
 }
@@ -203,48 +239,48 @@ function clearFolderDropHighlights() {
   });
 }
 
+function folderDropOnOver(e) {
+  const row = folderRowFromEvent(e.target);
+  if (!row) return;
+  e.preventDefault();
+  e.stopPropagation();
+  clearFolderDropHighlights();
+  row.classList.add('file-row--drop-target');
+}
+
+function folderDropOnLeave(e) {
+  const row = folderRowFromEvent(e.target);
+  if (!row) return;
+  if (row.contains(e.relatedTarget)) return;
+  row.classList.remove('file-row--drop-target');
+}
+
+async function folderDropOnDrop(e) {
+  const row = folderRowFromEvent(e.target);
+  if (!row) return;
+  e.preventDefault();
+  e.stopPropagation();
+  clearFolderDropHighlights();
+  const dest = row.dataset.path || '';
+  const entries = dropEntries(e.dataTransfer);
+  if (entries.some((ent) => ent.isDirectory)) {
+    await enqueueEntriesAt(entries, dest);
+    return;
+  }
+  enqueueAt([...(e.dataTransfer?.files || [])], dest);
+}
+
 export function bindFolderRowDrop(table) {
   if (!table || table.dataset.folderDropBound === '1') return () => {};
   table.dataset.folderDropBound = '1';
 
-  function onOver(e) {
-    const row = folderRowFromEvent(e.target);
-    if (!row) return;
-    e.preventDefault();
-    e.stopPropagation();
-    clearFolderDropHighlights();
-    row.classList.add('file-row--drop-target');
-  }
-
-  function onLeave(e) {
-    const row = folderRowFromEvent(e.target);
-    if (!row) return;
-    if (row.contains(e.relatedTarget)) return;
-    row.classList.remove('file-row--drop-target');
-  }
-
-  async function onDrop(e) {
-    const row = folderRowFromEvent(e.target);
-    if (!row) return;
-    e.preventDefault();
-    e.stopPropagation();
-    clearFolderDropHighlights();
-    const dest = row.dataset.path || '';
-    const entries = dropEntries(e.dataTransfer);
-    if (entries.some((ent) => ent.isDirectory)) {
-      await enqueueEntriesAt(entries, dest);
-      return;
-    }
-    enqueueAt([...(e.dataTransfer?.files || [])], dest);
-  }
-
-  table.addEventListener('dragover', onOver);
-  table.addEventListener('dragleave', onLeave);
-  table.addEventListener('drop', onDrop);
+  table.addEventListener('dragover', folderDropOnOver);
+  table.addEventListener('dragleave', folderDropOnLeave);
+  table.addEventListener('drop', folderDropOnDrop);
   return () => {
-    table.removeEventListener('dragover', onOver);
-    table.removeEventListener('dragleave', onLeave);
-    table.removeEventListener('drop', onDrop);
+    table.removeEventListener('dragover', folderDropOnOver);
+    table.removeEventListener('dragleave', folderDropOnLeave);
+    table.removeEventListener('drop', folderDropOnDrop);
     table.dataset.folderDropBound = '';
     clearFolderDropHighlights();
   };

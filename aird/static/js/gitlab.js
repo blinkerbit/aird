@@ -67,11 +67,11 @@ function setViewerToken(host, token) {
 }
 
 const GITLAB_API = "https://gitlab.com/api/v4";
-const LOCAL_BRIDGES = ["http://127.0.0.1:8765", "http://localhost:8765"];
+const LOCAL_BRIDGES = new Set(["http://127.0.0.1:8765", "http://localhost:8765"]);
 
 function bridgeBase() {
   const stored = String(localStorage.getItem(BRIDGE_KEY) || "").replace(/\/$/, "");
-  return LOCAL_BRIDGES.includes(stored) ? stored : "";
+  return LOCAL_BRIDGES.has(stored) ? stored : "";
 }
 
 function gitlabHttpsOrigin(host) {
@@ -92,7 +92,7 @@ function gitlabHttpsOrigin(host) {
 
 function gitlabApiRoot(host) {
   const bridge = bridgeBase();
-  if (LOCAL_BRIDGES.includes(bridge)) return `${bridge}/api/v4`;
+  if (LOCAL_BRIDGES.has(bridge)) return `${bridge}/api/v4`;
   const origin = gitlabHttpsOrigin(host);
   if (origin === "https://gitlab.com") return GITLAB_API;
   return `${origin}/api/v4`;
@@ -684,7 +684,7 @@ function openViewerToken() {
     setViewerToken(host, fd.get("token"));
     const bridgeField = fd.get("bridge");
     const bridge = (typeof bridgeField === "string" ? bridgeField : "").trim().replace(/\/$/, "");
-    if (LOCAL_BRIDGES.includes(bridge)) localStorage.setItem(BRIDGE_KEY, bridge);
+    if (LOCAL_BRIDGES.has(bridge)) localStorage.setItem(BRIDGE_KEY, bridge);
     else localStorage.removeItem(BRIDGE_KEY);
     closePanel();
     void loadCi();
@@ -784,7 +784,7 @@ async function openCommentsPanel(fullPath, name, isDir = false) {
   try {
     if (_status?.is_self) {
       const data = await aird("GET", `/api/gitlab/cached-issues?${qs({ path: rel, name: [name] })}`);
-      issues = (data.issues_by_name || {})[name] || [];
+      issues = data.issues_by_name?.[name] ?? [];
     }
   } catch (_) { /* ignore */ }
   const target = isDir ? "folder" : "file";

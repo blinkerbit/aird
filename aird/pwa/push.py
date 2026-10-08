@@ -67,40 +67,6 @@ def _try_send_one_subscription(
     return False
 
 
-def _deliver_one(
-    conn: sqlite3.Connection,
-    username: str,
-    sub: dict[str, Any],
-    body: str,
-    vapid: dict[str, Any],
-    claims: dict[str, str],
-    webpush,
-    WebPushException,
-    push_store,
-) -> bool:
-    try:
-        webpush(
-            subscription_info=sub,
-            data=body,
-            vapid_private_key=vapid["private_pem"],
-            vapid_claims=claims,
-            ttl=60,
-        )
-        return True
-    except WebPushException as exc:
-        status = getattr(getattr(exc, "response", None), "status_code", None)
-        if status in (404, 410):
-            try:
-                push_store.delete_endpoint(conn, sub["endpoint"])
-            except Exception:
-                logger.debug("failed to prune push endpoint", exc_info=True)
-        else:
-            logger.debug("web push failed for %s: %s", username, exc)
-    except Exception:
-        logger.debug("web push error for %s", username, exc_info=True)
-    return False
-
-
 def send_web_push(
     conn: sqlite3.Connection | None,
     username: str,
@@ -116,8 +82,6 @@ def send_web_push(
         logger.debug("pywebpush not installed; skipping web push")
         return 0
 
-    from pywebpush import WebPushException, webpush
-
     from aird.pwa import store as push_store
     from aird.pwa.vapid import load_or_create_vapid
 
@@ -131,7 +95,12 @@ def send_web_push(
     return sum(
         1
         for sub in subs
-        if _deliver_one(
-            conn, username, sub, body, vapid, claims, webpush, WebPushException, push_store
+        if _try_send_one_subscription(
+            conn,
+            username,
+            sub,
+            body=body,
+            vapid_private_key=vapid["private_pem"],
+            claims=claims,
         )
     )

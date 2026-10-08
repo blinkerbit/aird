@@ -4,17 +4,26 @@ import { getConflictPolicy, graphConflictBehavior, getDefaultSave, setDefaultSav
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
-export async function graph(token, path, opts = {}) {
+function jsonParseNull() {
+  return null;
+}
+
+export async function graph(token, path, opts) {
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/json',
+  };
+  const extraHeaders = opts?.headers;
+  if (extraHeaders && typeof extraHeaders === 'object' && !Array.isArray(extraHeaders)) {
+    Object.assign(headers, extraHeaders);
+  }
   const res = await fetch(`${GRAPH}${path}`, {
-    ...opts,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/json',
-      ...(opts.headers || {}),
-    },
+    method: opts?.method,
+    body: opts?.body,
+    headers,
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error?.message || data.error || res.statusText);
+  const data = await res.json().catch(jsonParseNull);
+  if (!res.ok) throw new Error(data?.error?.message || data?.error || res.statusText);
   return data;
 }
 
@@ -45,11 +54,17 @@ async function createFolder(token, parentId, name) {
   });
 }
 
+async function* eachFolderPart(parts) {
+  for (const name of parts) {
+    yield name;
+  }
+}
+
 export async function ensureFolderPath(token, parts) {
   let parentId = 'root';
-  for (const name of parts) {
+  for await (const name of eachFolderPart(parts)) {
     const kids = await listChildren(token, parentId);
-    let folder = kids.find((k) => k.folder && k.name === name);
+    let folder = kids.findLast((k) => k.folder && k.name === name);
     if (!folder) folder = await createFolder(token, parentId, name);
     parentId = folder.id;
   }
@@ -82,14 +97,14 @@ export async function uploadBlob(token, parentId, filename, blob, onProgress) {
   });
   if (res.status === 409 && policy === 'fail') return { skipped: true, name: filename };
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
+    const data = await res.json().catch(jsonParseNull);
     if (policy === 'rename' && res.status === 409) {
       const extMatch = /\.[^.]+$/.exec(filename);
       const ext = extMatch ? extMatch[0] : '';
       const alt = `${filename.replaceAll(/(\.[^.]+)?$/g, '')}-${Date.now()}${ext}`;
       return uploadBlob(token, parentId, alt, blob, onProgress);
     }
-    throw new Error(data.error?.message || 'Upload failed');
+    throw new Error(data?.error?.message || 'Upload failed');
   }
   if (onProgress) onProgress({ file: filename, phase: 'done' });
   return { skipped: false, name: filename };
@@ -113,7 +128,7 @@ async function listAirdDir(relPath) {
 }
 
 export async function uploadTree(token, parentId, relPath, isDir, onProgress) {
-  const name = relPath.split('/').filter(Boolean).pop() || relPath;
+  const name = relPath.split('/').findLast(Boolean) || relPath;
   if (!isDir) {
     const blob = await fetchAirdBlob(relPath);
     await uploadBlob(token, parentId, name, blob, onProgress);
@@ -121,16 +136,24 @@ export async function uploadTree(token, parentId, relPath, isDir, onProgress) {
   }
   const folder = await createFolder(token, parentId, name).catch(async () => {
     const kids = await listFolders(token, parentId);
-    return kids.find((k) => k.name === name);
+    return kids.findLast((k) => k.name === name);
   });
   if (!folder?.id) throw new Error('Could not create OneDrive folder');
   let count = 0;
-  const children = await listAirdDir(relPath);
-  for (const child of children) {
-    const childPath = relPath ? `${relPath}/${child.name}` : child.name;
-    count += await uploadTree(token, folder.id, childPath, !!child.is_dir, onProgress);
+  for await (const { childPath, isDir } of eachAirdChild(relPath)) {
+    count += await uploadTree(token, folder.id, childPath, isDir, onProgress);
   }
   return count;
+}
+
+async function* eachAirdChild(relPath) {
+  const children = await listAirdDir(relPath);
+  for (const child of children) {
+    yield {
+      childPath: relPath ? `${relPath}/${child.name}` : child.name,
+      isDir: !!child.is_dir,
+    };
+  }
 }
 
 function pickerSay(msgEl, text, err) {
@@ -275,8 +298,8 @@ export async function downloadItemText(token, itemId) {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error?.message || 'Download failed');
+    const data = await res.json().catch(jsonParseNull);
+    throw new Error(data?.error?.message || 'Download failed');
   }
   return res.text();
 }

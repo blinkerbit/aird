@@ -7,8 +7,12 @@ const PENDING = "aird.onedriveBrowser.pending";
 const LS_DEFAULT_SAVE = "aird.onedriveBrowser.defaultSave";
 const SCOPES = "Files.ReadWrite offline_access User.Read";
 
-function cfg() {
-  return globalThis.__ONEDRIVE_BROWSER_CONFIG || {};
+function browserConfig() {
+  return globalThis.__ONEDRIVE_BROWSER_CONFIG;
+}
+
+function jsonParseNull() {
+  return null;
 }
 
 function b64url(bytes) {
@@ -74,15 +78,37 @@ function appReturnPath(value) {
   }
 }
 
+function tokenExpiresAt(tokens) {
+  const at = Number(tokens?.expires_at);
+  if (Number.isFinite(at)) return at;
+  const expiresIn = Number(tokens?.expires_in);
+  if (Number.isFinite(expiresIn)) {
+    return Date.now() + Math.max(60, expiresIn) * 1000;
+  }
+  return 0;
+}
+
 function saveTokens(tokens) {
-  const access = storedSecret(tokens?.access_token);
-  const refresh = storedSecret(tokens?.refresh_token);
+  if (!tokens || typeof tokens !== "object") return;
+  const access = storedSecret(tokens.access_token);
+  const refresh = storedSecret(tokens.refresh_token);
   if (!access) return;
-  const expires = Number(tokens?.expires_at);
-  sessionStorage.setItem(STORE, JSON.stringify({
+  const safe = {
     access_token: access,
     refresh_token: refresh,
-    expires_at: Number.isFinite(expires) ? expires : 0,
+    expires_at: tokenExpiresAt(tokens),
+  };
+  sessionStorage.setItem(STORE, JSON.stringify(safe));
+}
+
+function savePkce({ verifier, state, returnTo }) {
+  const safeVerifier = storedSecret(verifier);
+  const safeState = storedSecret(state);
+  if (!safeVerifier || !safeState) return;
+  sessionStorage.setItem(PKCE, JSON.stringify({
+    verifier: safeVerifier,
+    state: safeState,
+    returnTo: appReturnPath(returnTo),
   }));
 }
 
@@ -103,7 +129,9 @@ function getDefaultSave() {
   }
 }
 
-function setDefaultSave({ path, folderId } = {}) {
+function setDefaultSave(opts) {
+  const path = opts?.path;
+  const folderId = opts?.folderId;
   const parts = String(path || "").split("/").filter(Boolean);
   const norm = parts.join("/");
   if (!norm && !folderId) {
@@ -160,8 +188,8 @@ async function exchangeCode(code, verifier, clientId, tenant) {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error_description || data.error || "Token exchange failed");
+  const data = await res.json().catch(jsonParseNull);
+  if (!res.ok) throw new Error(data?.error_description || data?.error || "Token exchange failed");
   return {
     access_token: data.access_token,
     refresh_token: data.refresh_token || "",
@@ -182,8 +210,8 @@ async function refreshTokens(tokens, clientId, tenant) {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) return null;
+  const data = await res.json().catch(jsonParseNull);
+  if (!res.ok || !data) return null;
   const next = {
     access_token: data.access_token,
     refresh_token: data.refresh_token || tokens.refresh_token,
@@ -194,10 +222,11 @@ async function refreshTokens(tokens, clientId, tenant) {
 }
 
 async function loadPublicConfig() {
-  if (cfg().clientId) return cfg();
+  const existing = browserConfig();
+  if (existing?.clientId) return existing;
   const res = await fetch("/api/onedrive-browser/config", { credentials: "same-origin" });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.client_id) throw new Error(data.error || "OneDrive browser is not configured.");
+  const data = await res.json().catch(jsonParseNull);
+  if (!res.ok || !data?.client_id) throw new Error(data?.error || "OneDrive browser is not configured.");
   globalThis.__ONEDRIVE_BROWSER_CONFIG = {
     enabled: true,
     clientId: data.client_id,
@@ -217,11 +246,11 @@ async function ensureAccessToken() {
   const verifier = b64url(randomBytes(32));
   const challenge = await sha256b64url(verifier);
   const state = b64url(randomBytes(16));
-  sessionStorage.setItem(PKCE, JSON.stringify({
+  savePkce({
     verifier,
     state,
-    returnTo: appReturnPath(globalThis.location.href),
-  }));
+    returnTo: globalThis.location.href,
+  });
   globalThis.location.assign(authorizeUrl(publicCfg.clientId, publicCfg.tenant, challenge, state));
   return null;
 }
@@ -243,24 +272,33 @@ async function finishCallback() {
     return;
   }
   const publicCfg = await loadPublicConfig();
-  const tokens = await exchangeCode(code, pkce.verifier, publicCfg.clientId, publicCfg.tenant);
+  const verifier = storedSecret(pkce.verifier);
+  if (!verifier) {
+    if (msg) msg.textContent = "OneDrive sign-in was cancelled.";
+    return;
+  }
+  const tokens = await exchangeCode(code, verifier, publicCfg.clientId, publicCfg.tenant);
   saveTokens(tokens);
   const next = appReturnPath(pkce.returnTo);
   if (next.startsWith("/")) globalThis.location.replace(next);
 }
 
-async function graph(token, path, opts = {}) {
-  const { headers: extraHeaders, ...rest } = opts;
+async function graph(token, path, opts) {
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/json",
+  };
+  const extraHeaders = opts?.headers;
+  if (extraHeaders && typeof extraHeaders === "object" && !Array.isArray(extraHeaders)) {
+    Object.assign(headers, extraHeaders);
+  }
   const res = await fetch(`${GRAPH}${path}`, {
-    ...rest,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-      ...(extraHeaders || {}),
-    },
+    method: opts?.method,
+    body: opts?.body,
+    headers,
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error?.message || data.error || res.statusText);
+  const data = await res.json().catch(jsonParseNull);
+  if (!res.ok) throw new Error(data?.error?.message || data?.error || res.statusText);
   return data;
 }
 
@@ -298,8 +336,8 @@ async function uploadBlob(token, parentId, filename, blob) {
     body: blob,
   });
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error?.message || "Upload failed");
+    const data = await res.json().catch(jsonParseNull);
+    throw new Error(data?.error?.message || "Upload failed");
   }
 }
 
@@ -321,7 +359,7 @@ async function listAirdDir(relPath) {
 }
 
 async function uploadTree(token, parentId, relPath, isDir) {
-  const name = relPath.split("/").findLast(Boolean) || relPath;
+  const name = relPath.split("/").filter(Boolean).pop() || relPath;
   if (!isDir) {
     const blob = await fetchAirdBlob(relPath);
     await uploadBlob(token, parentId, name, blob);
@@ -333,7 +371,7 @@ async function uploadTree(token, parentId, relPath, isDir) {
   });
   if (!folder?.id) throw new Error("Could not create OneDrive folder");
   const children = await listAirdDir(relPath);
-  for await (const child of children) {
+  for (const child of children) {
     const childPath = relPath ? `${relPath}/${child.name}` : child.name;
     await uploadTree(token, folder.id, childPath, !!child.is_dir);
   }
@@ -426,14 +464,34 @@ function showPicker({ token, onPick, title }) {
   void render();
 }
 
-export async function savePathsToOneDrive(items, opts = {}) {
+function sanitizePendingPath(raw) {
+  const parts = String(raw).replaceAll("\\", "/").split("/").filter(Boolean);
+  if (parts.some((p) => p === "..")) return "";
+  return parts.join("/").slice(0, 2048);
+}
+
+function savePendingItems(items) {
+  if (!Array.isArray(items)) return;
+  const safe = items
+    .filter((item) => item && typeof item.path === "string")
+    .map((item) => ({
+      path: sanitizePendingPath(item.path),
+      isDir: !!item.isDir,
+    }))
+    .filter((item) => item.path);
+  if (!safe.length) return;
+  sessionStorage.setItem(PENDING, JSON.stringify(safe));
+}
+
+export async function savePathsToOneDrive(items, opts) {
   if (!items?.length) return;
-  sessionStorage.setItem(PENDING, JSON.stringify(items));
+  savePendingItems(items);
+  const options = opts && typeof opts === 'object' ? opts : Object.create(null);
   const token = await ensureAccessToken();
   if (!token) return;
   sessionStorage.removeItem(PENDING);
 
-  const forcePick = !!opts.forcePick;
+  const forcePick = !!options.forcePick;
   let folderId = null;
   if (!forcePick) {
     try {
@@ -444,7 +502,7 @@ export async function savePathsToOneDrive(items, opts = {}) {
   }
 
   if (folderId) {
-    for await (const item of items) {
+    for (const item of items) {
       await uploadTree(token, folderId, item.path, !!item.isDir);
     }
     return { folderId, usedDefault: true };
@@ -453,12 +511,12 @@ export async function savePathsToOneDrive(items, opts = {}) {
   return new Promise((resolve, reject) => {
     showPicker({
       token,
-      title: opts.title || "Save to OneDrive",
+      title: options.title || "Save to OneDrive",
       onPick: async (pickedId, names) => {
-        for await (const item of items) {
+        for (const item of items) {
           await uploadTree(token, pickedId, item.path, !!item.isDir);
         }
-        if (opts.rememberAsDefault) {
+        if (options.rememberAsDefault) {
           const path = Array.isArray(names) && names.length > 1 ? names.slice(1).join("/") : "";
           setDefaultSave({ path, folderId: pickedId });
         }
@@ -488,7 +546,7 @@ export function initOneDriveBrowserUi() {
     });
     return;
   }
-  if (!cfg().enabled) return;
+  if (!browserConfig()?.enabled) return;
   resumePending().catch(() => {});
 }
 
@@ -511,8 +569,8 @@ async function downloadItemText(token, itemId) {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error?.message || "Download failed");
+    const data = await res.json().catch(jsonParseNull);
+    throw new Error(data?.error?.message || "Download failed");
   }
   return res.text();
 }
@@ -600,7 +658,7 @@ function showFilePicker({ token, title, filter, onPick }) {
 
 async function ensureFolderPath(token, parts) {
   let parentId = "root";
-  for await (const name of parts) {
+  for (const name of parts) {
     const kids = await listChildren(token, parentId);
     let folder = kids.find((k) => k.folder && k.name === name);
     if (!folder) {
@@ -623,10 +681,10 @@ globalThis.AirdOneDriveBrowser = {
   getDefaultSave,
   setDefaultSave,
   resolveDefaultFolderId,
-  showFolderPicker: (token, onPick, opts = {}) => new Promise((resolve, reject) => {
+  showFolderPicker: (token, onPick, opts) => new Promise((resolve, reject) => {
     showPicker({
       token,
-      title: opts.title || "Choose OneDrive folder",
+      title: opts?.title || "Choose OneDrive folder",
       onPick: async (folderId, names) => {
         try {
           const result = await onPick(folderId, names);
