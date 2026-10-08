@@ -28,6 +28,6 @@
     "playwright": "^1.52.0",
     "qrcode": "^1.5.4",
     "tailwindcss": "^4",
-    "vitest": "^3.2.7"
+    "vitest": "^5.0.3"
   }
 }
