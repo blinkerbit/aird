@@ -19,7 +19,7 @@
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@tailwindcss/cli": "^4",
     "daisyui": "^5",
-    "esbuild": "^0.25.12",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-plugin-sonarjs": "^4.0.3",
     "fflate": "^0.8.2",
