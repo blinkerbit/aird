@@ -19,6 +19,6 @@ urllib3==2.8.0
 cryptography==50.0.0
 chardet==5.2.0
 pyasn1==0.6.4
-webauthn==2.5.0
+webauthn==3.0.1
 watchdog==6.0.0
 pywebpush==2.0.3
