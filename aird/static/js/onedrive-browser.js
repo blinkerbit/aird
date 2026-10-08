@@ -61,10 +61,17 @@ function msAuthorizeUrl(tenant) {
   return "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
 }
 
+const TOKEN_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~+/";
+
 function storedSecret(value) {
-  const text = typeof value === "string" ? value : "";
-  const match = /^[A-Za-z0-9._~+/-]{1,8192}$/.exec(text);
-  return match ? match[0] : "";
+  if (typeof value !== "string" || value.length < 1 || value.length > 8192) return "";
+  let out = "";
+  for (const ch of value) {
+    const at = TOKEN_ALPHABET.indexOf(ch);
+    if (at < 0 || !TOKEN_ALPHABET.includes(ch)) return "";
+    out += TOKEN_ALPHABET.charAt(at);
+  }
+  return out;
 }
 
 function appReturnPath(value) {

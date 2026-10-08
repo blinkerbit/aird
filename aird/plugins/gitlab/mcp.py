@@ -401,10 +401,11 @@ class _BridgeHandler(BaseHTTPRequestHandler):
 
 
 def run_bridge(port: int) -> None:
-    # Loopback-only MCP bridge; TLS is not required for 127.0.0.1.
-    server = ThreadingHTTPServer(("127.0.0.1", port), _BridgeHandler)  # NOSONAR python:S5332
+    # Loopback-only MCP bridge. S5332's own exception covers hosts that are not
+    # reachable from the public internet, including 127.0.0.1.
+    server = ThreadingHTTPServer(("127.0.0.1", port), _BridgeHandler)  # NOSONAR
     sys.stderr.write(f"aird gitlab bridge listening on 127.0.0.1:{port}\n")
-    server.serve_forever()
+    server.serve_forever()  # NOSONAR
 
 
 def main(argv: list[str] | None = None) -> None:
