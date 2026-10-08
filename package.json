@@ -21,7 +21,7 @@
     "daisyui": "^5",
     "esbuild": "^0.25.12",
     "eslint": "^9",
-    "eslint-plugin-sonarjs": "^4.0.3",
+    "eslint-plugin-sonarjs": "^4.2.2",
     "fflate": "^0.8.2",
     "globals": "^15",
     "happy-dom": "^20.11.0",
