@@ -1,6 +1,6 @@
 # CI / test locked deps (generate hashes via: uv pip compile --generate-hashes -o requirements-ci.txt requirements-ci.in)
 build==1.6.1
-coverage==7.14.3
+coverage==7.16.2
 mock==5.2.0
 pytest==9.1.1
 pytest-asyncio==1.4.0
@@ -21,4 +21,4 @@ chardet==7.6.0
 pyasn1==0.6.4
 webauthn==3.0.1
 watchdog==6.0.0
-pywebpush==2.0.3
+pywebpush==2.5.0
