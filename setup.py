@@ -4,16 +4,16 @@ install_requires = [
     "tornado>=6.5.9",
     "uvloop>=0.19.0; sys_platform == 'linux'",
     "ldap3>=2.9.1",
-    "aiofiles>=23.0.0",
+    "aiofiles>=25.1.0",
     "argon2-cffi>=23.1.0",
-    "requests>=2.32.4",
+    "requests>=2.34.2",
     "urllib3>=2.8.0",
-    "cryptography>=50.0.0",
-    "chardet>=5.0.0,<8.0.0",
+    "cryptography>=50.0.2",
+    "chardet>=7.6.0,<8.0.0",
     "pyasn1>=0.6.4",
-    "webauthn>=2.0.0",
+    "webauthn>=3.0.1",
     "watchdog>=4.0.0",
-    "pywebpush>=1.14.0",
+    "pywebpush>=2.5.0",
 ]
 
 extras_require = {
