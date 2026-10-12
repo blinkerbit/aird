@@ -1,11 +1,12 @@
 name: dependabot-automerge
 
-# Dependabot opens pull requests against dev. This enables auto-merge after
-# the ci checks (frontend, tests, promote) pass. It does not check out PR code.
+# Dependabot opens pull requests against dev. Patch and minor updates merge
+# after frontend, tests, and promote pass. Major updates stay for review.
+# This workflow does not check out pull request code.
 
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened]
     branches: [dev]
 
 permissions:
@@ -20,11 +21,16 @@ jobs:
       github.repository == 'blinkerbit/aird'
     runs-on: ubuntu-latest
     steps:
-      - name: Approve and queue auto-merge
+      - name: Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@08eff52bf64351f401fb50d4972fa95b9f2c2d1b # v2.4.0
+
+      - name: Queue auto-merge for patch and minor updates
+        if: steps.meta.outputs.update-type != 'version-update:semver-major'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
           set -euo pipefail
-          gh pr review --approve "$PR_URL"
+          gh pr review --approve "$PR_URL" || true
           gh pr merge --auto --squash "$PR_URL"

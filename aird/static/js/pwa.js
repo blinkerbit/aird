@@ -58,12 +58,8 @@
       btn.classList.add('hidden');
       return;
     }
-    if (deferredPrompt || isIos()) {
-      btn.classList.remove('hidden');
-    } else {
-      // Chromium may fire beforeinstallprompt later; keep visible as soft hint
-      btn.classList.remove('hidden');
-    }
+    // Keep the button visible. Chromium may fire beforeinstallprompt later.
+    btn.classList.remove('hidden');
   }
 
   function showIosHelp() {

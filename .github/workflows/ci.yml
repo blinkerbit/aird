@@ -1,5 +1,9 @@
 name: ci
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 # feature PR → dev. Push to dev publishes a dev patch (0.5.6 → 0.5.7.devN).
 # PR dev → pre-release. Push to pre-release publishes an RC (0.5.7rcN).
 # PR pre-release → main. Push to main publishes the patch (0.5.7).

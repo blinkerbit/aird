@@ -17,14 +17,22 @@ updates:
     target-branch: dev
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: pip
     directory: /
     target-branch: dev
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    groups:
+      pip-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
     exclude-paths:
       # Hashed lockfile; bump pins in requirements-ci.in then recompile:
       #   uv pip compile --generate-hashes -o requirements-ci.txt requirements-ci.in
@@ -35,4 +43,8 @@ updates:
     target-branch: dev
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
