@@ -1,7 +1,7 @@
 name: wheels
 
 # Binary wheels for aird-transfer. The aird package is published by ci.yml:
-# main → patch, rc → release candidate, feature branches → dev.
+# dev → dev patch, pre-release → release candidate, main → patch.
 
 on:
   workflow_dispatch:

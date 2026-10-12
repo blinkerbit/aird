@@ -1,0 +1,30 @@
+name: dependabot-automerge
+
+# Dependabot opens pull requests against dev. This enables auto-merge after
+# the ci checks (frontend, tests, promote) pass. It does not check out PR code.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
+    branches: [dev]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    name: automerge
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.repository == 'blinkerbit/aird'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Approve and queue auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          set -euo pipefail
+          gh pr review --approve "$PR_URL"
+          gh pr merge --auto --squash "$PR_URL"

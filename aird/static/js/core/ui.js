@@ -2,6 +2,7 @@
  * Nav chrome wiring (theme picker, mobile dropdowns) shared by every page
  * through the classic `AirdCore` facade bundle.
  */
+import { placeNearAnchor } from './anchor.js';
 import { wireDialogCancelOnce } from './dialog.js';
 
 function wireAppThemePicker() {
@@ -13,27 +14,17 @@ function wireAppThemePicker() {
   let open = false;
 
   function placeMenu() {
-    const pad = 8;
-    const gap = 6;
     const rect = btn.getBoundingClientRect();
-    const vw = document.documentElement.clientWidth;
-    const vh = globalThis.innerHeight;
-    const mw = menu.offsetWidth || 176;
-    const mh = menu.offsetHeight || 280;
-
-    let top = rect.bottom + gap;
-    if (top + mh > vh - pad) {
-      top = Math.max(pad, rect.top - mh - gap);
-    }
-
-    let left = rect.left;
-    if (left + mw > vw - pad) {
-      left = vw - pad - mw;
-    }
-    left = Math.max(pad, left);
-
-    menu.style.setProperty('top', `${top}px`);
-    menu.style.setProperty('left', `${left}px`);
+    const pos = placeNearAnchor({
+      anchor: rect,
+      panel: { width: menu.offsetWidth || 176, height: menu.offsetHeight || 280 },
+      viewport: {
+        width: document.documentElement.clientWidth,
+        height: globalThis.innerHeight,
+      },
+    });
+    menu.style.setProperty('top', `${pos.top}px`);
+    menu.style.setProperty('left', `${pos.left}px`);
   }
 
   function showMenu() {
@@ -155,20 +146,16 @@ function wireMobileAppDropdowns() {
     globalThis.requestAnimationFrame(() => {
       const ph = panel.getBoundingClientRect().height || panel.offsetHeight || 0;
       const pw = panel.getBoundingClientRect().width || menuW;
-
-      let top = rect.bottom + gap;
-      if (top + ph > vh - pad - safeB) {
-        top = Math.max(pad + safeT, rect.top - ph - gap);
-      }
-
-      let left = rect.left;
-      if (left + pw > vw - pad - safeR) {
-        left = vw - pad - safeR - pw;
-      }
-      left = Math.max(pad + safeL, left);
-
-      panel.style.setProperty('top', `${top}px`, 'important');
-      panel.style.setProperty('left', `${left}px`, 'important');
+      const pos = placeNearAnchor({
+        anchor: rect,
+        panel: { width: pw, height: ph },
+        viewport: { width: vw, height: vh },
+        pad,
+        gap,
+        safe: { left: safeL, right: safeR, top: safeT, bottom: safeB },
+      });
+      panel.style.setProperty('top', `${pos.top}px`, 'important');
+      panel.style.setProperty('left', `${pos.left}px`, 'important');
     });
   }
 

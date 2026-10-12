@@ -33,11 +33,21 @@ npm ci
 ## Tests and lint
 
 ```bash
-python -m pytest
-npm run lint:js
+python -m pip install "nox>=2024.4.15"
+nox -s js quality tests
 ```
 
-`pytest.ini` skips `@pytest.mark.slow` packaging tests. CI runs the full suite.
+`pytest.ini` skips `@pytest.mark.slow` packaging tests. CI sets `AIRD_CI=1` and runs the full suite through the same Nox sessions.
+
+## Branches
+
+| Pull request | Push publishes |
+|--------------|----------------|
+| feature → `dev` | `dev` → `0.x.Y.devN` |
+| `dev` → `pre-release` | `pre-release` → `0.x.YrcN` |
+| `pre-release` → `main` | `main` → `0.x.Y` |
+
+Required checks on those pull requests are `frontend`, `tests`, and `promote`. Dependabot targets `dev` and is auto-merged after those checks pass. Repo settings that must be on: Allow auto-merge, and Allow GitHub Actions to create and approve pull requests. Branch protection on `dev` should require the three checks above.
 
 UI expectations, ESLint, and Sonar scope: [docs/developer-ui-quality.md](docs/developer-ui-quality.md).
 

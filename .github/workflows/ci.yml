@@ -1,19 +1,19 @@
 name: ci
 
-# main push → patch release (0.5.6 → 0.5.7)
-# rc push → release candidate (0.5.7rcN)
-# feat/, feature/, and fix/ pushes → dev release (0.5.7.devN)
+# feature PR → dev. Push to dev publishes a dev patch (0.5.6 → 0.5.7.devN).
+# PR dev → pre-release. Push to pre-release publishes an RC (0.5.7rcN).
+# PR pre-release → main. Push to main publishes the patch (0.5.7).
 # The version commit message includes [skip ci] so it does not publish again.
 
 on:
   push:
-    branches: [main, rc, "feat/**", "feature/**", "fix/**"]
+    branches: [dev, pre-release, main]
   pull_request:
-    branches: [main, rc]
+    branches: [dev, pre-release, main]
 
 jobs:
-  test:
-    name: pytest
+  frontend:
+    name: frontend
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -28,37 +28,77 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Build share UI bundle
+      - name: Frontend tests and lint
         run: |
-          npm ci --ignore-scripts
-          npm run js:share
+          python -m pip install "nox>=2024.4.15"
+          nox -s js quality
 
-      - name: Install package with chat extra
-        run: |
-          python -m pip install --require-hashes --only-binary=:all: --no-binary=http-ece -r requirements-ci.txt
-          # Build after js:share so aird/static/js/share/app.js is inside the wheel.
-          python -m build --wheel -o dist
-          WHEEL=$(ls dist/*.whl | head -1)
-          # Runtime deps already installed from hashed lockfile; install local wheel only.
-          python -m pip install --no-deps --only-binary=:all: "${WHEEL}"
+  tests:
+    name: tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Run tests
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      - name: Backend tests
+        env:
+          AIRD_CI: "1"
         run: |
-          # Reuse the post-npm wheel; packaging tests skip a second build.
-          export AIRD_TEST_WHEEL="$(pwd)/$(ls dist/aird-*.whl | head -1)"
-          # Include @pytest.mark.slow; pytest.ini defaults to -m "not slow" for local smoke.
-          python -m pytest tests/ -q --tb=no -m "slow or not slow" --cov=aird --cov-report=xml:coverage.xml
+          python -m pip install "nox>=2024.4.15"
+          nox -s tests
+
+  promote:
+    name: promote
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check promotion path
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          case "$BASE_REF" in
+            dev)
+              ;;
+            pre-release)
+              if [ "$HEAD_REF" != "dev" ]; then
+                echo "pre-release only accepts pull requests from dev (got ${HEAD_REF})"
+                exit 1
+              fi
+              ;;
+            main)
+              if [ "$HEAD_REF" != "pre-release" ]; then
+                echo "main only accepts pull requests from pre-release (got ${HEAD_REF})"
+                exit 1
+              fi
+              ;;
+            *)
+              echo "unsupported base branch: ${BASE_REF}"
+              exit 1
+              ;;
+          esac
 
   release:
     name: Publish
-    needs: test
+    needs: [frontend, tests]
     if: >-
       github.event_name == 'push' &&
       github.repository == 'blinkerbit/aird' &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/rc' ||
-       startsWith(github.ref, 'refs/heads/feat/') ||
-       startsWith(github.ref, 'refs/heads/feature/') ||
-       startsWith(github.ref, 'refs/heads/fix/'))
+      (github.ref == 'refs/heads/dev' ||
+       github.ref == 'refs/heads/pre-release' ||
+       github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -83,15 +123,18 @@ jobs:
           if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
             CHANNEL=main
             SEQ=0
-          elif [ "${GITHUB_REF}" = "refs/heads/rc" ]; then
+          elif [ "${GITHUB_REF}" = "refs/heads/pre-release" ]; then
             CHANNEL=rc
             PROBE=$(python scripts/release_version.py --channel rc --seq 1)
             BASE=${PROBE%rc*}
             COUNT=$(git tag -l "v${BASE}rc*" | wc -l | tr -d ' ')
             SEQ=$((COUNT + 1))
-          else
+          elif [ "${GITHUB_REF}" = "refs/heads/dev" ]; then
             CHANNEL=dev
             SEQ="${GITHUB_RUN_ID}"
+          else
+            echo "unsupported ref ${GITHUB_REF}" >&2
+            exit 1
           fi
           VERSION=$(python scripts/release_version.py --channel "$CHANNEL" --seq "$SEQ" --write)
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
@@ -139,4 +182,3 @@ jobs:
           else
             gh release create "v${VERSION}" --prerelease --title "v${VERSION}" --notes "Dev release ${VERSION}."
           fi
-

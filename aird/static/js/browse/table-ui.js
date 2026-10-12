@@ -1,6 +1,7 @@
 "use strict";
 
 import { SelectionStore } from './selection-store.js';
+import { wirePersistedToggle } from './persisted-toggle.js';
 import { isInputKeyTarget, getCanTag } from './util.js';
 import { updateBulkToolbar } from './selection-ui.js';
 import { closeRowTagPopover, isRowTagPopoverOpen, openRowTagPopover } from './tags.js';
@@ -42,47 +43,29 @@ export function refreshGridThumbs() {
   document.querySelectorAll('#fileTable .file-grid-thumb').forEach((img) => img.remove());
 }
 
+function listingHasClass(className) {
+  return !!document.getElementById('browseListingPanel')?.classList.contains(className);
+}
+
 export function initFileGridToggle() {
-  let grid = false;
-  try {
-    grid = localStorage.getItem(LAYOUT_STORAGE_KEY) === 'grid';
-  } catch {
-    grid = false;
-  }
-  applyGridLayout(grid);
-  const btn = document.getElementById('fileGridToggleBtn');
-  if (!btn) return;
-  btn.addEventListener('click', function () {
-    const panel = document.getElementById('browseListingPanel');
-    const next = !panel?.classList.contains('browse-listing--grid');
-    try {
-      localStorage.setItem(LAYOUT_STORAGE_KEY, next ? 'grid' : 'list');
-    } catch {
-      /* ignore */
-    }
-    applyGridLayout(next);
+  wirePersistedToggle({
+    key: LAYOUT_STORAGE_KEY,
+    onValue: 'grid',
+    offValue: 'list',
+    buttonId: 'fileGridToggleBtn',
+    isOn: () => listingHasClass('browse-listing--grid'),
+    apply: applyGridLayout,
   });
 }
 
 export function initFileListViewToggle() {
-  let compact = false;
-  try {
-    compact = localStorage.getItem(FILE_VIEW_STORAGE_KEY) === 'compact';
-  } catch {
-    compact = false;
-  }
-  applyFileListView(compact);
-  const btn = document.getElementById('fileViewToggleBtn');
-  if (!btn) return;
-  btn.addEventListener('click', function () {
-    const panel = document.getElementById('browseListingPanel');
-    const nextCompact = !panel?.classList.contains('browse-listing--compact');
-    try {
-      localStorage.setItem(FILE_VIEW_STORAGE_KEY, nextCompact ? 'compact' : 'detailed');
-    } catch {
-      /* ignore */
-    }
-    applyFileListView(nextCompact);
+  wirePersistedToggle({
+    key: FILE_VIEW_STORAGE_KEY,
+    onValue: 'compact',
+    offValue: 'detailed',
+    buttonId: 'fileViewToggleBtn',
+    isOn: () => listingHasClass('browse-listing--compact'),
+    apply: applyFileListView,
   });
 }
 
@@ -154,18 +137,38 @@ function showBrowseShortcutsHelp() {
 }
 
 function handleBrowseEscapeKey() {
-  if (_shortcutsOverlay) { hideBrowseShortcutsHelp(); return; }
-  if (isRowTagPopoverOpen()) { closeRowTagPopover(); return; }
-  if (globalThis.AirdCore.cancelActiveDialog()) return;
-  const fpOverlay = document.getElementById('folderPickerOverlay');
-  if (fpOverlay?.classList.contains('show')) { FolderPicker.close(null); return; }
-  const sharePicker = document.getElementById('sharePickerModal');
-  if (sharePicker?.open) {
-    document.getElementById('sharePickerCancel')?.click();
-    return;
-  }
-  const sharePopup = document.getElementById('sharePopup');
-  if (sharePopup?.open) { closeSharePopup(); return; }
+  const closedOverlay = [
+    () => {
+      if (!_shortcutsOverlay) return false;
+      hideBrowseShortcutsHelp();
+      return true;
+    },
+    () => {
+      if (!isRowTagPopoverOpen()) return false;
+      closeRowTagPopover();
+      return true;
+    },
+    () => !!globalThis.AirdCore?.cancelActiveDialog?.(),
+    () => {
+      const fpOverlay = document.getElementById('folderPickerOverlay');
+      if (!fpOverlay?.classList.contains('show')) return false;
+      FolderPicker.close(null);
+      return true;
+    },
+    () => {
+      const sharePicker = document.getElementById('sharePickerModal');
+      if (!sharePicker?.open) return false;
+      document.getElementById('sharePickerCancel')?.click();
+      return true;
+    },
+    () => {
+      const sharePopup = document.getElementById('sharePopup');
+      if (!sharePopup?.open) return false;
+      closeSharePopup();
+      return true;
+    },
+  ].some((close) => close());
+  if (closedOverlay) return;
   SelectionStore.clear();
   document.querySelectorAll('.row-checkbox:checked').forEach(function (cb) { cb.checked = false; });
   const selectAll = document.getElementById('selectAllCheckbox');

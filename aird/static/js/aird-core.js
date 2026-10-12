@@ -172,6 +172,28 @@
     return false;
   }
 
+  // aird/static/js/core/anchor.js
+  function placeNearAnchor(spec) {
+    const pad = spec.pad ?? 8;
+    const gap = spec.gap ?? 6;
+    const safe = spec.safe || {};
+    const safeL = safe.left || 0;
+    const safeR = safe.right || 0;
+    const safeT = safe.top || 0;
+    const safeB = safe.bottom || 0;
+    const { anchor, panel, viewport } = spec;
+    let top = anchor.bottom + gap;
+    if (top + panel.height > viewport.height - pad - safeB) {
+      top = Math.max(pad + safeT, anchor.top - panel.height - gap);
+    }
+    let left = anchor.left;
+    if (left + panel.width > viewport.width - pad - safeR) {
+      left = viewport.width - pad - safeR - panel.width;
+    }
+    left = Math.max(pad + safeL, left);
+    return { top, left };
+  }
+
   // aird/static/js/core/ui.js
   function wireAppThemePicker() {
     const btn = document.getElementById("airdAppThemeBtn");
@@ -180,24 +202,17 @@
     const menuHome = { parent: menu.parentElement, next: menu.nextSibling };
     let open = false;
     function placeMenu() {
-      const pad = 8;
-      const gap = 6;
       const rect = btn.getBoundingClientRect();
-      const vw = document.documentElement.clientWidth;
-      const vh = globalThis.innerHeight;
-      const mw = menu.offsetWidth || 176;
-      const mh = menu.offsetHeight || 280;
-      let top = rect.bottom + gap;
-      if (top + mh > vh - pad) {
-        top = Math.max(pad, rect.top - mh - gap);
-      }
-      let left = rect.left;
-      if (left + mw > vw - pad) {
-        left = vw - pad - mw;
-      }
-      left = Math.max(pad, left);
-      menu.style.setProperty("top", `${top}px`);
-      menu.style.setProperty("left", `${left}px`);
+      const pos = placeNearAnchor({
+        anchor: rect,
+        panel: { width: menu.offsetWidth || 176, height: menu.offsetHeight || 280 },
+        viewport: {
+          width: document.documentElement.clientWidth,
+          height: globalThis.innerHeight
+        }
+      });
+      menu.style.setProperty("top", `${pos.top}px`);
+      menu.style.setProperty("left", `${pos.left}px`);
     }
     function showMenu() {
       if (open) return;
@@ -302,17 +317,16 @@
       globalThis.requestAnimationFrame(() => {
         const ph = panel.getBoundingClientRect().height || panel.offsetHeight || 0;
         const pw = panel.getBoundingClientRect().width || menuW;
-        let top = rect.bottom + gap;
-        if (top + ph > vh - pad - safeB) {
-          top = Math.max(pad + safeT, rect.top - ph - gap);
-        }
-        let left = rect.left;
-        if (left + pw > vw - pad - safeR) {
-          left = vw - pad - safeR - pw;
-        }
-        left = Math.max(pad + safeL, left);
-        panel.style.setProperty("top", `${top}px`, "important");
-        panel.style.setProperty("left", `${left}px`, "important");
+        const pos = placeNearAnchor({
+          anchor: rect,
+          panel: { width: pw, height: ph },
+          viewport: { width: vw, height: vh },
+          pad,
+          gap,
+          safe: { left: safeL, right: safeR, top: safeT, bottom: safeB }
+        });
+        panel.style.setProperty("top", `${pos.top}px`, "important");
+        panel.style.setProperty("left", `${pos.left}px`, "important");
       });
     }
     function resetPanel(root) {

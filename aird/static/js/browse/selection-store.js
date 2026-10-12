@@ -1,72 +1,79 @@
 "use strict";
 
-/** Session-persisted multi-select for browse (Set-backed for O(1) membership). */
-export const SelectionStore = {
-  KEY: 'aird_browse_selections',
+/** Session-persisted multi-select. Inject storage in tests; the page uses sessionStorage. */
+export function createSelectionStore(storage, key = "aird_browse_selections") {
+  let items = null;
 
-  _read() {
+  function read() {
+    if (items) return items;
     try {
-      const arr = JSON.parse(sessionStorage.getItem(this.KEY)) || [];
-      return Array.isArray(arr) ? arr : [];
+      const arr = JSON.parse(storage.getItem(key)) || [];
+      items = Array.isArray(arr) ? arr : [];
     } catch {
-      return [];
+      items = [];
     }
-  },
+    return items;
+  }
 
-  _write(arr) {
+  function write(next) {
+    items = next;
     try {
-      sessionStorage.setItem(this.KEY, JSON.stringify(arr));
+      storage.setItem(key, JSON.stringify(next));
     } catch {
       /* quota / private mode */
     }
-  },
+  }
 
-  getAll() {
-    return this._read();
-  },
+  return {
+    KEY: key,
 
-  add(path) {
-    const arr = this._read();
-    if (!arr.includes(path)) {
-      arr.push(path);
-      this._write(arr);
-    }
-  },
+    getAll() {
+      return read().slice();
+    },
 
-  remove(path) {
-    this._write(this._read().filter((p) => p !== path));
-  },
+    add(path) {
+      const arr = read();
+      if (!arr.includes(path)) write(arr.concat(path));
+    },
 
-  has(path) {
-    return this._read().includes(path);
-  },
+    remove(path) {
+      write(read().filter((p) => p !== path));
+    },
 
-  clear() {
-    try {
-      sessionStorage.removeItem(this.KEY);
-    } catch {
-      /* ignore */
-    }
-  },
+    has(path) {
+      return read().includes(path);
+    },
 
-  count() {
-    return this._read().length;
-  },
-
-  addMany(paths) {
-    const set = new Set(this._read());
-    let changed = false;
-    for (const p of paths) {
-      if (!set.has(p)) {
-        set.add(p);
-        changed = true;
+    clear() {
+      items = [];
+      try {
+        storage.removeItem(key);
+      } catch {
+        /* ignore */
       }
-    }
-    if (changed) this._write([...set]);
-  },
+    },
 
-  removeMany(paths) {
-    const drop = new Set(paths);
-    this._write(this._read().filter((p) => !drop.has(p)));
-  },
-};
+    count() {
+      return read().length;
+    },
+
+    addMany(paths) {
+      const set = new Set(read());
+      let changed = false;
+      for (const p of paths) {
+        if (!set.has(p)) {
+          set.add(p);
+          changed = true;
+        }
+      }
+      if (changed) write([...set]);
+    },
+
+    removeMany(paths) {
+      const drop = new Set(paths);
+      write(read().filter((p) => !drop.has(p)));
+    },
+  };
+}
+
+export const SelectionStore = createSelectionStore(sessionStorage);

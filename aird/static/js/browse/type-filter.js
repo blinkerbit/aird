@@ -1,46 +1,18 @@
 "use strict";
 
+import {
+  emptyTypeFilter,
+  isFiltering,
+  normalizeTypeFilter,
+  parseExtensions,
+  rowMatchesFilter,
+  toggleCategory,
+  typeFilterFromSearch,
+} from "./type-filter-model.js";
+
 const STORAGE_KEY = "aird-browse-type-filter";
-const EXT_RE = /^\.[a-z0-9]{1,16}$/;
 
-const CATEGORIES = {
-  documents: [".pdf", ".doc", ".docx", ".txt", ".rtf", ".odt", ".md"],
-  images: [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp"],
-  videos: [".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm"],
-  archives: [".zip", ".rar", ".7z", ".tar", ".gz", ".bz2"],
-  code: [".js", ".py", ".html", ".css", ".java", ".cpp", ".c"],
-  audio: [".mp3", ".wav", ".flac", ".aac", ".ogg"],
-};
-
-let state = { categories: [], extensions: [] };
-
-function rowExt(row) {
-  const name = (row.querySelector(".file-link")?.textContent || "").trim();
-  const dot = name.lastIndexOf(".");
-  if (dot <= 0) return "";
-  return name.slice(dot).toLowerCase();
-}
-
-function parseExtInput(raw) {
-  return String(raw || "")
-    .split(/[\s,]+/)
-    .map((part) => part.trim().toLowerCase())
-    .filter(Boolean)
-    .map((part) => (part.startsWith(".") ? part : `.${part}`))
-    .filter((part) => EXT_RE.test(part));
-}
-
-function filtering() {
-  return state.categories.length > 0 || state.extensions.length > 0;
-}
-
-function rowMatches(row) {
-  if (row.dataset.isDir === "1") return true;
-  if (!filtering()) return true;
-  const ext = rowExt(row);
-  if (state.extensions.includes(ext)) return true;
-  return state.categories.some((cat) => (CATEGORIES[cat] || []).includes(ext));
-}
+let state = emptyTypeFilter();
 
 function writeUrl() {
   const url = new URL(globalThis.location.href);
@@ -63,21 +35,20 @@ function persist() {
 function readStored() {
   try {
     const saved = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || "null");
-    if (!saved || typeof saved !== "object") return;
-    state.categories = (saved.categories || []).filter((cat) => CATEGORIES[cat]);
-    state.extensions = (saved.extensions || []).filter((ext) => EXT_RE.test(ext));
+    state = normalizeTypeFilter(saved);
   } catch {
-    /* ignore bad storage */
+    state = emptyTypeFilter();
   }
 }
 
 function readInitial() {
   const url = new URL(globalThis.location.href);
-  const type = url.searchParams.get("type");
-  const ext = url.searchParams.get("ext");
-  if (type || ext) {
-    state.categories = (type || "").split(",").filter((cat) => CATEGORIES[cat]);
-    state.extensions = parseExtInput(ext || "");
+  const fromUrl = typeFilterFromSearch(
+    url.searchParams.get("type"),
+    url.searchParams.get("ext"),
+  );
+  if (fromUrl) {
+    state = fromUrl;
     return;
   }
   readStored();
@@ -86,7 +57,11 @@ function readInitial() {
 function updateCount(shown, files) {
   const count = document.getElementById("browseTypeFilterCount");
   if (!count) return;
-  count.textContent = filtering() ? `${shown} of ${files} files shown` : "";
+  count.textContent = isFiltering(state) ? `${shown} of ${files} files shown` : "";
+}
+
+function rowName(row) {
+  return (row.querySelector(".file-link")?.textContent || "").trim();
 }
 
 export function applyBrowseTypeFilter() {
@@ -96,7 +71,7 @@ export function applyBrowseTypeFilter() {
   rows.forEach((row) => {
     const isDir = row.dataset.isDir === "1";
     if (!isDir) files += 1;
-    const show = rowMatches(row);
+    const show = rowMatchesFilter(state, { isDir, name: rowName(row) });
     row.hidden = !show;
     if (!isDir && show) shown += 1;
   });
@@ -111,27 +86,21 @@ function syncPressed(root) {
 }
 
 function onCategoryClick(root, btn) {
-  const cat = btn.getAttribute("data-type-filter");
-  if (!cat || !CATEGORIES[cat]) return;
-  if (state.categories.includes(cat)) {
-    state.categories = state.categories.filter((item) => item !== cat);
-  } else {
-    state.categories = state.categories.concat(cat);
-  }
+  state = toggleCategory(state, btn.getAttribute("data-type-filter"));
   syncPressed(root);
   persist();
   applyBrowseTypeFilter();
 }
 
 function onExtChange(input) {
-  state.extensions = parseExtInput(input.value);
+  state = { categories: state.categories, extensions: parseExtensions(input.value) };
   input.value = state.extensions.join(", ");
   persist();
   applyBrowseTypeFilter();
 }
 
 function onClear(root, input) {
-  state = { categories: [], extensions: [] };
+  state = emptyTypeFilter();
   syncPressed(root);
   if (input) input.value = "";
   persist();
@@ -140,7 +109,8 @@ function onClear(root, input) {
 
 export function initBrowseTypeFilter() {
   const root = document.getElementById("browseTypeFilter");
-  if (!root) return;
+  if (!root || root.dataset.bound === "1") return;
+  root.dataset.bound = "1";
   readInitial();
   syncPressed(root);
   root.querySelectorAll("[data-type-filter]").forEach((btn) => {
