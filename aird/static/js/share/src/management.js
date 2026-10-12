@@ -111,7 +111,7 @@ function renderShareManagementModal(share) {
 
 async function updateShare() {
   if (!shareVars.currentShareData) {
-    showDialog('No share data available', 'Error');
+    void showDialog('No share data available', 'Error');
     return;
   }
 
@@ -171,19 +171,19 @@ async function updateShare() {
     const data = await response.json();
 
     if (data.error) {
-      showDialog('Error: ' + data.error, 'Error');
+      void showDialog('Error: ' + data.error, 'Error');
     } else {
       let message = 'Share updated successfully!';
       if (data.new_token) {
         message += `\n\nNew secret token: ${data.new_token}\n\nPlease save this token - it won't be shown again!`;
       }
-      showDialog(message, 'Success');
+      void showDialog(message, 'Success');
       closeShareManagementModal();
-      loadActiveShares();
+      void loadActiveShares();
     }
   } catch (error) {
     console.error('Error updating share:', error);
-    showDialog('Failed to update share', 'Error');
+    void showDialog('Failed to update share', 'Error');
   }
 }
 
@@ -214,15 +214,15 @@ async function removeFileFromShare(filePath) {
     const data = await response.json();
 
     if (data.error) {
-      showDialog('Error removing file: ' + data.error, 'Error');
+      void showDialog('Error removing file: ' + data.error, 'Error');
     } else {
-      showDialog('File removed successfully!', 'Success');
+      void showDialog('File removed successfully!', 'Success');
       // Refresh the modal
-      manageShare(shareVars.currentShareData.id);
+      void manageShare(shareVars.currentShareData.id);
     }
   } catch (error) {
     console.error('Error removing file:', error);
-    showDialog('Failed to remove file', 'Error');
+    void showDialog('Failed to remove file', 'Error');
   }
 }
 
@@ -242,14 +242,14 @@ async function addUserToShare() {
     });
     const data = await response.json();
     if (data.error) {
-      showDialog('Error adding user: ' + data.error, 'Error');
+      void showDialog('Error adding user: ' + data.error, 'Error');
     } else {
       input.value = '';
-      manageShare(shareVars.currentShareData.id);
+      void manageShare(shareVars.currentShareData.id);
     }
   } catch (error) {
     console.error('Error adding user:', error);
-    showDialog('Failed to add user', 'Error');
+    void showDialog('Failed to add user', 'Error');
   }
 }
 
@@ -279,14 +279,14 @@ async function removeUserFromShare(username) {
     const data = await response.json();
 
     if (data.error) {
-      showDialog('Error removing user: ' + data.error, 'Error');
+      void showDialog('Error removing user: ' + data.error, 'Error');
     } else {
-      showDialog('User access removed successfully!', 'Success');
-      manageShare(shareVars.currentShareData.id);
+      void showDialog('User access removed successfully!', 'Success');
+      void manageShare(shareVars.currentShareData.id);
     }
   } catch (error) {
     console.error('Error removing user:', error);
-    showDialog('Failed to remove user', 'Error');
+    void showDialog('Failed to remove user', 'Error');
   }
 }
 
@@ -306,14 +306,14 @@ async function addModifyUserToShare() {
     });
     const data = await response.json();
     if (data.error) {
-      showDialog('Error adding modifier: ' + data.error, 'Error');
+      void showDialog('Error adding modifier: ' + data.error, 'Error');
     } else {
       input.value = '';
-      manageShare(shareVars.currentShareData.id);
+      void manageShare(shareVars.currentShareData.id);
     }
   } catch (error) {
     console.error('Error adding modify user:', error);
-    showDialog('Failed to add modifier', 'Error');
+    void showDialog('Failed to add modifier', 'Error');
   }
 }
 
@@ -337,14 +337,14 @@ async function removeModifyUserFromShare(username) {
     });
     const data = await response.json();
     if (data.error) {
-      showDialog('Error removing modify access: ' + data.error, 'Error');
+      void showDialog('Error removing modify access: ' + data.error, 'Error');
     } else {
-      showDialog('Modify access removed!', 'Success');
-      manageShare(shareVars.currentShareData.id);
+      void showDialog('Modify access removed!', 'Success');
+      void manageShare(shareVars.currentShareData.id);
     }
   } catch (error) {
     console.error('Error removing modify user:', error);
-    showDialog('Failed to remove modify user', 'Error');
+    void showDialog('Failed to remove modify user', 'Error');
   }
 }
 

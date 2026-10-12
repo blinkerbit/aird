@@ -21,7 +21,7 @@
     if (typeof globalThis.CSS !== "undefined" && typeof globalThis.CSS.escape === "function") {
       return globalThis.CSS.escape(s);
     }
-    return s.replace(/\\/g, "\\\\").replace(/"/g, "\\22 ");
+    return s.replaceAll("\\", "\\\\").replaceAll('"', "\\22 ");
   }
   function queryByDataFileId(baseSelector, fileId) {
     const esc = escapeCssAttrValue(fileId);

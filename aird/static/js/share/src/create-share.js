@@ -123,7 +123,7 @@ async function generateShareLink() {
     const data = await response.json();
 
     if (data.error) {
-      showDialog('Error: ' + data.error, 'Error');
+      void showDialog('Error: ' + data.error, 'Error');
     } else {
       closeShareConfigModal();
       const fullUrl = `${globalThis.location.origin}${data.url}`;
@@ -133,12 +133,12 @@ async function generateShareLink() {
         data, fullUrl, accessType, allowedUsers, shareType, disableToken
       );
       clearSelection();
-      loadActiveShares();
+      void loadActiveShares();
       elements.shareResult.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   } catch (error) {
     console.error('Error generating share link:', error);
-    showDialog('Failed to generate share link', 'Error');
+    void showDialog('Failed to generate share link', 'Error');
   } finally {
     createBtn.disabled = false;
     createBtn.textContent = 'Create Share Link';

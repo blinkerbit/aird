@@ -163,7 +163,7 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
             closePeerConnection();
             ws.send(JSON.stringify({ type: 'restart_connection' }));
             if (currentMode === 'send') {
-                createPeerConnection(true);
+                void createPeerConnection(true);
             }
             setTimeout(updateApplyReconnectButton, 2000);
         }
@@ -258,7 +258,7 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
             log(`Peer joined: ${data.username}`, 'success');
             updateSendStatus('connected', `Connected to ${data.username}`);
             if (currentMode === 'send') {
-                createPeerConnection(true);
+                void createPeerConnection(true);
             }
             document.getElementById('session-warning').style.display = 'flex';
             updateApplyReconnectButton();
@@ -276,7 +276,7 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
             log(`Reconnecting with new settings (requested by ${data.username || 'peer'})...`, 'info');
             closePeerConnection();
             if (currentMode === 'send') {
-                createPeerConnection(true);
+                void createPeerConnection(true);
             }
         }
 
@@ -295,11 +295,11 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
             restart_connection: handleRestartConnectionMessage,
             offer: (data) => {
                 log('Received connection offer', 'info');
-                handleOffer(data.sdp);
+                void handleOffer(data.sdp);
             },
             answer: (data) => {
                 log('Received connection answer', 'info');
-                handleAnswer(data.sdp);
+                void handleAnswer(data.sdp);
             },
             ice_candidate: (data) => {
                 handleIceCandidate(data.candidate);
@@ -542,7 +542,7 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
             dataChannel.onopen = () => {
                 log('Data channel opened', 'success');
                 if (currentMode === 'send') {
-                    startFileSend();
+                    void startFileSend();
                 }
             };
 
@@ -560,7 +560,7 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
         }
 
         async function handleOffer(sdp) {
-            createPeerConnection(false);
+            void createPeerConnection(false);
 
             await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
             const answer = await peerConnection.createAnswer();
@@ -614,7 +614,7 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
             if (currentFileIndex === -1) {
                 log('Recipient requested a file that was removed', 'warning');
                 isTransferring = false;
-                processNextRequest();
+                void processNextRequest();
                 return;
             }
 
@@ -666,7 +666,7 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
             pendingRequests.push(msg.id);
             log(`File requested by recipient: ${msg.id}`, 'info');
             if (!isTransferring) {
-                processNextRequest();
+                void processNextRequest();
             }
         }
 
@@ -1051,7 +1051,7 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
                 log('No share code available yet', 'error');
                 return;
             }
-            copyToClipboard(code, 'Share code copied to clipboard');
+            void copyToClipboard(code, 'Share code copied to clipboard');
         }
 
         function copyShareLink() {
@@ -1061,7 +1061,7 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
                 return;
             }
             const link = buildP2pShareJoinUrl(code);
-            copyToClipboard(link, 'Share link copied to clipboard');
+            void copyToClipboard(link, 'Share link copied to clipboard');
         }
 
         function generateShareQRCode(roomId) {

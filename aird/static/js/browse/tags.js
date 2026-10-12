@@ -346,7 +346,7 @@ async function bulkRemoveTagsFromPaths(paths, tags) {
     await Promise.all(tags.map(function (tag) { return untagPath(tag, path); }));
     updateTagsCell(path, remain);
   }
-  showDialog('Removed [' + tags.join(', ') + '] from ' + paths.length + ' item(s).', 'Tags');
+  void showDialog('Removed [' + tags.join(', ') + '] from ' + paths.length + ' item(s).', 'Tags');
 }
 
 async function bulkApplyTagsToPaths(paths, tags, pendingColors) {
@@ -361,12 +361,12 @@ async function bulkApplyTagsToPaths(paths, tags, pendingColors) {
   }
   const msg = created + ' tag rule(s) created for [' + tags.join(', ') + '].'
     + (failed ? ' ' + failed + ' already existed or failed.' : '');
-  showDialog(msg, 'Tags applied');
+  void showDialog(msg, 'Tags applied');
 }
 
 export async function bulkAddTags() {
   const paths = SelectionStore.getAll();
-  if (!paths.length) { showDialog('No files selected.', 'Info'); return; }
+  if (!paths.length) { void showDialog('No files selected.', 'Info'); return; }
   const modal = document.getElementById('tagPickerModal');
   const inputEl = document.getElementById('tagPickerInput');
   const chipsEl = document.getElementById('tagPickerChips');
@@ -854,7 +854,7 @@ export async function openRowTagPopover(path, anchorEl) {
     syncTagsCellFromMap();
     closeRowTagPopover();
     if (failed > 0) {
-      showDialog(created + ' tag rule(s) added. ' + failed + ' already existed or failed.', 'Tags');
+      void showDialog(created + ' tag rule(s) added. ' + failed + ' already existed or failed.', 'Tags');
     }
   };
 

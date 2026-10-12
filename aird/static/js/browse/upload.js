@@ -16,7 +16,7 @@ function onUploadSuccess(job) {
 }
 
 function onUploadError(_job, err) {
-  showDialog(friendlyUploadErrorMessage(err), 'Upload failed');
+  void showDialog(friendlyUploadErrorMessage(err), 'Upload failed');
 }
 
 async function* readEntryBatches(reader) {
@@ -163,7 +163,7 @@ function transferSink() {
 }
 
 function warnNotReady() {
-  showDialog('Transfers are not ready. Refresh the page and try again.', 'Upload');
+  void showDialog('Transfers are not ready. Refresh the page and try again.', 'Upload');
 }
 
 export function currentUploadDir() {
@@ -190,7 +190,7 @@ function enqueueAt(files, dir) {
   }
   if (rejected.length) {
     const limitGB = (getMaxFileSize() / (1024 * 1024 * 1024)).toFixed(2);
-    showDialog(`Files exceed the ${limitGB} GB limit: ${rejected.join(', ')}`, 'File Size Limit');
+    void showDialog(`Files exceed the ${limitGB} GB limit: ${rejected.join(', ')}`, 'File Size Limit');
   }
   if (accepted.length) TM.pumpUploads(onUploadSuccess, onUploadError);
 }
@@ -224,7 +224,7 @@ async function enqueueEntriesAt(entries, baseDir) {
   }
   if (rejected.length) {
     const limitGB = (maxSize / (1024 * 1024 * 1024)).toFixed(2);
-    showDialog(`Files exceed the ${limitGB} GB limit: ${rejected.join(', ')}`, 'File Size Limit');
+    void showDialog(`Files exceed the ${limitGB} GB limit: ${rejected.join(', ')}`, 'File Size Limit');
   }
   TM.pumpUploads(onUploadSuccess, onUploadError);
 }

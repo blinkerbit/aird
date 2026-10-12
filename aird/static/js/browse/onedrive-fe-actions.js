@@ -19,7 +19,7 @@ function itemsFromPaths(paths) {
 
 async function runCopy(action, items) {
   if (!items.length) {
-    showDialog('Nothing selected to copy.', 'OneDrive');
+    void showDialog('Nothing selected to copy.', 'OneDrive');
     return;
   }
   try {
@@ -33,9 +33,9 @@ async function runCopy(action, items) {
     });
     if (!result) return;
     const n = result.uploaded ?? 0;
-    showDialog(n ? `Copied ${n} file(s) to OneDrive.` : 'Copied to OneDrive.', 'OneDrive');
+    void showDialog(n ? `Copied ${n} file(s) to OneDrive.` : 'Copied to OneDrive.', 'OneDrive');
   } catch (err) {
-    showDialog(err.message || 'OneDrive copy failed', 'OneDrive');
+    void showDialog(err.message || 'OneDrive copy failed', 'OneDrive');
   }
 }
 

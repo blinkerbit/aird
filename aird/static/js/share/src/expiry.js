@@ -55,7 +55,7 @@ function readExpiryDateFromInput(inputId) {
   if (!input?.value) return null;
   input.min = minExpiryDatetimeLocal();
   if (input.value < input.min) {
-    showDialog('Expiration must be in the future.', 'Invalid expiration');
+    void showDialog('Expiration must be in the future.', 'Invalid expiration');
     return undefined;
   }
   return new Date(input.value).toISOString().replace('Z', '');
