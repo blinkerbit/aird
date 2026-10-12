@@ -1,5 +1,5 @@
 # CI / test locked deps (generate hashes via: uv pip compile --generate-hashes -o requirements-ci.txt requirements-ci.in)
-build==1.5.0
+build==1.6.1
 coverage==7.14.3
 mock==5.2.0
 pytest==9.1.1
