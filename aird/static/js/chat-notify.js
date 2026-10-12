@@ -50,7 +50,13 @@
   }
 
   function escapeHtml(s) {
-    return String(s ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+    if (globalThis.AirdCore?.escapeHtml) return globalThis.AirdCore.escapeHtml(s);
+    return String(s ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
   }
 
   function maybeBrowserNotify(payload) {

@@ -1,3 +1,7 @@
+import { escapeHtml, escapeAttr, queryByDataFileId } from '../core/dom-safe.js';
+import { formatBytes } from '../core/format.js';
+import { copyToClipboard as copyTextToClipboard } from '../core/clipboard.js';
+
 let isAnonymous = document.body.dataset.isAnonymous === 'true';
 
         // =====================================================================
@@ -686,7 +690,7 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
 
         function markFileAsReceiving(fileId) {
             if (!fileId) return;
-            const dBtn = globalThis.AirdCore.queryByDataFileId('.available-file-btn', String(fileId));
+            const dBtn = queryByDataFileId('.available-file-btn', String(fileId));
             if (dBtn) dBtn.textContent = 'RECEIVING...';
         }
 
@@ -780,7 +784,7 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
             document.getElementById('receive-progress').classList.add('hidden');
             
             if (expectedFileInfo?.id) {
-                const btn = globalThis.AirdCore.queryByDataFileId('.available-file-btn', String(expectedFileInfo.id));
+                const btn = queryByDataFileId('.available-file-btn', String(expectedFileInfo.id));
                 if (btn) {
                     btn.textContent = 'DOWNLOADED ✓';
                     btn.disabled = true;
@@ -803,7 +807,7 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
                 return;
             }
             
-            const btn = globalThis.AirdCore.queryByDataFileId('.available-file-btn', String(id));
+            const btn = queryByDataFileId('.available-file-btn', String(id));
             if (btn?.disabled) return; // Prevent duplicate requests
             
             requestedFiles.add(id);
@@ -813,7 +817,7 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
                 btn.textContent = 'REQUESTED...';
                 btn.disabled = true;
             }
-            const cb = globalThis.AirdCore.queryByDataFileId('.available-file-checkbox', String(id));
+            const cb = queryByDataFileId('.available-file-checkbox', String(id));
             if (cb) {
                 cb.disabled = true;
                 cb.checked = false; // Disconnect it from select-all logic if requested
@@ -934,14 +938,6 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
             if (mime.includes('javascript') || mime.includes('json') || mime.includes('xml') || mime.includes('html') || mime.includes('css')) return FILE_ICONS.code;
             if (mime.includes('text') || mime.includes('document') || mime.includes('word')) return FILE_ICONS.document;
             return FILE_ICONS.default;
-        }
-
-        function escapeHtml(text) {
-            return globalThis.AirdCore.escapeHtml(text);
-        }
-
-        function escapeAttr(text) {
-            return globalThis.AirdCore.escapeAttr(text);
         }
 
         function downloadFile(fileId) {
@@ -1118,11 +1114,15 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
                 globalThis.prompt('Copy this value:', text);
                 return;
             }
+            let ok = false;
             try {
-                await navigator.clipboard.writeText(text);
-                log(successMessage, 'success');
+                ok = await copyTextToClipboard(text);
             } catch (err) {
                 console.error('Clipboard API failed:', err);
+            }
+            if (ok) {
+                log(successMessage, 'success');
+            } else {
                 log('Failed to copy. Please copy manually: ' + text, 'error');
                 globalThis.prompt('Copy this value:', text);
             }
@@ -1153,10 +1153,6 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
                 peerConnection.close();
                 peerConnection = null;
             }
-        }
-
-        function formatBytes(bytes) {
-            return globalThis.AirdCore.formatBytes(bytes);
         }
 
         function log(message, type = '') {

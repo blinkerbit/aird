@@ -12,7 +12,7 @@ import {
 } from './util.js';
 import { closeSelectionDrawer } from './selection-ui.js';
 import { bulkCopyToDefault, bulkCopyToFolder } from './onedrive-fe-actions.js';
-import { queueBrowseAttachBatch } from '../chat-attach.js?v=20260930h';
+import { queueBrowseAttachBatch } from '../chat-attach.js';
 
 const FolderPicker = globalThis.AirdFolderPicker;
 

@@ -2,6 +2,7 @@
  * Chat file attach: browse picker, drop zone, and pending chips.
  * Isolated so browse/drop cannot silently regress when chat UI changes.
  */
+import { escapeHtml as escapeText, escapeAttr } from './core/dom-safe.js';
 
 export const ATTACH_LIMIT = 10;
 
@@ -600,14 +601,6 @@ export function createBrowsePicker({
     get path() { return browsePath; },
     get hits() { return browseHits.slice(); },
   };
-}
-
-function escapeText(s) {
-  return String(s ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-}
-
-function escapeAttr(s) {
-  return escapeText(s).replaceAll('"', '&quot;');
 }
 
 const AirdChatAttach = {

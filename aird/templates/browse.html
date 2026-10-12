@@ -5,7 +5,7 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261001c" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261008b" />
   <link rel="stylesheet" href="/static/css/gitlab.css" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   {% include '_pwa_head.html' %}
@@ -58,6 +58,28 @@
         </svg>
         <span class="hidden sm:inline">Details</span>
       </button>
+      <button type="button" id="fileGridToggleBtn" class="btn btn-ghost btn-sm shadow-sm border border-base-300"
+        title="Switch to grid view" aria-label="Toggle grid view" aria-pressed="false">
+        <svg class="ico w-4 h-4" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+        <span class="hidden sm:inline">Grid</span>
+      </button>
+    </div>
+    <div id="browseTypeFilter" class="browse-type-filter mb-3" role="group" aria-label="Filter files by type">
+      <button type="button" class="btn btn-xs btn-ghost border border-base-300" data-type-filter="documents" aria-pressed="false">Documents</button>
+      <button type="button" class="btn btn-xs btn-ghost border border-base-300" data-type-filter="images" aria-pressed="false">Images</button>
+      <button type="button" class="btn btn-xs btn-ghost border border-base-300" data-type-filter="videos" aria-pressed="false">Videos</button>
+      <button type="button" class="btn btn-xs btn-ghost border border-base-300" data-type-filter="audio" aria-pressed="false">Audio</button>
+      <button type="button" class="btn btn-xs btn-ghost border border-base-300" data-type-filter="archives" aria-pressed="false">Archives</button>
+      <button type="button" class="btn btn-xs btn-ghost border border-base-300" data-type-filter="code" aria-pressed="false">Code</button>
+      <label class="browse-type-filter-ext" for="browseTypeFilterExt">
+        <span class="sr-only">Custom extensions</span>
+        <input id="browseTypeFilterExt" type="text" class="input input-bordered input-xs w-36" maxlength="80" placeholder=".heic, .psd" autocomplete="off" />
+      </label>
+      <button type="button" id="browseTypeFilterClear" class="btn btn-xs btn-ghost">Clear</button>
+      <span id="browseTypeFilterCount" class="text-xs opacity-70" aria-live="polite"></span>
     </div>
 
     <div class="aird-pathbar text-sm" aria-label="Path from file root — Home is your workspace root, not your computer account home folder">
@@ -438,9 +460,10 @@
   <script nonce="{{ csp_nonce }}" type="importmap">
   {
     "imports": {
-      "/static/js/browse/app.js": "/static/js/browse/app.js?v=20260930h",
-      "/static/js/browse/upload.js": "/static/js/browse/upload.js?v=20261001c",
-      "/static/js/browse/listing.js": "/static/js/browse/listing.js?v=20260930a",
+      "/static/js/browse/app.js": "/static/js/browse/app.js?v=20261008b",
+      "/static/js/browse/upload.js": "/static/js/browse/upload.js?v=20261008b",
+      "/static/js/browse/listing.js": "/static/js/browse/listing.js?v=20261008b",
+      "/static/js/browse/type-filter.js": "/static/js/browse/type-filter.js?v=20261008a",
       "/static/js/browse/util.js": "/static/js/browse/util.js?v=20260930h",
       "/static/js/browse/upload-errors.js": "/static/js/browse/upload-errors.js?v=20261001d",
       "/static/js/browse/selection-ui.js": "/static/js/browse/selection-ui.js?v=20260726d",
@@ -449,7 +472,7 @@
       "/static/js/browse/tags.js": "/static/js/browse/tags.js?v=20260930h",
       "/static/js/browse/tag-api.js": "/static/js/browse/tag-api.js?v=20260930h",
       "/static/js/browse/shares.js": "/static/js/browse/shares.js?v=20260726d",
-      "/static/js/browse/table-ui.js": "/static/js/browse/table-ui.js?v=20260930h",
+      "/static/js/browse/table-ui.js": "/static/js/browse/table-ui.js?v=20261008b",
       "/static/js/browse/row-more-menu.js": "/static/js/browse/row-more-menu.js?v=20260902d",
       "/static/js/browse/onedrive-fe-actions.js": "/static/js/browse/onedrive-fe-actions.js?v=20260902d",
       "/static/js/browse/gitlab-panel.js": "/static/js/browse/gitlab-panel.js?v=20260825d",
@@ -458,7 +481,14 @@
       "/static/js/onedrive-fe/sign-in.js": "/static/js/onedrive-fe/sign-in.js?v=20260902c",
       "/static/js/onedrive-fe/settings.js": "/static/js/onedrive-fe/settings.js?v=20260929c",
       "/static/js/onedrive-fe/graph.js": "/static/js/onedrive-fe/graph.js?v=20260902c",
-      "/static/js/onedrive-fe/tokens.js": "/static/js/onedrive-fe/tokens.js?v=20260902a"
+      "/static/js/onedrive-fe/tokens.js": "/static/js/onedrive-fe/tokens.js?v=20260902a",
+      "/static/js/chat-attach.js": "/static/js/chat-attach.js?v=20261009a",
+      "/static/js/core/xsrf.js": "/static/js/core/xsrf.js?v=20261009a",
+      "/static/js/core/dom-safe.js": "/static/js/core/dom-safe.js?v=20261009a",
+      "/static/js/core/format.js": "/static/js/core/format.js?v=20261009a",
+      "/static/js/core/clipboard.js": "/static/js/core/clipboard.js?v=20261009a",
+      "/static/js/core/dialog.js": "/static/js/core/dialog.js?v=20261009a",
+      "/static/js/core/http.js": "/static/js/core/http.js?v=20261009a"
     }
   }
   </script>
@@ -468,8 +498,8 @@
   <script src="/static/js/transfer-manager.js?v=20260821a"></script>
   <script src="/static/js/download-manager.js?v=20260821a"></script>
   <script src="/static/js/components/folder-picker.js"></script>
-  <script type="module" src="/static/js/browse/upload.js?v=20261001c"></script>
-  <script type="module" src="/static/js/browse/app.js?v=20260930h"></script>
+  <script type="module" src="/static/js/browse/upload.js?v=20261008b"></script>
+  <script type="module" src="/static/js/browse/app.js?v=20261008b"></script>
   <script src="/static/js/folder-size-scan.js"></script>
 
   <!-- Hover popup: all tags for a row (overflow) -->

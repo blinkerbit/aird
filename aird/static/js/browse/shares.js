@@ -7,6 +7,10 @@ import {
   showDialog,
   getXSRFToken,
 } from './util.js';
+import { copyToClipboard } from '../core/clipboard.js';
+import { apiFetch } from '../core/http.js';
+
+export { copyToClipboard };
 
 function formatShareAccessLabel(share) {
   const users = share.allowed_users;
@@ -113,16 +117,6 @@ export function closeSharePopup() {
   if (popup?.open) popup.close();
 }
 
-export function copyToClipboard(text, btn) {
-  if (globalThis.AirdCore?.copyToClipboard) {
-    globalThis.AirdCore.copyToClipboard(text, btn);
-    return;
-  }
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(String(text ?? '')).catch(() => {});
-  }
-}
-
 export function openShare(url) {
   globalThis.location.href = url;
 }
@@ -134,9 +128,8 @@ export async function revokeShare(shareId) {
   try {
     const formData = new URLSearchParams();
     formData.append('id', shareId);
-    const res = await fetch('/share/revoke', {
+    const res = await apiFetch('/share/revoke', {
       method: 'POST',
-      headers: { 'X-XSRFToken': getXSRFToken() },
       body: formData
     });
     if (!res.ok) {

@@ -1,12 +1,13 @@
 "use strict";
 
 import { showDialog, getChatEnabled } from './util.js';
+import { copyToClipboard } from '../core/clipboard.js';
 import { initUploadUi } from './upload.js';
 import { initBrowseSelectionUi } from './selection-ui.js';
 import { wireBrowseBulkActions } from './bulk-actions.js';
 import { bulkAddTags, initTagsUi } from './tags.js';
 import { initRowMoreMenus, registerRowMoreAction } from './row-more-menu.js';
-import { queueBrowseAttach } from '../chat-attach.js?v=20260930a';
+import { queueBrowseAttach } from '../chat-attach.js';
 import {
   openShareByTag,
   wireSharePopupClose,
@@ -15,8 +16,10 @@ import {
 import { initOneDriveFeUi } from '../onedrive-fe/index.js';
 import { registerOneDriveFeBrowseActions } from './onedrive-fe-actions.js';
 import { initBrowseGitlabPanel } from './gitlab-panel.js';
+import { initBrowseTypeFilter } from './type-filter.js';
 import {
   initFileListViewToggle,
+  initFileGridToggle,
   initMobileActionMenus,
   initBrowseKeyboardShortcuts,
   initBrowseColumnResize,
@@ -34,7 +37,8 @@ function wireCopyPathBtn() {
     const path = document.getElementById('currentPath')?.value ?? '';
     const text = '/' + (path.replace(/^\/+/, ''));
     try {
-      await navigator.clipboard.writeText(text);
+      const ok = await copyToClipboard(text);
+      if (!ok) throw new Error('clipboard write failed');
       const original = copyPathBtn.textContent;
       copyPathBtn.classList.add('copied');
       copyPathBtn.textContent = '✓';
@@ -77,6 +81,8 @@ export function initBrowsePage() {
   runInitStep('sharePopupClose', wireSharePopupClose);
   runInitStep('selectionUi', initBrowseSelectionUi);
   runInitStep('fileListView', initFileListViewToggle);
+  runInitStep('fileGrid', initFileGridToggle);
+  runInitStep('typeFilter', initBrowseTypeFilter);
   runInitStep('mobileMenus', initMobileActionMenus);
   runInitStep('bulkActions', () => wireBrowseBulkActions({ bulkAddTags, openShareByTag }));
   runInitStep('copyPath', wireCopyPathBtn);

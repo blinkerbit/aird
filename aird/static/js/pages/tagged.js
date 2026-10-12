@@ -1,6 +1,9 @@
 "use strict";
 
 function xsrfToken() {
+  if (globalThis.AirdCore?.getXSRFToken) {
+    return globalThis.AirdCore.getXSRFToken();
+  }
   const m = /(?:^|; )_xsrf=([^;]*)/.exec(document.cookie);
   return m ? decodeURIComponent(m[1]) : '';
 }

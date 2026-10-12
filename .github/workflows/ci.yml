@@ -47,7 +47,7 @@ jobs:
           # Reuse the post-npm wheel; packaging tests skip a second build.
           export AIRD_TEST_WHEEL="$(pwd)/$(ls dist/aird-*.whl | head -1)"
           # Include @pytest.mark.slow; pytest.ini defaults to -m "not slow" for local smoke.
-          python -m pytest tests/ -q --tb=no -m "slow or not slow"
+          python -m pytest tests/ -q --tb=no -m "slow or not slow" --cov=aird --cov-report=xml:coverage.xml
 
   release:
     name: Publish

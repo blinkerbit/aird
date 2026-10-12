@@ -1,16 +1,13 @@
 "use strict";
 
+import { getXSRFToken as xsrf } from '../core/xsrf.js';
+
 function cfg() {
   return globalThis.__GITLAB_BROWSE_CONFIG || {};
 }
 
 function currentPath() {
   return (document.getElementById("currentPath")?.value || "").replaceAll(/^\/+/g, "");
-}
-
-function xsrf() {
-  const m = /(?:^|; )_xsrf=([^;]+)/.exec(document.cookie);
-  return m ? decodeURIComponent(m[1]) : "";
 }
 
 function qs(extra = {}) {

@@ -164,10 +164,6 @@
       if (dirty) { e.preventDefault(); e.returnValue = ''; }
     });
 
-    function getXSRFToken() {
-      return globalThis.AirdCore.getXSRFToken();
-    }
-
     async function save() {
       saveBtn.disabled = true;
       setStatus('Saving');
@@ -177,7 +173,7 @@
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            'X-XSRFToken': getXSRFToken()
+            'X-XSRFToken': globalThis.AirdCore.getXSRFToken()
           },
           body: JSON.stringify({ path, content: editor.value })
         });

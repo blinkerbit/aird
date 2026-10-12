@@ -33,6 +33,7 @@ from aird.constants import (
     TRANSFER_CONFIG,
     COMPRESSION_CONFIG,
 )
+from aird.core.upload_extensions import collect_upload_extensions
 from aird.utils.util import invalidate_feature_flags_cache, invalidate_websocket_config_cache
 from aird.network_share_manager import (
     is_smb_server_available,
@@ -262,11 +263,19 @@ def _resolve_transfer_profile_submission(
 
 def _persist_admin_runtime_config(
     handler: BaseHandler, requested_profile: str
-) -> dict | None:
-    """Persist admin form config to DB. Return runtime payload or None."""
+) -> dict | str | None:
+    """Persist admin form config to DB. Return runtime payload, an error string, or None."""
     db_conn = handler.db_conn
     if db_conn is None:
         return None
+    selected_extensions = None
+    if not UPLOAD_CONFIG.get("allow_all_file_types"):
+        selected_extensions, ext_error = collect_upload_extensions(
+            list(handler.get_arguments("allow_ext") or []),
+            handler.get_argument("custom_ext", ""),
+        )
+        if ext_error:
+            return ext_error
     cfg = handler.get_service("config_service")
     cfg.save_feature_flags(db_conn, FEATURE_FLAGS)
     persisted_flags = cfg.load_feature_flags(db_conn)
@@ -280,10 +289,7 @@ def _persist_admin_runtime_config(
     cfg.save_transfer_limits(db_conn, TRANSFER_CONFIG)
     cfg.save_compression_config(db_conn, COMPRESSION_CONFIG)
     runtime_config = cfg.save_transfer_profile(db_conn, requested_profile)
-    if not UPLOAD_CONFIG.get("allow_all_file_types"):
-        selected_extensions = {
-            e for e in handler.get_arguments("allow_ext") if e and e.startswith(".")
-        }
+    if selected_extensions is not None:
         cfg.save_allowed_extensions(db_conn, selected_extensions)
         constants_module.UPLOAD_ALLOWED_EXTENSIONS = selected_extensions
     return runtime_config if isinstance(runtime_config, dict) else None
@@ -411,7 +417,9 @@ class AdminHandler(BaseHandler):
             if db_conn
             else set(constants_module.UPLOAD_ALLOWED_EXTENSIONS)
         )
-        available_extensions = sorted(constants_module.ALLOWED_UPLOAD_EXTENSIONS)
+        available_extensions = sorted(
+            set(constants_module.ALLOWED_UPLOAD_EXTENSIONS) | set(allowed_current)
+        )
 
         runtime_config = self.get_service("config_service").get_runtime_config(db_conn)
 
@@ -455,6 +463,10 @@ class AdminHandler(BaseHandler):
             runtime_config = _persist_admin_runtime_config(self, requested_profile)
         except Exception:
             logging.warning("admin config save failed", exc_info=True)
+        if isinstance(runtime_config, str):
+            self.set_status(HTTP_BAD_REQUEST)
+            self.write(runtime_config)
+            return
 
         runtime_payload = _runtime_payload_or_fallback(runtime_config)
         FeatureFlagSocketHandler.send_updates()

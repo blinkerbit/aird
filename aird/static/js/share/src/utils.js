@@ -1,19 +1,9 @@
-function getXSRFToken() {
-  return globalThis.AirdCore.getXSRFToken();
-}
-
-const showDialog = (...args) => globalThis.AirdCore.showDialog(...args);
-function formatFileSize(bytes) {
-  return globalThis.AirdCore.formatBytes(bytes);
-}
-
-function escapeHtml(text) {
-  return globalThis.AirdCore.escapeHtml(text);
-}
-
-function escapeAttr(text) {
-  return globalThis.AirdCore.escapeAttr(text);
-}
+// Canonical shared primitives re-exported from ../core (single source of truth).
+export { getXSRFToken, xsrfHeaders } from '../../core/xsrf.js';
+export { showDialog } from '../../core/dialog.js';
+export { formatFileSize } from '../../core/format.js';
+export { escapeHtml, escapeAttr } from '../../core/dom-safe.js';
+export { apiFetch } from '../../core/http.js';
 
 function findCheckboxByValue(scopeRoot, value) {
   if (!scopeRoot) return null;
@@ -23,4 +13,4 @@ function findCheckboxByValue(scopeRoot, value) {
   return null;
 }
 
-export { getXSRFToken, showDialog, formatFileSize, escapeHtml, escapeAttr, findCheckboxByValue };
+export { findCheckboxByValue };

@@ -6,7 +6,9 @@ import time
 from aird.handlers.base_handler import BaseHandler, XSRFTokenMixin
 from datetime import datetime
 import secrets
-from ldap3 import Server, Connection
+from ldap3 import Connection
+
+from aird.core.ldap_server import make_ldap_server
 from ldap3.utils.dn import escape_rdn
 from ldap3.utils.conv import escape_filter_chars
 from aird.core.auth_secrets import verify_auth_secret
@@ -538,7 +540,7 @@ class LDAPLoginHandler(BaseHandler):
             return
 
         try:
-            server = Server(self.settings["ldap_server"])
+            server = make_ldap_server(self.settings["ldap_server"])
             username_dn_escaped = escape_rdn(username)
             conn = Connection(
                 server,

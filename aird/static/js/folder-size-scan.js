@@ -10,7 +10,11 @@
   const _active = new Map();
 
   function getXsrf() {
-    return global.AirdCore?.getXSRFToken?.() || '';
+    if (global.AirdCore?.getXSRFToken) {
+      return global.AirdCore.getXSRFToken();
+    }
+    const m = /(?:^|; )_xsrf=([^;]*)/.exec(document.cookie);
+    return m ? decodeURIComponent(m[1]) : '';
   }
 
   function trimEndSlashes(s) {

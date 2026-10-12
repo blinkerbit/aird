@@ -52,7 +52,8 @@ The repo combines **SonarQube/SonarScanner** (see `sonar-project.properties`; pr
 
 ### 2.2 Python (SonarScanner)
 
-- Analyzed paths follow **`sonar.sources=aird`**; tests are excluded via `sonar.exclusions`.
+- Analyzed paths follow **`sonar.sources=aird`**. Tests live in `sonar.tests=tests`.
+- Coverage: `python -m pytest --cov=aird --cov-report=xml:coverage.xml`. `sonar.python.coverage.reportPaths` is `coverage.xml` (repo root). CI writes that file in the pytest job. SonarCloud automatic analysis does not see it unless a scanner runs in CI with `SONAR_TOKEN`.
 - Aim for Clean Code rules your quality profile enables: clarity, manageable **functions/classes**, cautious use of **`except`**, no dead code paths, and security hotspots (injections, weak crypto, unsafe deserialization) addressed—not suppressed without review.
 
 ### 2.3 General

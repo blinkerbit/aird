@@ -9,6 +9,7 @@ import { renameItem, deleteItem, downloadFileViaHttp } from './bulk-actions.js';
 
 const FolderPicker = globalThis.AirdFolderPicker;
 const FILE_VIEW_STORAGE_KEY = 'aird-browse-file-view';
+const LAYOUT_STORAGE_KEY = 'aird-browse-layout';
 
 function applyFileListView(compact) {
   const panel = document.getElementById('browseListingPanel');
@@ -24,6 +25,43 @@ function applyFileListView(compact) {
     if (detailedIcon) detailedIcon.classList.toggle('hidden', !compact);
     if (compactIcon) compactIcon.classList.toggle('hidden', compact);
   }
+}
+
+function applyGridLayout(grid) {
+  const panel = document.getElementById('browseListingPanel');
+  const btn = document.getElementById('fileGridToggleBtn');
+  if (panel) panel.classList.toggle('browse-listing--grid', grid);
+  document.querySelectorAll('#fileTable .file-grid-thumb').forEach((img) => img.remove());
+  if (btn) {
+    btn.setAttribute('aria-pressed', grid ? 'true' : 'false');
+    btn.title = grid ? 'Switch to list view' : 'Switch to grid view';
+  }
+}
+
+export function refreshGridThumbs() {
+  document.querySelectorAll('#fileTable .file-grid-thumb').forEach((img) => img.remove());
+}
+
+export function initFileGridToggle() {
+  let grid = false;
+  try {
+    grid = localStorage.getItem(LAYOUT_STORAGE_KEY) === 'grid';
+  } catch {
+    grid = false;
+  }
+  applyGridLayout(grid);
+  const btn = document.getElementById('fileGridToggleBtn');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    const panel = document.getElementById('browseListingPanel');
+    const next = !panel?.classList.contains('browse-listing--grid');
+    try {
+      localStorage.setItem(LAYOUT_STORAGE_KEY, next ? 'grid' : 'list');
+    } catch {
+      /* ignore */
+    }
+    applyGridLayout(next);
+  });
 }
 
 export function initFileListViewToggle() {

@@ -1,12 +1,6 @@
 import { elements } from './state.js';
-import { getXSRFToken, showDialog, escapeHtml, escapeAttr } from './utils.js';
-
-function _formatBytes(n) {
-  if (!n) return '';
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
+import { showDialog, escapeHtml, escapeAttr, formatFileSize, apiFetch } from './utils.js';
+import { copyToClipboard } from '../../core/clipboard.js';
 
 function _renderSenderGroup(group, idx) {
   const sender = escapeHtml(group.sender_username || 'unknown');
@@ -18,7 +12,7 @@ function _renderSenderGroup(group, idx) {
   const fileRows = files.map((item) => {
     const fileUrl = item.share_url || item.file_url || `/files/${encodeURI(item.relative_path || '')}`;
     const when = item.created_at ? new Date(item.created_at).toLocaleString() : '—';
-    const size = _formatBytes(item.size_bytes);
+    const size = item.size_bytes ? formatFileSize(item.size_bytes) : '';
     const openBlank = item.share_url ? '' : ' target="_blank" rel="noopener"';
     return `<tr>
       <td class="align-middle">${escapeHtml(item.original_name || item.relative_path)}</td>
@@ -81,9 +75,9 @@ async function loadChatShares() {
 async function deleteChatShare(shareId) {
   const confirmed = await showDialog('Remove this file from your workspace?', 'Delete chat share', { showCancel: true });
   if (!confirmed) return;
-  const res = await fetch(`/api/chat/shared-with-me/${encodeURIComponent(shareId)}`, {
+  const res = await apiFetch(`/api/chat/shared-with-me/${encodeURIComponent(shareId)}`, {
     method: 'DELETE',
-    headers: { Accept: 'application/json', 'X-XSRFToken': getXSRFToken() },
+    headers: { Accept: 'application/json' },
   });
   const text = await res.text();
   let data = {};
@@ -236,10 +230,6 @@ async function loadActiveShares() {
   }
 }
 
-function copyToClipboard(text, btn) {
-  globalThis.AirdCore.copyToClipboard(text, btn);
-}
-
 function openShare(url) {
   globalThis.location.href = url;
 }
@@ -251,11 +241,10 @@ async function revokeShare(shareId) {
   try {
     const formData = new URLSearchParams();
     formData.append('id', shareId);
-    const res = await fetch('/share/revoke', {
+    const res = await apiFetch('/share/revoke', {
       method: 'POST',
       headers: {
         'Accept': 'application/json',
-        'X-XSRFToken': getXSRFToken()
       },
       body: formData
     });

@@ -54,5 +54,10 @@ aird/static/js/share/app.js
 28092_heic.webp
 *mcp-server*
 *.md
+!CONTRIBUTING.md
+!README.md
+!docs/**/*.md
+!deploy/**/*.md
+coverage.xml
 *.err
 coverage.json

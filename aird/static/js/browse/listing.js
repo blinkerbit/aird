@@ -2,6 +2,8 @@
 
 import { escapeAttr, escapeHtml, getCanTag } from './util.js';
 import { buildMoreMenuHtml } from './row-more-menu.js';
+import { applyBrowseTypeFilter } from './type-filter.js';
+import { refreshGridThumbs } from './table-ui.js';
 
 const MEDIA_EXTS = new Set([
   'jpg', 'jpeg', 'jpe', 'jif', 'jfif', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico',
@@ -250,6 +252,8 @@ export function upsertListingEntry({ name, sizeBytes = 0, isDir = false, modifie
   clearEmptyState(tbody);
   const row = buildListingRow({ name, sizeBytes, isDir, modifiedMs });
   tbody.prepend(row);
+  refreshGridThumbs();
+  applyBrowseTypeFilter();
   return true;
 }
 
