@@ -24,10 +24,9 @@ describe('escapeHtml', () => {
   });
 
   it('escapes css attribute values when CSS.escape is absent', () => {
-    const css = globalThis.CSS;
-    globalThis.CSS = undefined;
+    vi.stubGlobal('CSS', undefined);
     expect(escapeCssAttrValue('a"b\\c')).toBe('a\\22 b\\\\c');
-    globalThis.CSS = css;
+    vi.unstubAllGlobals();
   });
 
   it('finds a row by data-file-id', () => {

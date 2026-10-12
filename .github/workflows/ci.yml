@@ -71,6 +71,8 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
           HEAD_REF: ${{ github.head_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           case "$BASE_REF" in
@@ -83,10 +85,16 @@ jobs:
               fi
               ;;
             main)
-              if [ "$HEAD_REF" != "pre-release" ]; then
-                echo "main only accepts pull requests from pre-release (got ${HEAD_REF})"
-                exit 1
+              if [ "$HEAD_REF" = "pre-release" ]; then
+                exit 0
               fi
+              PRE_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/pre-release" --jq .sha 2>/dev/null || true)
+              if [ -n "${PRE_SHA}" ] && [ "$HEAD_SHA" = "$PRE_SHA" ]; then
+                echo "head matches pre-release ${PRE_SHA}"
+                exit 0
+              fi
+              echo "main only accepts pull requests from pre-release (got ${HEAD_REF})"
+              exit 1
               ;;
             *)
               echo "unsupported base branch: ${BASE_REF}"

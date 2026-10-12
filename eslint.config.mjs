@@ -81,6 +81,7 @@ export default [
       "sonarjs/cognitive-complexity": "warn",
       "sonarjs/no-nested-conditional": "warn",
       "sonarjs/slow-regex": "warn",
+      "sonarjs/super-linear-regex": "warn",
       "sonarjs/no-nested-template-literals": "warn",
       "sonarjs/no-hardcoded-secrets": "warn",
       "sonarjs/no-all-duplicated-branches": "warn",
