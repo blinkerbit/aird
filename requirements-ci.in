@@ -22,3 +22,4 @@ pyasn1==0.6.4
 webauthn==3.0.1
 watchdog==6.0.0
 pywebpush==2.5.0
+typing-extensions==4.16.0
