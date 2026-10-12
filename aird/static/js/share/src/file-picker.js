@@ -31,7 +31,7 @@ function openShareFilePicker() {
   if (startBtn) startBtn.setAttribute('aria-expanded', 'true');
   if (!shareVars.filePickerLoaded) {
     shareVars.filePickerLoaded = true;
-    loadDirectory();
+    void loadDirectory();
   }
   section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }

@@ -133,15 +133,15 @@ export function initSharePage() {
   elements.selectAllVisible.onclick = selectAllVisible;
 
   document.addEventListener('DOMContentLoaded', () => {
-    loadActiveShares();
-    loadChatShares();
+    void loadActiveShares();
+    void loadChatShares();
     setupUserSearch();
     setupModifyUserSearch();
     consumeShareCreatePrefill();
 
     document.getElementById('refreshSharesBtn')?.addEventListener('click', () => {
-      loadActiveShares();
-      loadChatShares();
+      void loadActiveShares();
+      void loadChatShares();
     });
     document.getElementById('startCreateShareBtn')?.addEventListener('click', openShareFilePicker);
     document.getElementById('cancelCreateShareBtn')?.addEventListener('click', closeShareFilePicker);
@@ -180,7 +180,7 @@ export function initSharePage() {
           break;
         case 'loadDirectory':
           e.preventDefault();
-          loadDirectory(el.dataset.path);
+          void loadDirectory(el.dataset.path);
           break;
         case 'previewFile':
           e.preventDefault();
@@ -189,11 +189,11 @@ export function initSharePage() {
         case 'showShareDetails':
           e.preventDefault();
           e.stopPropagation();
-          showShareDetails(el.dataset.path);
+          void showShareDetails(el.dataset.path);
           break;
         case 'copyToClipboard':
           e.preventDefault();
-          copyToClipboard(el.dataset.text, el);
+          void copyToClipboard(el.dataset.text, el);
           break;
         case 'openShare':
           e.preventDefault();
@@ -201,7 +201,7 @@ export function initSharePage() {
           break;
         case 'manageShare':
           e.preventDefault();
-          manageShare(el.dataset.id);
+          void manageShare(el.dataset.id);
           break;
         case 'showAddFilesModalInManagement':
           e.preventDefault();
@@ -210,7 +210,7 @@ export function initSharePage() {
           break;
         case 'revokeShare':
           e.preventDefault();
-          revokeShare(el.dataset.id);
+          void revokeShare(el.dataset.id);
           break;
         case 'deleteChatShare':
           e.preventDefault();
@@ -218,15 +218,15 @@ export function initSharePage() {
           break;
         case 'removeUserFromShare':
           e.preventDefault();
-          removeUserFromShare(el.dataset.user);
+          void removeUserFromShare(el.dataset.user);
           break;
         case 'addUserToShare':
           e.preventDefault();
-          addUserToShare();
+          void addUserToShare();
           break;
         case 'removeFileFromShare':
           e.preventDefault();
-          removeFileFromShare(el.dataset.path);
+          void removeFileFromShare(el.dataset.path);
           break;
         case 'showAddFilesModal':
           e.preventDefault();
@@ -249,11 +249,11 @@ export function initSharePage() {
           break;
         case 'addModifyUserToShare':
           e.preventDefault();
-          addModifyUserToShare();
+          void addModifyUserToShare();
           break;
         case 'removeModifyUserFromShare':
           e.preventDefault();
-          removeModifyUserFromShare(el.dataset.user);
+          void removeModifyUserFromShare(el.dataset.user);
           break;
         case 'removeSelectedModifyUser':
           e.preventDefault();

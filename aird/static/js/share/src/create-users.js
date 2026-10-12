@@ -35,7 +35,7 @@ function setupUserSearch() {
 
     // Debounce search requests
     shareVars.searchTimeout = setTimeout(() => {
-      searchUsers(query);
+      void searchUsers(query);
     }, 300);
   });
 }

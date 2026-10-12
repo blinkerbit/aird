@@ -160,13 +160,13 @@ function switchCloudProvider(providerName) {
 
   updateCloudPathDisplay();
   updateCloudNavigationState();
-  loadCloudFolder(cloudState.currentFolder, { reset: true });
+  void loadCloudFolder(cloudState.currentFolder, { reset: true });
 }
 
 function openCloudBrowser() {
   const shareTypeRadio = document.querySelector('input[name="shareType"]:checked');
   if (shareTypeRadio?.value === 'dynamic') {
-    showDialog('Cloud files are not supported when creating a dynamic share.', 'Cloud Files');
+    void showDialog('Cloud files are not supported when creating a dynamic share.', 'Cloud Files');
     return;
   }
 
@@ -184,7 +184,7 @@ function openCloudBrowser() {
     cloudElements.tableBody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-base-content/50"><span class="loading loading-spinner loading-sm align-middle mr-2"></span><span class="align-middle">Loading…</span></td></tr>';
   }
 
-  loadCloudProviders();
+  void loadCloudProviders();
 }
 
 function closeCloudBrowser() {
@@ -258,13 +258,13 @@ function cloudNavigateUp() {
 
   const parentEntry = cloudState.pathStack.length > 1 ? cloudState.pathStack.at(-2) : null;
   const parentFolder = parentEntry ? parentEntry.id : (cloudState.currentProvider.root || 'root');
-  loadCloudFolder(parentFolder, { pop: true });
+  void loadCloudFolder(parentFolder, { pop: true });
 }
 
 function handleCloudFolderNavigation(file) {
   if (!file?.is_dir) return;
   const entry = { id: file.id, name: file.name || 'Folder' };
-  loadCloudFolder(file.id, { pushEntry: entry });
+  void loadCloudFolder(file.id, { pushEntry: entry });
 }
 
 function renderCloudFiles(files) {

@@ -11,7 +11,7 @@ function showAddFilesModal() {
   modal.showModal();
   addFilesModalData.currentPath = '';
   addFilesModalData.selectedFiles.clear();
-  loadFilesForAddModal();
+  void loadFilesForAddModal();
 }
 
 function closeAddFilesModal() {
@@ -154,13 +154,13 @@ function navigateUp() {
     const pathParts = addFilesModalData.currentPath.split('/').filter(part => part.length > 0);
     pathParts.pop();
     addFilesModalData.currentPath = pathParts.join('/');
-    loadFilesForAddModal();
+    void loadFilesForAddModal();
   }
 }
 
 function navigateToDirectory(dirPath) {
   addFilesModalData.currentPath = dirPath;
-  loadFilesForAddModal();
+  void loadFilesForAddModal();
 }
 
 async function addSelectedFilesToShare() {
@@ -193,18 +193,18 @@ async function addSelectedFilesToShare() {
       });
       const data = await response.json();
       if (data.error) {
-        showDialog('Error: ' + data.error, 'Error');
+        void showDialog('Error: ' + data.error, 'Error');
         return;
       }
       shareVars.currentShareData.paths = data.updated_paths || merged;
-      showDialog('Files added to share.', 'Success');
+      void showDialog('Files added to share.', 'Success');
       renderShareManagementModal(shareVars.currentShareData);
       closeAddFilesModal();
       modal.dataset.mode = '';
-      loadActiveShares();
+      void loadActiveShares();
     } catch (error) {
       console.error('Error adding files to share:', error);
-      showDialog('Failed to add files to share', 'Error');
+      void showDialog('Failed to add files to share', 'Error');
     }
   } else {
     // Normal creation mode - prefill the share creation form
