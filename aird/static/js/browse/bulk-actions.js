@@ -41,9 +41,9 @@ export async function renameItem(filepath) {
       return;
     }
     const t = await res.text().catch(() => "");
-    showDialog("Rename failed: " + t, "Error");
+    await showDialog("Rename failed: " + t, "Error");
   } catch (err) {
-    showDialog("Rename failed: " + err.message, "Error");
+    await showDialog("Rename failed: " + err.message, "Error");
   }
 }
 
@@ -71,9 +71,9 @@ export async function deleteItem(filepath, isFolder) {
       return;
     }
     const t = await res.text().catch(() => "");
-    showDialog("Delete failed: " + t, "Error");
+    await showDialog("Delete failed: " + t, "Error");
   } catch (err) {
-    showDialog("Delete failed: " + err.message, "Error");
+    await showDialog("Delete failed: " + err.message, "Error");
   }
 }
 
@@ -91,9 +91,9 @@ export async function newFolder() {
       body: formData.toString(),
     });
     if (res.ok) globalThis.location.reload();
-    else showDialog('Create folder failed: ' + (await res.text()), 'Error');
+    else await showDialog('Create folder failed: ' + (await res.text()), 'Error');
   } catch (e) {
-    showDialog('Create folder failed: ' + e.message, 'Error');
+    await showDialog('Create folder failed: ' + e.message, 'Error');
   }
 }
 
@@ -118,7 +118,7 @@ export async function downloadFileViaHttp(filePath) {
         FTH.saveBlob(result.blob, result.filename);
       }
     } catch (err) {
-      showDialog('Download failed: ' + (err?.message || err), 'Download');
+      await showDialog('Download failed: ' + (err?.message || err), 'Download');
     }
     return;
   }
@@ -253,14 +253,14 @@ export async function bulkDownload() {
     try {
       await downloadSelectionAsZip(paths);
     } catch (err) {
-      showDialog('Could not download zip: ' + (err?.message || err), 'Download');
+      await showDialog('Could not download zip: ' + (err?.message || err), 'Download');
     }
     return;
   }
 
   const Dl = globalThis.AirdDownloadManager;
   if (!Dl?.DownloadBatch) {
-    showDialog('Download manager failed to load. Hard-refresh the page.', 'Download');
+    await showDialog('Download manager failed to load. Hard-refresh the page.', 'Download');
     return;
   }
   const batch = new Dl.DownloadBatch({ title: 'Downloads' });
@@ -301,9 +301,9 @@ export async function bulkDelete() {
     });
     const data = await res.json();
     if (data.ok) { SelectionStore.clear(); globalThis.location.reload(); }
-    else showDialog(data.results?.some(r => !r.ok) ? data.results.map(r => r.error).filter(Boolean).join('; ') : 'Bulk delete failed', 'Error');
+    else await showDialog(data.results?.some(r => !r.ok) ? data.results.map(r => r.error).filter(Boolean).join('; ') : 'Bulk delete failed', 'Error');
   } catch (e) {
-    showDialog('Bulk delete failed: ' + e.message, 'Error');
+    await showDialog('Bulk delete failed: ' + e.message, 'Error');
   }
 }
 
@@ -312,7 +312,7 @@ export async function bulkCopy() {
   if (paths.length === 0) return;
   closeSelectionDrawer();
   if (!FolderPicker?.open) {
-    showDialog('Folder picker unavailable. Hard-refresh the page.', 'Copy');
+    await showDialog('Folder picker unavailable. Hard-refresh the page.', 'Copy');
     return;
   }
   const destDir = await FolderPicker.open('copy');
@@ -331,7 +331,7 @@ export async function bulkCopy() {
     await copyOne(path);
   }
   if (failed === 0) { SelectionStore.clear(); globalThis.location.reload(); }
-  else showDialog(failed + ' of ' + paths.length + ' copy operation(s) failed.', 'Copy');
+  else await showDialog(failed + ' of ' + paths.length + ' copy operation(s) failed.', 'Copy');
 }
 
 export async function bulkMove() {
@@ -339,7 +339,7 @@ export async function bulkMove() {
   if (paths.length === 0) return;
   closeSelectionDrawer();
   if (!FolderPicker?.open) {
-    showDialog('Folder picker unavailable. Hard-refresh the page.', 'Move');
+    await showDialog('Folder picker unavailable. Hard-refresh the page.', 'Move');
     return;
   }
   const destDir = await FolderPicker.open('move');
@@ -358,7 +358,7 @@ export async function bulkMove() {
     await moveOne(path);
   }
   if (failed === 0) { SelectionStore.clear(); globalThis.location.reload(); }
-  else showDialog(failed + ' of ' + paths.length + ' move operation(s) failed.', 'Move');
+  else await showDialog(failed + ' of ' + paths.length + ' move operation(s) failed.', 'Move');
 }
 
 export function bulkCreateShare() {
@@ -386,7 +386,7 @@ export async function bulkAddToShare() {
   try {
     const res = await fetch('/share/list');
     const data = await res.json();
-    if (data.error) { showDialog(data.error, 'Error'); modal.close(); return; }
+    if (data.error) { await showDialog(data.error, 'Error'); modal.close(); return; }
     const shares = data.shares || {};
     selectEl.innerHTML = Object.keys(shares).length ? Object.entries(shares).map(([id, s]) => {
       const label = id + (s.paths?.length ? ' (' + s.paths.length + ' path(s))' : '');
@@ -410,16 +410,16 @@ export async function bulkAddToShare() {
     });
     const data = await res.json();
     if (data.ok) { SelectionStore.clear(); globalThis.location.reload(); }
-    else showDialog(data.results?.some(r => !r.ok) ? data.results.map(r => r.error).filter(Boolean).join('; ') : 'Add to share failed', 'Error');
+    else await showDialog(data.results?.some(r => !r.ok) ? data.results.map(r => r.error).filter(Boolean).join('; ') : 'Add to share failed', 'Error');
   } catch (e) {
-    showDialog('Add to share failed: ' + e.message, 'Error');
+    await showDialog('Add to share failed: ' + e.message, 'Error');
   }
 }
 
 async function bulkOdCopyDefault() {
   const paths = getSelectedPaths();
   if (!paths.length) {
-    showDialog('Select files or folders to copy to OneDrive.', 'OneDrive');
+    await showDialog('Select files or folders to copy to OneDrive.', 'OneDrive');
     return;
   }
   await bulkCopyToDefault(paths);
@@ -430,7 +430,7 @@ async function bulkOdCopyDefault() {
 async function bulkOdCopyFolder() {
   const paths = getSelectedPaths();
   if (!paths.length) {
-    showDialog('Select files or folders to copy to OneDrive.', 'OneDrive');
+    await showDialog('Select files or folders to copy to OneDrive.', 'OneDrive');
     return;
   }
   await bulkCopyToFolder(paths);
@@ -441,7 +441,7 @@ async function bulkOdCopyFolder() {
 export function bulkSendToChat() {
   const paths = getSelectedPaths();
   if (!paths.length) {
-    showDialog('Select files or folders to send to chat.', 'Chat');
+    void showDialog('Select files or folders to send to chat.', 'Chat');
     return;
   }
   const entries = paths.map(function (path) {

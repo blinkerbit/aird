@@ -255,14 +255,14 @@ async function revokeShare(shareId) {
         const j = JSON.parse(text);
         if (j.error) detail = j.error;
       } catch { /* use raw text */ }
-      showDialog('Failed to revoke share: ' + detail, 'Error');
+      await showDialog('Failed to revoke share: ' + detail, 'Error');
       return;
     }
 
     void loadActiveShares();
   } catch (error) {
     console.error('Error revoking share:', error);
-    showDialog('Failed to revoke share', 'Error');
+    await showDialog('Failed to revoke share', 'Error');
   }
 }
 

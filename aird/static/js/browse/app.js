@@ -48,7 +48,7 @@ function wireCopyPathBtn() {
       }, 1200);
     } catch (e) {
       console.warn('Copy path failed:', e);
-      showDialog('Failed to copy path to clipboard', 'Error');
+      await showDialog('Failed to copy path to clipboard', 'Error');
     }
   });
 }
