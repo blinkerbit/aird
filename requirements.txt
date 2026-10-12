@@ -11,4 +11,4 @@ cryptography>=50.0.2
 chardet>=7.6.0,<8.0.0
 pyasn1>=0.6.4
 watchdog>=4.0.0
-pywebpush>=1.14.0
+pywebpush>=2.5.0
