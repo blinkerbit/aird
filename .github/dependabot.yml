@@ -4,6 +4,7 @@ version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
     groups:
@@ -13,12 +14,14 @@ updates:
 
   - package-ecosystem: npm
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
 
   - package-ecosystem: pip
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
@@ -29,6 +32,7 @@ updates:
 
   - package-ecosystem: cargo
     directory: /native/aird_transfer
+    target-branch: dev
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
