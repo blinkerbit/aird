@@ -15,6 +15,8 @@ import {
   sameBrowseValue,
   takePendingBrowseAttachAll,
 } from '../chat-attach.js?v=20260930h';
+import { escapeHtml as esc, escapeCssAttrValue as cssEscape } from '../core/dom-safe.js';
+import { getXSRFToken as xsrf } from '../core/xsrf.js';
 
 (function () {
   'use strict';
@@ -141,11 +143,6 @@ import {
     }
   }
 
-  function cssEscape(s) {
-    const text = String(s);
-    return text.replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`);
-  }
-
   function setPollEnabled(on) {
     if (pollTimer) {
       clearInterval(pollTimer);
@@ -156,13 +153,6 @@ import {
       if (window.AirdChatWS?.isOpen()) return;
       syncNewMessages().catch((err) => { console.debug('chat poll sync failed', err); });
     }, 4000);
-  }
-
-  const XSRF_RE = /(?:^|;\s*)_xsrf=([^;]+)/;
-
-  function xsrf() {
-    const m = XSRF_RE.exec(document.cookie);
-    return m ? decodeURIComponent(m[1]) : '';
   }
 
   function apiUrl(path, opts = {}) {
@@ -340,10 +330,6 @@ import {
     const names = memberNames(conv).filter((n) => n !== me);
     if (E2E?.extractMentions) return E2E.extractMentions(html, names);
     return [];
-  }
-
-  function esc(s) {
-    return String(s ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
   }
 
   function avatarHue(name) {
@@ -1316,7 +1302,7 @@ import {
 
   function handleWsEvent(data) {
     const handler = data?.type && WS_HANDLERS[data.type];
-    if (handler) void Promise.resolve(handler(data));
+    if (handler) Promise.resolve(handler(data)).catch((err) => console.debug('chat ws handler failed', err));
   }
 
   async function startConversation(username) {
@@ -1851,7 +1837,6 @@ import {
   function renderPending() {
     let el = document.getElementById('chatPending');
     if (!el && editor) {
-      const wrap = editor.closest('.chat-editor-wrap') || editor.parentNode;
       el = document.createElement('div');
       el.id = 'chatPending';
       el.className = 'chat-pending';

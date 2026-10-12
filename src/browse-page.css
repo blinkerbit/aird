@@ -106,10 +106,94 @@
       align-items: center;
     }
 
-    #fileViewToggleBtn[aria-pressed="true"] {
+    #fileViewToggleBtn[aria-pressed="true"],
+    #fileGridToggleBtn[aria-pressed="true"],
+    .browse-type-filter [data-type-filter][aria-pressed="true"] {
       background: var(--ds-bg-muted);
       border-color: var(--color-primary);
       color: var(--color-primary);
+    }
+
+    .browse-type-filter {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #fileTable tr.file-row[hidden] {
+      display: none !important;
+    }
+
+    .file-grid-thumb {
+      display: none !important;
+    }
+
+    .browse-listing-panel.browse-listing--grid .aird-table-wrap {
+      overflow: visible;
+    }
+
+    .browse-listing-panel.browse-listing--grid .file-table {
+      display: block;
+      width: 100%;
+    }
+
+    .browse-listing-panel.browse-listing--grid .file-table colgroup,
+    .browse-listing-panel.browse-listing--grid .file-table thead,
+    .browse-listing-panel.browse-listing--grid .mobile-sort-control,
+    .browse-listing-panel.browse-listing--grid .file-table .tags-cell,
+    .browse-listing-panel.browse-listing--grid .file-table .size-cell,
+    .browse-listing-panel.browse-listing--grid .file-table .modified-cell {
+      display: none !important;
+    }
+
+    .browse-listing-panel.browse-listing--grid .file-table tbody {
+      display: grid !important;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 12px;
+      width: 100%;
+    }
+
+    .browse-listing-panel.browse-listing--grid .file-table tr.file-row {
+      display: flex !important;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+      min-width: 0;
+      min-height: 128px;
+      padding: 10px;
+      border: 1px solid var(--ds-border);
+      border-radius: 8px;
+      background: var(--ds-surface);
+    }
+
+    .browse-listing-panel.browse-listing--grid .file-table td {
+      display: block;
+      width: 100%;
+      padding: 0;
+      border: 0;
+    }
+
+    .browse-listing-panel.browse-listing--grid .name-cell-contents,
+    .browse-listing-panel.browse-listing--grid .file-link {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      max-width: 100%;
+      text-align: center;
+      word-break: break-word;
+    }
+
+    .browse-listing-panel.browse-listing--grid .file-icon {
+      font-size: 2.25rem;
+      line-height: 1;
+    }
+
+    .browse-listing-panel.browse-listing--grid .actions-cell {
+      display: flex;
+      justify-content: center;
     }
 
     .browse-listing-panel.browse-listing--compact .mobile-sort-control {

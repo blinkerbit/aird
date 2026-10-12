@@ -407,7 +407,7 @@ class TestSyncLdapUsers:
         assert result["status"] == "success"
         assert "No active LDAP configurations found" in result["message"]
 
-    @patch("aird.database.ldap.Server")
+    @patch("aird.core.ldap_server.make_ldap_server")
     @patch("aird.database.ldap.Connection")
     def test_sync_ldap_bind_failure(self, mock_conn_class, mock_server_class, db_conn):
         """Test sync when LDAP bind fails"""
@@ -425,7 +425,7 @@ class TestSyncLdapUsers:
         assert len(result["config_results"]) == 1
         assert result["config_results"][0]["status"] == "error"
 
-    @patch("aird.database.ldap.Server")
+    @patch("aird.core.ldap_server.make_ldap_server")
     @patch("aird.database.ldap.Connection")
     def test_sync_ldap_success(self, mock_conn_class, mock_server_class, db_conn):
         from aird.db import init_db

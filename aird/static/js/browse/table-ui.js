@@ -1,6 +1,7 @@
 "use strict";
 
 import { SelectionStore } from './selection-store.js';
+import { wirePersistedToggle } from './persisted-toggle.js';
 import { isInputKeyTarget, getCanTag } from './util.js';
 import { updateBulkToolbar } from './selection-ui.js';
 import { closeRowTagPopover, isRowTagPopoverOpen, openRowTagPopover } from './tags.js';
@@ -9,6 +10,7 @@ import { renameItem, deleteItem, downloadFileViaHttp } from './bulk-actions.js';
 
 const FolderPicker = globalThis.AirdFolderPicker;
 const FILE_VIEW_STORAGE_KEY = 'aird-browse-file-view';
+const LAYOUT_STORAGE_KEY = 'aird-browse-layout';
 
 function applyFileListView(compact) {
   const panel = document.getElementById('browseListingPanel');
@@ -26,25 +28,44 @@ function applyFileListView(compact) {
   }
 }
 
-export function initFileListViewToggle() {
-  let compact = false;
-  try {
-    compact = localStorage.getItem(FILE_VIEW_STORAGE_KEY) === 'compact';
-  } catch {
-    compact = false;
+function applyGridLayout(grid) {
+  const panel = document.getElementById('browseListingPanel');
+  const btn = document.getElementById('fileGridToggleBtn');
+  if (panel) panel.classList.toggle('browse-listing--grid', grid);
+  document.querySelectorAll('#fileTable .file-grid-thumb').forEach((img) => img.remove());
+  if (btn) {
+    btn.setAttribute('aria-pressed', grid ? 'true' : 'false');
+    btn.title = grid ? 'Switch to list view' : 'Switch to grid view';
   }
-  applyFileListView(compact);
-  const btn = document.getElementById('fileViewToggleBtn');
-  if (!btn) return;
-  btn.addEventListener('click', function () {
-    const panel = document.getElementById('browseListingPanel');
-    const nextCompact = !panel?.classList.contains('browse-listing--compact');
-    try {
-      localStorage.setItem(FILE_VIEW_STORAGE_KEY, nextCompact ? 'compact' : 'detailed');
-    } catch {
-      /* ignore */
-    }
-    applyFileListView(nextCompact);
+}
+
+export function refreshGridThumbs() {
+  document.querySelectorAll('#fileTable .file-grid-thumb').forEach((img) => img.remove());
+}
+
+function listingHasClass(className) {
+  return !!document.getElementById('browseListingPanel')?.classList.contains(className);
+}
+
+export function initFileGridToggle() {
+  wirePersistedToggle({
+    key: LAYOUT_STORAGE_KEY,
+    onValue: 'grid',
+    offValue: 'list',
+    buttonId: 'fileGridToggleBtn',
+    isOn: () => listingHasClass('browse-listing--grid'),
+    apply: applyGridLayout,
+  });
+}
+
+export function initFileListViewToggle() {
+  wirePersistedToggle({
+    key: FILE_VIEW_STORAGE_KEY,
+    onValue: 'compact',
+    offValue: 'detailed',
+    buttonId: 'fileViewToggleBtn',
+    isOn: () => listingHasClass('browse-listing--compact'),
+    apply: applyFileListView,
   });
 }
 
@@ -116,18 +137,38 @@ function showBrowseShortcutsHelp() {
 }
 
 function handleBrowseEscapeKey() {
-  if (_shortcutsOverlay) { hideBrowseShortcutsHelp(); return; }
-  if (isRowTagPopoverOpen()) { closeRowTagPopover(); return; }
-  if (globalThis.AirdCore.cancelActiveDialog()) return;
-  const fpOverlay = document.getElementById('folderPickerOverlay');
-  if (fpOverlay?.classList.contains('show')) { FolderPicker.close(null); return; }
-  const sharePicker = document.getElementById('sharePickerModal');
-  if (sharePicker?.open) {
-    document.getElementById('sharePickerCancel')?.click();
-    return;
-  }
-  const sharePopup = document.getElementById('sharePopup');
-  if (sharePopup?.open) { closeSharePopup(); return; }
+  const closedOverlay = [
+    () => {
+      if (!_shortcutsOverlay) return false;
+      hideBrowseShortcutsHelp();
+      return true;
+    },
+    () => {
+      if (!isRowTagPopoverOpen()) return false;
+      closeRowTagPopover();
+      return true;
+    },
+    () => !!globalThis.AirdCore?.cancelActiveDialog?.(),
+    () => {
+      const fpOverlay = document.getElementById('folderPickerOverlay');
+      if (!fpOverlay?.classList.contains('show')) return false;
+      FolderPicker.close(null);
+      return true;
+    },
+    () => {
+      const sharePicker = document.getElementById('sharePickerModal');
+      if (!sharePicker?.open) return false;
+      document.getElementById('sharePickerCancel')?.click();
+      return true;
+    },
+    () => {
+      const sharePopup = document.getElementById('sharePopup');
+      if (!sharePopup?.open) return false;
+      closeSharePopup();
+      return true;
+    },
+  ].some((close) => close());
+  if (closedOverlay) return;
   SelectionStore.clear();
   document.querySelectorAll('.row-checkbox:checked').forEach(function (cb) { cb.checked = false; });
   const selectAll = document.getElementById('selectAllCheckbox');

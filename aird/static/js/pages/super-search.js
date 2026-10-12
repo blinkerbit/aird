@@ -1,3 +1,5 @@
+import { escapeHtml as coreEscapeHtml } from '../core/dom-safe.js';
+
 class SuperSearch {
       ws = null;
       isSearching = false;
@@ -45,8 +47,7 @@ class SuperSearch {
       setVisible(el, visible) {
         if (!el) return;
         el.classList.toggle('hidden', !visible);
-        if (visible) el.style.display = '';
-        else if (el.style) el.style.display = '';
+        if (el.style) el.style.display = '';
       }
 
       setupPlatformDefaults() {
@@ -520,7 +521,7 @@ class SuperSearch {
       }
 
       escapeHtml(text) {
-        return globalThis.AirdCore.escapeHtml(text);
+        return coreEscapeHtml(text);
       }
 
       escapeId(text) {

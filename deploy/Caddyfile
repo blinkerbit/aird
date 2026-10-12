@@ -1,0 +1,151 @@
+# Aird edge gateway. Backend ports bind loopback; only :8080 is public.
+# Required outside development: AIRD_MESH_SECRET and AIRD_JWT_SECRET.
+# Open the app at: http://localhost:8080/  (or http://127.0.0.1:8080/)
+{
+	auto_https off
+}
+
+http://localhost:8080, http://127.0.0.1:8080 {
+	encode gzip
+
+	log {
+		output file .aird/run/caddy-access.log
+	}
+
+	# Long-lived transfer paths.
+	@upload path /upload /api/upload/*
+	@download {
+		path /files/*
+		query download=*
+	}
+
+	# Health probes are intentionally unauthenticated.
+	handle /health/auth {
+		rewrite * /health
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle /health/browse {
+		rewrite * /health
+		reverse_proxy 127.0.0.1:8001
+	}
+	handle /health/transfer {
+		rewrite * /health
+		reverse_proxy 127.0.0.1:8002
+	}
+	handle /health/search {
+		rewrite * /health
+		reverse_proxy 127.0.0.1:8004
+	}
+	handle /health/shares {
+		rewrite * /health
+		reverse_proxy 127.0.0.1:8005
+	}
+	handle /health/p2p {
+		rewrite * /health
+		reverse_proxy 127.0.0.1:8006
+	}
+	handle /health/admin {
+		rewrite * /health
+		reverse_proxy 127.0.0.1:8007
+	}
+	handle /health {
+		header Content-Type application/json
+		respond `{"status":"ok","gateway":"caddy","services":["auth","browse","transfer","search","shares","p2p","admin"]}` 200
+	}
+
+	# Public entry points. Services still require Caddy's mesh secret.
+	@auth_public path /login /admin/login /auth/token /auth/refresh /api/webauthn/auth/*
+	handle @auth_public {
+		request_header -X-Aird-User
+		request_header -X-Aird-Role
+		request_header -X-Aird-Mesh
+		reverse_proxy 127.0.0.1:8000 {
+			header_up X-Aird-Mesh {$AIRD_MESH_SECRET}
+		}
+	}
+	handle /static/* {
+		request_header -X-Aird-User
+		request_header -X-Aird-Role
+		request_header -X-Aird-Mesh
+		reverse_proxy 127.0.0.1:8001 {
+			header_up X-Aird-Mesh {$AIRD_MESH_SECRET}
+		}
+	}
+	handle /shared/* {
+		request_header -X-Aird-User
+		request_header -X-Aird-Role
+		request_header -X-Aird-Mesh
+		reverse_proxy 127.0.0.1:8005 {
+			header_up X-Aird-Mesh {$AIRD_MESH_SECRET}
+		}
+	}
+	handle /p2p* {
+		request_header -X-Aird-User
+		request_header -X-Aird-Role
+		request_header -X-Aird-Mesh
+		reverse_proxy 127.0.0.1:8006 {
+			header_up X-Aird-Mesh {$AIRD_MESH_SECRET}
+			flush_interval -1
+		}
+	}
+
+	# Every remaining request is authenticated before routing.
+	handle {
+		route {
+			request_header -X-Aird-User
+			request_header -X-Aird-Role
+			request_header -X-Aird-Mesh
+
+			forward_auth 127.0.0.1:8000 {
+				uri /auth/verify
+				header_up X-Aird-Mesh {$AIRD_MESH_SECRET}
+				copy_headers X-Aird-User X-Aird-Role
+			}
+
+			reverse_proxy @upload 127.0.0.1:8002 {
+				header_up X-Aird-Mesh {$AIRD_MESH_SECRET}
+				flush_interval -1
+				transport http {
+					read_timeout 3600s
+					write_timeout 3600s
+				}
+			}
+
+			reverse_proxy @download 127.0.0.1:8002 {
+				header_up X-Aird-Mesh {$AIRD_MESH_SECRET}
+				flush_interval -1
+				transport http {
+					read_timeout 3600s
+					write_timeout 3600s
+				}
+			}
+
+			@auth_routes path /logout /profile /auth/* /api/sessions* /api/webauthn/*
+			reverse_proxy @auth_routes 127.0.0.1:8000 {
+				header_up X-Aird-Mesh {$AIRD_MESH_SECRET}
+			}
+
+			@search_routes path /search /search/ws
+			reverse_proxy @search_routes 127.0.0.1:8004 {
+				header_up X-Aird-Mesh {$AIRD_MESH_SECRET}
+				flush_interval -1
+			}
+
+			@share_routes path /share* /api/share* /api/favorites* /api/users/search
+			reverse_proxy @share_routes 127.0.0.1:8005 {
+				header_up X-Aird-Mesh {$AIRD_MESH_SECRET}
+			}
+
+			@admin_routes path /admin* /ws/policy-decisions
+			reverse_proxy @admin_routes 127.0.0.1:8007 {
+				header_up X-Aird-Mesh {$AIRD_MESH_SECRET}
+				flush_interval -1
+			}
+
+			reverse_proxy 127.0.0.1:8001 {
+				header_up X-Aird-Mesh {$AIRD_MESH_SECRET}
+				flush_interval -1
+			}
+		}
+	}
+}

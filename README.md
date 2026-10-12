@@ -161,11 +161,9 @@ Enable under **Admin → Plugins (experimental)**. Flag `gitlab_integration`.
   "admin_token": "your-admin-token",
   "multi_user": false,
   "workers": 2,
-  "ldap": {
-    "enabled": false,
-    "server": "ldap://ldap.example.com",
-    "base_dn": "dc=example,dc=com"
-  },
+  "ldap": false,
+  "ldap_server": "ldaps://directory.example.com:636",
+  "ldap_base_dn": "dc=example,dc=com",
   "feature_flags": {
     "file_upload": true,
     "super_search": true,
@@ -186,6 +184,7 @@ python -m aird --config /etc/aird/config.json
 |----------|---------|
 | `AIRD_ACCESS_TOKEN` | Login / API token (required in multi-user mode) |
 | `AIRD_COOKIE_SECRET` | Persistent session signing (set in production) |
+| `AIRD_LDAP_CA_FILE` | PEM CA for LDAPS when the directory certificate is private |
 | `AIRD_CORPORATE_IP_CIDRS` | Comma-separated CIDRs for ABAC / WAN compression rules |
 | `AIRD_GDRIVE_ACCESS_TOKEN` / `AIRD_ONEDRIVE_ACCESS_TOKEN` | Cloud providers |
 
@@ -221,6 +220,23 @@ WebSocket routes (`/stream/`, `/search/ws`, `/features`, `/ws/chat`, `/ws/…`) 
 ### Ubuntu deploy script
 
 `deploy_local.ps1` (run from Windows) syncs source or a wheel to a remote host, creates a **uv** venv with **Python 3.14t**, and installs the package. See `docs/wireguard-deploy.md` for VPN-only TLS layouts.
+
+### LDAP
+
+LDAP login is optional (`--ldap` or `"ldap": true` in `config.json`). The directory URL is `ldap_server` / `--ldap-server`.
+
+Production binds should use **LDAPS** so the password is not on the wire:
+
+```bash
+python -m aird --ldap \
+  --ldap-server ldaps://directory.example.com:636 \
+  --ldap-base-dn "dc=example,dc=com" \
+  --ldap-user-template "uid={username},ou=users,dc=example,dc=com"
+```
+
+`ldaps://` turns on TLS and certificate checks (`ssl.CERT_REQUIRED`, including the hostname). Trust comes from the host store, or from `AIRD_LDAP_CA_FILE` when the directory uses a private CA. `ldap://` is cleartext and is only appropriate on a network you already trust. Proxy TLS in front of Aird does not cover the LDAP connection.
+
+Config keys: `ldap`, `ldap_server`, `ldap_base_dn`, `ldap_user_template`, `ldap_filter_template`, `ldap_attributes`, `ldap_attribute_map`. Admin group sync uses the same `ldaps://` URL. Details: [docs/admin-ldap.md](docs/admin-ldap.md).
 
 ### Systemd
 

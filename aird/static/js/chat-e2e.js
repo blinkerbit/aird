@@ -234,18 +234,6 @@
     convCache.set(convId, copy);
   }
 
-  async function forgetLocalConvKey(convId) {
-    try {
-      const db = await openDb();
-      await new Promise((resolve, reject) => {
-        const tx = db.transaction('convKeys', 'readwrite');
-        tx.objectStore('convKeys').delete(convId);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
-    } catch (_) { /* browser copy is only a cache */ }
-  }
-
   async function ensureConversation(api, convId, memberNames) {
     const pending = inflight.get(convId);
     if (pending) return pending;

@@ -1,6 +1,6 @@
 'use strict';
 
-import { clearTokens, isSignedIn, loadTokens } from './tokens.js';
+import { clearTokens, isSignedIn } from './tokens.js';
 import { ensureSignedIn, ensureAccessToken, finishCallback, startRedirectLogin, startDeviceCode, pollDeviceCode } from './auth.js';
 import {
   getDefaultSave,
@@ -148,7 +148,7 @@ export async function initOneDriveFeUi() {
       const result = await resumePendingAction();
       if (result?.uploaded != null) {
         const { showDialog } = await import('../browse/util.js');
-        showDialog(`Copied ${result.uploaded} file(s) to OneDrive.`, 'OneDrive');
+        await showDialog(`Copied ${result.uploaded} file(s) to OneDrive.`, 'OneDrive');
       }
     } catch (err) {
       console.warn('onedrive-fe resume', err);

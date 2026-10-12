@@ -135,10 +135,15 @@ export function updateBulkToolbar() {
 
   const selectAll = document.getElementById('selectAllCheckbox');
   if (selectAll) {
-    const total = document.querySelectorAll('.row-checkbox').length;
-    selectAll.checked = total > 0 && pageCount === total;
-    selectAll.indeterminate = pageCount > 0 && pageCount < total;
+    const visible = visibleRowCheckboxes();
+    const visibleChecked = visible.filter((cb) => cb.checked).length;
+    selectAll.checked = visible.length > 0 && visibleChecked === visible.length;
+    selectAll.indeterminate = visibleChecked > 0 && visibleChecked < visible.length;
   }
+}
+
+function visibleRowCheckboxes() {
+  return Array.from(document.querySelectorAll('#fileTable tr.file-row:not([hidden]) .row-checkbox'));
 }
 
 export function initBrowseSelectionUi() {
@@ -156,8 +161,9 @@ export function initBrowseSelectionUi() {
       e.stopPropagation();
     });
     selectAllCheckbox.addEventListener('change', function () {
-      const allPagePaths = Array.from(document.querySelectorAll('.row-checkbox')).map(cb => cb.dataset.path);
-      document.querySelectorAll('.row-checkbox').forEach(cb => { cb.checked = selectAllCheckbox.checked; });
+      const visible = visibleRowCheckboxes();
+      const allPagePaths = visible.map(cb => cb.dataset.path);
+      visible.forEach(cb => { cb.checked = selectAllCheckbox.checked; });
       if (selectAllCheckbox.checked) {
         SelectionStore.addMany(allPagePaths);
       } else {

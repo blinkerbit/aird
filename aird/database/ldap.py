@@ -5,11 +5,10 @@ import sqlite3
 from datetime import datetime
 
 try:
-    from ldap3 import Server, Connection, ALL
+    from ldap3 import Connection, ALL
 
     LDAP3_AVAILABLE = True
 except ImportError:
-    Server = None
     Connection = None
     ALL = None
     LDAP3_AVAILABLE = False
@@ -260,7 +259,9 @@ def _collect_usernames_from_ldap_entries(
 def _sync_one_ldap_config(conn: sqlite3.Connection, config: dict):
     """Sync one LDAP config. Return (config_users: set, result_dict)."""
     try:
-        server = Server(config["server"], get_info=ALL)
+        from aird.core.ldap_server import make_ldap_server
+
+        server = make_ldap_server(config["server"], get_info=ALL)
         conn_ldap = Connection(server)
         if not conn_ldap.bind():
             return (

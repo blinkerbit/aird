@@ -267,7 +267,7 @@ class TestLDAPLoginHandler:
             )
         ]
 
-        with patch("aird.handlers.auth_handlers.Server"), patch(
+        with patch("aird.handlers.auth_handlers.make_ldap_server"), patch(
             "aird.handlers.auth_handlers.Connection", return_value=mock_conn
         ), patch_db_conn(MagicMock(), modules=["aird.handlers.auth_handlers"]), patch(
             "aird.services.user_service.get_user_by_username", return_value=None

@@ -56,7 +56,7 @@ class TestLDAPLoginHandlerExtended:
         )
 
         # Mock LDAP connection and search
-        with patch("aird.handlers.auth_handlers.Server"), patch(
+        with patch("aird.handlers.auth_handlers.make_ldap_server"), patch(
             "aird.handlers.auth_handlers.Connection"
         ) as mock_conn_cls:
 
@@ -80,7 +80,7 @@ class TestLDAPLoginHandlerExtended:
         )
 
         # Mock LDAP success
-        with patch("aird.handlers.auth_handlers.Server"), patch(
+        with patch("aird.handlers.auth_handlers.make_ldap_server"), patch(
             "aird.handlers.auth_handlers.Connection"
         ) as mock_conn_cls:
 
@@ -114,7 +114,7 @@ class TestLDAPLoginHandlerExtended:
         )
 
         # Mock LDAP success
-        with patch("aird.handlers.auth_handlers.Server"), patch(
+        with patch("aird.handlers.auth_handlers.make_ldap_server"), patch(
             "aird.handlers.auth_handlers.Connection"
         ) as mock_conn_cls:
 
@@ -145,7 +145,7 @@ class TestLDAPLoginHandlerExtended:
             side_effect=lambda k, d=None: "newuser" if k == "username" else "password"
         )
 
-        with patch("aird.handlers.auth_handlers.Server"), patch(
+        with patch("aird.handlers.auth_handlers.make_ldap_server"), patch(
             "aird.handlers.auth_handlers.Connection"
         ) as mock_conn_cls:
 
@@ -176,7 +176,7 @@ class TestLDAPLoginHandlerExtended:
         )
         self.mock_app.settings["admin_users"] = ["adminuser"]
 
-        with patch("aird.handlers.auth_handlers.Server"), patch(
+        with patch("aird.handlers.auth_handlers.make_ldap_server"), patch(
             "aird.handlers.auth_handlers.Connection"
         ) as mock_conn_cls:
 

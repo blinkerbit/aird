@@ -7,6 +7,10 @@ import {
   showDialog,
   getXSRFToken,
 } from './util.js';
+import { copyToClipboard } from '../core/clipboard.js';
+import { apiFetch } from '../core/http.js';
+
+export { copyToClipboard };
 
 function formatShareAccessLabel(share) {
   const users = share.allowed_users;
@@ -113,16 +117,6 @@ export function closeSharePopup() {
   if (popup?.open) popup.close();
 }
 
-export function copyToClipboard(text, btn) {
-  if (globalThis.AirdCore?.copyToClipboard) {
-    globalThis.AirdCore.copyToClipboard(text, btn);
-    return;
-  }
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(String(text ?? '')).catch(() => {});
-  }
-}
-
 export function openShare(url) {
   globalThis.location.href = url;
 }
@@ -134,21 +128,20 @@ export async function revokeShare(shareId) {
   try {
     const formData = new URLSearchParams();
     formData.append('id', shareId);
-    const res = await fetch('/share/revoke', {
+    const res = await apiFetch('/share/revoke', {
       method: 'POST',
-      headers: { 'X-XSRFToken': getXSRFToken() },
       body: formData
     });
     if (!res.ok) {
       const detail = (await res.text().catch(() => '')).trim() || ('HTTP ' + res.status);
-      showDialog('Failed to revoke share: ' + detail, 'Error');
+      await showDialog('Failed to revoke share: ' + detail, 'Error');
       return;
     }
     closeSharePopup();
     globalThis.location.reload();
   } catch (error) {
     console.error('Error revoking share:', error);
-    showDialog('Failed to revoke share: ' + (error.message || 'network error'), 'Error');
+    await showDialog('Failed to revoke share: ' + (error.message || 'network error'), 'Error');
   }
 }
 
@@ -198,7 +191,7 @@ export async function openShareByTag() {
   });
   if (!chosenTag) return;
   const patterns = allTagRules.filter(function (r) { return r.tag === chosenTag; }).map(function (r) { return r.glob_pattern; });
-  if (!patterns.length) { showDialog('No glob patterns defined for tag "' + chosenTag + '".', 'Error'); return; }
+  if (!patterns.length) { await showDialog('No glob patterns defined for tag "' + chosenTag + '".', 'Error'); return; }
   try {
     const res = await fetch('/share/create', {
       method: 'POST',
@@ -212,12 +205,12 @@ export async function openShareByTag() {
       }),
     });
     const data = await res.json();
-    if (!res.ok) { showDialog(data.error || ('Share creation failed (HTTP ' + res.status + ')'), 'Error'); return; }
+    if (!res.ok) { await showDialog(data.error || ('Share creation failed (HTTP ' + res.status + ')'), 'Error'); return; }
     const shareId = data.share_id || data.id || '';
     const tokenLine = data.secret_token ? '\nToken: ' + data.secret_token : '';
-    showDialog('Tag share created for "' + chosenTag + '".' + tokenLine + '\nShare ID: ' + shareId + '\n\nAccess it at /shared/' + shareId, 'Share created');
+    await showDialog('Tag share created for "' + chosenTag + '".' + tokenLine + '\nShare ID: ' + shareId + '\n\nAccess it at /shared/' + shareId, 'Share created');
   } catch (e) {
-    showDialog('Failed to create share: ' + e.message, 'Error');
+    await showDialog('Failed to create share: ' + e.message, 'Error');
   }
 }
 
@@ -234,7 +227,7 @@ export function wireShareActionDelegation() {
     const action = el.dataset.action;
     if (action === 'copyToClipboard') {
       e.preventDefault();
-      copyToClipboard(el.dataset.text, el);
+      void copyToClipboard(el.dataset.text, el);
     } else if (action === 'openShare') {
       e.preventDefault();
       openShare(el.dataset.url);

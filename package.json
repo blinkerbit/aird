@@ -11,6 +11,12 @@
     "test:js:watch": "vitest",
     "js:share": "esbuild aird/static/js/share/src/main.js --bundle --platform=browser --format=iife --outfile=aird/static/js/share/app.js",
     "js:share:watch": "esbuild aird/static/js/share/src/main.js --bundle --platform=browser --format=iife --outfile=aird/static/js/share/app.js --watch",
+    "js:core": "esbuild aird/static/js/core/shim.js --bundle --platform=browser --format=iife --banner:js=\"/* Generated from aird/static/js/core/* - do not edit; run npm run js:core. */\" --outfile=aird/static/js/aird-core.js",
+    "js:core:watch": "esbuild aird/static/js/core/shim.js --bundle --platform=browser --format=iife --banner:js=\"/* Generated from aird/static/js/core/* - do not edit; run npm run js:core. */\" --outfile=aird/static/js/aird-core.js --watch",
+    "js:browse": "esbuild aird/static/js/browse/app.js --bundle --platform=browser --format=esm --outfile=aird/static/js/browse/app.bundle.js",
+    "js:browse:watch": "esbuild aird/static/js/browse/app.js --bundle --platform=browser --format=esm --outfile=aird/static/js/browse/app.bundle.js --watch",
+    "js:pages": "esbuild aird/static/js/pages/p2p-page.js aird/static/js/pages/super-search.js --bundle --platform=browser --format=esm --outdir=aird/static/js/pages/dist --entry-names=[name].bundle",
+    "js:pages:watch": "esbuild aird/static/js/pages/p2p-page.js aird/static/js/pages/super-search.js --bundle --platform=browser --format=esm --outdir=aird/static/js/pages/dist --entry-names=[name].bundle --watch",
     "vendor:qrcode": "esbuild node_modules/qrcode/lib/browser.js --bundle --platform=browser --format=iife --global-name=AirdQRCode --outfile=aird/static/js/vendor/qrcode-browser.js",
     "vendor:fflate": "esbuild node_modules/fflate/umd/index.js --bundle --platform=browser --format=iife --global-name=fflate --outfile=aird/static/js/vendor/fflate.js",
     "demo:record": "node scripts/record-demo.mjs"
@@ -19,15 +25,15 @@
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@tailwindcss/cli": "^4",
     "daisyui": "^5",
-    "esbuild": "^0.25.12",
-    "eslint": "^9",
-    "eslint-plugin-sonarjs": "^4.0.3",
+    "esbuild": "^0.28.2",
+    "eslint": "^10",
+    "eslint-plugin-sonarjs": "^4.2.2",
     "fflate": "^0.8.2",
-    "globals": "^15",
-    "happy-dom": "^20.11.0",
-    "playwright": "^1.52.0",
+    "globals": "^17",
+    "happy-dom": "^20.14.6",
+    "playwright": "^1.64.0",
     "qrcode": "^1.5.4",
     "tailwindcss": "^4",
-    "vitest": "^3.2.7"
+    "vitest": "^5"
   }
 }
