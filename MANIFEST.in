@@ -1,6 +1,7 @@
 recursive-include aird/templates *.html
 recursive-include aird/static/css *.css
 recursive-include aird/static/js *.js
+recursive-include aird/static/vendor/swagger *
 recursive-include aird/static/fonts *.woff2
 recursive-include aird/static/img *
 include aird/static/favicon.png

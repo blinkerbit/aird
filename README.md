@@ -252,6 +252,12 @@ Run `python -m aird` (or the venv equivalent) as a service user with `--config` 
 
 ---
 
+## API
+
+Swagger UI is served by the running server at [`/api/docs`](http://localhost:8000/api/docs). The OpenAPI document is [`/api/openapi.json`](http://localhost:8000/api/openapi.json). That document is the contract a native client (including a future Android app) uses against this same process. Browser pages call those routes today.
+
+`POST /api/auth/login` with `{"username","password"}` returns a `token`. Send it as `Authorization: Bearer`. That call, and later bearer calls, do not use the `_xsrf` cookie. Cookie sessions still do. Send `Accept: application/json` so file-change errors are JSON.
+
 ## API overview
 
 Authentication: session cookie after `/login`, bearer token, or `Authorization` header where supported. Mutating requests require the `_xsrf` cookie + `X-XSRFToken` header.

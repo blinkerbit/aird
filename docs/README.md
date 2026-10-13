@@ -4,6 +4,7 @@ Short, **page-specific** notes: routes, templates, handlers, and contracts to pr
 
 | Doc | Primary routes |
 |-----|----------------|
+| [API (Swagger)](http://localhost:8000/api/docs) | `GET /api/docs`, `GET /api/openapi.json` — native-client contract |
 | [browse.md](browse.md) | `GET /files/…` (directory listing) |
 | [transfers.md](transfers.md) | Upload/download HTTP + WS stack, admin limits |
 | [file-view.md](file-view.md) | `GET /files/…` (file), `GET /stream/…`, `WS /features` |

@@ -112,6 +112,8 @@ from aird.handlers.api_handlers import (
 from aird.handlers.auth_handlers import (
     AdminLoginHandler,
     LDAPLoginHandler,
+    ApiLoginHandler,
+    ApiLogoutHandler,
     LoginHandler,
     LogoutHandler,
     MandatoryPasswordHandler,
@@ -147,6 +149,7 @@ from aird.handlers.file_op_handlers import (
     UploadHandler,
 )
 from aird.handlers.health_handler import HealthHandler
+from aird.handlers.openapi_handler import OpenAPIDocsHandler, OpenAPISpecHandler
 from aird.handlers.pwa_handlers import (
     ManifestHandler,
     PwaPushSubscribeHandler,
@@ -247,6 +250,8 @@ def make_app(
         ),
         (r"/", RootHandler),
         (r"/health", HealthHandler),
+        (r"/api/openapi.json", OpenAPISpecHandler),
+        (r"/api/docs", OpenAPIDocsHandler),
         (r"/sw.js", ServiceWorkerHandler),
         (r"/sw-transfer.js", ServiceWorkerHandler),
         (r"/manifest.webmanifest", ManifestHandler),
@@ -254,6 +259,8 @@ def make_app(
         (r"/api/pwa/push-subscribe", PwaPushSubscribeHandler),
         (r"/api/pwa/push-unsubscribe", PwaPushUnsubscribeHandler),
         (r"/login", login_handler),
+        (r"/api/auth/login", ApiLoginHandler),
+        (r"/api/auth/logout", ApiLogoutHandler),
         (r"/logout", LogoutHandler),
         (r"/auth/mandatory-password", MandatoryPasswordHandler),
         (r"/profile", ProfileHandler),

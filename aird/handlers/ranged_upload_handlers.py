@@ -675,6 +675,10 @@ class RangedUploadChunkHandler(BaseHandler):
             self._request_file = None
 
     def check_xsrf_cookie(self) -> None:
+        from aird.handlers.base_handler import bearer_authenticates
+
+        if bearer_authenticates(self):
+            return
         cookie_token = self.get_cookie("_xsrf")
         if not cookie_token:
             raise tornado.web.HTTPError(403, "'_xsrf' cookie missing")

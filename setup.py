@@ -38,6 +38,7 @@ setup(
         "static/img/**/*",
         "static/favicon.*",
         "static/manifest.webmanifest",
+        "static/vendor/swagger/*",
     ]},
     entry_points={
         "console_scripts": [

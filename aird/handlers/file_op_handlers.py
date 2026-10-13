@@ -526,6 +526,10 @@ class UploadHandler(BaseHandler):
 
     def check_xsrf_cookie(self) -> None:
         """Streamed uploads send raw body; accept X-XSRFToken header or ?_xsrf= query param."""
+        from aird.handlers.base_handler import bearer_authenticates
+
+        if bearer_authenticates(self):
+            return
         cookie_token = self.get_cookie("_xsrf")
         if not cookie_token:
             raise tornado.web.HTTPError(403, "'_xsrf' cookie missing")
