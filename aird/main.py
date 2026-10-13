@@ -732,10 +732,29 @@ def _run_http_server(app, ssl_options, sockets, http_port: int) -> None:
     io_loop.start()
 
 
+_BIND_RETRY_ATTEMPTS = 3
+
+
+def bind_ports(start: int) -> list[int]:
+    """Ports to try. The next ports are used only when AIRD_PORT_RETRY=1."""
+    if os.environ.get("AIRD_PORT_RETRY", "").strip() == "1":
+        return [start + offset for offset in range(_BIND_RETRY_ATTEMPTS)]
+    return [start]
+
+
+def _log_bind_failure(exc: OSError, port: int) -> None:
+    logger.error(
+        "Bind failed on port %d errno=%s: %s",
+        port,
+        exc.errno,
+        exc.strerror or exc,
+    )
+
+
 def _start_server(ssl_options, port: int, hostname: str, worker_count: int) -> None:
-    _MAX_PORT_RETRIES = 3
     proto = "https" if ssl_options else "http"
-    for attempt in range(_MAX_PORT_RETRIES):
+    ports = bind_ports(port)
+    for attempt, port in enumerate(ports):
         try:
             sockets = tornado.netutil.bind_sockets(port, address="")
             if worker_count <= 1:
@@ -767,17 +786,21 @@ def _start_server(ssl_options, port: int, hostname: str, worker_count: int) -> N
                 _print_server_urls(port, hostname, proto)
             _run_http_server(app, ssl_options, sockets, port)
             return
-        except OSError:
-            logger.exception("Failed to bind on port %d", port)
-            if attempt < _MAX_PORT_RETRIES - 1:
-                port += 1
+        except OSError as exc:
+            _log_bind_failure(exc, port)
+            if attempt < len(ports) - 1:
                 logger.warning(
-                    "Retrying on port %d (%d/%d)", port, attempt + 2, _MAX_PORT_RETRIES
+                    "AIRD_PORT_RETRY=1, retrying on port %d (%d/%d)",
+                    ports[attempt + 1],
+                    attempt + 2,
+                    len(ports),
                 )
             else:
                 logger.error(
-                    "Could not bind after %d attempts. Set a different --port and retry.",
-                    _MAX_PORT_RETRIES,
+                    "Could not bind port %d. Choose another --port. "
+                    "AIRD_PORT_RETRY=1 tries the next %d ports.",
+                    port,
+                    _BIND_RETRY_ATTEMPTS - 1,
                 )
                 raise
 

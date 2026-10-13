@@ -59,7 +59,7 @@ UI expectations, ESLint, and Sonar scope: [docs/developer-ui-quality.md](docs/de
 python -m pytest --cov=aird --cov-report=xml:coverage.xml
 ```
 
-`sonar-project.properties` points Sonar at `coverage.xml` and `tests/`. See [docs/developer-ui-quality.md](docs/developer-ui-quality.md).
+`sonar-project.properties` points Sonar at `coverage.xml` and `tests/`. CI writes `coverage.xml` on the `tests` job. The `sonar` job uploads it when the repository secret `SONAR_TOKEN` is set. Turn off SonarCloud Automatic Analysis after that, so the CI scan is the one that records coverage. See [docs/developer-ui-quality.md](docs/developer-ui-quality.md).
 
 ## Before a pull request
 

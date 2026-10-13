@@ -104,6 +104,8 @@ On first start, random **access** and **admin** tokens are printed unless you se
 
 **Multi-user mode** requires an explicit **access token** at startup (`--token`, `AIRD_ACCESS_TOKEN`, or `token` in config). Users still log in with username/password; the token is for API/CLI automation.
 
+A port that is already taken stops the process. Set `AIRD_PORT_RETRY=1` to try the next two ports.
+
 Open `http://localhost:8000/` → redirects to `/files/`.
 
 ### CLI client
