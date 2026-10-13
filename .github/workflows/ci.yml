@@ -103,13 +103,35 @@ jobs:
               ;;
           esac
 
-  release:
-    name: Publish
-    needs: [frontend, tests]
+  pypi-token:
+    name: PyPI token
     if: >-
       github.event_name == 'push' &&
       github.repository == 'blinkerbit/aird' &&
-      secrets.PYPI_API_TOKEN != '' &&
+      (github.ref == 'refs/heads/dev' ||
+       github.ref == 'refs/heads/pre-release' ||
+       github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    outputs:
+      present: ${{ steps.check.outputs.present }}
+    steps:
+      - id: check
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -n "${PYPI_API_TOKEN}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    name: Publish
+    needs: [frontend, tests, pypi-token]
+    if: >-
+      github.event_name == 'push' &&
+      github.repository == 'blinkerbit/aird' &&
+      needs.pypi-token.outputs.present == 'true' &&
       (github.ref == 'refs/heads/dev' ||
        github.ref == 'refs/heads/pre-release' ||
        github.ref == 'refs/heads/main')
