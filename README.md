@@ -4,6 +4,14 @@
   <img src="aird/static/img/logo-full.svg" alt="Aird" width="280">
 </p>
 
+<p align="center">
+  <a href="https://github.com/blinkerbit/aird/actions/workflows/ci.yml"><img src="https://github.com/blinkerbit/aird/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://pypi.org/project/aird/"><img src="https://img.shields.io/pypi/v/aird" alt="PyPI"></a>
+  <a href="https://pypi.org/project/aird/"><img src="https://img.shields.io/pypi/pyversions/aird" alt="Python versions"></a>
+  <a href="https://sonarcloud.io/summary/new_code?id=blinkerbit_aird"><img src="https://sonarcloud.io/api/project_badges/measure?project=blinkerbit_aird&metric=alert_status" alt="Quality gate"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-BSL%201.1-blue" alt="License: BSL 1.1"></a>
+</p>
+
 ![Aird demo](./demo.webp)
 
 **Aird** is a self-hosted file browser, editor, and sharing platform built on **Python** and **Tornado**. It targets fast local and LAN use: parallel HTTP transfers for large files, real-time log streaming, content search, secure shares, optional multi-user isolation, direct messages between users, and an admin console that applies settings without restarts.
@@ -322,7 +330,11 @@ docs/             # Per-page UI & admin documentation
 - Optional storage quotas (multi-user)
 - Audit trail and live policy-decision stream for ABAC
 
-Report issues via GitHub. For production, set `AIRD_COOKIE_SECRET`, use TLS, and restrict admin routes.
+For production, set `AIRD_COOKIE_SECRET`, use TLS, and restrict admin routes. Report vulnerabilities through [SECURITY.md](SECURITY.md).
+
+## Contributing
+
+Local setup, tests, and the `dev` → `pre-release` → `main` flow are in [CONTRIBUTING.md](CONTRIBUTING.md). Issues labeled [`good first issue`](https://github.com/blinkerbit/aird/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are a starting point.
 
 ---
 

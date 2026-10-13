@@ -30,6 +30,8 @@ npm ci
 
 `requirements-test.txt` is for local pytest. CI installs the hashed lockfile `requirements-ci.txt`.
 
+Running the server creates `.aird/`, `.aird-chats/`, and `.aird-shares/` next to the working directory. Those directories, bench binaries, and tokens stay untracked. Do not commit them.
+
 ## Tests and lint
 
 ```bash
@@ -61,6 +63,10 @@ python -m pytest --cov=aird --cov-report=xml:coverage.xml
 
 ## Before a pull request
 
+Open the pull request against `dev`. Use the pull request template.
+
 - `python -m pytest` passes
 - `npm run lint:js` passes
 - UI changes follow [docs/developer-ui-quality.md](docs/developer-ui-quality.md)
+
+Security reports go through [SECURITY.md](SECURITY.md), not a public issue.
