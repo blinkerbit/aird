@@ -1,6 +1,6 @@
 "use strict";
 
-import { getXSRFToken as xsrf } from '../core/xsrf.js';
+import { requestJson } from '../core/http.js';
 
 function cfg() {
   return globalThis.__GITLAB_BROWSE_CONFIG || {};
@@ -21,17 +21,12 @@ function qs(extra = {}) {
   return params.toString();
 }
 
-async function aird(method, url, body) {
-  const opts = { method, credentials: "same-origin", headers: { Accept: "application/json" } };
-  if (method !== "GET") {
-    opts.headers["Content-Type"] = "application/json";
-    opts.headers["X-XSRFToken"] = xsrf();
-    if (body) opts.body = JSON.stringify(body);
-  }
-  const resp = await fetch(url, opts);
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(data.error || resp.statusText);
-  return data;
+function aird(method, url, body) {
+  return requestJson(url, {
+    method,
+    credentials: "same-origin",
+    json: method === "GET" ? undefined : body,
+  });
 }
 
 function collectFileNames() {

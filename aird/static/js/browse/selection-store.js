@@ -1,22 +1,28 @@
 "use strict";
 
+import { createStore } from '../core/store.js';
+
 /** Session-persisted multi-select. Inject storage in tests; the page uses sessionStorage. */
 export function createSelectionStore(storage, key = "aird_browse_selections") {
-  let items = null;
+  // Observable store holds the loaded list (`null` = not yet read from storage).
+  const store = createStore({ items: null });
 
   function read() {
+    const { items } = store.getState();
     if (items) return items;
+    let loaded = [];
     try {
       const arr = JSON.parse(storage.getItem(key)) || [];
-      items = Array.isArray(arr) ? arr : [];
+      loaded = Array.isArray(arr) ? arr : [];
     } catch {
-      items = [];
+      loaded = [];
     }
-    return items;
+    store.setState({ items: loaded });
+    return loaded;
   }
 
   function write(next) {
-    items = next;
+    store.setState({ items: next });
     try {
       storage.setItem(key, JSON.stringify(next));
     } catch {
@@ -45,7 +51,7 @@ export function createSelectionStore(storage, key = "aird_browse_selections") {
     },
 
     clear() {
-      items = [];
+      store.setState({ items: [] });
       try {
         storage.removeItem(key);
       } catch {
@@ -72,6 +78,11 @@ export function createSelectionStore(storage, key = "aird_browse_selections") {
     removeMany(paths) {
       const drop = new Set(paths);
       write(read().filter((p) => !drop.has(p)));
+    },
+
+    /** Subscribe to selection changes (Observer via the shared store). */
+    subscribe(listener) {
+      return store.select((s) => s.items, (items) => listener(items ? items.slice() : []));
     },
   };
 }

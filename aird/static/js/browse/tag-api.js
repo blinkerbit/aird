@@ -1,6 +1,22 @@
 "use strict";
 
-import { getXSRFToken, isAutoColorEnabled, setTagColorLocal } from './util.js';
+// Repository pattern: all tag endpoints sit behind `tagsRequest`, which
+// goes through the shared HTTP gateway (XSRF + parsing in one place).
+import { apiFetch } from '../core/http.js';
+import { isAutoColorEnabled, setTagColorLocal } from './util.js';
+
+const TAGS_URL = '/admin/api/abac/tags';
+const TAG_COLORS_URL = '/admin/api/abac/tag-colors';
+
+async function tagsRequest(url, method, json) {
+  const res = await apiFetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: json === undefined ? undefined : JSON.stringify(json),
+  });
+  const data = await res.json().catch(function () { return {}; });
+  return { ok: res.ok, status: res.status, data };
+}
 
 export function normalizeRelPath(path) {
   return String(path || '').replaceAll('\\', '/').replaceAll(/^\/+/g, '');
@@ -13,9 +29,8 @@ export function pathToGlob(path) {
 
 export async function fetchTagCatalog() {
   try {
-    const res = await fetch('/api/tags', { headers: { Accept: 'application/json' } });
-    if (!res.ok) return { names: [], colors: {} };
-    const data = await res.json();
+    const { ok, data } = await tagsRequest('/api/tags', 'GET');
+    if (!ok) return { names: [], colors: {} };
     return { names: Array.isArray(data.names) ? data.names : [], colors: data.colors || {} };
   } catch {
     return { names: [], colors: {} };
@@ -26,56 +41,35 @@ export async function postTagRule(tag, globPattern, { color, autoColor } = {}) {
   const body = { tag, glob_pattern: globPattern };
   if (color) body.color = color;
   body.auto_color = autoColor ?? isAutoColorEnabled();
-  const res = await fetch('/admin/api/abac/tags', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json().catch(function () { return {}; });
-  const ok = res.ok || res.status === 409;
+  const { ok: resOk, status, data } = await tagsRequest(TAGS_URL, 'POST', body);
+  const ok = resOk || status === 409;
   if (ok && data.color) setTagColorLocal(tag, data.color);
-  return { ok, created: res.status === 201, color: data.color || '' };
+  return { ok, created: status === 201, color: data.color || '' };
 }
 
 export async function putTagColor(tag, color) {
-  const res = await fetch('/admin/api/abac/tag-colors', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
-    body: JSON.stringify({ tag, color }),
-  });
-  const data = await res.json().catch(function () { return {}; });
-  if (res.ok && data.color) setTagColorLocal(tag, data.color);
-  return { ok: res.ok, color: data.color || color };
+  const { ok, data } = await tagsRequest(TAG_COLORS_URL, 'PUT', { tag, color });
+  if (ok && data.color) setTagColorLocal(tag, data.color);
+  return { ok, color: data.color || color };
 }
 
 export async function deleteTagRuleIds(ids) {
   if (!ids.length) return { ok: true, deleted: [] };
-  const res = await fetch('/admin/api/abac/tags', {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
-    body: JSON.stringify({ ids: ids }),
-  });
-  if (!res.ok) return { ok: false, deleted: [] };
-  const data = await res.json().catch(function () { return {}; });
+  const { ok, data } = await tagsRequest(TAGS_URL, 'DELETE', { ids: ids });
+  if (!ok) return { ok: false, deleted: [] };
   return { ok: true, deleted: data.ids || [] };
 }
 
 export async function untagPath(tag, path) {
-  const res = await fetch('/admin/api/abac/tags', {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
-    body: JSON.stringify({ tag, glob_pattern: pathToGlob(path) }),
-  });
-  if (!res.ok) return { ok: false, count: 0 };
-  const data = await res.json().catch(function () { return {}; });
+  const { ok, data } = await tagsRequest(TAGS_URL, 'DELETE', { tag, glob_pattern: pathToGlob(path) });
+  if (!ok) return { ok: false, count: 0 };
   return { ok: true, count: data.count || 0 };
 }
 
 export async function fetchAllTagRules() {
   try {
-    const res = await fetch('/admin/api/abac/tags', { headers: { 'X-XSRFToken': getXSRFToken() } });
-    if (!res.ok) return [];
-    const data = await res.json();
+    const { ok, data } = await tagsRequest(TAGS_URL, 'GET');
+    if (!ok) return [];
     return data.tags || [];
   } catch {
     return [];
@@ -83,29 +77,19 @@ export async function fetchAllTagRules() {
 }
 
 export async function renameTag(oldTag, newTag) {
-  const res = await fetch('/admin/api/abac/tag-rename', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
-    body: JSON.stringify({ old_tag: oldTag, new_tag: newTag }),
-  });
-  const data = await res.json().catch(function () { return {}; });
-  return { ok: res.ok, data: data };
+  const { ok, data } = await tagsRequest('/admin/api/abac/tag-rename', 'POST', { old_tag: oldTag, new_tag: newTag });
+  return { ok, data: data };
 }
 
 export async function importTagSnapshot(snapshot) {
-  const res = await fetch('/admin/api/abac/tags', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
-    body: JSON.stringify({ import_snapshot: true, ...snapshot }),
-  });
-  const data = await res.json().catch(function () { return {}; });
-  return { ok: res.ok, data: data };
+  const { ok, data } = await tagsRequest(TAGS_URL, 'POST', { import_snapshot: true, ...snapshot });
+  return { ok, data: data };
 }
 
 export async function fetchTagExport() {
-  const res = await fetch('/admin/api/abac/tags', { headers: { 'X-XSRFToken': getXSRFToken() } });
-  if (!res.ok) return { tags: [], colors: {} };
-  return res.json();
+  const { ok, data } = await tagsRequest(TAGS_URL, 'GET');
+  if (!ok) return { tags: [], colors: {} };
+  return data;
 }
 
 function escapeGlobChar(ch) {
