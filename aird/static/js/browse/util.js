@@ -1,6 +1,7 @@
 "use strict";
 
 // Canonical shared primitives (single source of truth in ../core/).
+import { onById } from '../core/dom.js';
 export { getXSRFToken } from '../core/xsrf.js';
 export { escapeHtml, escapeAttr } from '../core/dom-safe.js';
 export { showDialog } from '../core/dialog.js';
@@ -106,27 +107,10 @@ export function isInputKeyTarget(target) {
   return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
 }
 
-export function createEl(tag, props, text) {
-  const el = document.createElement(tag);
-  if (props) {
-    for (const key of Object.keys(props)) {
-      if (key === 'className') el.className = props[key];
-      else if (key === 'dataset') {
-        for (const [dk, dv] of Object.entries(props[key])) {
-          el.dataset[dk] = dv;
-        }
-      }
-      else el.setAttribute(key, props[key]);
-    }
-  }
-  if (text != null) el.textContent = text;
-  return el;
-}
+export { createEl } from '../core/dom.js';
 
 export function wireBrowseButton(id, handler) {
-  const el = document.getElementById(id);
-  if (el) el.addEventListener('click', handler);
-  return el;
+  return onById(id, 'click', handler);
 }
 
 export function safeReload() {
