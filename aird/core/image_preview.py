@@ -33,6 +33,8 @@ def _largest_jpeg(data) -> bytes | None:
 
 def embedded_jpeg_preview(abspath: str) -> bytes | None:
     """Return the largest JPEG stream embedded in ``abspath``, if any."""
+    if ".." in abspath:
+        raise Exception("Invalid file path")
     try:
         size = os.path.getsize(abspath)
         if size < _MIN_PREVIEW_BYTES:

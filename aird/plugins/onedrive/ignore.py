@@ -20,6 +20,8 @@ def parse_ignore_lines(text: str | None) -> list[str]:
 
 def load_gitignore_file(path: str) -> list[str]:
     try:
+        if ".." in path:
+            raise Exception("Invalid file path")
         with open(path, encoding="utf-8", errors="replace") as fh:
             return parse_ignore_lines(fh.read())
     except OSError:
