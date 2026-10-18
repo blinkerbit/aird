@@ -20,8 +20,3 @@ export function formatBytes(bytes) {
   }
   return `${v.toFixed(1)} ${units[i]}`;
 }
-
-/** Alias kept for share-page call sites. */
-export function formatFileSize(bytes) {
-  return formatBytes(bytes);
-}

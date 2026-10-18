@@ -1,3 +1,6 @@
+import { apiFetch } from './core/http.js';
+import { escapeHtml } from './core/dom-safe.js';
+
 (function () {
   'use strict';
 
@@ -16,7 +19,7 @@
 
   async function refreshUnread() {
     try {
-      const res = await fetch('/api/chat/unread', { headers: { Accept: 'application/json' } });
+      const res = await apiFetch('/api/chat/unread', { headers: { Accept: 'application/json' } });
       if (!res.ok) return;
       const data = await res.json();
       updateBadge(data.total || 0);
@@ -47,16 +50,6 @@
     });
     host.appendChild(toast);
     setTimeout(() => toast.remove(), 5000);
-  }
-
-  function escapeHtml(s) {
-    if (globalThis.AirdCore?.escapeHtml) return globalThis.AirdCore.escapeHtml(s);
-    return String(s ?? '')
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#39;');
   }
 
   function maybeBrowserNotify(payload) {

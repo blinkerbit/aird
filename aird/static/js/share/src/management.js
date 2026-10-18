@@ -1,10 +1,10 @@
 import { shareVars } from './state.js';
-import { getXSRFToken, showDialog, escapeHtml } from './utils.js';
-import { postJson } from '../../core/http.js';
+import { showDialog, escapeHtml, parseCsvList } from './utils.js';
+import { getJson, postJson } from '../../core/http.js';
 
 // Repository: every share mutation is a POST to /share/update through
 // the shared gateway; callers only describe the payload.
-function shareUpdate(payload) {
+export function shareUpdate(payload) {
   return postJson('/share/update', { share_id: shareVars.currentShareData.id, ...payload }, { throwOnError: false });
 }
 import {
@@ -29,28 +29,9 @@ async function manageShare(shareId) {
   body.innerHTML = '<div class="flex flex-col items-center py-10"><span class="loading loading-spinner loading-lg text-primary"></span><div class="mt-4 text-base-content/60">Loading share details...</div></div>';
 
   try {
-    const detailsResponse = await fetch(`/api/share/details_by_id?id=${encodeURIComponent(shareId)}`, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'X-XSRFToken': getXSRFToken()
-      },
-      cache: 'no-store'
+    const detailsData = await getJson(`/api/share/details_by_id?id=${encodeURIComponent(shareId)}`, {
+      cache: 'no-store',
     });
-
-    if (!detailsResponse.ok) {
-      const errorText = await detailsResponse.text();
-      let errorMessage = `Server error: ${detailsResponse.status}`;
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.error || errorMessage;
-      } catch (parseErr) {
-        console.debug('Share details error body was not JSON', parseErr);
-      }
-      throw new Error(errorMessage);
-    }
-
-    const detailsData = await detailsResponse.json();
     shareVars.currentShareData = detailsData.share;
     renderShareManagementModal(shareVars.currentShareData);
 
@@ -135,8 +116,8 @@ async function updateShare() {
     }
     const disableToken = document.getElementById('disableTokenEdit').checked;
     const enableToken = document.getElementById('enableTokenEdit').checked;
-    const allowListText = document.getElementById('allowListEdit').value.trim();
-    const avoidListText = document.getElementById('avoidListEdit').value.trim();
+    const allowListText = document.getElementById('allowListEdit').value;
+    const avoidListText = document.getElementById('avoidListEdit').value;
 
     const hasSecret = Boolean(shareVars.currentShareData.secret_token || shareVars.currentShareData.has_token);
 
@@ -149,8 +130,8 @@ async function updateShare() {
       tokenDisabled = !hasSecret;
     }
 
-    const allowList = allowListText ? allowListText.split(',').map(s => s.trim()).filter(Boolean) : [];
-    const avoidList = avoidListText ? avoidListText.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const allowList = parseCsvList(allowListText);
+    const avoidList = parseCsvList(avoidListText);
 
     const expiryDate = readExpiryDateFromInput('expiryDateEdit');
     if (expiryDate === undefined) return;

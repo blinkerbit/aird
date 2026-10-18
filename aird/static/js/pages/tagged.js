@@ -1,13 +1,5 @@
 "use strict";
 
-function xsrfToken() {
-  if (globalThis.AirdCore?.getXSRFToken) {
-    return globalThis.AirdCore.getXSRFToken();
-  }
-  const m = /(?:^|; )_xsrf=([^;]*)/.exec(document.cookie);
-  return m ? decodeURIComponent(m[1]) : '';
-}
-
 function tagChipColors(hex) {
   if (!hex || typeof hex !== 'string') return null;
   const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
@@ -45,13 +37,10 @@ function setError(msg) {
 }
 
 async function saveColor(tag, hex) {
-  const res = await fetch('/admin/api/abac/tag-colors', {
+  const data = await globalThis.AirdCore.requestJson('/admin/api/abac/tag-colors', {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'X-XSRFToken': xsrfToken() },
-    body: JSON.stringify({ tag: tag, color: hex }),
+    json: { tag: tag, color: hex },
   });
-  const data = await res.json().catch(function () { return {}; });
-  if (!res.ok) throw new Error(data.error || 'Could not save color.');
   return data.color || hex;
 }
 

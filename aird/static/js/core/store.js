@@ -7,6 +7,8 @@
  * subscribes to one derived slice. State snapshots handed out are copies,
  * so callers cannot mutate the store behind its back.
  */
+import { safeNotify } from './events.js';
+
 export function createStore(initialState = {}) {
   let state = { ...initialState };
   const listeners = new Set();
@@ -17,13 +19,7 @@ export function createStore(initialState = {}) {
 
   function notify(prev) {
     const snapshot = getState();
-    for (const listener of [...listeners]) {
-      try {
-        listener(snapshot, prev);
-      } catch (err) {
-        console.error('Store subscriber failed:', err);
-      }
-    }
+    safeNotify(listeners, (listener) => listener(snapshot, prev), 'Store subscriber failed:');
   }
 
   function setState(patch) {

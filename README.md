@@ -91,7 +91,7 @@ python -m aird
 python -m aird --root /data --port 8080
 
 # Multi-user (per-user home directories under root)
-python -m aird --root /data --multi-user --token "your-long-secret"
+python -m aird --root /data --multi-user
 
 # TLS
 python -m aird --ssl-cert /path/cert.pem --ssl-key /path/key.pem --port 443
@@ -100,9 +100,7 @@ python -m aird --ssl-cert /path/cert.pem --ssl-key /path/key.pem --port 443
 python -m aird --workers 4
 ```
 
-On first start, random **access** and **admin** tokens are printed unless you set them via `--token`, `--admin-token`, `config.json`, or `AIRD_ACCESS_TOKEN`.
-
-**Multi-user mode** requires an explicit **access token** at startup (`--token`, `AIRD_ACCESS_TOKEN`, or `token` in config). Users still log in with username/password; the token is for API/CLI automation.
+On first start, random **access** and **admin** tokens are generated unless you set them via `--token`, `--admin-token`, `config.json`, or `AIRD_ACCESS_TOKEN`. Users log in with username/password; the access token is for API/CLI automation.
 
 A port that is already taken stops the process. Set `AIRD_PORT_RETRY=1` to try the next two ports.
 

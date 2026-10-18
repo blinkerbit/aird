@@ -6,6 +6,21 @@
  * an unsubscribe function back. A throwing listener never breaks the
  * publisher or the remaining listeners.
  */
+/**
+ * Call every listener with `call(listener)`; a throwing listener is logged
+ * and the rest still run. Shared by the bus and the store so subscriber
+ * isolation stays identical in both.
+ */
+export function safeNotify(listeners, call, label) {
+  for (const listener of [...listeners]) {
+    try {
+      call(listener);
+    } catch (err) {
+      console.error(label, err);
+    }
+  }
+}
+
 export function createEventBus() {
   const listeners = new Map();
 
@@ -41,13 +56,7 @@ export function createEventBus() {
   function emit(event, payload) {
     const set = listeners.get(event);
     if (!set) return false;
-    for (const listener of [...set]) {
-      try {
-        listener(payload);
-      } catch (err) {
-        console.error(`Event listener for "${event}" failed:`, err);
-      }
-    }
+    safeNotify(set, (listener) => listener(payload), `Event listener for "${event}" failed:`);
     return true;
   }
 

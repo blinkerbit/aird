@@ -2,6 +2,15 @@
  * Normal chat encryption. The private key and conversation keys are stored
  * in the user's Aird chat folder on the server and restored from there.
  */
+import {
+  b64encode as b64,
+  b64decode as unb64,
+  ecdhImportPublic as importPublic,
+  ecdhImportPrivate as importPrivate,
+  ecdhDeriveAesKey,
+} from './core/chat-crypto.js';
+import { apiFetch } from './core/http.js';
+
 (function (global) {
   'use strict';
 
@@ -13,22 +22,6 @@
   let dbPromise = null;
   let identity = null;
   let username = '';
-
-  function b64(buf) {
-    const bytes = buf instanceof ArrayBuffer ? new Uint8Array(buf) : buf;
-    let s = '';
-    for (let i = 0; i < bytes.length; i += 1) s += String.fromCharCode(bytes[i]);
-    return btoa(s);
-  }
-
-  function unb64(str) {
-    const n = String(str || '').replace(/-/g, '+').replace(/_/g, '/');
-    const pad = n.length % 4 === 0 ? '' : '='.repeat(4 - (n.length % 4));
-    const bin = atob(n + pad);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
-    return out;
-  }
 
   function openDb() {
     if (dbPromise) return dbPromise;
@@ -67,15 +60,6 @@
     return crypto.subtle.exportKey('jwk', key);
   }
 
-  async function importPublic(jwk) {
-    const pub = { kty: 'EC', crv: 'P-256', x: jwk.x, y: jwk.y };
-    return crypto.subtle.importKey('jwk', pub, ECDH, true, []);
-  }
-
-  async function importPrivate(jwk) {
-    return crypto.subtle.importKey('jwk', jwk, ECDH, true, ['deriveBits']);
-  }
-
   async function fingerprint(jwk) {
     const raw = new TextEncoder().encode(`${jwk.x}.${jwk.y}`);
     const hash = await crypto.subtle.digest('SHA-256', raw);
@@ -83,15 +67,7 @@
   }
 
   async function deriveWrapKey(priv, pub, convId) {
-    const bits = await crypto.subtle.deriveBits({ name: 'ECDH', public: pub }, priv, 256);
-    const hkdf = await crypto.subtle.importKey('raw', bits, 'HKDF', false, ['deriveKey']);
-    return crypto.subtle.deriveKey(
-      { name: 'HKDF', hash: 'SHA-256', salt: new TextEncoder().encode(convId), info: INFO },
-      hkdf,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['encrypt', 'decrypt'],
-    );
+    return ecdhDeriveAesKey(priv, pub, convId, INFO);
   }
 
   async function loadOrCreateIdentity(user, api) {
@@ -307,18 +283,14 @@
     return importAes(raw);
   }
 
-  const XSRF_RE = /(?:^|;\s*)_xsrf=([^;]+)/;
-
   function defaultApi(path, opts = {}) {
-    const m = XSRF_RE.exec(document.cookie);
-    const token = m ? decodeURIComponent(m[1]) : '';
     const { _retry304, ...fetchOpts } = opts;
     const method = String(fetchOpts.method || 'GET').toUpperCase();
     let url = path;
     if (method === 'GET' && !/[?&]_=/.test(path)) {
       url = `${path}${path.includes('?') ? '&' : '?'}_=${Date.now()}`;
     }
-    return fetch(url, {
+    return apiFetch(url, {
       cache: 'no-store',
       credentials: 'same-origin',
       headers: {
@@ -326,7 +298,6 @@
         'Cache-Control': 'no-cache',
         Pragma: 'no-cache',
         ...(fetchOpts.body && !(fetchOpts.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
-        ...(fetchOpts.method && fetchOpts.method !== 'GET' ? { 'X-XSRFToken': token } : {}),
       },
       ...fetchOpts,
     }).then(async (res) => {

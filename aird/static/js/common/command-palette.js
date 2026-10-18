@@ -8,6 +8,10 @@
  * exposes a `window.AirdCommandPalette.getSelection()` callback.
  */
 
+import { showDialog } from "../core/dialog.js";
+import { apiFetch } from "../core/http.js";
+import { ready } from "../core/dom.js";
+
 (function () {
   if (window.__airdCommandPaletteInitialized) return;
   window.__airdCommandPaletteInitialized = true;
@@ -77,10 +81,7 @@
   }
 
   function notify(title, message) {
-    if (globalThis.AirdCore?.showDialog) {
-      return globalThis.AirdCore.showDialog(message, title);
-    }
-    globalThis.alert(message);
+    return showDialog(message, title);
   }
 
   function tagSelection() {
@@ -92,15 +93,11 @@
       notify("Tag selection", "Select at least one file first.");
       return;
     }
-    const xsrfInput = document.querySelector('input[name="_xsrf"]');
-    const xsrf = xsrfInput ? xsrfInput.value : "";
-    const headers = { "Content-Type": "application/json" };
-    if (xsrf) headers["X-XSRFToken"] = xsrf;
     Promise.all(
       paths.map(function (path) {
-        return fetch("/admin/api/abac/tags", {
+        return apiFetch("/admin/api/abac/tags", {
           method: "POST",
-          headers: headers,
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             tag: tag,
             glob_pattern: path,
@@ -211,11 +208,7 @@
     });
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", attachTriggers);
-  } else {
-    attachTriggers();
-  }
+  ready(attachTriggers);
 
   window.AirdCommandPalette = window.AirdCommandPalette || {};
   window.AirdCommandPalette.open = open;

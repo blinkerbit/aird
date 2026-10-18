@@ -1,5 +1,6 @@
 "use strict";
 
+import { registerOverlay } from '../core/overlay.js';
 import { SelectionStore } from './selection-store.js';
 import {
   getCanTag,
@@ -324,19 +325,28 @@ function awaitTagPickerClose(modal, inputEl, errEl, pendingTags, refresh) {
   });
 }
 
-async function mergeTagCatalogIntoNames(existingTagNames) {
+function mergeCatalogColors(colors) {
+  if (!globalThis.__BROWSE_CONFIG) return;
+  const prev = globalThis.__BROWSE_CONFIG.tagColors;
+  globalThis.__BROWSE_CONFIG.tagColors = {
+    ...(prev && typeof prev === 'object' ? prev : undefined),
+    ...(colors && typeof colors === 'object' ? colors : undefined),
+  };
+}
+
+/** Best-effort catalog sync; `onSynced` runs only on success. */
+async function syncTagCatalog(existingTagNames, { isAborted, onSynced } = {}) {
   try {
     const catalog = await fetchTagCatalog();
+    if (isAborted?.()) return;
     mergeTagNames(existingTagNames, catalog.names);
-    if (globalThis.__BROWSE_CONFIG) {
-      const prev = globalThis.__BROWSE_CONFIG.tagColors;
-      const next = catalog.colors;
-      globalThis.__BROWSE_CONFIG.tagColors = {
-        ...(prev && typeof prev === 'object' ? prev : undefined),
-        ...(next && typeof next === 'object' ? next : undefined),
-      };
-    }
+    mergeCatalogColors(catalog.colors);
+    onSynced?.();
   } catch { /* autocomplete is best-effort */ }
+}
+
+async function mergeTagCatalogIntoNames(existingTagNames) {
+  await syncTagCatalog(existingTagNames);
 }
 
 async function bulkRemoveTagsFromPaths(paths, tags) {
@@ -813,22 +823,10 @@ export async function openRowTagPopover(path, anchorEl) {
   scheduleRowTagPopoverPosition();
   inputEl.focus();
 
-  void (async function loadRowTagCatalog() {
-    try {
-      const catalog = await fetchTagCatalog();
-      if (signal.aborted) return;
-      mergeTagNames(existingTagNames, catalog.names);
-      if (globalThis.__BROWSE_CONFIG) {
-        const prev = globalThis.__BROWSE_CONFIG.tagColors;
-        const next = catalog.colors;
-        globalThis.__BROWSE_CONFIG.tagColors = {
-          ...(prev && typeof prev === 'object' ? prev : undefined),
-          ...(next && typeof next === 'object' ? next : undefined),
-        };
-      }
-      refresh();
-    } catch { /* autocomplete is best-effort */ }
-  })();
+  void syncTagCatalog(existingTagNames, {
+    isAborted: () => signal.aborted,
+    onSynced: refresh,
+  });
 
   const onApply = async function () {
     commitTagInput(inputEl, pendingTags);
@@ -861,13 +859,6 @@ export async function openRowTagPopover(path, anchorEl) {
   applyBtn.addEventListener('click', onApply, { signal: signal });
   cancelBtn.addEventListener('click', closeRowTagPopover, { signal: signal });
   backdrop.addEventListener('click', closeRowTagPopover, { signal: signal });
-  document.addEventListener('keydown', function rowPopEsc(e) {
-    if (e.key === 'Escape' && isRowTagPopoverOpen()) {
-      e.preventDefault();
-      e.stopPropagation();
-      closeRowTagPopover();
-    }
-  }, { signal: signal });
   window.addEventListener('resize', scheduleRowTagPopoverPosition, { signal: signal });
   document.addEventListener('scroll', scheduleRowTagPopoverPosition, { signal: signal, capture: true });
   inputEl.addEventListener('input', scheduleRowTagPopoverPosition, { signal: signal });
@@ -894,3 +885,9 @@ export function initTagsUi() {
     }
   });
 }
+
+registerOverlay({
+  priority: 100,
+  isOpen: isRowTagPopoverOpen,
+  close() { closeRowTagPopover(); return true; },
+});

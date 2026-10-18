@@ -4,7 +4,7 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261018a" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   {% include '_pwa_head.html' %}
   <title>Settings · Aird</title>
@@ -380,7 +380,7 @@
     </div>
   </div>
   <script src="/static/js/theme.js" defer></script>
-  <script src="/static/js/webauthn.js" defer></script>
+  <script src="/static/js/webauthn.js" type="module"></script>
   {% if is_onedrive_browser_enabled() or is_chat_enabled() %}
   <script nonce="{{ csp_nonce }}">globalThis.__ONEDRIVE_BROWSER_CONFIG = {% raw json_encode_for_script({
     'enabled': is_onedrive_browser_enabled(),
@@ -391,7 +391,7 @@
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/onedrive-fe/index.js?v=20260929c"></script>
   {% end %}
   {% if is_chat_enabled() %}
-  <script nonce="{{ csp_nonce }}" src="/static/js/chat-key-backup.js?v=20260906p"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/chat-key-backup.js?v=20260906p"></script>
   {% end %}
   <script nonce="{{ csp_nonce }}">
   function getXsrfToken() {

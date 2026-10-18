@@ -7,6 +7,7 @@ describe('AirdFileTransferHttp', () => {
     delete globalThis.AirdTransferBackground;
     delete globalThis.AirdRuntimeConfig;
     globalThis.__BROWSE_CONFIG = {};
+    loadClassicScript('aird/static/js/transfer-engine/scheduler.js');
     loadClassicScript('aird/static/js/transfer-background.js');
     loadClassicScript('aird/static/js/file-transfer-http.js');
   });

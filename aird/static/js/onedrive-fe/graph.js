@@ -1,5 +1,6 @@
 'use strict';
 
+import { apiFetch } from '../core/http.js';
 import { getConflictPolicy, graphConflictBehavior, getDefaultSave, setDefaultSave } from './settings.js';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
@@ -115,13 +116,13 @@ function downloadUrl(relPath) {
 }
 
 async function fetchAirdBlob(relPath) {
-  const res = await fetch(downloadUrl(relPath), { credentials: 'same-origin' });
+  const res = await apiFetch(downloadUrl(relPath), { credentials: 'same-origin' });
   if (!res.ok) throw new Error('Could not read file from Aird');
   return res.blob();
 }
 
 async function listAirdDir(relPath) {
-  const res = await fetch(`/api/files/${encPath(relPath)}`, { credentials: 'same-origin' });
+  const res = await apiFetch(`/api/files/${encPath(relPath)}`, { credentials: 'same-origin' });
   if (!res.ok) throw new Error('Could not list folder');
   const data = await res.json();
   return data.files || [];

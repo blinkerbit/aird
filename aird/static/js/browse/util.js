@@ -90,11 +90,6 @@ export function getChatEnabled() {
   return !!browseConfig().chat;
 }
 
-/** @deprecated Prefer getMaxFileSize() — kept for call sites that need a snapshot. */
-export const MAX_FILE_SIZE = getMaxFileSize();
-export const CAN_TAG = getCanTag();
-export const TAG_COLORS = getTagColors();
-
 export function pathBasename(p) {
   const segs = String(p).split('/').filter(Boolean);
   return segs.length ? segs.at(-1) : p;
@@ -111,12 +106,4 @@ export { createEl } from '../core/dom.js';
 
 export function wireBrowseButton(id, handler) {
   return onById(id, 'click', handler);
-}
-
-export function safeReload() {
-  try {
-    globalThis.location.reload();
-  } catch (e) {
-    console.warn('Reload failed:', e);
-  }
 }

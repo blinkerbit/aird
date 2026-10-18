@@ -1,7 +1,7 @@
 "use strict";
 
 import { SelectionStore } from './selection-store.js';
-import { apiFetch, postForm, postJson } from '../core/http.js';
+import { apiFetch, getJson, postForm, postJson } from '../core/http.js';
 import { wireButtons } from '../core/dom.js';
 import {
   escapeHtml,
@@ -13,6 +13,7 @@ import {
 import { closeSelectionDrawer } from './selection-ui.js';
 import { bulkCopyToDefault, bulkCopyToFolder } from './onedrive-fe-actions.js';
 import { queueBrowseAttachBatch } from '../chat-attach.js';
+import { encodeBrowsePath, filesDownloadUrl, normalizeRelPath, rowByPath, rowIsDir } from './rows.js';
 
 const FolderPicker = globalThis.AirdFolderPicker;
 
@@ -79,16 +80,11 @@ export async function newFolder() {
   }
 }
 
-function downloadUrlForPath(path) {
-  const enc = String(path || '').split('/').filter(Boolean).map(encodeURIComponent).join('/');
-  return `/files/${enc}?download=1`;
-}
-
 export async function downloadFileViaHttp(filePath) {
   const FTH = globalThis.AirdFileTransferHttp;
   const Dl = globalThis.AirdDownloadManager;
   if (!FTH?.downloadFile) {
-    globalThis.location.href = downloadUrlForPath(filePath);
+    globalThis.location.href = filesDownloadUrl(filePath);
     return;
   }
   if (!Dl?.DownloadBatch) {
@@ -109,18 +105,10 @@ export async function downloadFileViaHttp(filePath) {
   await batch.run();
 }
 
-function stripLeadingSlashes(value) {
-  return String(value || '').replaceAll(/^\/+/g, '');
-}
-
 async function listDirectoryForDownload(remotePath) {
-  const enc = stripLeadingSlashes(remotePath)
-    .split('/')
-    .filter(Boolean)
-    .map(encodeURIComponent)
-    .join('/');
+  const enc = encodeBrowsePath(remotePath);
   const url = enc ? `/api/files/${enc}` : '/api/files/';
-  const res = await fetch(url);
+  const res = await apiFetch(url);
   if (!res.ok) return null;
   const data = await res.json();
   return Array.isArray(data.files) ? data.files : [];
@@ -146,7 +134,7 @@ async function walkDownloadTree(dir, dirEntries, listFn, seen, files) {
 }
 
 async function expandSelectionPath(raw, listFn, seen, files) {
-  const p = stripLeadingSlashes(String(raw || '').trim());
+  const p = normalizeRelPath(String(raw || '').trim());
   if (!p) return;
   const entries = await listFn(p);
   if (entries === null) {
@@ -170,27 +158,9 @@ export async function expandSelectionToFiles(paths) {
   return files;
 }
 
-function filesDownloadUrl(path) {
-  const enc = stripLeadingSlashes(path)
-    .split('/')
-    .filter(Boolean)
-    .map(encodeURIComponent)
-    .join('/');
-  return enc ? `/files/${enc}?download=1` : '/files/?download=1';
-}
-
-function pathIsDirectory(relPath) {
-  const target = String(relPath || '');
-  const match = document.querySelector(
-    '.row-checkbox[data-path="' + CSS.escape(target) + '"]'
-  );
-  if (match) return match.dataset.isDir === '1';
-  return false;
-}
-
 function selectionNeedsZip(paths) {
   if (paths.length > 1) return true;
-  if (paths.length === 1) return pathIsDirectory(paths[0]);
+  if (paths.length === 1) return rowIsDir(rowByPath(paths[0]));
   return false;
 }
 
@@ -210,17 +180,7 @@ async function downloadSelectionAsZip(paths) {
     const base = pathBasename(paths[0]);
     if (base) name = base + '.zip';
   }
-  const save = globalThis.AirdFileTransferHttp?.saveBlob;
-  if (save) {
-    save(blob, name);
-  } else {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+  await globalThis.AirdCore.saveBlob(blob, name);
 }
 
 export async function bulkDownload() {
@@ -343,8 +303,7 @@ export async function bulkAddToShare() {
   selectEl.innerHTML = '<option value="">Loading...</option>';
   modal.showModal();
   try {
-    const res = await fetch('/share/list');
-    const data = await res.json();
+    const data = await getJson('/share/list', { throwOnError: false });
     if (data.error) { await showDialog(data.error, 'Error'); modal.close(); return; }
     const shares = data.shares || {};
     selectEl.innerHTML = Object.keys(shares).length ? Object.entries(shares).map(([id, s]) => {
@@ -399,9 +358,7 @@ export function bulkSendToChat() {
     return;
   }
   const entries = paths.map(function (path) {
-    const row = document.querySelector('tr.file-row[data-path="' + CSS.escape(path) + '"]');
-    const isDir = row?.dataset.isDir === '1';
-    return { path: path, isDir: isDir };
+    return { path: path, isDir: rowIsDir(rowByPath(path)) };
   });
   queueBrowseAttachBatch(entries);
 }

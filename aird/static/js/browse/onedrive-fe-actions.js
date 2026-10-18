@@ -2,7 +2,8 @@
 
 import { registerRowMoreAction } from './row-more-menu.js';
 import { showDialog } from './util.js';
-import { runWithAuth, savePendingAction } from '../onedrive-fe/index.js';
+import { runWithAuth } from '../onedrive-fe/index.js';
+import { rowByPath, rowIsDir } from './rows.js';
 
 function itemsFromCtx(ctx) {
   if (!ctx?.path) return [];
@@ -10,11 +11,7 @@ function itemsFromCtx(ctx) {
 }
 
 function itemsFromPaths(paths) {
-  return paths.map((path) => {
-    const row = document.querySelector(`tr.file-row[data-path="${CSS.escape(path)}"]`);
-    const isDir = row?.querySelector('.row-checkbox')?.dataset.isDir === '1';
-    return { path, isDir };
-  });
+  return paths.map((path) => ({ path, isDir: rowIsDir(rowByPath(path)) }));
 }
 
 async function runCopy(action, items) {
@@ -61,8 +58,4 @@ export async function bulkCopyToDefault(paths) {
 
 export async function bulkCopyToFolder(paths) {
   return runCopy('copyFolder', itemsFromPaths(paths));
-}
-
-export function prepareBulkCopy(action, paths) {
-  savePendingAction({ action, items: itemsFromPaths(paths), opts: {} });
 }

@@ -1,13 +1,14 @@
 "use strict";
 
 import { requestJson } from '../core/http.js';
+import { normalizeRelPath, rowIsDir } from './rows.js';
 
 function cfg() {
   return globalThis.__GITLAB_BROWSE_CONFIG || {};
 }
 
 function currentPath() {
-  return (document.getElementById("currentPath")?.value || "").replaceAll(/^\/+/g, "");
+  return normalizeRelPath(document.getElementById("currentPath")?.value);
 }
 
 function qs(extra = {}) {
@@ -32,8 +33,7 @@ function aird(method, url, body) {
 function collectFileNames() {
   return [...document.querySelectorAll("#fileTable .file-row")]
     .map((row) => {
-      const isDir = row.querySelector(".row-checkbox")?.dataset?.isDir === "1";
-      if (isDir) return null;
+      if (rowIsDir(row)) return null;
       const path = row.dataset.path || "";
       return path.split("/").pop();
     })

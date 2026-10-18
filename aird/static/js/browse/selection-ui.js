@@ -1,10 +1,12 @@
 "use strict";
 
+import { registerOverlay } from '../core/overlay.js';
 import { SelectionStore } from './selection-store.js';
 import {
   escapeHtml,
   wireBrowseButton,
 } from './util.js';
+import { rowIsDir } from './rows.js';
 
 let _selectionDrawerIsOpen = false;
 
@@ -75,7 +77,7 @@ function renderBulkDrawerList(listEl, allPaths) {
   if (!listEl) return;
   const dirSet = new Set();
   document.querySelectorAll('.row-checkbox').forEach(function (cb) {
-    if (cb.dataset.isDir === '1') dirSet.add(cb.dataset.path);
+    if (rowIsDir(cb)) dirSet.add(cb.dataset.path);
   });
   const sorted = allPaths.slice().sort(function (a, b) {
     return String(a).localeCompare(String(b));
@@ -192,9 +194,10 @@ export function initBrowseSelectionUi() {
   if (browseSelectionBackdrop) {
     browseSelectionBackdrop.addEventListener('click', closeSelectionDrawer);
   }
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && _selectionDrawerIsOpen) {
-      closeSelectionDrawer();
-    }
-  });
 }
+
+registerOverlay({
+  priority: 50,
+  isOpen: () => _selectionDrawerIsOpen,
+  close() { closeSelectionDrawer(); return true; },
+});

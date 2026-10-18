@@ -121,7 +121,7 @@
     animation: aird-shell-in var(--aird-dur-slow) var(--aird-ease-out) both;
   }
 
-  .aird-shell > *:not(.aird-nav):not(script):not(style):not(.aird-admin-tabs) {
+  .aird-shell > *:not(.aird-nav):not(script):not(style):not(.aird-admin-tabs):not(.tt-sidebar):not(.tt-backdrop) {
     animation: aird-rise var(--aird-dur) var(--aird-ease-out) both;
   }
 
@@ -574,7 +574,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .aird-shell,
-  .aird-shell > *:not(.aird-nav):not(script):not(style),
+  .aird-shell > *:not(.aird-nav):not(script):not(style):not(.tt-sidebar):not(.tt-backdrop),
   .animate-aird-rise,
   .animate-aird-fade,
   .animate-fade-in-up {

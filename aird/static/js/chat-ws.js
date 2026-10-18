@@ -1,71 +1,47 @@
 /**
  * Shared /ws/chat connection — one socket per tab, auto-reconnect, fan-out to subscribers.
  */
+import { createReconnectingSocket, sameOriginWsUrl } from './core/ws.js';
+
 (function (global) {
   'use strict';
 
-  const RECONNECT_MS = 3000;
-  const listeners = new Set();
-  let ws = null;
-  let reconnectTimer = null;
-  let intentionalClose = false;
+  if (global.AirdChatWS) return;
 
-  function wsUrl() {
-    const proto = global.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${proto}//${global.location.host}/ws/chat`;
+  const listeners = new Set();
+
+  function hasChatUi() {
+    const path = global.location.pathname;
+    const onChatPage = path === '/chat' || path.startsWith('/chat/');
+    return onChatPage
+      || Boolean(global.document.querySelector('a[href="/chat"]'))
+      || Boolean(global.document.getElementById('chatUnreadBadge'));
   }
 
   function emit(payload) {
     listeners.forEach((fn) => {
-      try { fn(payload); } catch (_) { /* */ }
+      try { fn(payload); } catch { /* subscriber errors stay local */ }
     });
     try {
       global.dispatchEvent(new CustomEvent('aird:chat', { detail: payload }));
-    } catch (_) { /* */ }
+    } catch { /* no window in some tests */ }
   }
 
-  function scheduleReconnect() {
-    if (intentionalClose || reconnectTimer) return;
-    reconnectTimer = global.setTimeout(() => {
-      reconnectTimer = null;
-      connect();
-    }, RECONNECT_MS);
-  }
+  const live = createReconnectingSocket({
+    url: () => sameOriginWsUrl('/ws/chat'),
+    onOpen() { emit({ type: 'chat_ws_open' }); },
+    onJson(payload) { emit(payload); },
+    onJsonError() { /* malformed frame */ },
+    onClose() { emit({ type: 'chat_ws_close' }); },
+  });
 
   function connect() {
-    const onChatPage = global.location.pathname === '/chat'
-        || global.location.pathname.startsWith('/chat/');
-    const hasChatUi = onChatPage
-        || global.document.querySelector('a[href="/chat"]')
-        || global.document.getElementById('chatUnreadBadge');
-    if (!hasChatUi) {
-      return;
-    }
-    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-      return;
-    }
-    intentionalClose = false;
-    ws = new WebSocket(wsUrl());
-    ws.onopen = () => emit({ type: 'chat_ws_open' });
-    ws.onmessage = (ev) => {
-      try { emit(JSON.parse(ev.data)); } catch (_) { /* */ }
-    };
-    ws.onclose = (event) => {
-      ws = null;
-      emit({ type: 'chat_ws_close' });
-      // 1008 = auth/policy rejection — do not reconnect storm.
-      if (event && event.code === 1008) return;
-      scheduleReconnect();
-    };
-    ws.onerror = () => { /* onclose carries the close code */ };
+    if (!hasChatUi()) return;
+    live.connect();
   }
 
   function send(payload) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      return false;
-    }
-    ws.send(JSON.stringify(payload));
-    return true;
+    return live.send(payload);
   }
 
   function subscribe(fn) {
@@ -74,7 +50,7 @@
   }
 
   function isOpen() {
-    return !!(ws && ws.readyState === WebSocket.OPEN);
+    return live.isOpen();
   }
 
   global.AirdChatWS = { connect, send, subscribe, isOpen };
@@ -84,4 +60,4 @@
   } else {
     connect();
   }
-})(window);
+})(globalThis);

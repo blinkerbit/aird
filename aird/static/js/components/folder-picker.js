@@ -2,10 +2,12 @@
  * Folder picker overlay for bulk copy/move. Requires #folderPickerOverlay markup.
  * @global AirdFolderPicker
  */
+import { apiFetch, postForm } from '../core/http.js';
+import { showDialog } from '../core/dialog.js';
+import { escapeHtml, escapeAttr } from '../core/dom-safe.js';
+
 (function attachFolderPicker(global) {
   'use strict';
-
-  const core = global.AirdCore;
 
   const FolderPicker = {
     _overlay: null,
@@ -80,7 +82,7 @@
       this._abort = controller;
 
       try {
-        const res = await fetch('/api/files/' + encodeURI(path), { signal: controller.signal });
+        const res = await apiFetch('/api/files/' + encodeURI(path), { signal: controller.signal });
         if (controller.signal.aborted) return;
         if (!res.ok) throw new Error('Failed to load');
         const data = await res.json();
@@ -104,9 +106,9 @@
         const partPath = parts.slice(0, i + 1).join('/');
         html += ' <span class="fp-sep">/</span> ';
         if (i === parts.length - 1) {
-          html += '<span class="fp-current">' + core.escapeHtml(part) + '</span>';
+          html += '<span class="fp-current">' + escapeHtml(part) + '</span>';
         } else {
-          html += '<a data-fp-nav="' + core.escapeAttr(partPath) + '">' + core.escapeHtml(part) + '</a>';
+          html += '<a data-fp-nav="' + escapeAttr(partPath) + '">' + escapeHtml(part) + '</a>';
         }
       });
       this._breadcrumb.innerHTML = html;
@@ -130,7 +132,7 @@
         const li = document.createElement('li');
         li.className = 'fp-folder-item';
         li.innerHTML = '<span class="fp-icon">📁</span>'
-          + '<span class="fp-name">' + core.escapeHtml(f.name) + '</span>'
+          + '<span class="fp-name">' + escapeHtml(f.name) + '</span>'
           + '<span class="fp-arrow">›</span>';
         li.addEventListener('click', () => {
           const child = this._currentPath ? this._currentPath + '/' + f.name : f.name;
@@ -143,24 +145,17 @@
     },
 
     async _createFolder() {
-      const name = await core.showDialog('Enter folder name:', 'New folder', { prompt: true, showCancel: true });
+      const name = await showDialog('Enter folder name:', 'New folder', { prompt: true, showCancel: true });
       if (!name?.trim()) return;
       const formData = new URLSearchParams();
       formData.append('parent', this._currentPath);
       formData.append('name', name.trim());
       try {
-        const res = await fetch('/mkdir', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-XSRFToken': core.getXSRFToken(),
-          },
-          body: formData.toString(),
-        });
+        const res = await postForm('/mkdir', formData);
         if (res.ok) this._navigate(this._currentPath);
-        else core.showDialog('Create folder failed: ' + (await res.text()), 'Error');
+        else showDialog('Create folder failed: ' + (await res.text()), 'Error');
       } catch (e) {
-        core.showDialog('Create folder failed: ' + e.message, 'Error');
+        showDialog('Create folder failed: ' + e.message, 'Error');
       }
     },
   };
