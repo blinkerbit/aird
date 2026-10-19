@@ -214,7 +214,7 @@ import { apiFetch } from './core/http.js';
     });
 
     updateInstallButton();
-    ensureServiceWorker().then((reg) => {
+    void ensureServiceWorker().then((reg) => {
       if (!reg) return;
       // Re-sync subscription if permission already granted
       if (
@@ -222,9 +222,10 @@ import { apiFetch } from './core/http.js';
         && Notification.permission === 'granted'
         && document.documentElement.dataset.airdUser === '1'
       ) {
-        subscribePush().catch((err) => console.debug('push resync', err));
+        return subscribePush();
       }
-    });
+      return undefined;
+    }).catch((err) => console.debug('push resync', err));
   }
 
   globalThis.AirdPwa = {
