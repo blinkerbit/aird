@@ -153,9 +153,9 @@ import { escapeHtml, escapeAttr } from '../core/dom-safe.js';
       try {
         const res = await postForm('/mkdir', formData);
         if (res.ok) this._navigate(this._currentPath);
-        else showDialog('Create folder failed: ' + (await res.text()), 'Error');
+        else await showDialog('Create folder failed: ' + (await res.text()), 'Error');
       } catch (e) {
-        showDialog('Create folder failed: ' + e.message, 'Error');
+        await showDialog('Create folder failed: ' + e.message, 'Error');
       }
     },
   };

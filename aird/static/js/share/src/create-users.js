@@ -87,7 +87,9 @@ function createUserPicker({
       selectedList.innerHTML = emptySelectedHtml;
       return;
     }
-    selectedList.innerHTML = Array.from(selected).map(renderTag).join('');
+    selectedList.innerHTML = Array.from(selected).map(function (username) {
+      return renderTag(username);
+    }).join('');
   }
 
   function remove(username) {

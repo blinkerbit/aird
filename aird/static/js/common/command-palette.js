@@ -90,10 +90,10 @@ import { ready } from "../core/dom.js";
     const selFn = window.AirdCommandPalette.getSelection;
     const paths = typeof selFn === "function" ? selFn() : [];
     if (!Array.isArray(paths) || paths.length === 0) {
-      notify("Tag selection", "Select at least one file first.");
+      void notify("Tag selection", "Select at least one file first.");
       return;
     }
-    Promise.all(
+    void Promise.all(
       paths.map(function (path) {
         return apiFetch("/admin/api/abac/tags", {
           method: "POST",
@@ -108,7 +108,7 @@ import { ready } from "../core/dom.js";
     ).then(function (results) {
       const failed = results.filter(function (r) { return !r.ok; }).length;
       if (failed > 0) {
-        notify(
+        return notify(
           "Tag selection",
           "Tagged " +
             (paths.length - failed) +
@@ -118,9 +118,10 @@ import { ready } from "../core/dom.js";
             failed +
             " failed (likely admin-only)."
         );
-      } else {
-        notify("Tag selection", "Tagged " + paths.length + " item(s) as '" + tag + "'.");
       }
+      return notify("Tag selection", "Tagged " + paths.length + " item(s) as '" + tag + "'.");
+    }).catch(function () {
+      return notify("Tag selection", "Tagging failed.");
     });
   }
 
