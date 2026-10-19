@@ -228,9 +228,9 @@ import { apiFetch } from './core/http.js';
   function showIfEnabled(containerId) {
     const el = document.getElementById(containerId);
     if (!el) return;
-    isEnabled().then((on) => {
+    void isEnabled().then((on) => {
       if (on) el.classList.remove('hidden');
-    });
+    }).catch((err) => console.debug('webauthn availability', err));
   }
 
   global.AirdWebAuthn = {

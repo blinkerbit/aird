@@ -63,7 +63,10 @@ import { apiFetch } from './core/http.js';
   async function fingerprint(jwk) {
     const raw = new TextEncoder().encode(`${jwk.x}.${jwk.y}`);
     const hash = await crypto.subtle.digest('SHA-256', raw);
-    return b64(hash).replace(/=+$/, '');
+    const encoded = b64(hash);
+    let end = encoded.length;
+    while (end > 0 && encoded[end - 1] === '=') end -= 1;
+    return encoded.slice(0, end);
   }
 
   async function deriveWrapKey(priv, pub, convId) {
@@ -333,7 +336,7 @@ import { apiFetch } from './core/http.js';
 
   function onHubEvent(data) {
     if (data?.type === 'chat_e2e_need_key' && data.conversation_id && data.username !== username) {
-      shareIfHaveKey(data.conversation_id);
+      void shareIfHaveKey(data.conversation_id);
     }
   }
 
@@ -353,7 +356,7 @@ import { apiFetch } from './core/http.js';
         WS.connect();
       }
     };
-    start();
+    void start();
   }
 
   async function aesFor(convId) {

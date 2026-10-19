@@ -55,7 +55,7 @@ import { escapeHtml, escapeAttr } from '../core/dom-safe.js';
       const startPath = options.startPath
         ?? document.getElementById('currentPath')?.value
         ?? '';
-      this._navigate(startPath);
+      void this._navigate(startPath);
       return new Promise((resolve) => { this._resolve = resolve; });
     },
 
@@ -115,7 +115,7 @@ import { escapeHtml, escapeAttr } from '../core/dom-safe.js';
       this._breadcrumb.querySelectorAll('a[data-fp-nav]').forEach((a) => {
         a.addEventListener('click', (e) => {
           e.preventDefault();
-          this._navigate(a.dataset.fpNav);
+          void this._navigate(a.dataset.fpNav);
         });
       });
     },
@@ -136,7 +136,7 @@ import { escapeHtml, escapeAttr } from '../core/dom-safe.js';
           + '<span class="fp-arrow">›</span>';
         li.addEventListener('click', () => {
           const child = this._currentPath ? this._currentPath + '/' + f.name : f.name;
-          this._navigate(child);
+          void this._navigate(child);
         });
         ul.appendChild(li);
       });
@@ -152,7 +152,7 @@ import { escapeHtml, escapeAttr } from '../core/dom-safe.js';
       formData.append('name', name.trim());
       try {
         const res = await postForm('/mkdir', formData);
-        if (res.ok) this._navigate(this._currentPath);
+        if (res.ok) void this._navigate(this._currentPath);
         else await showDialog('Create folder failed: ' + (await res.text()), 'Error');
       } catch (e) {
         await showDialog('Create folder failed: ' + e.message, 'Error');
