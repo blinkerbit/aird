@@ -4,7 +4,7 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261018a" />
   <link rel="stylesheet" href="/static/css/chat.css?v=20261005a" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   {% include '_pwa_head.html' %}
@@ -245,11 +245,11 @@
 
   <script nonce="{{ csp_nonce }}">window.__AIRD_CHAT_USER__ = {% raw json_encode(current_user.get('username') if current_user else '') %};</script>
   <script nonce="{{ csp_nonce }}">globalThis.__ONEDRIVE_BROWSER_CONFIG = { enabled: {{ 'true' if is_onedrive_browser_enabled() else 'false' }} };</script>
-  <script nonce="{{ csp_nonce }}" src="/static/js/components/folder-picker.js"></script>
-  <script nonce="{{ csp_nonce }}" src="/static/js/chat-ws.js"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/components/folder-picker.js"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/chat-ws.js"></script>
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/onedrive-fe/index.js?v=20260929c"></script>
-  <script nonce="{{ csp_nonce }}" src="/static/js/chat-key-backup.js?v=20260906p"></script>
-  <script nonce="{{ csp_nonce }}" src="/static/js/chat-secret.js?v=20260927c"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/chat-key-backup.js?v=20260906p"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/chat-secret.js?v=20260927c"></script>
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/pages/chat.js?v=20261005a"></script>
 </body>
 </html>

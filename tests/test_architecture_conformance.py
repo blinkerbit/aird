@@ -62,3 +62,28 @@ def test_handler_cross_feature_imports_are_controlled():
         "Unexpected cross-handler imports found (should go through services): "
         f"{offenders}"
     )
+
+
+def test_schema_module_owns_init_db():
+    """App tables are created only in aird.db.schema."""
+    legacy = (PROJECT_ROOT / "aird" / "database" / "db.py").read_text(encoding="utf-8")
+    assert "CREATE TABLE" not in legacy
+    assert "from aird.db.schema import init_db" in legacy
+    owners = []
+    for path in (PROJECT_ROOT / "aird").rglob("*.py"):
+        if "def init_db(" in path.read_text(encoding="utf-8"):
+            owners.append(path.relative_to(PROJECT_ROOT).as_posix())
+    assert sorted(owners) == ["aird/database/db.py", "aird/db/schema.py"]
+
+
+def test_runtime_does_not_call_legacy_init_db():
+    offenders = []
+    for path in (PROJECT_ROOT / "aird").rglob("*.py"):
+        if path.name == "db.py" and path.parent.name == "database":
+            continue
+        if path.name == "schema.py" and path.parent.name == "db":
+            continue
+        text = path.read_text(encoding="utf-8")
+        if "database.db import init_db" in text or "database.db.init_db" in text:
+            offenders.append(path.relative_to(PROJECT_ROOT).as_posix())
+    assert not offenders, f"Legacy init_db imports: {offenders}"

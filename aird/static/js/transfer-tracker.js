@@ -583,6 +583,12 @@
     _render();
   }
 
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _refs);
+  } else {
+    _refs();
+  }
+
   global.AirdTransferTracker = {
     addTransfer: addTransfer,
     updateProgress: updateProgress,

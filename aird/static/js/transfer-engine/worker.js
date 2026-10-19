@@ -2,7 +2,7 @@
  * Web Worker entry for Aird transfer engine.
  */
 importScripts(
-  './hasher.js?v=20260724a',
+  './scheduler.js',
   './worker-lib.js?v=20260725c'
 );
 

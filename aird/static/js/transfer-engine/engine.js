@@ -33,6 +33,10 @@
     };
   }
 
+  function apiFetch(url, options) {
+    return global.AirdCore.apiFetch(url, options);
+  }
+
   function getXSRFToken() {
     if (global.AirdCore?.getXSRFToken) return global.AirdCore.getXSRFToken();
     const m = /(?:^|; )_xsrf=([^;]*)/.exec(document.cookie);
@@ -277,7 +281,7 @@
       || config().transferStrategy || {};
     if (strategy.downloadTransport === 'stream') return null;
     const url = filesUrl(path);
-    const head = await fetch(url, { method: 'HEAD', credentials: 'same-origin' });
+    const head = await apiFetch(url, { method: 'HEAD', credentials: 'same-origin' });
     if (!head.ok) return null;
     const total = parseInt(head.headers.get('Content-Length') || '0', 10);
     if (total < engineConfig(strategy).largeThreshold) return null;
@@ -357,7 +361,7 @@
     }
     if (resume.uploadId) {
       try {
-        await fetch(`/api/upload/range/${encodeURIComponent(resume.uploadId)}`, {
+        await apiFetch(`/api/upload/range/${encodeURIComponent(resume.uploadId)}`, {
           method: 'DELETE',
           credentials: 'same-origin',
           headers: { 'X-XSRFToken': getXSRFToken() },

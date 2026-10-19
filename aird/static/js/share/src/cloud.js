@@ -3,7 +3,8 @@ import {
   cloudState,
   selectedFiles,
 } from './state.js';
-import { getXSRFToken, formatFileSize, showDialog } from './utils.js';
+import { registerOverlay } from '../../core/overlay.js';
+import { formatBytes, showDialog, apiFetch, getJson } from './utils.js';
 import { addToSelection, removeFromSelection } from './selection.js';
 
 function cloudSelectionKey(providerName, fileId) {
@@ -109,11 +110,7 @@ async function loadCloudProviders(forceReload = false) {
 
   try {
     setCloudStatus('Loading providers...');
-    const response = await fetch('/api/cloud/providers');
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    const payload = await response.json();
+    const payload = await getJson('/api/cloud/providers');
     cloudState.providers = Array.isArray(payload.providers) ? payload.providers : [];
     renderCloudProviders(cloudState.providers);
 
@@ -216,11 +213,7 @@ async function loadCloudFolder(folderId, options = {}) {
     }
     const query = params.toString();
     const url = query ? `/api/cloud/${provider.name}/files?${query}` : `/api/cloud/${provider.name}/files`;
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    const payload = await response.json();
+    const payload = await getJson(url);
     const files = Array.isArray(payload.files) ? payload.files : [];
 
     if (options.reset) {
@@ -310,7 +303,7 @@ function renderCloudFiles(files) {
     if (file.is_dir || typeof file.size !== 'number') {
       sizeCell.textContent = '-';
     } else {
-      sizeCell.textContent = formatFileSize(file.size);
+      sizeCell.textContent = formatBytes(file.size);
     }
 
     const modifiedCell = document.createElement('td');
@@ -387,14 +380,8 @@ async function handleCloudUpload() {
   uploadInput.disabled = true;
 
   try {
-    const xsrfHeaders = {};
-    const xsrf = getXSRFToken();
-    if (xsrf) {
-      xsrfHeaders['X-XSRFToken'] = xsrf;
-    }
-    const response = await fetch(`/api/cloud/${cloudState.currentProvider.name}/upload`, {
+    const response = await apiFetch(`/api/cloud/${cloudState.currentProvider.name}/upload`, {
       method: 'POST',
-      headers: xsrfHeaders,
       body: formData
     });
     const payload = await response.json().catch(() => ({}));
@@ -474,10 +461,10 @@ if (cloudElements.modal) {
   });
 }
 
-document.addEventListener('keydown', function (event) {
-  if (event.key === 'Escape' && cloudElements.modal?.open) {
-    closeCloudBrowser();
-  }
+registerOverlay({
+  priority: 55,
+  isOpen: () => Boolean(cloudElements.modal?.open),
+  close() { closeCloudBrowser(); return true; },
 });
 }
 

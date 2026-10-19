@@ -40,14 +40,6 @@
       return { label, url };
     }
 
-    cancel() {
-      /* Individual downloads cancel via transfer tracker. */
-    }
-
-    cancelOne() {
-      /* Use transfer sidebar Stop on the active row. */
-    }
-
     close() {
       this.paths = [];
       this.urls = [];

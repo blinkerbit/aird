@@ -1,3 +1,4 @@
+import { registerOverlay } from '../../core/overlay.js';
 import {
   elements,
   selectedFiles,
@@ -108,11 +109,15 @@ export function initSharePage() {
     }
   });
 
-  document.addEventListener('keydown', function (event) {
-    if (event.key === 'Escape') {
-      closeShareManagementModal();
-      closeShareConfigModal();
-    }
+  registerOverlay({
+    priority: 70,
+    isOpen: () => Boolean(document.getElementById('shareManagementModal')?.open),
+    close() { closeShareManagementModal(); return true; },
+  });
+  registerOverlay({
+    priority: 65,
+    isOpen: () => Boolean(document.getElementById('shareConfigModal')?.open),
+    close() { closeShareConfigModal(); return true; },
   });
 
   document.addEventListener('click', function (event) {
@@ -122,10 +127,10 @@ export function initSharePage() {
     }
   });
 
-  document.addEventListener('keydown', function (event) {
-    if (event.key === 'Escape') {
-      closeSharePopup();
-    }
+  registerOverlay({
+    priority: 60,
+    isOpen: () => Boolean(document.getElementById('sharePopup')?.open),
+    close() { closeSharePopup(); return true; },
   });
 
   elements.generateLink.onclick = openShareConfigModal;

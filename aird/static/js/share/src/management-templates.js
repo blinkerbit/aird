@@ -1,4 +1,4 @@
-import { escapeHtml, escapeAttr } from './utils.js';
+import { escapeHtml, escapeAttr, isShareRestricted } from './utils.js';
 
 function buildShareUsersHtml(allowedUsers) {
   if (!allowedUsers || allowedUsers.length === 0) {
@@ -82,7 +82,7 @@ function _buildShareTypeEditBlock(share, isTag, isStatic) {
 }
 
 function _shareAccessBadgeHtml(share) {
-  const restricted = share.allowed_users && share.allowed_users.length > 0;
+  const restricted = isShareRestricted(share);
   const badgeCls = restricted ? 'badge-warning' : 'badge-success';
   const label = restricted ? 'Restricted' : 'Public';
   return '<span><span class="opacity-60">Access:</span> <span class="badge ' + badgeCls + ' badge-sm">' + label + '</span></span>';

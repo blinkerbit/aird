@@ -1,18 +1,19 @@
 "use strict";
 
 import { SelectionStore } from './selection-store.js';
+import { apiFetch, getJson, postForm, postJson } from '../core/http.js';
+import { wireButtons } from '../core/dom.js';
 import {
   escapeHtml,
   escapeAttr,
   showDialog,
-  getXSRFToken,
   pathBasename,
-  wireBrowseButton,
   getChatEnabled,
 } from './util.js';
 import { closeSelectionDrawer } from './selection-ui.js';
 import { bulkCopyToDefault, bulkCopyToFolder } from './onedrive-fe-actions.js';
 import { queueBrowseAttachBatch } from '../chat-attach.js';
+import { encodeBrowsePath, filesDownloadUrl, normalizeRelPath, rowByPath, rowIsDir } from './rows.js';
 
 const FolderPicker = globalThis.AirdFolderPicker;
 
@@ -27,14 +28,7 @@ export async function renameItem(filepath) {
   formData.append("path", filepath);
   formData.append("new_name", newName);
   try {
-    const res = await fetch("/rename", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "X-XSRFToken": getXSRFToken(),
-      },
-      body: formData.toString(),
-    });
+    const res = await postForm("/rename", formData);
     if (res.ok) {
       SelectionStore.remove(filepath);
       globalThis.location.reload();
@@ -57,14 +51,7 @@ export async function deleteItem(filepath, isFolder) {
   formData.append("path", filepath);
   if (isFolder) formData.append("recursive", "1");
   try {
-    const res = await fetch("/delete", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "X-XSRFToken": getXSRFToken(),
-      },
-      body: formData.toString(),
-    });
+    const res = await postForm("/delete", formData);
     if (res.ok) {
       SelectionStore.remove(filepath);
       globalThis.location.reload();
@@ -85,11 +72,7 @@ export async function newFolder() {
   formData.append('parent', currentPath);
   formData.append('name', name.trim());
   try {
-    const res = await fetch('/mkdir', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRFToken': getXSRFToken() },
-      body: formData.toString(),
-    });
+    const res = await postForm('/mkdir', formData);
     if (res.ok) globalThis.location.reload();
     else await showDialog('Create folder failed: ' + (await res.text()), 'Error');
   } catch (e) {
@@ -97,16 +80,11 @@ export async function newFolder() {
   }
 }
 
-function downloadUrlForPath(path) {
-  const enc = String(path || '').split('/').filter(Boolean).map(encodeURIComponent).join('/');
-  return `/files/${enc}?download=1`;
-}
-
 export async function downloadFileViaHttp(filePath) {
   const FTH = globalThis.AirdFileTransferHttp;
   const Dl = globalThis.AirdDownloadManager;
   if (!FTH?.downloadFile) {
-    globalThis.location.href = downloadUrlForPath(filePath);
+    globalThis.location.href = filesDownloadUrl(filePath);
     return;
   }
   if (!Dl?.DownloadBatch) {
@@ -127,18 +105,10 @@ export async function downloadFileViaHttp(filePath) {
   await batch.run();
 }
 
-function stripLeadingSlashes(value) {
-  return String(value || '').replaceAll(/^\/+/g, '');
-}
-
 async function listDirectoryForDownload(remotePath) {
-  const enc = stripLeadingSlashes(remotePath)
-    .split('/')
-    .filter(Boolean)
-    .map(encodeURIComponent)
-    .join('/');
+  const enc = encodeBrowsePath(remotePath);
   const url = enc ? `/api/files/${enc}` : '/api/files/';
-  const res = await fetch(url);
+  const res = await apiFetch(url);
   if (!res.ok) return null;
   const data = await res.json();
   return Array.isArray(data.files) ? data.files : [];
@@ -164,7 +134,7 @@ async function walkDownloadTree(dir, dirEntries, listFn, seen, files) {
 }
 
 async function expandSelectionPath(raw, listFn, seen, files) {
-  const p = stripLeadingSlashes(String(raw || '').trim());
+  const p = normalizeRelPath(String(raw || '').trim());
   if (!p) return;
   const entries = await listFn(p);
   if (entries === null) {
@@ -188,37 +158,16 @@ export async function expandSelectionToFiles(paths) {
   return files;
 }
 
-function filesDownloadUrl(path) {
-  const enc = stripLeadingSlashes(path)
-    .split('/')
-    .filter(Boolean)
-    .map(encodeURIComponent)
-    .join('/');
-  return enc ? `/files/${enc}?download=1` : '/files/?download=1';
-}
-
-function pathIsDirectory(relPath) {
-  const target = String(relPath || '');
-  const match = document.querySelector(
-    '.row-checkbox[data-path="' + CSS.escape(target) + '"]'
-  );
-  if (match) return match.dataset.isDir === '1';
-  return false;
-}
-
 function selectionNeedsZip(paths) {
   if (paths.length > 1) return true;
-  if (paths.length === 1) return pathIsDirectory(paths[0]);
+  if (paths.length === 1) return rowIsDir(rowByPath(paths[0]));
   return false;
 }
 
 async function downloadSelectionAsZip(paths) {
-  const res = await fetch('/api/download/zip', {
+  const res = await apiFetch('/api/download/zip', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-XSRFToken': getXSRFToken(),
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ paths }),
   });
   if (!res.ok) {
@@ -231,17 +180,7 @@ async function downloadSelectionAsZip(paths) {
     const base = pathBasename(paths[0]);
     if (base) name = base + '.zip';
   }
-  const save = globalThis.AirdFileTransferHttp?.saveBlob;
-  if (save) {
-    save(blob, name);
-  } else {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+  await globalThis.AirdCore.saveBlob(blob, name);
 }
 
 export async function bulkDownload() {
@@ -294,12 +233,7 @@ export async function bulkDelete() {
   const confirmed = await showDialog('Delete ' + paths.length + ' item(s)? This cannot be undone.', 'Confirm bulk delete', { showCancel: true });
   if (!confirmed) return;
   try {
-    const res = await fetch('/api/bulk', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
-      body: JSON.stringify({ action: 'delete', paths }),
-    });
-    const data = await res.json();
+    const data = await postJson('/api/bulk', { action: 'delete', paths }, { throwOnError: false });
     if (data.ok) { SelectionStore.clear(); globalThis.location.reload(); }
     else await showDialog(data.results?.some(r => !r.ok) ? data.results.map(r => r.error).filter(Boolean).join('; ') : 'Bulk delete failed', 'Error');
   } catch (e) {
@@ -307,58 +241,43 @@ export async function bulkDelete() {
   }
 }
 
-export async function bulkCopy() {
+// Template method: copy and move share the whole flow; only the
+// endpoint, picker mode, and label (the strategy) differ.
+const BULK_TRANSFERS = {
+  copy: { endpoint: '/copy', pickerMode: 'copy', label: 'Copy' },
+  move: { endpoint: '/move', pickerMode: 'move', label: 'Move' },
+};
+
+async function bulkTransfer(kind) {
+  const { endpoint, pickerMode, label } = BULK_TRANSFERS[kind];
   const paths = getSelectedPaths();
   if (paths.length === 0) return;
   closeSelectionDrawer();
   if (!FolderPicker?.open) {
-    await showDialog('Folder picker unavailable. Hard-refresh the page.', 'Copy');
+    await showDialog('Folder picker unavailable. Hard-refresh the page.', label);
     return;
   }
-  const destDir = await FolderPicker.open('copy');
+  const destDir = await FolderPicker.open(pickerMode);
   if (destDir == null) return;
   let failed = 0;
-  async function copyOne(path) {
+  for (const path of paths) {
     const base = pathBasename(path);
-    const fullDest = destDir ? destDir + '/' + base : base;
     const formData = new URLSearchParams();
     formData.append('path', path);
-    formData.append('dest', fullDest);
-    const res = await fetch('/copy', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRFToken': getXSRFToken() }, body: formData.toString() });
+    formData.append('dest', destDir ? destDir + '/' + base : base);
+    const res = await postForm(endpoint, formData);
     if (!res.ok) failed++;
   }
-  for await (const path of paths) {
-    await copyOne(path);
-  }
   if (failed === 0) { SelectionStore.clear(); globalThis.location.reload(); }
-  else await showDialog(failed + ' of ' + paths.length + ' copy operation(s) failed.', 'Copy');
+  else await showDialog(failed + ' of ' + paths.length + ' ' + kind + ' operation(s) failed.', label);
 }
 
-export async function bulkMove() {
-  const paths = getSelectedPaths();
-  if (paths.length === 0) return;
-  closeSelectionDrawer();
-  if (!FolderPicker?.open) {
-    await showDialog('Folder picker unavailable. Hard-refresh the page.', 'Move');
-    return;
-  }
-  const destDir = await FolderPicker.open('move');
-  if (destDir == null) return;
-  let failed = 0;
-  async function moveOne(path) {
-    const base = pathBasename(path);
-    const fullDest = destDir ? destDir + '/' + base : base;
-    const formData = new URLSearchParams();
-    formData.append('path', path);
-    formData.append('dest', fullDest);
-    const res = await fetch('/move', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-XSRFToken': getXSRFToken() }, body: formData.toString() });
-    if (!res.ok) failed++;
-  }
-  for await (const path of paths) {
-    await moveOne(path);
-  }
-  if (failed === 0) { SelectionStore.clear(); globalThis.location.reload(); }
-  else await showDialog(failed + ' of ' + paths.length + ' move operation(s) failed.', 'Move');
+export function bulkCopy() {
+  return bulkTransfer('copy');
+}
+
+export function bulkMove() {
+  return bulkTransfer('move');
 }
 
 export function bulkCreateShare() {
@@ -384,8 +303,7 @@ export async function bulkAddToShare() {
   selectEl.innerHTML = '<option value="">Loading...</option>';
   modal.showModal();
   try {
-    const res = await fetch('/share/list');
-    const data = await res.json();
+    const data = await getJson('/share/list', { throwOnError: false });
     if (data.error) { await showDialog(data.error, 'Error'); modal.close(); return; }
     const shares = data.shares || {};
     selectEl.innerHTML = Object.keys(shares).length ? Object.entries(shares).map(([id, s]) => {
@@ -403,12 +321,7 @@ export async function bulkAddToShare() {
   });
   if (!shareId) return;
   try {
-    const res = await fetch('/api/bulk', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
-      body: JSON.stringify({ action: 'add_to_share', share_id: shareId, paths }),
-    });
-    const data = await res.json();
+    const data = await postJson('/api/bulk', { action: 'add_to_share', share_id: shareId, paths }, { throwOnError: false });
     if (data.ok) { SelectionStore.clear(); globalThis.location.reload(); }
     else await showDialog(data.results?.some(r => !r.ok) ? data.results.map(r => r.error).filter(Boolean).join('; ') : 'Add to share failed', 'Error');
   } catch (e) {
@@ -445,26 +358,27 @@ export function bulkSendToChat() {
     return;
   }
   const entries = paths.map(function (path) {
-    const row = document.querySelector('tr.file-row[data-path="' + CSS.escape(path) + '"]');
-    const isDir = row?.dataset.isDir === '1';
-    return { path: path, isDir: isDir };
+    return { path: path, isDir: rowIsDir(rowByPath(path)) };
   });
   queueBrowseAttachBatch(entries);
 }
 
 export function wireBrowseBulkActions({ bulkAddTags, openShareByTag }) {
-  wireBrowseButton('newFolderBtn', newFolder);
-  wireBrowseButton('bulkDownloadBtn', bulkDownload);
-  wireBrowseButton('bulkDeleteBtn', bulkDelete);
-  wireBrowseButton('bulkCopyBtn', bulkCopy);
-  wireBrowseButton('bulkMoveBtn', bulkMove);
-  wireBrowseButton('bulkAddToShareBtn', bulkAddToShare);
-  wireBrowseButton('bulkCreateShareBtn', bulkCreateShare);
+  const bindings = {
+    newFolderBtn: newFolder,
+    bulkDownloadBtn: bulkDownload,
+    bulkDeleteBtn: bulkDelete,
+    bulkCopyBtn: bulkCopy,
+    bulkMoveBtn: bulkMove,
+    bulkAddToShareBtn: bulkAddToShare,
+    bulkCreateShareBtn: bulkCreateShare,
+  };
   if (globalThis.__ONEDRIVE_BROWSER_CONFIG?.enabled) {
-    wireBrowseButton('bulkOdCopyBtn', bulkOdCopyDefault);
-    wireBrowseButton('bulkOdFolderBtn', bulkOdCopyFolder);
+    bindings.bulkOdCopyBtn = bulkOdCopyDefault;
+    bindings.bulkOdFolderBtn = bulkOdCopyFolder;
   }
-  if (bulkAddTags) wireBrowseButton('bulkAddTagsBtn', bulkAddTags);
-  if (openShareByTag) wireBrowseButton('shareByTagBtn', openShareByTag);
-  if (getChatEnabled()) wireBrowseButton('bulkSendChatBtn', bulkSendToChat);
+  if (bulkAddTags) bindings.bulkAddTagsBtn = bulkAddTags;
+  if (openShareByTag) bindings.shareByTagBtn = openShareByTag;
+  if (getChatEnabled()) bindings.bulkSendChatBtn = bulkSendToChat;
+  wireButtons(bindings);
 }

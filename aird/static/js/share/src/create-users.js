@@ -1,5 +1,132 @@
 import { selectedUsers, selectedModifyUsers, shareVars } from './state.js';
-import { escapeHtml, escapeAttr, findCheckboxByValue } from './utils.js';
+import { escapeHtml, escapeAttr, findCheckboxByValue, getJson } from './utils.js';
+
+/**
+ * One user-search picker. Viewers and editors used to each carry a copy of
+ * the debounce, the result list, and the selected-tag row.
+ */
+function createUserPicker({
+  selected,
+  searchInputId,
+  listId,
+  selectedListId,
+  timeoutKey,
+  toggleAction,
+  emptySelectedHtml,
+  renderTag,
+}) {
+  function listEl() {
+    return document.getElementById(listId);
+  }
+
+  function setupSearch() {
+    const searchInput = document.getElementById(searchInputId);
+    if (!searchInput) return;
+    searchInput.addEventListener('input', function () {
+      const query = this.value.trim();
+      if (shareVars[timeoutKey]) clearTimeout(shareVars[timeoutKey]);
+      if (query.length < 1) {
+        listEl().innerHTML = '<em class="share-hint">Type to search for users...</em>';
+        return;
+      }
+      shareVars[timeoutKey] = setTimeout(() => { void search(query); }, 300);
+    });
+  }
+
+  async function search(query) {
+    try {
+      const data = await getJson(`/api/users/search?q=${encodeURIComponent(query)}`);
+      renderList(data.users || []);
+    } catch (error) {
+      console.error('Error searching users:', error);
+      listEl().innerHTML = '<em class="share-error-text">Error searching users</em>';
+    }
+  }
+
+  function renderList(users) {
+    const userList = listEl();
+    if (users.length === 0) {
+      userList.innerHTML = '<em class="share-hint">No users found</em>';
+      return;
+    }
+    userList.replaceChildren();
+    for (const user of users) {
+      const userDiv = document.createElement('div');
+      userDiv.style.marginBottom = '5px';
+      const label = document.createElement('label');
+      label.style.display = 'flex';
+      label.style.alignItems = 'center';
+      label.style.gap = '8px';
+      label.style.cursor = 'pointer';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.value = user.username;
+      checkbox.checked = selected.has(user.username);
+      checkbox.dataset.action = toggleAction;
+      checkbox.dataset.user = user.username;
+
+      const span = document.createElement('span');
+      const role = user.role === 'admin' ? ' (Admin)' : '';
+      span.textContent = `${user.username}${role}`;
+      label.append(checkbox, span);
+      userDiv.appendChild(label);
+      userList.appendChild(userDiv);
+    }
+  }
+
+  function toggle(username) {
+    if (selected.has(username)) selected.delete(username);
+    else selected.add(username);
+    updateSelected();
+  }
+
+  function updateSelected() {
+    const selectedList = document.getElementById(selectedListId);
+    if (selected.size === 0) {
+      selectedList.innerHTML = emptySelectedHtml;
+      return;
+    }
+    selectedList.innerHTML = Array.from(selected).map(function (username) {
+      return renderTag(username);
+    }).join('');
+  }
+
+  function remove(username) {
+    selected.delete(username);
+    updateSelected();
+    const checkbox = findCheckboxByValue(listEl(), username);
+    if (checkbox) checkbox.checked = false;
+  }
+
+  return { setupSearch, search, renderList, toggle, updateSelected, remove };
+}
+
+function userTag(username, action, className, prefix) {
+  return `<span class="config-tag ${className}" data-action="${action}" data-user="${escapeAttr(username)}">${prefix}${escapeHtml(username)} ×</span>`;
+}
+
+const viewers = createUserPicker({
+  selected: selectedUsers,
+  searchInputId: 'userSearchInput',
+  listId: 'userList',
+  selectedListId: 'selectedUsersList',
+  timeoutKey: 'searchTimeout',
+  toggleAction: 'toggleUserSelection',
+  emptySelectedHtml: '<em class="share-hint">No users selected</em>',
+  renderTag: (username) => userTag(username, 'removeSelectedUser', 'access', ''),
+});
+
+const editors = createUserPicker({
+  selected: selectedModifyUsers,
+  searchInputId: 'modifyUserSearchInput',
+  listId: 'modifyUserList',
+  selectedListId: 'selectedModifyUsersList',
+  timeoutKey: 'modifySearchTimeout',
+  toggleAction: 'toggleModifyUserSelection',
+  emptySelectedHtml: '<em class="share-hint">No modify users (read-only)</em>',
+  renderTag: (username) => userTag(username, 'removeSelectedModifyUser', 'editor', '✏️ '),
+});
 
 function toggleUserSelectionPanel() {
   const accessType = document.querySelector('input[name="accessType"]:checked').value;
@@ -7,209 +134,29 @@ function toggleUserSelectionPanel() {
 
   if (accessType === 'restricted') {
     userSelection.style.display = 'block';
-    // Clear previous search and selections
     document.getElementById('userSearchInput').value = '';
     document.getElementById('userList').innerHTML = '<em class="share-hint">Type to search for users...</em>';
-    updateSelectedUsersDisplay();
+    viewers.updateSelected();
   } else {
     userSelection.style.display = 'none';
     selectedUsers.clear();
-    updateSelectedUsersDisplay();
+    viewers.updateSelected();
   }
 }
 
-function setupUserSearch() {
-  const searchInput = document.getElementById('userSearchInput');
-  searchInput.addEventListener('input', function () {
-    const query = this.value.trim();
+const setupUserSearch = viewers.setupSearch;
+const searchUsers = viewers.search;
+const renderUserList = viewers.renderList;
+const toggleUserSelection = viewers.toggle;
+const updateSelectedUsersDisplay = viewers.updateSelected;
+const removeSelectedUser = viewers.remove;
 
-    // Clear previous timeout
-    if (shareVars.searchTimeout) {
-      clearTimeout(shareVars.searchTimeout);
-    }
-
-    if (query.length < 1) {
-      document.getElementById('userList').innerHTML = '<em class="share-hint">Type to search for users...</em>';
-      return;
-    }
-
-    // Debounce search requests
-    shareVars.searchTimeout = setTimeout(() => {
-      void searchUsers(query);
-    }, 300);
-  });
-}
-
-async function searchUsers(query) {
-  try {
-    const response = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`);
-    if (response.ok) {
-      const data = await response.json();
-      renderUserList(data.users || []);
-    } else {
-      document.getElementById('userList').innerHTML = '<em class="share-error-text">Error searching users</em>';
-    }
-  } catch (error) {
-    console.error('Error searching users:', error);
-    document.getElementById('userList').innerHTML = '<em class="share-error-text">Error searching users</em>';
-  }
-}
-
-function renderUserList(users) {
-  const userList = document.getElementById('userList');
-
-  if (users.length === 0) {
-    userList.innerHTML = '<em class="share-hint">No users found</em>';
-    return;
-  }
-
-  userList.innerHTML = '';
-  users.forEach(user => {
-    const userDiv = document.createElement('div');
-    userDiv.style.marginBottom = '5px';
-    const isSelected = selectedUsers.has(user.username);
-    const label = document.createElement('label');
-    label.style.display = 'flex';
-    label.style.alignItems = 'center';
-    label.style.gap = '8px';
-    label.style.cursor = 'pointer';
-
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.value = user.username;
-    checkbox.checked = isSelected;
-    checkbox.dataset.action = 'toggleUserSelection';
-    checkbox.dataset.user = user.username;
-
-    const span = document.createElement('span');
-    span.textContent = `${user.username} ${user.role === 'admin' ? '(Admin)' : ''}`;
-
-    label.appendChild(checkbox);
-    label.appendChild(span);
-    userDiv.appendChild(label);
-    userList.appendChild(userDiv);
-  });
-}
-
-function toggleUserSelection(username) {
-  if (selectedUsers.has(username)) {
-    selectedUsers.delete(username);
-  } else {
-    selectedUsers.add(username);
-  }
-  updateSelectedUsersDisplay();
-}
-
-function updateSelectedUsersDisplay() {
-  const selectedUsersList = document.getElementById('selectedUsersList');
-
-  if (selectedUsers.size === 0) {
-    selectedUsersList.innerHTML = '<em class="share-hint">No users selected</em>';
-    return;
-  }
-
-  selectedUsersList.innerHTML = Array.from(selectedUsers)
-    .map(username => `<span class="config-tag access" data-action="removeSelectedUser" data-user="${escapeAttr(username)}">${escapeHtml(username)} ×</span>`)
-    .join('');
-}
-
-function removeSelectedUser(username) {
-  selectedUsers.delete(username);
-  updateSelectedUsersDisplay();
-
-  // Update checkbox in search results if visible
-  const checkbox = findCheckboxByValue(document.getElementById('userList'), username);
-  if (checkbox) {
-    checkbox.checked = false;
-  }
-}
-
-function setupModifyUserSearch() {
-  const searchInput = document.getElementById('modifyUserSearchInput');
-  if (!searchInput) return;
-  searchInput.addEventListener('input', function () {
-    const query = this.value.trim();
-    if (shareVars.modifySearchTimeout) clearTimeout(shareVars.modifySearchTimeout);
-    if (query.length < 1) {
-      document.getElementById('modifyUserList').innerHTML = '<em class="share-hint">Type to search for users...</em>';
-      return;
-    }
-    shareVars.modifySearchTimeout = setTimeout(() => searchModifyUsers(query), 300);
-  });
-}
-
-async function searchModifyUsers(query) {
-  try {
-    const response = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`);
-    if (response.ok) {
-      const data = await response.json();
-      renderModifyUserList(data.users || []);
-    } else {
-      document.getElementById('modifyUserList').innerHTML = '<em class="share-error-text">Error searching users</em>';
-    }
-  } catch (error) {
-    console.error('Error searching modify users:', error);
-    document.getElementById('modifyUserList').innerHTML = '<em class="share-error-text">Error searching users</em>';
-  }
-}
-
-function renderModifyUserList(users) {
-  const userList = document.getElementById('modifyUserList');
-  if (users.length === 0) {
-    userList.innerHTML = '<em class="share-hint">No users found</em>';
-    return;
-  }
-  userList.innerHTML = '';
-  users.forEach(user => {
-    const userDiv = document.createElement('div');
-    userDiv.style.marginBottom = '5px';
-    const isSelected = selectedModifyUsers.has(user.username);
-    const label = document.createElement('label');
-    label.style.display = 'flex';
-    label.style.alignItems = 'center';
-    label.style.gap = '8px';
-    label.style.cursor = 'pointer';
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.value = user.username;
-    checkbox.checked = isSelected;
-    checkbox.dataset.action = 'toggleModifyUserSelection';
-    checkbox.dataset.user = user.username;
-    const span = document.createElement('span');
-    span.textContent = `${user.username} ${user.role === 'admin' ? '(Admin)' : ''}`;
-    label.appendChild(checkbox);
-    label.appendChild(span);
-    userDiv.appendChild(label);
-    userList.appendChild(userDiv);
-  });
-}
-
-function toggleModifyUserSelection(username) {
-  if (selectedModifyUsers.has(username)) {
-    selectedModifyUsers.delete(username);
-  } else {
-    selectedModifyUsers.add(username);
-  }
-  updateSelectedModifyUsersDisplay();
-}
-
-function updateSelectedModifyUsersDisplay() {
-  const list = document.getElementById('selectedModifyUsersList');
-  if (selectedModifyUsers.size === 0) {
-    list.innerHTML = '<em class="share-hint">No modify users (read-only)</em>';
-    return;
-  }
-  list.innerHTML = Array.from(selectedModifyUsers)
-    .map(u => `<span class="config-tag editor" data-action="removeSelectedModifyUser" data-user="${escapeAttr(u)}">✏️ ${escapeHtml(u)} ×</span>`)
-    .join('');
-}
-
-function removeSelectedModifyUser(username) {
-  selectedModifyUsers.delete(username);
-  updateSelectedModifyUsersDisplay();
-  const checkbox = findCheckboxByValue(document.getElementById('modifyUserList'), username);
-  if (checkbox) checkbox.checked = false;
-}
+const setupModifyUserSearch = editors.setupSearch;
+const searchModifyUsers = editors.search;
+const renderModifyUserList = editors.renderList;
+const toggleModifyUserSelection = editors.toggle;
+const updateSelectedModifyUsersDisplay = editors.updateSelected;
+const removeSelectedModifyUser = editors.remove;
 
 export {
   toggleUserSelectionPanel,

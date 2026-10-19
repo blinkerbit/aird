@@ -16,7 +16,7 @@ import {
   takePendingBrowseAttachAll,
 } from '../chat-attach.js?v=20260930h';
 import { escapeHtml as esc, escapeCssAttrValue as cssEscape } from '../core/dom-safe.js';
-import { getXSRFToken as xsrf } from '../core/xsrf.js';
+import { apiFetch } from '../core/http.js';
 
 (function () {
   'use strict';
@@ -165,14 +165,13 @@ import { getXSRFToken as xsrf } from '../core/xsrf.js';
     const { _retry304, ...fetchOpts } = opts;
     const target = new URL(apiUrl(path, fetchOpts), globalThis.location.origin);
     if (target.origin !== globalThis.location.origin) throw new Error('Blocked request');
-    const res = await fetch(`${target.pathname}${target.search}`, {
+    const res = await apiFetch(`${target.pathname}${target.search}`, {
       cache: 'no-store',
       headers: {
         Accept: 'application/json',
         'Cache-Control': 'no-cache',
         Pragma: 'no-cache',
         ...(fetchOpts.body && !(fetchOpts.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
-        ...(fetchOpts.method && fetchOpts.method !== 'GET' ? { 'X-XSRFToken': xsrf() } : {}),
       },
       ...fetchOpts,
     });

@@ -61,6 +61,53 @@ jobs:
           python -m pip install "nox>=2024.4.15"
           nox -s tests
 
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: hashFiles('coverage.xml') != ''
+        with:
+          name: coverage
+          path: coverage.xml
+          retention-days: 7
+
+  sonar-token:
+    name: Sonar token
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      present: ${{ steps.check.outputs.present }}
+    steps:
+      - id: check
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -n "${SONAR_TOKEN}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  sonar:
+    name: sonar
+    needs: [tests, sonar-token]
+    if: needs.sonar-token.outputs.present == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: coverage
+          path: .
+
+      - uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
   promote:
     name: promote
     if: github.event_name == 'pull_request'
@@ -176,10 +223,10 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
 
-      - name: Build share UI bundle
+      - name: Build frontend bundles
         run: |
           npm ci --ignore-scripts
-          npm run js:share
+          npm run js:build
 
       - name: Build sdist + wheel
         run: |

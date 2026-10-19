@@ -91,7 +91,7 @@ python -m aird
 python -m aird --root /data --port 8080
 
 # Multi-user (per-user home directories under root)
-python -m aird --root /data --multi-user --token "your-long-secret"
+python -m aird --root /data --multi-user
 
 # TLS
 python -m aird --ssl-cert /path/cert.pem --ssl-key /path/key.pem --port 443
@@ -100,9 +100,9 @@ python -m aird --ssl-cert /path/cert.pem --ssl-key /path/key.pem --port 443
 python -m aird --workers 4
 ```
 
-On first start, random **access** and **admin** tokens are printed unless you set them via `--token`, `--admin-token`, `config.json`, or `AIRD_ACCESS_TOKEN`.
+On first start, random **access** and **admin** tokens are generated unless you set them via `--token`, `--admin-token`, `config.json`, or `AIRD_ACCESS_TOKEN`. Users log in with username/password; the access token is for API/CLI automation.
 
-**Multi-user mode** requires an explicit **access token** at startup (`--token`, `AIRD_ACCESS_TOKEN`, or `token` in config). Users still log in with username/password; the token is for API/CLI automation.
+A port that is already taken stops the process. Set `AIRD_PORT_RETRY=1` to try the next two ports.
 
 Open `http://localhost:8000/` → redirects to `/files/`.
 
@@ -251,6 +251,12 @@ Config keys: `ldap`, `ldap_server`, `ldap_base_dn`, `ldap_user_template`, `ldap_
 Run `python -m aird` (or the venv equivalent) as a service user with `--config` pointing at your JSON file. Logs go to the data directory (`aird.log` under the platform app data path).
 
 ---
+
+## API
+
+Swagger UI is served by the running server at [`/api/docs`](http://localhost:8000/api/docs). The OpenAPI document is [`/api/openapi.json`](http://localhost:8000/api/openapi.json). That document is the contract a native client (including a future Android app) uses against this same process. Browser pages call those routes today.
+
+`POST /api/auth/login` with `{"username","password"}` returns a `token`. Send it as `Authorization: Bearer`. That call, and later bearer calls, do not use the `_xsrf` cookie. Cookie sessions still do. Send `Accept: application/json` so file-change errors are JSON.
 
 ## API overview
 

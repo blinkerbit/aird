@@ -71,6 +71,8 @@ def tests(session: nox.Session) -> None:
         )
         return
 
+    _npm_ci(session)
+    session.run("npm", "run", "js:build", external=True)
     session.install("-r", "requirements-test.txt")
     session.install("-e", ".[chat]")
     session.run("python", "-m", "pytest", "tests/", *session.posargs)

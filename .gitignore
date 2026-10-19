@@ -43,6 +43,10 @@ main_backup.py
 *.tar.gz.part
 .cursor
 node_modules/
+# Generated frontend bundles (rebuilt by scripts/build_frontend.py on every
+# sdist/wheel build, and by `npm run js:build`; never commit).
+aird/static/js/aird-core.js
+aird/static/js/core/shim.js
 aird/static/js/share/app.js
 *.log
 *.pdf

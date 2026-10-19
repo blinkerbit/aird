@@ -10,6 +10,7 @@ describe('AirdWorkerLib', () => {
       globalThis.self = globalThis;
     }
     globalThis.self.postMessage = (msg) => { posts.push(msg); };
+    loadClassicScript('aird/static/js/transfer-engine/scheduler.js');
     loadClassicScript('aird/static/js/transfer-engine/worker-lib.js');
   });
 

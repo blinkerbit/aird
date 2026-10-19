@@ -1,5 +1,5 @@
 import { elements } from './state.js';
-import { showDialog, escapeHtml, escapeAttr, formatFileSize, apiFetch } from './utils.js';
+import { showDialog, escapeHtml, escapeAttr, formatBytes, apiFetch, getJson, accessLabel } from './utils.js';
 import { copyToClipboard } from '../../core/clipboard.js';
 
 function _renderSenderGroup(group, idx) {
@@ -12,7 +12,7 @@ function _renderSenderGroup(group, idx) {
   const fileRows = files.map((item) => {
     const fileUrl = item.share_url || item.file_url || `/files/${encodeURI(item.relative_path || '')}`;
     const when = item.created_at ? new Date(item.created_at).toLocaleString() : '—';
-    const size = item.size_bytes ? formatFileSize(item.size_bytes) : '';
+    const size = item.size_bytes ? formatBytes(item.size_bytes) : '';
     const openBlank = item.share_url ? '' : ' target="_blank" rel="noopener"';
     return `<tr>
       <td class="align-middle">${escapeHtml(item.original_name || item.relative_path)}</td>
@@ -49,7 +49,7 @@ async function loadChatShares() {
   const section = elements.fromChatSection;
   if (!section || section.dataset.chatDisabled) return;
   try {
-    const res = await fetch('/api/chat/shared-with-me', { headers: { Accept: 'application/json' } });
+    const res = await apiFetch('/api/chat/shared-with-me', { headers: { Accept: 'application/json' } });
     if (res.status === 403 || res.status === 404) {
       section.classList.add('hidden');
       return;
@@ -87,14 +87,7 @@ async function deleteChatShare(shareId) {
 }
 
 function _buildAccessInfo(share) {
-  const au = share.allowed_users;
-  let accessInfo;
-  if (Array.isArray(au) && au.length > 0) {
-    const suffix = au.length === 1 ? '' : 's';
-    accessInfo = `Restricted (${au.length} user${suffix})`;
-  } else {
-    accessInfo = 'Public';
-  }
+  let accessInfo = accessLabel(share);
   const modifyCount = share.modify_users?.length ?? 0;
   if (modifyCount > 0) {
     accessInfo += ` <span class="permission-badge editor">${modifyCount} editor${modifyCount === 1 ? '' : 's'}</span>`;
@@ -166,11 +159,7 @@ async function loadActiveShares() {
   const refreshBtn = document.getElementById('refreshSharesBtn');
   if (refreshBtn) refreshBtn.classList.add('loading');
   try {
-    const response = await fetch('/share/list');
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    const data = await response.json();
+    const data = await getJson('/share/list');
 
     const sharesArray = data.shares ? Object.keys(data.shares).map(id => ({
       id: id,

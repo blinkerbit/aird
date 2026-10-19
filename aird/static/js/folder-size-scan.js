@@ -9,14 +9,6 @@
   const SCAN_TIMEOUT_MS = 180000;
   const _active = new Map();
 
-  function getXsrf() {
-    if (global.AirdCore?.getXSRFToken) {
-      return global.AirdCore.getXSRFToken();
-    }
-    const m = /(?:^|; )_xsrf=([^;]*)/.exec(document.cookie);
-    return m ? decodeURIComponent(m[1]) : '';
-  }
-
   function trimEndSlashes(s) {
     let out = s;
     while (out.endsWith('/')) out = out.slice(0, -1);
@@ -149,10 +141,9 @@
     const url = API_PATH + '?path=' + encodeURIComponent(path);
 
     try {
-      const res = await fetch(url, {
+      const res = await global.AirdCore.apiFetch(url, {
         method: 'GET',
         credentials: 'same-origin',
-        headers: { 'X-XSRFToken': getXsrf() },
         signal: controller?.signal,
       });
       const text = await res.text();

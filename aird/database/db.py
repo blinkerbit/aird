@@ -1,4 +1,4 @@
-"""Database initialization and connection management."""
+"""Legacy connection helpers. Schema lives in aird.db.schema."""
 
 import os
 import sys
@@ -33,103 +33,17 @@ def get_data_dir() -> str:
 
 
 def init_db(conn: sqlite3.Connection) -> None:
-    """Initialize database tables and migrations."""
+    """Delegate to aird.db.schema. Kept so older imports keep working."""
     import warnings
+
+    from aird.db.schema import init_db as schema_init_db
 
     warnings.warn(
         "aird.database.db.init_db is deprecated; use aird.db.schema.init_db instead",
         DeprecationWarning,
         stacklevel=2,
     )
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS feature_flags (
-            key TEXT PRIMARY KEY,
-            value INTEGER NOT NULL
-        )
-        """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS shares (
-            id TEXT PRIMARY KEY,
-            created TEXT NOT NULL,
-            paths TEXT NOT NULL,
-            allowed_users TEXT
-        )
-        """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'user',
-            created_at TEXT NOT NULL,
-            active INTEGER NOT NULL DEFAULT 1,
-            last_login TEXT
-        )
-        """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS ldap_configs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL,
-            server TEXT NOT NULL,
-            ldap_base_dn TEXT NOT NULL,
-            ldap_member_attributes TEXT NOT NULL DEFAULT 'member',
-            user_template TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            active INTEGER NOT NULL DEFAULT 1
-        )
-        """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS ldap_sync_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            config_id INTEGER NOT NULL,
-            sync_type TEXT NOT NULL,
-            users_found INTEGER NOT NULL,
-            users_created INTEGER NOT NULL,
-            users_removed INTEGER NOT NULL,
-            sync_time TEXT NOT NULL,
-            status TEXT NOT NULL,
-            error_message TEXT,
-            FOREIGN KEY (config_id) REFERENCES ldap_configs (id)
-        )
-        """)
-
-    # Migration for shares table
-    cursor = conn.cursor()
-    cursor.execute("PRAGMA table_info(shares)")
-    columns = [column[1] for column in cursor.fetchall()]
-    if "allowed_users" not in columns:
-        cursor.execute("ALTER TABLE shares ADD COLUMN allowed_users TEXT")
-    if "secret_token" not in columns:
-        cursor.execute("ALTER TABLE shares ADD COLUMN secret_token TEXT")
-    if "share_type" not in columns:
-        cursor.execute("ALTER TABLE shares ADD COLUMN share_type TEXT DEFAULT 'static'")
-    if "allow_list" not in columns:
-        cursor.execute("ALTER TABLE shares ADD COLUMN allow_list TEXT")
-    if "avoid_list" not in columns:
-        cursor.execute("ALTER TABLE shares ADD COLUMN avoid_list TEXT")
-    if "expiry_date" not in columns:
-        cursor.execute("ALTER TABLE shares ADD COLUMN expiry_date TEXT")
-
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS favorites (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
-            file_path TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            UNIQUE(username, file_path)
-        )
-        """)
-
-    # Migrate users table: add quota columns if missing
-    user_cols = {r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()}
-    if "quota_bytes" not in user_cols:
-        conn.execute("ALTER TABLE users ADD COLUMN quota_bytes INTEGER")
-    if "used_bytes" not in user_cols:
-        conn.execute(
-            "ALTER TABLE users ADD COLUMN used_bytes INTEGER NOT NULL DEFAULT 0"
-        )
-
-    conn.commit()
+    schema_init_db(conn)
 
 
 def set_db_conn(conn: sqlite3.Connection, db_path: str = None):

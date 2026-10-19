@@ -1,5 +1,6 @@
 'use strict';
 
+import { apiFetch } from '../core/http.js';
 import { loadTokens, saveTokens } from './tokens.js';
 import { getLocalAppConfig } from './settings.js';
 
@@ -32,7 +33,7 @@ export async function loadPublicConfig() {
   if (local?.clientId) return storeCfg(local.clientId, local.tenant);
 
   try {
-    const res = await fetch('/api/onedrive-browser/config', { credentials: 'same-origin' });
+    const res = await apiFetch('/api/onedrive-browser/config', { credentials: 'same-origin' });
     const data = await res.json().catch(() => ({}));
     if (res.ok && validClientId(data.client_id)) {
       return storeCfg(data.client_id, data.tenant);

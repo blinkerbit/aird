@@ -6,6 +6,7 @@ import {
 } from './util.js';
 import { friendlyUploadErrorMessage } from './upload-errors.js';
 import { reflectUploadInListing } from './listing.js';
+import { rowIsDir } from './rows.js';
 
 function onUploadSuccess(job) {
   reflectUploadInListing({
@@ -156,6 +157,19 @@ export function splitBySize(files, maxSize) {
   return { accepted, rejected };
 }
 
+function warnOversizedFiles(rejected, maxSize) {
+  if (!rejected.length) return;
+  const limitGB = (maxSize / (1024 * 1024 * 1024)).toFixed(2);
+  void showDialog(`Files exceed the ${limitGB} GB limit: ${rejected.join(', ')}`, 'File Size Limit');
+}
+
+/** Size-gate plain `File` objects: warn about oversized ones, return the rest. */
+export function checkSizeOrWarn(files, maxSize) {
+  const { accepted, rejected } = splitBySize(files, maxSize);
+  warnOversizedFiles(rejected, maxSize);
+  return accepted;
+}
+
 function transferSink() {
   const TM = globalThis.AirdTransferManager;
   if (!TM?.enqueueUpload || !TM?.pumpUploads) return null;
@@ -173,9 +187,7 @@ export function currentUploadDir() {
 export function folderRowFromEvent(target) {
   const el = target && (target.nodeType === 1 ? target : target.parentElement);
   const row = el?.closest?.('tr.file-row');
-  if (!row) return null;
-  const isDir = row.dataset.isDir === '1' || row.querySelector('.row-checkbox')?.dataset.isDir === '1';
-  return isDir ? row : null;
+  return row && rowIsDir(row) ? row : null;
 }
 
 function enqueueAt(files, dir) {
@@ -184,13 +196,9 @@ function enqueueAt(files, dir) {
     warnNotReady();
     return;
   }
-  const { accepted, rejected } = splitBySize(files, getMaxFileSize());
+  const accepted = checkSizeOrWarn(files, getMaxFileSize());
   for (const file of accepted) {
     TM.enqueueUpload({ file, uploadDir: dir });
-  }
-  if (rejected.length) {
-    const limitGB = (getMaxFileSize() / (1024 * 1024 * 1024)).toFixed(2);
-    void showDialog(`Files exceed the ${limitGB} GB limit: ${rejected.join(', ')}`, 'File Size Limit');
   }
   if (accepted.length) TM.pumpUploads(onUploadSuccess, onUploadError);
 }
@@ -222,10 +230,7 @@ async function enqueueEntriesAt(entries, baseDir) {
     if (subDir) uploadDir = root ? `${root}/${subDir}` : subDir;
     TM.enqueueUpload({ file: fw.file, uploadDir, uploadName: fileName });
   }
-  if (rejected.length) {
-    const limitGB = (maxSize / (1024 * 1024 * 1024)).toFixed(2);
-    void showDialog(`Files exceed the ${limitGB} GB limit: ${rejected.join(', ')}`, 'File Size Limit');
-  }
+  warnOversizedFiles(rejected, maxSize);
   TM.pumpUploads(onUploadSuccess, onUploadError);
 }
 

@@ -62,18 +62,10 @@
     });
   }
 
-  async function clearCompleted() {
-    const jobs = await listJobs();
-    await Promise.all(
-      jobs.filter((j) => j.status === 'complete').map((j) => deleteJob(j.jobId))
-    );
-  }
-
   global.AirdResumeStore = {
     saveJob,
     getJob,
     listJobs,
     deleteJob,
-    clearCompleted,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

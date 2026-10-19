@@ -2,11 +2,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { vi } from 'vitest';
+import * as AirdCoreBarrel from '/static/js/core/index.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
+/**
+ * Mirror production: classic scripts always run with the `AirdCore` facade
+ * present (built here from the real core barrel, as the bundle does).
+ */
+export function ensureAirdCore() {
+  if (!globalThis.AirdCore) globalThis.AirdCore = { ...AirdCoreBarrel };
+  return globalThis.AirdCore;
+}
+
 /** Evaluate a browser classic script (IIFE) into the current happy-dom global. */
 export function loadClassicScript(relFromRepo) {
+  ensureAirdCore();
   const code = fs.readFileSync(path.join(repoRoot, relFromRepo), 'utf8');
   // Scripts attach to globalThis / window; run in this realm.
   // eslint-disable-next-line no-new-func

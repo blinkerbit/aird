@@ -12,4 +12,4 @@ Security fixes ship on the latest release published from `main`. Older tags are 
 
 ## Production defaults
 
-Set `AIRD_COOKIE_SECRET`, terminate TLS at a reverse proxy, and do not expose the admin token. Multi-user mode requires an explicit access token at startup.
+Set `AIRD_COOKIE_SECRET`, terminate TLS at a reverse proxy, and do not expose the admin token.

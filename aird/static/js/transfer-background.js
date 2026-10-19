@@ -56,30 +56,14 @@
     };
   }
 
-  /** @deprecated use onChange */
-  function onResume(fn) {
-    return onChange((ev) => {
-      if (ev.type === 'resume') fn();
-    });
-  }
-
+  // Canonical predicates live in core/net-utils.js (AirdCore loads first via
+  // _app_nav_header.html); this facade keeps the AirdTransferBackground shape.
   function isRetryableError(err) {
-    if (!err) return false;
-    if (err.message === 'paused') return true;
-    if (err.message === 'cancelled' || err.name === 'AbortError') return false;
-    const msg = String(err.message || '').toLowerCase();
-    return (
-      msg.includes('network')
-      || msg.includes('failed to fetch')
-      || msg.includes('load failed')
-      || msg.includes('timeout')
-      || err.name === 'TypeError'
-      || err.name === 'NetworkError'
-    );
+    return global.AirdCore.isRetryableError(err);
   }
 
   function isPauseError(err) {
-    return err?.message === 'paused';
+    return global.AirdCore.isPauseError(err);
   }
 
   function setHidden(next) {
@@ -158,7 +142,6 @@
     acquireWakeLock,
     releaseWakeLock,
     onChange,
-    onResume,
     isRetryableError,
     isPauseError,
     syncFromDocument,
