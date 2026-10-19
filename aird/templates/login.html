@@ -4,7 +4,7 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261018a" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Login · Aird</title>
   <style nonce="{{ csp_nonce }}">
@@ -263,7 +263,7 @@
 
   <script src="/static/js/theme.js" defer></script>
   <script src="/static/js/login-ui.js" defer></script>
-  <script src="/static/js/webauthn.js" defer></script>
+  <script src="/static/js/webauthn.js" type="module"></script>
   <script nonce="{{ csp_nonce }}">
   globalThis.addEventListener('load', function () {
     if (globalThis.AirdLoginUI) {

@@ -138,7 +138,7 @@
     timeoutMs = timeoutMs ?? 15000;
     return new Promise((resolve, reject) => {
       let settled = false;
-      const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${WS_PATH}`);
+      const ws = new WebSocket(global.AirdCore.sameOriginWsUrl(WS_PATH));
       ws.binaryType = 'arraybuffer';
 
       const timer = setTimeout(() => finish(reject, new Error('WebSocket timed out')), timeoutMs);
@@ -405,19 +405,11 @@
   }
 
   function saveBlob(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = Object.assign(document.createElement('a'), {
-      href: url, download: filename || 'download', rel: 'noopener',
-    });
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    return global.AirdCore.saveBlob(blob, filename);
   }
 
   global.AirdFileTransferWs = {
-    wsUrl: () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${WS_PATH}`,
+    wsUrl: () => global.AirdCore.sameOriginWsUrl(WS_PATH),
     openSocket,
     uploadFile,
     uploadFileCompressed,

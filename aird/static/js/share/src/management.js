@@ -1,5 +1,12 @@
 import { shareVars } from './state.js';
-import { getXSRFToken, showDialog, escapeHtml } from './utils.js';
+import { showDialog, escapeHtml, parseCsvList } from './utils.js';
+import { getJson, postJson } from '../../core/http.js';
+
+// Repository: every share mutation is a POST to /share/update through
+// the shared gateway; callers only describe the payload.
+export function shareUpdate(payload) {
+  return postJson('/share/update', { share_id: shareVars.currentShareData.id, ...payload }, { throwOnError: false });
+}
 import {
   toLocalDatetimeInput,
   configureExpiryDateInput,
@@ -22,28 +29,9 @@ async function manageShare(shareId) {
   body.innerHTML = '<div class="flex flex-col items-center py-10"><span class="loading loading-spinner loading-lg text-primary"></span><div class="mt-4 text-base-content/60">Loading share details...</div></div>';
 
   try {
-    const detailsResponse = await fetch(`/api/share/details_by_id?id=${encodeURIComponent(shareId)}`, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'X-XSRFToken': getXSRFToken()
-      },
-      cache: 'no-store'
+    const detailsData = await getJson(`/api/share/details_by_id?id=${encodeURIComponent(shareId)}`, {
+      cache: 'no-store',
     });
-
-    if (!detailsResponse.ok) {
-      const errorText = await detailsResponse.text();
-      let errorMessage = `Server error: ${detailsResponse.status}`;
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.error || errorMessage;
-      } catch (parseErr) {
-        console.debug('Share details error body was not JSON', parseErr);
-      }
-      throw new Error(errorMessage);
-    }
-
-    const detailsData = await detailsResponse.json();
     shareVars.currentShareData = detailsData.share;
     renderShareManagementModal(shareVars.currentShareData);
 
@@ -128,8 +116,8 @@ async function updateShare() {
     }
     const disableToken = document.getElementById('disableTokenEdit').checked;
     const enableToken = document.getElementById('enableTokenEdit').checked;
-    const allowListText = document.getElementById('allowListEdit').value.trim();
-    const avoidListText = document.getElementById('avoidListEdit').value.trim();
+    const allowListText = document.getElementById('allowListEdit').value;
+    const avoidListText = document.getElementById('avoidListEdit').value;
 
     const hasSecret = Boolean(shareVars.currentShareData.secret_token || shareVars.currentShareData.has_token);
 
@@ -142,33 +130,23 @@ async function updateShare() {
       tokenDisabled = !hasSecret;
     }
 
-    const allowList = allowListText ? allowListText.split(',').map(s => s.trim()).filter(Boolean) : [];
-    const avoidList = avoidListText ? avoidListText.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const allowList = parseCsvList(allowListText);
+    const avoidList = parseCsvList(avoidListText);
 
     const expiryDate = readExpiryDateFromInput('expiryDateEdit');
     if (expiryDate === undefined) return;
 
-    const response = await fetch('/share/update', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-XSRFToken': getXSRFToken()
-      },
-      body: JSON.stringify({
-        share_id: shareVars.currentShareData.id,
-        share_type: shareType,
-        disable_token: tokenDisabled,
-        allow_list: allowList,
-        avoid_list: avoidList,
-        expiry_date: expiryDate,
-        allowed_users: shareVars.currentShareData.allowed_users || [],
-        modify_users: shareVars.currentShareData.modify_users || [],
-        paths: shareVars.currentShareData.paths || [],
-        rotate_token: Boolean(document.getElementById('rotateTokenEdit')?.checked)
-      })
+    const data = await shareUpdate({
+      share_type: shareType,
+      disable_token: tokenDisabled,
+      allow_list: allowList,
+      avoid_list: avoidList,
+      expiry_date: expiryDate,
+      allowed_users: shareVars.currentShareData.allowed_users || [],
+      modify_users: shareVars.currentShareData.modify_users || [],
+      paths: shareVars.currentShareData.paths || [],
+      rotate_token: Boolean(document.getElementById('rotateTokenEdit')?.checked)
     });
-
-    const data = await response.json();
 
     if (data.error) {
       void showDialog('Error: ' + data.error, 'Error');
@@ -199,19 +177,7 @@ async function removeFileFromShare(filePath) {
   if (!confirmed) return;
 
   try {
-    const response = await fetch('/share/update', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-XSRFToken': getXSRFToken()
-      },
-      body: JSON.stringify({
-        share_id: shareVars.currentShareData.id,
-        remove_files: [filePath]
-      })
-    });
-
-    const data = await response.json();
+    const data = await shareUpdate({ remove_files: [filePath] });
 
     if (data.error) {
       void showDialog('Error removing file: ' + data.error, 'Error');
@@ -226,126 +192,73 @@ async function removeFileFromShare(filePath) {
   }
 }
 
-async function addUserToShare() {
-  const input = document.getElementById('newUserInput');
+// Add/remove for allowed_users and modify_users share one flow; the
+// field name and messages are the only differences (strategy).
+async function addShareUser(field, inputId, messages) {
+  const input = document.getElementById(inputId);
   const user = input.value.trim();
   if (!user) return;
-
-  const currentUsers = shareVars.currentShareData.allowed_users || [];
+  const currentUsers = shareVars.currentShareData[field] || [];
   if (currentUsers.includes(user)) { input.value = ''; return; }
-  const updatedUsers = [...currentUsers, user];
   try {
-    const response = await fetch('/share/update', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
-      body: JSON.stringify({ share_id: shareVars.currentShareData.id, allowed_users: updatedUsers })
-    });
-    const data = await response.json();
+    const data = await shareUpdate({ [field]: [...currentUsers, user] });
     if (data.error) {
-      void showDialog('Error adding user: ' + data.error, 'Error');
+      void showDialog(messages.error + data.error, 'Error');
     } else {
       input.value = '';
       void manageShare(shareVars.currentShareData.id);
     }
   } catch (error) {
-    console.error('Error adding user:', error);
-    void showDialog('Failed to add user', 'Error');
+    console.error(messages.log, error);
+    void showDialog(messages.failed, 'Error');
   }
 }
 
-
-async function removeUserFromShare(username) {
+async function removeShareUser(field, username, messages) {
   if (!shareVars.currentShareData) return;
-
-  const confirmed = await showDialog(`Remove access for "${username}"?`, 'Confirm Removal', { showCancel: true });
+  const confirmed = await showDialog(messages.confirm(username), 'Confirm Removal', { showCancel: true });
   if (!confirmed) return;
-
-  const currentUsers = shareVars.currentShareData.allowed_users || [];
-  const updatedUsers = currentUsers.filter(u => u !== username);
-
+  const updatedUsers = (shareVars.currentShareData[field] || []).filter(u => u !== username);
   try {
-    const response = await fetch('/share/update', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-XSRFToken': getXSRFToken()
-      },
-      body: JSON.stringify({
-        share_id: shareVars.currentShareData.id,
-        allowed_users: updatedUsers
-      })
-    });
-
-    const data = await response.json();
-
+    const data = await shareUpdate({ [field]: updatedUsers });
     if (data.error) {
-      void showDialog('Error removing user: ' + data.error, 'Error');
+      void showDialog(messages.error + data.error, 'Error');
     } else {
-      void showDialog('User access removed successfully!', 'Success');
+      void showDialog(messages.success, 'Success');
       void manageShare(shareVars.currentShareData.id);
     }
   } catch (error) {
-    console.error('Error removing user:', error);
-    void showDialog('Failed to remove user', 'Error');
+    console.error(messages.log, error);
+    void showDialog(messages.failed, 'Error');
   }
 }
 
-async function addModifyUserToShare() {
-  const input = document.getElementById('newModifyUserInput');
-  const user = input.value.trim();
-  if (!user) return;
-
-  const currentUsers = shareVars.currentShareData.modify_users || [];
-  if (currentUsers.includes(user)) { input.value = ''; return; }
-  const updatedUsers = [...currentUsers, user];
-  try {
-    const response = await fetch('/share/update', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
-      body: JSON.stringify({ share_id: shareVars.currentShareData.id, modify_users: updatedUsers })
-    });
-    const data = await response.json();
-    if (data.error) {
-      void showDialog('Error adding modifier: ' + data.error, 'Error');
-    } else {
-      input.value = '';
-      void manageShare(shareVars.currentShareData.id);
-    }
-  } catch (error) {
-    console.error('Error adding modify user:', error);
-    void showDialog('Failed to add modifier', 'Error');
-  }
+function addUserToShare() {
+  return addShareUser('allowed_users', 'newUserInput', {
+    error: 'Error adding user: ', failed: 'Failed to add user', log: 'Error adding user:',
+  });
 }
 
-async function removeModifyUserFromShare(username) {
-  if (!shareVars.currentShareData) return;
-  const confirmed = await showDialog(`Remove modify access for "${username}"?`, 'Confirm Removal', { showCancel: true });
-  if (!confirmed) return;
-  const currentModifyUsers = shareVars.currentShareData.modify_users || [];
-  const updatedUsers = currentModifyUsers.filter(u => u !== username);
-  try {
-    const response = await fetch('/share/update', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-XSRFToken': getXSRFToken()
-      },
-      body: JSON.stringify({
-        share_id: shareVars.currentShareData.id,
-        modify_users: updatedUsers
-      })
-    });
-    const data = await response.json();
-    if (data.error) {
-      void showDialog('Error removing modify access: ' + data.error, 'Error');
-    } else {
-      void showDialog('Modify access removed!', 'Success');
-      void manageShare(shareVars.currentShareData.id);
-    }
-  } catch (error) {
-    console.error('Error removing modify user:', error);
-    void showDialog('Failed to remove modify user', 'Error');
-  }
+function removeUserFromShare(username) {
+  return removeShareUser('allowed_users', username, {
+    confirm: (u) => `Remove access for "${u}"?`,
+    error: 'Error removing user: ', success: 'User access removed successfully!',
+    failed: 'Failed to remove user', log: 'Error removing user:',
+  });
+}
+
+function addModifyUserToShare() {
+  return addShareUser('modify_users', 'newModifyUserInput', {
+    error: 'Error adding modifier: ', failed: 'Failed to add modifier', log: 'Error adding modify user:',
+  });
+}
+
+function removeModifyUserFromShare(username) {
+  return removeShareUser('modify_users', username, {
+    confirm: (u) => `Remove modify access for "${u}"?`,
+    error: 'Error removing modify access: ', success: 'Modify access removed!',
+    failed: 'Failed to remove modify user', log: 'Error removing modify user:',
+  });
 }
 
 export {

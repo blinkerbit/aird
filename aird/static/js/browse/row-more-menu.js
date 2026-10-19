@@ -1,5 +1,7 @@
 'use strict';
 
+import { rowIsDir } from './rows.js';
+
 function actionList() {
   if (!globalThis.__AIRD_ROW_MORE_ACTIONS) {
     globalThis.__AIRD_ROW_MORE_ACTIONS = [];
@@ -45,7 +47,7 @@ function rowContext(btn) {
   const row = btn.closest('tr.file-row');
   return {
     path: row?.dataset.path || '',
-    isDir: row?.querySelector('.row-checkbox')?.dataset.isDir === '1',
+    isDir: rowIsDir(row),
     name: row?.querySelector('.file-name')?.textContent?.trim() || '',
     row,
     cell: btn.closest('.actions-cell'),

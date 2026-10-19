@@ -5,9 +5,6 @@
 (function (global) {
   'use strict';
 
-  let socket = null;
-  let reconnectTimer = null;
-
   function currentConfig() {
     return global.__BROWSE_CONFIG || (global.__BROWSE_CONFIG = {});
   }
@@ -62,7 +59,7 @@
   /** One-shot HTTP sync (multi-worker fallback after reconnect). */
   async function refresh() {
     try {
-      const response = await fetch('/api/runtime-config', {
+      const response = await global.AirdCore.apiFetch('/api/runtime-config', {
         credentials: 'same-origin',
         cache: 'no-store',
         redirect: 'manual',
@@ -79,32 +76,18 @@
     }
   }
 
+  const live = global.AirdCore.createReconnectingSocket({
+    url: () => global.AirdCore.sameOriginWsUrl('/runtime-config'),
+    onOpen() { refresh(); },
+    onJson(data) { applyStrategy(data); },
+    onJsonError(err) { console.debug('Invalid runtime config message', err); },
+    // Auth reject is handled by the helper (close 1008). Also stop when the
+    // socket opened and was kicked before any payload.
+    stopWhen({ opened, gotPayload }) { return opened && !gotPayload; },
+  });
+
   function connect() {
-    if (socket && (socket.readyState === WebSocket.OPEN
-      || socket.readyState === WebSocket.CONNECTING)) return;
-    const scheme = global.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let opened = false;
-    let gotPayload = false;
-    socket = new WebSocket(`${scheme}//${global.location.host}/runtime-config`);
-    socket.onopen = () => {
-      opened = true;
-      refresh();
-    };
-    socket.onmessage = (event) => {
-      gotPayload = true;
-      try {
-        applyStrategy(JSON.parse(event.data));
-      } catch (err) {
-        console.debug('Invalid runtime config message', err);
-      }
-    };
-    socket.onclose = (event) => {
-      socket = null;
-      // Auth/policy reject, or opened then kicked before any payload.
-      if ((event && event.code === 1008) || (opened && !gotPayload)) return;
-      clearTimeout(reconnectTimer);
-      reconnectTimer = setTimeout(connect, 3000);
-    };
+    live.connect();
   }
 
   function start() {

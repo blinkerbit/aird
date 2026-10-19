@@ -1,6 +1,8 @@
 /**
  * PWA install prompt + Web Push subscription for Aird.
  */
+import { apiFetch } from './core/http.js';
+
 (function () {
   'use strict';
 
@@ -28,11 +30,6 @@
   function isIos() {
     const ua = navigator.userAgent || '';
     return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  }
-
-  function xsrfToken() {
-    const m = document.cookie.match(/(?:^|; )_xsrf=([^;]*)/);
-    return m ? decodeURIComponent(m[1]) : '';
   }
 
   async function ensureServiceWorker() {
@@ -115,19 +112,18 @@
   }
 
   async function fetchVapidPublicKey() {
-    const res = await fetch('/api/pwa/vapid-public-key', { headers: { Accept: 'application/json' } });
+    const res = await apiFetch('/api/pwa/vapid-public-key', { headers: { Accept: 'application/json' } });
     if (!res.ok) throw new Error('VAPID key unavailable');
     const data = await res.json();
     return data.publicKey;
   }
 
   async function postJson(url, body) {
-    const res = await fetch(url, {
+    const res = await apiFetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
-        'X-XSRFToken': xsrfToken(),
       },
       body: JSON.stringify(body),
       credentials: 'same-origin',

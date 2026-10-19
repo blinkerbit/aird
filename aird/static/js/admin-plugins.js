@@ -29,11 +29,11 @@ function boardRow(board, index) {
   </div>`;
 }
 
+// Canonical escape lives in core/dom-safe.js (AirdCore loads first via
+// _app_nav_header.html). This also fixes the old local copy, which missed
+// `>` and `'`.
 function escapeAttr(s) {
-  return String(s ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("\"", "&quot;")
-    .replaceAll("<", "&lt;");
+  return globalThis.AirdCore.escapeHtml(s);
 }
 
 function mapRow(map, index) {
@@ -171,14 +171,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let _odPollTimer = null;
 
-  function xsrf() {
-    const m = /(?:^|; )_xsrf=([^;]+)/.exec(document.cookie);
-    return m ? decodeURIComponent(m[1]) : "";
-  }
-
   async function odAdminApi(url, opts) {
-    const headers = mergeFetchHeaders({ Accept: "application/json", "X-XSRFToken": xsrf() }, opts?.headers);
-    const res = await fetch(url, { credentials: "same-origin", method: "POST", ...opts, headers });
+    const headers = mergeFetchHeaders({ Accept: "application/json" }, opts?.headers);
+    const res = await globalThis.AirdCore.apiFetch(url, { credentials: "same-origin", method: "POST", ...opts, headers });
     const data = await res.json().catch(jsonParseFallback);
     if (!res.ok && !data.pending) throw new Error(data.error || res.statusText);
     return data;
@@ -230,9 +225,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function odHostApi(url, opts) {
     const method = opts?.method || "GET";
-    const headers = mergeFetchHeaders({ Accept: "application/json", "X-XSRFToken": xsrf() }, opts?.headers);
+    const headers = mergeFetchHeaders({ Accept: "application/json" }, opts?.headers);
     if (opts?.body) headers["Content-Type"] = "application/json";
-    const res = await fetch(url, { credentials: "same-origin", method, ...opts, headers });
+    const res = await globalThis.AirdCore.apiFetch(url, { credentials: "same-origin", method, ...opts, headers });
     const data = await res.json().catch(jsonParseFallback);
     if (!res.ok) throw new Error(data.error || res.statusText);
     return data;

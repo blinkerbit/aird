@@ -132,61 +132,27 @@
     };
   }
 
+  const Sched = global.AirdTransferScheduler;
+
   function abortableSleep(ms, cancelScope) {
-    return new Promise((resolve, reject) => {
-      if (cancelScope.aborted) {
-        reject(new Error('cancelled'));
-        return;
-      }
-      const timer = setTimeout(() => {
-        cancelScope.removeEventListener('abort', onAbort);
-        resolve();
-      }, ms);
-      function onAbort() {
-        clearTimeout(timer);
-        cancelScope.removeEventListener('abort', onAbort);
-        reject(new Error('cancelled'));
-      }
-      cancelScope.addEventListener('abort', onAbort);
-    });
+    return Sched.abortableSleep(ms, cancelScope);
   }
 
   function createProgressReporter(fn, intervalMs) {
-    const interval = intervalMs || 100;
-    let last = 0;
-    let timer = null;
-    function flush() {
-      timer = null;
-      last = Date.now();
-      fn();
-    }
-    return function report(force) {
-      if (force) {
-        if (timer) { clearTimeout(timer); timer = null; }
-        flush();
-        return;
-      }
-      const now = Date.now();
-      if (now - last >= interval) {
-        if (timer) { clearTimeout(timer); timer = null; }
-        flush();
-        return;
-      }
-      if (!timer) timer = setTimeout(flush, interval - (now - last));
-    };
+    return Sched.createProgressReporter(fn, intervalMs);
   }
 
   function isCancelError(err) {
-    return err?.message === 'cancelled' || err?.name === 'AbortError';
+    return Sched.isCancelError(err);
   }
 
   function isPauseError(err) {
-    return err?.message === 'paused'
+    return Sched.isPauseError(err)
       || (global.AirdTransferBackground && global.AirdTransferBackground.isPauseError(err));
   }
 
   function cancelError() {
-    const err = new Error('cancelled');
+    const err = Sched.cancelledError();
     err.name = 'AbortError';
     return err;
   }
@@ -274,6 +240,10 @@
       }
     }
     throw lastErr || new Error('Range download failed');
+  }
+
+  function apiFetch(url, options) {
+    return global.AirdCore.apiFetch(url, options);
   }
 
   function getXSRFToken() {
@@ -386,7 +356,7 @@
   async function fetchRangePart(url, start, end, cancelScope) {
     const ac = new AbortController();
     if (cancelScope) cancelScope.trackController(ac);
-    const res = await fetch(url, {
+    const res = await apiFetch(url, {
       credentials: 'same-origin',
       signal: ac.signal,
       headers: { Range: `bytes=${start}-${end}` },
@@ -418,13 +388,11 @@
   }
 
   function chunkRangeCovered(idx, chunkSz, total, ranges) {
-    const start = idx * chunkSz;
-    const end = Math.min(start + chunkSz - 1, total - 1);
-    return ranges.some((r) => r[0] <= start && r[1] >= end);
+    return Sched.chunkRangeCovered(idx, chunkSz, total, ranges);
   }
 
   async function fetchUploadStatus(uploadId, xsrf) {
-    const res = await fetch(
+    const res = await apiFetch(
       `/api/upload/range/${encodeURIComponent(uploadId)}/status`,
       { credentials: 'same-origin', headers: { 'X-XSRFToken': xsrf } }
     );
@@ -435,7 +403,7 @@
   }
 
   async function createRangeUploadSession(uploadDir, filename, totalSize, xsrf, TT, ttId) {
-    const sessionRes = await fetch('/api/upload/range/session', {
+    const sessionRes = await apiFetch('/api/upload/range/session', {
       method: 'POST',
       credentials: 'same-origin',
       headers: {
@@ -574,7 +542,7 @@
   async function discardRangeUploadSession(uploadId, xsrf) {
     if (!uploadId) return;
     try {
-      await fetch(`/api/upload/range/${encodeURIComponent(uploadId)}`, {
+      await apiFetch(`/api/upload/range/${encodeURIComponent(uploadId)}`, {
         method: 'DELETE',
         credentials: 'same-origin',
         headers: { 'X-XSRFToken': xsrf || getXSRFToken() },
@@ -610,22 +578,17 @@
       const totalChunks = Math.ceil(totalSize / chunkSize);
 
       const chunkDone = new Uint8Array(totalChunks);
-      const inFlight = new Map();
       const pending = new Set();
       for (let i = 0; i < totalChunks; i++) pending.add(i);
 
       let bytesUploaded = 0;
       let remaining = totalChunks;
-      let finished = false;
-      let active = 0;
       let transferActive = false;
       let uiPaused = false;
       let activeConcurrency = maxConcurrency;
       let resumeSync = null;
       const concurrencyHints = { backoff: false };
-
-      let settleResolve = null;
-      const settled = new Promise((resolve) => { settleResolve = resolve; });
+      let reportProgress = function () {};
 
       function markDone(idx, bytes) {
         if (chunkDone[idx]) return;
@@ -634,25 +597,55 @@
         bytesUploaded += bytes;
       }
 
-      function maybeSettle() {
-        if (finished || failure) {
-          settleResolve();
-          return;
-        }
-        if (cancelScope.aborted) {
-          failure = failure || new Error('cancelled');
-          settleResolve();
-          return;
-        }
-        if (active === 0 && pending.size === 0 && remaining === 0) {
-          finished = true;
-          settleResolve();
-        }
-      }
+      const pool = Sched.createChunkPool({
+        pending,
+        isStopped: () => cancelScope.aborted,
+        isPaused: () => Boolean(BG?.isBackgroundPaused()),
+        onPaused: () => setPaused(true, BG.pauseReason()),
+        onRunning: () => setPaused(false),
+        prepareWave() {
+          if (concurrencyHints.backoff) {
+            concurrencyHints.backoff = false;
+            activeConcurrency = Math.max(1, Math.floor(activeConcurrency / 2));
+          } else if (pool.inFlight.size === 0 && activeConcurrency < maxConcurrency) {
+            activeConcurrency = Math.min(maxConcurrency, activeConcurrency + 1);
+          }
+        },
+        maxInFlight: () => activeConcurrency,
+        alreadyDone: (idx) => Boolean(chunkDone[idx]),
+        isComplete: (active, queue) => active === 0 && queue.size === 0 && remaining === 0,
+        send: (idx, reportLoaded) => sendRangeUploadChunk(
+          file, uploadId, idx * chunkSize, chunkSize, totalSize, xsrf, cancelScope,
+          reportLoaded, TT, ttId, concurrencyHints,
+        ),
+        isTerminalSuccess: (result) => Boolean(result.finished),
+        onTerminal: () => {
+          remaining = 0;
+          bytesUploaded = totalSize;
+          reportProgress(true);
+          ttComplete(TT, ttId);
+          cancelScope.pauseInFlight();
+        },
+        onChunkOk: (idx, result) => {
+          const start = idx * chunkSize;
+          markDone(idx, result.bytes || Math.min(chunkSize, totalSize - start));
+        },
+        isHardCancel: (err) => cancelScope.aborted || (isCancelError(err) && !isPauseError(err)),
+        asCancel: (err) => (isCancelError(err) ? err : cancelError()),
+        shouldRetry: (err) => isPauseError(err) || Boolean(BG?.isRetryableError(err)) || Boolean(BG?.isBackgroundPaused()),
+        requeue: (idx) => {
+          if (!chunkDone[idx] && !pool.inFlight.has(idx)) pending.add(idx);
+        },
+        sleepRetry: (inFlightCount) => abortableSleep(
+          Math.min(1000 * (1 + inFlightCount), 4000),
+          cancelScope,
+        ),
+        onProgress: () => reportProgress(),
+      });
+      const inFlight = pool.inFlight;
 
       cancelScope.addEventListener('abort', () => {
-        failure = failure || new Error('cancelled');
-        settleResolve();
+        pool.fail(cancelError());
       });
 
       function loadedBytes() {
@@ -661,7 +654,7 @@
         return Math.min(totalSize, loaded);
       }
 
-      const reportProgress = createProgressReporter(() => {
+      reportProgress = createProgressReporter(() => {
         const loaded = loadedBytes();
         if (!transferActive && loaded > 0 && !uiPaused) {
           transferActive = true;
@@ -689,10 +682,6 @@
         }
       }
 
-      function requeue(idx) {
-        if (!chunkDone[idx] && !inFlight.has(idx)) pending.add(idx);
-      }
-
       function rebuildPending() {
         pending.clear();
         for (let i = 0; i < totalChunks; i++) {
@@ -705,10 +694,9 @@
         if (status.complete) {
           remaining = 0;
           bytesUploaded = totalSize;
-          finished = true;
           reportProgress(true);
           ttComplete(TT, ttId);
-          settleResolve();
+          pool.completeNow();
           return true;
         }
         const ranges = status.ranges || [];
@@ -727,105 +715,8 @@
         return false;
       }
 
-      function shouldRetry(err) {
-        return isPauseError(err)
-          || BG?.isRetryableError(err)
-          || BG?.isBackgroundPaused();
-      }
-
-      function startNext() {
-        if (failure || finished || cancelScope.aborted) {
-          maybeSettle();
-          return;
-        }
-        if (BG?.isBackgroundPaused()) {
-          setPaused(true, BG.pauseReason());
-          return;
-        }
-        setPaused(false);
-
-        if (concurrencyHints.backoff) {
-          concurrencyHints.backoff = false;
-          activeConcurrency = Math.max(1, Math.floor(activeConcurrency / 2));
-        } else if (active === 0 && activeConcurrency < maxConcurrency) {
-          activeConcurrency = Math.min(maxConcurrency, activeConcurrency + 1);
-        }
-
-        while (active < activeConcurrency && pending.size > 0) {
-          const idx = pending.values().next().value;
-          pending.delete(idx);
-          if (chunkDone[idx] || inFlight.has(idx)) continue;
-          const start = idx * chunkSize;
-          active += 1;
-          inFlight.set(idx, 0);
-          reportProgress();
-
-          sendRangeUploadChunk(
-            file, uploadId, start, chunkSize, totalSize, xsrf, cancelScope,
-            (chunkLoaded) => {
-              inFlight.set(idx, chunkLoaded);
-              reportProgress();
-            },
-            TT, ttId, concurrencyHints
-          ).then((result) => {
-            active -= 1;
-            inFlight.delete(idx);
-            if (cancelScope.aborted) {
-              failure = new Error('cancelled');
-              maybeSettle();
-              return;
-            }
-            if (result.finished) {
-              finished = true;
-              failure = null;
-              remaining = 0;
-              bytesUploaded = totalSize;
-              reportProgress(true);
-              ttComplete(TT, ttId);
-              cancelScope.pauseInFlight();
-              maybeSettle();
-              return;
-            }
-            markDone(idx, result.bytes || Math.min(chunkSize, totalSize - start));
-            reportProgress();
-            startNext();
-            maybeSettle();
-          }).catch((err) => {
-            active -= 1;
-            inFlight.delete(idx);
-            if (finished) {
-              maybeSettle();
-              return;
-            }
-            if (cancelScope.aborted || (isCancelError(err) && !isPauseError(err))) {
-              failure = isCancelError(err) ? err : new Error('cancelled');
-              maybeSettle();
-              return;
-            }
-            if (shouldRetry(err)) {
-              requeue(idx);
-              if (BG?.isBackgroundPaused()) {
-                setPaused(true, BG.pauseReason());
-                maybeSettle();
-                return;
-              }
-              abortableSleep(Math.min(1000 * (1 + inFlight.size), 4000), cancelScope)
-                .then(() => { if (!finished && !failure) startNext(); })
-                .catch(() => {
-                  failure = new Error('cancelled');
-                  maybeSettle();
-                });
-              return;
-            }
-            failure = err;
-            maybeSettle();
-          });
-        }
-        maybeSettle();
-      }
-
       unsub = BG?.onChange((ev) => {
-        if (finished || failure) return;
+        if (pool.finished || pool.failure) return;
         if (ev.type === 'pause') {
           setPaused(true, ev.reason || BG.pauseReason());
           cancelScope.pauseInFlight();
@@ -835,20 +726,22 @@
         setPaused(false);
         resumeSync = syncFromServer()
           .then((done) => {
-            if (done || finished || failure || cancelScope.aborted) return;
-            startNext();
+            if (done || pool.finished || pool.failure || cancelScope.aborted) return;
+            pool.startNext();
           })
           .catch(() => {
-            if (!finished && !failure) startNext();
+            if (!pool.finished && !pool.failure) pool.startNext();
           })
           .finally(() => { resumeSync = null; });
       });
 
       // Always start chunks. Stale background-pause must not block the first byte.
       if (BG?.syncFromDocument) BG.syncFromDocument();
-      startNext();
+      pool.startNext();
 
-      await settled;
+      await pool.settled;
+      let finished = pool.finished;
+      failure = pool.failure;
 
       if (finished) {
         return { message: 'Upload successful' };
@@ -901,7 +794,7 @@
   async function fetchFileSize(url, cancelScope) {
     const ac = new AbortController();
     if (cancelScope) cancelScope.trackController(ac);
-    const head = await fetch(url, { method: 'HEAD', credentials: 'same-origin', signal: ac.signal });
+    const head = await apiFetch(url, { method: 'HEAD', credentials: 'same-origin', signal: ac.signal });
     if (!head.ok) {
       throw new Error(`HEAD failed (${head.status})`);
     }
@@ -918,7 +811,7 @@
 
     const ac = new AbortController();
     cancelScope.trackController(ac);
-    const res = await fetch(url, { credentials: 'same-origin', signal: ac.signal });
+    const res = await apiFetch(url, { credentials: 'same-origin', signal: ac.signal });
     if (!res.ok) {
       if (TT && ttId) TT.failTransfer(ttId, `HTTP ${res.status}`);
       throw new Error(`Download failed (${res.status})`);
@@ -1086,35 +979,8 @@
     return smallDownload(path, options);
   }
 
-  async function saveBlob(blob, filename) {
-    if (typeof window.showSaveFilePicker === 'function' && blob.stream) {
-      try {
-        const handle = await window.showSaveFilePicker({
-          suggestedName: filename || 'download',
-        });
-        const writable = await handle.createWritable();
-        const reader = blob.stream().getReader();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          await writable.write(value);
-        }
-        await writable.close();
-        return;
-      } catch (err) {
-        if (err && err.name === 'AbortError') throw err;
-      }
-    }
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename || 'download';
-    a.rel = 'noopener';
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  function saveBlob(blob, filename) {
+    return global.AirdCore.saveBlob(blob, filename);
   }
 
   global.AirdFileTransferHttp = {

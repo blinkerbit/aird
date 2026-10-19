@@ -1,4 +1,4 @@
-import { escapeHtml, escapeAttr } from './utils.js';
+import { escapeHtml, escapeAttr, accessLabel, isShareRestricted, getJson } from './utils.js';
 
 function previewFile(filePath) {
   globalThis.location.href = `/files/${filePath}`;
@@ -14,8 +14,7 @@ async function showShareDetails(filePath) {
   content.innerHTML = '<div class="p-6 text-center text-base-content/50"><span class="loading loading-spinner loading-sm align-middle mr-2"></span><span class="align-middle">Loading share details…</span></div>';
 
   try {
-    const response = await fetch(`/api/share/details?path=${encodeURIComponent(filePath)}`);
-    const data = await response.json();
+    const data = await getJson(`/api/share/details?path=${encodeURIComponent(filePath)}`, { throwOnError: false });
 
     if (data.error) {
       content.innerHTML = `<div class="share-error-msg">Error: ${escapeHtml(data.error)}</div>`;
@@ -34,14 +33,8 @@ async function showShareDetails(filePath) {
     // Render share details
     content.innerHTML = data.shares.map((share) => {
       const allowed = share.allowed_users;
-      const isRestricted = allowed && allowed.length > 0;
-      let shareAccessInfo;
-      if (isRestricted) {
-        const suffix = allowed.length === 1 ? '' : 's';
-        shareAccessInfo = `Restricted (${allowed.length} user${suffix})`;
-      } else {
-        shareAccessInfo = 'Public Access';
-      }
+      const isRestricted = isShareRestricted(share);
+      const shareAccessInfo = accessLabel(share, 'Public Access');
       const fullShareUrl = globalThis.location.origin + share.url;
 
       let secretBlock = '';

@@ -4,27 +4,19 @@
 (function () {
   'use strict';
 
+  const {
+    cancelledError,
+    pausedError,
+    isRetryableError,
+    chunkRangeCovered,
+    abortableSleep,
+    createProgressReporter,
+    AdaptiveScheduler,
+    createChunkPool,
+  } = globalThis.AirdTransferScheduler;
+
   const jobs = new Map();
   let backgroundPaused = false;
-
-  function isRetryableError(err) {
-    if (!err) return false;
-    if (err.message === 'cancelled') return false;
-    if (err.message === 'paused') return true;
-    const msg = String(err.message || '').toLowerCase();
-    return (
-      msg.includes('network')
-      || msg.includes('failed to fetch')
-      || msg.includes('load failed')
-      || msg.includes('timeout')
-    );
-  }
-
-  function chunkRangeCovered(idx, chunkSz, total, ranges) {
-    const start = idx * chunkSz;
-    const end = Math.min(start + chunkSz - 1, total - 1);
-    return ranges.some((r) => r[0] <= start && r[1] >= end);
-  }
 
   async function fetchUploadStatus(cfg, uploadId) {
     const res = await fetch(
@@ -70,26 +62,6 @@
     self.postMessage({ jobId, ...msg });
   }
 
-  function abortableSleep(ms, job) {
-    return new Promise((resolve, reject) => {
-      if (job.cancelled) {
-        reject(new Error('cancelled'));
-        return;
-      }
-      const timer = setTimeout(() => {
-        if (job._sleepAbort) {
-          job._sleepAbort = null;
-        }
-        resolve();
-      }, ms);
-      job._sleepAbort = () => {
-        clearTimeout(timer);
-        job._sleepAbort = null;
-        reject(new Error('cancelled'));
-      };
-    });
-  }
-
   async function createSession(cfg, meta) {
     const res = await fetch('/api/upload/range/session', {
       method: 'POST',
@@ -113,7 +85,7 @@
   function putChunkXHR(cfg, uploadId, file, start, end, totalSize, job, onProgress) {
     return new Promise((resolve, reject) => {
       if (job.cancelled) {
-        reject(new Error('cancelled'));
+        reject(cancelledError());
         return;
       }
       const xhr = new XMLHttpRequest();
@@ -136,10 +108,10 @@
       xhr.addEventListener('error', () => reject(new Error('Network error during chunk upload')));
       xhr.addEventListener('abort', () => {
         if (job.softAborting || backgroundPaused) {
-          reject(new Error('paused'));
+          reject(pausedError());
           return;
         }
-        reject(new Error('cancelled'));
+        reject(cancelledError());
       });
 
       const chunk = file.slice(start, end + 1);
@@ -160,11 +132,11 @@
     let lastRes = null;
     let lastErr = null;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      if (job.cancelled) throw new Error('cancelled');
+      if (job.cancelled) throw cancelledError();
       try {
         lastRes = await putChunkXHR(cfg, uploadId, file, start, end, totalSize, job, onProgress);
       } catch (err) {
-        if (job.cancelled || err?.message === 'cancelled') throw new Error('cancelled');
+        if (job.cancelled || err?.message === 'cancelled') throw cancelledError();
         if (err?.message === 'paused') throw err;
         lastErr = err;
         if (!isRetryableError(err) && attempt >= 1) throw err;
@@ -186,38 +158,6 @@
     }
     if (lastErr) throw lastErr;
     throw new Error(lastRes?.text || 'Chunk upload failed after retries');
-  }
-
-  class AdaptiveScheduler {
-    constructor(minC, maxC) {
-      this.min = minC;
-      this.max = maxC;
-      this.current = minC;
-      this.windowBytes = 0;
-      this.windowStart = Date.now();
-      this.onChange = null;
-    }
-
-    record(bytes) {
-      this.windowBytes += bytes;
-      const elapsed = (Date.now() - this.windowStart) / 1000;
-      if (elapsed < 2) return;
-      const mbps = (this.windowBytes / elapsed) / (1024 * 1024);
-      this.windowBytes = 0;
-      this.windowStart = Date.now();
-      const prev = this.current;
-      // Ramp up while below target; never throttle a fast link (that capped LAN ~60 MB/s).
-      if (mbps < 200 && this.current < this.max) {
-        this.current = Math.min(this.max, this.current + 2);
-      }
-      if (this.current !== prev && typeof this.onChange === 'function') {
-        this.onChange(this.current);
-      }
-    }
-
-    limit() {
-      return this.current;
-    }
   }
 
   async function runUpload(jobId, data) {
@@ -320,33 +260,45 @@
       doneChunks.forEach((idx) => {
         bytesConfirmed += Math.min(chunkSize, totalSize - idx * chunkSize);
       });
-      const inFlight = new Map();
-      let finished = false;
-      let failure = null;
-      let active = 0;
       let lastPersist = 0;
       let resumeSync = null;
+      let reportProgress = function () {};
 
-      let settleResolve = null;
-      const settled = new Promise((resolve) => { settleResolve = resolve; });
+      const pool = createChunkPool({
+        pending,
+        isStopped: () => job.cancelled,
+        isPaused: () => backgroundPaused,
+        maxInFlight: () => scheduler.limit(),
+        alreadyDone: (idx) => doneChunks.has(idx),
+        isComplete: (active, queue) => queue.size === 0 && active === 0 && doneChunks.size >= totalChunks,
+        send: (idx, reportLoaded) => putChunkWithRetry(
+          cfg, uploadId, file, idx, chunkSize, totalSize, job, reportLoaded,
+        ),
+        isTerminalSuccess: (res) => res.status === 201,
+        onTerminal: () => {
+          bytesConfirmed = totalSize;
+          reportProgress(true);
+          job.softAborting = true;
+          job.xhrs?.forEach((x) => { try { x.abort(); } catch (_) { /* ignore */ } });
+          queueMicrotask(() => { job.softAborting = false; });
+        },
+        onChunkOk: (idx) => {
+          doneChunks.add(idx);
+          const chunkBytes = Math.min(chunkSize, totalSize - idx * chunkSize);
+          bytesConfirmed += chunkBytes;
+          scheduler.record(chunkBytes);
+          persistResume();
+        },
+        isHardCancel: (err) => job.cancelled || err?.message === 'cancelled',
+        asCancel: (err) => (err?.message === 'cancelled' ? err : cancelledError()),
+        shouldRetry: (err) => err?.message === 'paused' || isRetryableError(err) || backgroundPaused,
+        requeue: (idx) => { if (!doneChunks.has(idx)) pending.add(idx); },
+        sleepRetry: () => abortableSleep(1000, job),
+        onProgress: () => reportProgress(),
+      });
+      const inFlight = pool.inFlight;
 
-      function maybeSettle() {
-        if (finished || failure || job.cancelled) {
-          if (job.cancelled && !failure) failure = new Error('cancelled');
-          settleResolve();
-          return;
-        }
-        if (pending.size === 0 && active === 0 && doneChunks.size >= totalChunks) {
-          finished = true;
-          settleResolve();
-        }
-      }
-
-      let lastProgress = 0;
-      let progressTimer = null;
-      function flushProgress(extra) {
-        progressTimer = null;
-        lastProgress = Date.now();
+      reportProgress = createProgressReporter((extra) => {
         let loaded = Math.min(totalSize, bytesConfirmed);
         inFlight.forEach((n) => { loaded += n; });
         if (loaded > totalSize) loaded = totalSize;
@@ -357,23 +309,7 @@
           concurrency: scheduler.limit(),
           ...(extra || {}),
         });
-      }
-      function reportProgress(force, extra) {
-        if (force) {
-          if (progressTimer) { clearTimeout(progressTimer); progressTimer = null; }
-          flushProgress(extra);
-          return;
-        }
-        const now = Date.now();
-        if (now - lastProgress >= 100) {
-          if (progressTimer) { clearTimeout(progressTimer); progressTimer = null; }
-          flushProgress(extra);
-          return;
-        }
-        if (!progressTimer) {
-          progressTimer = setTimeout(() => flushProgress(extra), 100 - (now - lastProgress));
-        }
-      }
+      });
 
       function persistResume(force) {
         const now = Date.now();
@@ -402,10 +338,10 @@
       async function syncFromServer() {
         const status = await fetchUploadStatus(cfg, uploadId);
         if (status.complete) {
-          finished = true;
+          pool.finished = true;
           bytesConfirmed = totalSize;
           reportProgress(true);
-          maybeSettle();
+          pool.maybeSettle();
           return true;
         }
         const ranges = status.ranges || [];
@@ -425,97 +361,14 @@
 
       reportProgress(true);
 
-      function maxInFlight() {
-        // Cap at scheduler concurrency. Multiplying by pipelineDepth oversubscribed
-        // the server (429) and collapsed LAN throughput.
-        return scheduler.limit();
-      }
-
-      function startNext() {
-        if (failure || finished || job.cancelled) {
-          maybeSettle();
-          return;
-        }
-        if (backgroundPaused) return;
-
-        while (active < maxInFlight() && pending.size > 0) {
-          const idx = pending.values().next().value;
-          pending.delete(idx);
-          if (doneChunks.has(idx) || inFlight.has(idx)) continue;
-          active += 1;
-          inFlight.set(idx, 0);
-          reportProgress();
-
-          putChunkWithRetry(cfg, uploadId, file, idx, chunkSize, totalSize, job, (n) => {
-            inFlight.set(idx, n);
-            reportProgress();
-          }).then((res) => {
-            active -= 1;
-            inFlight.delete(idx);
-            if (job.cancelled) {
-              failure = new Error('cancelled');
-              maybeSettle();
-              return;
-            }
-            if (res.status === 201) {
-              finished = true;
-              failure = null;
-              bytesConfirmed = totalSize;
-              reportProgress(true);
-              job.softAborting = true;
-              job.xhrs?.forEach((x) => { try { x.abort(); } catch (_) { /* ignore */ } });
-              queueMicrotask(() => { job.softAborting = false; });
-              maybeSettle();
-              return;
-            }
-            doneChunks.add(idx);
-            const chunkBytes = Math.min(chunkSize, totalSize - idx * chunkSize);
-            bytesConfirmed += chunkBytes;
-            scheduler.record(chunkBytes);
-            reportProgress();
-            persistResume();
-            startNext();
-            maybeSettle();
-          }).catch((err) => {
-            active -= 1;
-            inFlight.delete(idx);
-            if (finished) {
-              maybeSettle();
-              return;
-            }
-            if (job.cancelled || err?.message === 'cancelled') {
-              failure = err?.message === 'cancelled' ? err : new Error('cancelled');
-              maybeSettle();
-              return;
-            }
-            if (err?.message === 'paused' || isRetryableError(err) || backgroundPaused) {
-              if (!doneChunks.has(idx)) pending.add(idx);
-              if (backgroundPaused) {
-                maybeSettle();
-                return;
-              }
-              abortableSleep(1000, job).then(() => startNext()).catch(() => {
-                failure = new Error('cancelled');
-                maybeSettle();
-              });
-              return;
-            }
-            failure = err;
-            maybeSettle();
-          });
-        }
-        maybeSettle();
-      }
-
       scheduler.onChange = () => {
-        if (!finished && !failure && !job.cancelled && !backgroundPaused) startNext();
+        if (!pool.finished && !pool.failure && !job.cancelled && !backgroundPaused) pool.startNext();
       };
 
-      job.kick = startNext;
+      job.kick = pool.startNext;
       job.forceSettle = () => {
         if (job._sleepAbort) job._sleepAbort();
-        if (!failure) failure = new Error('cancelled');
-        settleResolve();
+        pool.fail(cancelledError());
       };
       job.onPause = () => {
         reportProgress(true, { paused: true });
@@ -531,26 +384,25 @@
       // Always kick off chunks. Mid-flight pause still works via setBackgroundPaused;
       // starting paused left uploads stuck at 0% forever (file picker / pagehide).
       backgroundPaused = false;
-      startNext();
+      pool.startNext();
 
-      await settled;
-      if (progressTimer) clearTimeout(progressTimer);
+      await pool.settled;
       job.xhrs.forEach((x) => { try { x.abort(); } catch (_) { /* ignore */ } });
 
-      if (finished) {
+      if (pool.finished) {
         post(jobId, { type: 'complete', message: 'Upload successful' });
         return;
       }
-      if (failure) throw failure;
-      if (!finished) {
-        if (doneChunks.size >= totalChunks) finished = true;
+      if (pool.failure) throw pool.failure;
+      if (!pool.finished) {
+        if (doneChunks.size >= totalChunks) pool.finished = true;
         else {
           try {
-            if (await syncFromServer()) finished = true;
+            if (await syncFromServer()) pool.finished = true;
           } catch (_) { /* ignore */ }
         }
       }
-      if (!finished) throw new Error('Upload did not complete');
+      if (!pool.finished) throw new Error('Upload did not complete');
 
       post(jobId, { type: 'complete', message: 'Upload successful' });
     } catch (err) {
@@ -562,7 +414,7 @@
   }
 
   async function fetchRange(cfg, url, start, end, job) {
-    if (job.cancelled) throw new Error('cancelled');
+    if (job.cancelled) throw cancelledError();
     const ac = new AbortController();
     job.controllers.add(ac);
     try {
@@ -605,7 +457,7 @@
       async function workerLoop() {
         while (!failure) {
           if (job.cancelled) {
-            failure = new Error('cancelled');
+            failure = cancelledError();
             return;
           }
           const maxInFlight = scheduler.limit() * pipelineDepth;

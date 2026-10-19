@@ -4,6 +4,7 @@ import { escapeAttr, escapeHtml, getCanTag } from './util.js';
 import { buildMoreMenuHtml } from './row-more-menu.js';
 import { applyBrowseTypeFilter } from './type-filter.js';
 import { refreshGridThumbs } from './table-ui.js';
+import { encodeBrowsePath, normalizeRelPath } from './rows.js';
 
 const MEDIA_EXTS = new Set([
   'jpg', 'jpeg', 'jpe', 'jif', 'jfif', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico',
@@ -36,22 +37,15 @@ const ACTION_SVGS = {
   onedrive: '☁',
 };
 
-function normalizePath(p) {
-  let s = String(p || '');
-  while (s.startsWith('/')) s = s.slice(1);
-  while (s.endsWith('/')) s = s.slice(0, -1);
-  return s;
-}
-
 function joinBrowsePath(dir, name) {
-  const d = normalizePath(dir);
-  let n = String(name || '');
-  while (n.startsWith('/')) n = n.slice(1);
+  let d = normalizeRelPath(dir);
+  while (d.endsWith('/')) d = d.slice(0, -1);
+  const n = normalizeRelPath(name);
   return d ? `${d}/${n}` : n;
 }
 
 function currentBrowsePath() {
-  return normalizePath(document.getElementById('currentPath')?.value);
+  return normalizeRelPath(document.getElementById('currentPath')?.value);
 }
 
 function formatListingSize(bytes) {
@@ -160,11 +154,7 @@ function buildTagsHtml(fullPath) {
 }
 
 function buildFileHref(fullPath, name, isDir) {
-  const enc = String(fullPath)
-    .split('/')
-    .filter(Boolean)
-    .map(encodeURIComponent)
-    .join('/');
+  const enc = encodeBrowsePath(fullPath);
   if (isDir) return `/files/${enc}`;
   const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
   const media = MEDIA_EXTS.has(ext);
@@ -265,7 +255,7 @@ export function upsertListingEntry({ name, sizeBytes = 0, isDir = false, modifie
 export function reflectUploadInListing(item) {
   if (!item || item.cancelled) return false;
   const current = currentBrowsePath();
-  const uploadDir = normalizePath(item.uploadDir ?? current);
+  const uploadDir = normalizeRelPath(item.uploadDir ?? current);
   const fname = item.uploadName ?? item.file?.name;
   if (!fname) return false;
 

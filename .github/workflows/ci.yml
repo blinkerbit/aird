@@ -223,10 +223,10 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
 
-      - name: Build share UI bundle
+      - name: Build frontend bundles
         run: |
           npm ci --ignore-scripts
-          npm run js:share
+          npm run js:build
 
       - name: Build sdist + wheel
         run: |

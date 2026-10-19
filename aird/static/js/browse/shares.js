@@ -5,10 +5,9 @@ import {
   escapeHtml,
   escapeAttr,
   showDialog,
-  getXSRFToken,
 } from './util.js';
 import { copyToClipboard } from '../core/clipboard.js';
-import { apiFetch } from '../core/http.js';
+import { apiFetch, getJson, postJson } from '../core/http.js';
 
 export { copyToClipboard };
 
@@ -87,8 +86,7 @@ export async function showShareDetails(filePath) {
   content.appendChild(createEl('div', { className: 'p-6 text-center text-base-content/50' }, 'Loading share details…'));
 
   try {
-    const response = await fetch('/api/share/details?path=' + encodeURIComponent(filePath));
-    const data = await response.json();
+    const data = await getJson('/api/share/details?path=' + encodeURIComponent(filePath), { throwOnError: false });
 
     content.textContent = '';
     if (data.error) {
@@ -156,9 +154,7 @@ export async function openShareByTag() {
   errEl.classList.add('hidden');
   let allTagRules = [];
   try {
-    const res = await fetch('/admin/api/abac/tags', { headers: { 'X-XSRFToken': getXSRFToken() } });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
+    const data = await getJson('/admin/api/abac/tags');
     allTagRules = data.tags || [];
   } catch {
     selectEl.innerHTML = '<option value="">Failed to load tags</option>';
@@ -193,19 +189,13 @@ export async function openShareByTag() {
   const patterns = allTagRules.filter(function (r) { return r.tag === chosenTag; }).map(function (r) { return r.glob_pattern; });
   if (!patterns.length) { await showDialog('No glob patterns defined for tag "' + chosenTag + '".', 'Error'); return; }
   try {
-    const res = await fetch('/share/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-XSRFToken': getXSRFToken() },
-      body: JSON.stringify({
-        share_type: 'tag',
-        tag_name: chosenTag,
-        paths: [],
-        allow_list: [],
-        avoid_list: [],
-      }),
+    const data = await postJson('/share/create', {
+      share_type: 'tag',
+      tag_name: chosenTag,
+      paths: [],
+      allow_list: [],
+      avoid_list: [],
     });
-    const data = await res.json();
-    if (!res.ok) { await showDialog(data.error || ('Share creation failed (HTTP ' + res.status + ')'), 'Error'); return; }
     const shareId = data.share_id || data.id || '';
     const tokenLine = data.secret_token ? '\nToken: ' + data.secret_token : '';
     await showDialog('Tag share created for "' + chosenTag + '".' + tokenLine + '\nShare ID: ' + shareId + '\n\nAccess it at /shared/' + shareId, 'Share created');

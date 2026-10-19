@@ -375,6 +375,25 @@ class TestMultiUserConfigFlag:
             assert config.MULTI_USER is True
 
     @patch("aird.config.socket.getfqdn", return_value="test.local")
+    def test_multi_user_does_not_require_token(self, _mock_fqdn, tmp_path):
+        """-mu starts without --token and generates an access token."""
+        from aird import config
+
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k not in ("AIRD_ACCESS_TOKEN", "AIRD_ADMIN_TOKEN")
+        }
+        with patch(
+            "sys.argv", ["test", "-mu", "--root", str(tmp_path)]
+        ), patch.dict("os.environ", env, clear=True):
+            config.ACCESS_TOKEN = None
+            config.MULTI_USER = False
+            config.init_config()
+            assert config.MULTI_USER is True
+            assert config.ACCESS_TOKEN
+
+    @patch("aird.config.socket.getfqdn", return_value="test.local")
     def test_multi_user_flag_from_long_option(self, _mock_fqdn):
         """MULTI_USER is True when --multi-user is passed."""
         from aird import config

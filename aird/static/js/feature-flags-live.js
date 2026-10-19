@@ -7,8 +7,6 @@
 
   let _cache = null;
   let _inflight = null;
-  let socket = null;
-  let reconnectTimer = null;
 
   function applyFlags(flags) {
     if (!flags || typeof flags !== 'object') return;
@@ -28,7 +26,7 @@
 
   function refresh() {
     if (_inflight) return _inflight;
-    _inflight = fetch('/api/features', {
+    _inflight = global.AirdCore.apiFetch('/api/features', {
       credentials: 'same-origin',
       cache: 'no-store',
       redirect: 'manual',
@@ -49,32 +47,16 @@
     return _inflight;
   }
 
+  const live = global.AirdCore.createReconnectingSocket({
+    url: () => global.AirdCore.sameOriginWsUrl('/features'),
+    onOpen() { refresh(); },
+    onJson(data) { applyFlags(data); },
+    onJsonError(err) { console.debug('Invalid feature flag message', err); },
+    stopWhen({ opened, gotPayload }) { return opened && !gotPayload; },
+  });
+
   function connect() {
-    if (socket && (socket.readyState === WebSocket.OPEN
-      || socket.readyState === WebSocket.CONNECTING)) return;
-    const scheme = global.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let opened = false;
-    let gotPayload = false;
-    socket = new WebSocket(`${scheme}//${global.location.host}/features`);
-    socket.onopen = function () {
-      opened = true;
-      refresh();
-    };
-    socket.onmessage = function (event) {
-      gotPayload = true;
-      try {
-        applyFlags(JSON.parse(event.data));
-      } catch (err) {
-        console.debug('Invalid feature flag message', err);
-      }
-    };
-    socket.onclose = function (event) {
-      socket = null;
-      // Auth/policy reject, or opened then kicked before any payload.
-      if ((event && event.code === 1008) || (opened && !gotPayload)) return;
-      clearTimeout(reconnectTimer);
-      reconnectTimer = setTimeout(connect, 3000);
-    };
+    live.connect();
   }
 
   function isEnabled(key, fallback) {

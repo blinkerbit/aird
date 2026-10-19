@@ -1,3 +1,4 @@
+import { createReconnectingSocket, sameOriginWsUrl } from '../core/ws.js';
 import { escapeHtml, escapeAttr, queryByDataFileId } from '../core/dom-safe.js';
 import { formatBytes } from '../core/format.js';
 import { copyToClipboard as copyTextToClipboard } from '../core/clipboard.js';
@@ -90,14 +91,6 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
         let pendingRoomId = pendingRoomIdRaw || null;
         const roomJoinError = document.body.dataset.roomJoinError || '';
         let receivedFiles = []; // Array to store received files for manual download
-        const p2pPatternKit = globalThis.P2PPatterns?.createP2PPatternKit({
-            currentMode: null,
-            currentRoomId: null,
-            isTransferring: false,
-            otherPeerInRoom: false
-        });
-        const p2pStateMachine = p2pPatternKit?.stateMachine || null;
-        const p2pMediator = p2pPatternKit?.mediator || null;
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
@@ -168,51 +161,41 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
             setTimeout(updateApplyReconnectButton, 2000);
         }
 
+        let signaling = null;
+
         function initWebSocket() {
-            const protocol = globalThis.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            let wsUrl = `${protocol}//${globalThis.location.host}/p2p/signal`;
-
-            // Pass room ID when joining via share link (anonymous access pre-check on server)
-            if (pendingRoomId) {
-                wsUrl += `?room=${encodeURIComponent(pendingRoomId)}`;
+            if (!signaling) {
+                signaling = createReconnectingSocket({
+                    url() {
+                        let path = '/p2p/signal';
+                        if (pendingRoomId) path += `?room=${encodeURIComponent(pendingRoomId)}`;
+                        return sameOriginWsUrl(path);
+                    },
+                    onSocket(socket) { ws = socket; },
+                    onConstructError(err) {
+                        log(`Failed to create WebSocket: ${err.message}`, 'error');
+                    },
+                    onOpen() {
+                        log('Connected to signaling server', 'success');
+                    },
+                    onClose(event) {
+                        log(`Disconnected from signaling server (code: ${event.code}, reason: ${event.reason || 'none'})`, 'error');
+                        if (event.code === 1008) {
+                            log(event.reason || 'Connection closed by server.', 'error');
+                        }
+                    },
+                    onError(error) {
+                        log('WebSocket connection error - check if server is running', 'error');
+                        console.error('WebSocket error:', error);
+                    },
+                    onJson(data) { handleSignalingMessage(data); },
+                    onJsonError(err) { log(`Error parsing message: ${err.message}`, 'error'); },
+                    // 1008 (auth) is halted by the helper. 1000 is a deliberate close.
+                    stopWhen({ event }) { return event.code === 1000; },
+                });
             }
-
-            log(`Connecting to ${wsUrl}...`, 'info');
-
-            try {
-                ws = new WebSocket(wsUrl);
-            } catch (e) {
-                log(`Failed to create WebSocket: ${e.message}`, 'error');
-                return;
-            }
-
-            ws.onopen = () => {
-                log('Connected to signaling server', 'success');
-            };
-
-            ws.onclose = (event) => {
-                log(`Disconnected from signaling server (code: ${event.code}, reason: ${event.reason || 'none'})`, 'error');
-                // Only reconnect if not a deliberate close or auth failure
-                if (event.code !== 1000 && event.code !== 1008) {
-                    setTimeout(initWebSocket, 3000);
-                } else if (event.code === 1008) {
-                    log(event.reason || 'Connection closed by server.', 'error');
-                }
-            };
-
-            ws.onerror = (error) => {
-                log('WebSocket connection error - check if server is running', 'error');
-                console.error('WebSocket error:', error);
-            };
-
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    handleSignalingMessage(data);
-                } catch (e) {
-                    log(`Error parsing message: ${e.message}`, 'error');
-                }
-            };
+            log('Connecting to signaling server...', 'info');
+            signaling.connect();
         }
 
         function handleConnectedMessage(data) {
@@ -312,24 +295,12 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
         };
 
         function handleSignalingMessage(data) {
-            const SignalingServiceCtor = globalThis.P2PPatterns?.SignalingService;
-            if (!SignalingServiceCtor) {
-                const handler = SIGNALING_MESSAGE_HANDLERS[data.type];
-                if (handler) handler(data);
-                return;
-            }
-            if (!handleSignalingMessage._service) {
-                handleSignalingMessage._service = new SignalingServiceCtor(
-                    SIGNALING_MESSAGE_HANDLERS
-                );
-            }
-            handleSignalingMessage._service.dispatch(data);
-            p2pMediator?.emit("signaling:message", data);
+            const handler = SIGNALING_MESSAGE_HANDLERS[data.type];
+            if (handler) handler(data);
         }
 
         function selectMode(mode) {
             currentMode = mode;
-            p2pStateMachine?.transition("MODE_SELECTED", { mode });
             document.getElementById('mode-section').classList.add('hidden');
 
             if (mode === 'send') {
@@ -734,25 +705,6 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
         }
 
         function handleDataChannelMessage(data) {
-            const TransferServiceCtor = globalThis.P2PPatterns?.TransferService;
-            if (TransferServiceCtor) {
-                if (!handleDataChannelMessage._service) {
-                    handleDataChannelMessage._service = new TransferServiceCtor({
-                        onStringMessage: (msg) => {
-                            if (currentMode === 'send') {
-                                handleSenderDataMessage(msg);
-                                return;
-                            }
-                            handleReceiverDataMessage(msg);
-                        },
-                        onBinaryMessage: (chunk) => {
-                            handleBinaryDataChunk(chunk);
-                        }
-                    });
-                }
-                handleDataChannelMessage._service.handleIncoming(data);
-                return;
-            }
             if (typeof data !== 'string') {
                 handleBinaryDataChunk(data);
                 return;
@@ -1171,9 +1123,6 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
             });
             document.getElementById('receive-mode-btn')?.addEventListener('click', function () {
                 selectMode('receive');
-            });
-            document.getElementById('drop-zone')?.addEventListener('click', function () {
-                document.getElementById('file-input').click();
             });
             document.getElementById('copy-code-btn')?.addEventListener('click', copyShareCode);
             document.getElementById('copy-link-btn')?.addEventListener('click', copyShareLink);

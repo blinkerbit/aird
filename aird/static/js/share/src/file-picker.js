@@ -1,5 +1,5 @@
 import { shareVars, selectedFiles, elements } from './state.js';
-import { escapeHtml, escapeAttr } from './utils.js';
+import { escapeHtml, escapeAttr, getJson } from './utils.js';
 import { getFileIcon } from './file-icons.js';
 import { updateSelectedDisplay, clearSelection } from './selection.js';
 
@@ -52,18 +52,10 @@ async function loadDirectory(path = '') {
     updateBreadcrumb(path);
     elements.fileTableBody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-base-content/50"><span class="loading loading-spinner loading-sm align-middle mr-2"></span><span class="align-middle">Loading…</span></td></tr>';
 
-    const response = await fetch(`/api/files/${path}`);
-
-    if (response.ok) {
-      const data = await response.json();
-      shareVars.allFiles = data.files;
-      renderFiles();
-      updateSelectedDisplay();
-    } else {
-      const errorText = await response.text();
-      console.error('API error:', errorText);
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
+    const data = await getJson(`/api/files/${path}`);
+    shareVars.allFiles = data.files;
+    renderFiles();
+    updateSelectedDisplay();
 
   } catch (error) {
     console.error('Error loading directory:', error);

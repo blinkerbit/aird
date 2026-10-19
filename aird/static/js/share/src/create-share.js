@@ -5,7 +5,7 @@ import {
   selectedUsers,
   elements,
 } from './state.js';
-import { getXSRFToken, showDialog, escapeHtml, escapeAttr } from './utils.js';
+import { showDialog, escapeHtml, escapeAttr, parseCsvList, postJson } from './utils.js';
 import { readExpiryDateFromInput, configureExpiryDateInput } from './expiry.js';
 import { updateConfigSelectedFiles, clearSelection } from './selection.js';
 import { loadActiveShares } from './shares-list.js';
@@ -92,35 +92,24 @@ async function generateShareLink() {
     const modifyUsers = Array.from(selectedModifyUsers);
     const disableToken = document.getElementById('disableToken').checked;
 
-    const allowListText = document.getElementById('allowList').value.trim();
-    const avoidListText = document.getElementById('avoidList').value.trim();
-    const allowList = allowListText ? allowListText.split(',').map(s => s.trim()).filter(Boolean) : [];
-    const avoidList = avoidListText ? avoidListText.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const allowList = parseCsvList(document.getElementById('allowList').value);
+    const avoidList = parseCsvList(document.getElementById('avoidList').value);
 
     const expiryDate = readExpiryDateFromInput('expiryDate');
     if (expiryDate === undefined) return;
 
     const pathsPayload = buildPathsPayload(selectedFiles, selectedFileMetadata);
 
-    const response = await fetch('/share/create', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-XSRFToken': getXSRFToken()
-      },
-      body: JSON.stringify({
-        paths: pathsPayload,
-        allowed_users: allowedUsers,
-        modify_users: modifyUsers,
-        share_type: shareType,
-        allow_list: allowList,
-        avoid_list: avoidList,
-        disable_token: disableToken,
-        expiry_date: expiryDate
-      })
-    });
-
-    const data = await response.json();
+    const data = await postJson('/share/create', {
+      paths: pathsPayload,
+      allowed_users: allowedUsers,
+      modify_users: modifyUsers,
+      share_type: shareType,
+      allow_list: allowList,
+      avoid_list: avoidList,
+      disable_token: disableToken,
+      expiry_date: expiryDate,
+    }, { throwOnError: false });
 
     if (data.error) {
       void showDialog('Error: ' + data.error, 'Error');

@@ -2,37 +2,25 @@
  * Enhanced Secure Chat. Keys and plaintext live in sessionStorage for this tab only.
  * The server relays ciphertext and keeps no copy of either.
  */
+import {
+  b64encode as b64,
+  b64decode as unb64,
+  ecdhImportPublic as importPublic,
+  ecdhImportPrivate as importPrivate,
+  ecdhGenerateKey as freshKey,
+  ecdhDeriveAesKey,
+} from './core/chat-crypto.js';
+import { escapeHtml as esc } from './core/dom-safe.js';
+
 (function (global) {
   'use strict';
 
   const STORE = 'aird-enhanced-secure-v1';
-  const ECDH = { name: 'ECDH', namedCurve: 'P-256' };
   const INFO = new TextEncoder().encode('aird-enhanced-secure-chat-v1');
+
   const rooms = new Map();
   let viewing = null;
   let draftPeer = null;
-
-  function b64(buf) {
-    const bytes = buf instanceof ArrayBuffer ? new Uint8Array(buf) : buf;
-    let s = '';
-    for (let i = 0; i < bytes.length; i += 1) s += String.fromCharCode(bytes[i]);
-    return btoa(s);
-  }
-
-  function unb64(str) {
-    const n = String(str || '').replace(/-/g, '+').replace(/_/g, '/');
-    const pad = n.length % 4 === 0 ? '' : '='.repeat(4 - (n.length % 4));
-    const bin = atob(n + pad);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
-    return out;
-  }
-
-  function esc(s) {
-    return String(s ?? '').replace(/[&<>"']/g, (c) => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-    }[c]));
-  }
 
   function loadStore() {
     try {
@@ -71,53 +59,10 @@
     global.AirdChatPage?.refreshList?.();
   }
 
-  async function importPrivate(jwk) {
-    return crypto.subtle.importKey('jwk', jwk, ECDH, true, ['deriveBits']);
-  }
-
-  async function importPublic(jwk) {
-    return crypto.subtle.importKey(
-      'jwk',
-      { kty: 'EC', crv: 'P-256', x: jwk.x, y: jwk.y },
-      ECDH,
-      true,
-      [],
-    );
-  }
-
-  async function freshKey() {
-    const pair = await crypto.subtle.generateKey(ECDH, true, ['deriveBits']);
-    const publicJwk = await crypto.subtle.exportKey('jwk', pair.publicKey);
-    const privateJwk = await crypto.subtle.exportKey('jwk', pair.privateKey);
-    delete publicJwk.d;
-    return {
-      publicJwk: { kty: 'EC', crv: 'P-256', x: publicJwk.x, y: publicJwk.y },
-      privateJwk,
-      privateKey: pair.privateKey,
-    };
-  }
-
   async function derive(room, theirPub) {
     if (!room?.privateKey || !theirPub) return;
     const pub = await importPublic(theirPub);
-    const bits = await crypto.subtle.deriveBits(
-      { name: 'ECDH', public: pub },
-      room.privateKey,
-      256,
-    );
-    const hkdf = await crypto.subtle.importKey('raw', bits, 'HKDF', false, ['deriveKey']);
-    room.aes = await crypto.subtle.deriveKey(
-      {
-        name: 'HKDF',
-        hash: 'SHA-256',
-        salt: new TextEncoder().encode(room.roomId),
-        info: INFO,
-      },
-      hkdf,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['encrypt', 'decrypt'],
-    );
+    room.aes = await ecdhDeriveAesKey(room.privateKey, pub, room.roomId, INFO);
     room.open = true;
     saveStore();
   }
