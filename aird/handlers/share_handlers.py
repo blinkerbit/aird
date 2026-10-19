@@ -842,7 +842,9 @@ class ShareRevokeHandler(XSRFTokenMixin, BaseHandler):
 
         remove_share_cloud_dir(sid)
 
-        if self.request.headers.get("Accept") == "application/json":
+        from aird.handlers.base_handler import client_wants_json
+
+        if client_wants_json(self):
             self.write({"ok": True})
             return
         self.redirect("/share")

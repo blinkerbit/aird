@@ -1,12 +1,14 @@
 "use strict";
 
+import { registerOverlay } from '../core/overlay.js';
 import { SelectionStore } from './selection-store.js';
 import { wirePersistedToggle } from './persisted-toggle.js';
 import { isInputKeyTarget, getCanTag } from './util.js';
 import { updateBulkToolbar } from './selection-ui.js';
-import { closeRowTagPopover, isRowTagPopoverOpen, openRowTagPopover } from './tags.js';
+import { openRowTagPopover } from './tags.js';
 import { closeSharePopup, showShareDetails } from './shares.js';
 import { renameItem, deleteItem, downloadFileViaHttp } from './bulk-actions.js';
+import { rowIsDir } from './rows.js';
 
 const FolderPicker = globalThis.AirdFolderPicker;
 const FILE_VIEW_STORAGE_KEY = 'aird-browse-file-view';
@@ -97,13 +99,13 @@ export function initMobileActionMenus() {
       closeMobileActionMenus();
     }
   });
-
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') {
-      closeMobileActionMenus();
-    }
-  });
 }
+
+registerOverlay({
+  priority: 40,
+  isOpen: () => Boolean(document.querySelector('.mobile-actions-open')),
+  close() { closeMobileActionMenus(); return true; },
+});
 
 let _shortcutsOverlay = null;
 
@@ -136,39 +138,28 @@ function showBrowseShortcutsHelp() {
   document.body.appendChild(_shortcutsOverlay);
 }
 
+registerOverlay({
+  priority: 110,
+  isOpen: () => Boolean(_shortcutsOverlay),
+  close() { hideBrowseShortcutsHelp(); return true; },
+});
+registerOverlay({
+  priority: 80,
+  isOpen: () => Boolean(document.getElementById('folderPickerOverlay')?.classList.contains('show')),
+  close() { FolderPicker?.close(null); return true; },
+});
+registerOverlay({
+  priority: 70,
+  isOpen: () => Boolean(document.getElementById('sharePickerModal')?.open),
+  close() { document.getElementById('sharePickerCancel')?.click(); return true; },
+});
+registerOverlay({
+  priority: 60,
+  isOpen: () => Boolean(document.getElementById('sharePopup')?.open),
+  close() { closeSharePopup(); return true; },
+});
+
 function handleBrowseEscapeKey() {
-  const closedOverlay = [
-    () => {
-      if (!_shortcutsOverlay) return false;
-      hideBrowseShortcutsHelp();
-      return true;
-    },
-    () => {
-      if (!isRowTagPopoverOpen()) return false;
-      closeRowTagPopover();
-      return true;
-    },
-    () => !!globalThis.AirdCore?.cancelActiveDialog?.(),
-    () => {
-      const fpOverlay = document.getElementById('folderPickerOverlay');
-      if (!fpOverlay?.classList.contains('show')) return false;
-      FolderPicker.close(null);
-      return true;
-    },
-    () => {
-      const sharePicker = document.getElementById('sharePickerModal');
-      if (!sharePicker?.open) return false;
-      document.getElementById('sharePickerCancel')?.click();
-      return true;
-    },
-    () => {
-      const sharePopup = document.getElementById('sharePopup');
-      if (!sharePopup?.open) return false;
-      closeSharePopup();
-      return true;
-    },
-  ].some((close) => close());
-  if (closedOverlay) return;
   SelectionStore.clear();
   document.querySelectorAll('.row-checkbox:checked').forEach(function (cb) { cb.checked = false; });
   const selectAll = document.getElementById('selectAllCheckbox');
@@ -381,8 +372,8 @@ export function sortTable(columnIndex) {
       return (av - bv) * mult;
     }
     const nameCol = 0;
-    const aIsDir = a.children[nameCol]?.querySelector(".file-icon")?.textContent === "📁";
-    const bIsDir = b.children[nameCol]?.querySelector(".file-icon")?.textContent === "📁";
+    const aIsDir = rowIsDir(a);
+    const bIsDir = rowIsDir(b);
     if (aIsDir !== bIsDir) return bIsDir ? 1 : -1;
     const aVal = a.children[nameCol].textContent.trim();
     const bVal = b.children[nameCol].textContent.trim();

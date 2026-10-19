@@ -1,8 +1,8 @@
 import { addFilesModalData, shareVars } from './state.js';
-import { getXSRFToken, showDialog, escapeHtml, escapeAttr } from './utils.js';
+import { showDialog, escapeHtml, escapeAttr, apiFetch } from './utils.js';
 import { getFileIcon } from './file-icons.js';
 import { addToSelection } from './selection.js';
-import { renderShareManagementModal } from './management.js';
+import { renderShareManagementModal, shareUpdate } from './management.js';
 import { openShareConfigModal } from './create-share.js';
 import { loadActiveShares } from './shares-list.js';
 
@@ -30,7 +30,7 @@ async function loadFilesForAddModal() {
 
   try {
     const apiPath = addFilesModalData.currentPath || '';
-    const response = await fetch(`/api/files/${apiPath}`);
+    const response = await apiFetch(`/api/files/${apiPath}`);
 
     if (response.ok) {
       const data = await response.json();
@@ -180,18 +180,7 @@ async function addSelectedFilesToShare() {
       if (!merged.includes(p)) merged.push(p);
     });
     try {
-      const response = await fetch('/share/update', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-XSRFToken': getXSRFToken()
-        },
-        body: JSON.stringify({
-          share_id: shareVars.currentShareData.id,
-          paths: merged
-        })
-      });
-      const data = await response.json();
+      const data = await shareUpdate({ paths: merged });
       if (data.error) {
         void showDialog('Error: ' + data.error, 'Error');
         return;

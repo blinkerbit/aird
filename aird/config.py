@@ -212,7 +212,6 @@ def _apply_access_tokens(args, config: dict) -> tuple[bool, bool]:
     from aird.core.auth_secrets import resolve_auth_secret, secrets_dir_for_root
 
     root_dir = args.root or config.get("root") or os.getcwd()
-    multi_user = args.multi_user or config.get("multi_user", False)
     secrets_dir = secrets_dir_for_root(root_dir)
 
     access_cli = args.token
@@ -223,20 +222,14 @@ def _apply_access_tokens(args, config: dict) -> tuple[bool, bool]:
     admin_env = os.environ.get("AIRD_ADMIN_TOKEN", "").strip() or None
     admin_config = config.get("admin_token")
 
-    allow_auto_access = not multi_user
     ACCESS_TOKEN, access_explicit = resolve_auth_secret(
         cli_value=access_cli,
         config_value=access_config,
         env_value=access_env,
         secrets_dir=secrets_dir,
         secret_filename="access_token",
-        allow_auto_generate=allow_auto_access,
+        allow_auto_generate=True,
     )
-    if ACCESS_TOKEN is None:
-        raise SystemExit(
-            "Multi-user mode requires an explicit access token. "
-            "Set AIRD_ACCESS_TOKEN, --token, or token in config."
-        )
 
     ADMIN_TOKEN, admin_explicit = resolve_auth_secret(
         cli_value=admin_cli,

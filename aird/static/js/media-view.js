@@ -62,7 +62,7 @@
       if (loadingEl) loadingEl.remove();
     }
 
-    fetch(src, { credentials: 'same-origin' })
+    globalThis.AirdCore.apiFetch(src, { credentials: 'same-origin' })
       .then(function (resp) {
         if (!resp.ok) {
           throw new Error('HTTP ' + resp.status);

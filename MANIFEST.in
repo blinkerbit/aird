@@ -1,12 +1,21 @@
 recursive-include aird/templates *.html
 recursive-include aird/static/css *.css
 recursive-include aird/static/js *.js
+recursive-include aird/static/vendor/swagger *
 recursive-include aird/static/fonts *.woff2
 recursive-include aird/static/img *
 include aird/static/favicon.png
 include aird/static/favicon.ico
 include aird/static/favicon.svg
 include aird/static/manifest.webmanifest
+
+# Frontend build scripts: setup.py regenerates the git-ignored JS bundles at
+# build time, so sdists must ship the scripts (and the freshly built bundles,
+# picked up by recursive-include above, let node-less installs skip rebuild).
+include scripts/build_frontend.py
+include scripts/gen-core-shim.mjs
+include scripts/build-core.mjs
+include scripts/build-share.mjs
 
 # Native extension sources (built/published separately as aird-transfer;
 # shipped in the aird sdist so contributors can build from one tarball).

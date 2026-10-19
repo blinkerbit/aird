@@ -3,11 +3,6 @@
 const TOKEN_KEY = (host) => `aird.gitlab.token.${host || "gitlab.com"}`;
 const BRIDGE_KEY = "aird.gitlab.bridge";
 
-function xsrf() {
-  const match = /(?:^|; )_xsrf=([^;]+)/.exec(document.cookie);
-  return match ? decodeURIComponent(match[1]) : "";
-}
-
 function currentPath() {
   return (document.getElementById("currentPath")?.value || "").replace(/^\/+/, "");
 }
@@ -32,10 +27,9 @@ async function aird(method, url, body) {
   const opts = { method, credentials: "same-origin", headers: { Accept: "application/json" } };
   if (method !== "GET") {
     opts.headers["Content-Type"] = "application/json";
-    opts.headers["X-XSRFToken"] = xsrf();
     if (body) opts.body = JSON.stringify(body);
   }
-  const resp = await fetch(url, opts);
+  const resp = await globalThis.AirdCore.apiFetch(url, opts);
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(data.error || resp.statusText);
   return data;
@@ -518,7 +512,7 @@ async function loadFolderFiles() {
   listNote(list, "text-sm opacity-60", "Loading files…");
   let files = [];
   try {
-    const res = await fetch(enc ? `/api/files/${enc}` : "/api/files/", { credentials: "same-origin" });
+    const res = await globalThis.AirdCore.apiFetch(enc ? `/api/files/${enc}` : "/api/files/", { credentials: "same-origin" });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || res.statusText || "Could not list folder");
     files = data.files || [];
@@ -832,9 +826,8 @@ async function openCommentsPanel(fullPath, name, isDir = false) {
 
 function connectCommentsWs(rel) {
   if (_ws) _ws.close();
-  const proto = location.protocol === "https:" ? "wss" : "ws";
   const q = qs({ path: rel });
-  _ws = new WebSocket(`${proto}://${location.host}/ws/file-comments?${q}`);
+  _ws = new WebSocket(globalThis.AirdCore.sameOriginWsUrl(`/ws/file-comments?${q}`));
   _ws.onmessage = (ev) => {
     try {
       const msg = JSON.parse(ev.data);

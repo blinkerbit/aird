@@ -1,4 +1,39 @@
-from setuptools import setup, find_packages
+import subprocess
+import sys
+from pathlib import Path
+
+from setuptools import find_packages, setup
+from setuptools.command.build_py import build_py as _BuildPy
+from setuptools.command.sdist import sdist as _Sdist
+
+ROOT = Path(__file__).resolve().parent
+
+
+def _build_frontend_bundles() -> None:
+    """Generate the git-ignored JS bundles before packaging (fail closed).
+
+    Templates reference ``aird-core.js`` and ``share/app.js``; both are build
+    artifacts produced from ``aird/static/js`` sources, so every sdist/wheel
+    build regenerates them instead of relying on committed copies.
+    """
+    subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "build_frontend.py")],
+        cwd=ROOT,
+        check=True,
+    )
+
+
+class BuildPyWithFrontend(_BuildPy):
+    def run(self) -> None:
+        _build_frontend_bundles()
+        super().run()
+
+
+class SdistWithFrontend(_Sdist):
+    def run(self) -> None:
+        _build_frontend_bundles()
+        super().run()
+
 
 install_requires = [
     "tornado>=6.5.9",
@@ -27,6 +62,7 @@ setup(
     name="aird",
     version="0.5.6",
     packages=find_packages(exclude=["aird.ms", "aird.ms.*"]),
+    cmdclass={"build_py": BuildPyWithFrontend, "sdist": SdistWithFrontend},
     include_package_data=True,
     package_data={"aird": [
         "templates/*.html",
@@ -38,6 +74,7 @@ setup(
         "static/img/**/*",
         "static/favicon.*",
         "static/manifest.webmanifest",
+        "static/vendor/swagger/*",
     ]},
     entry_points={
         "console_scripts": [

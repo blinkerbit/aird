@@ -4,9 +4,11 @@
  * Dominant signature used across browse/share pages:
  * `showDialog(message, title, options)`.
  */
+import { registerOverlay } from './overlay.js';
 
 let _dialogState = null;
 let _dialogCancelWired = false;
+let _dialogOverlayOff = null;
 
 function ensureCustomDialogModal() {
   let modal = document.getElementById('customDialogModal');
@@ -84,6 +86,8 @@ export function showDialog(message, title = 'Confirm', options = {}) {
     const close = (value) => {
       modal.close();
       _dialogState = null;
+      _dialogOverlayOff?.();
+      _dialogOverlayOff = null;
       if (opener && typeof opener.focus === 'function') {
         try { opener.focus(); } catch { /* ignore */ }
       }
@@ -95,6 +99,16 @@ export function showDialog(message, title = 'Confirm', options = {}) {
       isPrompt: !!options.prompt,
       cancel: () => close(options.prompt ? null : false),
     };
+    _dialogOverlayOff?.();
+    _dialogOverlayOff = registerOverlay({
+      priority: 90,
+      isOpen: () => Boolean(_dialogState) && !_dialogState.isPrompt,
+      close() {
+        if (!_dialogState || _dialogState.isPrompt) return false;
+        _dialogState.cancel();
+        return true;
+      },
+    });
 
     confirmBtn.onclick = () => close(options.prompt ? input.value : true);
     cancelBtn.onclick = () => close(options.prompt ? null : false);

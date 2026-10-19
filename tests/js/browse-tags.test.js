@@ -61,6 +61,23 @@ describe('row tag popover contract', () => {
   });
 });
 
+describe('tag suggestion plan', () => {
+  it('stays closed until there is a query, and offers a new name instead of the full list', async () => {
+    const { planTagSuggestions } = await import('/static/js/browse/tags.js');
+    const names = ['green-tag', 'python', 'another-tag'];
+    const pending = new Set();
+    expect(planTagSuggestions(names, pending, '', null, false)).toEqual({ matches: [], create: '' });
+    expect(planTagSuggestions(names, pending, 'py', null, false).matches).toEqual(['python']);
+    expect(planTagSuggestions(names, pending, 'py', null, false).create).toBe('py');
+    const fresh = planTagSuggestions(names, pending, 'brand new', null, false);
+    expect(fresh.matches).toEqual([]);
+    expect(fresh.create).toBe('brand-new');
+    expect(planTagSuggestions(names, pending, '', null, true).matches).toEqual(
+      ['another-tag', 'green-tag', 'python'],
+    );
+  });
+});
+
 describe('paintTagColor', () => {
   it('recolors every listing chip for that tag without a reload', async () => {
     const { paintTagColor } = await import('/static/js/browse/tags.js');

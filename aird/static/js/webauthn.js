@@ -1,19 +1,13 @@
 /**
  * Optional WebAuthn passkeys — hidden when unsupported or feature disabled.
  */
+import { apiFetch } from './core/http.js';
+
 (function (global) {
   'use strict';
 
   let _enabled = null;
   let _rpId = null;
-
-  function getXSRFToken() {
-    if (global.AirdCore?.getXSRFToken) {
-      return global.AirdCore.getXSRFToken();
-    }
-    const m = /(?:^|; )_xsrf=([^;]*)/.exec(document.cookie);
-    return m ? decodeURIComponent(m[1]) : '';
-  }
 
   function isBrowserSupported() {
     return typeof global.PublicKeyCredential !== 'undefined'
@@ -104,7 +98,7 @@
       return false;
     }
     try {
-      const res = await fetch('/api/webauthn/status', { credentials: 'same-origin' });
+      const res = await apiFetch('/api/webauthn/status', { credentials: 'same-origin' });
       if (!res.ok) {
         _enabled = false;
         return false;
@@ -125,14 +119,10 @@
   }
 
   async function registerPasskey(nickname) {
-    const xsrf = getXSRFToken();
-    const optRes = await fetch('/api/webauthn/register/options', {
+    const optRes = await apiFetch('/api/webauthn/register/options', {
       method: 'POST',
       credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-XSRFToken': xsrf,
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: '{}',
     });
     if (!optRes.ok) {
@@ -173,13 +163,10 @@
       prfCapable = false;
     }
 
-    const verifyRes = await fetch('/api/webauthn/register/verify', {
+    const verifyRes = await apiFetch('/api/webauthn/register/verify', {
       method: 'POST',
       credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-XSRFToken': xsrf,
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         credential: credentialToJSON(cred),
         prfCapable,
@@ -195,7 +182,7 @@
   }
 
   async function loginWithPasskey(username, nextUrl) {
-    const optRes = await fetch('/api/webauthn/auth/options', {
+    const optRes = await apiFetch('/api/webauthn/auth/options', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -211,7 +198,7 @@
     });
     if (!cred) throw new Error('Passkey sign-in was cancelled.');
 
-    const verifyRes = await fetch('/api/webauthn/auth/verify', {
+    const verifyRes = await apiFetch('/api/webauthn/auth/verify', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -228,11 +215,9 @@
   }
 
   async function deletePasskey(id) {
-    const xsrf = getXSRFToken();
-    const res = await fetch(`/api/webauthn/credentials/${encodeURIComponent(id)}`, {
+    const res = await apiFetch(`/api/webauthn/credentials/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       credentials: 'same-origin',
-      headers: { 'X-XSRFToken': xsrf },
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

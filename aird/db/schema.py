@@ -1,4 +1,7 @@
-"""Database schema creation and migration."""
+"""Canonical database schema and migrations.
+
+Call ``init_db`` from this module. ``aird.database.db.init_db`` only delegates here.
+"""
 
 import sqlite3
 import logging

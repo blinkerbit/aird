@@ -1,3 +1,5 @@
+import json
+
 import tornado.web
 import tornado.escape
 import logging
@@ -595,6 +597,84 @@ class LDAPLoginHandler(BaseHandler):
                 error="Authentication failed. Please check your credentials.",
                 settings=self.settings,
             )
+
+
+class ApiLoginHandler(BaseHandler):
+    """POST /api/auth/login — JSON session for a native client."""
+
+    def check_xsrf_cookie(self):
+        return
+
+    def post(self):
+        if not check_login_rate_limit(self.request.remote_ip):
+            self.write_json_error(429, TOO_MANY_LOGIN_ATTEMPTS_MSG)
+            return
+        try:
+            body = json.loads(self.request.body or b"{}")
+        except json.JSONDecodeError:
+            self.write_json_error(400, "Invalid JSON")
+            return
+        if not isinstance(body, dict):
+            self.write_json_error(400, "Invalid JSON")
+            return
+        username = str(body.get("username") or "").strip()
+        password = str(body.get("password") or "")
+        if (
+            not username
+            or not password
+            or len(username) > LOGIN_USERNAME_MAX_LEN
+            or len(password) > LOGIN_PASSWORD_MAX_LEN
+        ):
+            self.write_json_error(401, INVALID_CREDENTIALS_MSG)
+            return
+        if self.db_conn is None:
+            self.write_json_error(500, "Database unavailable")
+            return
+        try:
+            user = self.get_service("user_service").authenticate(
+                self.db_conn, username, password
+            )
+        except Exception:
+            logging.exception("API login failed")
+            self.write_json_error(500, "Error processing login request. Please try again.")
+            return
+        if user is None:
+            self.write_json_error(401, INVALID_CREDENTIALS_MSG)
+            return
+        role = user["role"]
+        session_id = establish_server_session(
+            self, username, role, is_admin=role == "admin"
+        )
+        if not session_id:
+            self.write_json_error(500, "Session store unavailable")
+            return
+        _publish_user_authenticated(self, username=username, role=role)
+        self.get_service("audit_service").log(
+            self.db_conn, "login", username=username, ip=self.request.remote_ip
+        )
+        self.write(
+            {
+                "token": session_id,
+                "username": username,
+                "role": role,
+                "must_change_password": bool(user.get("must_change_password")),
+            }
+        )
+
+
+class ApiLogoutHandler(BaseHandler):
+    """POST /api/auth/logout — revoke the bearer session or the cookie session."""
+
+    @tornado.web.authenticated
+    def post(self):
+        from aird.db.sessions import revoke_session_by_id
+
+        user = self.current_user if isinstance(self.current_user, dict) else {}
+        session_id = user.get("_session_id")
+        if session_id and self.db_conn is not None:
+            revoke_session_by_id(self.db_conn, str(session_id))
+        self.clear_auth_cookies()
+        self.write({"ok": True})
 
 
 class LoginHandler(BaseHandler):

@@ -347,6 +347,8 @@ class XSRFTokenMixin:
 
     def check_xsrf_cookie(self):
         """Validate XSRF token from header or form field (Tornado v2 mask-safe)."""
+        if bearer_authenticates(self):
+            return
         provided_token = self.request.headers.get("X-XSRFToken")
         if not provided_token:
             provided_token = self.get_argument("_xsrf", None)
@@ -428,38 +430,80 @@ class CookieAuthStrategy:
         if stored is None:
             return None
         touch_session(db_conn, session_id)
+        return _user_from_stored_session(handler, stored, session_id)
 
-        username = stored["username"]
-        token_user = self._token_user_from_username(handler, username)
-        if token_user is not None:
-            token_user = dict(token_user)
-            token_user["_session_id"] = session_id
-            return token_user
-        try:
-            user = get_user_by_username(db_conn, username)
-            if user:
-                user.pop("password_hash", None)
-                user["_session_id"] = session_id
-                return user
-        except Exception:
-            logger.debug("CookieAuthStrategy: db lookup failed", exc_info=True)
+
+def _user_from_stored_session(handler: Any, stored: dict[str, Any], session_id: str) -> dict[str, Any] | None:
+    """Map a session row to the same user dict cookie auth returns."""
+    username = stored["username"]
+    token_user = CookieAuthStrategy._token_user_from_username(handler, username)
+    if token_user is not None:
+        token_user = dict(token_user)
+        token_user["_session_id"] = session_id
+        return token_user
+    try:
+        user = get_user_by_username(_handler_db_conn(handler), username)
+        if user:
+            user.pop("password_hash", None)
+            user["_session_id"] = session_id
+            return user
+    except Exception:
+        logger.debug("session user lookup failed", exc_info=True)
+    return None
+
+
+def bearer_token(handler: Any) -> str | None:
+    """Return the raw bearer credential, if the header is present."""
+    auth_header = handler.request.headers.get("Authorization")
+    if not isinstance(auth_header, str) or not auth_header.startswith("Bearer "):
         return None
+    token = auth_header[7:].strip()
+    return token or None
 
 
 class BearerAuthStrategy:
-    """Authenticate a user from Bearer token."""
+    """Authenticate a user from Bearer token.
+
+    The server access token maps to ``token_user``. A session id from
+    ``POST /api/auth/login`` maps to that user.
+    """
 
     def authenticate(self, handler: Any) -> dict[str, Any] | None:
-        auth_header = handler.request.headers.get("Authorization")
-        if not isinstance(auth_header, str) or not auth_header.startswith("Bearer "):
+        token = bearer_token(handler)
+        if not token:
             return None
-        token = auth_header.split(" ")[1]
         current_access_token = config_module.ACCESS_TOKEN
-        if not isinstance(current_access_token, str) or not current_access_token:
+        if isinstance(current_access_token, str) and current_access_token:
+            if verify_auth_secret(token, current_access_token):
+                return {"username": "token_user", "role": "user"}
+        from aird.db.sessions import get_session, touch_session
+
+        db_conn = _handler_db_conn(handler)
+        if db_conn is None:
             return None
-        if verify_auth_secret(token, current_access_token):
-            return {"username": "token_user", "role": "user"}
-        return None
+        stored = get_session(db_conn, token)
+        if stored is None:
+            return None
+        touch_session(db_conn, token)
+        return _user_from_stored_session(handler, stored, token)
+
+
+def client_wants_json(handler: Any) -> bool:
+    """True when the client asked for a JSON body."""
+    accept = handler.request.headers.get("Accept") or ""
+    for part in accept.split(","):
+        if part.split(";", 1)[0].strip().lower() == "application/json":
+            return True
+    return False
+
+
+def bearer_authenticates(handler: Any) -> bool:
+    """True when Authorization Bearer is a valid access token or session id.
+
+    A present but invalid bearer does not count, so a browser session cannot
+    skip CSRF by sending a junk Authorization header.
+    """
+    return BearerAuthStrategy().authenticate(handler) is not None
 
 
 class ChainedAuthStrategy:
@@ -776,6 +820,23 @@ class BaseHandler(tornado.web.RequestHandler):
             raise tornado.web.HTTPError(403, decision.reason)
         return decision
 
+    def check_xsrf_cookie(self):
+        """Cookie sessions keep CSRF. A valid bearer credential does not need it."""
+        if bearer_authenticates(self):
+            return
+        super().check_xsrf_cookie()
+
+    def write(self, chunk):
+        """Plain-text errors become ``{"error": ...}`` when the client wants JSON."""
+        status = self.get_status()
+        if status >= 400 and client_wants_json(self) and isinstance(chunk, (str, bytes)):
+            text = chunk.decode("utf-8", errors="replace") if isinstance(chunk, bytes) else chunk
+            stripped = text.lstrip()
+            if stripped and not stripped.startswith("<") and not stripped.startswith("{"):
+                self.set_header("Content-Type", "application/json; charset=utf-8")
+                chunk = {"error": text}
+        return super().write(chunk)
+
     def write_json_error(self, status: int, message: str) -> None:
         self.set_status(status)
         self.write({"error": message})
@@ -830,7 +891,7 @@ class BaseHandler(tornado.web.RequestHandler):
 
     def respond_mutation(self, location: str, payload: dict | None = None) -> None:
         """JSON body when Accept is application/json, otherwise redirect."""
-        if self.request.headers.get("Accept") == "application/json":
+        if client_wants_json(self):
             self.set_header("Content-Type", "application/json")
             self.write({"ok": True} if payload is None else payload)
             return
