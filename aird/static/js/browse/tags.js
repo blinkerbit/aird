@@ -140,15 +140,20 @@ function renderTagChips(chipsEl, pendingTags, onRemove, colorable, onColor, onPr
   bindChipColorInputs(chipsEl, onColor, onPreview);
 }
 
+export function normalizeTagToken(raw) {
+  return String(raw || '').trim().toLowerCase().replaceAll(/\s+/g, '-');
+}
+
 function commitTagInput(inputEl, pendingTags) {
   inputEl.value.split(',')
-    .map(function (s) { return s.trim().toLowerCase().replaceAll(/\s+/g, '-'); })
+    .map(normalizeTagToken)
     .filter(Boolean)
     .forEach(function (t) {
       pendingTags.add(t);
       noteRecentTag(t);
     });
   inputEl.value = '';
+  inputEl.dataset.tagBrowse = '';
 }
 
 function collectKnownTagNames() {
@@ -169,10 +174,23 @@ function mergeTagNames(target, extra) {
 }
 
 function suggestionMatches(names, pendingTags, q, excludeSet) {
+  const token = normalizeTagToken(q);
   return names.filter(function (n) {
     if (pendingTags.has(n) || excludeSet?.has(n)) return false;
-    return !q || n.includes(q);
+    if (!q) return true;
+    return n.includes(q) || (token && token !== q && n.includes(token));
   });
+}
+
+export function planTagSuggestions(names, pendingTags, query, excludeSet, browseAll) {
+  const q = String(query || '').trim().toLowerCase();
+  const token = normalizeTagToken(query);
+  if (!q && !browseAll) return { matches: [], create: '' };
+  const matches = sortTagSuggestions(
+    suggestionMatches(names, pendingTags, browseAll && !q ? '' : q, excludeSet)
+  );
+  const taken = !token || pendingTags.has(token) || excludeSet?.has(token) || names.includes(token);
+  return { matches: matches, create: taken ? '' : token };
 }
 
 function nextSuggestionIndex(idx, len, key) {
@@ -195,14 +213,31 @@ function sortTagSuggestions(matches) {
   });
 }
 
+function hideTagSuggestions(sugId) {
+  const sug = document.getElementById(sugId);
+  if (!sug) return;
+  sug.hidden = true;
+  sug.innerHTML = '';
+}
+
+function suggestionOptionHtml(name) {
+  const hex = getTagColors()[name];
+  const swatch = hex
+    ? '<span class="tag-picker-suggestion-swatch" style="background:' + escapeAttr(hex) + '"></span>'
+    : '';
+  return '<div class="tag-picker-suggestion-item" role="option" data-sug="' + escapeAttr(name) + '">'
+    + swatch + escapeHtml(name) + '</div>';
+}
+
 function renderTagSuggestions(inputEl, existingTagNames, pendingTags, onPick, excludeSet, suggestionsId) {
   const sugId = suggestionsId ?? 'tagPickerSuggestions';
-  const q = inputEl.value.trim().toLowerCase();
-  let matches = suggestionMatches(existingTagNames, pendingTags, q, excludeSet);
-  if (q && !matches.length) {
-    matches = suggestionMatches(existingTagNames, pendingTags, '', excludeSet);
-  }
-  matches = sortTagSuggestions(matches);
+  const plan = planTagSuggestions(
+    existingTagNames,
+    pendingTags,
+    inputEl.value,
+    excludeSet,
+    inputEl.dataset.tagBrowse === '1',
+  );
   let sug = document.getElementById(sugId);
   if (!sug) {
     sug = document.createElement('div');
@@ -211,22 +246,71 @@ function renderTagSuggestions(inputEl, existingTagNames, pendingTags, onPick, ex
     inputEl.parentNode.classList.add('tag-picker-input-wrap');
     inputEl.after(sug);
   }
-  sug.hidden = !matches.length;
-  sug.innerHTML = matches.map(function (n) {
-    const hex = getTagColors()[n];
-    const swatch = hex
-      ? '<span class="tag-picker-suggestion-swatch" style="background:' + escapeAttr(hex) + '"></span>'
-      : '';
-    return '<div class="tag-picker-suggestion-item" role="option" data-sug="' + escapeAttr(n) + '">'
-      + swatch + escapeHtml(n) + '</div>';
-  }).join('');
-  sug.querySelectorAll('[data-sug]').forEach(function (el) {
+  const createHtml = plan.create
+    ? '<div class="tag-picker-suggestion-item" role="option" data-create="' + escapeAttr(plan.create) + '">'
+      + 'Add “' + escapeHtml(plan.create) + '”</div>'
+    : '';
+  sug.hidden = !plan.matches.length && !plan.create;
+  sug.innerHTML = createHtml + plan.matches.map(suggestionOptionHtml).join('');
+  sug.querySelectorAll('[data-sug], [data-create]').forEach(function (el) {
     el.addEventListener('mousedown', function (e) {
       e.preventDefault();
-      onPick(el.dataset.sug);
+      inputEl.dataset.tagBrowse = '';
+      onPick(el.dataset.create || el.dataset.sug);
     });
   });
   if (sugId === 'rowTagPopoverSuggestions') scheduleRowTagPopoverPosition();
+}
+
+function handleTagInputKey(e, inputEl, sugId, pendingTags, pick, refresh) {
+  if (e.key === 'Escape') {
+    const open = document.getElementById(sugId);
+    if (open && !open.hidden) {
+      e.preventDefault();
+      e.stopPropagation();
+      inputEl.dataset.tagBrowse = '';
+      hideTagSuggestions(sugId);
+    }
+    return;
+  }
+  if (e.key === 'ArrowDown' && !inputEl.value.trim()) inputEl.dataset.tagBrowse = '1';
+  const sug = document.getElementById(sugId);
+  const items = sug && !sug.hidden ? [...sug.querySelectorAll('[data-sug], [data-create]')] : [];
+  if (e.key === 'ArrowDown' && !items.length && inputEl.dataset.tagBrowse === '1') {
+    renderFromKey();
+    return;
+  }
+  const active = sug?.querySelector('.is-active');
+  const idx = items.indexOf(active);
+  if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && items.length) {
+    e.preventDefault();
+    const next = nextSuggestionIndex(idx, items.length, e.key);
+    items.forEach(function (el) { el.classList.remove('is-active'); });
+    items[next].classList.add('is-active');
+    items[next].scrollIntoView({ block: 'nearest' });
+    return;
+  }
+  const chosen = active?.dataset.create || active?.dataset.sug;
+  if (e.key === 'Enter' && chosen) {
+    e.preventDefault();
+    inputEl.dataset.tagBrowse = '';
+    pick(chosen);
+    return;
+  }
+  if (e.key === 'Enter' || e.key === ',') {
+    e.preventDefault();
+    inputEl.dataset.tagBrowse = '';
+    commitTagInput(inputEl, pendingTags);
+    refresh();
+  }
+
+  function renderFromKey() {
+    e.preventDefault();
+    refresh();
+    const opened = document.getElementById(sugId);
+    const first = opened?.querySelector('[data-sug], [data-create]');
+    first?.classList.add('is-active');
+  }
 }
 
 
@@ -245,6 +329,7 @@ function setupTagPickerListeners(inputEl, chipsEl, pendingTags, existingTagNames
     pendingTags.add(tag);
     noteRecentTag(tag);
     inputEl.value = '';
+    inputEl.dataset.tagBrowse = '';
     refresh();
   }
 
@@ -257,30 +342,10 @@ function setupTagPickerListeners(inputEl, chipsEl, pendingTags, existingTagNames
   }
 
   inputEl.addEventListener('keydown', function (e) {
-    const sug = document.getElementById(sugId);
-    const items = sug ? [...sug.querySelectorAll('[data-sug]')] : [];
-    const active = sug?.querySelector('.is-active');
-    const idx = items.indexOf(active);
-    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && items.length) {
-      e.preventDefault();
-      const next = nextSuggestionIndex(idx, items.length, e.key);
-      items.forEach(function (el) { el.classList.remove('is-active'); });
-      items[next].classList.add('is-active');
-      items[next].scrollIntoView({ block: 'nearest' });
-      return;
-    }
-    if (e.key === 'Enter' && active?.dataset.sug) {
-      e.preventDefault();
-      pick(active.dataset.sug);
-      return;
-    }
-    if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault();
-      commitTagInput(inputEl, pendingTags);
-      refresh();
-    }
+    handleTagInputKey(e, inputEl, sugId, pendingTags, pick, refresh);
   }, opts);
   inputEl.addEventListener('input', function () {
+    inputEl.dataset.tagBrowse = '';
     if (inputEl.value.includes(',')) {
       commitTagInput(inputEl, pendingTags);
       refresh();
@@ -288,8 +353,9 @@ function setupTagPickerListeners(inputEl, chipsEl, pendingTags, existingTagNames
     }
     renderTagSuggestions(inputEl, existingTagNames, pendingTags, pick, excludeSet, sugId);
   }, opts);
-  inputEl.addEventListener('focus', function () {
-    renderTagSuggestions(inputEl, existingTagNames, pendingTags, pick, excludeSet, sugId);
+  inputEl.addEventListener('blur', function () {
+    inputEl.dataset.tagBrowse = '';
+    hideTagSuggestions(sugId);
   }, opts);
   return refresh;
 }
