@@ -15,6 +15,10 @@ def test_vapid_keys_persist(tmp_path, monkeypatch):
     a = load_or_create_vapid(str(tmp_path))
     assert a["public_key"]
     assert "BEGIN" in a["private_pem"]
+    from aird.pwa.vapid import vapid_private_key_for_webpush
+
+    raw = vapid_private_key_for_webpush(a["private_pem"])
+    assert raw and "BEGIN" not in raw
     clear_vapid_cache()
     b = load_or_create_vapid(str(tmp_path))
     assert a["public_key"] == b["public_key"]
@@ -48,4 +52,6 @@ def test_manifest_and_sw_files_exist():
     assert (root / "img" / "pwa-icon-512.png").is_file()
     data = json.loads((root / "manifest.webmanifest").read_text(encoding="utf-8"))
     assert data["display"] == "standalone"
-    assert data["start_url"] == "/files/"
+    assert data["start_url"] == "/static/pwa-shell.html"
+    assert data["scope"] == "/"
+    assert (root / "pwa-shell.html").is_file()

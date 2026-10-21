@@ -72,6 +72,19 @@ def vapid_public_key(root_dir: str | None = None) -> str:
     return load_or_create_vapid(root_dir)["public_key"]
 
 
+def vapid_private_key_for_webpush(private_pem: str) -> str:
+    """Return the raw P-256 private key pywebpush can sign with.
+
+    Stored keys are PEM. Current pywebpush treats a PEM string as raw DER and
+    refuses to sign, so every push fails before it reaches the phone.
+    """
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
+
+    key = load_pem_private_key(private_pem.encode("utf-8"), password=None)
+    raw = key.private_numbers().private_value.to_bytes(32, "big")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
 def clear_vapid_cache() -> None:
     global _cached
     _cached = None

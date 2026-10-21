@@ -52,7 +52,8 @@ def _try_send_one_subscription(
             data=body,
             vapid_private_key=vapid_private_key,
             vapid_claims=claims,
-            ttl=60,
+            ttl=86400,
+            headers={"Urgency": "high"},
         )
         return True
     except WebPushException as exc:
@@ -61,7 +62,7 @@ def _try_send_one_subscription(
             404,
             410,
         ):
-            logger.debug("web push failed for %s: %s", username, exc)
+            logger.warning("web push failed for %s: %s", username, exc)
     except Exception:
         logger.debug("web push error for %s", username, exc_info=True)
     return False
@@ -83,7 +84,7 @@ def send_web_push(
         return 0
 
     from aird.pwa import store as push_store
-    from aird.pwa.vapid import load_or_create_vapid
+    from aird.pwa.vapid import load_or_create_vapid, vapid_private_key_for_webpush
 
     subs = push_store.subscriptions_for_user(conn, username)
     if not subs:
@@ -92,6 +93,7 @@ def send_web_push(
     vapid = load_or_create_vapid()
     body = json.dumps(payload)
     claims = {"sub": vapid.get("subject") or "mailto:aird@localhost"}
+    vapid_private_key = vapid_private_key_for_webpush(vapid["private_pem"])
     return sum(
         1
         for sub in subs
@@ -100,7 +102,7 @@ def send_web_push(
             username,
             sub,
             body=body,
-            vapid_private_key=vapid["private_pem"],
+            vapid_private_key=vapid_private_key,
             claims=claims,
         )
     )

@@ -3,17 +3,27 @@
  */
 'use strict';
 
-const CACHE_NAME = 'aird-pwa-v1';
+const CACHE_NAME = 'aird-pwa-v3';
+const SHELL = '/static/pwa-shell.html';
 const PRECACHE = [
+  SHELL,
+  '/manifest.webmanifest',
   '/static/img/pwa-icon-192.png',
   '/static/img/pwa-icon-512.png',
-  '/static/manifest.webmanifest',
 ];
 
 globalThis.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE)).then(() => globalThis.skipWaiting())
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    await Promise.all(PRECACHE.map(async (url) => {
+      try {
+        await cache.add(url);
+      } catch {
+        /* one missing asset must not block install */
+      }
+    }));
+    await globalThis.skipWaiting();
+  })());
 });
 
 globalThis.addEventListener('activate', (event) => {
@@ -24,6 +34,28 @@ globalThis.addEventListener('activate', (event) => {
       await globalThis.clients.claim();
     })()
   );
+});
+
+globalThis.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
+  event.respondWith((async () => {
+    try {
+      const res = await fetch(event.request);
+      if (res.ok && event.request.mode === 'navigate') {
+        const cache = await caches.open(CACHE_NAME);
+        cache.put(event.request, res.clone());
+      }
+      return res;
+    } catch (err) {
+      const cached = await caches.match(event.request);
+      if (cached) return cached;
+      if (event.request.mode === 'navigate') {
+        const shell = await caches.match(SHELL);
+        if (shell) return shell;
+      }
+      throw err;
+    }
+  })());
 });
 
 globalThis.addEventListener('sync', (event) => {
@@ -59,18 +91,38 @@ async function handlePush(event) {
 
   const title = data.title || data.sender || 'Aird';
   const body = data.body || data.preview || 'New message';
-  const convId = data.conversation_id || data.tag || '';
+  const convId = String(data.conversation_id || '');
   const url = data.url || (convId ? `/chat?c=${encodeURIComponent(convId)}` : '/chat');
   const tag = data.tag || (convId ? `aird-chat-${convId}` : 'aird-notify');
+  const unread = Number(data.unread_total);
 
-  await globalThis.registration.showNotification(title, {
-    body,
-    icon: '/static/img/pwa-icon-192.png',
-    badge: '/static/img/pwa-icon-192.png',
-    tag,
-    renotify: true,
-    data: { url, conversation_id: convId, ...data },
-  });
+  const windows = await globalThis.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  const onThisChat = windows.some((client) => client.visibilityState === 'visible' && viewingChat(client.url, convId));
+  if (!onThisChat) {
+    await globalThis.registration.showNotification(title, {
+      body,
+      icon: '/static/img/pwa-icon-192.png',
+      badge: '/static/img/pwa-icon-192.png',
+      tag,
+      renotify: true,
+      vibrate: [80, 40, 80],
+      data: { url, conversation_id: convId },
+    });
+  }
+  if (typeof navigator.setAppBadge === 'function' && Number.isFinite(unread)) {
+    if (unread > 0) await navigator.setAppBadge(unread);
+    else await navigator.clearAppBadge();
+  }
+}
+
+function viewingChat(clientUrl, convId) {
+  if (!convId) return false;
+  try {
+    const url = new URL(clientUrl);
+    return url.pathname === '/chat' && url.searchParams.get('c') === convId;
+  } catch {
+    return false;
+  }
 }
 
 globalThis.addEventListener('notificationclick', (event) => {
