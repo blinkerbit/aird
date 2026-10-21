@@ -37,16 +37,25 @@ def _write_json(handler: BaseHandler, payload: dict[str, Any], *, status: int | 
 class ManifestHandler(tornado.web.RequestHandler):
     """GET /manifest.webmanifest"""
 
+    def head(self):
+        self.get()
+
     def get(self):
         path = _static_file("manifest.webmanifest")
         self.set_header("Content-Type", "application/manifest+json; charset=utf-8")
         self.set_header("Cache-Control", "no-cache")
         with open(path, "rb") as fh:
-            self.write(fh.read())
+            body = fh.read()
+        self.set_header("Content-Length", str(len(body)))
+        if self.request.method != "HEAD":
+            self.write(body)
 
 
 class ServiceWorkerHandler(tornado.web.RequestHandler):
     """Serve the PWA service worker from site root (scope /)."""
+
+    def head(self):
+        self.get()
 
     def get(self):
         sw_path = _static_js("sw.js")
@@ -55,7 +64,10 @@ class ServiceWorkerHandler(tornado.web.RequestHandler):
         self.set_header("Cache-Control", "no-store, must-revalidate")
         self.set_header("Pragma", "no-cache")
         with open(sw_path, "rb") as fh:
-            self.write(fh.read())
+            body = fh.read()
+        self.set_header("Content-Length", str(len(body)))
+        if self.request.method != "HEAD":
+            self.write(body)
 
 
 class PwaVapidPublicKeyHandler(BaseHandler):

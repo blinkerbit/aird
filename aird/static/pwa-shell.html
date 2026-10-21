@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aird</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#1d232a" />
+  <link rel="icon" href="/static/favicon.png" type="image/png" />
+  <style>
+    html, body { margin: 0; height: 100%; background: #1d232a; color: #e5e7eb; font: 16px/1.4 system-ui, sans-serif; display: grid; place-items: center; }
+  </style>
+</head>
+<body>
+  <p id="msg">Opening Aird…</p>
+  <script>
+    if (navigator.onLine) {
+      location.replace('/files/');
+    } else {
+      document.getElementById('msg').textContent = 'Aird is offline.';
+    }
+  </script>
+</body>
+</html>

@@ -62,6 +62,7 @@ def dispatch_message(msg: dict, *, sender_id: int, sender_username: str) -> None
                 "conversation_id": conv_id,
                 "url": f"/chat?c={conv_id}",
                 "tag": f"aird-chat-{conv_id}",
+                "unread_total": total,
             },
         )
 

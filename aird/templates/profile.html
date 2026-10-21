@@ -646,7 +646,12 @@
     const chatToggle = document.getElementById('chatBrowserNotify');
     const chatMsg = document.getElementById('chatNotifyMsg');
     if (chatToggle) {
-      chatToggle.checked = localStorage.getItem('aird.chat.browserNotify') !== '0';
+      const notifyOff = localStorage.getItem('aird.chat.browserNotify') === '0';
+      const notifyGranted = 'Notification' in globalThis && Notification.permission === 'granted';
+      chatToggle.checked = !notifyOff && notifyGranted;
+      if (chatToggle.checked && globalThis.AirdPwa?.subscribePush) {
+        globalThis.AirdPwa.subscribePush().catch(function () {});
+      }
       chatToggle.addEventListener('change', async function () {
         if (chatToggle.checked) {
           try {

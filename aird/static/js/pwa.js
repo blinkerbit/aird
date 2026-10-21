@@ -37,10 +37,6 @@ import { apiFetch } from './core/http.js';
     if (swReg) return swReg;
     try {
       swReg = await navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' });
-      // Also keep legacy URL registered clients migrating
-      try {
-        await navigator.serviceWorker.register('/sw-transfer.js', { scope: '/', updateViaCache: 'none' });
-      } catch { /* ignore */ }
       return swReg;
     } catch (err) {
       console.debug('SW register failed', err);
@@ -191,6 +187,41 @@ import { apiFetch } from './core/http.js';
     return true;
   }
 
+  function showPushBanner() {
+    if (qs('airdPushBanner')) return;
+    const bar = document.createElement('div');
+    bar.id = 'airdPushBanner';
+    bar.className = 'alert alert-info shadow-lg fixed bottom-4 inset-x-4 z-50 max-w-md mx-auto';
+    bar.innerHTML = `
+      <span class="text-sm">Turn on chat notifications for this app.</span>
+      <div class="flex gap-2">
+        <button type="button" class="btn btn-primary btn-sm" data-enable>Enable</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-dismiss>Not now</button>
+      </div>`;
+    document.body.appendChild(bar);
+    bar.querySelector('[data-enable]').addEventListener('click', () => {
+      subscribePush()
+        .then(() => bar.remove())
+        .catch(() => bar.remove());
+    });
+    bar.querySelector('[data-dismiss]').addEventListener('click', () => {
+      localStorage.setItem(LS_NOTIFY, '0');
+      bar.remove();
+    });
+  }
+
+  function ensureInstalledPush() {
+    if (!isStandalone()) return;
+    if (document.documentElement.dataset.airdUser !== '1') return;
+    if (localStorage.getItem(LS_NOTIFY) === '0') return;
+    if (!('Notification' in globalThis)) return;
+    if (Notification.permission === 'granted') {
+      subscribePush().catch((err) => console.debug('installed push subscribe', err));
+      return;
+    }
+    if (Notification.permission === 'default') showPushBanner();
+  }
+
   function boot() {
     const btn = qs('airdPwaInstallBtn');
     if (btn) {
@@ -214,6 +245,7 @@ import { apiFetch } from './core/http.js';
     });
 
     updateInstallButton();
+    ensureInstalledPush();
     ensureServiceWorker().then((reg) => {
       if (!reg) return;
       // Re-sync subscription if permission already granted

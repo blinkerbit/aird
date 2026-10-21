@@ -52,35 +52,6 @@ import { escapeHtml } from './core/dom-safe.js';
     setTimeout(() => toast.remove(), 5000);
   }
 
-  function maybeBrowserNotify(payload) {
-    if (!document.hidden) return;
-    if (localStorage.getItem('aird.chat.browserNotify') === '0') return;
-    if (!('Notification' in window) || Notification.permission !== 'granted') return;
-    // Prefer service-worker notifications (required for installed PWAs / mobile).
-    if (globalThis.AirdPwa?.showViaServiceWorker) {
-      globalThis.AirdPwa.showViaServiceWorker(payload).then((ok) => {
-        if (ok) return;
-        tryPageNotification(payload);
-      }).catch(() => tryPageNotification(payload));
-      return;
-    }
-    tryPageNotification(payload);
-  }
-
-  function tryPageNotification(payload) {
-    try {
-      const n = new Notification(`${payload.sender || 'Aird'}`, {
-        body: payload.preview || 'New message',
-        icon: '/static/img/pwa-icon-192.png',
-        tag: `aird-chat-${payload.conversation_id}`,
-      });
-      n.onclick = () => {
-        window.focus();
-        location.href = `/chat?c=${encodeURIComponent(payload.conversation_id)}`;
-      };
-    } catch (err) { console.debug('browser notify failed', err); }
-  }
-
   function onNotify(payload) {
     if (location.pathname === '/chat') {
       const params = new URLSearchParams(location.search);
@@ -88,8 +59,7 @@ import { escapeHtml } from './core/dom-safe.js';
     }
     updateBadge(payload.unread_total ?? null);
     if (payload.unread_total == null) void refreshUnread();
-    showToast(payload);
-    maybeBrowserNotify(payload);
+    if (!document.hidden) showToast(payload);
   }
 
   function onChatEvent(data) {
