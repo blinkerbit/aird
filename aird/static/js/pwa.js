@@ -244,6 +244,19 @@ import { apiFetch } from './core/http.js';
       }
     });
 
+    document.addEventListener('submit', (event) => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement)) return;
+      let path = '';
+      try {
+        path = new URL(form.action, globalThis.location.href).pathname;
+      } catch {
+        return;
+      }
+      if (path !== '/logout' && path !== '/api/auth/logout') return;
+      navigator.serviceWorker?.controller?.postMessage({ type: 'aird-clear-pages' });
+    });
+
     updateInstallButton();
     ensureInstalledPush();
     void ensureServiceWorker().then((reg) => {

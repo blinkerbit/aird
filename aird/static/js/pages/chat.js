@@ -22,6 +22,7 @@ import { apiFetch } from '../core/http.js';
   'use strict';
 
   const REACTIONS = ['👍', '❤️', '😂', '🎉'];
+  let identityReady = Promise.resolve();
   const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'jpe', 'jif', 'jfif', 'png', 'gif', 'bmp', 'webp', 'tiff', 'tif', 'svg', 'ico', 'avif', 'heic', 'heif', 'dng', 'cr2', 'nef', 'arw', 'orf', 'rw2', 'raf', 'raw']);
   let pendingBrowseAttachQueue = takePendingBrowseAttachAll();
 
@@ -226,6 +227,7 @@ import { apiFetch } from '../core/http.js';
   }
 
   async function e2eReady(convId) {
+    await identityReady;
     if (!E2E?.ready()) return false;
     try {
       const conv = conversations.find((c) => c.id === convId);
@@ -571,12 +573,10 @@ import { apiFetch } from '../core/http.js';
     }
   }
 
-  async function loadConversations() {
-    const data = await api('/api/chat/conversations');
-    conversations = data.conversations || [];
-    conversations.forEach(mergeConvMemberPresence);
+  async function fillEncryptedPreviews() {
+    if (!E2E?.ready()) return;
     await Promise.all(conversations.map(async (c) => {
-      if (!c.last_e2e || c.request || !E2E?.ready()) return;
+      if (!c.last_e2e || c.request) return;
       try {
         await e2eReady(c.id);
         const result = await decryptPayload(c.id, c.last_e2e);
@@ -588,6 +588,14 @@ import { apiFetch } from '../core/http.js';
       } catch (err) { console.debug('conv preview decrypt failed', err); }
     }));
     renderConvList();
+  }
+
+  async function loadConversations() {
+    const data = await api('/api/chat/conversations');
+    conversations = data.conversations || [];
+    conversations.forEach(mergeConvMemberPresence);
+    renderConvList();
+    await fillEncryptedPreviews();
     runAsync(() => updateNavBadge(), 'updateNavBadge');
   }
 
@@ -2317,10 +2325,12 @@ import { apiFetch } from '../core/http.js';
       WS.subscribe(handleWsEvent);
     }
     const start = async () => {
-      if (E2E && me) {
-        try { await E2E.init(me, api); } catch (err) { console.warn('chat e2e', err); }
-      }
+      identityReady = (E2E && me)
+        ? E2E.init(me, api).catch((err) => { console.warn('chat e2e', err); })
+        : Promise.resolve();
       await loadConversations();
+      await identityReady;
+      await fillEncryptedPreviews();
       const initialConv = new URLSearchParams(location.search).get('c');
       if (pendingBrowseAttachQueue.length && !initialConv) {
         const first = pendingBrowseAttachQueue[0];
