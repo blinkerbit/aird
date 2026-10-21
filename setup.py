@@ -60,7 +60,7 @@ extras_require = {
 
 setup(
     name="aird",
-    version="0.5.7",
+    version="0.5.8",
     packages=find_packages(exclude=["aird.ms", "aird.ms.*"]),
     cmdclass={"build_py": BuildPyWithFrontend, "sdist": SdistWithFrontend},
     include_package_data=True,
