@@ -1,0 +1,19 @@
+# Aird LiveKit — matches dx6si-PORT.aiccloud.online firewall pattern.
+# Signaling: TCP 8899 → wss://dx6si-8899.aiccloud.online
+# Media: TCP 8900 (ICE/TCP), UDP 8901 (ICE/UDP mux) — open separately on the firewall.
+
+port: 8899
+
+log_level: info
+
+rtc:
+  tcp_port: 8900
+  udp_port: 8901
+  use_external_ip: true
+  allow_tcp_fallback: true
+
+room:
+  auto_create: true
+  empty_timeout: 300
+
+# API keys are injected via LIVEKIT_KEYS in docker-compose (not committed).

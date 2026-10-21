@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 from typing import TYPE_CHECKING
 
@@ -19,18 +20,24 @@ logger = logging.getLogger(__name__)
 
 
 class ChatHub:
-    """Track WebSocket connections per user id (in-process)."""
+    """Track WebSocket connections per user id.
+
+    Sockets stay in the worker that accepted them. Presence and deliveries
+    are repeated to other workers through the chat hub bus.
+    """
 
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._by_user: dict[int, set[ChatWebSocketHandler]] = {}
         self._username: dict[int, str] = {}
+        self._remote: dict[int, dict[int, str]] = {}
 
     def add(self, user_id: int, handler: ChatWebSocketHandler, username: str = "") -> None:
         with self._lock:
             self._by_user.setdefault(user_id, set()).add(handler)
             if username:
                 self._username[user_id] = username
+        self.publish_presence()
 
     def remove(self, user_id: int, handler: ChatWebSocketHandler) -> None:
         with self._lock:
@@ -40,18 +47,87 @@ class ChatHub:
             bucket.discard(handler)
             if not bucket:
                 self._by_user.pop(user_id, None)
+        self.publish_presence()
+
+    def _remote_has(self, user_id: int) -> bool:
+        return any(user_id in bucket for bucket in self._remote.values())
 
     def is_online(self, user_id: int) -> bool:
         with self._lock:
-            return bool(self._by_user.get(user_id))
+            return bool(self._by_user.get(user_id)) or self._remote_has(user_id)
 
     def online_user_ids(self) -> set[int]:
         with self._lock:
-            return {uid for uid, bucket in self._by_user.items() if bucket}
+            ids = {uid for uid, bucket in self._by_user.items() if bucket}
+            for bucket in self._remote.values():
+                ids.update(bucket)
+            return ids
 
     def username_for(self, user_id: int) -> str | None:
         with self._lock:
-            return self._username.get(user_id)
+            name = self._username.get(user_id)
+            if name:
+                return name
+            for bucket in self._remote.values():
+                found = bucket.get(user_id)
+                if found:
+                    return found
+            return None
+
+    def online_usernames(self) -> set[str]:
+        with self._lock:
+            names = {
+                self._username[user_id]
+                for user_id, sockets in self._by_user.items()
+                if sockets and user_id in self._username
+            }
+            for bucket in self._remote.values():
+                names.update(name for name in bucket.values() if name)
+            return names
+
+    def publish_presence(self) -> None:
+        with self._lock:
+            online = [
+                {"id": uid, "username": self._username.get(uid, "")}
+                for uid, sockets in self._by_user.items()
+                if sockets
+            ]
+        self._bus({"op": "presence", "worker": os.getpid(), "online": online})
+
+    def handle_bus_frame(self, frame: dict) -> None:
+        op = frame.get("op")
+        if op == "presence":
+            worker = frame.get("worker")
+            if worker == os.getpid():
+                return
+            mapped: dict[int, str] = {}
+            for item in frame.get("online") or []:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    mapped[int(item["id"])] = str(item.get("username") or "")
+                except (KeyError, TypeError, ValueError):
+                    continue
+            with self._lock:
+                self._remote[worker] = mapped
+            return
+        if op != "deliver":
+            return
+        payload = frame.get("payload")
+        if not isinstance(payload, dict):
+            return
+        ids: list[int] = []
+        for uid in frame.get("user_ids") or []:
+            try:
+                ids.append(int(uid))
+            except (TypeError, ValueError):
+                continue
+        self._deliver_local(ids, payload)
+
+    def _bus(self, frame: dict) -> None:
+        from aird.plugins.chat.hub_bus import publish
+
+        publish(frame)
 
     def _schedule_send(self, handler: ChatWebSocketHandler, raw: str) -> None:
         loop = tornado.ioloop.IOLoop.current(instance=False)
@@ -77,12 +153,24 @@ class ChatHub:
         except RuntimeError:
             _write()
 
-    def send_to_user(self, user_id: int, payload: dict) -> None:
-        with self._lock:
-            targets = list(self._by_user.get(user_id, ()))
+    def _deliver_local(self, user_ids: list[int], payload: dict) -> None:
         raw = json.dumps(payload)
+        targets: list[ChatWebSocketHandler] = []
+        with self._lock:
+            for uid in user_ids:
+                targets.extend(self._by_user.get(uid, ()))
         for handler in targets:
             self._schedule_send(handler, raw)
+
+    def _publish_deliver(self, user_ids: list[int], payload: dict) -> None:
+        if not user_ids:
+            return
+        self._bus({"op": "deliver", "user_ids": user_ids, "payload": payload})
+
+    def send_to_user(self, user_id: int, payload: dict) -> None:
+        ids = [int(user_id)]
+        self._deliver_local(ids, payload)
+        self._publish_deliver(ids, payload)
 
     def broadcast_user_ids(
         self,
@@ -91,10 +179,16 @@ class ChatHub:
         *,
         exclude_user_id: int | None = None,
     ) -> None:
+        ids: list[int] = []
         for uid in user_ids:
-            if exclude_user_id is not None and uid == exclude_user_id:
+            parsed = int(uid)
+            if exclude_user_id is not None and parsed == int(exclude_user_id):
                 continue
-            self.send_to_user(int(uid), payload)
+            ids.append(parsed)
+        if not ids:
+            return
+        self._deliver_local(ids, payload)
+        self._publish_deliver(ids, payload)
 
 
 _chat_hub = ChatHub()

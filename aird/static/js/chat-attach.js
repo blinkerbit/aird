@@ -131,14 +131,106 @@ export function droppedFiles(dataTransfer) {
     .filter(Boolean);
 }
 
+const STICKER_EXT = {
+  'image/png': 'png',
+  'image/apng': 'png',
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/avif': 'avif',
+  'image/bmp': 'bmp',
+  'image/heic': 'heic',
+  'image/heif': 'heif',
+};
+
 export function clipboardFiles(clipboardData) {
   if (!clipboardData) return [];
   const fromList = [...(clipboardData.files || [])].filter(Boolean);
   if (fromList.length) return fromList;
   return [...(clipboardData.items || [])]
-    .filter((item) => item.kind === 'file')
-    .map((item) => item.getAsFile())
+    .filter((item) => item.kind === 'file' || String(item.type || '').startsWith('image/'))
+    .map((item) => item.getAsFile?.())
     .filter(Boolean);
+}
+
+function imageExt(type) {
+  const mime = String(type || '').toLowerCase().split(';')[0].trim();
+  return STICKER_EXT[mime] || 'png';
+}
+
+export function stickerFileName(type, index = 0) {
+  return `sticker-${index}.${imageExt(type)}`;
+}
+
+export function imageFileName(type, index = 0) {
+  return `image-${index}.${imageExt(type)}`;
+}
+
+function imageMime(file) {
+  const type = String(file?.type || '').toLowerCase().split(';')[0].trim();
+  const ext = String(file?.name || '').split('.').pop().toLowerCase();
+  const image = type.startsWith('image/') || Object.values(STICKER_EXT).includes(ext);
+  if (!image) return '';
+  return type.startsWith('image/') ? type : `image/${ext === 'jpg' ? 'jpeg' : ext || 'png'}`;
+}
+
+function genericImageName(name) {
+  const base = String(name || '').trim().toLowerCase();
+  return !base || /^(image|blob|sticker|content)(\.(png|jpe?g|gif|webp|bmp|avif|heic|heif))?$/.test(base);
+}
+
+export function namedImageFile(file, index = 0) {
+  if (!file) return null;
+  const mime = imageMime(file);
+  if (!mime) return file;
+  if (file.name && !genericImageName(file.name)) return file;
+  return new File([file], imageFileName(mime, index), { type: mime });
+}
+
+export function asStickerFile(file, index = 0) {
+  if (!file) return null;
+  const mime = imageMime(file);
+  if (!mime) return file;
+  return new File([file], stickerFileName(mime, index), { type: mime });
+}
+
+export function fileFromDataUrl(src, index = 0) {
+  const match = /^data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/=\s]+)$/i.exec(String(src || '').trim());
+  if (!match) return null;
+  try {
+    const type = match[1].toLowerCase();
+    const binary = atob(match[2].replace(/\s/g, ''));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return new File([bytes], imageFileName(type, index), { type });
+  } catch {
+    return null;
+  }
+}
+
+export function filesFromClipboardHtml(html) {
+  if (!html || !String(html).includes('<img')) return [];
+  const re = /<img\b[^>]*\bsrc\s*=\s*["'](data:image\/[a-z0-9.+-]+;base64,[^"']+)["']/gi;
+  const out = [];
+  let match = re.exec(html);
+  while (match) {
+    const file = fileFromDataUrl(match[1], out.length);
+    if (file) out.push(file);
+    match = re.exec(html);
+  }
+  return out;
+}
+
+export function pastedStickers(clipboardData) {
+  const files = clipboardFiles(clipboardData)
+    .map((file, index) => namedImageFile(file, index))
+    .filter(Boolean);
+  const hasImage = files.some((file) => String(file.type || '').startsWith('image/'));
+  if (hasImage) return files;
+  let html = '';
+  try { html = clipboardData?.getData?.('text/html') || ''; } catch { html = ''; }
+  return files.concat(filesFromClipboardHtml(html));
 }
 
 const PENDING_ATTACH_KEY = 'aird.chat.pendingAttach';
@@ -212,10 +304,18 @@ export function createPendingStore({ limit = ATTACH_LIMIT } = {}) {
     return { ok: true };
   }
 
-  function stageBlob(file) {
+  function stageBlob(file, opts = {}) {
     if (!file) return { ok: false, reason: 'No file.' };
     if (items.length >= limit) return { ok: false, reason: `Up to ${limit} files per message` };
-    items.push({ id: `b:${Date.now()}:${file.name}:${items.length}`, name: file.name, file });
+    const asSticker = !!opts.asSticker || /^sticker-/i.test(file.name || '');
+    const stored = asSticker ? asStickerFile(file, items.length) : namedImageFile(file, items.length);
+    items.push({
+      id: `b:${Date.now()}:${stored.name}:${items.length}`,
+      name: stored.name,
+      file: stored,
+      sourceFile: file,
+      asSticker,
+    });
     return { ok: true };
   }
 

@@ -5,7 +5,11 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   attachAllowed,
   bindDropZone,
+  asStickerFile,
   clipboardFiles,
+  fileFromDataUrl,
+  namedImageFile,
+  pastedStickers,
   completePath,
   createBrowsePicker,
   createPendingStore,
@@ -86,6 +90,32 @@ describe('chat attach gates', () => {
       files: [],
       items: [{ kind: 'file', getAsFile: () => img }, { kind: 'string', getAsFile: () => null }],
     })).toEqual([img]);
+    const webp = new File(['w'], 'blob', { type: 'image/webp' });
+    expect(clipboardFiles({
+      files: [],
+      items: [{ kind: 'string', type: 'image/webp', getAsFile: () => webp }],
+    })).toEqual([webp]);
+  });
+
+  it('turns keyboard stickers into named image files', () => {
+    const webp = new File(['w'], 'image.webp', { type: 'image/webp' });
+    const shot = new File(['s'], 'Screenshot_1.jpg', { type: 'image/jpeg' });
+    expect(namedImageFile(webp, 0).name).toBe('image-0.webp');
+    expect(asStickerFile(shot, 1).name).toBe('sticker-1.jpg');
+    expect(namedImageFile(shot, 1)).toBe(shot);
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    expect(fileFromDataUrl(png, 2).type).toBe('image/png');
+    expect(fileFromDataUrl(png, 2).name).toBe('image-2.png');
+    const html = `<img src="${png}">`;
+    expect(pastedStickers({
+      files: [],
+      items: [],
+      getData: (kind) => (kind === 'text/html' ? html : ''),
+    }).map((f) => f.name)).toEqual(['image-0.png']);
+    expect(pastedStickers({
+      files: [webp],
+      getData: () => html,
+    })[0].name).toBe('image-0.webp');
   });
 });
 

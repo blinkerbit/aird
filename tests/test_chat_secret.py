@@ -1,4 +1,4 @@
-"""Enhanced Secure Chat stays in memory and never touches the mailbox."""
+"""Enhanced Secure Chat keeps ciphertext off the mailbox."""
 
 from __future__ import annotations
 
@@ -62,6 +62,34 @@ def test_enhanced_secure_rejects_private_key_material():
     epk["d"] = "secret"
     with pytest.raises(ValueError):
         hub.join("alice", room["room_id"], epk)
+
+
+def test_enhanced_secure_invite_reaches_another_process(tmp_path):
+    left = EnhancedSecureHub()
+    right = EnhancedSecureHub()
+    path = str(tmp_path / "enhanced-secure.sqlite3")
+    left.use_shared(path)
+    right.use_shared(path)
+    room = left.invite("alice", "bob")
+    left.join("alice", room["room_id"], _jwk(7))
+    left.enqueue("bob", {
+        "type": "enhanced_request",
+        "room_id": room["room_id"],
+        "from": "alice",
+        "epk": _jwk(7),
+    })
+    pending = right.pending_for("bob")
+    assert pending[0]["type"] == "enhanced_request"
+    assert pending[0]["room_id"] == room["room_id"]
+    notes = right.take_outbox({"bob"})
+    assert notes[0][0] == "bob"
+    assert notes[0][1]["type"] == "enhanced_request"
+    joined = right.join("bob", room["room_id"], _jwk(8))
+    assert joined["ready"] is True
+    peer, blob = left.relay("alice", room["room_id"], _blob())
+    assert peer == "bob"
+    assert blob["ct"]
+    assert "ct" not in left.pending_for("bob")[0]
 
 
 def test_enhanced_secure_invite_reuses_the_same_pair():

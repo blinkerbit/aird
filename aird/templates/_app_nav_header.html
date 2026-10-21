@@ -2,15 +2,19 @@
    Optional overrides: nav_search_path, nav_title.
    Layout: place this include inside the same outer wrapper as page content, e.g.
    <div class="container mx-auto p-4"> …header… …content… </div> (same as browse/share/search). #}
-<div class="navbar aird-nav bg-base-200 shadow-sm rounded-box mb-4 flex-wrap gap-2">
-  <div class="flex-1">
+<div class="navbar aird-nav bg-base-200 shadow-sm rounded-box mb-4 gap-2">
+  <div class="aird-nav-brand flex-1 min-w-0">
     <a href="/files/" class="btn btn-ghost text-xl font-extrabold tracking-wide gap-1.5 px-2 text-base-content" aria-label="Aird Home">
       <img src="/static/img/logo-icon.png" alt="" aria-hidden="true" class="h-8 w-auto shrink-0">
       {% set logo_height = 'h-6' %}
       {% include '_logo_text.html' %}
     </a>
   </div>
-  <div class="flex items-center gap-1 flex-wrap">
+  <button type="button" class="aird-nav-burger btn btn-ghost btn-sm btn-square" id="airdNavBurger" aria-label="Open menu" aria-expanded="false" aria-controls="airdNavActions">
+    <svg class="aird-nav-burger-open hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+    <svg class="aird-nav-burger-close hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+  </button>
+  <div class="aird-nav-actions flex items-center gap-1" id="airdNavActions">
     {% if current_user %}
     <a href="/profile" class="btn btn-ghost btn-sm gap-1 max-w-[10rem] sm:max-w-[14rem]" title="User settings">
       <svg class="hdr-ico shrink-0" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
@@ -107,6 +111,34 @@
     {% end %}
   </div>
 </div>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var nav = document.querySelector('.aird-nav');
+  var btn = document.getElementById('airdNavBurger');
+  if (!nav || !btn) return;
+  var mq = window.matchMedia('(max-width: 767px)');
+  function setOpen(open) {
+    nav.classList.toggle('is-menu-open', open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  }
+  btn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    setOpen(!nav.classList.contains('is-menu-open'));
+  });
+  document.addEventListener('click', function (e) {
+    if (!nav.classList.contains('is-menu-open') || nav.contains(e.target)) return;
+    setOpen(false);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') setOpen(false);
+  });
+  nav.querySelectorAll('#airdNavActions a, #airdNavActions button[type="submit"]').forEach(function (el) {
+    el.addEventListener('click', function () { setOpen(false); });
+  });
+  if (mq.addEventListener) mq.addEventListener('change', function () { setOpen(false); });
+})();
+</script>
 
 <div id="airdAppThemeMenu" class="aird-app-theme-menu" role="menu" aria-label="Choose theme" hidden>
   <button type="button" data-set-theme="light" role="menuitem" class="aird-app-theme-menu-item">☀️ Light</button>
@@ -127,9 +159,10 @@
 <script nonce="{{ csp_nonce }}" src="/static/js/feature-flags-live.js" defer></script>
 {% if is_chat_enabled() %}
 <script nonce="{{ csp_nonce }}">window.__AIRD_CHAT_USER__ = {% raw json_encode(current_user.get('username') if current_user else '') %};</script>
+<script nonce="{{ csp_nonce }}">window.__AIRD_CALLS_ENABLED__ = {% if is_calls_enabled() %}true{% else %}false{% end %};</script>
 <script nonce="{{ csp_nonce }}" src="/static/js/chat-ws.js" type="module"></script>
-<script nonce="{{ csp_nonce }}" src="/static/js/chat-e2e.js?v=20261005a" type="module"></script>
-<script nonce="{{ csp_nonce }}" src="/static/js/chat-notify.js" type="module"></script>
+<script nonce="{{ csp_nonce }}" src="/static/js/chat-e2e.js?v=20261021e" type="module"></script>
+<script nonce="{{ csp_nonce }}" src="/static/js/chat-notify.js?v=20261022m" type="module"></script>
 {% end %}
 {% end %}
 

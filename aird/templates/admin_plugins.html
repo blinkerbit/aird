@@ -4,7 +4,7 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261018a" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261021f" />
   <link rel="stylesheet" href="/static/css/admin-plugins.css" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Plugins · Aird</title>
@@ -59,6 +59,8 @@
               <p class="pane-lead">
                 {% if plugin['id'] == 'direct_messages' %}
                 End-to-end encrypted direct messages between users.
+                {% elif plugin['id'] == 'voice_video' %}
+                Voice and video calls in chat via LiveKit (set LIVEKIT_* on the server).
                 {% elif plugin['id'] == 'gitlab' %}
                 GitLab boards, issue mapping, and repo-linked tickets. Admin app — open from here, not the main nav.
                 {% elif plugin['id'] == 'onedrive' %}

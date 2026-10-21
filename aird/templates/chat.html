@@ -4,8 +4,8 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="/static/css/app.css?v=20261018a" />
-  <link rel="stylesheet" href="/static/css/chat.css?v=20261005a" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261021f" />
+  <link rel="stylesheet" href="/static/css/chat.css?v=20261022b" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   {% include '_pwa_head.html' %}
   <title>Chat · Aird</title>
@@ -137,12 +137,13 @@
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21.44 11.05 12.06 20.4a5.5 5.5 0 0 1-7.78-7.78l10.6-10.6a3.5 3.5 0 0 1 4.95 4.95L8.7 18.17a1.5 1.5 0 0 1-2.12-2.12l9.9-9.9"/></svg>
                 <input type="file" id="chatFileInput" class="hidden" multiple>
               </label>
-              <label class="chat-toolbar-btn chat-attach-only" title="GIF" aria-label="GIF">
-                GIF
-                <input type="file" id="chatGifInput" accept="image/gif,.gif" class="hidden">
+              <label class="chat-toolbar-btn chat-attach-only" title="Sticker" aria-label="Sticker">
+                Sticker
+                <input type="file" id="chatGifInput" accept="image/png,image/webp,image/gif,image/jpeg,image/*" class="hidden">
               </label>
             </div>
             <div class="chat-editor-wrap">
+              <div id="chatTyping" class="chat-typing-line" hidden></div>
               <div id="chatEmojiPicker" class="chat-emoji-picker hidden" hidden></div>
               <div id="chatPathSuggest" class="chat-path-suggest" hidden></div>
               <div class="chat-composer-row">
@@ -244,12 +245,13 @@
   </div>
 
   <script nonce="{{ csp_nonce }}">window.__AIRD_CHAT_USER__ = {% raw json_encode(current_user.get('username') if current_user else '') %};</script>
+  <script nonce="{{ csp_nonce }}">window.__AIRD_CALLS_ENABLED__ = {% if is_calls_enabled() %}true{% else %}false{% end %};</script>
   <script nonce="{{ csp_nonce }}">globalThis.__ONEDRIVE_BROWSER_CONFIG = { enabled: {{ 'true' if is_onedrive_browser_enabled() else 'false' }} };</script>
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/components/folder-picker.js"></script>
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/chat-ws.js"></script>
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/onedrive-fe/index.js?v=20260929c"></script>
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/chat-key-backup.js?v=20260906p"></script>
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/chat-secret.js?v=20260927c"></script>
-  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/pages/chat.js?v=20261021c"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/pages/chat.js?v=20261022o"></script>
 </body>
 </html>

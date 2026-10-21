@@ -1,22 +1,27 @@
 import {
   attachAllowed,
   bindDropZone,
-  clipboardFiles,
   completePath,
   createBrowsePicker,
   createPendingStore,
   filesApiUrl,
   formatRelPath,
   joinRel,
+  asStickerFile,
+  fileFromDataUrl,
   looksLikePath,
+  namedImageFile,
   normalizeRel,
   parsePathInput,
+  pastedStickers,
   restyleCompleted,
   sameBrowseValue,
+  stickerFileName,
   takePendingBrowseAttachAll,
-} from '../chat-attach.js?v=20260930h';
+} from '../chat-attach.js?v=20261021t';
 import { escapeHtml as esc, escapeCssAttrValue as cssEscape } from '../core/dom-safe.js';
 import { apiFetch } from '../core/http.js';
+import { setAppIconBadge } from '../core/app-badge.js';
 
 (function () {
   'use strict';
@@ -87,6 +92,11 @@ import { apiFetch } from '../core/http.js';
 
   const me = window.__AIRD_CHAT_USER__ || '';
   let activeConvId = null;
+
+  function noteOpenChat(id) {
+    globalThis.__AIRD_OPEN_CHAT__ = id || '';
+    document.dispatchEvent(new Event('aird-chat-view'));
+  }
   let enhancedSecureView = false;
   let conversations = [];
   let pins = [];
@@ -100,7 +110,10 @@ import { apiFetch } from '../core/http.js';
   let searchTimer = null;
   let pollTimer = null;
   let loadGen = 0;
-  let typingTimer = null;
+  let typingConv = '';
+  const typingWho = new Map();
+  let typingSentAt = 0;
+  const outgoing = new Map();
   let forwardMsgId = null;
   let loadingOlder = false;
   let hasOlder = false;
@@ -109,39 +122,164 @@ import { apiFetch } from '../core/http.js';
   let keyWaitTimer = null;
   let keyWaitConv = '';
   const presence = {};
+  const threadMem = new Map();
+  const THREAD_DB = 'aird-chat-threads';
+  let threadDbPromise = null;
+
+  function openThreadDb() {
+    if (threadDbPromise) return threadDbPromise;
+    threadDbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(THREAD_DB, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains('threads')) db.createObjectStore('threads');
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return threadDbPromise;
+  }
+
+  function readThreadCache(convId) {
+    return openThreadDb().then((db) => new Promise((resolve) => {
+      const tx = db.transaction('threads', 'readonly');
+      const req = tx.objectStore('threads').get(convId);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    })).catch(() => null);
+  }
+
+  function writeThreadCache(convId, snap) {
+    const payload = {
+      messages: (snap.messages || []).slice(-50),
+      pins: snap.pins || [],
+      receipts: snap.receipts || [],
+      hasOlder: !!snap.hasOlder,
+    };
+    threadMem.set(convId, { ...payload, source: snap.source || 'net' });
+    return openThreadDb().then((db) => new Promise((resolve) => {
+      const tx = db.transaction('threads', 'readwrite');
+      tx.objectStore('threads').put(payload, convId);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    })).catch(() => {});
+  }
+
+  function threadSig(snap) {
+    return (snap?.messages || []).map((m) => [
+      m.id,
+      m.edited_at || '',
+      m.body || '',
+      JSON.stringify(m.reactions || []),
+    ].join('\u0001')).join('\u0002');
+  }
+
+  function reuseDecrypted(msgs, prev) {
+    const byId = new Map((prev?.messages || []).map((m) => [m.id, m]));
+    for (const msg of msgs) {
+      const old = byId.get(msg.id);
+      if (!old?._decryptOk) continue;
+      const a = old.metadata?.e2e;
+      const b = msg.metadata?.e2e;
+      if (!a || !b || a.ct !== b.ct || a.iv !== b.iv) continue;
+      msg.body = old.body;
+      msg._e2e = true;
+      msg._decryptOk = true;
+      e2ePlain.set(msg.id, old.body);
+    }
+  }
+
+  function noteCachedMessage(msg) {
+    const convId = msg?.conversation_id;
+    if (!convId) return;
+    const snap = threadMem.get(convId) || { messages: [], pins, receipts, hasOlder };
+    const messages = (snap.messages || []).filter((m) => m.id !== msg.id);
+    messages.push(msg);
+    void writeThreadCache(convId, {
+      messages: messages.slice(-50),
+      pins: snap.pins || [],
+      receipts: snap.receipts || [],
+      hasOlder: snap.hasOlder,
+      source: 'net',
+    });
+  }
+
+  function dropCachedMessage(convId, messageId) {
+    const snap = threadMem.get(convId);
+    if (!snap) return;
+    void writeThreadCache(convId, {
+      ...snap,
+      messages: (snap.messages || []).filter((m) => m.id !== messageId),
+      source: 'net',
+    });
+  }
 
   function lastMessageId() {
-    const nodes = messagesEl?.querySelectorAll('[data-msg-id]');
-    if (!nodes?.length) return '';
-    return nodes[nodes.length - 1].dataset.msgId || '';
+    const nodes = [...(messagesEl?.querySelectorAll('[data-msg-id]') || [])];
+    for (let i = nodes.length - 1; i >= 0; i -= 1) {
+      const id = nodes[i].dataset.msgId || '';
+      if (id && !id.startsWith('pending-')) return id;
+    }
+    return '';
   }
 
   function firstMessageId() {
     return messagesEl?.querySelector('[data-msg-id]')?.dataset.msgId || '';
   }
 
+  let syncing = null;
+
+  function placePrepared(msg) {
+    const stamp = msg.created_at || '';
+    const rows = [...(messagesEl?.querySelectorAll('[data-msg-id]') || [])];
+    const next = rows.find((row) => {
+      const id = row.dataset.msgId || '';
+      if (id.startsWith('pending-')) return true;
+      return (row.dataset.createdAt || '') > stamp;
+    });
+    if (!next) {
+      paintPrepared(msg);
+      return;
+    }
+    tagMine(msg);
+    messagesEl.querySelector('.chat-empty')?.remove();
+    next.insertAdjacentHTML('beforebegin', messageHtml(msg));
+    bindMessageUi(next.previousElementSibling);
+    noteCachedMessage(msg);
+  }
+
   async function syncNewMessages() {
+    if (syncing) return syncing;
+    syncing = pullNewMessages().finally(() => { syncing = null; });
+    return syncing;
+  }
+
+  async function pullNewMessages() {
     if (enhancedSecureView || !activeConvId || !messagesEl) return;
     const afterId = lastMessageId();
     const query = afterId ? `?after_id=${encodeURIComponent(afterId)}` : '';
     const data = await api(`/api/chat/conversations/${activeConvId}/messages${query}`);
+    const incoming = (data.messages || []).filter((m) => {
+      if (messagesEl.querySelector(`[data-msg-id="${cssEscape(m.id)}"]`)) return false;
+      return !claimOutgoing(m);
+    });
+    reuseDecrypted(incoming, threadMem.get(activeConvId));
+    await prepareMessages(incoming);
     let added = false;
     let lastReadable = null;
-    for await (const m of (data.messages || [])) {
-      if (!messagesEl.querySelector(`[data-msg-id="${cssEscape(m.id)}"]`)) {
-        await appendMessage(m);
-        added = true;
-        if (!m._e2e || m._decryptOk) lastReadable = m;
-      }
+    for (const m of incoming) {
+      if (messagesEl.querySelector(`[data-msg-id="${cssEscape(m.id)}"]`)) continue;
+      if (claimOutgoing(m)) continue;
+      placePrepared(m);
+      added = true;
+      if (!m._e2e || m._decryptOk) lastReadable = m;
     }
     if (data.pins) {
       pins = data.pins;
       renderPins();
     }
     if (data.receipts) receipts = data.receipts;
-    if (added) {
-      if (lastReadable) markRead(lastReadable);
-    }
+    if (added && lastReadable) markRead(lastReadable);
   }
 
   function setPollEnabled(on) {
@@ -151,7 +289,6 @@ import { apiFetch } from '../core/http.js';
     }
     if (!on || !activeConvId) return;
     pollTimer = setInterval(() => {
-      if (window.AirdChatWS?.isOpen()) return;
       syncNewMessages().catch((err) => { console.debug('chat poll sync failed', err); });
     }, 4000);
   }
@@ -303,7 +440,8 @@ import { apiFetch } from '../core/http.js';
       console.debug('decrypt failed, retrying with ensureConversation', err);
       try {
         const conv = conversations.find((c) => c.id === convId);
-        await E2E.ensureConversation(api, convId, memberNames(conv));
+        const sync = E2E.syncConversation || E2E.ensureConversation;
+        await sync(api, convId, memberNames(conv));
         return { html: await tryDecrypt(), decrypted: true };
       } catch {
         return {
@@ -316,6 +454,7 @@ import { apiFetch } from '../core/http.js';
 
   async function prepareMessage(msg) {
     if (!msg) return msg;
+    if (msg._decryptOk && msg.body) return msg;
     const blob = msg.metadata?.e2e;
     if (msg.e2e || blob) {
       const result = await decryptPayload(msg.conversation_id, blob);
@@ -325,6 +464,19 @@ import { apiFetch } from '../core/http.js';
       if (result.decrypted) e2ePlain.set(msg.id, result.html);
     }
     return msg;
+  }
+
+  async function prepareMessages(msgs) {
+    const todo = [];
+    for (const msg of msgs || []) {
+      if (!msg || msg._decryptOk) continue;
+      if (msg.e2e || msg.metadata?.e2e) todo.push(msg);
+    }
+    const convId = todo[0]?.conversation_id;
+    if (convId && E2E?.warmKey) {
+      try { await E2E.warmKey(convId); } catch (err) { console.debug('warm key failed', err); }
+    }
+    await Promise.all(todo.map((msg) => prepareMessage(msg)));
   }
 
   function extractMentions(html, conv) {
@@ -407,6 +559,7 @@ import { apiFetch } from '../core/http.js';
     if (!layoutEl) return;
     layoutEl.classList.toggle('chat-layout--thread', view === 'thread');
     layoutEl.classList.toggle('chat-layout--list', view !== 'thread');
+    document.dispatchEvent(new Event('aird-chat-view'));
   }
 
   function tagMine(msg) {
@@ -448,14 +601,19 @@ import { apiFetch } from '../core/http.js';
     const dot = conv.kind === 'dm' && isOnlineUser(conv.peer_username)
       ? '<span class="chat-online-dot" title="Online"></span>'
       : '';
-    const lock = '<span class="chat-e2e-lock" title="End-to-end encrypted">🔒</span>';
+    const lock = '<svg class="chat-e2e-lock" viewBox="0 0 24 24" aria-hidden="true" title="End-to-end encrypted"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
     const groupActs = conv.kind === 'group'
       ? '<button type="button" id="chatAddMemberBtn">Add member</button><button type="button" id="chatLeaveBtn" class="is-danger">Leave group</button>'
       : '';
+    const callBtns = globalThis.__AIRD_CALLS_ENABLED__
+      ? (globalThis.AirdChatCalls?.headerCallButtonsHtml?.()
+        || '<button type="button" id="chatVoiceCallBtn" class="chat-call-btn" title="Voice call" aria-label="Voice call"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg></button><button type="button" id="chatVideoCallBtn" class="chat-call-btn" title="Video call" aria-label="Video call"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 13 5.2 3.1a.8.8 0 0 0 1.2-.7V8.6a.8.8 0 0 0-1.2-.7L16 11"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg></button>')
+      : '';
     header.innerHTML = `<button type="button" class="chat-back" id="chatBackBtn" aria-label="Back to conversations"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button><span class="chat-avatar-wrap">${avatarHtml(title)}${dot}</span><div class="chat-thread-head-main"><div class="chat-thread-title">${esc(title)} ${lock}</div><div class="chat-thread-sub">${esc(sub)}</div></div>
       <div class="chat-thread-actions">
+        ${callBtns}
         <details class="chat-head-more">
-          <summary aria-label="Conversation actions">⋯</summary>
+          <summary aria-label="Conversation actions"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></summary>
           <div class="chat-head-menu">
             <button type="button" id="chatMuteBtn">${conv.muted ? 'Unmute' : 'Mute'}</button>
             ${conv.kind === 'dm' && conv.peer_username ? '<button type="button" id="chatEnhancedSecureBtn">Enhanced Secure Chat</button>' : ''}
@@ -471,6 +629,9 @@ import { apiFetch } from '../core/http.js';
     });
     qs('#chatAddMemberBtn')?.addEventListener('click', () => openAddMember());
     qs('#chatLeaveBtn')?.addEventListener('click', () => leaveGroup(conv).catch((e) => alert(e.message)));
+    if (callBtns) {
+      document.dispatchEvent(new CustomEvent('aird-calls-header', { detail: { conv } }));
+    }
   }
 
   async function toggleMute(conv) {
@@ -511,6 +672,7 @@ import { apiFetch } from '../core/http.js';
     if (!confirm('Leave this group?')) return;
     await api(`/api/chat/conversations/${conv.id}/members?username=${encodeURIComponent(me)}`, { method: 'DELETE' });
     activeConvId = null;
+    noteOpenChat('');
     composer?.classList.add('hidden');
     setThreadHeader(null);
     clearMessagesView();
@@ -595,7 +757,7 @@ import { apiFetch } from '../core/http.js';
     conversations = data.conversations || [];
     conversations.forEach(mergeConvMemberPresence);
     renderConvList();
-    await fillEncryptedPreviews();
+    void identityReady.then(() => fillEncryptedPreviews());
     runAsync(() => updateNavBadge(), 'updateNavBadge');
   }
 
@@ -652,7 +814,9 @@ import { apiFetch } from '../core/http.js';
       const blank = att.share_url ? '' : ' target="_blank" rel="noopener"';
       const menu = mine ? '' : `<button type="button" class="chat-link-btn" data-att="save" data-id="${esc(msg.id)}" data-i="${i}">Save a copy</button>`;
       if (isImageAtt(att, msg)) {
-        return `<div class="chat-att-wrap"><img src="${esc(previewUrl)}" alt="${esc(name)}" class="chat-msg-image" data-full="${esc(previewUrl)}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'chat-file-unavailable',textContent:'File unavailable'}))">${menu}</div>`;
+        const kind = att?.media_kind || (msg?.msg_type === 'gif' ? 'gif' : '');
+        const sticker = /^sticker-/i.test(name) || kind === 'gif' ? ' chat-msg-sticker' : '';
+        return `<div class="chat-att-wrap"><img src="${esc(previewUrl)}" alt="" class="chat-msg-image${sticker}" data-full="${esc(previewUrl)}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'chat-file-unavailable',textContent:'File unavailable'}))">${menu}</div>`;
       }
       if (isFolderAtt(att)) {
         return `<div class="chat-att-wrap"><a class="chat-file-card chat-file-card--folder" href="${esc(openUrl)}">${esc(name)}/</a>${menu}</div>`;
@@ -1010,9 +1174,7 @@ import { apiFetch } from '../core/http.js';
     await loadConversations();
   }
 
-  async function appendMessage(msg) {
-    if (!messagesEl) return;
-    await prepareMessage(msg);
+  function paintPrepared(msg) {
     tagMine(msg);
     messagesEl.querySelector('.chat-empty')?.remove();
     const day = dayKey(msg.created_at);
@@ -1022,11 +1184,19 @@ import { apiFetch } from '../core/http.js';
     messagesEl.insertAdjacentHTML('beforeend', messageHtml(msg));
     bindMessageUi(messagesEl.lastElementChild);
     messagesEl.scrollTop = messagesEl.scrollHeight;
+    noteCachedMessage(msg);
+  }
+
+  async function appendMessage(msg) {
+    if (!messagesEl) return;
+    await prepareMessage(msg);
+    paintPrepared(msg);
   }
 
   async function replaceMessage(msg) {
     await prepareMessage(msg);
     tagMine(msg);
+    noteCachedMessage(msg);
     const el = messagesEl?.querySelector(`[data-msg-id="${cssEscape(msg.id)}"]`);
     if (!el) {
       runAsync(() => appendMessage(msg), 'appendMessage');
@@ -1040,6 +1210,7 @@ import { apiFetch } from '../core/http.js';
   function removeMessageEl(messageId) {
     const el = messagesEl?.querySelector(`[data-msg-id="${cssEscape(messageId)}"]`);
     el?.remove();
+    if (activeConvId) dropCachedMessage(activeConvId, messageId);
     if (messagesEl && !messagesEl.querySelector('[data-msg-id]')) showEmptyThread();
   }
 
@@ -1065,7 +1236,8 @@ import { apiFetch } from '../core/http.js';
       const msgs = data.messages || [];
       hasOlder = msgs.length >= 50;
       if (!msgs.length) return;
-      for await (const m of msgs) await prepareMessage(m);
+      reuseDecrypted(msgs, threadMem.get(activeConvId));
+      await prepareMessages(msgs);
       const firstDay = messagesEl.querySelector('.chat-day');
       const frag = document.createElement('div');
       let prevDay = '';
@@ -1102,51 +1274,108 @@ import { apiFetch } from '../core/http.js';
       pendingStore.clear();
       renderPending();
     }
+    if (convId !== activeConvId) clearTyping();
     const gen = ++loadGen;
     activeConvId = convId;
+    noteOpenChat(convId);
     loadingOlder = false;
     const conv = conversations.find((c) => c.id === convId);
     setThreadHeader(conv || null);
     hideRequest();
     composer.classList.add('hidden');
-    messagesEl.innerHTML = '<div class="chat-empty"><p>Loading…</p></div>';
     renderConvList();
     setPollEnabled(true);
     setMobileView('thread');
+    clearLocalUnread(convId);
     if (showRequest(conv)) {
+      messagesEl.innerHTML = '';
       if (conv.request === 'outgoing') {
         try { await e2eReady(convId); } catch (err) { console.debug('e2e ready on request failed', err); }
       }
       clearMessagesView();
-      messagesEl.innerHTML = '';
       const params = new URLSearchParams(location.search);
       params.set('c', convId);
       history.replaceState(null, '', `${location.pathname}?${params}`);
       return;
     }
     composer.classList.remove('hidden');
-    try { await e2eReady(convId); } catch (err) { console.debug('e2e ready on openConversation failed', err); }
-    const data = await api(`/api/chat/conversations/${convId}/messages?limit=50`);
-    if (gen !== loadGen) return;
-    clearMessagesView();
-    pins = data.pins || [];
-    receipts = data.receipts || [];
-    renderPins();
-    const msgs = data.messages || [];
-    hasOlder = msgs.length >= 50;
-    for await (const m of msgs) await prepareMessage(m);
-    if (!msgs.length) showEmptyThread();
-    else msgs.forEach((m) => paintMessage(m));
-    if (msgs.length) messagesEl.scrollTop = messagesEl.scrollHeight;
-    const last = msgs.toReversed().find((msg) => !msg._e2e || msg._decryptOk);
-    if (last) markRead(last);
     const params = new URLSearchParams(location.search);
     params.set('c', convId);
     params.delete('attach');
     params.delete('attachDir');
     params.delete('attachBatch');
     history.replaceState(null, '', `${location.pathname}?${params}`);
-    applyPendingBrowseAttach();
+    const mem = threadMem.get(convId);
+    if (mem?.messages?.length) paintThread(mem, gen);
+    else messagesEl.innerHTML = '<div class="chat-empty"><p>Loading…</p></div>';
+    if (!mem?.messages?.length) {
+      readThreadCache(convId).then((stored) => {
+        if (gen !== loadGen || !stored?.messages?.length) return;
+        if (threadMem.get(convId)?.source === 'net') return;
+        threadMem.set(convId, stored);
+        paintThread(stored, gen);
+      }).catch((err) => console.debug('thread cache read failed', err));
+    }
+    try {
+      const [, data] = await Promise.all([
+        e2eReady(convId).catch((err) => {
+          console.debug('e2e ready on openConversation failed', err);
+          return false;
+        }),
+        api(`/api/chat/conversations/${convId}/messages?limit=50`),
+      ]);
+      if (gen !== loadGen) return;
+      const prev = threadMem.get(convId);
+      const msgs = data.messages || [];
+      reuseDecrypted(msgs, prev);
+      await prepareMessages(msgs);
+      if (gen !== loadGen) return;
+      const snap = {
+        messages: msgs,
+        pins: data.pins || [],
+        receipts: data.receipts || [],
+        hasOlder: msgs.length >= 50,
+        source: 'net',
+      };
+      const changed = threadSig(prev) !== threadSig(snap);
+      threadMem.set(convId, snap);
+      void writeThreadCache(convId, snap);
+      if (changed) paintThread(snap, gen);
+      else {
+        pins = snap.pins;
+        receipts = snap.receipts;
+        hasOlder = snap.hasOlder;
+        renderPins();
+      }
+      const last = msgs.toReversed().find((msg) => !msg._e2e || msg._decryptOk);
+      if (last) markRead(last);
+      applyPendingBrowseAttach();
+    } catch (err) {
+      if (gen !== loadGen) return;
+      console.debug('open conversation failed', err);
+      if (!threadMem.get(convId)?.messages?.length && messagesEl) {
+        messagesEl.innerHTML = `<p class="text-error">${esc(err.message || 'Could not load messages')}</p>`;
+      }
+    }
+  }
+
+  function nearBottom() {
+    if (!messagesEl) return true;
+    return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 80;
+  }
+
+  function paintThread(snap, gen) {
+    if (gen !== loadGen || !messagesEl) return;
+    const stick = !messagesEl.querySelector('[data-msg-id]') || nearBottom();
+    clearMessagesView();
+    pins = snap.pins || [];
+    receipts = snap.receipts || [];
+    renderPins();
+    const msgs = snap.messages || [];
+    hasOlder = !!snap.hasOlder;
+    if (!msgs.length) showEmptyThread();
+    else msgs.forEach((m) => paintMessage(m));
+    if (stick && msgs.length) messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
   function applyPendingBrowseAttach() {
@@ -1163,6 +1392,19 @@ import { apiFetch } from '../core/http.js';
     setE2eStatus('');
   }
 
+  function clearLocalUnread(convId) {
+    let changed = false;
+    conversations.forEach((c) => {
+      if (c.id === convId && c.unread) {
+        c.unread = 0;
+        changed = true;
+      }
+    });
+    if (changed) renderConvList();
+    const total = conversations.reduce((sum, c) => sum + (Number(c.unread) || 0), 0);
+    void updateNavBadge(total);
+  }
+
   function markRead(msg) {
     const WS = window.AirdChatWS;
     if (document.visibilityState !== 'visible' || !WS?.isOpen() || !activeConvId) return;
@@ -1173,7 +1415,11 @@ import { apiFetch } from '../core/http.js';
       message_id: msg.id,
       decrypted: !!(msg._e2e && msg._decryptOk),
     });
-    runAsync(() => loadConversations(), 'loadConversations');
+    clearLocalUnread(activeConvId);
+    setTimeout(() => {
+      loadConversations().catch((err) => console.debug('loadConversations failed', err));
+      updateNavBadge().catch((err) => console.debug('updateNavBadge failed', err));
+    }, 300);
   }
 
   function markLatestVisibleRead() {
@@ -1190,7 +1436,7 @@ import { apiFetch } from '../core/http.js';
     });
   }
 
-  function onWsChatMessage(data) {
+  async function onWsChatMessage(data) {
     if (enhancedSecureView) {
       runAsync(() => loadConversations(), 'loadConversations');
       runAsync(() => updateNavBadge(), 'updateNavBadge');
@@ -1198,26 +1444,70 @@ import { apiFetch } from '../core/http.js';
     }
     if (!data.message) return;
     const msg = tagMine({ ...data.message });
-    if (msg.conversation_id === activeConvId) {
-      if (!messagesEl?.querySelector(`[data-msg-id="${cssEscape(msg.id)}"]`)) {
-        appendMessage(msg).then(() => markRead(msg)).catch((err) => {
-          console.debug('appendMessage failed', err);
-        });
+    const paint = (async () => {
+      if (msg.conversation_id !== activeConvId) return;
+      if (msg.sender_username) dropTyper(msg.sender_username);
+      if (claimOutgoing(msg)) {
+        markRead({ ...msg, _e2e: !!msg.metadata?.e2e, _decryptOk: true });
+        return;
       }
-    }
+      if (messagesEl?.querySelector(`[data-msg-id="${cssEscape(msg.id)}"]`)) return;
+      await appendMessage(msg);
+      markRead(msg);
+    })();
     runAsync(() => loadConversations(), 'loadConversations');
     runAsync(() => updateNavBadge(), 'updateNavBadge');
+    paint.catch((err) => console.debug('appendMessage failed', err));
+  }
+
+  function paintTyping() {
+    const line = qs('#chatTyping');
+    if (!line) return;
+    const names = [...typingWho.keys()];
+    if (!names.length || typingConv !== activeConvId) {
+      line.hidden = true;
+      line.replaceChildren();
+      return;
+    }
+    const label = names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`;
+    line.hidden = false;
+    line.innerHTML = `${esc(label)}<span class="chat-typing" aria-label="typing"><i></i><i></i><i></i></span>`;
+  }
+
+  function dropTyper(name) {
+    const timer = typingWho.get(name);
+    if (!timer) return;
+    clearTimeout(timer);
+    typingWho.delete(name);
+    if (!typingWho.size) typingConv = '';
+    paintTyping();
+  }
+
+  function clearTyping() {
+    for (const timer of typingWho.values()) clearTimeout(timer);
+    typingWho.clear();
+    typingConv = '';
+    paintTyping();
   }
 
   function onWsTyping(data) {
     if (enhancedSecureView || data.conversation_id !== activeConvId) return;
-    const sub = header?.querySelector('.chat-thread-sub');
-    if (!sub || data.username === me) return;
-    const prev = sub.dataset.base || sub.textContent;
-    sub.dataset.base = prev;
-    sub.textContent = `${data.username} is typing…`;
-    clearTimeout(typingTimer);
-    typingTimer = setTimeout(() => { sub.textContent = sub.dataset.base || prev; }, 1500);
+    if (!data.username || data.username === me) return;
+    typingConv = data.conversation_id;
+    const prev = typingWho.get(data.username);
+    if (prev) clearTimeout(prev);
+    typingWho.set(data.username, setTimeout(() => dropTyper(data.username), 1500));
+    paintTyping();
+  }
+
+  function pulseTyping() {
+    if (!activeConvId || enhancedSecureView) return;
+    const text = (editor?.innerText || '').replaceAll('\u00a0', ' ').trim();
+    if (!text) return;
+    const now = Date.now();
+    if (now - typingSentAt < 1100) return;
+    typingSentAt = now;
+    window.AirdChatWS?.send({ type: 'chat_typing', conversation_id: activeConvId });
   }
 
   const WS_HANDLERS = {
@@ -1266,10 +1556,10 @@ import { apiFetch } from '../core/http.js';
     },
     chat_notify: (data) => {
       runAsync(() => updateNavBadge(data.unread_total), 'updateNavBadge');
-      if (!enhancedSecureView && data.conversation_id === activeConvId) {
-        syncNewMessages().catch((err) => { console.debug('chat_notify sync failed', err); });
-      }
       runAsync(() => loadConversations(), 'loadConversations');
+      if (data.conversation_id && data.conversation_id === activeConvId) {
+        syncNewMessages().catch((err) => console.debug('chat notify sync failed', err));
+      }
     },
     chat_ws_close: () => setPollEnabled(true),
     chat_ws_open: () => setPollEnabled(!!activeConvId),
@@ -1514,6 +1804,7 @@ import { apiFetch } from '../core/http.js';
     try {
       await window.AirdEnhancedSecure.sendText(text);
       editor.innerHTML = '';
+      focusComposer();
       setE2eStatus('');
     } catch (err) {
       setE2eStatus(err.message || 'Could not send.');
@@ -1551,19 +1842,127 @@ import { apiFetch } from '../core/http.js';
     await loadConversations();
   }
 
+  function showOutgoing(html) {
+    const id = `pending-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    outgoing.set(id, { body: html, ct: '', iv: '' });
+    paintPrepared({
+      id,
+      conversation_id: activeConvId,
+      sender_username: me,
+      msg_type: 'text',
+      body: html,
+      created_at: new Date().toISOString(),
+      metadata: {},
+      _e2e: true,
+      _decryptOk: true,
+    });
+    return id;
+  }
+
+  function rememberOutgoingCipher(localId, e2e) {
+    const row = outgoing.get(localId);
+    if (!row || !e2e) return;
+    row.ct = e2e.ct || '';
+    row.iv = e2e.iv || '';
+  }
+
+  function claimOutgoing(msg) {
+    const ct = msg?.metadata?.e2e?.ct || '';
+    const iv = msg?.metadata?.e2e?.iv || '';
+    let localId = '';
+    let plain = '';
+    for (const [id, row] of outgoing) {
+      const sameCipher = ct && row.ct === ct && row.iv === iv;
+      const samePlain = !ct && row.body && row.body === (msg.body || '');
+      if (!sameCipher && !samePlain) continue;
+      localId = id;
+      plain = row.body;
+      break;
+    }
+    if (!localId) return false;
+    outgoing.delete(localId);
+    const el = messagesEl?.querySelector(`[data-msg-id="${cssEscape(localId)}"]`);
+    dropCachedMessage(msg.conversation_id || activeConvId, localId);
+    if (el) el.dataset.msgId = msg.id;
+    if (plain) e2ePlain.set(msg.id, plain);
+    noteCachedMessage({
+      ...msg,
+      body: plain || msg.body || '',
+      _e2e: !!ct,
+      _decryptOk: true,
+      conversation_id: msg.conversation_id || activeConvId,
+    });
+    return true;
+  }
+
+  function failOutgoing(localId) {
+    const row = outgoing.get(localId);
+    outgoing.delete(localId);
+    messagesEl?.querySelector(`[data-msg-id="${cssEscape(localId)}"]`)?.remove();
+    if (activeConvId) dropCachedMessage(activeConvId, localId);
+    if (messagesEl && !messagesEl.querySelector('[data-msg-id]')) showEmptyThread();
+    if (row && editor && !(editor.innerText || '').replaceAll('\u00a0', ' ').trim()) {
+      editor.innerHTML = row.body;
+      focusComposer();
+    }
+  }
+
   async function sendTextOverWire({ e2e, mentions, body, reply }) {
     const payload = e2e
       ? { type: 'chat_send', conversation_id: activeConvId, e2e, mentions, reply_to_id: reply }
       : { type: 'chat_send', conversation_id: activeConvId, body, reply_to_id: reply };
     const WS = window.AirdChatWS;
-    if (WS?.isOpen() && WS.send(payload)) return false;
-    await api(`/api/chat/conversations/${activeConvId}/messages`, {
+    if (WS?.isOpen() && WS.send(payload)) return null;
+    const data = await api(`/api/chat/conversations/${activeConvId}/messages`, {
       method: 'POST',
       body: JSON.stringify(e2e
         ? { type: 'text', e2e, mentions, reply_to_id: reply }
         : { type: 'text', body, reply_to_id: reply }),
     });
-    return true;
+    return data.message || null;
+  }
+
+  let absorbJob = null;
+  function absorbEditorStickers() {
+    if (!absorbJob) {
+      absorbJob = (async () => {
+        try {
+          await collectEditorStickers();
+        } finally {
+          absorbJob = null;
+        }
+      })();
+    }
+    return absorbJob;
+  }
+
+  async function collectEditorStickers() {
+    if (!editor) return;
+    const gate = canAttachFiles();
+    let found = false;
+    let i = 0;
+    let img = editor.querySelector('img');
+    while (img) {
+      found = true;
+      const src = img.getAttribute('src') || '';
+      img.remove();
+      if (gate.ok) {
+        const dataFile = fileFromDataUrl(src, i);
+        if (dataFile) stageBlob(dataFile);
+        else if (src.startsWith('blob:')) {
+          try {
+            const blob = await fetch(src).then((res) => res.blob());
+            const type = blob.type || 'image/png';
+            stageBlob(new File([blob], stickerFileName(type, i), { type }));
+          } catch { /* bytes already released */ }
+        }
+      }
+      i += 1;
+      img = editor.querySelector('img');
+    }
+    if (!found) return;
+    if (!gate.ok) setE2eStatus(gate.reason);
+    else renderPending();
   }
 
   async function sendEditorMessage() {
@@ -1572,44 +1971,73 @@ import { apiFetch } from '../core/http.js';
       return;
     }
     if (!activeConvId || !editor) return;
+    await absorbEditorStickers();
     const hasText = (editor.innerText || '').replaceAll('\u00a0', ' ').trim().length > 0;
     if (!hasText && !pending.length) return;
     const body = editor.innerHTML.trim();
     const reply = replyToId;
-    let e2e = null;
-    let mentions = [];
-    if (hasText) {
-      try {
-        const encrypted = await encryptOutgoingBody(body);
-        if (!encrypted) return;
-        e2e = encrypted.e2e;
-        mentions = encrypted.mentions;
-      } catch (err) {
-        setE2eStatus(err.message || 'Could not encrypt this message.');
-        return;
-      }
-    }
+    const plain = hasText && E2E?.sanitizeHtml ? E2E.sanitizeHtml(body) : body;
     pending.forEach(function (p) { revokePendingPreview(p); });
     const staged = pendingStore.take();
     renderPending();
     editor.innerHTML = '';
+    focusComposer();
     clearReply();
     hidePathSuggest();
-    if (staged.length) {
-      await postStagedAttachments(staged, { e2e, mentions, hasText, body, reply });
-      return;
+    const localId = hasText ? showOutgoing(plain) : '';
+    let e2e = null;
+    let mentions = [];
+    try {
+      if (hasText) {
+        const encrypted = await encryptOutgoingBody(body);
+        if (!encrypted) throw new Error('Waiting for the chat key…');
+        e2e = encrypted.e2e;
+        mentions = encrypted.mentions;
+        rememberOutgoingCipher(localId, e2e);
+      }
+      if (staged.length) {
+        await postStagedAttachments(staged, { e2e, mentions, hasText, body, reply });
+        return;
+      }
+      if (!hasText) return;
+      const serverMsg = await sendTextOverWire({ e2e, mentions, body, reply });
+      if (serverMsg && !claimOutgoing(serverMsg)) {
+        const existing = messagesEl?.querySelector(`[data-msg-id="${cssEscape(serverMsg.id)}"]`);
+        if (!existing) await appendMessage({ ...serverMsg, body: plain, _decryptOk: true, _e2e: !!e2e });
+      }
+      if (serverMsg) void loadConversations();
+    } catch (err) {
+      if (localId) failOutgoing(localId);
+      setE2eStatus(err.message || 'Could not send this message.');
     }
-    if (!hasText) return;
-    const sentHttp = await sendTextOverWire({ e2e, mentions, body, reply });
-    if (sentHttp) {
-      await openConversation(activeConvId);
-      await loadConversations();
-    }
+    focusComposer();
   }
 
-  composer?.addEventListener('submit', async (e) => {
+  function focusComposer() {
+    if (!editor || editor.hidden) return;
+    editor.focus({ preventScroll: true });
+  }
+
+  let sendLock = false;
+  function queueSend() {
+    if (sendLock) return;
+    sendLock = true;
+    setTimeout(() => { sendLock = false; }, 0);
+    sendEditorMessage().catch((err) => alert(err.message)).finally(focusComposer);
+  }
+
+  const sendBtn = composer?.querySelector('.chat-send-btn');
+  sendBtn?.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    await sendEditorMessage();
+  });
+  sendBtn?.addEventListener('pointerup', (e) => {
+    e.preventDefault();
+    queueSend();
+  });
+
+  composer?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    queueSend();
   });
 
   function pathPopupVisible() {
@@ -1682,10 +2110,11 @@ import { apiFetch } from '../core/http.js';
       sendEditorMessage().catch((err) => alert(err.message));
       return;
     }
-    window.AirdChatWS?.send({ type: 'chat_typing', conversation_id: activeConvId });
   }, true);
 
   editor?.addEventListener('input', () => {
+    void absorbEditorStickers();
+    pulseTyping();
     window.requestAnimationFrame(() => {
       const text = editor.innerText || '';
       const at = text.split(/\s/).pop() || '';
@@ -1831,10 +2260,15 @@ import { apiFetch } from '../core/http.js';
     const rm = esc(p.id);
     if (p.file && String(p.file.type || '').startsWith('image/')) {
       if (!p.previewUrl) p.previewUrl = URL.createObjectURL(p.file);
-      return '<span class="chat-pending-chip chat-pending-chip--image">'
+      const sticker = !!p.asSticker;
+      const name = sticker ? '' : '<span class="truncate" title="' + label + '">' + esc(p.name) + '</span>';
+      const removeLabel = sticker ? 'Remove sticker' : 'Remove ' + p.name;
+      const mode = sticker ? 'Photo' : 'Send as sticker';
+      return '<span class="chat-pending-chip chat-pending-chip--image' + (sticker ? ' chat-pending-chip--sticker' : '') + '">'
         + '<img class="chat-pending-thumb" src="' + esc(p.previewUrl) + '" alt="">'
-        + '<span class="truncate" title="' + label + '">' + esc(p.name) + '</span>'
-        + '<button type="button" data-rm="' + rm + '" aria-label="Remove ' + esc(p.name) + '">×</button></span>';
+        + name
+        + '<button type="button" class="chat-sticker-toggle" data-sticker="' + rm + '">' + mode + '</button>'
+        + '<button type="button" data-rm="' + rm + '" aria-label="' + esc(removeLabel) + '">×</button></span>';
     }
     return '<span class="chat-pending-chip' + (p.isDir ? ' is-folder' : '') + '">'
       + '<span class="truncate" title="' + label + '">' + esc(p.name) + '</span>'
@@ -1860,6 +2294,22 @@ import { apiFetch } from '../core/http.js';
     el.querySelectorAll('[data-rm]').forEach((btn) => {
       btn.addEventListener('click', handlePendingRemoveClick);
     });
+    el.querySelectorAll('[data-sticker]').forEach((btn) => {
+      btn.addEventListener('click', handlePendingStickerClick);
+    });
+  }
+
+  function handlePendingStickerClick(e) {
+    const item = pending.find((p) => p.id === e.currentTarget.dataset.sticker);
+    if (!item?.file) return;
+    const source = item.sourceFile || item.file;
+    item.asSticker = !item.asSticker;
+    const next = item.asSticker ? asStickerFile(source, 0) : namedImageFile(source, 0);
+    revokePendingPreview(item);
+    item.file = next;
+    item.name = next.name;
+    item.sourceFile = source;
+    renderPending();
   }
 
   function handlePendingRemoveClick(e) {
@@ -1879,8 +2329,8 @@ import { apiFetch } from '../core/http.js';
     renderPending();
   }
 
-  function stageBlob(file) {
-    const result = pendingStore.stageBlob(file);
+  function stageBlob(file, opts) {
+    const result = pendingStore.stageBlob(file, opts);
     if (!result.ok) {
       setE2eStatus(result.reason);
       return;
@@ -2142,7 +2592,19 @@ import { apiFetch } from '../core/http.js';
   }
 
   fileInput?.addEventListener('change', () => attachUpload(fileInput));
-  gifInput?.addEventListener('change', () => attachUpload(gifInput));
+  gifInput?.addEventListener('change', () => {
+    if (!gifInput.files?.length) return;
+    const gate = canAttachFiles();
+    if (!gate.ok) {
+      setE2eStatus(gate.reason);
+      gifInput.value = '';
+      return;
+    }
+    [...gifInput.files].forEach((file) => stageBlob(file, { asSticker: true }));
+    gifInput.value = '';
+    setE2eStatus('');
+    editor?.focus();
+  });
   browseBtn?.addEventListener('click', () => {
     const gate = canAttachFiles();
     if (!gate.ok) {
@@ -2209,7 +2671,7 @@ import { apiFetch } from '../core/http.js';
     onBlocked: setE2eStatus,
   });
   editor?.addEventListener('paste', (e) => {
-    const files = clipboardFiles(e.clipboardData);
+    const files = pastedStickers(e.clipboardData);
     if (!files.length) return;
     e.preventDefault();
     const gate = canAttachFiles();
@@ -2218,16 +2680,17 @@ import { apiFetch } from '../core/http.js';
       return;
     }
     files.forEach((file) => attachFileBlob(file));
-    if (files.length) {
-      setE2eStatus('');
-      editor?.focus();
-    }
+    const text = (e.clipboardData?.getData?.('text/plain') || '').replaceAll('\u00a0', ' ').trim();
+    if (text) insertTextAtCaret(text);
+    setE2eStatus('');
+    editor?.focus();
   });
 
   async function updateNavBadge(fallbackTotal) {
     const badge = document.getElementById('chatUnreadBadge');
     if (!badge) return;
     if (typeof fallbackTotal === 'number') {
+      void setAppIconBadge(fallbackTotal);
       if (fallbackTotal > 0) {
         badge.textContent = fallbackTotal > 99 ? '99+' : String(fallbackTotal);
         badge.classList.remove('hidden');
@@ -2297,6 +2760,7 @@ import { apiFetch } from '../core/http.js';
     });
     if (action === 'decline') {
       activeConvId = '';
+      noteOpenChat('');
       hideRequest();
       composer?.classList.add('hidden');
       setThreadHeader(null);
@@ -2309,7 +2773,11 @@ import { apiFetch } from '../core/http.js';
     await openConversation(id);
   }
 
-  document.addEventListener('visibilitychange', markLatestVisibleRead);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    markLatestVisibleRead();
+    syncNewMessages().catch((err) => console.debug('chat resume sync failed', err));
+  });
 
   function boot() {
     qs('#chatRequestAccept')?.addEventListener('click', () => {
@@ -2324,13 +2792,27 @@ import { apiFetch } from '../core/http.js';
       WS.connect();
       WS.subscribe(handleWsEvent);
     }
+    if (globalThis.__AIRD_CALLS_ENABLED__) {
+      import('../chat-calls.js?v=20261022m').then((m) => {
+        globalThis.AirdChatCalls = m;
+        m.initCalls({
+          api,
+          me,
+          getActiveConvId: () => activeConvId,
+          sendWs: (payload) => window.AirdChatWS?.send(payload),
+          openConversation,
+        });
+        if (activeConvId) setThreadHeader(activeConv());
+      }).catch((err) => console.debug('chat calls init', err));
+    }
     const start = async () => {
       identityReady = (E2E && me)
         ? E2E.init(me, api).catch((err) => { console.warn('chat e2e', err); })
         : Promise.resolve();
+      globalThis.addEventListener('aird-chat-identity', () => {
+        if (activeConvId) runAsync(() => reloadThreadAfterKey(activeConvId), 'reloadThreadAfterKey');
+      });
       await loadConversations();
-      await identityReady;
-      await fillEncryptedPreviews();
       const initialConv = new URLSearchParams(location.search).get('c');
       if (pendingBrowseAttachQueue.length && !initialConv) {
         const first = pendingBrowseAttachQueue[0];

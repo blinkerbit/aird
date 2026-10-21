@@ -1050,15 +1050,23 @@ class BaseHandler(tornado.web.RequestHandler):
             self._csp_nonce = base64.b64encode(secrets.token_bytes(16)).decode("utf-8")
         return self._csp_nonce
 
+    def _permissions_policy(self) -> str:
+        """Allow mic/camera on this origin when voice and video calls are on."""
+        try:
+            from aird.plugins.calls import is_calls_enabled
+
+            if is_calls_enabled():
+                return "camera=(self), microphone=(self), geolocation=(), payment=()"
+        except Exception:
+            pass
+        return "camera=(), microphone=(), geolocation=(), payment=()"
+
     def set_default_headers(self):
         # Security headers
         self.set_header("X-Content-Type-Options", "nosniff")
         self.set_header("X-Frame-Options", "DENY")
         self.set_header("Referrer-Policy", "strict-origin-when-cross-origin")
-        self.set_header(
-            "Permissions-Policy",
-            "camera=(), microphone=(), geolocation=(), payment=()",
-        )
+        self.set_header("Permissions-Policy", self._permissions_policy())
         # SharedArrayBuffer / Wasm workers (cross-origin isolated context)
         self.set_header("Cross-Origin-Opener-Policy", "same-origin")
         self.set_header("Cross-Origin-Embedder-Policy", "credentialless")
@@ -1091,6 +1099,8 @@ class BaseHandler(tornado.web.RequestHandler):
 
     def render(self, template_name, **kwargs):
         """Override render to set CSP header before rendering."""
+        self.set_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        self.set_header("Pragma", "no-cache")
         self._set_csp_header()
         super().render(template_name, **kwargs)
 
