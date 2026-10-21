@@ -40,6 +40,8 @@ async def sendfile_to_socket(
     except (AttributeError, OSError):
         return False
     try:
+        if ".." in file_path:
+            raise Exception("Invalid file path")
         file_size = os.path.getsize(file_path)
         end = file_size if length is None else start + length
         count = min(end, file_size) - start

@@ -123,6 +123,8 @@ def _sync_one_entry(
     remote = f"{user_remote_root(root_base, username)}/{arcname}"
     safe_conflict = conflict if conflict in {"replace", "rename", "fail"} else "replace"
     try:
+        if ".." in abs_path:
+            raise Exception("Invalid file path")
         with open(abs_path, "rb") as fh:
             uploaded_file = provider.upload_file_at_path(
                 fh,

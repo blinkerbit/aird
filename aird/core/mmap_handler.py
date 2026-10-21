@@ -46,6 +46,8 @@ class _SyncChunkReader:
         self._mm = None
 
     def open(self) -> None:
+        if ".." in self._file_path:
+            raise Exception("Invalid file path")
         self._file = open(self._file_path, "rb")
         if self._use_mmap:
             self._mm = mmap.mmap(self._file.fileno(), 0, access=mmap.ACCESS_READ)
@@ -218,6 +220,8 @@ def _search_small_file(
     file_path: str, search_term: str, max_results: int
 ) -> list[dict]:
     """Search in small file using traditional file reading."""
+    if ".." in file_path:
+        raise Exception("Invalid file path")
     results = []
     with open(file_path, "r", encoding="utf-8", errors="replace") as f:
         for line_num, line in enumerate(f, 1):
@@ -242,6 +246,8 @@ def _search_mmap_file(
     file_path: str, search_term: str, search_bytes: bytes, max_results: int
 ) -> list[dict]:
     """Search in large file using mmap."""
+    if ".." in file_path:
+        raise Exception("Invalid file path")
     results = []
     with open(file_path, "rb") as f:
         with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:

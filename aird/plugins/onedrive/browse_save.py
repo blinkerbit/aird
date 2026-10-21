@@ -15,6 +15,8 @@ def _guess_type(path: str) -> str:
 
 
 def _upload_file(provider: OneDriveProvider, local_path: str, remote_path: str) -> None:
+    if ".." in local_path:
+        raise Exception("Invalid file path")
     size = os.path.getsize(local_path)
     with open(local_path, "rb") as stream:
         provider.upload_file_at_path(

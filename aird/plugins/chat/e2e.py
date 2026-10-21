@@ -179,11 +179,15 @@ def _path_lock(path: str) -> threading.Lock:
 
 
 def _atomic_write_json(path: str, payload: dict) -> None:
+    if ".." in path:
+        raise Exception("Invalid file path")
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     existing = _read_json(path)
     if existing == payload:
         return
     tmp = f"{path}.{os.getpid()}.{threading.get_ident()}.{time.time_ns()}.tmp"
+    if ".." in tmp:
+        raise Exception("Invalid file path")
     with _path_lock(os.path.normcase(os.path.abspath(path))):
         existing = _read_json(path)
         if existing == payload:
@@ -213,6 +217,8 @@ def _atomic_write_json(path: str, payload: dict) -> None:
 
 
 def _read_json(path: str) -> dict | None:
+    if ".." in path:
+        raise Exception("Invalid file path")
     try:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)

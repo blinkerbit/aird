@@ -321,11 +321,16 @@ def download_cloud_item(share_id: str, item: dict) -> str:
         dest_path = os.path.join(share_dir, candidate)
         counter += 1
 
-    with open(dest_path, "wb") as out:
+    share_dir_real = os.path.realpath(share_dir)
+    dest_path_real = os.path.realpath(dest_path)
+    if os.path.commonpath([share_dir_real, dest_path_real]) != share_dir_real:
+        raise Exception("Invalid file path")
+
+    with open(dest_path_real, "wb") as out:
         for chunk in download.iter_chunks():
             out.write(chunk)
 
-    relative_path = os.path.relpath(dest_path, ROOT_DIR).replace("\\", "/")
+    relative_path = os.path.relpath(dest_path_real, ROOT_DIR).replace("\\", "/")
     return relative_path
 
 
