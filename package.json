@@ -32,8 +32,8 @@
     "eslint-plugin-sonarjs": "^4.2.2",
     "fflate": "^0.8.2",
     "globals": "^17",
-    "happy-dom": "^21.0.1",
-    "playwright": "^1.64.0",
+    "happy-dom": "^21.0.3",
+    "playwright": "^1.64.1",
     "qrcode": "^1.5.4",
     "tailwindcss": "^4",
     "vitest": "^5"
