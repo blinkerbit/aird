@@ -30,11 +30,11 @@ function meName() {
 
 function ensureCallStyles() {
   const existing = document.getElementById('chatCallStyles');
-  if (existing?.dataset.version === '11') return;
+  if (existing?.dataset.version === '12') return;
   existing?.remove();
   const style = document.createElement('style');
   style.id = 'chatCallStyles';
-  style.dataset.version = '11';
+  style.dataset.version = '12';
   style.textContent = `
     .chat-call-btn{display:inline-flex;align-items:center;justify-content:center;width:2.15rem;height:2.15rem;padding:0;border:0;border-radius:999px;background:transparent;color:color-mix(in oklch,var(--color-base-content) 70%,transparent);box-shadow:none;cursor:pointer}
     .chat-call-btn svg{width:1.15rem;height:1.15rem}
@@ -60,7 +60,7 @@ function ensureCallStyles() {
     .chat-call-stage{position:relative;flex:1;width:100%;min-height:0}
     .chat-call-tile{position:absolute;overflow:hidden;background:#17171d}
     .chat-call-tile--remote{inset:0}
-    .chat-call-tile--local{right:.75rem;bottom:.75rem;width:min(34vw,13.5rem);aspect-ratio:3/4;border-radius:.85rem;box-shadow:0 10px 28px rgba(0,0,0,.45);z-index:2;border:1px solid rgba(255,255,255,.12)}
+    .chat-call-tile--local{right:.75rem;bottom:.75rem;width:min(34vw,13.5rem);aspect-ratio:3/4;border-radius:.85rem;box-shadow:0 10px 28px rgba(0,0,0,.45);z-index:2;border:1px solid rgba(255,255,255,.12);touch-action:none;cursor:grab;user-select:none}
     .chat-call-pipmin{position:absolute;top:.4rem;right:.4rem;z-index:4;width:1.75rem;height:1.75rem;padding:0;border:0;border-radius:999px;background:rgba(0,0,0,.55);color:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
     .chat-call-pipmin svg{width:1rem;height:1rem}
     .chat-call-pipmin .icon-show{display:none}
@@ -136,6 +136,45 @@ function tileMarkup(which, name) {
     ${pip}`;
 }
 
+function wireSelfPreview(overlay) {
+  const stage = overlay.querySelector('.chat-call-stage');
+  const tile = overlay.querySelector('#chatCallLocalTile');
+  if (!stage || !tile) return;
+  let drag = null;
+  const place = (left, top) => {
+    const bounds = stage.getBoundingClientRect();
+    const maxL = Math.max(0, bounds.width - tile.offsetWidth);
+    const maxT = Math.max(0, bounds.height - tile.offsetHeight);
+    tile.style.left = Math.min(maxL, Math.max(0, left)) + 'px';
+    tile.style.top = Math.min(maxT, Math.max(0, top)) + 'px';
+    tile.style.right = 'auto';
+    tile.style.bottom = 'auto';
+  };
+  tile.addEventListener('pointerdown', (event) => {
+    if (event.target.closest('button')) return;
+    const rect = tile.getBoundingClientRect();
+    const bounds = stage.getBoundingClientRect();
+    drag = {
+      id: event.pointerId,
+      dx: event.clientX - rect.left,
+      dy: event.clientY - rect.top,
+      ox: bounds.left,
+      oy: bounds.top,
+    };
+    tile.setPointerCapture(event.pointerId);
+  });
+  tile.addEventListener('pointermove', (event) => {
+    if (!drag || drag.id !== event.pointerId) return;
+    place(event.clientX - drag.ox - drag.dx, event.clientY - drag.oy - drag.dy);
+  });
+  const endDrag = (event) => {
+    if (!drag || drag.id !== event.pointerId) return;
+    drag = null;
+  };
+  tile.addEventListener('pointerup', endDrag);
+  tile.addEventListener('pointercancel', endDrag);
+}
+
 function ensureOverlay() {
   const existing = document.getElementById('chatCallOverlay');
   if (existing && existing.dataset.version === '9') return existing;
@@ -178,8 +217,13 @@ function ensureOverlay() {
   el.dataset.version = '9';
   document.body.appendChild(el);
   el.querySelector('#chatCallHangupBtn')?.addEventListener('click', () => { void hangUp(); });
+  wireSelfPreview(el);
   el.querySelector('#chatCallMinimizeBtn')?.addEventListener('click', () => {
     closeDeviceMenu();
+    if (window.AndroidHost && typeof window.AndroidHost.enterPipMode === 'function') {
+      window.AndroidHost.enterPipMode();
+      return;
+    }
     setCallMinimized(true);
   });
   el.querySelector('.chat-call-pipmin')?.addEventListener('click', (event) => {
@@ -507,6 +551,15 @@ function scheduleRemoteDropCheck() {
   }, 3000);
 }
 
+function notifyAndroidCall(active, mode) {
+  try {
+    const host = globalThis.AndroidHost;
+    if (!host) return;
+    if (typeof host.setInVideoCall === 'function') host.setInVideoCall(Boolean(active));
+    if (active && typeof host.setSpeakerphone === 'function') host.setSpeakerphone(mode === 'video');
+  } catch { /* host missing */ }
+}
+
 function markAnswered() {
   if (phase !== 'outgoing' && !waitingForAnswer) return;
   phase = 'live';
@@ -518,7 +571,9 @@ function markAnswered() {
 
 function signalCall(type, convId, id) {
   if (!convId) return;
-  ctx.sendWs?.({ type, conversation_id: convId, call_id: id || callId || '' });
+  const ending = id || callId || '';
+  ctx.sendWs?.({ type, conversation_id: convId, call_id: ending });
+  try { globalThis.AndroidHost?.signalCall?.(type, convId, ending); } catch { /* ignore */ }
 }
 
 function sameCall(data) {
@@ -953,6 +1008,7 @@ async function joinSession(session, opts = {}) {
   const keepRing = Boolean(opts.keepRing);
   const { Room, RoomEvent, VideoPresets } = await loadLiveKit();
   activeMode = mode === 'video' ? 'video' : 'audio';
+  notifyAndroidCall(true, activeMode);
   if (!keepRing) {
     stopRing();
     hideIncoming();
@@ -1091,6 +1147,7 @@ async function startCall(mode, permission) {
   phase = 'outgoing';
   activeCallConvId = convId;
   activeMode = mode === 'video' ? 'video' : 'audio';
+  notifyAndroidCall(true, activeMode);
   callId = '';
   waitingForAnswer = true;
   showOverlay(true);
@@ -1121,6 +1178,8 @@ async function endLocal(message, notify) {
   const endingId = callId;
   const was = phase;
   phase = 'idle';
+  try { if (convId) globalThis.AndroidHost?.onCallEnded?.(convId); } catch { /* ignore */ }
+  notifyAndroidCall(false, activeMode);
   callId = '';
   clearBusyTimer();
   clearRemoteDropTimer();
@@ -1141,7 +1200,7 @@ async function endLocal(message, notify) {
   if (message) {
     showOverlay(true);
     setStatus(message);
-    setTimeout(() => { if (!room && phase === 'idle') showOverlay(false); }, 1600);
+    setTimeout(() => { if (!room && phase === 'idle') showOverlay(false); }, 4000);
   } else {
     showOverlay(false);
   }
@@ -1185,8 +1244,8 @@ function callConvMatches(convId) {
 }
 
 function revealIncoming(payload) {
-  const label = payload.mode === 'video' ? 'video' : 'voice';
-  const message = `${payload.from} is calling · ${label}`;
+  const label = payload.mode === 'video' ? 'Video call' : 'Voice call';
+  const message = `${label} from ${payload.from}. Accept or decline.`;
   const bar = ensureIncomingBar();
   const text = bar.querySelector('#chatCallIncomingText');
   if (text) text.textContent = message;
@@ -1203,9 +1262,29 @@ function revealIncoming(payload) {
   startRing('incoming');
 }
 
+function callSilenced(id) {
+  try { return JSON.parse(sessionStorage.getItem('aird-silenced-calls') || '[]').includes(id); }
+  catch { return false; }
+}
+
+function silenceCall(id) {
+  if (!id) return;
+  let cur = [];
+  try { cur = JSON.parse(sessionStorage.getItem('aird-silenced-calls') || '[]'); }
+  catch { cur = []; }
+  if (!cur.includes(id)) cur.push(id);
+  sessionStorage.setItem('aird-silenced-calls', JSON.stringify(cur.slice(-30)));
+}
+
 function showIncoming(payload) {
-  if (!payload || payload.type !== 'call_invite') return;
-  if (!payload.call_id || !payload.conversation_id || !payload.from || payload.from === meName()) return;
+  if (!payload || (payload.type && payload.type !== 'call_invite')) return;
+  const from = String(payload.from || payload.caller || payload.sender || '').trim();
+  const call_id = String(payload.call_id || '').trim();
+  const conversation_id = String(payload.conversation_id || '').trim();
+  if (!call_id || !conversation_id) return;
+  if (from && identityBase(from) === identityBase(meName())) return;
+  payload = { ...payload, type: 'call_invite', from: from || 'Someone', call_id, conversation_id };
+  if (callSilenced(payload.call_id)) return;
   if (payload.call_id && callId && payload.call_id === callId && phase === 'incoming') {
     const bar = document.getElementById('chatCallIncoming');
     if (bar && !bar.classList.contains('hidden')) return;
@@ -1276,6 +1355,7 @@ async function acceptIncoming(permission) {
     await joinSession(data);
     if (phase !== 'joining') return;
     phase = 'live';
+    silenceCall(callId);
     setStatus(mode === 'video' ? 'Video call' : 'Voice call');
     signalCall('call_accept', convId, callId);
   } catch (err) {
@@ -1300,6 +1380,7 @@ async function acceptIncoming(permission) {
 function declineIncoming() {
   const conv = incoming?.conversation_id;
   const id = incoming?.call_id || callId;
+  silenceCall(id);
   if (conv) signalCall('call_decline', conv, id);
   phase = 'idle';
   callId = '';
@@ -1309,15 +1390,24 @@ function declineIncoming() {
   hideIncoming();
 }
 
+function endsActiveCall(data) {
+  const conv = String(data?.conversation_id || '');
+  if (!conv || phase === 'idle') return false;
+  return conv === activeCallConvId || conv === incoming?.conversation_id;
+}
+
 function onWs(data) {
   if (!data?.type) return;
   if (data.type === 'call_invite') showIncoming(data);
   if (data.type === 'call_accept' && sameCall(data) && phase === 'outgoing') markAnswered();
-  if (data.type === 'call_decline' && sameCall(data) && phase === 'outgoing') {
-    void endLocal('Call declined', false);
+  if (data.type === 'call_decline' && (sameCall(data) || endsActiveCall(data))) {
+    if (phase === 'outgoing') void endLocal('Busy', false);
+    else if (phase === 'incoming' || phase === 'joining') void endLocal('', false);
+    else if (phase !== 'idle') void endLocal('Call ended', false);
+    return;
   }
-  if (data.type === 'call_end' && sameCall(data) && phase !== 'idle') {
-    void endLocal('Call ended', false);
+  if (data.type === 'call_end' && (sameCall(data) || endsActiveCall(data)) && phase !== 'idle') {
+    void endLocal(phase === 'outgoing' ? 'Busy' : 'Call ended', false);
   }
 }
 
@@ -1380,7 +1470,10 @@ function takeUrlCallAction() {
 export function initCalls(options) {
   ctx = { ...ctx, ...options };
   globalThis.__AIRD_SHOW_CALL__ = showIncoming;
-  globalThis.__AIRD_ACCEPT_CALL__ = (payload) => { onNotificationAction('accept', payload); };
+  globalThis.__AIRD_ACCEPT_CALL__ = (payload) => {
+    if (payload?.call_id) globalThis.__AIRD_SILENCE_CALL__ = String(payload.call_id);
+    onNotificationAction('accept', payload);
+  };
   globalThis.__AIRD_REJECT_CALL__ = (payload) => { onNotificationAction('decline', payload); };
   ensureCallStyles();
   ensureOverlay();

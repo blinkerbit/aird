@@ -90,6 +90,8 @@ def test_list_messages_after_id(chat_env):
     newer = chat_db.list_messages("alice", conv, after_id=m1["id"])
     assert len(newer) == 1
     assert newer[0]["body"] == "two"
+    caught_up = chat_db.list_messages("alice", conv, after_id="pending-missing")
+    assert [m["body"] for m in caught_up] == ["one", "two"]
     assert chat_db.get_message("bob", m1["id"])["body"] == "one"
 
 

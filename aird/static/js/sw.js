@@ -3,7 +3,10 @@
  */
 'use strict';
 
-const STATIC_CACHE = 'aird-static-v1';
+const STATIC_CACHE = 'aird-static-v3';
+const viewingChatByClient = new Map();
+let pendingCallAction = null;
+let ringingCall = null;
 const PAGE_CACHE = 'aird-pages-v1';
 const SHELL = '/static/pwa-shell.html';
 const PRECACHE = [
@@ -52,6 +55,10 @@ function isStaticAsset(url) {
   return url.pathname.startsWith('/static/') || url.pathname === '/manifest.webmanifest';
 }
 
+function isCodeAsset(url) {
+  return /\.(js|mjs|css|html)$/.test(url.pathname);
+}
+
 function canStore(response) {
   return response && response.ok && response.type === 'basic' && !response.headers.has('set-cookie');
 }
@@ -72,9 +79,22 @@ async function staleWhileRevalidate(event, request, cacheName) {
   return Response.error();
 }
 
+async function networkFirstAsset(request, cacheName) {
+  const cache = await caches.open(cacheName);
+  try {
+    const response = await fetch(request, { cache: 'reload' });
+    if (canStore(response)) await cache.put(request, response.clone());
+    return response;
+  } catch {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    return Response.error();
+  }
+}
+
 async function networkFirstPage(request) {
   try {
-    const response = await fetch(request);
+    const response = await fetch(request, { cache: 'reload' });
     if (request.mode === 'navigate' && canStore(response)) {
       const cache = await caches.open(PAGE_CACHE);
       await cache.put(request, response.clone());
@@ -100,7 +120,8 @@ globalThis.addEventListener('fetch', (event) => {
   }
   if (bypassCache(event.request, url)) return;
   if (isStaticAsset(url)) {
-    event.respondWith(staleWhileRevalidate(event, event.request, STATIC_CACHE));
+    if (isCodeAsset(url)) event.respondWith(networkFirstAsset(event.request, STATIC_CACHE));
+    else event.respondWith(staleWhileRevalidate(event, event.request, STATIC_CACHE));
     return;
   }
   event.respondWith(networkFirstPage(event.request));
@@ -141,21 +162,63 @@ async function handlePush(event) {
   const body = data.body || data.preview || 'New message';
   const convId = String(data.conversation_id || '');
   const url = data.url || (convId ? `/chat?c=${encodeURIComponent(convId)}` : '/chat');
-  const tag = data.tag || (convId ? `aird-chat-${convId}` : 'aird-notify');
+  const callMode = data.mode === 'video' || data.mode === 'audio'
+    ? data.mode
+    : (/video/i.test(String(data.title || data.body || data.preview || '')) ? 'video' : 'audio');
+  const isCall = data.kind === 'call' || String(data.tag || '').startsWith('aird-call');
+  const tag = (isCall && convId && data.call_id)
+    ? `aird-call.${convId}.${data.call_id}.${callMode}`
+    : (data.tag || (convId ? `aird-chat-${convId}` : 'aird-notify'));
   const unread = Number(data.unread_total);
 
   const windows = await globalThis.clients.matchAll({ type: 'window', includeUncontrolled: true });
-  const onThisChat = windows.some((client) => client.visibilityState === 'visible' && viewingChat(client.url, convId));
+  const onThisChat = !isCall && windows.some((client) => clientIsWatching(client, convId));
+  if (isCall && data.call_id && convId) {
+    const invitePayload = {
+      type: 'call_invite',
+      conversation_id: convId,
+      from: data.sender || title,
+      mode: callMode,
+      call_id: data.call_id,
+    };
+    ringingCall = { payload: invitePayload, at: Date.now() };
+    for (const client of windows) {
+      try { client.postMessage({ type: 'aird-call-invite', payload: invitePayload }); } catch { /* closed */ }
+    }
+  }
   if (!onThisChat) {
-    await globalThis.registration.showNotification(title, {
+    const note = {
       body,
       icon: '/static/img/pwa-icon-192.png',
       badge: '/static/img/pwa-icon-192.png',
       tag,
       renotify: true,
-      vibrate: [80, 40, 80],
-      data: { url, conversation_id: convId },
-    });
+      requireInteraction: isCall,
+      silent: false,
+      vibrate: isCall ? [200, 100, 200, 100, 200] : [80, 40, 80],
+      data: {
+        url,
+        conversation_id: convId,
+        kind: isCall ? 'call' : 'chat',
+        call_id: data.call_id || '',
+        from: data.sender || title,
+        mode: callMode,
+      },
+    };
+    const maxActions = globalThis.Notification?.maxActions || 0;
+    if (isCall && maxActions >= 2) {
+      note.actions = [
+        { action: 'accept', title: 'Accept' },
+        { action: 'decline', title: 'Decline' },
+      ];
+    }
+    try {
+      await globalThis.registration.showNotification(title, note);
+    } catch {
+      delete note.actions;
+      note.requireInteraction = false;
+      await globalThis.registration.showNotification(title, note);
+    }
   }
   if (typeof navigator.setAppBadge === 'function' && Number.isFinite(unread)) {
     if (unread > 0) await navigator.setAppBadge(unread);
@@ -163,21 +226,79 @@ async function handlePush(event) {
   }
 }
 
-function viewingChat(clientUrl, convId) {
-  if (!convId) return false;
-  try {
-    const url = new URL(clientUrl);
-    return url.pathname === '/chat' && url.searchParams.get('c') === convId;
-  } catch {
-    return false;
-  }
+function clientIsWatching(client, convId) {
+  if (!convId || client.visibilityState !== 'visible' || !client.focused) return false;
+  const row = viewingChatByClient.get(client.id);
+  if (!row || row.conversation_id !== convId) return false;
+  return Date.now() - row.at < 2000;
+}
+
+function callDataFromNotification(notification) {
+  const data = notification?.data || {};
+  if (data.kind === 'call' && data.call_id && data.conversation_id) return data;
+  const parts = String(notification?.tag || '').split('.');
+  if (parts[0] !== 'aird-call' || !parts[1] || !parts[2]) return null;
+  return {
+    url: `/chat?c=${encodeURIComponent(parts[1])}`,
+    conversation_id: parts[1],
+    call_id: parts[2],
+    mode: parts[3] === 'video' ? 'video' : 'audio',
+    from: notification.title || 'Call',
+    kind: 'call',
+  };
+}
+
+function callOpenUrl(data, action) {
+  const url = new URL(data.url || '/chat', globalThis.location.origin);
+  if (!url.searchParams.get('c') && data.conversation_id) url.searchParams.set('c', data.conversation_id);
+  url.searchParams.set('call_action', action);
+  url.searchParams.set('call_id', data.call_id);
+  url.searchParams.set('call_mode', data.mode || 'audio');
+  if (data.from) url.searchParams.set('call_from', data.from);
+  return url.href;
 }
 
 globalThis.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  const target = event.notification.data?.url || '/files/';
+  const note = event.notification;
+  const data = callDataFromNotification(note);
+  if (data?.call_id) {
+    const action = event.action === 'accept' || event.action === 'decline' ? event.action : 'open';
+    const payload = {
+      type: 'call_invite',
+      conversation_id: data.conversation_id,
+      from: data.from || note.title || 'Call',
+      mode: data.mode || 'audio',
+      call_id: data.call_id,
+    };
+    const target = callOpenUrl(data, action);
+    // Android drops the click unless openWindow is the first client call.
+    const launch = action === 'decline' ? null : globalThis.clients.openWindow(target);
+    event.waitUntil(deliverCallAction(action, payload, launch, note));
+    return;
+  }
+  note.close();
+  const target = (note.data && note.data.url) || '/files/';
   event.waitUntil(openOrFocus(target));
 });
+
+async function deliverCallAction(action, payload, launch, note) {
+  const msg = { type: 'aird-call-action', action, payload };
+  pendingCallAction = { ...msg, at: Date.now() };
+  const windows = await globalThis.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  await Promise.all(windows.map((client) => client.postMessage(msg).catch(() => {})));
+  if (launch) {
+    try {
+      const opened = await launch;
+      if (opened) {
+        await opened.postMessage(msg).catch(() => {});
+        if (opened.focus) await opened.focus();
+      }
+    } catch { /* a window is already open */ }
+    const visible = windows.find((client) => client.visibilityState === 'visible') || windows[0];
+    try { if (visible?.focus) await visible.focus(); } catch { /* ignore */ }
+  }
+  try { note?.close(); } catch { /* already closed */ }
+}
 
 async function openOrFocus(url) {
   const abs = new URL(url, globalThis.location.origin).href;
@@ -203,10 +324,45 @@ async function openOrFocus(url) {
 globalThis.addEventListener('message', (event) => {
   if (event.origin !== globalThis.location.origin) return;
   const data = event.data || {};
+  if ((data.type === 'aird-calls-ready' || data.type === 'aird-call-peek') && event.source && ringingCall) {
+    if (Date.now() - ringingCall.at < 60000) {
+      event.source.postMessage({ type: 'aird-call-invite', payload: ringingCall.payload });
+    } else {
+      ringingCall = null;
+    }
+  }
+  if (data.type === 'aird-call-clear') ringingCall = null;
+  if (data.type === 'aird-calls-ready' && event.source && pendingCallAction) {
+    if (Date.now() - pendingCallAction.at < 60000) {
+      event.source.postMessage(pendingCallAction);
+    }
+    pendingCallAction = null;
+  }
   if (data.type === 'aird-skip-waiting') {
     globalThis.skipWaiting();
+  }
+  if (data.type === 'aird-badge') {
+    const n = Math.max(0, Math.floor(Number(data.count) || 0));
+    event.waitUntil((async () => {
+      if (typeof navigator.setAppBadge !== 'function') return;
+      if (n > 0) await navigator.setAppBadge(n);
+      else await navigator.clearAppBadge();
+    })());
   }
   if (data.type === 'aird-clear-pages') {
     event.waitUntil(caches.delete(PAGE_CACHE));
   }
+  if (data.type === 'aird-viewing-chat') {
+    const id = event.source?.id;
+    const convId = String(data.conversation_id || '');
+    if (id) {
+      viewingChatByClient.set(id, { conversation_id: convId, at: Date.now() });
+    }
+    if (convId) event.waitUntil(clearChatNotification(convId));
+  }
 });
+
+async function clearChatNotification(convId) {
+  const notes = await globalThis.registration.getNotifications({ tag: `aird-chat-${convId}` });
+  notes.forEach((note) => note.close());
+}

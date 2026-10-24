@@ -59,6 +59,8 @@
               <p class="pane-lead">
                 {% if plugin['id'] == 'direct_messages' %}
                 End-to-end encrypted direct messages between users.
+                {% elif plugin['id'] == 'voice_video' %}
+                Voice and video calls in chat via LiveKit (set LIVEKIT_* on the server).
                 {% elif plugin['id'] == 'gitlab' %}
                 GitLab boards, issue mapping, and repo-linked tickets. Admin app — open from here, not the main nav.
                 {% elif plugin['id'] == 'onedrive' %}

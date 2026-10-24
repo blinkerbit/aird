@@ -710,6 +710,16 @@ class ChatPageHandler(BaseHandler):
     def get(self):
         if not _require_chat(self):
             return
+        try:
+            from aird.plugins.calls import is_calls_enabled
+
+            if is_calls_enabled():
+                self.set_header(
+                    "Permissions-Policy",
+                    "camera=(self), microphone=(self), geolocation=(), payment=()",
+                )
+        except ImportError:
+            pass
         self.render("chat.html")
 
 

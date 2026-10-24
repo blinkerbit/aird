@@ -73,8 +73,42 @@ import { apiFetch } from './core/http.js';
     return ecdhDeriveAesKey(priv, pub, convId, INFO);
   }
 
+  function clearKeyCaches() {
+    convCache.clear();
+    aesKeys.clear();
+    aesInflight.clear();
+    convFallback.clear();
+  }
+
+  async function adoptServerIdentity(user, api) {
+    let backup = null;
+    try {
+      backup = (await api('/api/chat/e2e/identity'))?.backup;
+    } catch (err) {
+      console.debug('aird identity refresh failed', err);
+      return;
+    }
+    if (!backup?.privateJwk || !backup?.publicJwk) return;
+    if (identity?.kid && backup.kid === identity.kid) return;
+    await importBackup(backup, user);
+    clearKeyCaches();
+    try { await publishIdentity(api); } catch (err) { console.debug('e2e publish after adopt', err); }
+    global.dispatchEvent(new CustomEvent('aird-chat-identity', { detail: { replaced: true } }));
+  }
+
   async function loadOrCreateIdentity(user, api) {
     username = user;
+    const stored = await idbGet('identity', user);
+    if (stored?.privateJwk && stored?.publicJwk) {
+      identity = {
+        publicJwk: stored.publicJwk,
+        privateKey: await importPrivate(stored.privateJwk),
+        privateJwk: stored.privateJwk,
+        kid: stored.kid || await fingerprint(stored.publicJwk),
+      };
+      if (api) void adoptServerIdentity(user, api);
+      return identity;
+    }
     if (api) {
       try {
         const backup = (await api('/api/chat/e2e/identity'))?.backup;
@@ -85,16 +119,6 @@ import { apiFetch } from './core/http.js';
       } catch (err) {
         console.debug('aird identity restore failed', err);
       }
-    }
-    const stored = await idbGet('identity', user);
-    if (stored?.privateJwk && stored?.publicJwk) {
-      identity = {
-        publicJwk: stored.publicJwk,
-        privateKey: await importPrivate(stored.privateJwk),
-        privateJwk: stored.privateJwk,
-        kid: stored.kid || await fingerprint(stored.publicJwk),
-      };
-      return identity;
     }
     if (global.AirdChatKeyBackup?.tryRestoreFromConfiguredPath) {
       try {
@@ -190,6 +214,8 @@ import { apiFetch } from './core/http.js';
   const convCache = new Map();
   const convFallback = new Map();
   const inflight = new Map();
+  const aesKeys = new Map();
+  const aesInflight = new Map();
 
   async function loadConvRaw(convId) {
     const hit = convCache.get(convId);
@@ -202,18 +228,40 @@ import { apiFetch } from './core/http.js';
     return null;
   }
 
+  async function importAesCached(convId, raw) {
+    const bytes = asBytes(raw);
+    const hit = aesKeys.get(convId);
+    if (hit && bytesEq(hit.raw, bytes)) return hit.key;
+    const pending = aesInflight.get(convId);
+    if (pending) return pending;
+    const run = importAes(bytes).then((key) => {
+      aesKeys.set(convId, { raw: bytes, key });
+      if (aesInflight.get(convId) === run) aesInflight.delete(convId);
+      return key;
+    });
+    aesInflight.set(convId, run);
+    return run;
+  }
+
   async function saveConvRaw(convId, raw) {
     const copy = raw instanceof Uint8Array ? raw : new Uint8Array(raw);
     const prev = asBytes(convCache.get(convId));
-    if (prev && !bytesEq(prev, copy)) {
+    if (prev && bytesEq(prev, copy)) return;
+    if (prev) {
       const list = convFallback.get(convId) || [];
       list.push(prev);
       convFallback.set(convId, list.slice(-4));
+      aesKeys.delete(convId);
     }
     convCache.set(convId, copy);
+    try {
+      await idbSet('convKeys', convId, copy);
+    } catch (err) {
+      console.debug('conv key persist failed', err);
+    }
   }
 
-  async function ensureConversation(api, convId, memberNames) {
+  function syncConversation(api, convId, memberNames) {
     const pending = inflight.get(convId);
     if (pending) return pending;
     const run = ensureConversationInner(api, convId, memberNames).finally(() => {
@@ -221,6 +269,26 @@ import { apiFetch } from './core/http.js';
     });
     inflight.set(convId, run);
     return run;
+  }
+
+  function scheduleSync(api, convId, memberNames) {
+    if (inflight.has(convId)) return;
+    const run = ensureConversationInner(api, convId, memberNames).catch((err) => {
+      console.debug('e2e sync failed', err);
+      return null;
+    }).finally(() => {
+      if (inflight.get(convId) === run) inflight.delete(convId);
+    });
+    inflight.set(convId, run);
+  }
+
+  async function ensureConversation(api, convId, memberNames) {
+    const local = asBytes(await loadConvRaw(convId));
+    if (local) {
+      scheduleSync(api, convId, memberNames);
+      return importAesCached(convId, local);
+    }
+    return syncConversation(api, convId, memberNames);
   }
 
   async function ensureConversationInner(api, convId, memberNames) {
@@ -345,8 +413,7 @@ import { apiFetch } from './core/http.js';
     if (!user || !global.crypto?.subtle) return;
     const start = async () => {
       try {
-        if (!identity) await loadOrCreateIdentity(user, defaultApi);
-        try { await persistIdentity(defaultApi); } catch (err) { console.debug('e2e persist', err); }
+        await global.AirdChatE2E.init(user, defaultApi);
       } catch (err) {
         console.debug('e2e background init failed', err);
       }
@@ -360,9 +427,9 @@ import { apiFetch } from './core/http.js';
   }
 
   async function aesFor(convId) {
-    const raw = await loadConvRaw(convId);
+    const raw = asBytes(await loadConvRaw(convId));
     if (!raw) throw new Error('No conversation key');
-    return importAes(raw);
+    return importAesCached(convId, raw);
   }
 
   async function encrypt(convId, plaintext) {
@@ -392,9 +459,11 @@ import { apiFetch } from './core/http.js';
       return true;
     });
     let lastErr = new Error('No conversation key');
-    for (const raw of candidates) {
+    for (let i = 0; i < candidates.length; i += 1) {
       try {
-        const key = await importAes(raw);
+        const key = i === 0
+          ? await importAesCached(convId, candidates[i])
+          : await importAes(candidates[i]);
         const pt = await crypto.subtle.decrypt(ad, key, ct);
         return new TextDecoder().decode(pt);
       } catch (err) {
@@ -518,19 +587,32 @@ import { apiFetch } from './core/http.js';
     return bundle;
   }
 
+  let identityPromise = null;
+
   global.AirdChatE2E = {
-    async init(user, api) {
-      if (!user || !global.crypto?.subtle) throw new Error('Web Crypto required for encrypted chat');
-      await loadOrCreateIdentity(user, api || defaultApi);
-      try {
-        await persistIdentity(api || defaultApi);
-      } catch (err) {
-        console.warn('chat e2e persist', err);
-        try { await publishIdentity(api || defaultApi); } catch (_) { /* */ }
+    init(user, api) {
+      if (!user || !global.crypto?.subtle) {
+        return Promise.reject(new Error('Web Crypto required for encrypted chat'));
       }
-      return identity.publicJwk;
+      if (identity && username === user) return Promise.resolve(identity.publicJwk);
+      if (!identityPromise) {
+        identityPromise = (async () => {
+          await loadOrCreateIdentity(user, api || defaultApi);
+          void persistIdentity(api || defaultApi).catch((err) => {
+            console.warn('chat e2e persist', err);
+            publishIdentity(api || defaultApi).catch(() => {});
+          });
+          return identity.publicJwk;
+        })().catch((err) => {
+          identityPromise = null;
+          throw err;
+        });
+      }
+      return identityPromise;
     },
     ensureConversation,
+    syncConversation,
+    warmKey: aesFor,
     requestKeyShare,
     hasConvKey: (convId) => convCache.has(convId),
     encrypt,

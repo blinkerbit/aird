@@ -11,6 +11,7 @@ htmlcov
 .pytest_cache
 .ruff_cache
 .vscode
+deploy/livekit/secrets.env
 .env
 .env.local
 .env.development.local
@@ -52,6 +53,7 @@ aird/static/js/share/app.js
 *.pdf
 *.iso
 *aird.db
+aird.sqlite3
 *.exe
 *.jar
 *.ps1

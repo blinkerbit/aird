@@ -48,6 +48,7 @@ FEATURE_FLAGS = {
     "smb_server": False,
     "webdav_server": False,
     "direct_messages": False,
+    "voice_video": False,
     "gitlab_integration": False,
     "onedrive_backup": False,
     "onedrive_browser": False,

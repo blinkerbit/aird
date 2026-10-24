@@ -93,6 +93,8 @@ import { apiFetch } from '../core/http.js';
   let activeConvId = null;
   let enhancedSecureView = false;
   let conversations = [];
+  let convFilter = '';
+  let convFilterKeepId = '';
   let pins = [];
   let receipts = [];
   let replyToId = null;
@@ -457,8 +459,13 @@ import { apiFetch } from '../core/http.js';
     const groupActs = conv.kind === 'group'
       ? '<button type="button" id="chatAddMemberBtn">Add member</button><button type="button" id="chatLeaveBtn" class="is-danger">Leave group</button>'
       : '';
+    const callBtns = globalThis.__AIRD_CALLS_ENABLED__
+      ? (globalThis.AirdChatCalls?.headerCallButtonsHtml?.()
+        || '<button type="button" id="chatVoiceCallBtn" class="chat-call-btn" title="Voice call" aria-label="Voice call">Voice</button><button type="button" id="chatVideoCallBtn" class="chat-call-btn" title="Video call" aria-label="Video call">Video</button>')
+      : '';
     header.innerHTML = `<button type="button" class="chat-back" id="chatBackBtn" aria-label="Back to conversations"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button><span class="chat-avatar-wrap">${avatarHtml(title)}${dot}</span><div class="chat-thread-head-main"><div class="chat-thread-title">${esc(title)} ${lock}</div><div class="chat-thread-sub">${esc(sub)}</div></div>
       <div class="chat-thread-actions">
+        ${callBtns}
         <details class="chat-head-more">
           <summary aria-label="Conversation actions">⋯</summary>
           <div class="chat-head-menu">
@@ -546,14 +553,31 @@ import { apiFetch } from '../core/http.js';
     runAsync(() => openConversation(e.currentTarget.dataset.id), 'openConversation');
   }
 
+  function convMatchesQuery(c, query) {
+    const q = query.toLowerCase();
+    const bits = [
+      convTitle(c),
+      c.peer_username || '',
+      c.title || '',
+      c.last_preview || '',
+      ...(c.members || []).map((m) => m.username || ''),
+    ];
+    return bits.join('\n').toLowerCase().includes(q);
+  }
+
   function renderConvList() {
     if (!convList) return;
     const enhancedHtml = window.AirdEnhancedSecure?.listHtml?.() || '';
-    if (!conversations.length && !enhancedHtml) {
-      convList.innerHTML = '<li class="p-3 text-sm opacity-50 text-center">No conversations yet</li>';
+    const shown = convFilter
+      ? conversations.filter((c) => c.id === convFilterKeepId || convMatchesQuery(c, convFilter))
+      : conversations;
+    if (!shown.length && !enhancedHtml) {
+      convList.innerHTML = convFilter
+        ? '<li class="p-3 text-sm opacity-50 text-center">No matches</li>'
+        : '<li class="p-3 text-sm opacity-50 text-center">No conversations yet</li>';
       return;
     }
-    convList.innerHTML = enhancedHtml + conversations.map((c) => {
+    convList.innerHTML = enhancedHtml + shown.map((c) => {
       const active = !enhancedSecureView && c.id === activeConvId ? ' active' : '';
       const badge = c.unread ? `<span class="badge badge-primary badge-xs">${c.unread}</span>` : '';
       const preview = convListPreview(c);
@@ -625,6 +649,11 @@ import { apiFetch } from '../core/http.js';
     return att?.media_kind === 'folder';
   }
 
+  function isGifAtt(att, msg) {
+    if (att?.media_kind === 'gif' || msg?.msg_type === 'gif') return true;
+    return String(att?.original_name || '').toLowerCase().endsWith('.gif');
+  }
+
   function isImageAtt(att, msg) {
     if (isFolderAtt(att)) return false;
     const kind = att?.media_kind || (msg?.msg_type === 'gif' ? 'gif' : '');
@@ -632,11 +661,6 @@ import { apiFetch } from '../core/http.js';
     const name = String(att?.original_name || '').toLowerCase();
     const ext = name.split('.').pop();
     return IMAGE_EXTS.has(ext);
-  }
-
-  function isGifAtt(att, msg) {
-    if (att?.media_kind === 'gif' || msg?.msg_type === 'gif') return true;
-    return String(att?.original_name || '').toLowerCase().endsWith('.gif');
   }
 
   function gifDurationMs(bytes) {
@@ -717,7 +741,10 @@ import { apiFetch } from '../core/http.js';
       canvas.height = img.naturalHeight;
       canvas.getContext('2d').drawImage(img, 0, 0);
       canvas.hidden = false;
+      img.hidden = true;
     }
+    img.dataset.gifHold = '1';
+    if (img.getAttribute('src')) img.removeAttribute('src');
     img.dataset.gifState = 'paused';
     syncGifToggle(img);
   }
@@ -736,12 +763,15 @@ import { apiFetch } from '../core/http.js';
     if (!base) return;
     img._gifWantPlay = true;
     img._gifIgnoreIoUntil = Date.now() + 500;
+    img.hidden = false;
     if (img._gifCanvas) img._gifCanvas.hidden = true;
     img.dataset.gifState = 'playing';
+    delete img.dataset.gifHold;
     const bust = `${base}${base.includes('?') ? '&' : '?'}_=${Date.now()}`;
     img.removeAttribute('src');
     requestAnimationFrame(() => {
       img.src = bust;
+      if (img.complete && img.naturalWidth) scheduleGifPause(img);
     });
     syncGifToggle(img);
   }
@@ -786,6 +816,7 @@ import { apiFetch } from '../core/http.js';
       else freezeGif(img);
     });
     img.addEventListener('error', () => {
+      if (img.dataset.gifHold === '1') return;
       if (img.dataset.gifState === 'paused' && img._gifCanvas && !img._gifCanvas.hidden) return;
       img.replaceWith(Object.assign(document.createElement('div'), {
         className: 'chat-file-unavailable',
@@ -886,6 +917,12 @@ import { apiFetch } from '../core/http.js';
     if (id && replyLabelCache.has(id)) return replyLabelCache.get(id);
     const text = (row?.querySelector('.chat-msg-text')?.innerText || '').replace(/\s+/g, ' ').trim();
     return (text || 'Message').slice(0, 80);
+  }
+
+  function findMessageRow(id) {
+    const want = String(id || '');
+    if (!want || !messagesEl) return null;
+    return [...messagesEl.querySelectorAll('[data-msg-id]')].find((el) => el.dataset.msgId === want) || null;
   }
 
   function replyQuoteHtml(msg) {
@@ -1044,12 +1081,6 @@ import { apiFetch } from '../core/http.js';
     const url = (imgEl?.dataset.full || imgEl?.src) || '';
     if (img && url) img.src = url;
     dlg?.showModal();
-  }
-
-  function findMessageRow(id) {
-    const want = String(id || '');
-    if (!want || !messagesEl) return null;
-    return [...messagesEl.querySelectorAll('[data-msg-id]')].find((el) => el.dataset.msgId === want) || null;
   }
 
   async function jumpTo(id) {
@@ -1395,6 +1426,7 @@ import { apiFetch } from '../core/http.js';
     if (!msgs.length) showEmptyThread();
     else msgs.forEach((m) => paintMessage(m));
     if (msgs.length) messagesEl.scrollTop = messagesEl.scrollHeight;
+    if (convFilter) runSearch(searchInput?.value || convFilter);
     const last = msgs.toReversed().find((msg) => !msg._e2e || msg._decryptOk);
     if (last) markRead(last);
     const params = new URLSearchParams(location.search);
@@ -1709,29 +1741,48 @@ import { apiFetch } from '../core/http.js';
     userSuggest.innerHTML = '';
   }
 
-  async function runSearch(q) {
-    if (!searchResults) return;
+  function loadedMessageHits(query) {
+    const q = query.toLowerCase();
+    const hits = [];
+    if (!messagesEl || !activeConvId) return hits;
+    messagesEl.querySelectorAll('[data-msg-id]').forEach((row) => {
+      const text = (row.querySelector('.aird-chat-bubble-body')?.innerText || '').replace(/\s+/g, ' ').trim();
+      if (!text.toLowerCase().includes(q)) return;
+      const sender = (row.querySelector('.chat-msg-name')?.textContent || me || '').trim();
+      const idx = text.toLowerCase().indexOf(q);
+      const start = Math.max(0, idx - 24);
+      const snippet = (start ? '…' : '') + text.slice(start, start + 90);
+      hits.push({ id: row.dataset.msgId, sender, snippet });
+    });
+    return hits.slice(0, 30);
+  }
+
+  function runSearch(q) {
     const query = (q || '').trim();
-    if (query.length < 2) {
+    convFilter = query;
+    const hits = query ? loadedMessageHits(query) : [];
+    convFilterKeepId = hits.length ? activeConvId : '';
+    renderConvList();
+    if (!searchResults) return;
+    if (!query) {
       searchResults.classList.add('hidden');
       searchResults.innerHTML = '';
       return;
     }
-    const data = await api(`/api/chat/search?q=${encodeURIComponent(query)}`);
-    const rows = data.results || [];
-    if (!rows.length) {
-      searchResults.innerHTML = '<p class="text-xs opacity-50 p-2">No matches</p>';
-      searchResults.classList.remove('hidden');
+    if (!hits.length) {
+      searchResults.classList.add('hidden');
+      searchResults.innerHTML = '';
       return;
     }
-    searchResults.innerHTML = rows.map((r) =>
-      `<button type="button" class="chat-search-hit" data-cid="${esc(r.conversation_id)}" data-mid="${esc(r.id)}"><strong>${esc(r.sender_username)}</strong> ${esc(r.snippet || '')}</button>`
+    const title = convTitle(activeConv()) || 'This chat';
+    searchResults.innerHTML = hits.map((r) =>
+      `<button type="button" class="chat-search-hit" data-mid="${esc(r.id)}"><strong>${esc(r.sender)}</strong> <span class="opacity-60">${esc(title)}</span> ${esc(r.snippet)}</button>`
     ).join('');
     searchResults.classList.remove('hidden');
     searchResults.querySelectorAll('.chat-search-hit').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        await openConversation(btn.dataset.cid);
+      btn.addEventListener('click', () => {
         jumpTo(btn.dataset.mid);
+        searchResults.classList.add('hidden');
       });
     });
   }
@@ -1744,9 +1795,7 @@ import { apiFetch } from '../core/http.js';
   });
   searchInput?.addEventListener('input', () => {
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => runSearch(searchInput.value).catch((err) => {
-      console.debug('chat search failed', err);
-    }), 280);
+    searchTimer = setTimeout(() => runSearch(searchInput.value), 120);
   });
 
   document.addEventListener('click', (e) => {
@@ -2695,6 +2744,19 @@ import { apiFetch } from '../core/http.js';
     if (WS) {
       WS.connect();
       WS.subscribe(handleWsEvent);
+    }
+    if (globalThis.__AIRD_CALLS_ENABLED__) {
+      import('../chat-calls.js?v=20261024e').then((m) => {
+        globalThis.AirdChatCalls = m;
+        m.initCalls({
+          api,
+          me,
+          getActiveConvId: () => activeConvId,
+          sendWs: (payload) => window.AirdChatWS?.send(payload),
+          openConversation,
+        });
+        if (activeConvId) setThreadHeader(activeConv());
+      }).catch((err) => console.debug('chat calls init', err));
     }
     const start = async () => {
       identityReady = (E2E && me)
