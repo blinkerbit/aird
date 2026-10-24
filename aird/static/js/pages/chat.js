@@ -92,6 +92,8 @@ import { apiFetch } from '../core/http.js';
   let activeConvId = null;
   let enhancedSecureView = false;
   let conversations = [];
+  let convFilter = '';
+  let convFilterKeepId = '';
   let pins = [];
   let receipts = [];
   let replyToId = null;
@@ -549,14 +551,31 @@ import { apiFetch } from '../core/http.js';
     runAsync(() => openConversation(e.currentTarget.dataset.id), 'openConversation');
   }
 
+  function convMatchesQuery(c, query) {
+    const q = query.toLowerCase();
+    const bits = [
+      convTitle(c),
+      c.peer_username || '',
+      c.title || '',
+      c.last_preview || '',
+      ...(c.members || []).map((m) => m.username || ''),
+    ];
+    return bits.join('\n').toLowerCase().includes(q);
+  }
+
   function renderConvList() {
     if (!convList) return;
     const enhancedHtml = window.AirdEnhancedSecure?.listHtml?.() || '';
-    if (!conversations.length && !enhancedHtml) {
-      convList.innerHTML = '<li class="p-3 text-sm opacity-50 text-center">No conversations yet</li>';
+    const shown = convFilter
+      ? conversations.filter((c) => c.id === convFilterKeepId || convMatchesQuery(c, convFilter))
+      : conversations;
+    if (!shown.length && !enhancedHtml) {
+      convList.innerHTML = convFilter
+        ? '<li class="p-3 text-sm opacity-50 text-center">No matches</li>'
+        : '<li class="p-3 text-sm opacity-50 text-center">No conversations yet</li>';
       return;
     }
-    convList.innerHTML = enhancedHtml + conversations.map((c) => {
+    convList.innerHTML = enhancedHtml + shown.map((c) => {
       const active = !enhancedSecureView && c.id === activeConvId ? ' active' : '';
       const badge = c.unread ? `<span class="badge badge-primary badge-xs">${c.unread}</span>` : '';
       const preview = convListPreview(c);
@@ -628,6 +647,11 @@ import { apiFetch } from '../core/http.js';
     return att?.media_kind === 'folder';
   }
 
+  function isGifAtt(att, msg) {
+    if (att?.media_kind === 'gif' || msg?.msg_type === 'gif') return true;
+    return String(att?.original_name || '').toLowerCase().endsWith('.gif');
+  }
+
   function isImageAtt(att, msg) {
     if (isFolderAtt(att)) return false;
     const kind = att?.media_kind || (msg?.msg_type === 'gif' ? 'gif' : '');
@@ -635,6 +659,166 @@ import { apiFetch } from '../core/http.js';
     const name = String(att?.original_name || '').toLowerCase();
     const ext = name.split('.').pop();
     return IMAGE_EXTS.has(ext);
+  }
+
+  function gifDurationMs(bytes) {
+    if (bytes.length < 13 || bytes[0] !== 0x47 || bytes[1] !== 0x49 || bytes[2] !== 0x46) return 0;
+    let i = 13;
+    if (bytes[10] & 0x80) i += 3 * (2 ** ((bytes[10] & 7) + 1));
+    let cs = 0;
+    let frames = 0;
+    while (i < bytes.length) {
+      const sep = bytes[i++];
+      if (sep === 0x3b) break;
+      if (sep === 0x21) {
+        const label = bytes[i++];
+        if (label === 0xf9 && bytes[i] === 4) {
+          const delay = bytes[i + 2] | (bytes[i + 3] << 8);
+          cs += delay || 10;
+          frames += 1;
+        }
+        while (i < bytes.length) {
+          const size = bytes[i++];
+          if (!size) break;
+          i += size;
+        }
+        continue;
+      }
+      if (sep === 0x2c) {
+        if (i + 9 > bytes.length) break;
+        const packed = bytes[i + 8];
+        i += 9;
+        if (packed & 0x80) i += 3 * (2 ** ((packed & 7) + 1));
+        if (i >= bytes.length) break;
+        i += 1;
+        while (i < bytes.length) {
+          const size = bytes[i++];
+          if (!size) break;
+          i += size;
+        }
+        continue;
+      }
+      break;
+    }
+    return frames ? cs * 10 : 0;
+  }
+
+  let gifObserver = null;
+
+  function gifWatch() {
+    if (gifObserver) return gifObserver;
+    gifObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        const img = entry.target;
+        const onScreen = entry.isIntersecting && entry.intersectionRatio >= 0.2;
+        img._gifOnScreen = onScreen;
+        if (!onScreen && img.dataset.gifState === 'playing') freezeGif(img);
+      });
+    }, { root: messagesEl, threshold: [0, 0.2] });
+    return gifObserver;
+  }
+
+  function syncGifToggle(img) {
+    const btn = img._gifToggle;
+    if (!btn) return;
+    const playing = img.dataset.gifState === 'playing';
+    btn.textContent = playing ? 'Pause' : 'Play';
+    btn.setAttribute('aria-label', playing ? 'Pause GIF' : 'Play GIF');
+    btn.setAttribute('aria-pressed', playing ? 'true' : 'false');
+  }
+
+  function freezeGif(img) {
+    clearTimeout(img._gifTimer);
+    img._gifWantPlay = false;
+    const canvas = img._gifCanvas;
+    if (img.naturalWidth && canvas) {
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      canvas.hidden = false;
+      img.hidden = true;
+    }
+    img.dataset.gifHold = '1';
+    if (img.getAttribute('src')) img.removeAttribute('src');
+    img.dataset.gifState = 'paused';
+    syncGifToggle(img);
+  }
+
+  function scheduleGifPause(img) {
+    clearTimeout(img._gifTimer);
+    const ms = Math.min(Math.max(Number(img.dataset.gifMs) || 3500, 600), 20000);
+    img._gifTimer = setTimeout(() => {
+      if (img.dataset.gifState === 'playing') freezeGif(img);
+    }, ms);
+  }
+
+  function playGif(img) {
+    if (img.dataset.gifState === 'playing') return;
+    const src = img.dataset.gifSrc;
+    if (!src) return;
+    img._gifWantPlay = true;
+    img.hidden = false;
+    if (img._gifCanvas) img._gifCanvas.hidden = true;
+    img.dataset.gifState = 'playing';
+    delete img.dataset.gifHold;
+    if (img.getAttribute('src') !== src) img.src = src;
+    syncGifToggle(img);
+    if (img.complete && img.naturalWidth) scheduleGifPause(img);
+  }
+
+  function toggleGifPlayback(img) {
+    if (img.dataset.gifState === 'playing') freezeGif(img);
+    else playGif(img);
+  }
+
+  function bindGifPause(img) {
+    if (img.dataset.gifBound === '1') return;
+    img.dataset.gifBound = '1';
+    img.dataset.gifSrc = img.getAttribute('src') || img.dataset.full || '';
+    img.removeAttribute('onerror');
+    img.classList.add('chat-msg-gif');
+    const canvas = document.createElement('canvas');
+    canvas.className = 'chat-msg-image chat-msg-gif-still';
+    canvas.hidden = true;
+    canvas.setAttribute('aria-hidden', 'true');
+    img.after(canvas);
+    img._gifCanvas = canvas;
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'chat-gif-toggle';
+    toggle.textContent = 'Play';
+    toggle.setAttribute('aria-label', 'Play GIF');
+    toggle.setAttribute('aria-pressed', 'false');
+    toggle.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleGifPlayback(img);
+    });
+    img.parentElement?.append(toggle);
+    img._gifToggle = toggle;
+    const badge = document.createElement('span');
+    badge.className = 'chat-gif-badge';
+    badge.textContent = 'GIF';
+    img.parentElement?.append(badge);
+    img.addEventListener('load', () => {
+      if (img.dataset.gifState === 'playing') scheduleGifPause(img);
+      else freezeGif(img);
+    });
+    img.addEventListener('error', () => {
+      if (img.dataset.gifHold === '1') return;
+      img.replaceWith(Object.assign(document.createElement('div'), {
+        className: 'chat-file-unavailable',
+        textContent: 'File unavailable',
+      }));
+    });
+    gifWatch().observe(img);
+    const src = img.dataset.gifSrc;
+    if (!src || img.dataset.gifMs) return;
+    fetch(src, { credentials: 'same-origin' }).then(async (res) => {
+      if (!res.ok) return;
+      const ms = gifDurationMs(new Uint8Array(await res.arrayBuffer()));
+      if (ms) img.dataset.gifMs = String(ms + 80);
+    }).catch(() => {});
   }
 
   function highlightMentions(html) {
@@ -660,7 +844,8 @@ import { apiFetch } from '../core/http.js';
       const blank = att.share_url ? '' : ' target="_blank" rel="noopener"';
       const menu = mine ? '' : `<button type="button" class="chat-link-btn" data-att="save" data-id="${esc(msg.id)}" data-i="${i}">Save a copy</button>`;
       if (isImageAtt(att, msg)) {
-        return `<div class="chat-att-wrap"><img src="${esc(previewUrl)}" alt="${esc(name)}" class="chat-msg-image" data-full="${esc(previewUrl)}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'chat-file-unavailable',textContent:'File unavailable'}))">${menu}</div>`;
+        const gif = isGifAtt(att, msg) ? ' data-gif="1"' : '';
+        return `<div class="chat-att-wrap"><img src="${esc(previewUrl)}" alt="${esc(name)}" class="chat-msg-image" data-full="${esc(previewUrl)}"${gif} onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'chat-file-unavailable',textContent:'File unavailable'}))">${menu}</div>`;
       }
       if (isFolderAtt(att)) {
         return `<div class="chat-att-wrap"><a class="chat-file-card chat-file-card--folder" href="${esc(openUrl)}">${esc(name)}/</a>${menu}</div>`;
@@ -700,8 +885,7 @@ import { apiFetch } from '../core/http.js';
     const att = msgAttachments(msg || {})[0];
     if (att) {
       const name = att.original_name || att.name || '';
-      const gif = att.media_kind === 'gif' || msg?.msg_type === 'gif';
-      if (gif) return name || 'GIF';
+      if (isGifAtt(att, msg)) return name || 'GIF';
       if (isImageAtt(att, msg)) return name || 'Photo';
       if (isFolderAtt(att)) return `${name || 'Folder'}/`;
       return name || 'File';
@@ -716,6 +900,12 @@ import { apiFetch } from '../core/http.js';
     if (stored) return stored;
     const text = (row?.querySelector('.aird-chat-bubble-body')?.innerText || '').replace(/\s+/g, ' ').trim();
     return text.slice(0, 80) || 'Message';
+  }
+
+  function findMessageRow(id) {
+    const want = String(id || '');
+    if (!want || !messagesEl) return null;
+    return [...messagesEl.querySelectorAll('[data-msg-id]')].find((el) => el.dataset.msgId === want) || null;
   }
 
   function replyQuoteHtml(msg) {
@@ -835,6 +1025,10 @@ import { apiFetch } from '../core/http.js';
     const scope = root || messagesEl;
     if (!scope) return;
     scope.querySelectorAll('.chat-msg-image').forEach((img) => {
+      if (img.dataset.gif === '1') {
+        bindGifPause(img);
+        return;
+      }
       img.addEventListener('click', () => openLightbox(img));
     });
     scope.querySelectorAll('[data-att="open"]').forEach((btn) => {
@@ -864,12 +1058,6 @@ import { apiFetch } from '../core/http.js';
     const url = (imgEl?.dataset.full || imgEl?.src) || '';
     if (img && url) img.src = url;
     dlg?.showModal();
-  }
-
-  function findMessageRow(id) {
-    const want = String(id || '');
-    if (!want || !messagesEl) return null;
-    return [...messagesEl.querySelectorAll('[data-msg-id]')].find((el) => el.dataset.msgId === want) || null;
   }
 
   async function jumpTo(id) {
@@ -1215,6 +1403,7 @@ import { apiFetch } from '../core/http.js';
     if (!msgs.length) showEmptyThread();
     else msgs.forEach((m) => paintMessage(m));
     if (msgs.length) messagesEl.scrollTop = messagesEl.scrollHeight;
+    if (convFilter) runSearch(searchInput?.value || convFilter);
     const last = msgs.toReversed().find((msg) => !msg._e2e || msg._decryptOk);
     if (last) markRead(last);
     const params = new URLSearchParams(location.search);
@@ -1529,29 +1718,48 @@ import { apiFetch } from '../core/http.js';
     userSuggest.innerHTML = '';
   }
 
-  async function runSearch(q) {
-    if (!searchResults) return;
+  function loadedMessageHits(query) {
+    const q = query.toLowerCase();
+    const hits = [];
+    if (!messagesEl || !activeConvId) return hits;
+    messagesEl.querySelectorAll('[data-msg-id]').forEach((row) => {
+      const text = (row.querySelector('.aird-chat-bubble-body')?.innerText || '').replace(/\s+/g, ' ').trim();
+      if (!text.toLowerCase().includes(q)) return;
+      const sender = (row.querySelector('.chat-msg-name')?.textContent || me || '').trim();
+      const idx = text.toLowerCase().indexOf(q);
+      const start = Math.max(0, idx - 24);
+      const snippet = (start ? '…' : '') + text.slice(start, start + 90);
+      hits.push({ id: row.dataset.msgId, sender, snippet });
+    });
+    return hits.slice(0, 30);
+  }
+
+  function runSearch(q) {
     const query = (q || '').trim();
-    if (query.length < 2) {
+    convFilter = query;
+    const hits = query ? loadedMessageHits(query) : [];
+    convFilterKeepId = hits.length ? activeConvId : '';
+    renderConvList();
+    if (!searchResults) return;
+    if (!query) {
       searchResults.classList.add('hidden');
       searchResults.innerHTML = '';
       return;
     }
-    const data = await api(`/api/chat/search?q=${encodeURIComponent(query)}`);
-    const rows = data.results || [];
-    if (!rows.length) {
-      searchResults.innerHTML = '<p class="text-xs opacity-50 p-2">No matches</p>';
-      searchResults.classList.remove('hidden');
+    if (!hits.length) {
+      searchResults.classList.add('hidden');
+      searchResults.innerHTML = '';
       return;
     }
-    searchResults.innerHTML = rows.map((r) =>
-      `<button type="button" class="chat-search-hit" data-cid="${esc(r.conversation_id)}" data-mid="${esc(r.id)}"><strong>${esc(r.sender_username)}</strong> ${esc(r.snippet || '')}</button>`
+    const title = convTitle(activeConv()) || 'This chat';
+    searchResults.innerHTML = hits.map((r) =>
+      `<button type="button" class="chat-search-hit" data-mid="${esc(r.id)}"><strong>${esc(r.sender)}</strong> <span class="opacity-60">${esc(title)}</span> ${esc(r.snippet)}</button>`
     ).join('');
     searchResults.classList.remove('hidden');
     searchResults.querySelectorAll('.chat-search-hit').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        await openConversation(btn.dataset.cid);
+      btn.addEventListener('click', () => {
         jumpTo(btn.dataset.mid);
+        searchResults.classList.add('hidden');
       });
     });
   }
@@ -1564,9 +1772,7 @@ import { apiFetch } from '../core/http.js';
   });
   searchInput?.addEventListener('input', () => {
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => runSearch(searchInput.value).catch((err) => {
-      console.debug('chat search failed', err);
-    }), 280);
+    searchTimer = setTimeout(() => runSearch(searchInput.value), 120);
   });
 
   document.addEventListener('click', (e) => {

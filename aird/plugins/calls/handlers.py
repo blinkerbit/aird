@@ -70,7 +70,8 @@ class ChatCallHandler(BaseHandler, XSRFTokenMixin):
             self.write({"error": "Forbidden"})
             return
         room = room_name(conversation_id)
-        call_id = str(body.get("call_id") or "").strip() or uuid.uuid4().hex
+        supplied_call_id = str(body.get("call_id") or "").strip()
+        call_id = supplied_call_id or uuid.uuid4().hex
         token = create_participant_token(
             api_key=livekit_api_key(),
             api_secret=livekit_api_secret(),
@@ -78,7 +79,8 @@ class ChatCallHandler(BaseHandler, XSRFTokenMixin):
             identity=f"{username}:{uuid.uuid4().hex[:8]}",
             name=username,
         )
-        if body.get("invite") is not False:
+        joining = body.get("invite") is False and bool(supplied_call_id)
+        if not joining:
             dispatch_call_invite(
                 conversation_id=conversation_id,
                 caller_username=username,

@@ -162,7 +162,9 @@ async function handlePush(event) {
   const body = data.body || data.preview || 'New message';
   const convId = String(data.conversation_id || '');
   const url = data.url || (convId ? `/chat?c=${encodeURIComponent(convId)}` : '/chat');
-  const callMode = /video/i.test(String(data.body || data.preview || '')) ? 'video' : 'audio';
+  const callMode = data.mode === 'video' || data.mode === 'audio'
+    ? data.mode
+    : (/video/i.test(String(data.title || data.body || data.preview || '')) ? 'video' : 'audio');
   const isCall = data.kind === 'call' || String(data.tag || '').startsWith('aird-call');
   const tag = (isCall && convId && data.call_id)
     ? `aird-call.${convId}.${data.call_id}.${callMode}`

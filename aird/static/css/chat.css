@@ -1233,6 +1233,44 @@ body.chat-page {
   cursor: zoom-in;
 }
 
+.chat-msg-gif,
+.chat-msg-gif-still {
+  cursor: default;
+}
+
+.chat-gif-badge {
+  position: absolute;
+  left: 0.35rem;
+  bottom: 0.35rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.3rem;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+
+.chat-gif-toggle {
+  position: absolute;
+  right: 0.35rem;
+  bottom: 0.35rem;
+  z-index: 2;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.chat-gif-toggle:hover {
+  background: rgba(0, 0, 0, 0.78);
+}
+
 .chat-file-unavailable {
   font-size: 0.8rem;
   opacity: 0.55;

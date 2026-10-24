@@ -1244,8 +1244,8 @@ function callConvMatches(convId) {
 }
 
 function revealIncoming(payload) {
-  const label = payload.mode === 'video' ? 'video' : 'voice';
-  const message = `${payload.from} is calling · ${label}`;
+  const label = payload.mode === 'video' ? 'Video call' : 'Voice call';
+  const message = `${label} from ${payload.from}. Accept or decline.`;
   const bar = ensureIncomingBar();
   const text = bar.querySelector('#chatCallIncomingText');
   if (text) text.textContent = message;
@@ -1277,8 +1277,13 @@ function silenceCall(id) {
 }
 
 function showIncoming(payload) {
-  if (!payload || payload.type !== 'call_invite') return;
-  if (!payload.call_id || !payload.conversation_id || !payload.from || payload.from === meName()) return;
+  if (!payload || (payload.type && payload.type !== 'call_invite')) return;
+  const from = String(payload.from || payload.caller || payload.sender || '').trim();
+  const call_id = String(payload.call_id || '').trim();
+  const conversation_id = String(payload.conversation_id || '').trim();
+  if (!call_id || !conversation_id) return;
+  if (from && identityBase(from) === identityBase(meName())) return;
+  payload = { ...payload, type: 'call_invite', from: from || 'Someone', call_id, conversation_id };
   if (callSilenced(payload.call_id)) return;
   if (payload.call_id && callId && payload.call_id === callId && phase === 'incoming') {
     const bar = document.getElementById('chatCallIncoming');

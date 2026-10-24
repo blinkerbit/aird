@@ -12,7 +12,7 @@ from aird.plugins.chat import db as chat_db
 from aird.plugins.chat.service import get_chat_hub
 
 logger = logging.getLogger(__name__)
-_push_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="call-push")
+_push_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="call-push")
 _RING_TTL = 45
 
 
@@ -204,10 +204,11 @@ def _maybe_push_ring(caller: str, conversation_id: str, mode: str, call_id: str 
                     conn,
                     m["username"],
                     {
-                        "title": caller,
-                        "body": f"Incoming {label.lower()}",
+                        "title": label,
+                        "body": f"{caller} is calling. Accept or decline.",
                         "sender": caller,
                         "preview": label,
+                        "mode": "video" if mode == "video" else "audio",
                         "conversation_id": conversation_id,
                         "url": f"/chat?c={conversation_id}",
                     "tag": f"aird-call-{conversation_id}",

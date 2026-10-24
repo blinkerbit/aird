@@ -112,17 +112,25 @@ import { setAppIconBadge } from './core/app-badge.js';
     if (!payload?.conversation_id) return;
     if (payload.type && payload.type !== 'call_invite') return;
     if (payload.call_id && silencedCalls().includes(payload.call_id)) return;
-    const invite = { ...payload, type: 'call_invite' };
+    const invite = {
+      ...payload,
+      type: 'call_invite',
+      from: payload.from || payload.caller || payload.sender || '',
+    };
     const me = globalThis.__AIRD_CHAT_USER__ || '';
     if (invite.from && me && invite.from === me) return;
     if (typeof globalThis.__AIRD_SHOW_CALL__ === 'function') {
-      const extra = document.getElementById('airdCallPopup');
-      if (extra) extra.style.setProperty('display', 'none', 'important');
       globalThis.__AIRD_SHOW_CALL__(invite);
-      return;
+      const bar = document.getElementById('chatCallIncoming');
+      const shown = bar && !bar.classList.contains('hidden');
+      if (shown) {
+        const extra = document.getElementById('airdCallPopup');
+        if (extra) extra.style.setProperty('display', 'none', 'important');
+        return;
+      }
     }
-    const label = payload.mode === 'video' ? 'video' : 'voice';
-    const who = payload.from || 'Someone';
+    const label = payload.mode === 'video' ? 'Video call' : 'Voice call';
+    const who = invite.from || 'Someone';
     let el = document.getElementById('airdCallPopup');
     if (!el) {
       el = document.createElement('div');
@@ -168,7 +176,7 @@ import { setAppIconBadge } from './core/app-badge.js';
     }
     el._airdCall = invite;
     const text = document.getElementById('airdCallPopupText');
-    if (text) text.textContent = `${who} is calling · ${label}`;
+    if (text) text.textContent = `${label} from ${who}. Accept or decline.`;
     el.style.setProperty('display', 'flex', 'important');
   }
 
@@ -185,7 +193,7 @@ import { setAppIconBadge } from './core/app-badge.js';
     if (!globalThis.__AIRD_CALLS_ENABLED__) return;
     const WS = window.AirdChatWS;
     if (!WS) return;
-    const { initCalls } = await import('./chat-calls.js?v=20261024e');
+    const { initCalls } = await import('./chat-calls.js?v=20261024h');
     const callsOpts = {
       me: globalThis.__AIRD_CHAT_USER__ || '',
       api: async (url, opts) => {
@@ -263,6 +271,16 @@ import { setAppIconBadge } from './core/app-badge.js';
         globalThis.dispatchEvent(new CustomEvent('aird-call-action', { detail: data }));
       }
     });
+    const pullRing = async () => {
+      if (document.visibilityState === 'hidden') return;
+      try {
+        const res = await apiFetch('/api/chat/call-ring', { headers: { Accept: 'application/json' } });
+        const data = await res.json();
+        if (data?.ring?.type === 'call_invite' || data?.ring?.conversation_id) showCallPopup(data.ring);
+      } catch { /* ring endpoint quiet */ }
+    };
+    void pullRing();
+    setInterval(pullRing, 1000);
     const WS = window.AirdChatWS;
     if (!WS) return;
     WS.connect();
