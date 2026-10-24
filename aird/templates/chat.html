@@ -243,6 +243,7 @@
     </div>
   </div>
 
+  <script nonce="{{ csp_nonce }}" src="/static/js/theme.js"></script>
   <script nonce="{{ csp_nonce }}">window.__AIRD_CHAT_USER__ = {% raw json_encode(current_user.get('username') if current_user else '') %};</script>
   <script nonce="{{ csp_nonce }}">globalThis.__ONEDRIVE_BROWSER_CONFIG = { enabled: {{ 'true' if is_onedrive_browser_enabled() else 'false' }} };</script>
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/components/folder-picker.js"></script>
@@ -250,6 +251,6 @@
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/onedrive-fe/index.js?v=20260929c"></script>
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/chat-key-backup.js?v=20260906p"></script>
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/chat-secret.js?v=20260927c"></script>
-  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/pages/chat.js?v=20261024i"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/pages/chat.js?v=20261024j"></script>
 </body>
 </html>

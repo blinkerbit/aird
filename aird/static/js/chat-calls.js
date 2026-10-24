@@ -30,15 +30,14 @@ function meName() {
 
 function ensureCallStyles() {
   const existing = document.getElementById('chatCallStyles');
-  if (existing?.dataset.version === '12') return;
+  if (existing?.dataset.version === '13') return;
   existing?.remove();
   const style = document.createElement('style');
   style.id = 'chatCallStyles';
-  style.dataset.version = '12';
+  style.dataset.version = '13';
   style.textContent = `
-    .chat-call-btn{display:inline-flex;align-items:center;justify-content:center;width:2.15rem;height:2.15rem;padding:0;border:0;border-radius:999px;background:transparent;color:color-mix(in oklch,var(--color-base-content) 70%,transparent);box-shadow:none;cursor:pointer}
-    .chat-call-btn svg{width:1.15rem;height:1.15rem}
-    .chat-call-btn:hover{background:color-mix(in oklch,var(--color-primary) 14%,transparent);color:var(--color-primary)}
+    .chat-call-btn.btn{min-height:2rem;height:2rem;width:2rem;padding:0}
+    .chat-call-btn svg{width:16px;height:16px}
     .chat-call-incoming{position:fixed;inset:0;z-index:2147483000;display:flex !important;align-items:center;justify-content:center;padding:1rem;background:rgba(0,0,0,.55)}
     .chat-call-pagebar{position:fixed;top:0;left:0;right:0;z-index:2147483001;display:flex !important;align-items:center;justify-content:space-between;gap:.75rem;padding:calc(.65rem + env(safe-area-inset-top,0)) .8rem .65rem;background:#111827;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.28)}
     .chat-call-pagebar p{margin:0;font-weight:700;font-size:.95rem}
@@ -1517,10 +1516,10 @@ export function initCalls(options) {
   navigator.serviceWorker?.controller?.postMessage({ type: 'aird-calls-ready' });
 }
 
-const CALL_VOICE_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
-const CALL_VIDEO_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 13 5.2 3.1a.8.8 0 0 0 1.2-.7V8.6a.8.8 0 0 0-1.2-.7L16 11"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>';
+const CALL_VOICE_ICON = '<svg class="hdr-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
+const CALL_VIDEO_ICON = '<svg class="hdr-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="m16 13 5.2 3.1a.8.8 0 0 0 1.2-.7V8.6a.8.8 0 0 0-1.2-.7L16 11"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>';
 
 export function headerCallButtonsHtml() {
-  return `<button type="button" id="chatVoiceCallBtn" class="chat-call-btn" title="Voice call" aria-label="Voice call">${CALL_VOICE_ICON}</button>`
-    + `<button type="button" id="chatVideoCallBtn" class="chat-call-btn" title="Video call" aria-label="Video call">${CALL_VIDEO_ICON}</button>`;
+  return `<button type="button" id="chatVoiceCallBtn" class="btn btn-ghost btn-sm btn-square chat-call-btn" title="Voice call" aria-label="Voice call">${CALL_VOICE_ICON}</button>`
+    + `<button type="button" id="chatVideoCallBtn" class="btn btn-ghost btn-sm btn-square chat-call-btn" title="Video call" aria-label="Video call">${CALL_VIDEO_ICON}</button>`;
 }

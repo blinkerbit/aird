@@ -21,6 +21,7 @@ from aird.handlers.base_handler import (
     get_username_string_for_db,
     resolve_handler_rel,
 )
+from aird.core.fast_upload import FastUploadWriter
 from aird.core.transfer_native import try_start_native_socket_upload
 from aird.core.browse_paths import mounts_for_username, write_blocked_reason
 from aird.core.mmap_handler import MMapFileHandler

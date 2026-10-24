@@ -193,7 +193,7 @@ import { setAppIconBadge } from './core/app-badge.js';
     if (!globalThis.__AIRD_CALLS_ENABLED__) return;
     const WS = window.AirdChatWS;
     if (!WS) return;
-    const { initCalls } = await import('./chat-calls.js?v=20261024h');
+    const { initCalls } = await import('./chat-calls.js?v=20261024j');
     const callsOpts = {
       me: globalThis.__AIRD_CHAT_USER__ || '',
       api: async (url, opts) => {
