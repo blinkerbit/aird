@@ -41,6 +41,7 @@ from aird.network_share_manager import (
     smb_library_available,
     webdav_library_available,
 )
+from aird.plugins.calls import calls_library_available
 from aird.plugins.chat import chat_library_available
 from aird.plugins.gitlab import gitlab_library_available
 from aird.constants.admin import (
@@ -147,6 +148,12 @@ def _apply_admin_feature_flags(handler: BaseHandler) -> str:
         plugin_notice = plugin_notice or "gitlab_package_required"
     else:
         FEATURE_FLAGS["gitlab_integration"] = gitlab_requested
+    voice_video_requested = _admin_checkbox(handler, "voice_video")
+    if voice_video_requested and not calls_library_available():
+        FEATURE_FLAGS["voice_video"] = False
+        plugin_notice = plugin_notice or "calls_livekit_required"
+    else:
+        FEATURE_FLAGS["voice_video"] = voice_video_requested
     return plugin_notice
 
 
@@ -436,6 +443,7 @@ class AdminHandler(BaseHandler):
             smb_library_available=smb_library_available(),
             webdav_library_available=webdav_library_available(),
             chat_library_available=chat_library_available(),
+            calls_library_available=calls_library_available(),
             gitlab_library_available=gitlab_library_available(),
             admin_notice=self.get_argument("notice", ""),
         )

@@ -1,0 +1,11 @@
+services:
+  livekit:
+    image: livekit/livekit-server:v1.9.4
+    container_name: aird-livekit
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - secrets.env
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    command: ["--config", "/etc/livekit.yaml"]

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 
 import tornado.ioloop
 import tornado.websocket
@@ -28,6 +29,41 @@ from aird.utils.util import WebSocketConnectionManager
 
 logger = logging.getLogger(__name__)
 _ENHANCED_MESSAGE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{12,80}$")
+
+
+def _deliver_enhanced(conn, username: str, payload: dict) -> None:
+    if conn is None or not username:
+        return
+    uid = chat_db.resolve_user_id(conn, username)
+    if uid is None or not get_chat_hub().is_online(uid):
+        return
+    get_chat_hub().send_to_user(uid, payload)
+
+
+def flush_enhanced(conn) -> None:
+    hub = get_enhanced_secure_hub()
+    if not hub.shares_state():
+        return
+    names = get_chat_hub().online_usernames()
+    hub.touch_presence(names)
+    for username, payload in hub.take_outbox(names):
+        _deliver_enhanced(conn, username, payload)
+
+
+def _ensure_enhanced_pump(app) -> None:
+    if app.settings.get("_enhanced_pump"):
+        return
+    app.settings["_enhanced_pump"] = True
+    io = tornado.ioloop.IOLoop.current()
+
+    def tick() -> None:
+        try:
+            flush_enhanced(app.settings.get("db_conn"))
+        except Exception:
+            logger.debug("enhanced secure delivery failed", exc_info=True)
+        io.call_later(0.4, tick)
+
+    io.call_later(0.4, tick)
 
 
 class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandler):
@@ -75,9 +111,18 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
         chat_db.maybe_migrate_user(conn, username)
         get_chat_hub().add(uid, self, username)
         get_enhanced_secure_hub().clear_offline(username)
+        get_enhanced_secure_hub().touch_presence({username})
+        _ensure_enhanced_pump(self.application)
         self.write_message(json.dumps({"type": "chat_ready"}))
         for note in get_enhanced_secure_hub().pending_for(username):
             self.write_message(json.dumps(note))
+        try:
+            from aird.plugins.calls.notify import peek_call_ring
+            ring = peek_call_ring(username)
+            if ring:
+                self.write_message(json.dumps(ring))
+        except Exception:
+            pass
         dispatch_presence(username, uid, True)
 
     def on_close(self):
@@ -94,14 +139,17 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
         app = self.application
 
         def _fire() -> None:
-            if get_enhanced_secure_hub().offline_token(username) != token:
+            hub = get_enhanced_secure_hub()
+            if hub.offline_token(username) != token:
+                return
+            if hub.shares_state() and hub.recently_online(username):
                 return
             if get_chat_hub().is_online(user_id):
                 return
-            ended = get_enhanced_secure_hub().drop_user(username)
+            ended = hub.drop_user(username)
             conn = app.settings.get("db_conn")
             for room_id, peer in ended:
-                self._push_named(conn, peer, {
+                self._emit_enhanced(conn, peer, {
                     "type": "enhanced_ended",
                     "room_id": room_id,
                     "reason": "offline",
@@ -141,6 +189,32 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
             self._handle_enhanced_receipt(conn, data)
         elif msg_type == "enhanced_close":
             self._handle_enhanced_close(conn, data)
+        elif msg_type in ("call_accept", "call_end", "call_decline"):
+            self._handle_call_signal(data, msg_type)
+
+    def _handle_call_signal(self, data: dict, msg_type: str) -> None:
+        try:
+            from aird.plugins.calls import is_calls_enabled
+            from aird.plugins.calls.notify import dispatch_call_signal
+        except ImportError:
+            return
+        if not is_calls_enabled() or self._user_id is None or not self._username:
+            return
+        conversation_id = str(data.get("conversation_id") or "")
+        if not conversation_id or not chat_db.user_in_conversation(self._username, conversation_id):
+            return
+        extra = {}
+        if data.get("mode"):
+            extra["mode"] = data.get("mode")
+        if data.get("call_id"):
+            extra["call_id"] = str(data.get("call_id"))
+        dispatch_call_signal(
+            username=self._username,
+            conversation_id=conversation_id,
+            actor_id=self._user_id,
+            signal_type=msg_type,
+            extra=extra or None,
+        )
 
     def _handle_send(self, conn, data: dict) -> None:
         conversation_id = str(data.get("conversation_id") or "")
@@ -202,8 +276,18 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
 
     def _handle_typing(self, data: dict) -> None:
         conversation_id = str(data.get("conversation_id") or "")
-        if not conversation_id or not chat_db.user_in_conversation(self._username, conversation_id):
+        if not conversation_id:
             return
+        now = time.monotonic()
+        recent = getattr(self, "_typing_at", None)
+        if recent is None:
+            recent = {}
+            self._typing_at = recent
+        if now - recent.get(conversation_id, 0.0) < 0.8:
+            return
+        if not chat_db.user_in_conversation(self._username, conversation_id):
+            return
+        recent[conversation_id] = now
         dispatch_typing(self._username, conversation_id, self._user_id)
 
     def _handle_e2e_need_key(self, data: dict) -> None:
@@ -228,14 +312,25 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
         uid = chat_db.resolve_user_id(conn, username) if conn is not None else None
         return uid is not None and get_chat_hub().is_online(uid)
 
+    def _emit_enhanced(self, conn, username: str, payload: dict) -> None:
+        hub = get_enhanced_secure_hub()
+        if hub.shares_state():
+            hub.enqueue(username, payload)
+            flush_enhanced(conn)
+            return
+        self._push_named(conn, username, payload)
+
     def _publish_enhanced_secure(self, conn, view: dict) -> None:
         if not view.get("ready"):
             return
-        if not (self._user_online(conn, view["host"]) and self._user_online(conn, view["peer"])):
+        hub = get_enhanced_secure_hub()
+        if not hub.shares_state() and not (
+            self._user_online(conn, view["host"]) and self._user_online(conn, view["peer"])
+        ):
             return
         for name in (view["host"], view["peer"]):
             other = view["peer"] if name == view["host"] else view["host"]
-            self._push_named(conn, name, {
+            self._emit_enhanced(conn, name, {
                 "type": "enhanced_open",
                 "room_id": view["room_id"],
                 "peer": other,
@@ -271,7 +366,7 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
         if view["ready"]:
             self._publish_enhanced_secure(conn, view)
             return
-        self._push_named(conn, peer, {
+        self._emit_enhanced(conn, peer, {
             "type": "enhanced_request",
             "room_id": view["room_id"],
             "from": self._username,
@@ -310,10 +405,16 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
         except ValueError as exc:
             self._enhanced_error(str(exc))
             return
-        if not self._user_online(conn, peer) or not self._user_online(conn, self._username):
+        hub = get_enhanced_secure_hub()
+        peer_online = (
+            hub.recently_online(peer)
+            if hub.shares_state()
+            else self._user_online(conn, peer) and self._user_online(conn, self._username)
+        )
+        if not peer_online:
             self._enhanced_error("Both people need to be online")
             return
-        self._push_named(conn, peer, {
+        self._emit_enhanced(conn, peer, {
             "type": "enhanced_msg",
             "room_id": room_id,
             "message_id": message_id,
@@ -334,7 +435,7 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
             peer = get_enhanced_secure_hub().peer_for(self._username, room_id)
         except ValueError:
             return
-        self._push_named(conn, peer, {
+        self._emit_enhanced(conn, peer, {
             "type": "enhanced_receipt",
             "room_id": room_id,
             "message_id": message_id,
@@ -349,4 +450,4 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
         other = view["peer"] if self._username == view["host"] else view["host"]
         note = {"type": "enhanced_ended", "room_id": room_id, "reason": "closed"}
         self.write_message(json.dumps(note))
-        self._push_named(conn, other, note)
+        self._emit_enhanced(conn, other, note)

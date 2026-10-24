@@ -350,12 +350,14 @@ def make_app(
         (r"/files/(.*)", MainHandler),
     ]
 
+    from aird.plugins.calls import register_calls
     from aird.plugins.chat import register_chat
     from aird.plugins.gitlab import register_gitlab
     from aird.plugins.onedrive_host import register_onedrive_host
     from aird.plugins.onedrive_browser import register_onedrive_browser
 
     register_chat(routes)
+    register_calls(routes)
     register_gitlab(routes)
     register_onedrive_host(routes)
     register_onedrive_browser(routes)
@@ -701,9 +703,18 @@ def _maybe_start_bulk_server(app, http_port: int) -> None:
     app.settings["bulk_tcp_server"] = server
 
 
+def _connect_chat_hub_bus() -> None:
+    from aird.plugins.chat.hub_bus import connect_if_started
+    from aird.plugins.chat.service import get_chat_hub
+
+    hub = get_chat_hub()
+    connect_if_started(hub.handle_bus_frame, on_connect=hub.publish_presence)
+
+
 def _run_http_server(app, ssl_options, sockets, http_port: int) -> None:
     from aird.event_loop import apply_io_thread_pool
 
+    _connect_chat_hub_bus()
     _tune_sockets(sockets)
     _maybe_start_bulk_server(app, http_port)
     # Default Tornado chunk_size is 64 KiB. WireGuard/LAN uses 50 MiB reads so
@@ -776,9 +787,12 @@ def _start_server(ssl_options, port: int, hostname: str, worker_count: int) -> N
                 describe_worker_layout(worker_count),
             )
             logger.warning(
-                "Multiple workers: in-memory WebSocket/P2P state is per process; "
-                "use sticky sessions at the load balancer if needed."
+                "Multiple workers: chat events fan out across processes; "
+                "other in-memory WebSocket/P2P state stays per process."
             )
+            from aird.plugins.chat.hub_bus import production_addr, spawn_hub_process
+
+            spawn_hub_process(production_addr(port), sockets)
             tornado.process.fork_processes(worker_count)
             _init_database()
             app = _build_application()

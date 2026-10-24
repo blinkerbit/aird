@@ -32,6 +32,7 @@ from aird.network_share_manager import (
     webdav_library_available,
 )
 from aird.utils.tag_display import tag_chip_inline_style
+from aird.plugins.calls import calls_library_available
 from aird.plugins.chat import chat_library_available
 from aird.plugins.gitlab import gitlab_library_available
 
@@ -94,6 +95,7 @@ async def admin_dashboard(request: Request) -> Response:
         smb_library_available=smb_library_available(),
         webdav_library_available=webdav_library_available(),
         chat_library_available=chat_library_available(),
+        calls_library_available=calls_library_available(),
         gitlab_library_available=gitlab_library_available(),
     )
 

@@ -677,9 +677,8 @@ def _list_message_rows(
 ) -> list:
     if after_id:
         ts = _message_created(conn, after_id)
-        if ts is None:
-            return []
-        return conn.execute(
+        if ts is not None:
+            return conn.execute(
             f"""
             {_MSG_SELECT}
             WHERE conversation_id = ? AND (created_at > ? OR (created_at = ? AND id > ?))

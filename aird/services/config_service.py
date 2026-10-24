@@ -200,6 +200,12 @@ class ConfigService:
             elif key == "gitlab_integration" and not gitlab_library_available():
                 value = False
                 notice = "gitlab_package_required"
+            elif key == "voice_video":
+                from aird.plugins.calls import calls_library_available
+
+                if not calls_library_available():
+                    value = False
+                    notice = "calls_livekit_required"
             elif key == "webdav_server" and not webdav_library_available():
                 value = False
                 notice = "webdav_package_required"

@@ -455,8 +455,13 @@ import { apiFetch } from '../core/http.js';
     const groupActs = conv.kind === 'group'
       ? '<button type="button" id="chatAddMemberBtn">Add member</button><button type="button" id="chatLeaveBtn" class="is-danger">Leave group</button>'
       : '';
+    const callBtns = globalThis.__AIRD_CALLS_ENABLED__
+      ? (globalThis.AirdChatCalls?.headerCallButtonsHtml?.()
+        || '<button type="button" id="chatVoiceCallBtn" class="chat-call-btn" title="Voice call" aria-label="Voice call">Voice</button><button type="button" id="chatVideoCallBtn" class="chat-call-btn" title="Video call" aria-label="Video call">Video</button>')
+      : '';
     header.innerHTML = `<button type="button" class="chat-back" id="chatBackBtn" aria-label="Back to conversations"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button><span class="chat-avatar-wrap">${avatarHtml(title)}${dot}</span><div class="chat-thread-head-main"><div class="chat-thread-title">${esc(title)} ${lock}</div><div class="chat-thread-sub">${esc(sub)}</div></div>
       <div class="chat-thread-actions">
+        ${callBtns}
         <details class="chat-head-more">
           <summary aria-label="Conversation actions">⋯</summary>
           <div class="chat-head-menu">
@@ -2427,6 +2432,19 @@ import { apiFetch } from '../core/http.js';
     if (WS) {
       WS.connect();
       WS.subscribe(handleWsEvent);
+    }
+    if (globalThis.__AIRD_CALLS_ENABLED__) {
+      import('../chat-calls.js?v=20261024e').then((m) => {
+        globalThis.AirdChatCalls = m;
+        m.initCalls({
+          api,
+          me,
+          getActiveConvId: () => activeConvId,
+          sendWs: (payload) => window.AirdChatWS?.send(payload),
+          openConversation,
+        });
+        if (activeConvId) setThreadHeader(activeConv());
+      }).catch((err) => console.debug('chat calls init', err));
     }
     const start = async () => {
       identityReady = (E2E && me)

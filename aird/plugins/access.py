@@ -15,6 +15,7 @@ SCOPE_USERS = "users"
 SCOPES = frozenset({SCOPE_NONE, SCOPE_ALL, SCOPE_USERS})
 
 PLUGIN_CHAT = "direct_messages"
+PLUGIN_CALLS = "voice_video"
 PLUGIN_GITLAB = "gitlab"
 PLUGIN_ONEDRIVE = "onedrive"
 PLUGIN_ONEDRIVE_BROWSER = "onedrive_browser"
@@ -22,6 +23,7 @@ PLUGIN_ONEDRIVE_BROWSER = "onedrive_browser"
 # Missing row: keep existing plugins usable when their flag is on.
 _DEFAULT_SCOPE = {
     PLUGIN_CHAT: SCOPE_ALL,
+    PLUGIN_CALLS: SCOPE_ALL,
     PLUGIN_GITLAB: SCOPE_ALL,
     PLUGIN_ONEDRIVE: SCOPE_NONE,
     PLUGIN_ONEDRIVE_BROWSER: SCOPE_ALL,
@@ -29,6 +31,15 @@ _DEFAULT_SCOPE = {
 
 
 # audience: "user" = end-user UI (nav / profile); "admin" = admin console apps.
+def _calls_catalog_available() -> bool:
+    try:
+        from aird.plugins.calls import calls_library_available
+
+        return calls_library_available()
+    except ImportError:
+        return False
+
+
 def catalog() -> list[dict]:
     return [
         {
@@ -36,6 +47,14 @@ def catalog() -> list[dict]:
             "label": "Direct messages",
             "flag": "direct_messages",
             "available": chat_library_available(),
+            "audience": "user",
+            "href": "/chat",
+        },
+        {
+            "id": PLUGIN_CALLS,
+            "label": "Voice and video calls",
+            "flag": "voice_video",
+            "available": _calls_catalog_available(),
             "audience": "user",
             "href": "/chat",
         },
@@ -180,9 +199,13 @@ def bind_template_plugin_checks(username: str | None, conn: sqlite3.Connection |
     from aird.plugins.onedrive import is_onedrive_enabled
     from aird.plugins.onedrive_browser import is_onedrive_browser_enabled
 
+    from aird.plugins.calls import is_calls_enabled as _calls_on
+
     return {
         "is_chat_enabled": lambda: is_chat_enabled()
         and user_may_use_plugin(PLUGIN_CHAT, username, conn),
+        "is_calls_enabled": lambda: _calls_on()
+        and user_may_use_plugin(PLUGIN_CALLS, username, conn),
         "is_gitlab_enabled": lambda: is_gitlab_enabled()
         and user_may_use_plugin(PLUGIN_GITLAB, username, conn),
         "is_onedrive_enabled": lambda: is_onedrive_enabled()
