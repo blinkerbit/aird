@@ -1,6 +1,7 @@
 'use strict';
 
 import { rowIsDir } from './rows.js';
+import { isCompactUi, placePortaledMenu, restorePortaledMenu } from '../core/anchor.js';
 
 function actionList() {
   if (!globalThis.__AIRD_ROW_MORE_ACTIONS) {
@@ -54,15 +55,21 @@ function rowContext(btn) {
   };
 }
 
+function toggleForMenu(menu) {
+  return menu?._airdToggle
+    || menu?.closest('.row-more-wrap')?.querySelector('.row-more-toggle')
+    || (menu?.previousElementSibling?.classList.contains('row-more-toggle') ? menu.previousElementSibling : null);
+}
+
 function closeAllMenus(except) {
   document.querySelectorAll('.row-more-menu').forEach((menu) => {
     if (except && menu === except) return;
     menu.hidden = true;
-    const toggle = menu.closest('.row-more-wrap')?.querySelector('.row-more-toggle')
-      || menu.previousElementSibling;
+    const toggle = toggleForMenu(menu);
     if (toggle?.classList.contains('row-more-toggle')) {
       toggle.setAttribute('aria-expanded', 'false');
     }
+    restorePortaledMenu(menu);
   });
 }
 
@@ -104,7 +111,10 @@ export function initRowMoreMenus() {
       const open = menu.hidden;
       closeAllMenus(open ? menu : null);
       menu.hidden = !open;
+      menu._airdToggle = toggle;
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open && isCompactUi()) placePortaledMenu(menu, toggle, { width: 200, height: 160, display: 'block' });
+      else restorePortaledMenu(menu);
       return;
     }
     const item = e.target.closest('.row-more-item');
@@ -112,8 +122,7 @@ export function initRowMoreMenus() {
       e.preventDefault();
       e.stopPropagation();
       const menu = item.closest('.row-more-menu');
-      const toggle = menu?.closest('.row-more-wrap')?.querySelector('.row-more-toggle')
-        || menu?.previousElementSibling;
+      const toggle = toggleForMenu(menu);
       const ctx = toggle ? rowContext(toggle) : {};
       const action = actionList().find((a) => a.id === item.dataset.rowMoreAction);
       closeAllMenus();

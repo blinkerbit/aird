@@ -6,10 +6,12 @@ import {
   attachAllowed,
   bindDropZone,
   clipboardFiles,
+  clipboardImageSrcs,
   completePath,
   createBrowsePicker,
   createPendingStore,
   droppedFiles,
+  fileFromImageSrc,
   filesApiUrl,
   formatRelPath,
   isFileDrag,
@@ -86,6 +88,40 @@ describe('chat attach gates', () => {
       files: [],
       items: [{ kind: 'file', getAsFile: () => img }, { kind: 'string', getAsFile: () => null }],
     })).toEqual([img]);
+  });
+
+  it('reads a gif clipboard item the file list misses and names it .gif', () => {
+    const gif = new File(['GIF89a'], 'image.png', { type: 'image/gif' });
+    const [file] = clipboardFiles({
+      files: [],
+      items: [{ kind: 'string', type: 'image/gif', getAsFile: () => gif }],
+    });
+    expect(file.name).toBe('image.gif');
+    expect(file.type).toBe('image/gif');
+  });
+
+  it('reads blob and data-url sticker images from clipboard html', async () => {
+    const dataUrl = `data:image/gif;base64,${btoa('GIF89a!!')}`;
+    const html = `<img src="${dataUrl}"><img src="blob:https://aird/1"><img src="https://evil/a.gif"><img src="data:image/svg+xml,x">`;
+    expect(clipboardImageSrcs({
+      getData: (type) => (type === 'text/html' ? html : ''),
+    })).toEqual([dataUrl, 'blob:https://aird/1']);
+    const fromData = await fileFromImageSrc(dataUrl);
+    expect(fromData.name).toBe('sticker.gif');
+    expect(fromData.type).toBe('image/gif');
+    const png = await fileFromImageSrc(`data:image/png;base64,${btoa('notagif')}`);
+    expect(png.name).toBe('image.png');
+    expect(png.type).toBe('image/png');
+    expect(await fileFromImageSrc('https://evil/a.gif')).toBeNull();
+    const body = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0, 1]);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, {
+      status: 200,
+      headers: { 'Content-Type': 'application/octet-stream' },
+    })));
+    const fromBlob = await fileFromImageSrc('blob:https://aird/sticker');
+    expect(fromBlob?.name).toBe('sticker.gif');
+    expect(fromBlob?.type).toBe('image/gif');
+    vi.unstubAllGlobals();
   });
 });
 
@@ -210,6 +246,10 @@ describe('chat page attach contract', () => {
     expect(js).toContain('if (!Array.isArray(data?.files)) throw');
     expect(js).toContain('filePicker.open()');
     expect(js).toContain('bindDropZone');
+    expect(js).toContain('clipboardImageSrcs');
+    expect(js).toContain('fileFromImageSrc');
+    expect(js).toContain('attachEditorImages()');
+    expect(js).toContain("addEventListener('beforeinput'");
   });
 });
 

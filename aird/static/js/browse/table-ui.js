@@ -9,6 +9,7 @@ import { openRowTagPopover } from './tags.js';
 import { closeSharePopup, showShareDetails } from './shares.js';
 import { renameItem, deleteItem, downloadFileViaHttp } from './bulk-actions.js';
 import { rowIsDir } from './rows.js';
+import { isCompactUi, placePortaledMenu, restorePortaledMenu } from '../core/anchor.js';
 
 const FolderPicker = globalThis.AirdFolderPicker;
 const FILE_VIEW_STORAGE_KEY = 'aird-browse-file-view';
@@ -72,11 +73,16 @@ export function initFileListViewToggle() {
 }
 
 function closeMobileActionMenus(exceptCell) {
+  document.querySelectorAll('.row-more-menu').forEach(function (menu) {
+    menu.hidden = true;
+    restorePortaledMenu(menu);
+  });
   document.querySelectorAll('.actions-cell.mobile-actions-open').forEach(function (cell) {
     if (cell === exceptCell) return;
     cell.classList.remove('mobile-actions-open');
     const btn = cell.querySelector('.mobile-actions-toggle');
     if (btn) btn.setAttribute('aria-expanded', 'false');
+    restorePortaledMenu(cell.querySelector('.mobile-actions-menu'));
   });
 }
 
@@ -92,12 +98,14 @@ export function initMobileActionMenus() {
     closeMobileActionMenus(cell);
     cell.classList.toggle('mobile-actions-open', opening);
     btn.setAttribute('aria-expanded', opening ? 'true' : 'false');
+    const menu = cell.querySelector('.mobile-actions-menu');
+    if (opening && isCompactUi()) placePortaledMenu(menu, btn, { width: 220, height: 220, display: 'grid' });
+    else restorePortaledMenu(menu);
   });
 
   document.addEventListener('click', function (e) {
-    if (!e.target.closest('.actions-cell')) {
-      closeMobileActionMenus();
-    }
+    if (e.target.closest('.actions-cell, .mobile-actions-menu, .row-more-menu')) return;
+    closeMobileActionMenus();
   });
 }
 
@@ -395,36 +403,40 @@ export function wireBrowseRowActions() {
   });
 }
 
+function inBrowseUi(el) {
+  return Boolean(el?.closest('#fileTable, .mobile-actions-menu, .aird-portaled-menu'));
+}
+
 export function wireBrowseTableDelegation() {
-  document.getElementById('fileTable')?.addEventListener('click', function (e) {
+  document.addEventListener('click', function (e) {
     const shareEl = e.target.closest('[data-share-path]');
-    if (shareEl?.closest('#fileTable')) {
+    if (inBrowseUi(shareEl)) {
       e.stopPropagation();
       e.preventDefault();
       void showShareDetails(shareEl.dataset.sharePath);
       return;
     }
     const renameEl = e.target.closest('[data-rename-path]');
-    if (renameEl?.closest('#fileTable')) {
+    if (inBrowseUi(renameEl)) {
       e.preventDefault();
       void renameItem(renameEl.dataset.renamePath);
       return;
     }
     const deleteEl = e.target.closest('[data-delete-path]');
-    if (deleteEl?.closest('#fileTable')) {
+    if (inBrowseUi(deleteEl)) {
       e.preventDefault();
       void deleteItem(deleteEl.dataset.deletePath, deleteEl.dataset.isDir === '1');
       return;
     }
     const dl = e.target.closest('.download-btn');
-    if (dl) {
+    if (inBrowseUi(dl)) {
       e.preventDefault();
       const path = dl.dataset.downloadPath || dl.closest('tr.file-row')?.dataset.path;
       if (path) void downloadFileViaHttp(path);
       return;
     }
     const tagBtn = e.target.closest('.row-tag-add-btn');
-    if (!tagBtn) return;
+    if (!inBrowseUi(tagBtn)) return;
     e.preventDefault();
     e.stopPropagation();
     void openRowTagPopover(tagBtn.dataset.path, tagBtn);

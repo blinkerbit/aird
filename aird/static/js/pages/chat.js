@@ -2,11 +2,14 @@ import {
   attachAllowed,
   bindDropZone,
   clipboardFiles,
+  clipboardImageSrcs,
   completePath,
   createBrowsePicker,
   createPendingStore,
+  fileFromImageSrc,
   filesApiUrl,
   formatRelPath,
+  inlineImageSrc,
   joinRel,
   looksLikePath,
   normalizeRel,
@@ -14,7 +17,7 @@ import {
   restyleCompleted,
   sameBrowseValue,
   takePendingBrowseAttachAll,
-} from '../chat-attach.js?v=20260930h';
+} from '../chat-attach.js?v=20261024b';
 import { escapeHtml as esc, escapeCssAttrValue as cssEscape } from '../core/dom-safe.js';
 import { apiFetch } from '../core/http.js';
 
@@ -1686,6 +1689,7 @@ import { apiFetch } from '../core/http.js';
   }, true);
 
   editor?.addEventListener('input', () => {
+    attachEditorImages();
     window.requestAnimationFrame(() => {
       const text = editor.innerText || '';
       const at = text.split(/\s/).pop() || '';
@@ -2208,20 +2212,109 @@ import { apiFetch } from '../core/http.js';
     },
     onBlocked: setE2eStatus,
   });
-  editor?.addEventListener('paste', (e) => {
-    const files = clipboardFiles(e.clipboardData);
-    if (!files.length) return;
-    e.preventDefault();
+  let pastedImageAt = 0;
+
+  function markPastedImages() {
+    pastedImageAt = Date.now();
+  }
+
+  function clipboardPlainText(clipboardData) {
+    try {
+      const text = String(clipboardData?.getData?.('text/plain') || '').trim();
+      if (inlineImageSrc(text)) return '';
+      return text;
+    } catch {
+      return '';
+    }
+  }
+
+  function acceptAttachedFiles(files) {
     const gate = canAttachFiles();
     if (!gate.ok) {
       setE2eStatus(gate.reason);
       return;
     }
-    files.forEach((file) => attachFileBlob(file));
-    if (files.length) {
-      setE2eStatus('');
-      editor?.focus();
+    let added = 0;
+    files.forEach((file) => {
+      if (!file) return;
+      attachFileBlob(file);
+      added += 1;
+    });
+    if (!added) return;
+    setE2eStatus('');
+    editor?.focus();
+  }
+
+  function editorImageSrc(img) {
+    return inlineImageSrc(img.getAttribute('src')) || inlineImageSrc(img.currentSrc || img.src);
+  }
+
+  function attachEditorImages() {
+    if (!editor) return;
+    const imgs = [...editor.querySelectorAll('img')];
+    if (!imgs.length) return;
+    if (Date.now() - pastedImageAt < 800) {
+      imgs.forEach((img) => {
+        if (editorImageSrc(img)) img.remove();
+      });
+      return;
     }
+    const gate = canAttachFiles();
+    if (!gate.ok) {
+      let removed = false;
+      imgs.forEach((img) => {
+        if (!editorImageSrc(img)) return;
+        img.remove();
+        removed = true;
+      });
+      if (removed) setE2eStatus(gate.reason);
+      return;
+    }
+    const parked = [];
+    const reads = [];
+    imgs.forEach((img) => {
+      const src = editorImageSrc(img);
+      if (!src) return;
+      const read = fileFromImageSrc(src);
+      img.remove();
+      parked.push(img);
+      reads.push(read);
+    });
+    if (!reads.length) return;
+    runAsync(async () => {
+      try {
+        const files = (await Promise.all(reads)).filter(Boolean);
+        acceptAttachedFiles(files);
+      } finally {
+        parked.forEach((img) => img.removeAttribute('src'));
+      }
+    }, 'editor image attach');
+  }
+
+  editor?.addEventListener('beforeinput', () => {
+    setTimeout(attachEditorImages, 0);
+  });
+  editor?.addEventListener('paste', (e) => {
+    const files = clipboardFiles(e.clipboardData);
+    if (files.length) {
+      e.preventDefault();
+      markPastedImages();
+      acceptAttachedFiles(files);
+      return;
+    }
+    const srcs = clipboardImageSrcs(e.clipboardData);
+    if (!srcs.length || clipboardPlainText(e.clipboardData).length > 64) return;
+    e.preventDefault();
+    markPastedImages();
+    const gate = canAttachFiles();
+    if (!gate.ok) {
+      setE2eStatus(gate.reason);
+      return;
+    }
+    runAsync(async () => {
+      const lifted = (await Promise.all(srcs.map((src) => fileFromImageSrc(src)))).filter(Boolean);
+      acceptAttachedFiles(lifted);
+    }, 'paste image');
   });
 
   async function updateNavBadge(fallbackTotal) {
@@ -2239,6 +2332,17 @@ import { apiFetch } from '../core/http.js';
       await updateNavBadge(data.total || 0);
     } catch (err) { console.debug('nav badge unread fetch failed', err); }
   }
+
+  globalThis.__AIRD_ATTACH_BLOB__ = (name, mime, b64) => {
+    try {
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+      attachFileBlob(new File([bytes], name || 'sticker.png', { type: mime || 'image/png' }));
+    } catch (err) {
+      console.debug('sticker attach failed', err);
+    }
+  };
 
   globalThis.AirdChatPage = {
     refreshList: () => renderConvList(),

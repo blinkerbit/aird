@@ -131,14 +131,148 @@ export function droppedFiles(dataTransfer) {
     .filter(Boolean);
 }
 
+const MAX_INLINE_IMAGE_CHARS = 28 * 1024 * 1024;
+
+function withGifExtension(file) {
+  if (!file) return null;
+  const type = String(file.type || '').split(';')[0].trim().toLowerCase();
+  if (type !== 'image/gif' || /\.gif$/i.test(file.name || '')) return file;
+  const stem = String(file.name || 'sticker').replace(/\.[^.]+$/, '') || 'sticker';
+  return new File([file], `${stem}.gif`, { type: 'image/gif', lastModified: file.lastModified });
+}
+
 export function clipboardFiles(clipboardData) {
   if (!clipboardData) return [];
-  const fromList = [...(clipboardData.files || [])].filter(Boolean);
-  if (fromList.length) return fromList;
-  return [...(clipboardData.items || [])]
-    .filter((item) => item.kind === 'file')
-    .map((item) => item.getAsFile())
-    .filter(Boolean);
+  const found = [];
+  const seen = new Set();
+  const push = (file) => {
+    const named = withGifExtension(file);
+    if (!named) return;
+    const key = `${named.size}:${named.type}:${named.name}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    found.push(named);
+  };
+  for (const file of clipboardData.files || []) push(file);
+  for (const item of clipboardData.items || []) {
+    const type = String(item?.type || '').toLowerCase();
+    if (item?.kind !== 'file' && !type.startsWith('image/')) continue;
+    if (typeof item.getAsFile !== 'function') continue;
+    try {
+      push(item.getAsFile());
+    } catch { /* ignore */ }
+  }
+  return found;
+}
+
+export function inlineImageSrc(value) {
+  const src = String(value || '').trim();
+  if (/^blob:/i.test(src)) return src;
+  if (/^data:image\/(?!svg\+xml)/i.test(src)) return src;
+  return '';
+}
+
+function clipboardHtml(clipboardData) {
+  if (typeof clipboardData?.getData !== 'function') return '';
+  try {
+    return String(clipboardData.getData('text/html') || '');
+  } catch {
+    return '';
+  }
+}
+
+export function clipboardImageSrcs(clipboardData) {
+  if (!clipboardData) return [];
+  const srcs = [];
+  const push = (src) => {
+    if (!src || srcs.includes(src) || srcs.length >= ATTACH_LIMIT) return;
+    srcs.push(src);
+  };
+  const html = clipboardHtml(clipboardData);
+  if (html && /<img\b/i.test(html)) {
+    const doc = new DOMParser().parseFromString(html.slice(0, MAX_INLINE_IMAGE_CHARS), 'text/html');
+    for (const img of doc.querySelectorAll('img')) push(inlineImageSrc(img.getAttribute('src')));
+  }
+  if (typeof clipboardData.getData === 'function') {
+    try {
+      push(inlineImageSrc(clipboardData.getData('text/plain')));
+    } catch { /* ignore */ }
+  }
+  return srcs;
+}
+
+function looksLikeGif(bytes) {
+  return bytes.length >= 6
+    && bytes[0] === 0x47
+    && bytes[1] === 0x49
+    && bytes[2] === 0x46
+    && bytes[3] === 0x38
+    && (bytes[4] === 0x37 || bytes[4] === 0x39)
+    && bytes[5] === 0x61;
+}
+
+function imageFileParts(type, bytes) {
+  const declared = String(type || '').split(';')[0].trim().toLowerCase();
+  const mime = looksLikeGif(bytes) ? 'image/gif' : declared;
+  if (mime === 'image/gif') return { name: 'sticker.gif', type: 'image/gif' };
+  const ext = {
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/bmp': 'bmp',
+    'image/avif': 'avif',
+    'image/heic': 'heic',
+    'image/heif': 'heif',
+  }[mime];
+  if (!ext) return null;
+  return { name: `image.${ext}`, type: mime };
+}
+
+function decodeDataPayload(meta, payload) {
+  if (payload.length > MAX_INLINE_IMAGE_CHARS) return null;
+  try {
+    if (/;base64/i.test(meta)) {
+      const bin = atob(payload.replaceAll(/\s/g, ''));
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i) & 255;
+      return bytes;
+    }
+    return new TextEncoder().encode(decodeURIComponent(payload));
+  } catch {
+    return null;
+  }
+}
+
+function fileFromDataUrl(src) {
+  const value = inlineImageSrc(src);
+  if (!value) return null;
+  const comma = value.indexOf(',');
+  if (comma < 0) return null;
+  const meta = value.slice(5, comma);
+  const bytes = decodeDataPayload(meta, value.slice(comma + 1));
+  if (!bytes) return null;
+  const parts = imageFileParts(meta.split(';')[0], bytes);
+  if (!parts) return null;
+  return new File([bytes], parts.name, { type: parts.type });
+}
+
+export async function fileFromImageSrc(src) {
+  const value = inlineImageSrc(src);
+  if (!value) return null;
+  if (/^data:/i.test(value)) return fileFromDataUrl(value);
+  try {
+    const res = await fetch(value);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    if (!blob || blob.size < 6 || blob.size > MAX_INLINE_IMAGE_CHARS) return null;
+    const head = new Uint8Array(await blob.slice(0, 6).arrayBuffer());
+    const parts = imageFileParts(blob.type, head);
+    if (!parts) return null;
+    return new File([blob], parts.name, { type: parts.type });
+  } catch {
+    return null;
+  }
 }
 
 const PENDING_ATTACH_KEY = 'aird.chat.pendingAttach';

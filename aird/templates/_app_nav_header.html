@@ -2,15 +2,19 @@
    Optional overrides: nav_search_path, nav_title.
    Layout: place this include inside the same outer wrapper as page content, e.g.
    <div class="container mx-auto p-4"> …header… …content… </div> (same as browse/share/search). #}
-<div class="navbar aird-nav bg-base-200 shadow-sm rounded-box mb-4 flex-wrap gap-2">
-  <div class="flex-1">
+<div class="navbar aird-nav bg-base-200 shadow-sm rounded-box mb-4 gap-2">
+  <div class="aird-nav-brand flex-1">
     <a href="/files/" class="btn btn-ghost text-xl font-extrabold tracking-wide gap-1.5 px-2 text-base-content" aria-label="Aird Home">
       <img src="/static/img/logo-icon.png" alt="" aria-hidden="true" class="h-8 w-auto shrink-0">
       {% set logo_height = 'h-6' %}
       {% include '_logo_text.html' %}
     </a>
   </div>
-  <div class="flex items-center gap-1 flex-wrap">
+  <button type="button" class="aird-nav-burger btn btn-ghost btn-sm btn-square" id="airdNavBurger" aria-label="Open menu" aria-expanded="false" aria-controls="airdNavActions">
+    <svg class="aird-nav-burger-open hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+    <svg class="aird-nav-burger-close hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+  </button>
+  <div class="aird-nav-actions flex items-center gap-1" id="airdNavActions">
     {% if current_user %}
     <a href="/profile" class="btn btn-ghost btn-sm gap-1 max-w-[10rem] sm:max-w-[14rem]" title="User settings">
       <svg class="hdr-ico shrink-0" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
@@ -107,6 +111,103 @@
     {% end %}
   </div>
 </div>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var nav = document.querySelector('.aird-nav');
+  var btn = document.getElementById('airdNavBurger');
+  var actions = document.getElementById('airdNavActions');
+  if (!nav || !btn || !actions) return;
+  var mq = window.matchMedia('(max-width: 767px)');
+  var measuring = false;
+  var lastWidth = 0;
+  function setOpen(open) {
+    nav.classList.toggle('is-menu-open', open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  }
+  function actionEdge() {
+    var edge = 0;
+    var kids = actions.children;
+    for (var i = 0; i < kids.length; i++) {
+      var rect = kids[i].getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) continue;
+      if (rect.right > edge) edge = rect.right;
+    }
+    return edge;
+  }
+  function updateCollapse() {
+    raf = 0;
+    measuring = true;
+    var was = nav.classList.contains('is-collapsed');
+    if (mq.matches) {
+      if (was) {
+        nav.classList.remove('is-collapsed');
+        setOpen(false);
+      }
+      lastWidth = nav.getBoundingClientRect().width;
+      measuring = false;
+      return;
+    }
+    if (was) nav.classList.remove('is-collapsed');
+    var brand = nav.querySelector('.aird-nav-brand');
+    var prevFlex = brand ? brand.style.flex : '';
+    if (brand) brand.style.flex = '0 0 auto';
+    var navRect = nav.getBoundingClientRect();
+    if (navRect.width < 8) {
+      if (brand) brand.style.flex = prevFlex;
+      if (was) nav.classList.add('is-collapsed');
+      measuring = false;
+      return;
+    }
+    var padR = parseFloat(getComputedStyle(nav).paddingRight) || 0;
+    var slack = navRect.right - padR - actionEdge();
+    if (brand) brand.style.flex = prevFlex;
+    var collapse = was ? slack < 16 : slack < -0.5;
+    nav.classList.toggle('is-collapsed', collapse);
+    if (was && !collapse) setOpen(false);
+    lastWidth = nav.getBoundingClientRect().width;
+    measuring = false;
+  }
+  var raf = 0;
+  function schedule() {
+    if (measuring) return;
+    if (raf) cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(updateCollapse);
+  }
+  btn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    setOpen(!nav.classList.contains('is-menu-open'));
+  });
+  document.addEventListener('click', function (e) {
+    if (!nav.classList.contains('is-menu-open') || nav.contains(e.target)) return;
+    setOpen(false);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') setOpen(false);
+  });
+  nav.querySelectorAll('#airdNavActions a, #airdNavActions button[type="submit"]').forEach(function (el) {
+    el.addEventListener('click', function () { setOpen(false); });
+  });
+  if (mq.addEventListener) mq.addEventListener('change', function () { setOpen(false); schedule(); });
+  window.addEventListener('resize', schedule);
+  if (window.ResizeObserver) {
+    new ResizeObserver(function () {
+      if (measuring) return;
+      var w = nav.getBoundingClientRect().width;
+      if (Math.abs(w - lastWidth) < 1) return;
+      schedule();
+    }).observe(nav);
+  }
+  new MutationObserver(schedule).observe(actions, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['class', 'hidden']
+  });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(schedule);
+  updateCollapse();
+})();
+</script>
 
 <div id="airdAppThemeMenu" class="aird-app-theme-menu" role="menu" aria-label="Choose theme" hidden>
   <button type="button" data-set-theme="light" role="menuitem" class="aird-app-theme-menu-item">☀️ Light</button>
@@ -118,7 +219,66 @@
   <button type="button" data-set-theme="autumn" role="menuitem" class="aird-app-theme-menu-item">🍂 Autumn</button>
 </div>
 
-<script src="/static/js/aird-core.js"></script>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var android = /AirdAndroid/.test(navigator.userAgent);
+  if (android) document.documentElement.classList.add('aird-android');
+  if (android) {
+    var acceptParams = new URLSearchParams(location.search);
+    if (acceptParams.get('call_action') === 'accept' && acceptParams.get('call_id')) {
+      window.__AIRD_SILENCE_CALL__ = acceptParams.get('call_id');
+    }
+  }
+  if (android && !window.__AIRD_NATIVE_CALL_HOOKED__) {
+    window.__AIRD_NATIVE_CALL_HOOKED__ = true;
+    document.addEventListener('aird-call-invite', function (e) {
+      var data = e && e.detail;
+      if (!data || !window.AndroidHost || typeof window.AndroidHost.onIncomingCall !== 'function') return;
+      var id = String(data.conversation_id || '');
+      if (data.type === 'call_invite') {
+        var incomingId = String(data.call_id || '');
+        var silenced = String(window.__AIRD_SILENCE_CALL__ || '');
+        if (silenced && incomingId === silenced) return;
+        var pageAccept = new URLSearchParams(location.search);
+        if (pageAccept.get('call_action') === 'accept' && pageAccept.get('c') === id && (!incomingId || incomingId === pageAccept.get('call_id'))) return;
+        window.AndroidHost.onIncomingCall(data.from || 'Incoming call', data.mode || 'audio', id, incomingId);
+      } else if ((data.type === 'call_end' || data.type === 'call_decline') && typeof window.AndroidHost.onCallEnded === 'function') {
+        window.AndroidHost.onCallEnded(id);
+      }
+    });
+  }
+  if (android && document.body && document.body.classList.contains('chat-page')) {
+    var fitChat = function () {
+      var shell = document.querySelector('.aird-shell--chat');
+      if (!shell) return;
+      var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight || screen.height;
+      if (!h) return;
+      shell.style.setProperty('position', 'fixed', 'important');
+      shell.style.setProperty('top', '0', 'important');
+      shell.style.setProperty('left', '0', 'important');
+      shell.style.setProperty('right', '0', 'important');
+      shell.style.setProperty('bottom', 'auto', 'important');
+      shell.style.setProperty('height', h + 'px', 'important');
+      shell.style.setProperty('min-height', h + 'px', 'important');
+      shell.style.setProperty('max-height', h + 'px', 'important');
+    };
+    fitChat();
+    window.addEventListener('resize', fitChat);
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', fitChat);
+    document.addEventListener('DOMContentLoaded', fitChat);
+  }
+  if (android || window.matchMedia('(max-width: 767px)').matches) {
+    document.documentElement.classList.add('aird-compact');
+  }
+  if (!android || !window.HTMLDialogElement) return;
+  var show = HTMLDialogElement.prototype.show;
+  HTMLDialogElement.prototype.showModal = function () {
+    this.classList.add('aird-dialog-sheet');
+    show.call(this);
+  };
+})();
+</script>
+<script src="/static/js/aird-core.js?v=20261023c"></script>
 <script src="/static/js/transfer-tracker.js?v=20261018a"></script>
 <script src="/static/js/pwa.js?v=20261021c" type="module"></script>
 <script src="/static/js/common/command-palette.js" type="module"></script>

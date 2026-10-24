@@ -1003,6 +1003,7 @@
     @media (max-width: 768px) {
       .file-table {
         display: block;
+        overflow: visible;
         border: none;
         border-radius: 0;
         box-shadow: none;

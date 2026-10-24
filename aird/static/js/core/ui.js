@@ -85,7 +85,8 @@ function wireAppThemePicker() {
 
 /** Keep nav dropdowns (theme, etc.) inside the viewport on narrow screens. */
 function wireMobileAppDropdowns() {
-  const mq = globalThis.matchMedia('(max-width: 639px)');
+  const mq = globalThis.matchMedia('(max-width: 767px)');
+  const compact = () => mq.matches || document.documentElement.classList.contains('aird-android');
   const panelSel = '.aird-app-dropdown-panel, .dropdown-content';
 
   function safeInset(edge) {
@@ -105,7 +106,7 @@ function wireMobileAppDropdowns() {
   }
 
   function positionPanel(root) {
-    if (!mq.matches) return;
+    if (!compact()) return;
     const btn = root.querySelector(':scope > button');
     const panel = getPanel(root);
     if (!btn || !panel) return;
@@ -197,7 +198,7 @@ function wireMobileAppDropdowns() {
         root.classList.toggle('dropdown-open', opening);
         btn.setAttribute('aria-expanded', opening ? 'true' : 'false');
         if (opening) {
-          if (mq.matches) {
+          if (compact()) {
             positionPanel(root);
           }
         } else {
@@ -219,7 +220,7 @@ function wireMobileAppDropdowns() {
 
   globalThis.addEventListener('resize', () => {
     document.querySelectorAll('.aird-app-dropdown.dropdown-open').forEach((root) => {
-      if (mq.matches) positionPanel(root);
+      if (compact()) positionPanel(root);
       else resetPanel(root);
     });
   });
