@@ -670,11 +670,59 @@ import { apiFetch } from '../core/http.js';
     return `<div class="chat-att-stack">${cards}</div>`;
   }
 
+  function chatPlain(body) {
+    return String(body || '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(div|p|li)>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&#39;|&apos;/gi, "'")
+      .replace(/&quot;/gi, '"')
+      .replace(/\u00a0/g, ' ');
+  }
+
+  function chatBodyHtml(body) {
+    const raw = String(body || '');
+    const legacy = /<\/?[a-z][^>]*>/i.test(raw) || /&(?:nbsp|amp|lt|gt|quot|apos|#39);/i.test(raw);
+    const plain = (legacy ? chatPlain(raw) : raw.replace(/\u00a0/g, ' '))
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/^\n+|\n+$/g, '');
+    if (!plain.trim()) return '';
+    return highlightMentions(esc(plain).replace(/\n/g, '<br>'));
+  }
+
+  function messageLabel(msg) {
+    const plain = chatPlain(msg?.body).replace(/\s+/g, ' ').trim();
+    if (plain) return plain.slice(0, 80);
+    const att = msgAttachments(msg || {})[0];
+    if (att) {
+      const name = att.original_name || att.name || '';
+      const gif = att.media_kind === 'gif' || msg?.msg_type === 'gif';
+      if (gif) return name || 'GIF';
+      if (isImageAtt(att, msg)) return name || 'Photo';
+      if (isFolderAtt(att)) return `${name || 'Folder'}/`;
+      return name || 'File';
+    }
+    if (msg?.msg_type === 'gif') return 'GIF';
+    if (msg?.msg_type === 'file') return 'File';
+    return 'Message';
+  }
+
+  function rowLabel(row) {
+    const stored = row?.dataset?.label || '';
+    if (stored) return stored;
+    const text = (row?.querySelector('.aird-chat-bubble-body')?.innerText || '').replace(/\s+/g, ' ').trim();
+    return text.slice(0, 80) || 'Message';
+  }
+
   function replyQuoteHtml(msg) {
     if (!msg.reply_to_id) return '';
-    const src = messagesEl?.querySelector(`[data-msg-id="${cssEscape(msg.reply_to_id)}"]`);
-    const preview = src ? (src.querySelector('.aird-chat-bubble-body')?.innerText || '').slice(0, 80) : 'Message';
-    return `<button type="button" class="chat-quote" data-jump="${esc(msg.reply_to_id)}">${esc(preview || 'Original message')}</button>`;
+    const src = findMessageRow(msg.reply_to_id);
+    const preview = src?.dataset?.label || 'Original message';
+    return `<button type="button" class="chat-quote" data-jump="${esc(msg.reply_to_id)}">${esc(preview)}</button>`;
   }
 
   function reactionsHtml(msg) {
@@ -743,9 +791,9 @@ import { apiFetch } from '../core/http.js';
     }
     body += replyQuoteHtml(msg);
     const hasAtt = msgAttachments(msg).length > 0 || msg.msg_type === 'file' || msg.msg_type === 'gif';
-    const text = String(msg.body || '').replace(/<br\s*\/?>/gi, '').trim();
-    if (text) {
-      body += `<div class="chat-msg-text">${highlightMentions(msg.body || '')}</div>`;
+    const rendered = chatBodyHtml(msg.body);
+    if (rendered) {
+      body += `<div class="chat-msg-text">${rendered}</div>`;
     }
     if (hasAtt) {
       body += attachmentHtml(msg);
@@ -754,7 +802,7 @@ import { apiFetch } from '../core/http.js';
     const nameLine = msg._mine
       ? ''
       : `<div class="chat-msg-name">${esc(msg.sender_username)}</div>`;
-    return `<div class="chat-msg-row ${rowClass}" data-msg-id="${esc(msg.id)}" data-e2e="${msg._e2e ? '1' : '0'}" data-decrypt-ok="${msg._decryptOk ? '1' : '0'}" data-created-at="${esc(msg.created_at || '')}">${avatarHtml(msg.sender_username)}<div class="chat-msg-stack">${nameLine}<div class="chat-msg-main">${hoverBarHtml(msg)}<div class="aird-chat-bubble ${bubbleClass}"><div class="aird-chat-bubble-body">${body}</div>${reactionsHtml(msg)}</div></div><div class="chat-msg-time">${esc(formatTime(msg.created_at))}</div>${seenHtml(msg)}</div></div>`;
+    return `<div class="chat-msg-row ${rowClass}" data-msg-id="${esc(msg.id)}" data-label="${esc(messageLabel(msg))}" data-e2e="${msg._e2e ? '1' : '0'}" data-decrypt-ok="${msg._decryptOk ? '1' : '0'}" data-created-at="${esc(msg.created_at || '')}">${avatarHtml(msg.sender_username)}<div class="chat-msg-stack">${nameLine}<div class="chat-msg-main">${hoverBarHtml(msg)}<div class="aird-chat-bubble ${bubbleClass}"><div class="aird-chat-bubble-body">${body}</div>${reactionsHtml(msg)}</div></div><div class="chat-msg-time">${esc(formatTime(msg.created_at))}</div>${seenHtml(msg)}</div></div>`;
   }
 
   function refreshSeenIndicator(messageId) {
@@ -802,7 +850,11 @@ import { apiFetch } from '../core/http.js';
       btn.addEventListener('click', handleReactClick);
     });
     scope.querySelectorAll('.chat-quote').forEach((btn) => {
-      btn.addEventListener('click', () => jumpTo(btn.dataset.jump));
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        jumpTo(btn.dataset.jump);
+      });
     });
   }
 
@@ -814,10 +866,27 @@ import { apiFetch } from '../core/http.js';
     dlg?.showModal();
   }
 
-  function jumpTo(id) {
-    const el = messagesEl?.querySelector(`[data-msg-id="${cssEscape(id)}"]`);
-    if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  function findMessageRow(id) {
+    const want = String(id || '');
+    if (!want || !messagesEl) return null;
+    return [...messagesEl.querySelectorAll('[data-msg-id]')].find((el) => el.dataset.msgId === want) || null;
+  }
+
+  async function jumpTo(id) {
+    let el = findMessageRow(id);
+    let tries = 0;
+    while (!el && hasOlder && tries < 40) {
+      tries += 1;
+      await loadOlderMessages();
+      el = findMessageRow(id);
+    }
+    if (!el || !messagesEl) return;
+    const box = messagesEl.getBoundingClientRect();
+    const row = el.getBoundingClientRect();
+    messagesEl.scrollTo({
+      top: Math.max(0, messagesEl.scrollTop + (row.top - box.top) - (box.height - row.height) / 2),
+      behavior: 'smooth',
+    });
     el.classList.add('chat-msg-flash');
     setTimeout(() => el.classList.remove('chat-msg-flash'), 1200);
   }
@@ -867,8 +936,8 @@ import { apiFetch } from '../core/http.js';
   function setReply(id) {
     replyToId = id;
     const row = messagesEl?.querySelector(`[data-msg-id="${cssEscape(id)}"]`);
-    const text = (row?.querySelector('.aird-chat-bubble-body')?.innerText || 'Message').slice(0, 100);
-    if (replyPreview) replyPreview.textContent = `Replying: ${text}`;
+    const text = rowLabel(row);
+    if (replyPreview) replyPreview.textContent = `Replying to: ${text}`;
     replyBar?.classList.remove('hidden');
     editor?.focus();
   }
@@ -910,12 +979,12 @@ import { apiFetch } from '../core/http.js';
         if (!E2E?.ready()) throw new Error('Waiting for the chat key…');
         const ok = await e2eReady(activeConvId);
         if (!ok) throw new Error('Waiting for the chat key…');
-        const e2e = await E2E.encrypt(activeConvId, E2E.sanitizeHtml(textEl.innerHTML || next));
+        const e2e = await E2E.encrypt(activeConvId, next);
         const data = await api(`/api/chat/conversations/${activeConvId}/messages/${messageId}`, {
           method: 'PATCH',
           body: JSON.stringify({
             e2e,
-            mentions: extractMentions(textEl.innerHTML || next, activeConv()),
+            mentions: extractMentions(next, activeConv()),
           }),
         });
         if (data.message) {
@@ -1535,9 +1604,8 @@ import { apiFetch } from '../core/http.js';
     }
     const ok = await e2eReady(activeConvId);
     if (!ok) return null;
-    const html = E2E.sanitizeHtml(body);
-    const e2e = await E2E.encrypt(activeConvId, html);
-    const mentions = extractMentions(html, activeConv());
+    const e2e = await E2E.encrypt(activeConvId, body);
+    const mentions = extractMentions(body, activeConv());
     return { e2e, mentions };
   }
 
@@ -1574,15 +1642,23 @@ import { apiFetch } from '../core/http.js';
     return true;
   }
 
+  function editorPlainText() {
+    if (!editor) return '';
+    return (editor.innerText || '')
+      .replaceAll('\u00a0', ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/^\n+|\n+$/g, '');
+  }
+
   async function sendEditorMessage() {
     if (window.AirdEnhancedSecure?.viewing()) {
       await sendEnhancedSecureEditorMessage();
       return;
     }
     if (!activeConvId || !editor) return;
-    const hasText = (editor.innerText || '').replaceAll('\u00a0', ' ').trim().length > 0;
+    const body = editorPlainText();
+    const hasText = body.trim().length > 0;
     if (!hasText && !pending.length) return;
-    const body = editor.innerHTML.trim();
     const reply = replyToId;
     let e2e = null;
     let mentions = [];
