@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 from urllib.parse import quote
 
 from starlette.requests import Request
-from starlette.responses import JSONResponse, RedirectResponse, Response
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from aird.constants.input_limits import (
@@ -23,11 +24,13 @@ from aird.db.shares import list_shares_accessible_to_user
 from aird.domain.contracts import AuthRequest
 from aird.handlers.auth_handlers import (
     _TOKEN_ONLY_PROFILE_USERNAMES,
-    _XSRF_RELOAD_MSG,
+    _apply_session_cookies,
     _session_public_view,
     check_login_rate_limit,
     terminate_server_session,
 )
+
+_XSRF_RELOAD_MSG = "Your session expired. Reload the page and try again."
 from aird.handlers.constants import (
     ADMIN_LOGIN_TEMPLATE,
     ADMIN_URL,
@@ -262,6 +265,10 @@ async def login_get(request: Request):
             return RedirectResponse(f"/auth/mandatory-password?next={mq}", status_code=302)
         return RedirectResponse(next_url, status_code=302)
 
+    sso_response = _authentik_sso_response(request, settings, next_url)
+    if sso_response is not None:
+        return sso_response
+
     return render_html(
         request,
         LOGIN_HTML,
@@ -269,6 +276,68 @@ async def login_get(request: Request):
         settings=settings,
         next_url=next_url,
     )
+
+
+def _record_authentik_last_login(bridge: _HandlerBridge, user: dict) -> None:
+    user_id = user.get("id")
+    if user_id is None or bridge.db_conn is None:
+        return
+    stamp = datetime.now().isoformat()
+    try:
+        service = bridge.get_service("user_service")
+        if service is not None:
+            service.update_user(bridge.db_conn, user_id, last_login=stamp)
+        else:
+            from aird.db.users import update_user
+
+            update_user(bridge.db_conn, user_id, last_login=stamp)
+    except Exception:
+        logger.warning("Authentik auto-login could not update last_login")
+
+
+def _finish_authentik_login(
+    request: Request, settings: dict[str, Any], user: dict, next_url: str
+) -> Response:
+    bridge = _HandlerBridge(request, settings)
+    _record_authentik_last_login(bridge, user)
+    _apply_session_cookies(bridge, str(user["username"]), str(user.get("role") or "user"))
+    if user.get("must_change_password"):
+        bridge.redirect(f"/auth/mandatory-password?next={quote(next_url)}")
+    else:
+        bridge.redirect(next_url)
+    return _bridge_response(request, bridge)
+
+
+def _authentik_sso_response(
+    request: Request, settings: dict[str, Any], next_url: str
+) -> Response | None:
+    from aird.core.authentik_sso import (
+        ACCESS_DENIED_HTML,
+        decide_authentik_login,
+        load_authentik_sso,
+    )
+    from aird.ms.deps import db_conn as request_db
+    from aird.ms.deps import get_service
+
+    conn = request_db(request)
+    config = load_authentik_sso(conn)
+
+    def lookup(username: str):
+        if conn is None:
+            return None
+        service = get_service(request, "user_service")
+        if service is not None:
+            return service.get_user(conn, username)
+        from aird.db.users import get_user_by_username
+
+        return get_user_by_username(conn, username)
+
+    decision = decide_authentik_login(config, request.headers, lookup)
+    if decision.action == "forbidden":
+        return HTMLResponse(ACCESS_DENIED_HTML, status_code=403)
+    if decision.action == "session" and decision.user and decision.user.get("username"):
+        return _finish_authentik_login(request, settings, decision.user, next_url)
+    return None
 
 
 async def login_post(request: Request):

@@ -79,6 +79,14 @@ async def admin_dashboard(request: Request) -> Response:
         except Exception:
             logger.debug("admin dashboard config load failed", exc_info=True)
 
+    from aird.core.authentik_sso import load_authentik_sso, public_authentik_sso
+
+    try:
+        authentik_sso = public_authentik_sso(load_authentik_sso(conn))
+    except Exception:
+        logger.debug("authentik sso config load failed", exc_info=True)
+        authentik_sso = public_authentik_sso({})
+
     return render_html(
         request,
         "admin.html",
@@ -87,6 +95,7 @@ async def admin_dashboard(request: Request) -> Response:
         upload_config=UPLOAD_CONFIG,
         runtime_config=runtime_config,
         ldap_enabled=ldap_enabled,
+        authentik_sso=authentik_sso,
         available_extensions=sorted(
             set(constants_module.ALLOWED_UPLOAD_EXTENSIONS) | set(allowed_current)
         ),
@@ -611,6 +620,33 @@ async def admin_plugins(request: Request) -> Response:
     )
 
 
+async def admin_authentik_sso(request: Request) -> Response:
+    try:
+        require_admin(request)
+    except PermissionError:
+        return _forbidden()
+    try:
+        check_xsrf_token(request)
+    except PermissionError:
+        return PlainTextResponse("XSRF validation failed", status_code=403)
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    conn = db_conn(request)
+    if conn is None:
+        return JSONResponse({"ok": False, "error": "Database not available"}, status_code=503)
+    from aird.core.authentik_sso import public_authentik_sso, save_authentik_sso
+
+    try:
+        saved = save_authentik_sso(conn, payload)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return JSONResponse({"ok": True, **public_authentik_sso(saved)})
+
+
 async def admin_feature_flag(request: Request) -> Response:
     try:
         require_admin(request)
@@ -720,6 +756,7 @@ routes = [
     Route("/admin/api/onedrive/device-start", admin_onedrive_device_start, methods=["POST"]),
     Route("/admin/api/onedrive/device-poll", admin_onedrive_device_poll, methods=["POST"]),
     Route("/admin/api/feature-flags", admin_feature_flag, methods=["POST"]),
+    Route("/admin/api/authentik-sso", admin_authentik_sso, methods=["POST"]),
 ]
 
 __all__ = ["routes", "require_admin", "DISPLAY_ADMIN_TOKEN"]

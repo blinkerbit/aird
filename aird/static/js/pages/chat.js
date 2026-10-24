@@ -28,6 +28,7 @@ import { apiFetch } from '../core/http.js';
   let identityReady = Promise.resolve();
   const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'jpe', 'jif', 'jfif', 'png', 'gif', 'bmp', 'webp', 'tiff', 'tif', 'svg', 'ico', 'avif', 'heic', 'heif', 'dng', 'cr2', 'nef', 'arw', 'orf', 'rw2', 'raf', 'raw']);
   let pendingBrowseAttachQueue = takePendingBrowseAttachAll();
+  const replyLabelCache = new Map();
 
   const qs = (sel) => document.querySelector(sel);
   const convList = qs('#chatConvList');
@@ -327,6 +328,7 @@ import { apiFetch } from '../core/http.js';
       msg._decryptOk = result.decrypted;
       if (result.decrypted) e2ePlain.set(msg.id, result.html);
     }
+    rememberMsgLabel(msg);
     return msg;
   }
 
@@ -632,6 +634,174 @@ import { apiFetch } from '../core/http.js';
     return IMAGE_EXTS.has(ext);
   }
 
+  function isGifAtt(att, msg) {
+    if (att?.media_kind === 'gif' || msg?.msg_type === 'gif') return true;
+    return String(att?.original_name || '').toLowerCase().endsWith('.gif');
+  }
+
+  function gifDurationMs(bytes) {
+    if (bytes.length < 13 || bytes[0] !== 0x47 || bytes[1] !== 0x49 || bytes[2] !== 0x46) return 0;
+    let i = 13;
+    if (bytes[10] & 0x80) i += 3 * (2 ** ((bytes[10] & 7) + 1));
+    let cs = 0;
+    let frames = 0;
+    while (i < bytes.length) {
+      const sep = bytes[i++];
+      if (sep === 0x3b) break;
+      if (sep === 0x21) {
+        const label = bytes[i++];
+        if (label === 0xf9 && bytes[i] === 4) {
+          const delay = bytes[i + 2] | (bytes[i + 3] << 8);
+          cs += delay || 10;
+          frames += 1;
+        }
+        while (i < bytes.length) {
+          const size = bytes[i++];
+          if (!size) break;
+          i += size;
+        }
+        continue;
+      }
+      if (sep === 0x2c) {
+        if (i + 9 > bytes.length) break;
+        const packed = bytes[i + 8];
+        i += 9;
+        if (packed & 0x80) i += 3 * (2 ** ((packed & 7) + 1));
+        if (i >= bytes.length) break;
+        i += 1;
+        while (i < bytes.length) {
+          const size = bytes[i++];
+          if (!size) break;
+          i += size;
+        }
+        continue;
+      }
+      break;
+    }
+    return frames ? cs * 10 : 0;
+  }
+
+  let gifObserver = null;
+
+  function gifWatch() {
+    if (gifObserver) return gifObserver;
+    gifObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        const img = entry.target;
+        const onScreen = entry.isIntersecting && entry.intersectionRatio >= 0.2;
+        img._gifOnScreen = onScreen;
+        if (!onScreen && img.dataset.gifState === 'playing') {
+          if (Date.now() < (img._gifIgnoreIoUntil || 0)) return;
+          freezeGif(img);
+        }
+      });
+    }, { root: messagesEl, threshold: [0, 0.2] });
+    return gifObserver;
+  }
+
+  function syncGifToggle(img) {
+    const btn = img._gifToggle;
+    if (!btn) return;
+    const playing = img.dataset.gifState === 'playing';
+    btn.textContent = playing ? 'Pause' : 'Play';
+    btn.setAttribute('aria-label', playing ? 'Pause GIF' : 'Play GIF');
+    btn.setAttribute('aria-pressed', playing ? 'true' : 'false');
+  }
+
+  function freezeGif(img) {
+    clearTimeout(img._gifTimer);
+    img._gifWantPlay = false;
+    const canvas = img._gifCanvas;
+    if (img.naturalWidth && canvas) {
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      canvas.hidden = false;
+    }
+    img.dataset.gifState = 'paused';
+    syncGifToggle(img);
+  }
+
+  function scheduleGifPause(img) {
+    clearTimeout(img._gifTimer);
+    const ms = Math.min(Math.max(Number(img.dataset.gifMs) || 3500, 600), 20000);
+    img._gifTimer = setTimeout(() => {
+      if (img.dataset.gifState === 'playing') freezeGif(img);
+    }, ms);
+  }
+
+  function playGif(img) {
+    if (img.dataset.gifState === 'playing') return;
+    const base = img.dataset.gifSrc;
+    if (!base) return;
+    img._gifWantPlay = true;
+    img._gifIgnoreIoUntil = Date.now() + 500;
+    if (img._gifCanvas) img._gifCanvas.hidden = true;
+    img.dataset.gifState = 'playing';
+    const bust = `${base}${base.includes('?') ? '&' : '?'}_=${Date.now()}`;
+    img.removeAttribute('src');
+    requestAnimationFrame(() => {
+      img.src = bust;
+    });
+    syncGifToggle(img);
+  }
+
+  function toggleGifPlayback(img) {
+    if (img.dataset.gifState === 'playing') freezeGif(img);
+    else playGif(img);
+  }
+
+  function bindGifPause(img) {
+    if (img.dataset.gifBound === '1') return;
+    img.dataset.gifBound = '1';
+    img.dataset.gifSrc = img.getAttribute('src') || img.dataset.full || '';
+    img.removeAttribute('onerror');
+    img.classList.add('chat-msg-gif');
+    img.dataset.gifState = 'paused';
+    const canvas = document.createElement('canvas');
+    canvas.className = 'chat-msg-image chat-msg-gif-still';
+    canvas.hidden = true;
+    canvas.setAttribute('aria-hidden', 'true');
+    img.after(canvas);
+    img._gifCanvas = canvas;
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'chat-gif-toggle';
+    toggle.textContent = 'Play';
+    toggle.setAttribute('aria-label', 'Play GIF');
+    toggle.setAttribute('aria-pressed', 'false');
+    toggle.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleGifPlayback(img);
+    });
+    img.parentElement?.append(toggle);
+    img._gifToggle = toggle;
+    const badge = document.createElement('span');
+    badge.className = 'chat-gif-badge';
+    badge.textContent = 'GIF';
+    img.parentElement?.append(badge);
+    img.addEventListener('load', () => {
+      if (img.dataset.gifState === 'playing') scheduleGifPause(img);
+      else freezeGif(img);
+    });
+    img.addEventListener('error', () => {
+      if (img.dataset.gifState === 'paused' && img._gifCanvas && !img._gifCanvas.hidden) return;
+      img.replaceWith(Object.assign(document.createElement('div'), {
+        className: 'chat-file-unavailable',
+        textContent: 'File unavailable',
+      }));
+    });
+    gifWatch().observe(img);
+    const src = img.dataset.gifSrc;
+    if (!src || img.dataset.gifMs) return;
+    fetch(src, { credentials: 'same-origin' }).then(async (res) => {
+      if (!res.ok) return;
+      const ms = gifDurationMs(new Uint8Array(await res.arrayBuffer()));
+      if (ms) img.dataset.gifMs = String(ms + 80);
+    }).catch(() => {});
+  }
+
   function highlightMentions(html) {
     return String(html || '').replace(/@([A-Za-z0-9_.\-@]+)/g, (all, name) => {
       const members = (activeConv()?.members || []).map((m) => m.username);
@@ -655,7 +825,8 @@ import { apiFetch } from '../core/http.js';
       const blank = att.share_url ? '' : ' target="_blank" rel="noopener"';
       const menu = mine ? '' : `<button type="button" class="chat-link-btn" data-att="save" data-id="${esc(msg.id)}" data-i="${i}">Save a copy</button>`;
       if (isImageAtt(att, msg)) {
-        return `<div class="chat-att-wrap"><img src="${esc(previewUrl)}" alt="${esc(name)}" class="chat-msg-image" data-full="${esc(previewUrl)}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'chat-file-unavailable',textContent:'File unavailable'}))">${menu}</div>`;
+        const gif = isGifAtt(att, msg) ? ' data-gif="1"' : '';
+        return `<div class="chat-att-wrap"><img src="${esc(previewUrl)}" alt="${esc(name)}" class="chat-msg-image" data-full="${esc(previewUrl)}"${gif} onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'chat-file-unavailable',textContent:'File unavailable'}))">${menu}</div>`;
       }
       if (isFolderAtt(att)) {
         return `<div class="chat-att-wrap"><a class="chat-file-card chat-file-card--folder" href="${esc(openUrl)}">${esc(name)}/</a>${menu}</div>`;
@@ -695,8 +866,7 @@ import { apiFetch } from '../core/http.js';
     const att = msgAttachments(msg || {})[0];
     if (att) {
       const name = att.original_name || att.name || '';
-      const gif = att.media_kind === 'gif' || msg?.msg_type === 'gif';
-      if (gif) return name || 'GIF';
+      if (isGifAtt(att, msg)) return name || 'GIF';
       if (isImageAtt(att, msg)) return name || 'Photo';
       if (isFolderAtt(att)) return `${name || 'Folder'}/`;
       return name || 'File';
@@ -706,18 +876,23 @@ import { apiFetch } from '../core/http.js';
     return 'Message';
   }
 
+  function rememberMsgLabel(msg) {
+    if (!msg?.id) return;
+    replyLabelCache.set(msg.id, messageLabel(msg));
+  }
+
   function rowLabel(row) {
-    const stored = row?.dataset?.label || '';
-    if (stored) return stored;
-    const text = (row?.querySelector('.aird-chat-bubble-body')?.innerText || '').replace(/\s+/g, ' ').trim();
-    return text.slice(0, 80) || 'Message';
+    const id = row?.dataset?.msgId;
+    if (id && replyLabelCache.has(id)) return replyLabelCache.get(id);
+    const text = (row?.querySelector('.chat-msg-text')?.innerText || '').replace(/\s+/g, ' ').trim();
+    return (text || 'Message').slice(0, 80);
   }
 
   function replyQuoteHtml(msg) {
-    if (!msg.reply_to_id) return '';
-    const src = findMessageRow(msg.reply_to_id);
-    const preview = src?.dataset?.label || 'Original message';
-    return `<button type="button" class="chat-quote" data-jump="${esc(msg.reply_to_id)}">${esc(preview)}</button>`;
+    const replyId = String(msg.reply_to_id || '').trim();
+    if (!replyId || replyId === String(msg.id)) return '';
+    const preview = replyLabelCache.get(replyId) || 'Original message';
+    return `<button type="button" class="chat-quote" data-jump="${esc(replyId)}">${esc(preview)}</button>`;
   }
 
   function reactionsHtml(msg) {
@@ -778,6 +953,7 @@ import { apiFetch } from '../core/http.js';
   }
 
   function messageHtml(msg) {
+    rememberMsgLabel(msg);
     const rowClass = msg._mine ? 'chat-msg-row--mine' : 'chat-msg-row--theirs';
     const bubbleClass = msg._mine ? 'aird-chat-bubble--mine' : 'aird-chat-bubble--theirs';
     let body = '';
@@ -797,7 +973,7 @@ import { apiFetch } from '../core/http.js';
     const nameLine = msg._mine
       ? ''
       : `<div class="chat-msg-name">${esc(msg.sender_username)}</div>`;
-    return `<div class="chat-msg-row ${rowClass}" data-msg-id="${esc(msg.id)}" data-label="${esc(messageLabel(msg))}" data-e2e="${msg._e2e ? '1' : '0'}" data-decrypt-ok="${msg._decryptOk ? '1' : '0'}" data-created-at="${esc(msg.created_at || '')}">${avatarHtml(msg.sender_username)}<div class="chat-msg-stack">${nameLine}<div class="chat-msg-main">${hoverBarHtml(msg)}<div class="aird-chat-bubble ${bubbleClass}"><div class="aird-chat-bubble-body">${body}</div>${reactionsHtml(msg)}</div></div><div class="chat-msg-time">${esc(formatTime(msg.created_at))}</div>${seenHtml(msg)}</div></div>`;
+    return `<div class="chat-msg-row ${rowClass}" data-msg-id="${esc(msg.id)}" data-e2e="${msg._e2e ? '1' : '0'}" data-decrypt-ok="${msg._decryptOk ? '1' : '0'}" data-created-at="${esc(msg.created_at || '')}">${avatarHtml(msg.sender_username)}<div class="chat-msg-stack">${nameLine}<div class="chat-msg-main">${hoverBarHtml(msg)}<div class="aird-chat-bubble ${bubbleClass}"><div class="aird-chat-bubble-body">${body}</div>${reactionsHtml(msg)}</div></div><div class="chat-msg-time">${esc(formatTime(msg.created_at))}</div>${seenHtml(msg)}</div></div>`;
   }
 
   function refreshSeenIndicator(messageId) {
@@ -830,6 +1006,10 @@ import { apiFetch } from '../core/http.js';
     const scope = root || messagesEl;
     if (!scope) return;
     scope.querySelectorAll('.chat-msg-image').forEach((img) => {
+      if (img.dataset.gif === '1') {
+        bindGifPause(img);
+        return;
+      }
       img.addEventListener('click', () => openLightbox(img));
     });
     scope.querySelectorAll('[data-att="open"]').forEach((btn) => {
@@ -844,13 +1024,18 @@ import { apiFetch } from '../core/http.js';
     scope.querySelectorAll('.chat-react-chip, .chat-react-emoji').forEach((btn) => {
       btn.addEventListener('click', handleReactClick);
     });
-    scope.querySelectorAll('.chat-quote').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        jumpTo(btn.dataset.jump);
-      });
-    });
+  }
+
+  function scrollParentFor(el) {
+    let node = el.parentElement;
+    while (node) {
+      const oy = getComputedStyle(node).overflowY;
+      if ((oy === 'auto' || oy === 'scroll' || oy === 'overlay') && node.scrollHeight > node.clientHeight + 1) {
+        return node;
+      }
+      node = node.parentElement;
+    }
+    return messagesEl;
   }
 
   function openLightbox(imgEl) {
@@ -875,15 +1060,14 @@ import { apiFetch } from '../core/http.js';
       await loadOlderMessages();
       el = findMessageRow(id);
     }
-    if (!el || !messagesEl) return;
-    const box = messagesEl.getBoundingClientRect();
-    const row = el.getBoundingClientRect();
-    messagesEl.scrollTo({
-      top: Math.max(0, messagesEl.scrollTop + (row.top - box.top) - (box.height - row.height) / 2),
-      behavior: 'smooth',
-    });
-    el.classList.add('chat-msg-flash');
-    setTimeout(() => el.classList.remove('chat-msg-flash'), 1200);
+    if (!el) return;
+    const scroller = scrollParentFor(el) || messagesEl;
+    if (!scroller) return;
+    const er = el.getBoundingClientRect();
+    const sr = scroller.getBoundingClientRect();
+    scroller.scrollTop += er.top - sr.top - (sr.height - er.height) / 2;
+    el.classList.add('chat-msg-flash', 'chat-msg-flash--bg');
+    setTimeout(() => el.classList.remove('chat-msg-flash', 'chat-msg-flash--bg'), 1500);
   }
 
   async function saveCopy(messageId, index) {
@@ -1176,6 +1360,7 @@ import { apiFetch } from '../core/http.js';
     }
     const gen = ++loadGen;
     activeConvId = convId;
+    replyLabelCache.clear();
     loadingOlder = false;
     const conv = conversations.find((c) => c.id === convId);
     setThreadHeader(conv || null);
@@ -2265,6 +2450,13 @@ import { apiFetch } from '../core/http.js';
       const conv = activeConv();
       if (conv) addMember(conv).catch((err) => alert(err.message));
     }
+  });
+  messagesEl?.addEventListener('click', (e) => {
+    const btn = e.target.closest?.('.chat-quote');
+    if (!btn?.dataset?.jump) return;
+    e.preventDefault();
+    e.stopPropagation();
+    void jumpTo(btn.dataset.jump);
   });
   messagesEl?.addEventListener('scroll', () => {
     if (messagesEl.scrollTop < 64) {

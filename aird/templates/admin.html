@@ -319,6 +319,40 @@
         </div>
       </div>
     </form>
+
+    {% try %}
+    {% set authentik_sso_view = authentik_sso %}
+    {% except %}
+    {% set authentik_sso_view = None %}
+    {% end %}
+    {% if authentik_sso_view is not None %}
+    <div class="card bg-base-100 shadow-sm border border-base-300 aird-admin-card mt-6">
+      <div class="card-body space-y-3">
+        <h2 class="card-title text-base">
+          Authentik auto-login
+          <span id="airdAuthentikSaveStatus" class="text-xs font-normal text-base-content/50 ml-2" aria-live="polite"></span>
+        </h2>
+        <p class="text-sm text-base-content/70">Off by default. When Authentik already authenticated the browser, skip this login form only if that username is an existing active AIRD user. AIRD does not create an account. The shared secret is optional and is only needed when AIRD can be reached without the proxy that strips client-supplied X-authentik-* headers.</p>
+        <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 w-fit">
+          <input type="checkbox" id="authentikSsoEnabled" class="toggle toggle-primary toggle-sm" {% if authentik_sso_view.get('enabled') %}checked{% end %}>
+          <span class="label-text">Enable Authentik auto-login</span>
+        </label>
+        <label class="form-control max-w-md" for="authentikSsoHeader">
+          <span class="label-text text-sm font-semibold">Username header</span>
+          <input type="text" id="authentikSsoHeader" class="input input-bordered input-sm w-full" maxlength="128" autocomplete="off" spellcheck="false" value="{{ authentik_sso_view.get('username_header', 'X-authentik-username') }}">
+          <span class="label-text-alt text-base-content/50">Must start with X-. Default X-authentik-username. The proxy must keep stripping client-supplied X-authentik-* headers.</span>
+        </label>
+        <label class="form-control max-w-md" for="authentikSsoSecret">
+          <span class="label-text text-sm font-semibold">Shared secret</span>
+          <input type="password" id="authentikSsoSecret" class="input input-bordered input-sm w-full" maxlength="512" autocomplete="new-password" value="" placeholder="{% if authentik_sso_view.get('secret_set') %}Leave blank to keep the current secret{% else %}Optional{% end %}">
+          <span id="authentikSsoSecretHint" class="label-text-alt text-base-content/50">{% if authentik_sso_view.get('secret_set') %}A secret is stored. It is required on each login.{% else %}No secret stored. The username header is enough behind the proxy.{% end %}</span>
+        </label>
+        <div class="card-actions justify-end">
+          <button type="button" id="authentikSsoSave" class="btn btn-primary btn-sm">Save Authentik settings</button>
+        </div>
+      </div>
+    </div>
+    {% end %}
   </main>
   </div>
 
@@ -396,6 +430,60 @@
           });
         });
       });
+
+      var authentikSave = document.getElementById('authentikSsoSave');
+      if (authentikSave) {
+        authentikSave.addEventListener('click', function () {
+          var statusEl = document.getElementById('airdAuthentikSaveStatus');
+          var enabledEl = document.getElementById('authentikSsoEnabled');
+          var headerEl = document.getElementById('authentikSsoHeader');
+          var secretEl = document.getElementById('authentikSsoSecret');
+          var hintEl = document.getElementById('authentikSsoSecretHint');
+          function setAuthentikStatus(text, ok) {
+            if (!statusEl) return;
+            statusEl.textContent = text || '';
+            statusEl.className = 'text-xs font-normal ml-2 ' + (ok ? 'text-success' : 'text-error');
+          }
+          setAuthentikStatus('Saving…', true);
+          authentikSave.disabled = true;
+          fetch('/admin/api/authentik-sso', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-XSRFToken': xsrf()
+            },
+            body: JSON.stringify({
+              enabled: !!(enabledEl && enabledEl.checked),
+              username_header: headerEl ? headerEl.value : '',
+              secret: secretEl ? secretEl.value : ''
+            })
+          }).then(function (res) {
+            return res.json().then(function (data) {
+              return { res: res, data: data || {} };
+            }).catch(function () {
+              return { res: res, data: {} };
+            });
+          }).then(function (out) {
+            var data = out.data;
+            if (!out.res.ok || data.ok === false) {
+              setAuthentikStatus(data.error || 'Save failed', false);
+              return;
+            }
+            if (enabledEl) enabledEl.checked = !!data.enabled;
+            if (headerEl && data.username_header) headerEl.value = data.username_header;
+            if (secretEl) secretEl.value = '';
+            if (hintEl) {
+              hintEl.textContent = data.secret_set ? 'A secret is stored. It is required on each login.' : 'No secret stored. The username header is enough behind the proxy.';
+            }
+            setAuthentikStatus('Saved', true);
+          }).catch(function () {
+            setAuthentikStatus('Save failed', false);
+          }).finally(function () {
+            authentikSave.disabled = false;
+          });
+        });
+      }
     })();
   </script>
   <script src="/static/js/theme.js"></script>

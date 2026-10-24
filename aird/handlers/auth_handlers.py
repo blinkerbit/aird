@@ -677,6 +677,57 @@ class ApiLogoutHandler(BaseHandler):
         self.write({"ok": True})
 
 
+def _try_authentik_auto_login(handler: BaseHandler) -> bool:
+    """Sign in from the Authentik username header. Return True if a response was sent."""
+    from aird.core.authentik_sso import (
+        ACCESS_DENIED_HTML,
+        decide_authentik_login,
+        load_authentik_sso,
+    )
+
+    conn = handler.db_conn
+    config = load_authentik_sso(conn)
+
+    def lookup(username: str):
+        if conn is None:
+            return None
+        service = handler.get_service("user_service")
+        if service is not None:
+            return service.get_user(conn, username)
+        from aird.db.users import get_user_by_username
+
+        return get_user_by_username(conn, username)
+
+    decision = decide_authentik_login(config, handler.request.headers, lookup)
+    if decision.action == "form":
+        return False
+    if decision.action == "forbidden":
+        handler.set_status(403)
+        handler.set_header("Content-Type", "text/html; charset=UTF-8")
+        handler.finish(ACCESS_DENIED_HTML)
+        return True
+    user = decision.user or {}
+    username = str(user.get("username") or "")
+    if not username:
+        return False
+    user_id = user.get("id")
+    if user_id is not None and conn is not None:
+        stamp = datetime.now().isoformat()
+        try:
+            handler.get_service("user_service").update_user(conn, user_id, last_login=stamp)
+        except Exception:
+            logging.warning("Authentik auto-login could not update last_login")
+    role = str(user.get("role") or "user")
+    _apply_session_cookies(handler, username, role)
+    next_url = handler._get_safe_next_url()
+    if user.get("must_change_password"):
+        mq = tornado.escape.url_escape(next_url)
+        handler.redirect(f"/auth/mandatory-password?next={mq}")
+    else:
+        handler.redirect(next_url)
+    return True
+
+
 class LoginHandler(BaseHandler):
     def _is_safe_redirect_url(self, url: str) -> bool:
         """Validate that a redirect URL is safe (relative path only, no external redirects)."""
@@ -711,6 +762,8 @@ class LoginHandler(BaseHandler):
             next_url = self._get_safe_next_url()
             logging.info("User already authenticated, redirecting to safe URL")
             self.redirect(next_url)
+            return
+        if _try_authentik_auto_login(self):
             return
         # Not logged in, show login form with next URL preserved
         next_url = self._get_safe_next_url()

@@ -961,6 +961,257 @@ def test_decline_dm_removes_it(chat_env):
     assert chat_db.get_conversation("bob", conv) is None
 
 
+class _EditCapture:
+    def __init__(self):
+        self.status = 200
+        self.payload = None
+
+    def set_status(self, code):
+        self.status = code
+
+    def write(self, data):
+        self.payload = data
+
+    def get_status(self):
+        return self.status
+
+
+def _open_dm(chat_env):
+    from aird.plugins.chat import db as chat_db
+
+    alice = chat_db.resolve_user_id(chat_env, "alice")
+    bob = chat_db.resolve_user_id(chat_env, "bob")
+    conv = chat_db.create_dm_conversation(chat_env, alice, bob)
+    chat_db.respond_to_request(actor="bob", conversation_id=conv, action="accept")
+    return conv
+
+
+def _patch_text(conv, message_id, body="edited text", actor="alice"):
+    from aird.plugins.chat.handlers import _patch_conversation_message
+
+    handler = _EditCapture()
+    msg, unchanged = _patch_conversation_message(
+        handler,
+        name=actor,
+        conversation_id=conv,
+        message_id=message_id,
+        body={"body": body},
+    )
+    return handler, msg, unchanged
+
+
+def _age_receipt(conversation_id, reader, when):
+    from datetime import timezone
+
+    from aird.plugins.chat.mailbox import mailbox
+
+    stamp = when.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    with mailbox("alice") as box:
+        box.conn.execute(
+            "UPDATE receipts SET last_read_at = ? WHERE conversation_id = ? AND username = ?",
+            (stamp, conversation_id, reader),
+        )
+        box.conn.commit()
+    return stamp
+
+
+def _freeze_edit_clock(monkeypatch, when):
+    from datetime import datetime
+
+    class _Clock:
+        @staticmethod
+        def now(tz=None):
+            return when
+
+        fromisoformat = staticmethod(datetime.fromisoformat)
+
+    monkeypatch.setattr("aird.plugins.chat.handlers.datetime", _Clock)
+
+
+def test_unseen_plain_text_can_be_edited(chat_env):
+    from aird.plugins.chat import db as chat_db
+
+    conv = _open_dm(chat_env)
+    msg = chat_db.insert_message(
+        chat_env, username="alice", conversation_id=conv, msg_type="text", body="hello"
+    )
+    handler, edited, unchanged = _patch_text(conv, msg["id"], "hello there")
+    assert handler.status == 200
+    assert unchanged is False
+    assert edited["body"] == "hello there"
+    assert edited["edited_at"]
+    assert chat_db.get_message("bob", msg["id"])["body"] == "hello there"
+
+
+def test_edit_allowed_within_30_seconds_of_seen(chat_env, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from aird.plugins.chat import db as chat_db
+
+    conv = _open_dm(chat_env)
+    msg = chat_db.insert_message(
+        chat_env, username="alice", conversation_id=conv, msg_type="text", body="hello"
+    )
+    chat_db.mark_read(actor="bob", conversation_id=conv, message_id=msg["id"])
+    seen = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    _age_receipt(conv, "bob", seen)
+    _freeze_edit_clock(monkeypatch, seen + timedelta(seconds=29))
+    handler, edited, _unchanged = _patch_text(conv, msg["id"], "still open")
+    assert handler.status == 200
+    assert edited["body"] == "still open"
+
+
+def test_edit_rejected_30_seconds_after_seen(chat_env, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from aird.plugins.chat import db as chat_db
+
+    conv = _open_dm(chat_env)
+    msg = chat_db.insert_message(
+        chat_env, username="alice", conversation_id=conv, msg_type="text", body="hello"
+    )
+    chat_db.mark_read(actor="bob", conversation_id=conv, message_id=msg["id"])
+    seen = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    _age_receipt(conv, "bob", seen)
+    _freeze_edit_clock(monkeypatch, seen + timedelta(seconds=30))
+    handler, edited, _unchanged = _patch_text(conv, msg["id"], "too late")
+    assert edited is None
+    assert handler.status == 403
+    assert handler.payload == {"error": "Edit window has closed"}
+    assert chat_db.get_message("alice", msg["id"])["body"] == "hello"
+    assert chat_db.get_message("bob", msg["id"])["edited_at"] in (None, "")
+
+
+def test_edit_window_uses_earliest_covering_receipt(chat_env, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from aird.plugins.chat import db as chat_db
+
+    conv = chat_db.create_group_conversation(
+        chat_env, creator_username="alice", title="Team", member_usernames=["bob", "carol"]
+    )
+    chat_db.respond_to_request(actor="bob", conversation_id=conv, action="accept")
+    chat_db.respond_to_request(actor="carol", conversation_id=conv, action="accept")
+    msg = chat_db.insert_message(
+        chat_env, username="alice", conversation_id=conv, msg_type="text", body="hello"
+    )
+    chat_db.mark_read(actor="bob", conversation_id=conv, message_id=msg["id"])
+    chat_db.mark_read(actor="carol", conversation_id=conv, message_id=msg["id"])
+    seen = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    _age_receipt(conv, "bob", seen + timedelta(seconds=20))
+    _age_receipt(conv, "carol", seen)
+    _freeze_edit_clock(monkeypatch, seen + timedelta(seconds=40))
+    handler, edited, _unchanged = _patch_text(conv, msg["id"], "too late")
+    assert edited is None
+    assert handler.status == 403
+    assert chat_db.get_message("alice", msg["id"])["body"] == "hello"
+
+
+def test_later_message_not_covered_by_older_receipt_stays_editable(chat_env, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from aird.plugins.chat import db as chat_db
+
+    conv = _open_dm(chat_env)
+    first = chat_db.insert_message(
+        chat_env, username="alice", conversation_id=conv, msg_type="text", body="one"
+    )
+    chat_db.mark_read(actor="bob", conversation_id=conv, message_id=first["id"])
+    seen = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    _age_receipt(conv, "bob", seen)
+    second = chat_db.insert_message(
+        chat_env, username="alice", conversation_id=conv, msg_type="text", body="two"
+    )
+    _freeze_edit_clock(monkeypatch, seen + timedelta(seconds=60))
+    handler, edited, _unchanged = _patch_text(conv, second["id"], "two edited")
+    assert handler.status == 200
+    assert edited["body"] == "two edited"
+    late, rejected, _unchanged = _patch_text(conv, first["id"], "one edited")
+    assert rejected is None
+    assert late.status == 403
+    assert chat_db.get_message("alice", first["id"])["body"] == "one"
+
+
+def test_e2e_unread_receipt_does_not_start_edit_window(chat_env, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from aird.plugins.chat import db as chat_db
+
+    conv = _open_dm(chat_env)
+    payload = {"v": 1, "iv": _b64(b"\x01", 12), "ct": _b64(b"\xab", 24)}
+    msg = chat_db.insert_message(
+        chat_env,
+        username="alice",
+        conversation_id=conv,
+        msg_type="text",
+        body="",
+        metadata={"e2e": payload},
+    )
+    chat_db.mark_read(
+        actor="bob", conversation_id=conv, message_id=msg["id"], decrypted=False
+    )
+    seen = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    _age_receipt(conv, "bob", seen)
+    _freeze_edit_clock(monkeypatch, seen + timedelta(seconds=120))
+    handler, edited, _unchanged = _patch_text(conv, msg["id"], "decoded later")
+    assert handler.status == 200
+    assert edited["body"] == "decoded later"
+
+    chat_db.mark_read(
+        actor="bob", conversation_id=conv, message_id=msg["id"], decrypted=True
+    )
+    _age_receipt(conv, "bob", seen)
+    closed, rejected, _unchanged = _patch_text(conv, msg["id"], "after seen")
+    assert rejected is None
+    assert closed.status == 403
+    assert chat_db.get_message("alice", msg["id"])["body"] == "decoded later"
+
+
+def test_file_folder_gif_are_not_editable(chat_env):
+    from aird.plugins.chat import db as chat_db
+    from aird.plugins.chat.files import attachment_meta
+
+    conv = _open_dm(chat_env)
+    cases = (
+        ("file", "notes.txt", None),
+        ("gif", "clip.gif", "gif"),
+        ("file", "photos", "folder"),
+    )
+    for msg_type, name, kind in cases:
+        msg = chat_db.insert_message(
+            chat_env,
+            username="alice",
+            conversation_id=conv,
+            msg_type=msg_type,
+            body="caption",
+            metadata=attachment_meta(
+                original_name=name,
+                owner_username="alice",
+                owner_rel=f".aird-chats/c/{conv}/{name}",
+                size_bytes=3,
+                media_kind=kind,
+            ),
+        )
+        handler, edited, _unchanged = _patch_text(conv, msg["id"], "nope")
+        assert edited is None
+        assert handler.status == 400
+        assert handler.payload == {"error": "Message is not editable"}
+        assert chat_db.get_message("alice", msg["id"])["body"] == "caption"
+
+
+def test_other_sender_cannot_edit(chat_env):
+    from aird.plugins.chat import db as chat_db
+
+    conv = _open_dm(chat_env)
+    msg = chat_db.insert_message(
+        chat_env, username="alice", conversation_id=conv, msg_type="text", body="mine"
+    )
+    handler, edited, _unchanged = _patch_text(conv, msg["id"], "stolen", actor="bob")
+    assert edited is None
+    assert handler.status == 200
+    assert chat_db.get_message("alice", msg["id"])["body"] == "mine"
+
+
 def test_put_path_drops_stored_conv_key(chat_env):
     from aird.plugins.chat import db as chat_db
     from aird.plugins.chat.e2e import delete_stored_conv_keys, load_conv_key, save_conv_key

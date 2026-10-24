@@ -9,6 +9,7 @@ import mimetypes
 import os
 import secrets
 import tempfile
+from datetime import datetime, timedelta, timezone
 
 import aiofiles
 import tornado.web
@@ -357,12 +358,17 @@ def _store_uploaded_chat_attachment(
     conversation_id: str,
     tmps: list[str],
 ) -> dict | None:
-    original_name = os.path.basename(meta["filename"] or "file")
-    fd, tmp = tempfile.mkstemp(prefix="aird_chat_")
-    os.close(fd)
-    tmps.append(tmp)
-    with open(tmp, "wb") as out:
-        out.write(meta["body"])
+    original_name = os.path.basename(meta.get("filename") or "file")
+    tmp = meta.get("tmp_path")
+    if tmp:
+        tmps.append(tmp)
+    else:
+        fd, tmp = tempfile.mkstemp(prefix="aird_chat_")
+        os.close(fd)
+        tmps.append(tmp)
+        with open(tmp, "wb") as out:
+            out.write(meta.get("body") or b"")
+        meta["body"] = b""
     size = os.path.getsize(tmp)
     if not _quota_check(handler, name, size):
         return None
@@ -528,6 +534,96 @@ def _save_copy_attachment(
     return {"saved_rel": saved_rel, "size_bytes": size}
 
 
+_EDIT_AFTER_SEEN = timedelta(seconds=30)
+
+
+def _parse_chat_iso(value: str) -> datetime | None:
+    text = (value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _receipt_covers_message(receipt: dict, message: dict) -> bool:
+    last_id = str(receipt.get("last_read_id") or "")
+    message_id = str(message.get("id") or "")
+    by_id = bool(last_id) and last_id == message_id
+    meta = message.get("metadata") or {}
+    e2e = isinstance(meta, dict) and bool(meta.get("e2e"))
+    created = str(message.get("created_at") or "")
+    last_at = str(receipt.get("last_read_at") or "")
+    by_time = (not e2e) and bool(last_at) and bool(created) and last_at >= created
+    if not by_id and not by_time:
+        return False
+    if e2e and not receipt.get("decrypted"):
+        return False
+    return True
+
+
+def _is_plain_text_message(message: dict) -> bool:
+    """Edit applies to the sender's own text. Files, folders, and gifs do not."""
+    if str(message.get("msg_type") or "") != "text":
+        return False
+    meta = message.get("metadata") or {}
+    if not isinstance(meta, dict):
+        return False
+    if attachment_entries(meta):
+        return False
+    kind = str(meta.get("media_kind") or "").strip().lower()
+    return kind not in {"file", "folder", "gif"}
+
+
+def _reject_uneditable_message(
+    handler: BaseHandler, actor: str, conversation_id: str, message_id: str
+) -> bool:
+    """Write 400 when the message exists, is the sender's, and is not plain text."""
+    current = chat_db.get_message(actor, message_id)
+    if current is None or current.get("conversation_id") != conversation_id:
+        return False
+    if str(current.get("sender_username") or "") != actor:
+        return False
+    if _is_plain_text_message(current):
+        return False
+    handler.set_status(400)
+    handler.write({"error": "Message is not editable"})
+    return True
+
+
+def _reject_late_edit(handler: BaseHandler, actor: str, conversation_id: str, message_id: str) -> bool:
+    """Write 403 when a covering receipt is older than the edit window."""
+    current = chat_db.get_message(actor, message_id)
+    if current is None or current.get("conversation_id") != conversation_id:
+        return False
+    if str(current.get("sender_username") or "") != actor:
+        return False
+    seen_at = None
+    for receipt in chat_db.list_receipts(actor, conversation_id):
+        if str(receipt.get("username") or "").lower() == actor.lower():
+            continue
+        if not _receipt_covers_message(receipt, current):
+            continue
+        stamp = _parse_chat_iso(str(receipt.get("last_read_at") or ""))
+        if stamp is None:
+            continue
+        if seen_at is None or stamp < seen_at:
+            seen_at = stamp
+    if seen_at is None:
+        return False
+    if datetime.now(timezone.utc) - seen_at >= _EDIT_AFTER_SEEN:
+        handler.set_status(403)
+        handler.write({"error": "Edit window has closed"})
+        return True
+    return False
+
+
 def _patch_conversation_message(
     handler: BaseHandler,
     *,
@@ -537,6 +633,10 @@ def _patch_conversation_message(
     body: dict,
 ) -> tuple[dict | None, bool]:
     """Return (message, unchanged). On error, writes response and returns (None, False)."""
+    if _reject_uneditable_message(handler, name, conversation_id, message_id):
+        return None, False
+    if _reject_late_edit(handler, name, conversation_id, message_id):
+        return None, False
     try:
         e2e_meta = _e2e_from_body(body)
     except ValueError as exc:
@@ -823,32 +923,96 @@ def _insert_chat_attachment_message(
     )
 
 
+@tornado.web.stream_request_body
 class ChatAttachHandler(BaseHandler, XSRFTokenMixin):
+    def prepare(self):
+        super().prepare()
+        if getattr(self, "_finished", False):
+            return
+        fd, path = tempfile.mkstemp(prefix="aird_chat_body_")
+        os.close(fd)
+        self._body_path = path
+        self._body_file = open(path, "wb")
+
+    def on_finish(self):
+        self._close_body()
+        self._unlink_body()
+        super().on_finish()
+
+    def data_received(self, chunk: bytes):
+        fh = getattr(self, "_body_file", None)
+        if chunk and fh is not None and not fh.closed:
+            fh.write(chunk)
+
+    def on_connection_close(self):
+        self._close_body()
+        self._unlink_body()
+
+    def _close_body(self) -> None:
+        fh = getattr(self, "_body_file", None)
+        if fh is not None and not fh.closed:
+            fh.close()
+
+    def _unlink_body(self) -> None:
+        path = getattr(self, "_body_path", "")
+        if path:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            self._body_path = ""
+
+    def _apply_spooled_form(self) -> None:
+        from aird.plugins.chat.upload_stream import parse_spooled_form
+
+        self._close_body()
+        path = getattr(self, "_body_path", "")
+        try:
+            if not path:
+                return
+            fields, files = parse_spooled_form(path, self.request.headers.get("Content-Type", ""))
+        finally:
+            self._unlink_body()
+        for key, values in fields.items():
+            self.request.arguments[key] = [value.encode("utf-8") for value in values]
+        if files:
+            self.request.files["file"] = files
+
     @tornado.web.authenticated
     @require_db
     def post(self, conversation_id: str):
         if not _require_chat(self):
             return
-        self.check_xsrf_cookie()
+        try:
+            self._apply_spooled_form()
+        except ValueError as exc:
+            self.set_status(400)
+            self.write({"error": str(exc)})
+            return
         name = _username(self)
         uid = _uid(self)
-        if uid is None or not chat_db.user_in_conversation(name, conversation_id):
-            self.set_status(403)
-            self.write({"error": _ERR_FORBIDDEN})
-            return
-        if _exchange_blocked(self, name, conversation_id):
-            return
-        caption = sanitize_chat_html(self.get_argument("caption", "") or self.get_argument("body", ""))
-        reply_to = str(self.get_argument("reply_to_id", "") or "") or None
-        e2e_meta, e2e_err = _parse_chat_attach_e2e(self)
-        if e2e_err is not None:
-            self.set_status(400)
-            self.write({"error": e2e_err})
-            return
-        if e2e_meta:
-            caption = ""
-        tmps: list[str] = []
+        tmps = [
+            item.get("tmp_path")
+            for item in (self.request.files.get("file") or [])
+            if isinstance(item, dict) and item.get("tmp_path")
+        ]
         try:
+            self.check_xsrf_cookie()
+            if uid is None or not chat_db.user_in_conversation(name, conversation_id):
+                self.set_status(403)
+                self.write({"error": _ERR_FORBIDDEN})
+                return
+            if _exchange_blocked(self, name, conversation_id):
+                return
+            caption = sanitize_chat_html(self.get_argument("caption", "") or self.get_argument("body", ""))
+            reply_to = str(self.get_argument("reply_to_id", "") or "") or None
+            e2e_meta, e2e_err = _parse_chat_attach_e2e(self)
+            if e2e_err is not None:
+                self.set_status(400)
+                self.write({"error": e2e_err})
+                return
+            if e2e_meta:
+                caption = ""
             atts = _collect_chat_attachments(
                 self,
                 name=name,
@@ -874,7 +1038,7 @@ class ChatAttachHandler(BaseHandler, XSRFTokenMixin):
             self.write({"error": str(exc)})
             return
         finally:
-            _cleanup_tmp_paths(tmps)
+            _cleanup_tmp_paths([path for path in tmps if path])
         dispatch_message(msg, sender_id=uid, sender_username=name)
         self.write({"message": msg})
 
