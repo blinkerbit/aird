@@ -44,6 +44,7 @@ from aird.plugins.chat.notify import (
     dispatch_message_edited,
     dispatch_pin,
     dispatch_reaction,
+    dispatch_receipt,
     dispatch_chat_request,
     dispatch_e2e_key_ready,
 )
@@ -1382,6 +1383,41 @@ class ChatForwardHandler(BaseHandler, XSRFTokenMixin):
             e2e_by_target=e2e_by_target if isinstance(e2e_by_target, dict) else None,
         )
         self.write({"messages": forwarded, "results": results})
+
+
+class ChatReadHandler(BaseHandler, XSRFTokenMixin):
+    """HTTP twin of the ``chat_read`` socket message, for clients whose socket is down."""
+
+    @tornado.web.authenticated
+    @require_db
+    def post(self, conversation_id: str):
+        if not _require_chat(self):
+            return
+        self.check_xsrf_cookie()
+        name = _username(self)
+        uid = _uid(self)
+        if uid is None or not chat_db.user_in_conversation(name, conversation_id):
+            self.set_status(403)
+            self.write({"error": _ERR_FORBIDDEN})
+            return
+        try:
+            body = self.parse_json_body()
+        except tornado.web.HTTPError:
+            return
+        message_id = str(body.get("message_id") or "")
+        if not message_id:
+            self.set_status(400)
+            self.write({"error": "message_id required"})
+            return
+        decrypted = body.get("decrypted") is True
+        chat_db.mark_read(
+            actor=name,
+            conversation_id=conversation_id,
+            message_id=message_id,
+            decrypted=decrypted,
+        )
+        dispatch_receipt(name, conversation_id, message_id, uid, decrypted=decrypted)
+        self.write({"ok": True})
 
 
 class ChatMembersHandler(BaseHandler, XSRFTokenMixin):
