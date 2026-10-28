@@ -31,6 +31,12 @@ logger = logging.getLogger(__name__)
 _ENHANCED_MESSAGE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{12,80}$")
 
 
+def msg_is_heartbeat(message) -> bool:
+    if isinstance(message, bytes) or len(message) > 64:
+        return False
+    return message.strip().startswith('{"type":"ping"') or message.strip().startswith('{"type": "ping"')
+
+
 def _deliver_enhanced(conn, username: str, payload: dict) -> None:
     if conn is None or not username:
         return
@@ -61,9 +67,9 @@ def _ensure_enhanced_pump(app) -> None:
             flush_enhanced(app.settings.get("db_conn"))
         except Exception:
             logger.debug("enhanced secure delivery failed", exc_info=True)
-        io.call_later(0.4, tick)
+        io.call_later(0.05, tick)
 
-    io.call_later(0.4, tick)
+    io.call_later(0.05, tick)
 
 
 class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHandler):
@@ -157,7 +163,17 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
 
         tornado.ioloop.IOLoop.current().call_later(grace_seconds(), _fire)
 
+    def on_pong(self, data):
+        self.connection_manager.update_activity(self)
+
+    def on_ping(self, data):
+        self.connection_manager.update_activity(self)
+
     def on_message(self, message):
+        self.connection_manager.update_activity(self)
+        if msg_is_heartbeat(message):
+            self.write_message('{"type":"pong"}')
+            return
         if self.reject_oversized_ws_message(message):
             return
         if not is_chat_enabled() or self._user_id is None or not self._username:
@@ -189,7 +205,7 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
             self._handle_enhanced_receipt(conn, data)
         elif msg_type == "enhanced_close":
             self._handle_enhanced_close(conn, data)
-        elif msg_type in ("call_accept", "call_end", "call_decline"):
+        elif msg_type in ("call_accept", "call_end", "call_decline", "call_mode"):
             self._handle_call_signal(data, msg_type)
 
     def _handle_call_signal(self, data: dict, msg_type: str) -> None:

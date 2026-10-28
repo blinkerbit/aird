@@ -5,6 +5,8 @@
 
 const STATIC_CACHE = 'aird-static-v3';
 const viewingChatByClient = new Map();
+const shownNotifyIds = new Set();
+const endedCallIds = new Set();
 let pendingCallAction = null;
 let ringingCall = null;
 const PAGE_CACHE = 'aird-pages-v1';
@@ -158,6 +160,13 @@ async function handlePush(event) {
     }
   }
 
+  if (data.kind === 'call_end' || data.type === 'call_end') {
+    await stopCallAlert(data);
+    return;
+  }
+  const incomingCall = data.kind === 'call' || String(data.tag || '').startsWith('aird-call.');
+  if (data.call_id && endedCallIds.has(String(data.call_id))) return;
+  if (!incomingCall && data.notify_id && shownNotifyIds.has(String(data.notify_id))) return;
   const title = data.title || data.sender || 'Aird';
   const body = data.body || data.preview || 'New message';
   const convId = String(data.conversation_id || '');
@@ -203,6 +212,7 @@ async function handlePush(event) {
         call_id: data.call_id || '',
         from: data.sender || title,
         mode: callMode,
+        notify_id: data.notify_id || '',
       },
     };
     const maxActions = globalThis.Notification?.maxActions || 0;
@@ -224,6 +234,33 @@ async function handlePush(event) {
     if (unread > 0) await navigator.setAppBadge(unread);
     else await navigator.clearAppBadge();
   }
+}
+
+async function stopCallAlert(data) {
+  const callId = String(data.call_id || '');
+  const convId = String(data.conversation_id || '');
+  if (callId) {
+    endedCallIds.add(callId);
+    if (endedCallIds.size > 30) endedCallIds.delete(endedCallIds.values().next().value);
+  }
+  if (ringingCall) {
+    const ringingId = String(ringingCall.payload?.call_id || '');
+    if (callId && ringingId === callId) ringingCall = null;
+    else if (!callId && !ringingId) ringingCall = null;
+  }
+  const notes = await globalThis.registration.getNotifications();
+  notes.forEach((note) => {
+    const tag = String(note.tag || '');
+    const noteCall = String(note.data?.call_id || '');
+    const callNote = note.data?.kind === 'call' || tag.startsWith('aird-call.');
+    if (!callNote) return;
+    if (callId && noteCall === callId) note.close();
+    else if (callId && tag.includes(`.${callId}.`)) note.close();
+    else if (!callId && convId && String(note.data?.conversation_id || '') === convId) note.close();
+  });
+  const payload = { type: 'call_end', conversation_id: convId, call_id: callId };
+  const windows = await globalThis.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  await Promise.all(windows.map((client) => client.postMessage({ type: 'aird-call-end', payload }).catch(() => {})));
 }
 
 function clientIsWatching(client, convId) {
@@ -325,13 +362,49 @@ globalThis.addEventListener('message', (event) => {
   if (event.origin !== globalThis.location.origin) return;
   const data = event.data || {};
   if ((data.type === 'aird-calls-ready' || data.type === 'aird-call-peek') && event.source && ringingCall) {
-    if (Date.now() - ringingCall.at < 60000) {
+    const ringingId = String(ringingCall.payload?.call_id || '');
+    if (ringingId && endedCallIds.has(ringingId)) ringingCall = null;
+    if (ringingCall && Date.now() - ringingCall.at < 60000) {
       event.source.postMessage({ type: 'aird-call-invite', payload: ringingCall.payload });
     } else {
       ringingCall = null;
     }
   }
-  if (data.type === 'aird-call-clear') ringingCall = null;
+  if (data.type === 'aird-call-clear') {
+    const callId = String(data.call_id || '');
+    const convId = String(data.conversation_id || '');
+    if (callId) endedCallIds.add(callId);
+    if (ringingCall) {
+      const ringingId = String(ringingCall.payload?.call_id || '');
+      if (!callId || !ringingId || ringingId === callId) ringingCall = null;
+    }
+    event.waitUntil((async () => {
+      const notes = await globalThis.registration.getNotifications();
+      notes.forEach((note) => {
+        const tag = String(note.tag || '');
+        const noteCall = String(note.data?.call_id || '');
+        const callNote = note.data?.kind === 'call' || tag.startsWith('aird-call.');
+        if (!callNote) return;
+        if (callId && (noteCall === callId || tag.includes(`.${callId}.`))) note.close();
+        else if (!callId && convId && String(note.data?.conversation_id || '') === convId) note.close();
+        else if (!callId && !convId) note.close();
+      });
+    })());
+  }
+  if (data.type === 'aird-notify-shown' && data.notify_id) {
+    const id = String(data.notify_id);
+    shownNotifyIds.add(id);
+    if (shownNotifyIds.size > 100) {
+      const oldest = shownNotifyIds.values().next().value;
+      shownNotifyIds.delete(oldest);
+    }
+    event.waitUntil((async () => {
+      const notes = await globalThis.registration.getNotifications();
+      notes.forEach((note) => {
+        if (String(note.data?.notify_id || '') === id) note.close();
+      });
+    })());
+  }
   if (data.type === 'aird-calls-ready' && event.source && pendingCallAction) {
     if (Date.now() - pendingCallAction.at < 60000) {
       event.source.postMessage(pendingCallAction);

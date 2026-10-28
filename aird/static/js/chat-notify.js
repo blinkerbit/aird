@@ -111,7 +111,11 @@ import { setAppIconBadge } from './core/app-badge.js';
   function showCallPopup(payload) {
     if (!payload?.conversation_id) return;
     if (payload.type && payload.type !== 'call_invite') return;
-    if (payload.call_id && silencedCalls().includes(payload.call_id)) return;
+    if (payload.call_id && silencedCalls().includes(payload.call_id)) {
+      if (payload.type !== 'call_invite') markShown(payload);
+      return;
+    }
+    if (!pageIsLive()) return;
     const invite = {
       ...payload,
       type: 'call_invite',
@@ -126,6 +130,7 @@ import { setAppIconBadge } from './core/app-badge.js';
       if (shown) {
         const extra = document.getElementById('airdCallPopup');
         if (extra) extra.style.setProperty('display', 'none', 'important');
+        if (payload.type !== 'call_invite') markShown(payload);
         return;
       }
     }
@@ -178,14 +183,30 @@ import { setAppIconBadge } from './core/app-badge.js';
     const text = document.getElementById('airdCallPopupText');
     if (text) text.textContent = `${label} from ${who}. Accept or decline.`;
     el.style.setProperty('display', 'flex', 'important');
+    if (payload.type !== 'call_invite') markShown(payload);
   }
 
   globalThis.__AIRD_SHOW_CALL_POPUP__ = showCallPopup;
   globalThis.__AIRD_HIDE_CALL_POPUP__ = hideCallPopup;
 
+  function pageIsLive() {
+    return document.visibilityState === 'visible' && document.hasFocus();
+  }
+
+  function markShown(payload) {
+    const id = payload?.notify_id;
+    if (!id || !pageIsLive()) return;
+    navigator.serviceWorker?.controller?.postMessage({
+      type: 'aird-notify-shown',
+      notify_id: id,
+    });
+  }
+
   function onNotify(payload) {
     updateBadge(payload.unread_total ?? null);
     if (payload.unread_total == null) void refreshUnread();
+    if (!pageIsLive()) return;
+    markShown(payload);
     if (!viewingConversation(payload.conversation_id)) showToast(payload);
   }
 
@@ -193,7 +214,7 @@ import { setAppIconBadge } from './core/app-badge.js';
     if (!globalThis.__AIRD_CALLS_ENABLED__) return;
     const WS = window.AirdChatWS;
     if (!WS) return;
-    const { initCalls } = await import('./chat-calls.js?v=20261024j');
+    const { initCalls } = await import('./chat-calls.js?v=20261028c');
     const callsOpts = {
       me: globalThis.__AIRD_CHAT_USER__ || '',
       api: async (url, opts) => {
@@ -232,7 +253,7 @@ import { setAppIconBadge } from './core/app-badge.js';
       if (data.type === 'call_invite' && data.conversation_id) {
         globalThis.__AIRD_PENDING_CALL__ = data;
         showCallPopup(data);
-      } else if ((data.type === 'call_end' || data.type === 'call_decline') && globalThis.__AIRD_PENDING_CALL__?.conversation_id === data.conversation_id) {
+      } else if ((data.type === 'call_end' || data.type === 'call_decline') && globalThis.__AIRD_PENDING_CALL__?.conversation_id === data.conversation_id && (!data.call_id || !globalThis.__AIRD_PENDING_CALL__?.call_id || data.call_id === globalThis.__AIRD_PENDING_CALL__.call_id)) {
         globalThis.__AIRD_PENDING_CALL__ = null;
         hideCallPopup();
       }
@@ -253,9 +274,10 @@ import { setAppIconBadge } from './core/app-badge.js';
     window.addEventListener('pagehide', reportViewing);
     document.addEventListener('visibilitychange', () => {
       reportViewing();
-      if (document.visibilityState !== 'visible') return;
+      if (!pageIsLive()) return;
       const pending = globalThis.__AIRD_PENDING_CALL__;
       if (pending?.type === 'call_invite') showCallPopup(pending);
+      void pullRing();
     });
     document.addEventListener('freeze', reportViewing);
     navigator.serviceWorker?.addEventListener('controllerchange', keepViewingFresh);
@@ -266,6 +288,16 @@ import { setAppIconBadge } from './core/app-badge.js';
         globalThis.__AIRD_PENDING_CALL__ = payload;
         showCallPopup(payload);
         globalThis.dispatchEvent(new CustomEvent('aird-call-invite', { detail: data.payload }));
+      }
+      if (data.type === 'aird-call-end') {
+        const payload = data.payload?.type ? data.payload : { ...(data.payload || {}), type: 'call_end' };
+        const pending = globalThis.__AIRD_PENDING_CALL__;
+        const same = !payload.call_id || !pending?.call_id || payload.call_id === pending.call_id;
+        if (same) {
+          globalThis.__AIRD_PENDING_CALL__ = null;
+          hideCallPopup();
+          globalThis.dispatchEvent(new CustomEvent('aird-call-invite', { detail: payload }));
+        }
       }
       if (data.type === 'aird-call-action') {
         globalThis.dispatchEvent(new CustomEvent('aird-call-action', { detail: data }));
@@ -280,11 +312,18 @@ import { setAppIconBadge } from './core/app-badge.js';
       } catch { /* ring endpoint quiet */ }
     };
     void pullRing();
-    setInterval(pullRing, 1000);
+    window.addEventListener('focus', () => {
+      const pending = globalThis.__AIRD_PENDING_CALL__;
+      if (pending?.type === 'call_invite') showCallPopup(pending);
+      void pullRing();
+    });
     const WS = window.AirdChatWS;
     if (!WS) return;
     WS.connect();
-    WS.subscribe(onChatEvent);
+    WS.subscribe((data) => {
+      onChatEvent(data);
+      if (data?.type === 'chat_ws_open') void pullRing();
+    });
     void ensureCallsListener();
     const askRing = () => navigator.serviceWorker?.controller?.postMessage({ type: 'aird-call-peek' });
     askRing();

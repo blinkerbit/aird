@@ -105,7 +105,14 @@
     }
     if (_backdrop) _backdrop.addEventListener('click', _closeSidebar);
     var closeBtn = _el('transferTrackerClose');
-    if (closeBtn) closeBtn.addEventListener('click', _closeSidebar);
+    if (closeBtn && !closeBtn.dataset.ttBound) {
+      closeBtn.dataset.ttBound = '1';
+      closeBtn.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        _closeSidebar();
+      });
+    }
   }
 
   /* ── Aggregate ──────────────────────────────────────────────────── */
@@ -582,6 +589,14 @@
     _items.clear();
     _render();
   }
+
+  document.addEventListener('click', function (ev) {
+    var closeHit = ev.target && ev.target.closest && ev.target.closest('#transferTrackerClose');
+    if (!closeHit) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    _closeSidebar();
+  }, true);
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', _refs);

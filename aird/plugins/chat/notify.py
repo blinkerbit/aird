@@ -4,22 +4,11 @@ from __future__ import annotations
 
 import logging
 
+from aird.notifications.engine import deliver
 from aird.plugins.chat import db as chat_db
 from aird.plugins.chat.service import get_chat_hub, message_preview
 
 logger = logging.getLogger(__name__)
-
-
-def _send_web_push(username: str, payload: dict) -> None:
-    """Best-effort Web Push for installed PWAs / background browsers."""
-    try:
-        import aird.constants as constants_module
-        from aird.pwa.push import send_web_push
-
-        conn = getattr(constants_module, "DB_CONN", None)
-        send_web_push(conn, username, payload)
-    except Exception:
-        logger.debug("web push skipped for %s", username, exc_info=True)
 
 
 def dispatch_message(msg: dict, *, sender_id: int, sender_username: str) -> None:
@@ -51,10 +40,12 @@ def dispatch_message(msg: dict, *, sender_id: int, sender_username: str) -> None
             "unread_total": total,
             "mention": m["username"] in mentions,
         }
-        get_chat_hub().send_to_user(m["user_id"], notify)
-        _send_web_push(
-            m["username"],
-            {
+        deliver(
+            username=m["username"],
+            user_id=m["user_id"],
+            kind="message",
+            socket_payload=notify,
+            push_payload={
                 "title": msg.get("sender_username") or "Aird",
                 "body": preview,
                 "sender": msg.get("sender_username"),
@@ -63,7 +54,10 @@ def dispatch_message(msg: dict, *, sender_id: int, sender_username: str) -> None
                 "url": f"/chat?c={conv_id}",
                 "tag": f"aird-chat-{conv_id}",
                 "unread_total": total,
+                "kind": "message",
             },
+            expire_s=86400,
+            push_ttl=86400,
         )
 
 

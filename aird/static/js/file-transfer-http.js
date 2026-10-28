@@ -29,6 +29,15 @@
     return strategy?.rangeChunkBytes || config().rangeChunkBytes || DEFAULT_RANGE_CHUNK;
   }
 
+  function effectiveChunkBytes(totalSize, serverChunk, concurrency) {
+    const maxChunk = Math.max(4 * 1024 * 1024, Number(serverChunk) || DEFAULT_RANGE_CHUNK);
+    const lanes = Math.max(1, Math.min(8, Number(concurrency) || 4));
+    if (totalSize < 8 * 1024 * 1024) return Math.min(maxChunk, Math.max(totalSize, 1));
+    const target = Math.min(lanes, Math.ceil(totalSize / (8 * 1024 * 1024)));
+    if (target <= 1) return Math.min(maxChunk, totalSize);
+    return Math.max(4 * 1024 * 1024, Math.min(maxChunk, Math.ceil(totalSize / target)));
+  }
+
   function rangeUploadConcurrency(strategy) {
     const n = strategy?.rangeUploadConcurrency
       || config().rangeUploadConcurrency
@@ -573,8 +582,10 @@
         uploadDir, filename, totalSize, xsrf, TT, ttId
       );
       uploadId = session.uploadId;
-      const chunkSize = session.chunkBytes;
       const maxConcurrency = rangeUploadConcurrency(strategy);
+      const chunkSize = effectiveChunkBytes(
+        totalSize, session.chunkBytes, maxConcurrency
+      );
       const totalChunks = Math.ceil(totalSize / chunkSize);
 
       const chunkDone = new Uint8Array(totalChunks);

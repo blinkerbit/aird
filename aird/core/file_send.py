@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import select
 import sys
 
 logger = logging.getLogger(__name__)
@@ -16,10 +17,30 @@ def sendfile_available() -> bool:
     return sys.platform.startswith("linux") and hasattr(os, "sendfile")
 
 
+def _wait_socket_writable(out_fd: int) -> None:
+    """Tornado sockets are non-blocking; sendfile stops with EAGAIN when the buffer fills."""
+    while True:
+        try:
+            _, ready, _ = select.select([], [out_fd], [], 30)
+        except InterruptedError:
+            continue
+        if ready:
+            return
+        raise TimeoutError("timed out waiting to send file")
+
+
 def _sendfile_sync(out_fd: int, in_fd: int, offset: int, count: int) -> int:
     sent = 0
     while sent < count:
-        n = os.sendfile(out_fd, in_fd, offset + sent, min(_SENDFILE_CHUNK, count - sent))
+        try:
+            n = os.sendfile(
+                out_fd, in_fd, offset + sent, min(_SENDFILE_CHUNK, count - sent)
+            )
+        except BlockingIOError:
+            _wait_socket_writable(out_fd)
+            continue
+        except InterruptedError:
+            continue
         if n <= 0:
             break
         sent += n
@@ -31,14 +52,19 @@ async def sendfile_to_socket(
     file_path: str,
     start: int = 0,
     length: int | None = None,
-) -> bool:
-    """Send file bytes to socket via sendfile. Returns False if unsupported or failed."""
+) -> int:
+    """Send file bytes to socket via sendfile.
+
+    Returns the number of bytes written. ``0`` means nothing was sent and the
+    caller may still write the body. ``-1`` means some or all bytes may already
+    be on the socket and the caller must not write the body again.
+    """
     if not sendfile_available():
-        return False
+        return 0
     try:
         out_fd = sock.fileno()
     except (AttributeError, OSError):
-        return False
+        return 0
     try:
         if ".." in file_path:
             raise Exception("Invalid file path")
@@ -46,15 +72,17 @@ async def sendfile_to_socket(
         end = file_size if length is None else start + length
         count = min(end, file_size) - start
         if count <= 0:
-            return True
+            return 0
 
         def _run() -> int:
             with open(file_path, "rb") as f:
-                in_fd = f.fileno()
-                return _sendfile_sync(out_fd, in_fd, start, count)
+                try:
+                    return _sendfile_sync(out_fd, f.fileno(), start, count)
+                except OSError:
+                    logger.debug("sendfile failed for %s", file_path, exc_info=True)
+                    return -1
 
-        sent = await asyncio.to_thread(_run)
-        return sent >= count
+        return await asyncio.to_thread(_run)
     except OSError:
         logger.debug("sendfile failed for %s", file_path, exc_info=True)
-        return False
+        return 0

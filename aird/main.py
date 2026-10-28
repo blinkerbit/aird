@@ -70,6 +70,7 @@ from aird.handlers.abac_handlers import (
 )
 from aird.handlers.admin_handlers import (
     AdminAuditHandler,
+    AdminAuthentikSsoAPIHandler,
     AdminFeatureFlagAPIHandler,
     AdminHandler,
     AdminNetworkShareDeleteHandler,
@@ -276,6 +277,7 @@ def make_app(
         (r"/admin/login", AdminLoginHandler),
         (r"/admin", AdminHandler),
         (r"/admin/api/feature-flags", AdminFeatureFlagAPIHandler),
+        (r"/admin/api/authentik-sso", AdminAuthentikSsoAPIHandler),
         (r"/admin/users", AdminUsersHandler),
         (r"/admin/plugins", AdminPluginsHandler),
         (r"/admin/api/onedrive/device-start", AdminOneDriveDeviceStartHandler),
@@ -611,6 +613,9 @@ def _build_application():
         "login_url": "/login",
         "admin_login_url": "/admin/login",
         "cloud_manager": constants.CLOUD_MANAGER,
+        # Detect half-open phone sockets and drop dead registrations.
+        "websocket_ping_interval": 20,
+        "websocket_ping_timeout": 40,
     }
     settings["app_context"] = _build_app_context()
     return make_app(
@@ -733,6 +738,9 @@ def _run_http_server(app, ssl_options, sockets, http_port: int) -> None:
     server.add_sockets(sockets)
     io_loop = tornado.ioloop.IOLoop.current()
     apply_io_thread_pool()
+    from aird.notifications.engine import start_retry_loop
+
+    start_retry_loop()
     if tornado.process.task_id() in (0, None):
         io_loop.call_later(3600, _run_cleanup_expired_shares)
         from aird.plugins.onedrive_host.sync_queue import start_host_scheduler

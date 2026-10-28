@@ -1,3 +1,4 @@
+import tornado.iostream
 import tornado.web
 import os
 import mimetypes
@@ -115,15 +116,38 @@ async def _stream_chunks_to_handler(handler, chunk_iter, user_key):
         await handler.flush()
 
 
+def _mark_download_body_sent(handler) -> None:
+    """sendfile writes past Tornado's buffer, so the framed body is already done."""
+    conn = getattr(handler.request, "connection", None)
+    if conn is not None and hasattr(conn, "_expected_content_remaining"):
+        conn._expected_content_remaining = 0
+
+
 async def _try_sendfile_download(handler, abspath, offset, length, user_key):
+    """Send the body with sendfile after the HTTP headers.
+
+    Returns True when this function owns the outcome, including a failed
+    send that must not be followed by another copy of the body.
+    """
     if not is_feature_enabled("transfer_sendfile", False) or not sendfile_available():
         return False
     sock = _download_socket(handler)
     if not sock:
         return False
-    if not await sendfile_to_socket(sock, abspath, offset, length):
+    # Headers must be on the wire first. sendfile writes the raw socket and
+    # would otherwise put file bytes ahead of the HTTP status line.
+    await handler.flush()
+    sent = await sendfile_to_socket(sock, abspath, offset, length)
+    if sent == length:
+        _mark_download_body_sent(handler)
+        await TransferRateLimiter.wait_for_bytes(user_key, length, direction="download")
+        return True
+    if sent == 0:
         return False
-    await TransferRateLimiter.wait_for_bytes(user_key, length, direction="download")
+    stream = getattr(getattr(handler.request, "connection", None), "stream", None)
+    if stream is not None and not stream.closed():
+        stream.close()
+    _mark_download_body_sent(handler)
     return True
 
 
@@ -244,10 +268,14 @@ async def _serve_raw_mode(handler, abspath):
                         break
                     handler.write(chunk)
                     await handler.flush()
+    except tornado.iostream.StreamClosedError:
+        logging.debug("Client closed raw file stream for %s", abspath)
+        return
     except Exception:
         logging.exception("Error serving raw file")
-        handler.set_status(500)
-        handler.write("Error serving file")
+        if not handler.request.connection.stream.closed():
+            handler.set_status(500)
+            handler.write("Error serving file")
 
 
 

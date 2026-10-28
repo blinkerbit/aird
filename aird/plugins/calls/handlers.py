@@ -101,11 +101,15 @@ class ChatCallHandler(BaseHandler, XSRFTokenMixin):
 
 
 class CallRingHandler(BaseHandler):
+    def compute_etag(self):
+        return None
+
     @tornado.web.authenticated
     @require_db
     def get(self):
         if not _require_calls(self):
             return
+        self.set_header("Cache-Control", "no-store")
         username = get_username_string_for_db(self)
         ring = read_call_ring(self.db_conn, username) if username else None
         self.write({"ring": ring})

@@ -23,7 +23,7 @@ def test_sendfile_available_on_linux():
 @pytest.mark.asyncio
 async def test_sendfile_unsupported_platform():
     with patch("aird.core.file_send.sendfile_available", return_value=False):
-        assert await sendfile_to_socket(MagicMock(), "/tmp/x") is False
+        assert await sendfile_to_socket(MagicMock(), "/tmp/x") == 0
 
 
 @pytest.mark.asyncio
@@ -35,7 +35,7 @@ async def test_sendfile_success(tmp_path):
     with patch("aird.core.file_send.sendfile_available", return_value=True), patch(
         "aird.core.file_send._sendfile_sync", return_value=5
     ):
-        assert await sendfile_to_socket(sock, str(src)) is True
+        assert await sendfile_to_socket(sock, str(src)) == 5
 
 
 def test_sendfile_sync_partial():

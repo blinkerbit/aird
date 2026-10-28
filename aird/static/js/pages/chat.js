@@ -20,6 +20,7 @@ import {
 } from '../chat-attach.js?v=20261024b';
 import { escapeHtml as esc, escapeCssAttrValue as cssEscape } from '../core/dom-safe.js';
 import { apiFetch } from '../core/http.js';
+import { getXSRFToken } from '../core/xsrf.js';
 
 (function () {
   'use strict';
@@ -105,6 +106,7 @@ import { apiFetch } from '../core/http.js';
   let userSearchTimer = null;
   let searchTimer = null;
   let pollTimer = null;
+  let uploading = false;
   let loadGen = 0;
   let typingTimer = null;
   let forwardMsgId = null;
@@ -156,10 +158,12 @@ import { apiFetch } from '../core/http.js';
       pollTimer = null;
     }
     if (!on || !activeConvId) return;
-    pollTimer = setInterval(() => {
+    const pull = () => {
       if (window.AirdChatWS?.isOpen()) return;
       syncNewMessages().catch((err) => { console.debug('chat poll sync failed', err); });
-    }, 4000);
+    };
+    pull();
+    pollTimer = setInterval(pull, 1000);
   }
 
   function apiUrl(path, opts = {}) {
@@ -1561,7 +1565,10 @@ import { apiFetch } from '../core/http.js';
       runAsync(() => loadConversations(), 'loadConversations');
     },
     chat_ws_close: () => setPollEnabled(true),
-    chat_ws_open: () => setPollEnabled(!!activeConvId),
+    chat_ws_open: () => {
+      setPollEnabled(!!activeConvId);
+      if (activeConvId) syncNewMessages().catch((err) => { console.debug('chat resync failed', err); });
+    },
     chat_typing: onWsTyping,
     chat_e2e_key_ready: (data) => {
       const convId = data.conversation_id;
@@ -1838,7 +1845,106 @@ import { apiFetch } from '../core/http.js';
     return { e2e, mentions };
   }
 
-  async function postStagedAttachments(staged, { e2e, mentions, hasText, body, reply }) {
+  function formatUploadSize(bytes) {
+    const n = Number(bytes) || 0;
+    if (n < 1024) return `${n} B`;
+    if (n < 1048576) return `${(n / 1024).toFixed(n < 10240 ? 1 : 0)} KB`;
+    return `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`;
+  }
+
+  function uploadChatForm(convId, fd, onProgress) {
+    return new Promise((resolve, reject) => {
+      const target = new URL(`/api/chat/conversations/${convId}/attach`, globalThis.location.origin);
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${target.pathname}${target.search}`);
+      xhr.setRequestHeader('Accept', 'application/json');
+      xhr.setRequestHeader('X-XSRFToken', getXSRFToken());
+      xhr.upload.addEventListener('progress', (ev) => {
+        onProgress?.(ev.loaded, ev.lengthComputable ? ev.total : 0);
+      });
+      xhr.addEventListener('load', () => {
+        let json = {};
+        try { json = JSON.parse(xhr.responseText); } catch { json = { error: xhr.responseText }; }
+        if (xhr.status < 200 || xhr.status >= 300) {
+          reject(new Error(json.error || xhr.responseText || `HTTP ${xhr.status}`));
+          return;
+        }
+        resolve(json);
+      });
+      xhr.addEventListener('error', () => reject(new Error('Upload failed')));
+      xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
+      xhr.send(fd);
+    });
+  }
+
+  function uploadNames(staged) {
+    if (staged.length === 1) return staged[0].name || 'file';
+    return `${staged.length} files`;
+  }
+
+  function paintUploadSlot(root, label, pct, detail) {
+    if (!root) return;
+    let name = root.querySelector('.chat-upload-label');
+    let track = root.querySelector('.chat-upload-track');
+    let fill = root.querySelector('.chat-upload-fill');
+    let meta = root.querySelector('.chat-upload-meta');
+    if (!name || !track || !fill || !meta) {
+      root.innerHTML = `<div class="chat-upload-label"></div>`
+        + `<div class="chat-upload-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">`
+        + `<div class="chat-upload-fill"></div></div>`
+        + `<div class="chat-upload-meta"></div>`;
+      name = root.querySelector('.chat-upload-label');
+      track = root.querySelector('.chat-upload-track');
+      fill = root.querySelector('.chat-upload-fill');
+      meta = root.querySelector('.chat-upload-meta');
+    }
+    name.textContent = label;
+    track.setAttribute('aria-valuenow', String(pct));
+    fill.style.width = `${pct}%`;
+    meta.textContent = detail;
+  }
+
+  function paintUploadProgress(staged, loaded, total) {
+    const label = uploadNames(staged);
+    const known = total > 0;
+    const pct = known ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
+    const detail = !known
+      ? 'Uploading…'
+      : (pct >= 100
+        ? 'Finishing…'
+        : `Uploading ${pct}% · ${formatUploadSize(loaded)} / ${formatUploadSize(total)}`);
+    let status = document.getElementById('chatUploadStatus');
+    if (!status && editor) {
+      status = document.createElement('div');
+      status.id = 'chatUploadStatus';
+      status.className = 'chat-upload-status';
+      editor.before(status);
+    }
+    if (status) {
+      status.hidden = false;
+      paintUploadSlot(status, label, pct, detail);
+    }
+    if (!messagesEl) return;
+    messagesEl.querySelector('.chat-empty')?.remove();
+    let row = document.getElementById('chatUploadProgress');
+    if (!row) {
+      row = document.createElement('div');
+      row.id = 'chatUploadProgress';
+      row.className = 'chat-msg-row chat-msg-row--mine chat-upload-row';
+      row.innerHTML = `${avatarHtml(me)}<div class="chat-msg-stack"><div class="aird-chat-bubble aird-chat-bubble--mine"><div class="aird-chat-bubble-body chat-upload-slot"></div></div></div>`;
+      messagesEl.appendChild(row);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+    paintUploadSlot(row.querySelector('.chat-upload-slot'), label, pct, detail);
+    if (messagesEl.lastElementChild !== row) messagesEl.appendChild(row);
+  }
+
+  function clearUploadProgress() {
+    document.getElementById('chatUploadStatus')?.remove();
+    document.getElementById('chatUploadProgress')?.remove();
+  }
+
+  async function postStagedAttachments(staged, { e2e, mentions, hasText, body, reply, convId }) {
     const fd = new FormData();
     if (e2e) {
       fd.append('e2e', JSON.stringify(e2e));
@@ -1851,8 +1957,10 @@ import { apiFetch } from '../core/http.js';
       if (item.path) fd.append('source_path', item.path);
       else fd.append('file', item.file, item.file.name);
     }
-    await api(`/api/chat/conversations/${activeConvId}/attach`, { method: 'POST', body: fd });
-    await openConversation(activeConvId);
+    paintUploadProgress(staged, 0, 0);
+    await uploadChatForm(convId, fd, (loaded, total) => paintUploadProgress(staged, loaded, total));
+    clearUploadProgress();
+    if (activeConvId === convId) await openConversation(convId);
     await loadConversations();
   }
 
@@ -1888,6 +1996,7 @@ import { apiFetch } from '../core/http.js';
     const body = editorPlainText();
     const hasText = body.trim().length > 0;
     if (!hasText && !pending.length) return;
+    if (uploading) return;
     const reply = replyToId;
     let e2e = null;
     let mentions = [];
@@ -1909,7 +2018,24 @@ import { apiFetch } from '../core/http.js';
     clearReply();
     hidePathSuggest();
     if (staged.length) {
-      await postStagedAttachments(staged, { e2e, mentions, hasText, body, reply });
+      const convId = activeConvId;
+      uploading = true;
+      try {
+        await postStagedAttachments(staged, { e2e, mentions, hasText, body, reply, convId });
+      } catch (err) {
+        clearUploadProgress();
+        for (const item of staged) {
+          if (item.path) pendingStore.stagePath(item.path, { isDir: item.isDir });
+          else if (item.file) pendingStore.stageBlob(item.file);
+        }
+        renderPending();
+        if (hasText && editor) editor.textContent = body;
+        if (reply) setReply(reply);
+        setE2eStatus(err.message || 'Upload failed');
+      } finally {
+        uploading = false;
+        staged.forEach(revokePendingPreview);
+      }
       return;
     }
     if (!hasText) return;
@@ -2746,7 +2872,7 @@ import { apiFetch } from '../core/http.js';
       WS.subscribe(handleWsEvent);
     }
     if (globalThis.__AIRD_CALLS_ENABLED__) {
-      import('../chat-calls.js?v=20261024e').then((m) => {
+      import('../chat-calls.js?v=20261028c').then((m) => {
         globalThis.AirdChatCalls = m;
         m.initCalls({
           api,

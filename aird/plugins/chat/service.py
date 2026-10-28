@@ -31,8 +31,15 @@ class ChatHub:
         self._by_user: dict[int, set[ChatWebSocketHandler]] = {}
         self._username: dict[int, str] = {}
         self._remote: dict[int, dict[int, str]] = {}
+        self._loop: tornado.ioloop.IOLoop | None = None
 
     def add(self, user_id: int, handler: ChatWebSocketHandler, username: str = "") -> None:
+        try:
+            loop = tornado.ioloop.IOLoop.current(instance=False)
+            if loop is not None and loop.asyncio_loop.is_running():
+                self._loop = loop
+        except Exception:
+            pass
         with self._lock:
             self._by_user.setdefault(user_id, set()).add(handler)
             if username:
@@ -130,17 +137,12 @@ class ChatHub:
         publish(frame)
 
     def _schedule_send(self, handler: ChatWebSocketHandler, raw: str) -> None:
-        loop = tornado.ioloop.IOLoop.current(instance=False)
-        if loop is None:
+        """Always write on the worker's IOLoop thread.
 
-            def _direct() -> None:
-                try:
-                    handler.write_message(raw)
-                except Exception:
-                    logger.debug("chat ws send failed", exc_info=True)
-
-            _direct()
-            return
+        Bus frames arrive on a helper thread. Tornado sockets are not thread
+        safe, and writing from another thread does not wake the loop, so the
+        frame would sit until some unrelated event arrived.
+        """
 
         def _write() -> None:
             try:
@@ -148,7 +150,19 @@ class ChatHub:
             except Exception:
                 logger.debug("chat ws send failed", exc_info=True)
 
+        loop = self._loop
+        if loop is None:
+            try:
+                loop = tornado.ioloop.IOLoop.current(instance=False)
+            except Exception:
+                loop = None
+        if loop is None:
+            _write()
+            return
         try:
+            if not loop.asyncio_loop.is_running():
+                _write()
+                return
             loop.add_callback(_write)
         except RuntimeError:
             _write()

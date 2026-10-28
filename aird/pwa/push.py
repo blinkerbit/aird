@@ -43,6 +43,7 @@ def _try_send_one_subscription(
     body: str,
     vapid_private_key: str,
     claims: dict,
+    ttl: int,
 ) -> bool:
     from pywebpush import WebPushException, webpush
 
@@ -52,7 +53,7 @@ def _try_send_one_subscription(
             data=body,
             vapid_private_key=vapid_private_key,
             vapid_claims=claims,
-            ttl=86400,
+            ttl=ttl,
             headers={"Urgency": "high"},
         )
         return True
@@ -64,7 +65,7 @@ def _try_send_one_subscription(
         ):
             logger.warning("web push failed for %s: %s", username, exc)
     except Exception:
-        logger.debug("web push error for %s", username, exc_info=True)
+        logger.warning("web push error for %s", username, exc_info=True)
     return False
 
 
@@ -72,23 +73,25 @@ def send_web_push(
     conn: sqlite3.Connection | None,
     username: str,
     payload: dict[str, Any],
+    ttl: int = 86400,
 ) -> int:
     """Send *payload* JSON to all push subscriptions for *username*.
 
-    Returns the number of successful deliveries. Removes gone subscriptions.
+    Returns the number of successful deliveries, or -1 when there is nothing
+    to send. Removes gone subscriptions (404/410).
     """
     if not conn or not username:
-        return 0
+        return -1
     if not _webpush_available():
         logger.debug("pywebpush not installed; skipping web push")
-        return 0
+        return -1
 
     from aird.pwa import store as push_store
     from aird.pwa.vapid import load_or_create_vapid, vapid_private_key_for_webpush
 
     subs = push_store.subscriptions_for_user(conn, username)
     if not subs:
-        return 0
+        return -1
 
     vapid = load_or_create_vapid()
     body = json.dumps(payload)
@@ -104,5 +107,6 @@ def send_web_push(
             body=body,
             vapid_private_key=vapid_private_key,
             claims=claims,
+            ttl=max(0, int(ttl)),
         )
     )

@@ -222,6 +222,8 @@ def _worker_loop(addr, on_frame, on_connect) -> None:
         with _pub_lock:
             global _pub_sock
             _pub_sock = conn
+            if _pending:
+                _flush_pending_locked(conn)
         try:
             if on_connect is not None:
                 on_connect()
@@ -245,7 +247,30 @@ def _worker_loop(addr, on_frame, on_connect) -> None:
         time.sleep(0.2)
 
 
+_PENDING_MAX = 500
+_PENDING_AGE = 20.0
+_pending: list[tuple[float, bytes]] = []
+
+
+def _flush_pending_locked(sock: socket.socket) -> None:
+    """Send frames queued while the hub link was down. Call with _pub_lock held."""
+    import time
+
+    now = time.monotonic()
+    queued = list(_pending)
+    _pending.clear()
+    for stamp, packet in queued:
+        if now - stamp > _PENDING_AGE:
+            continue
+        try:
+            sock.sendall(packet)
+        except OSError:
+            _pending.append((stamp, packet))
+
+
 def publish(frame: dict) -> bool:
+    import time
+
     raw = json.dumps(frame, separators=(",", ":")).encode()
     if len(raw) > _MAX_FRAME:
         logger.warning("chat hub frame dropped (%s bytes)", len(raw))
@@ -253,11 +278,17 @@ def publish(frame: dict) -> bool:
     packet = _HDR.pack(len(raw)) + raw
     with _pub_lock:
         sock = _pub_sock
-        if sock is None:
-            return False
-        try:
-            sock.sendall(packet)
-            return True
-        except OSError:
-            logger.debug("chat hub publish failed", exc_info=True)
-            return False
+        if sock is not None:
+            if _pending:
+                _flush_pending_locked(sock)
+            try:
+                sock.sendall(packet)
+                return True
+            except OSError:
+                logger.debug("chat hub publish failed", exc_info=True)
+        # Link is down. Keep the frame and resend when the worker reconnects.
+        if frame.get("op") == "deliver":
+            _pending.append((time.monotonic(), packet))
+            if len(_pending) > _PENDING_MAX:
+                del _pending[: len(_pending) - _PENDING_MAX]
+        return False

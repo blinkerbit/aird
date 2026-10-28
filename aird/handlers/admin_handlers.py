@@ -429,6 +429,13 @@ class AdminHandler(BaseHandler):
         )
 
         runtime_config = self.get_service("config_service").get_runtime_config(db_conn)
+        from aird.core.authentik_sso import load_authentik_sso, public_authentik_sso
+
+        try:
+            authentik_sso = public_authentik_sso(load_authentik_sso(db_conn))
+        except Exception:
+            logging.debug("authentik sso config load failed", exc_info=True)
+            authentik_sso = public_authentik_sso({})
 
         self.render(
             "admin.html",
@@ -438,6 +445,7 @@ class AdminHandler(BaseHandler):
             runtime_config=runtime_config,
             transfer_profile_names=_VALID_TRANSFER_PROFILES,
             ldap_enabled=ldap_enabled,
+            authentik_sso=authentik_sso,
             available_extensions=available_extensions,
             allowed_extensions_current=allowed_current,
             smb_library_available=smb_library_available(),
@@ -506,6 +514,33 @@ class AdminFeatureFlagAPIHandler(XSRFTokenMixin, BaseHandler):
         if not result.get("ok"):
             self.set_status(int(result.get("status") or HTTP_BAD_REQUEST))
         self.write(result)
+
+
+class AdminAuthentikSsoAPIHandler(XSRFTokenMixin, BaseHandler):
+    """POST /admin/api/authentik-sso — save Authentik auto-login settings."""
+
+    @tornado.web.authenticated
+    @require_admin(deny_status=HTTP_FORBIDDEN, deny_body=ACCESS_DENIED_JSON)
+    def post(self):
+        self.check_xsrf_cookie()
+        if self.db_conn is None:
+            self.set_status(503)
+            self.set_header("Content-Type", CONTENT_TYPE_JSON)
+            self.write({"ok": False, "error": "Database not available"})
+            return
+        from aird.core.authentik_sso import public_authentik_sso, save_authentik_sso
+
+        payload = self.parse_json_body() or {}
+        if not isinstance(payload, dict):
+            payload = {}
+        self.set_header("Content-Type", CONTENT_TYPE_JSON)
+        try:
+            saved = save_authentik_sso(self.db_conn, payload)
+        except ValueError as exc:
+            self.set_status(HTTP_BAD_REQUEST)
+            self.write({"ok": False, "error": str(exc)})
+            return
+        self.write({"ok": True, **public_authentik_sso(saved)})
 
 
 class AdminPluginsHandler(BaseHandler):

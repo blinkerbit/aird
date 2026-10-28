@@ -28,6 +28,7 @@ import { createReconnectingSocket, sameOriginWsUrl } from './core/ws.js';
   }
 
   const live = createReconnectingSocket({
+    delayMs: 250,
     url: () => sameOriginWsUrl('/ws/chat'),
     onOpen() { emit({ type: 'chat_ws_open' }); },
     onJson(payload) { emit(payload); },

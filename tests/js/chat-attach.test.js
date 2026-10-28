@@ -249,6 +249,8 @@ describe('chat page attach contract', () => {
     expect(js).toContain('clipboardImageSrcs');
     expect(js).toContain('fileFromImageSrc');
     expect(js).toContain('attachEditorImages()');
+    expect(js).toContain('chatUploadProgress');
+    expect(js).toContain('xhr.upload.addEventListener');
     expect(js).toContain("addEventListener('beforeinput'");
   });
 });

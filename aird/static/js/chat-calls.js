@@ -23,6 +23,10 @@ let meterCtx = null;
 let meters = { local: null, remote: null };
 let meterRaf = 0;
 let speakerCtx = null;
+let audioRoute = 'headset';
+let routeGen = 0;
+let routeTimers = [];
+let routeToastTimer = 0;
 
 function meName() {
   return ctx?.me || globalThis.__AIRD_CHAT_USER__ || '';
@@ -30,11 +34,11 @@ function meName() {
 
 function ensureCallStyles() {
   const existing = document.getElementById('chatCallStyles');
-  if (existing?.dataset.version === '13') return;
+  if (existing?.dataset.version === '14') return;
   existing?.remove();
   const style = document.createElement('style');
   style.id = 'chatCallStyles';
-  style.dataset.version = '13';
+  style.dataset.version = '14';
   style.textContent = `
     .chat-call-btn.btn{min-height:2rem;height:2rem;width:2rem;padding:0}
     .chat-call-btn svg{width:16px;height:16px}
@@ -96,6 +100,10 @@ function ensureCallStyles() {
     .chat-call-popup-btn--decline,.chat-call-ctrl--danger{background:#dc2626}
     .chat-call-ctrl{background:#e5e7eb;color:#111}
     .chat-call-ctrl[aria-pressed="true"]{background:#2563eb;color:#fff}
+    .chat-call-route{min-width:2.75rem;width:2.75rem;height:2.75rem;padding:0;display:inline-flex;align-items:center;justify-content:center}
+    .chat-call-route svg{width:1.25rem;height:1.25rem}
+    .chat-call-route-toast{position:absolute;left:50%;top:42%;z-index:8;transform:translate(-50%,-40%);padding:.5rem .95rem;border-radius:.75rem;background:rgba(0,0,0,.78);color:#fff;font-size:1.05rem;font-weight:700;letter-spacing:.01em;pointer-events:none;opacity:0;transition:opacity .2s ease}
+    .chat-call-route-toast.is-on{opacity:1}
     .chat-call-controls{display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;width:100%;position:relative;z-index:3;padding:.75rem .8rem;padding-bottom:calc(.8rem + env(safe-area-inset-bottom,0))}
     .chat-call-minimized{position:fixed;z-index:91;left:50%;transform:translateX(-50%);bottom:calc(.75rem + env(safe-area-inset-bottom,0));display:flex;align-items:center;gap:.5rem;padding:.55rem .65rem;border-radius:999px;background:var(--color-primary,#2563eb);color:#fff;box-shadow:0 8px 28px rgba(0,0,0,.28);min-width:min(92vw,20rem);max-width:92vw;cursor:pointer}
     .chat-call-minimized-pulse{width:.55rem;height:.55rem;border-radius:50%;background:#4ade80;flex-shrink:0}
@@ -113,6 +121,8 @@ function muteIcon() {
 }
 
 const CALL_MINIMIZE_ICON = '<svg class="icon-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/></svg><svg class="icon-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 14v6h6M20 10V4h-6M14 10l6-6M10 14l-6 6"/></svg>';
+const SPEAKER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>';
+const HEADSET_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>';
 
 function tileMarkup(which, name) {
   const face = which === 'local' ? 'chatCallLocalFace' : 'chatCallRemoteFace';
@@ -176,7 +186,7 @@ function wireSelfPreview(overlay) {
 
 function ensureOverlay() {
   const existing = document.getElementById('chatCallOverlay');
-  if (existing && existing.dataset.version === '9') return existing;
+  if (existing && existing.dataset.version === '11') return existing;
   existing?.remove();
   const el = document.createElement('div');
   el.id = 'chatCallOverlay';
@@ -206,14 +216,17 @@ function ensureOverlay() {
       <div class="chat-call-tile chat-call-tile--remote" id="chatCallRemoteTile">${tileMarkup('remote', 'Other')}</div>
       <div class="chat-call-tile chat-call-tile--local" id="chatCallLocalTile">${tileMarkup('local', 'You')}</div>
     </div>
+    <div id="chatCallRouteToast" class="chat-call-route-toast" role="status"></div>
     <div class="chat-call-controls">
+      <button type="button" id="chatCallRouteBtn" class="chat-call-ctrl chat-call-route" aria-pressed="false" aria-label="Headset">${HEADSET_ICON}</button>
       <button type="button" id="chatCallHearBtn" class="chat-call-ctrl hidden">Speaker</button>
       <button type="button" id="chatCallMuteBtn" class="chat-call-ctrl">Mute</button>
       <button type="button" id="chatCallFitBtn" class="chat-call-ctrl" aria-pressed="true">Fit</button>
+      <button type="button" id="chatCallModeBtn" class="chat-call-ctrl">Video</button>
       <button type="button" id="chatCallCamBtn" class="chat-call-ctrl hidden">Camera</button>
       <button type="button" id="chatCallHangupBtn" class="chat-call-ctrl chat-call-ctrl--danger">End</button>
     </div>`;
-  el.dataset.version = '9';
+  el.dataset.version = '11';
   document.body.appendChild(el);
   el.querySelector('#chatCallHangupBtn')?.addEventListener('click', () => { void hangUp(); });
   wireSelfPreview(el);
@@ -245,7 +258,13 @@ function ensureOverlay() {
     if (event.target.closest('#chatCallDevicesBtn, #chatCallDeviceMenu')) return;
     closeDeviceMenu();
   });
+  el.querySelector('#chatCallRouteBtn')?.addEventListener('click', () => {
+    void switchAudioRoute(audioRoute === 'speaker' ? 'headset' : 'speaker');
+  });
   el.querySelector('#chatCallHearBtn')?.addEventListener('click', () => { void enableCallSound(); });
+  el.querySelector('#chatCallModeBtn')?.addEventListener('click', () => {
+    void setCallMode(activeMode === 'video' ? 'audio' : 'video');
+  });
   el.querySelector('#chatCallCamBtn')?.addEventListener('click', () => { void toggleCamera(); });
   el.querySelector('#chatCallFitBtn')?.addEventListener('click', () => {
     applyVideoFit(videoFit === 'fit' ? 'fill' : 'fit');
@@ -442,10 +461,101 @@ function ensureSpeakerElement() {
   return el;
 }
 
-function preferLoudspeaker() {
+function routeFromLabel(label) {
+  const text = String(label || '').toLowerCase();
+  if (/speaker|loud/.test(text)) return 'speaker';
+  if (/headset|headphone|earpiece|ear piece|bluetooth|airpod|buds|handset|\bphone\b/.test(text)) return 'headset';
+  return '';
+}
+
+async function sinkForRoute(speaker) {
+  if (!navigator.mediaDevices?.enumerateDevices) return '';
   try {
-    if (navigator.audioSession) navigator.audioSession.type = 'playback';
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const match = devices.find((device) => (
+      device.kind === 'audiooutput'
+      && device.deviceId
+      && routeFromLabel(device.label) === (speaker ? 'speaker' : 'headset')
+    ));
+    return match?.deviceId || '';
+  } catch {
+    return '';
+  }
+}
+
+async function switchAudioRoute(route) {
+  applyAudioRoute(route, { toast: true });
+  const id = await sinkForRoute(route === 'speaker');
+  if (!id) return;
+  savePreferredDevice('audiooutput', id);
+  const sel = document.getElementById('chatCallSpeakerSelect');
+  if (sel && [...sel.options].some((opt) => opt.value === id)) sel.value = id;
+  if (room) await room.switchActiveDevice('audiooutput', id).catch(() => {});
+  await applySpeakerToAttachedAudio(id);
+  pushHardwareRoute(route === 'speaker');
+}
+
+function clearRouteTimers() {
+  routeTimers.forEach((timer) => clearTimeout(timer));
+  routeTimers = [];
+}
+
+function paintRouteButton() {
+  const btn = document.getElementById('chatCallRouteBtn');
+  if (!btn) return;
+  const speaker = audioRoute === 'speaker';
+  btn.setAttribute('aria-pressed', speaker ? 'true' : 'false');
+  btn.setAttribute('aria-label', speaker ? 'Speaker' : 'Headset');
+  btn.innerHTML = speaker ? SPEAKER_ICON : HEADSET_ICON;
+}
+
+function showRouteToast(text) {
+  const host = document.getElementById('chatCallOverlay') || document.body;
+  let el = document.getElementById('chatCallRouteToast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'chatCallRouteToast';
+    el.className = 'chat-call-route-toast';
+    el.setAttribute('role', 'status');
+    host.appendChild(el);
+  } else if (el.parentElement !== host) {
+    host.appendChild(el);
+  }
+  el.textContent = text;
+  el.classList.remove('is-on');
+  void el.offsetWidth;
+  el.classList.add('is-on');
+  clearTimeout(routeToastTimer);
+  routeToastTimer = setTimeout(() => el.classList.remove('is-on'), 1500);
+}
+
+function pushHardwareRoute(speaker) {
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = speaker ? 'playback' : 'play-and-record';
   } catch { /* unsupported */ }
+  try {
+    globalThis.AndroidHost?.setSpeakerphone?.(speaker);
+  } catch { /* host missing */ }
+}
+
+function applyAudioRoute(route, opts = {}) {
+  audioRoute = route === 'speaker' ? 'speaker' : 'headset';
+  const generation = ++routeGen;
+  const speaker = audioRoute === 'speaker';
+  const run = () => {
+    if (generation !== routeGen) return;
+    pushHardwareRoute(speaker);
+  };
+  run();
+  clearRouteTimers();
+  routeTimers.push(setTimeout(run, 350));
+  routeTimers.push(setTimeout(run, 1100));
+  paintRouteButton();
+  if (opts.toast) showRouteToast(speaker ? 'Speaker' : 'Headset');
+}
+
+function preferLoudspeaker() {
+  applyAudioRoute(audioRoute);
 }
 
 function unlockCallAudio() {
@@ -553,10 +663,18 @@ function scheduleRemoteDropCheck() {
 function notifyAndroidCall(active, mode) {
   try {
     const host = globalThis.AndroidHost;
-    if (!host) return;
-    if (typeof host.setInVideoCall === 'function') host.setInVideoCall(Boolean(active));
-    if (active && typeof host.setSpeakerphone === 'function') host.setSpeakerphone(mode === 'video');
+    if (host && typeof host.setInVideoCall === 'function') host.setInVideoCall(Boolean(active));
   } catch { /* host missing */ }
+  if (active) {
+    applyAudioRoute(mode === 'video' ? 'speaker' : 'headset');
+    return;
+  }
+  clearRouteTimers();
+  routeGen += 1;
+  pushHardwareRoute(false);
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = 'auto';
+  } catch { /* unsupported */ }
 }
 
 function markAnswered() {
@@ -568,11 +686,94 @@ function markAnswered() {
   paintSpeaking();
 }
 
-function signalCall(type, convId, id) {
+function signalCall(type, convId, id, extra) {
   if (!convId) return;
   const ending = id || callId || '';
-  ctx.sendWs?.({ type, conversation_id: convId, call_id: ending });
+  ctx.sendWs?.({ type, conversation_id: convId, call_id: ending, ...(extra || {}) });
   try { globalThis.AndroidHost?.signalCall?.(type, convId, ending); } catch { /* ignore */ }
+}
+
+function syncCallModeUi() {
+  const video = activeMode === 'video';
+  document.getElementById('chatCallCamBtn')?.classList.toggle('hidden', !video);
+  const modeBtn = document.getElementById('chatCallModeBtn');
+  if (modeBtn) modeBtn.textContent = video ? 'Voice' : 'Video';
+  const camBtn = document.getElementById('chatCallCamBtn');
+  if (camBtn && video) camBtn.textContent = room?.localParticipant?.isCameraEnabled ? 'Camera off' : 'Camera on';
+  if (!waitingForAnswer) setStatus(video ? 'Video call' : 'Voice call');
+  try { globalThis.AndroidHost?.setInVideoCall?.(video); } catch { /* host missing */ }
+}
+
+function clearLocalVideo() {
+  const tile = document.getElementById('chatCallLocalTile');
+  tile?.querySelectorAll('video').forEach((node) => node.remove());
+  tile?.classList.remove('has-video');
+}
+
+let modeSwitching = false;
+
+async function setCallMode(mode) {
+  const live = room;
+  if (!live?.localParticipant || modeSwitching) return;
+  if (phase !== 'live' && phase !== 'outgoing' && phase !== 'joining') return;
+  const next = mode === 'video' ? 'video' : 'audio';
+  if (next === activeMode) return;
+  modeSwitching = true;
+  try {
+    if (next === 'video') {
+      await ensureMediaPermission('video');
+      const mobile = globalThis.matchMedia('(max-width: 1023px)').matches;
+      const { VideoPresets } = await loadLiveKit();
+      const preset = mobile ? VideoPresets.h540 : VideoPresets.h720;
+      const cameraId = document.getElementById('chatCallCamSelect')?.value || preferredDeviceId('videoinput');
+      const capture = {
+        resolution: preset.resolution,
+        ...(cameraId ? { deviceId: cameraId } : {}),
+      };
+      try {
+        await live.localParticipant.setCameraEnabled(true, capture);
+      } catch {
+        await live.localParticipant.setCameraEnabled(true, { resolution: preset.resolution });
+      }
+      live.localParticipant.videoTrackPublications.forEach((pub) => {
+        if (pub.track) attachVideoTrack(pub.track, live.localParticipant);
+      });
+      if (audioRoute !== 'speaker') applyAudioRoute('speaker', { toast: true });
+    } else {
+      await live.localParticipant.setCameraEnabled(false);
+      clearLocalVideo();
+    }
+  } catch (err) {
+    setStatus(String(err?.message || 'Camera unavailable'));
+    return;
+  } finally {
+    modeSwitching = false;
+  }
+  activeMode = next;
+  syncCallModeUi();
+  if (activeCallConvId) signalCall('call_mode', activeCallConvId, callId, { mode: next });
+}
+
+function applyRemoteCallMode(mode) {
+  const next = mode === 'video' ? 'video' : 'audio';
+  if (next === activeMode) {
+    syncCallModeUi();
+    return;
+  }
+  activeMode = next;
+  if (next === 'audio') {
+    const live = room;
+    if (live?.localParticipant?.isCameraEnabled) {
+      void live.localParticipant.setCameraEnabled(false);
+    }
+    clearLocalVideo();
+    const remote = document.getElementById('chatCallRemoteTile');
+    remote?.querySelectorAll('video').forEach((node) => node.remove());
+    remote?.classList.remove('has-video');
+  } else if (audioRoute !== 'speaker') {
+    applyAudioRoute('speaker', { toast: true });
+  }
+  syncCallModeUi();
 }
 
 function sameCall(data) {
@@ -581,6 +782,11 @@ function sameCall(data) {
   if (activeCallConvId && conv !== activeCallConvId && incoming?.conversation_id !== conv) return false;
   if (data.call_id && callId && data.call_id !== callId) return false;
   return phase !== 'idle' || Boolean(incoming);
+}
+
+function endsThisCall(data) {
+  if (data?.call_id && callId && data.call_id !== callId) return false;
+  return sameCall(data) || endsActiveCall(data);
 }
 
 async function dropAsBusy() {
@@ -719,11 +925,11 @@ function savePreferredDevice(kind, deviceId) {
 }
 
 async function applySpeakerToAttachedAudio(deviceId) {
-  if (isPhone()) return;
   const id = deviceId || preferredDeviceId('audiooutput');
   if (!id) return;
-  document.querySelectorAll('audio.chat-call-remote-audio').forEach((el) => {
-    if (typeof el.setSinkId === 'function') void el.setSinkId(id).catch(() => {});
+  document.querySelectorAll('audio').forEach((el) => {
+    if (typeof el.setSinkId !== 'function') return;
+    void el.setSinkId(id).catch(() => {});
   });
 }
 
@@ -809,10 +1015,14 @@ async function applySelectedMic() {
 async function applySelectedSpeaker() {
   const sel = document.getElementById('chatCallSpeakerSelect');
   const id = sel?.value;
-  if (!id || !room) return;
-  savePreferredDevice('audiooutput', id);
-  await room.switchActiveDevice('audiooutput', id).catch(() => {});
-  await applySpeakerToAttachedAudio(id);
+  const label = sel?.selectedOptions?.[0]?.textContent || '';
+  const route = routeFromLabel(label) || (audioRoute === 'speaker' ? 'headset' : 'speaker');
+  if (id && room) {
+    savePreferredDevice('audiooutput', id);
+    await room.switchActiveDevice('audiooutput', id).catch(() => {});
+    await applySpeakerToAttachedAudio(id);
+  }
+  applyAudioRoute(route, { toast: true });
 }
 
 async function applySelectedCamera() {
@@ -835,10 +1045,14 @@ async function applySavedAudioDevices() {
     await live.switchActiveDevice('audioinput', micSel.value).catch(() => {});
   }
   if (spkSel?.value && !isPhone()) {
+    const label = spkSel.selectedOptions?.[0]?.textContent || '';
+    const guessed = routeFromLabel(label);
+    if (guessed) audioRoute = guessed;
     savePreferredDevice('audiooutput', spkSel.value);
     await live.switchActiveDevice('audiooutput', spkSel.value).catch(() => {});
     await applySpeakerToAttachedAudio(spkSel.value);
   }
+  applyAudioRoute(audioRoute);
   if (activeMode === 'video' && camSel?.value) {
     savePreferredDevice('videoinput', camSel.value);
     await live.switchActiveDevice('videoinput', camSel.value).catch(() => {});
@@ -907,6 +1121,7 @@ function showOverlay(show) {
   mini.classList.add('hidden');
   overlay.classList.remove('hidden');
   syncHearButton();
+  paintRouteButton();
 }
 
 function readVideoFit() {
@@ -1114,9 +1329,7 @@ async function joinSession(session, opts = {}) {
   syncHearButton();
   await applySavedAudioDevices();
   paintPeopleNames();
-  const camBtn = document.getElementById('chatCallCamBtn');
   if (activeMode === 'video') {
-    camBtn?.classList.remove('hidden');
     const preset = mobile ? VideoPresets.h540 : VideoPresets.h720;
     const cameraId = preferredDeviceId('videoinput');
     const capture = {
@@ -1132,10 +1345,8 @@ async function joinSession(session, opts = {}) {
     current.localParticipant.videoTrackPublications.forEach((pub) => {
       if (pub.track) attachVideoTrack(pub.track, current.localParticipant);
     });
-  } else {
-    camBtn?.classList.add('hidden');
-    setStatus('Voice call');
   }
+  syncCallModeUi();
 }
 
 async function startCall(mode, permission) {
@@ -1172,37 +1383,41 @@ async function startCall(mode, permission) {
   }
 }
 
+function cutCallNow(convId, endingId) {
+  stopRing();
+  hideIncoming();
+  showOverlay(false);
+  globalThis.__AIRD_PENDING_CALL__ = null;
+  globalThis.__AIRD_HIDE_CALL_POPUP__?.();
+  try { if (convId) globalThis.AndroidHost?.onCallEnded?.(convId); } catch { /* ignore */ }
+  notifyAndroidCall(false, activeMode);
+  try {
+    navigator.serviceWorker?.controller?.postMessage({
+      type: 'aird-call-clear',
+      call_id: endingId || '',
+      conversation_id: convId || '',
+    });
+  } catch { /* no worker */ }
+}
+
 async function endLocal(message, notify) {
   const convId = activeCallConvId || incoming?.conversation_id || '';
   const endingId = callId;
   const was = phase;
   phase = 'idle';
-  try { if (convId) globalThis.AndroidHost?.onCallEnded?.(convId); } catch { /* ignore */ }
-  notifyAndroidCall(false, activeMode);
   callId = '';
+  activeCallConvId = '';
   clearBusyTimer();
   clearRemoteDropTimer();
-  stopRing();
-  activeCallConvId = '';
-  globalThis.__AIRD_PENDING_CALL__ = null;
-  globalThis.__AIRD_HIDE_CALL_POPUP__?.();
+  cutCallNow(convId, endingId);
   if (notify && convId && was !== 'idle') signalCall('call_end', convId, endingId);
   const current = room;
   room = null;
-  if (current) {
-    try { await current.disconnect(); } catch { /* ignore */ }
-  }
-  hideIncoming();
   stopMeters();
   clearVideos();
   clearRemoteAudio();
-  if (message) {
-    showOverlay(true);
-    setStatus(message);
-    setTimeout(() => { if (!room && phase === 'idle') showOverlay(false); }, 4000);
-  } else {
-    showOverlay(false);
-  }
+  if (message && phase === 'idle' && !room) setStatus(message);
+  if (current) void current.disconnect().catch(() => {});
 }
 
 async function hangUp() {
@@ -1399,14 +1614,17 @@ function onWs(data) {
   if (!data?.type) return;
   if (data.type === 'call_invite') showIncoming(data);
   if (data.type === 'call_accept' && sameCall(data) && phase === 'outgoing') markAnswered();
-  if (data.type === 'call_decline' && (sameCall(data) || endsActiveCall(data))) {
+  if (data.type === 'call_decline' && endsThisCall(data)) {
     if (phase === 'outgoing') void endLocal('Busy', false);
     else if (phase === 'incoming' || phase === 'joining') void endLocal('', false);
     else if (phase !== 'idle') void endLocal('Call ended', false);
     return;
   }
-  if (data.type === 'call_end' && (sameCall(data) || endsActiveCall(data)) && phase !== 'idle') {
+  if (data.type === 'call_end' && endsThisCall(data) && phase !== 'idle') {
     void endLocal(phase === 'outgoing' ? 'Busy' : 'Call ended', false);
+  }
+  if (data.type === 'call_mode' && (sameCall(data) || endsActiveCall(data)) && phase !== 'idle' && phase !== 'incoming') {
+    applyRemoteCallMode(data.mode);
   }
 }
 
