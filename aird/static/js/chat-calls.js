@@ -1623,6 +1623,12 @@ function onWs(data) {
   if (data.type === 'call_end' && endsThisCall(data) && phase !== 'idle') {
     void endLocal(phase === 'outgoing' ? 'Busy' : 'Call ended', false);
   }
+  if (data.type === 'call_missed' && endsThisCall(data) && phase !== 'idle') {
+    void endLocal(phase === 'outgoing' ? 'No answer' : '', false);
+  }
+  if (data.type === 'call_answered' && phase === 'incoming' && endsThisCall(data)) {
+    void endLocal('', false);
+  }
   if (data.type === 'call_mode' && (sameCall(data) || endsActiveCall(data)) && phase !== 'idle' && phase !== 'incoming') {
     applyRemoteCallMode(data.mode);
   }

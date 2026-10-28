@@ -17,7 +17,7 @@ from aird.plugins.calls.config import (
     livekit_url,
     room_name,
 )
-from aird.plugins.calls.notify import dispatch_call_invite, read_call_ring
+from aird.plugins.calls.notify import dispatch_call_invite, dispatch_call_signal, read_call_ring
 from aird.plugins.calls.token import create_participant_token
 from aird.plugins.chat import db as chat_db
 from aird.plugins.chat import is_chat_enabled
@@ -98,6 +98,50 @@ class ChatCallHandler(BaseHandler, XSRFTokenMixin):
                 "call_id": call_id,
             }
         )
+
+
+_SIGNALS = frozenset({"call_accept", "call_decline", "call_end", "call_mode"})
+
+
+class CallSignalHandler(BaseHandler, XSRFTokenMixin):
+    """HTTP twin of the WebSocket call signals, for clients whose socket is down."""
+
+    @tornado.web.authenticated
+    @require_db
+    def post(self, conversation_id: str):
+        if not _require_calls(self):
+            return
+        self.check_xsrf_cookie()
+        username = get_username_string_for_db(self)
+        uid = chat_db.resolve_user_id(self.db_conn, username) if username else None
+        if uid is None or not chat_db.user_in_conversation(username, conversation_id):
+            self.set_status(403)
+            self.write({"error": "Forbidden"})
+            return
+        try:
+            body = json.loads(self.request.body or b"{}")
+        except json.JSONDecodeError:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        signal_type = str(body.get("type") or "")
+        if signal_type not in _SIGNALS:
+            self.set_status(400)
+            self.write({"error": "Unknown call signal"})
+            return
+        extra = {}
+        if body.get("mode"):
+            extra["mode"] = str(body.get("mode"))
+        if body.get("call_id"):
+            extra["call_id"] = str(body.get("call_id"))
+        dispatch_call_signal(
+            username=username,
+            conversation_id=conversation_id,
+            actor_id=uid,
+            signal_type=signal_type,
+            extra=extra or None,
+        )
+        self.write({"ok": True})
 
 
 class CallRingHandler(BaseHandler):

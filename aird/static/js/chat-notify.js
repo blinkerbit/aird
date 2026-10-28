@@ -214,7 +214,7 @@ import { setAppIconBadge } from './core/app-badge.js';
     if (!globalThis.__AIRD_CALLS_ENABLED__) return;
     const WS = window.AirdChatWS;
     if (!WS) return;
-    const { initCalls } = await import('./chat-calls.js?v=20261028c');
+    const { initCalls } = await import('./chat-calls.js?v=20261028d');
     const callsOpts = {
       me: globalThis.__AIRD_CHAT_USER__ || '',
       api: async (url, opts) => {
@@ -249,11 +249,11 @@ import { setAppIconBadge } from './core/app-badge.js';
       onNotify(data);
     } else if (data.type === 'chat_message' || data.type === 'chat_message_deleted') {
       void refreshUnread();
-    } else if (data.type === 'call_invite' || data.type === 'call_accept' || data.type === 'call_end' || data.type === 'call_decline') {
+    } else if (data.type === 'call_invite' || data.type === 'call_accept' || data.type === 'call_end' || data.type === 'call_decline' || data.type === 'call_missed' || data.type === 'call_answered') {
       if (data.type === 'call_invite' && data.conversation_id) {
         globalThis.__AIRD_PENDING_CALL__ = data;
         showCallPopup(data);
-      } else if ((data.type === 'call_end' || data.type === 'call_decline') && globalThis.__AIRD_PENDING_CALL__?.conversation_id === data.conversation_id && (!data.call_id || !globalThis.__AIRD_PENDING_CALL__?.call_id || data.call_id === globalThis.__AIRD_PENDING_CALL__.call_id)) {
+      } else if ((data.type === 'call_end' || data.type === 'call_decline' || data.type === 'call_missed' || data.type === 'call_answered') && globalThis.__AIRD_PENDING_CALL__?.conversation_id === data.conversation_id && (!data.call_id || !globalThis.__AIRD_PENDING_CALL__?.call_id || data.call_id === globalThis.__AIRD_PENDING_CALL__.call_id)) {
         globalThis.__AIRD_PENDING_CALL__ = null;
         hideCallPopup();
       }

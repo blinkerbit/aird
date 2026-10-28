@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import threading
 import time
 
 from aird.notifications.engine import deliver, drop_pending_calls, push_now
@@ -13,6 +14,8 @@ from aird.plugins.chat.service import get_chat_hub
 
 logger = logging.getLogger(__name__)
 _RING_TTL = 45
+_MISSED_GRACE = 2
+_STATE_KEEP_S = 3600
 
 
 def _ring_conn():
@@ -29,7 +32,150 @@ def _ring_conn():
             created_at REAL NOT NULL
         )"""
     )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS call_state (
+            call_id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            caller TEXT NOT NULL,
+            state TEXT NOT NULL,
+            created_at REAL NOT NULL
+        )"""
+    )
     return conn
+
+
+def _record_call(call_id: str, conversation_id: str, caller: str) -> None:
+    """Remember a ringing call so any worker can tell if it was answered."""
+    if not call_id:
+        return
+    conn = _ring_conn()
+    if conn is None:
+        return
+    try:
+        now = time.time()
+        conn.execute("DELETE FROM call_state WHERE created_at < ?", (now - _STATE_KEEP_S,))
+        conn.execute(
+            "INSERT OR REPLACE INTO call_state(call_id, conversation_id, caller, state, created_at) "
+            "VALUES(?,?,?,?,?)",
+            (call_id, conversation_id, caller, "ringing", now),
+        )
+        conn.commit()
+    except Exception:
+        logger.debug("call state save failed", exc_info=True)
+    finally:
+        conn.close()
+
+
+def _settle_call(conversation_id: str, call_id: str, state: str) -> None:
+    """Move a ringing call to answered, ended or missed. Other states stay put."""
+    conn = _ring_conn()
+    if conn is None:
+        return
+    try:
+        if call_id:
+            conn.execute(
+                "UPDATE call_state SET state=? WHERE call_id=? AND state='ringing'",
+                (state, call_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE call_state SET state=? WHERE conversation_id=? AND state='ringing'",
+                (state, conversation_id),
+            )
+        conn.commit()
+    except Exception:
+        logger.debug("call state update failed", exc_info=True)
+    finally:
+        conn.close()
+
+
+def _claim_missed(call_id: str) -> str | None:
+    """Atomically flip a still-ringing call to missed. Returns the conversation id."""
+    conn = _ring_conn()
+    if conn is None:
+        return None
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT conversation_id FROM call_state WHERE call_id=? AND state='ringing'",
+            (call_id,),
+        ).fetchone()
+        if not row:
+            conn.rollback()
+            return None
+        conn.execute("UPDATE call_state SET state='missed' WHERE call_id=?", (call_id,))
+        conn.commit()
+        return str(row[0])
+    except Exception:
+        logger.debug("call missed claim failed", exc_info=True)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return None
+    finally:
+        conn.close()
+
+
+def _expire_ring(caller: str, conversation_id: str, call_id: str) -> None:
+    """Nobody answered in time. Tell everyone the call is missed."""
+    claimed = _claim_missed(call_id)
+    if not claimed or claimed != conversation_id:
+        return
+    try:
+        ids = _member_ids(caller, conversation_id)
+        get_chat_hub().broadcast_user_ids(
+            ids,
+            {
+                "type": "call_missed",
+                "conversation_id": conversation_id,
+                "from": caller,
+                "call_id": call_id,
+            },
+        )
+        clear_call_rings(caller, conversation_id, call_id)
+        _stop_remote_rings(caller, conversation_id, call_id)
+    except Exception:
+        logger.warning("call missed dispatch failed", exc_info=True)
+
+
+def _arm_ring_timeout(caller: str, conversation_id: str, call_id: str) -> None:
+    if not call_id:
+        return
+    timer = threading.Timer(
+        _RING_TTL + _MISSED_GRACE,
+        _expire_ring,
+        args=(caller, conversation_id, call_id),
+    )
+    timer.daemon = True
+    timer.start()
+
+
+def clear_user_ring(username: str, conversation_id: str, call_id: str = "") -> None:
+    """Stop replaying a ring to one person, for example after they answered."""
+    conn = _ring_conn()
+    if conn is None:
+        return
+    try:
+        if call_id:
+            row = conn.execute(
+                "SELECT payload FROM call_rings WHERE username=?", (username,)
+            ).fetchone()
+            if not row:
+                return
+            try:
+                stored = json.loads(row[0])
+            except json.JSONDecodeError:
+                stored = {}
+            stored_id = str(stored.get("call_id") or "")
+            if stored_id and stored_id != call_id:
+                return
+        conn.execute("DELETE FROM call_rings WHERE username=?", (username,))
+        conn.commit()
+    except Exception:
+        logger.debug("user ring clear failed", exc_info=True)
+    finally:
+        conn.close()
 
 
 def save_call_rings(caller: str, conversation_id: str, mode: str, call_id: str) -> None:
@@ -139,6 +285,8 @@ def dispatch_call_invite(
     # Store the ring first. A device that gets the invite can then ask
     # /api/chat/call-ring whether the call is still live.
     save_call_rings(caller_username, conversation_id, mode, call_id)
+    _record_call(call_id, conversation_id, caller_username)
+    _arm_ring_timeout(caller_username, conversation_id, call_id)
     socket_payload = {
         "type": "call_invite",
         "conversation_id": conversation_id,
@@ -209,6 +357,7 @@ def dispatch_call_signal(
             payload.update(extra)
         get_chat_hub().broadcast_user_ids(ids, payload)
         ended_id = str((extra or {}).get("call_id") or "")
+        _settle_call(conversation_id, ended_id, "ended")
         clear_call_rings(username, conversation_id, ended_id)
         _stop_remote_rings(username, conversation_id, ended_id)
         return
@@ -228,12 +377,28 @@ def dispatch_call_signal(
         get_chat_hub().broadcast_user_ids(ids, payload)
         return
     if signal_type == "call_accept":
+        accepted_id = str((extra or {}).get("call_id") or "")
+        _settle_call(conversation_id, accepted_id, "answered")
         # The answering device is already in the call. Tell the caller.
-        # Leave the ring in place so every other signed-in device keeps ringing.
         get_chat_hub().broadcast_user_ids(ids, payload, exclude_user_id=actor_id)
+        # Every other device of the person who answered stops ringing.
+        answered = {
+            "type": "call_answered",
+            "conversation_id": conversation_id,
+            "from": username,
+        }
+        if accepted_id:
+            answered["call_id"] = accepted_id
+        get_chat_hub().broadcast_user_ids([actor_id], answered)
+        clear_user_ring(username, conversation_id, accepted_id)
+        try:
+            drop_pending_calls(conversation_id, accepted_id, username)
+        except Exception:
+            logger.warning("answered call push cancel failed", exc_info=True)
         return
     get_chat_hub().broadcast_user_ids(ids, payload)
     ended_id = str((extra or {}).get("call_id") or "")
+    _settle_call(conversation_id, ended_id, "ended")
     clear_call_rings(username, conversation_id, ended_id)
     _stop_remote_rings(username, conversation_id, ended_id)
 

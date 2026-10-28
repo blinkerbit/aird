@@ -31,8 +31,9 @@ def is_calls_enabled() -> bool:
 def register_calls(routes: list) -> None:
     if not chat_library_available():
         return
-    from aird.plugins.calls.handlers import CallRingHandler, ChatCallHandler
+    from aird.plugins.calls.handlers import CallRingHandler, CallSignalHandler, ChatCallHandler
 
     cid = r"([^/]+)"
     routes.append((r"/api/chat/call-ring", CallRingHandler))
+    routes.append((rf"/api/chat/conversations/{cid}/call/signal", CallSignalHandler))
     routes.append((rf"/api/chat/conversations/{cid}/call", ChatCallHandler))

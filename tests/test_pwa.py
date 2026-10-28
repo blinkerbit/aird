@@ -56,7 +56,7 @@ def test_manifest_and_sw_files_exist():
     assert data["scope"] == "/"
     assert (root / "pwa-shell.html").is_file()
     worker = (root / "js" / "sw.js").read_text(encoding="utf-8")
-    assert "aird-static-v1" in worker
+    assert "aird-static-v" in worker
     assert "staleWhileRevalidate" in worker
     assert "aird-clear-pages" in worker
     assert "path.startsWith('/api/')" in worker

@@ -6,6 +6,8 @@ import logging
 
 from aird.notifications.engine import deliver
 from aird.plugins.chat import db as chat_db
+from aird.plugins.chat.e2e import is_e2e_meta
+from aird.plugins.chat.files import attachment_entries
 from aird.plugins.chat.service import get_chat_hub, message_preview
 
 logger = logging.getLogger(__name__)
@@ -20,6 +22,9 @@ def dispatch_message(msg: dict, *, sender_id: int, sender_username: str) -> None
         {"type": "chat_message", "message": msg},
     )
     mentions = set(msg.get("mentions") or [])
+    meta = msg.get("metadata") or {}
+    sealed = meta.get("e2e") if is_e2e_meta(meta) else None
+    attachment_count = len(attachment_entries(meta))
     for m in members:
         if m["user_id"] == sender_id:
             continue
@@ -40,6 +45,11 @@ def dispatch_message(msg: dict, *, sender_id: int, sender_username: str) -> None
             "unread_total": total,
             "mention": m["username"] in mentions,
         }
+        # Socket only. Lets a client that holds the chat key show real text.
+        if sealed:
+            notify["e2e"] = sealed
+        if attachment_count:
+            notify["attachments"] = attachment_count
         deliver(
             username=m["username"],
             user_id=m["user_id"],

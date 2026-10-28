@@ -19,7 +19,8 @@ from concurrent.futures import ThreadPoolExecutor
 logger = logging.getLogger(__name__)
 
 _pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="notify-push")
-_MAX_ATTEMPTS = 3
+_MAX_ATTEMPTS = 6
+_BACKOFF = (1.0, 3.0, 10.0, 30.0, 60.0)
 
 
 def _db_path():
@@ -181,7 +182,7 @@ def _claim() -> list[dict]:
             (_MAX_ATTEMPTS, now, now),
         ).fetchall()
         for row in rows:
-            backoff = 1.0 if int(row["attempts"]) == 0 else 3.0
+            backoff = _BACKOFF[min(int(row["attempts"]), len(_BACKOFF) - 1)]
             cur = conn.execute(
                 """UPDATE notify_outbox
                    SET attempts = attempts + 1, push_after = ?
@@ -208,16 +209,26 @@ def _claim() -> list[dict]:
         conn.close()
 
 
-def drop_pending_calls(conversation_id: str, call_id: str = "") -> None:
-    """Drop a call alert that has not been pushed yet."""
+def drop_pending_calls(conversation_id: str, call_id: str = "", username: str = "") -> None:
+    """Drop a call alert that has not been pushed yet.
+
+    With *username* only that person's alert is dropped.
+    """
     conn = _connect()
     if conn is None or not conversation_id:
         return
     now = time.time()
     try:
-        rows = conn.execute(
-            "SELECT id, payload FROM notify_outbox WHERE kind='call' AND pushed_at IS NULL"
-        ).fetchall()
+        if username:
+            rows = conn.execute(
+                "SELECT id, payload FROM notify_outbox "
+                "WHERE kind='call' AND pushed_at IS NULL AND username=?",
+                (username,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, payload FROM notify_outbox WHERE kind='call' AND pushed_at IS NULL"
+            ).fetchall()
         for row in rows:
             try:
                 payload = json.loads(row["payload"])
