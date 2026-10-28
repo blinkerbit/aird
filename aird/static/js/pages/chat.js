@@ -1270,6 +1270,16 @@ import { getXSRFToken } from '../core/xsrf.js';
     qs('#chatForwardModal')?.showModal();
   }
 
+  function throwForwardFailures(out) {
+    const failed = (out?.results || []).filter((r) => !r.ok);
+    if (!failed.length) return;
+    const names = failed.map((r) => {
+      const conv = conversations.find((c) => c.id === r.conversation_id);
+      return `${conv ? convTitle(conv) : r.conversation_id}: ${r.error || 'failed'}`;
+    });
+    throw new Error(`Not forwarded to ${names.join('; ')}`);
+  }
+
   async function sendForward() {
     if (!activeConvId || !forwardMsgId) return;
     const ids = [...(qs('#chatForwardList')?.querySelectorAll('input:checked') || [])].map((i) => i.value);
@@ -1282,20 +1292,23 @@ import { getXSRFToken } from '../core/xsrf.js';
       if (!E2E?.ready()) throw new Error('Waiting for the chat key…');
       if (plain.includes('chat-e2e-fail')) throw new Error('Cannot forward a message that did not decrypt on this device');
       const html = E2E.sanitizeHtml(plain);
-      for await (const id of ids) {
+      const sealed = {};
+      for (const id of ids) {
         const ok = await e2eReady(id);
         if (!ok) throw new Error('Waiting for the chat key…');
-        const e2e = await E2E.encrypt(id, html);
-        await api(`/api/chat/conversations/${id}/messages`, {
-          method: 'POST',
-          body: JSON.stringify({ type: 'text', e2e }),
-        });
+        sealed[id] = await E2E.encrypt(id, html);
       }
+      const out = await api(`/api/chat/conversations/${activeConvId}/messages/${forwardMsgId}/forward`, {
+        method: 'POST',
+        body: JSON.stringify({ conversation_ids: ids, e2e: sealed }),
+      });
+      throwForwardFailures(out);
     } else {
-      await api(`/api/chat/conversations/${activeConvId}/messages/${forwardMsgId}/forward`, {
+      const out = await api(`/api/chat/conversations/${activeConvId}/messages/${forwardMsgId}/forward`, {
         method: 'POST',
         body: JSON.stringify({ conversation_ids: ids }),
       });
+      throwForwardFailures(out);
     }
     qs('#chatForwardModal')?.close();
     await loadConversations();
@@ -2872,7 +2885,7 @@ import { getXSRFToken } from '../core/xsrf.js';
       WS.subscribe(handleWsEvent);
     }
     if (globalThis.__AIRD_CALLS_ENABLED__) {
-      import('../chat-calls.js?v=20261028c').then((m) => {
+      import('../chat-calls.js?v=20261028d').then((m) => {
         globalThis.AirdChatCalls = m;
         m.initCalls({
           api,

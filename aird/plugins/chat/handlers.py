@@ -670,6 +670,68 @@ def _patch_conversation_message(
     return edited, False
 
 
+_FORWARD_MAX_TARGETS = 20
+_FORWARD_DROP_KEYS = ("saved_rel", "share_id", "share_url")
+
+
+def _forward_attachments(meta: dict) -> list[dict]:
+    """Copy attachment pointers without per-recipient state (saved copy, share)."""
+    cleaned = []
+    for entry in attachment_entries(meta):
+        item = {k: v for k, v in entry.items() if k not in _FORWARD_DROP_KEYS}
+        cleaned.append(item)
+    return cleaned
+
+
+def _forward_target_meta(src: dict, conversation_id: str, e2e_payload) -> tuple[dict, bool]:
+    """Build the metadata for one target. Returns (meta, encrypted)."""
+    forwarded_from = {
+        "username": src.get("sender_username"),
+        "source_message_id": src["id"],
+        "source_conversation_id": conversation_id,
+    }
+    atts = _forward_attachments(src.get("metadata") or {})
+    meta: dict = pack_attachments(atts) if atts else {}
+    meta["forwarded_from"] = forwarded_from
+    if e2e_payload is not None:
+        meta.update(metadata_from_e2e_request({"e2e": e2e_payload}))
+        return meta, True
+    return meta, False
+
+
+def _forward_one_target(
+    handler: BaseHandler,
+    *,
+    name: str,
+    uid: int,
+    conversation_id: str,
+    src: dict,
+    dest_id: str,
+    e2e_payload,
+) -> tuple[dict | None, str]:
+    if not chat_db.user_in_conversation(name, dest_id):
+        return None, "Conversation not found"
+    if not chat_db.exchange_open(name, dest_id):
+        return None, "Chat request not accepted yet"
+    src_encrypted = is_e2e_meta(src.get("metadata")) or bool(src.get("e2e"))
+    if src_encrypted and e2e_payload is None:
+        return None, "Encrypted messages must be re-encrypted on the client"
+    try:
+        meta, encrypted = _forward_target_meta(src, conversation_id, e2e_payload)
+    except ValueError as exc:
+        return None, str(exc)
+    msg = chat_db.insert_message(
+        handler.db_conn,
+        username=name,
+        conversation_id=dest_id,
+        msg_type=src.get("msg_type") or "text",
+        body="" if encrypted else (src.get("body") or ""),
+        metadata=meta,
+    )
+    dispatch_message(msg, sender_id=uid, sender_username=name)
+    return msg, ""
+
+
 def _forward_message_to_targets(
     handler: BaseHandler,
     *,
@@ -678,31 +740,36 @@ def _forward_message_to_targets(
     conversation_id: str,
     src: dict,
     targets: list,
-) -> list[dict]:
-    forwarded = []
-    meta = dict(src.get("metadata") or {})
-    meta["forwarded_from"] = {
-        "username": src.get("sender_username"),
-        "source_message_id": src["id"],
-        "source_conversation_id": conversation_id,
-    }
-    for dest in targets[:20]:
-        dest_id = str(dest)
-        if not chat_db.user_in_conversation(name, dest_id):
+    e2e_by_target: dict | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """Forward *src* to each target. Returns (messages, per-target results)."""
+    forwarded: list[dict] = []
+    results: list[dict] = []
+    seen: set[str] = set()
+    e2e_by_target = e2e_by_target if isinstance(e2e_by_target, dict) else {}
+    for dest in targets:
+        dest_id = str(dest or "").strip()
+        if not dest_id or dest_id in seen:
             continue
-        if not chat_db.exchange_open(name, dest_id):
+        seen.add(dest_id)
+        if len(seen) > _FORWARD_MAX_TARGETS:
+            results.append({"conversation_id": dest_id, "ok": False, "error": "Too many targets"})
             continue
-        msg = chat_db.insert_message(
-            handler.db_conn,
-            username=name,
-            conversation_id=dest_id,
-            msg_type=src.get("msg_type") or "text",
-            body=src.get("body") or "",
-            metadata=meta if attachment_entries(meta) else {"forwarded_from": meta["forwarded_from"]},
+        msg, error = _forward_one_target(
+            handler,
+            name=name,
+            uid=uid,
+            conversation_id=conversation_id,
+            src=src,
+            dest_id=dest_id,
+            e2e_payload=e2e_by_target.get(dest_id),
         )
-        dispatch_message(msg, sender_id=uid, sender_username=name)
+        if msg is None:
+            results.append({"conversation_id": dest_id, "ok": False, "error": error})
+            continue
         forwarded.append(msg)
-    return forwarded
+        results.append({"conversation_id": dest_id, "ok": True, "message_id": msg["id"]})
+    return forwarded, results
 
 
 class ChatPageHandler(BaseHandler):
@@ -1286,9 +1353,9 @@ class ChatForwardHandler(BaseHandler, XSRFTokenMixin):
             self.set_status(404)
             self.write({"error": _ERR_MESSAGE_NOT_FOUND})
             return
-        if is_e2e_meta(src.get("metadata")) or src.get("e2e"):
-            self.set_status(400)
-            self.write({"error": "Encrypted messages must be re-encrypted on the client"})
+        if src.get("conversation_id") != conversation_id:
+            self.set_status(404)
+            self.write({"error": _ERR_MESSAGE_NOT_FOUND})
             return
         try:
             body = self.parse_json_body()
@@ -1299,15 +1366,22 @@ class ChatForwardHandler(BaseHandler, XSRFTokenMixin):
             self.set_status(400)
             self.write({"error": "conversation_ids required"})
             return
-        forwarded = _forward_message_to_targets(
+        src_encrypted = is_e2e_meta(src.get("metadata")) or bool(src.get("e2e"))
+        e2e_by_target = body.get("e2e")
+        if src_encrypted and not isinstance(e2e_by_target, dict):
+            self.set_status(400)
+            self.write({"error": "Encrypted messages must be re-encrypted on the client"})
+            return
+        forwarded, results = _forward_message_to_targets(
             self,
             name=name,
             uid=uid,
             conversation_id=conversation_id,
             src=src,
             targets=targets,
+            e2e_by_target=e2e_by_target if isinstance(e2e_by_target, dict) else None,
         )
-        self.write({"messages": forwarded})
+        self.write({"messages": forwarded, "results": results})
 
 
 class ChatMembersHandler(BaseHandler, XSRFTokenMixin):

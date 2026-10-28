@@ -1224,3 +1224,92 @@ def test_put_path_drops_stored_conv_key(chat_env):
     save_conv_key("alice", conv, {"v": 1, "conversation_id": conv, "key": _b64(b"\x11", 32)})
     delete_stored_conv_keys(["alice", "bob"], conv)
     assert load_conv_key("alice", conv) is None
+
+
+def _forward_env(chat_env, tmp_path):
+    from types import SimpleNamespace
+
+    from aird.plugins.chat import db as chat_db
+
+    alice = chat_db.resolve_user_id(chat_env, "alice")
+    bob = chat_db.resolve_user_id(chat_env, "bob")
+    carol = chat_db.resolve_user_id(chat_env, "carol")
+    dm_ab = chat_db.create_dm_conversation(chat_env, alice, bob)
+    chat_db.respond_to_request(actor="bob", conversation_id=dm_ab, action="accept")
+    dm_ac = chat_db.create_dm_conversation(chat_env, alice, carol)
+    pending = chat_db.create_dm_conversation(chat_env, bob, carol)
+    return SimpleNamespace(db_conn=chat_env), alice, dm_ab, dm_ac, pending
+
+
+def test_forward_reports_blocked_target(chat_env, tmp_path):
+    from aird.plugins.chat import db as chat_db
+    from aird.plugins.chat.handlers import _forward_message_to_targets
+
+    handler, alice, dm_ab, dm_ac, _ = _forward_env(chat_env, tmp_path)
+    src = chat_db.insert_message(
+        chat_env, username="alice", conversation_id=dm_ab, msg_type="text", body="hello"
+    )
+    messages, results = _forward_message_to_targets(
+        handler,
+        name="alice",
+        uid=alice,
+        conversation_id=dm_ab,
+        src=src,
+        targets=[dm_ac, "missing-conversation", dm_ac],
+    )
+    assert messages == []
+    assert [r["ok"] for r in results] == [False, False]
+    assert results[0]["error"] == "Chat request not accepted yet"
+    assert results[1]["error"] == "Conversation not found"
+
+
+def test_forward_encrypted_file_keeps_pointer_with_new_ciphertext(chat_env, tmp_path):
+    from aird.plugins.chat import db as chat_db
+    from aird.plugins.chat.files import attachment_meta, store_upload
+    from aird.plugins.chat.handlers import _forward_message_to_targets
+
+    handler, alice, dm_ab, dm_ac, _ = _forward_env(chat_env, tmp_path)
+    chat_db.respond_to_request(actor="carol", conversation_id=dm_ac, action="accept")
+    doc = tmp_path / "clip.mp4"
+    doc.write_bytes(b"video")
+    rel, size = store_upload(
+        sender_username="alice", conversation_id=dm_ab, source_abs=str(doc), original_name="clip.mp4"
+    )
+    meta = attachment_meta(
+        original_name="clip.mp4",
+        owner_username="alice",
+        owner_rel=rel,
+        size_bytes=size,
+        saved_rel="saved/clip.mp4",
+        share_id="old-share",
+        share_url="/s/old-share",
+    )
+    meta["attachments"] = [dict(meta)]
+    meta["e2e"] = {"v": 1, "iv": _b64(b"\x01", 12), "ct": _b64(b"\xab", 24)}
+    src = chat_db.insert_message(
+        chat_env, username="alice", conversation_id=dm_ab, msg_type="file", body="", metadata=meta
+    )
+    fresh = {"v": 1, "iv": _b64(b"\x02", 12), "ct": _b64(b"\xcd", 24)}
+
+    _, no_key = _forward_message_to_targets(
+        handler, name="alice", uid=alice, conversation_id=dm_ab, src=src, targets=[dm_ac]
+    )
+    assert no_key[0]["ok"] is False
+
+    messages, results = _forward_message_to_targets(
+        handler,
+        name="alice",
+        uid=alice,
+        conversation_id=dm_ab,
+        src=src,
+        targets=[dm_ac],
+        e2e_by_target={dm_ac: fresh},
+    )
+    assert results == [{"conversation_id": dm_ac, "ok": True, "message_id": messages[0]["id"]}]
+    out = messages[0]["metadata"]
+    assert out["owner_rel"] == rel
+    assert out["e2e"]["ct"] == fresh["ct"]
+    assert out["forwarded_from"]["source_message_id"] == src["id"]
+    for key in ("saved_rel", "share_id", "share_url"):
+        assert key not in out
+        assert key not in out["attachments"][0]
