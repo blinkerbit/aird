@@ -3,11 +3,11 @@ build==1.6.1
 coverage==7.16.2
 mock==5.2.0
 pytest==9.1.1
-pytest-asyncio==1.4.0
+pytest-asyncio==1.4.1
 pytest-cov==7.1.0
 pytest-mock==3.17.0
 pytest-xdist==3.8.0
-zipp==4.1.1
+zipp==4.1.2
 bleach==6.4.0
 # aird install_requires (pinned for hashed CI install; wheel installed --no-deps)
 tornado==6.5.10
