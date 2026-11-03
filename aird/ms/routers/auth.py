@@ -471,6 +471,12 @@ async def login_post(request: Request):
 # ---------------------------------------------------------------------------
 
 
+def _post_logout_redirect(bridge) -> str:
+    from aird.core.authentik_sso import post_logout_redirect_url
+
+    return post_logout_redirect_url(getattr(bridge, "db_conn", None))
+
+
 async def logout_get(request: Request):
     logger.warning(
         "Deprecated GET /logout from %s; use POST with XSRF",
@@ -479,7 +485,7 @@ async def logout_get(request: Request):
     settings = _settings(request)
     bridge = _HandlerBridge(request, settings)
     terminate_server_session(bridge)
-    bridge.redirect("/login?logged_out=1")
+    bridge.redirect(_post_logout_redirect(bridge))
     return _bridge_response(request, bridge)
 
 
@@ -492,12 +498,12 @@ async def logout_post(request: Request):
         # Still end the session; a bare /login redirect would bounce them back in.
         bridge = _HandlerBridge(request, settings, form)
         terminate_server_session(bridge)
-        bridge.redirect("/login?logged_out=1")
+        bridge.redirect(_post_logout_redirect(bridge))
         return _bridge_response(request, bridge)
 
     bridge = _HandlerBridge(request, settings, form)
     terminate_server_session(bridge)
-    bridge.redirect("/login?logged_out=1")
+    bridge.redirect(_post_logout_redirect(bridge))
     return _bridge_response(request, bridge)
 
 

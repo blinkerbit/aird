@@ -361,6 +361,11 @@
           <input type="password" id="authentikSsoSecret" class="input input-bordered input-sm w-full" maxlength="512" autocomplete="new-password" value="" placeholder="{% if authentik_sso_view.get('secret_set') %}Leave blank to keep the current secret{% else %}Optional{% end %}">
           <span id="authentikSsoSecretHint" class="label-text-alt text-base-content/50">{% if authentik_sso_view.get('secret_set') %}A secret is stored. It is required on each login.{% else %}No secret stored. The username header is enough behind the proxy.{% end %}</span>
         </label>
+        <label class="form-control max-w-md" for="authentikSsoLogoutUrl">
+          <span class="label-text text-sm font-semibold">Logout URL</span>
+          <input type="text" id="authentikSsoLogoutUrl" class="input input-bordered input-sm w-full" maxlength="512" autocomplete="off" spellcheck="false" value="{{ authentik_sso_view.get('logout_url', '/flows/-/default/invalidation/?next=/') }}">
+          <span class="label-text-alt text-base-content/50">When Authentik auto-login is on, AIRD logout clears the AIRD session then redirects here to end the Authentik session too. Default is the built-in invalidation flow on this host.</span>
+        </label>
         <div class="card-actions justify-end">
           <button type="button" id="authentikSsoSave" class="btn btn-primary btn-sm">Save Authentik settings</button>
         </div>
@@ -454,6 +459,7 @@
           var headerEl = document.getElementById('authentikSsoHeader');
           var nameEl = document.getElementById('authentikSsoNameHeader');
           var secretEl = document.getElementById('authentikSsoSecret');
+          var logoutEl = document.getElementById('authentikSsoLogoutUrl');
           var hintEl = document.getElementById('authentikSsoSecretHint');
           function setAuthentikStatus(text, ok) {
             if (!statusEl) return;
@@ -473,6 +479,7 @@
               enabled: !!(enabledEl && enabledEl.checked),
               username_header: headerEl ? headerEl.value : '',
               name_header: nameEl ? nameEl.value : '',
+              logout_url: logoutEl ? logoutEl.value : '',
               secret: secretEl ? secretEl.value : ''
             })
           }).then(function (res) {
@@ -490,6 +497,7 @@
             if (enabledEl) enabledEl.checked = !!data.enabled;
             if (headerEl && data.username_header) headerEl.value = data.username_header;
             if (nameEl && data.name_header) nameEl.value = data.name_header;
+            if (logoutEl && data.logout_url) logoutEl.value = data.logout_url;
             if (secretEl) secretEl.value = '';
             if (hintEl) {
               hintEl.textContent = data.secret_set ? 'A secret is stored. It is required on each login.' : 'No secret stored. The username header is enough behind the proxy.';

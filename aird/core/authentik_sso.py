@@ -18,10 +18,13 @@ logger = logging.getLogger(__name__)
 CONFIG_KEY = "authentik_sso"
 DEFAULT_USERNAME_HEADER = "X-authentik-username"
 DEFAULT_NAME_HEADER = "X-authentik-name"
+# Same-host Authentik invalidation (clears the IdP session after Aird logout).
+DEFAULT_LOGOUT_URL = "/flows/-/default/invalidation/?next=/"
 SECRET_HEADER = "X-Aird-Authentik-Secret"
 ACTION_FORM = "form"
 ACTION_FORBIDDEN = "forbidden"
 ACTION_SESSION = "session"
+_LOGOUT_URL_MAX_LEN = 512
 
 ACCESS_DENIED_HTML = (
     "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">"
@@ -51,11 +54,24 @@ def validate_username_header(name: str) -> str:
     return cleaned
 
 
+def _stored_logout_url(cfg: dict | None) -> str:
+    raw = str((cfg or {}).get("logout_url") or "").strip()
+    if not raw or len(raw) > _LOGOUT_URL_MAX_LEN:
+        return DEFAULT_LOGOUT_URL
+    # Same-origin path or absolute http(s) URL only.
+    if raw.startswith("/") and not raw.startswith("//"):
+        return raw
+    if raw.startswith("https://") or raw.startswith("http://"):
+        return raw
+    return DEFAULT_LOGOUT_URL
+
+
 def default_authentik_sso() -> dict:
     return {
         "enabled": False,
         "username_header": DEFAULT_USERNAME_HEADER,
         "name_header": DEFAULT_NAME_HEADER,
+        "logout_url": DEFAULT_LOGOUT_URL,
         "secret": "",
     }
 
@@ -72,6 +88,7 @@ def public_authentik_sso(config: dict | None) -> dict:
         "enabled": bool(cfg.get("enabled")),
         "username_header": header,
         "name_header": _stored_name_header(cfg),
+        "logout_url": _stored_logout_url(cfg),
         "secret_set": bool(cfg.get("secret")),
     }
 
@@ -90,8 +107,21 @@ def load_authentik_sso(conn) -> dict:
         "enabled": bool(raw.get("enabled")),
         "username_header": header,
         "name_header": _stored_name_header(raw),
+        "logout_url": _stored_logout_url(raw),
         "secret": secret,
     }
+
+
+def post_logout_redirect_url(conn) -> str:
+    """Where to send the browser after clearing the Aird session.
+
+    When Authentik auto-login is on, end the Authentik session too so the
+    next page load does not immediately re-establish an Aird session.
+    """
+    cfg = load_authentik_sso(conn)
+    if cfg.get("enabled"):
+        return _stored_logout_url(cfg)
+    return "/login?logged_out=1"
 
 
 def merge_authentik_sso(current: dict, payload: dict) -> dict:
@@ -128,10 +158,33 @@ def merge_authentik_sso(current: dict, payload: dict) -> dict:
         if stripped:
             secret = stripped
 
+    if "logout_url" in payload:
+        submitted_logout = payload.get("logout_url")
+        if submitted_logout is None or (
+            isinstance(submitted_logout, str) and not submitted_logout.strip()
+        ):
+            logout_url = DEFAULT_LOGOUT_URL
+        elif not isinstance(submitted_logout, str):
+            raise ValueError("Logout URL must be a string")
+        else:
+            cleaned = submitted_logout.strip()
+            if len(cleaned) > _LOGOUT_URL_MAX_LEN:
+                raise ValueError("Logout URL is too long")
+            if not (
+                (cleaned.startswith("/") and not cleaned.startswith("//"))
+                or cleaned.startswith("https://")
+                or cleaned.startswith("http://")
+            ):
+                raise ValueError("Logout URL must be a path or http(s) URL")
+            logout_url = cleaned
+    else:
+        logout_url = _stored_logout_url(current)
+
     return {
         "enabled": enabled,
         "username_header": header,
         "name_header": name_header,
+        "logout_url": logout_url,
         "secret": secret,
     }
 
@@ -146,6 +199,7 @@ def save_authentik_sso(conn, payload: dict) -> dict:
             "enabled": updated["enabled"],
             "username_header": updated["username_header"],
             "name_header": updated["name_header"],
+            "logout_url": updated["logout_url"],
             "secret": updated["secret"],
         },
     )

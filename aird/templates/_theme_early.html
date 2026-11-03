@@ -1,12 +1,13 @@
 {# Blocking theme init — must be first in <head> to prevent light flash #}
 <script nonce="{{ csp_nonce }}">
 (function () {
-  var THEMES = ['light', 'dark', 'nord', 'dracula', 'cyberpunk', 'retro', 'autumn'];
-  var DARK = { dark: 1, dracula: 1 };
+  var THEMES = ['light', 'dark', 'midnight', 'nord', 'dracula', 'cyberpunk', 'retro', 'autumn'];
+  var DARK = { dark: 1, midnight: 1, dracula: 1 };
   /* DaisyUI default base-100 (hex) — must match theme.js BG map */
   var BG = {
     light: '#ffffff',
     dark: '#1d232a',
+    midnight: '#000000',
     nord: '#eceff4',
     dracula: '#282a36',
     cyberpunk: '#ffee00',

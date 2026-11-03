@@ -110,8 +110,16 @@ import { getXSRFToken } from '../core/xsrf.js';
   let uploading = false;
   let loadGen = 0;
   let typingTimer = null;
-  let forwardMsgId = null;
+  let forwardMsgIds = [];
   let loadingOlder = false;
+  let selectMode = false;
+  const selectedIds = new Set();
+  let pressTimer = null;
+  let pressId = '';
+  const selectBar = qs('#chatSelectBar');
+  const selectCountEl = qs('#chatSelectCount');
+  const selectForwardBtn = qs('#chatSelectForward');
+  const selectDeleteBtn = qs('#chatSelectDelete');
   let hasOlder = false;
   let newMode = 'dm';
   let groupPicks = [];
@@ -967,16 +975,21 @@ import { getXSRFToken } from '../core/xsrf.js';
     const emojis = REACTIONS.map((e) =>
       `<button type="button" class="chat-react-emoji" data-emoji="${e}" data-id="${id}" title="${e}">${e}</button>`
     ).join('');
+    const deleteBtn = msg._mine
+      ? `<button type="button" class="chat-hover-delete" data-act="delete" data-id="${id}">Delete</button>`
+      : '';
     const mineActs = msg._mine
       ? `<button type="button" data-act="edit" data-id="${id}">Edit</button><button type="button" data-act="delete" data-id="${id}">Delete</button>`
       : '';
     return `<div class="chat-hover-bar" role="toolbar" aria-label="Message actions">
       ${emojis}
+      ${deleteBtn}
       <details class="chat-msg-more">
         <summary aria-label="More">⋯</summary>
         <div class="chat-msg-more-list">
           <button type="button" data-act="reply" data-id="${id}">Reply</button>
           <button type="button" data-act="forward" data-id="${id}">Forward</button>
+          <button type="button" data-act="select" data-id="${id}">Select</button>
           <button type="button" data-act="pin" data-id="${id}">Pin</button>
           ${mineActs}
         </div>
@@ -1027,10 +1040,9 @@ import { getXSRFToken } from '../core/xsrf.js';
     const nameLine = msg._mine
       ? ''
       : `<div class="chat-msg-name">${esc(msg.sender_display_name || userLabel(msg.sender_username, activeConv()) || msg.sender_username)}</div>`;
-    const delBtn = msg._mine
-      ? `<button type="button" class="btn btn-ghost btn-xs text-error chat-msg-delete" data-act="delete" data-id="${esc(msg.id)}" title="Delete message" aria-label="Delete message">×</button>`
-      : '';
-    return `<div class="chat-msg-row ${rowClass}" data-msg-id="${esc(msg.id)}" data-e2e="${msg._e2e ? '1' : '0'}" data-decrypt-ok="${msg._decryptOk ? '1' : '0'}" data-created-at="${esc(msg.created_at || '')}">${avatarHtml(msg.sender_username)}<div class="chat-msg-stack">${nameLine}<div class="chat-msg-main">${hoverBarHtml(msg)}<div class="aird-chat-bubble ${bubbleClass}"><div class="aird-chat-bubble-body">${body}</div>${reactionsHtml(msg)}</div>${delBtn}</div><div class="chat-msg-time">${esc(formatTime(msg.created_at))}</div>${seenHtml(msg)}</div></div>`;
+    const selected = selectedIds.has(msg.id) ? ' is-selected' : '';
+    const checked = selectedIds.has(msg.id) ? ' checked' : '';
+    return `<div class="chat-msg-row ${rowClass}${selected}" data-msg-id="${esc(msg.id)}" data-mine="${msg._mine ? '1' : '0'}" data-e2e="${msg._e2e ? '1' : '0'}" data-decrypt-ok="${msg._decryptOk ? '1' : '0'}" data-created-at="${esc(msg.created_at || '')}"><label class="chat-msg-select"><input type="checkbox" data-select-id="${esc(msg.id)}"${checked} aria-label="Select message"></label>${avatarHtml(msg.sender_username)}<div class="chat-msg-stack">${nameLine}<div class="chat-msg-main">${hoverBarHtml(msg)}<div class="aird-chat-bubble ${bubbleClass}"><div class="aird-chat-bubble-body">${body}</div>${reactionsHtml(msg)}</div></div><div class="chat-msg-time">${esc(formatTime(msg.created_at))}</div>${seenHtml(msg)}</div></div>`;
   }
 
   function refreshSeenIndicator(messageId) {
@@ -1160,7 +1172,63 @@ import { getXSRFToken } from '../core/xsrf.js';
     else if (act === 'delete') deleteMessage(id).catch((e) => alert(e.message));
     else if (act === 'edit') editMessage(id).catch((e) => alert(e.message));
     else if (act === 'pin') pinMessage(id).catch((e) => alert(e.message));
-    else if (act === 'forward') openForward(id);
+    else if (act === 'forward') openForward([id]);
+    else if (act === 'select') enterSelectMode(id);
+  }
+
+  function updateSelectBar() {
+    const n = selectedIds.size;
+    if (selectCountEl) selectCountEl.textContent = `${n} selected`;
+    if (selectForwardBtn) selectForwardBtn.disabled = n === 0;
+    const mineCount = [...selectedIds].filter((id) => {
+      const row = findMessageRow(id);
+      return row?.dataset.mine === '1';
+    }).length;
+    if (selectDeleteBtn) {
+      selectDeleteBtn.disabled = mineCount === 0;
+      selectDeleteBtn.textContent = mineCount ? `Delete (${mineCount})` : 'Delete';
+    }
+  }
+
+  function setSelectMode(on) {
+    selectMode = !!on;
+    messagesEl?.classList.toggle('chat-selecting', selectMode);
+    if (selectBar) selectBar.hidden = !selectMode;
+    if (!selectMode) {
+      selectedIds.clear();
+      messagesEl?.querySelectorAll('.chat-msg-row.is-selected').forEach((el) => {
+        el.classList.remove('is-selected');
+        const box = el.querySelector('[data-select-id]');
+        if (box) box.checked = false;
+      });
+    }
+    updateSelectBar();
+  }
+
+  function enterSelectMode(messageId) {
+    setSelectMode(true);
+    if (messageId) toggleSelected(messageId, true);
+  }
+
+  function toggleSelected(messageId, force) {
+    if (!messageId) return;
+    const on = force == null ? !selectedIds.has(messageId) : !!force;
+    if (on) selectedIds.add(messageId);
+    else selectedIds.delete(messageId);
+    const row = findMessageRow(messageId);
+    row?.classList.toggle('is-selected', on);
+    const box = row?.querySelector('[data-select-id]');
+    if (box) box.checked = on;
+    if (selectMode && selectedIds.size === 0) setSelectMode(false);
+    else updateSelectBar();
+  }
+
+  function clearPressTimer() {
+    if (pressTimer) {
+      clearTimeout(pressTimer);
+      pressTimer = null;
+    }
+    pressId = '';
   }
 
   function setReply(id) {
@@ -1275,8 +1343,12 @@ import { getXSRFToken } from '../core/xsrf.js';
     unpinMessage(id).catch((err) => alert(err.message));
   }
 
-  function openForward(messageId) {
-    forwardMsgId = messageId;
+  function openForward(messageIds) {
+    const ids = (Array.isArray(messageIds) ? messageIds : [messageIds]).filter(Boolean);
+    if (!ids.length) return;
+    forwardMsgIds = ids;
+    const title = qs('#chatForwardTitle');
+    if (title) title.textContent = ids.length > 1 ? `Forward ${ids.length} messages` : 'Forward message';
     const list = qs('#chatForwardList');
     if (list) {
       list.innerHTML = conversations.filter((c) => c.id !== activeConvId).map((c) =>
@@ -1296,37 +1368,45 @@ import { getXSRFToken } from '../core/xsrf.js';
     throw new Error(`Not forwarded to ${names.join('; ')}`);
   }
 
-  async function sendForward() {
-    if (!activeConvId || !forwardMsgId) return;
-    const ids = [...(qs('#chatForwardList')?.querySelectorAll('input:checked') || [])].map((i) => i.value);
-    if (!ids.length) return;
-    const isE2e = e2ePlain.has(forwardMsgId);
-    const plain = e2ePlain.get(forwardMsgId)
-      || messagesEl?.querySelector(`[data-msg-id="${cssEscape(forwardMsgId)}"] .chat-msg-text`)?.innerHTML
+  async function forwardOneMessage(messageId, targetIds) {
+    const isE2e = e2ePlain.has(messageId);
+    const plain = e2ePlain.get(messageId)
+      || messagesEl?.querySelector(`[data-msg-id="${cssEscape(messageId)}"] .chat-msg-text`)?.innerHTML
       || '';
     if (isE2e) {
       if (!E2E?.ready()) throw new Error('Waiting for the chat key…');
       if (plain.includes('chat-e2e-fail')) throw new Error('Cannot forward a message that did not decrypt on this device');
       const html = E2E.sanitizeHtml(plain);
       const sealed = {};
-      for (const id of ids) {
+      for (const id of targetIds) {
         const ok = await e2eReady(id);
         if (!ok) throw new Error('Waiting for the chat key…');
         sealed[id] = await E2E.encrypt(id, html);
       }
-      const out = await api(`/api/chat/conversations/${activeConvId}/messages/${forwardMsgId}/forward`, {
+      const out = await api(`/api/chat/conversations/${activeConvId}/messages/${messageId}/forward`, {
         method: 'POST',
-        body: JSON.stringify({ conversation_ids: ids, e2e: sealed }),
+        body: JSON.stringify({ conversation_ids: targetIds, e2e: sealed }),
       });
       throwForwardFailures(out);
-    } else {
-      const out = await api(`/api/chat/conversations/${activeConvId}/messages/${forwardMsgId}/forward`, {
-        method: 'POST',
-        body: JSON.stringify({ conversation_ids: ids }),
-      });
-      throwForwardFailures(out);
+      return;
+    }
+    const out = await api(`/api/chat/conversations/${activeConvId}/messages/${messageId}/forward`, {
+      method: 'POST',
+      body: JSON.stringify({ conversation_ids: targetIds }),
+    });
+    throwForwardFailures(out);
+  }
+
+  async function sendForward() {
+    if (!activeConvId || !forwardMsgIds.length) return;
+    const ids = [...(qs('#chatForwardList')?.querySelectorAll('input:checked') || [])].map((i) => i.value);
+    if (!ids.length) return;
+    for (const messageId of forwardMsgIds) {
+      await forwardOneMessage(messageId, ids);
     }
     qs('#chatForwardModal')?.close();
+    forwardMsgIds = [];
+    setSelectMode(false);
     await loadConversations();
   }
 
@@ -1423,6 +1503,7 @@ import { getXSRFToken } from '../core/xsrf.js';
   async function openConversation(convId) {
     window.AirdEnhancedSecure?.closeView?.();
     enhancedSecureView = false;
+    setSelectMode(false);
     if (activeConvId && convId !== activeConvId) {
       pending.forEach(function (p) { revokePendingPreview(p); });
       pendingStore.clear();
@@ -1738,6 +1819,29 @@ import { getXSRFToken } from '../core/xsrf.js';
     if (!confirm('Delete this message?')) return;
     await api(`/api/chat/conversations/${activeConvId}/messages/${messageId}`, { method: 'DELETE' });
     removeMessageEl(messageId);
+    selectedIds.delete(messageId);
+    updateSelectBar();
+    await loadConversations();
+  }
+
+  async function deleteSelectedMessages() {
+    if (!activeConvId) return;
+    const mine = [...selectedIds].filter((id) => findMessageRow(id)?.dataset.mine === '1');
+    if (!mine.length) {
+      alert('Select your own messages to delete.');
+      return;
+    }
+    const skipped = selectedIds.size - mine.length;
+    const tip = skipped
+      ? `Delete ${mine.length} of your messages? (${skipped} from others will be skipped.)`
+      : `Delete ${mine.length} message${mine.length === 1 ? '' : 's'}?`;
+    if (!confirm(tip)) return;
+    for (const messageId of mine) {
+      await api(`/api/chat/conversations/${activeConvId}/messages/${messageId}`, { method: 'DELETE' });
+      removeMessageEl(messageId);
+      selectedIds.delete(messageId);
+    }
+    setSelectMode(false);
     await loadConversations();
   }
 
@@ -2733,9 +2837,52 @@ import { getXSRFToken } from '../core/xsrf.js';
     }
   });
   qs('#chatReplyCancel')?.addEventListener('click', clearReply);
-  qs('#chatForwardCancel')?.addEventListener('click', () => qs('#chatForwardModal')?.close());
+  qs('#chatForwardCancel')?.addEventListener('click', () => {
+    forwardMsgIds = [];
+    qs('#chatForwardModal')?.close();
+  });
   qs('#chatForwardSend')?.addEventListener('click', () => sendForward().catch((e) => alert(e.message)));
   qs('#chatLightboxClose')?.addEventListener('click', () => qs('#chatLightbox')?.close());
+  qs('#chatSelectCancel')?.addEventListener('click', () => setSelectMode(false));
+  qs('#chatSelectForward')?.addEventListener('click', () => {
+    openForward([...selectedIds]);
+  });
+  qs('#chatSelectDelete')?.addEventListener('click', () => {
+    deleteSelectedMessages().catch((e) => alert(e.message));
+  });
+  messagesEl?.addEventListener('change', (e) => {
+    const box = e.target?.closest?.('[data-select-id]');
+    if (!box) return;
+    if (!selectMode) setSelectMode(true);
+    toggleSelected(box.dataset.selectId, box.checked);
+  });
+  messagesEl?.addEventListener('click', (e) => {
+    if (!selectMode) return;
+    if (e.target.closest('a, button, input, summary, details, .chat-msg-image, .chat-react-chip, .chat-react-emoji, .chat-quote')) return;
+    const row = e.target.closest('.chat-msg-row[data-msg-id]');
+    if (!row) return;
+    e.preventDefault();
+    toggleSelected(row.dataset.msgId);
+  });
+  messagesEl?.addEventListener('pointerdown', (e) => {
+    if (selectMode || e.button) return;
+    if (e.target.closest('a, button, input, summary, details')) return;
+    const row = e.target.closest('.chat-msg-row[data-msg-id]');
+    if (!row) return;
+    pressId = row.dataset.msgId || '';
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      if (pressId) enterSelectMode(pressId);
+      clearPressTimer();
+    }, 480);
+  });
+  messagesEl?.addEventListener('pointerup', clearPressTimer);
+  messagesEl?.addEventListener('pointercancel', clearPressTimer);
+  messagesEl?.addEventListener('pointerleave', clearPressTimer);
+  messagesEl?.addEventListener('pointermove', (e) => {
+    if (!pressTimer) return;
+    if (Math.abs(e.movementX) + Math.abs(e.movementY) > 8) clearPressTimer();
+  });
 
   bindDropZone(qs('.chat-thread-panel'), {
     canAttach: canAttachFiles,

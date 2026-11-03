@@ -667,6 +667,7 @@ class ApiLogoutHandler(BaseHandler):
 
     @tornado.web.authenticated
     def post(self):
+        from aird.core.authentik_sso import post_logout_redirect_url
         from aird.db.sessions import revoke_session_by_id
 
         user = self.current_user if isinstance(self.current_user, dict) else {}
@@ -674,7 +675,8 @@ class ApiLogoutHandler(BaseHandler):
         if session_id and self.db_conn is not None:
             revoke_session_by_id(self.db_conn, str(session_id))
         self.clear_auth_cookies()
-        self.write({"ok": True})
+        redirect = post_logout_redirect_url(self.db_conn)
+        self.write({"ok": True, "redirect": redirect})
 
 
 def _try_authentik_auto_login(handler: BaseHandler) -> bool:
@@ -1012,9 +1014,14 @@ class MandatoryPasswordHandler(BaseHandler):
 
 
 class LogoutHandler(XSRFTokenMixin, BaseHandler):
-    def post(self):
+    def _finish_logout(self):
+        from aird.core.authentik_sso import post_logout_redirect_url
+
         terminate_server_session(self)
-        self.redirect(f"{LOGIN_URL}?logged_out=1")
+        self.redirect(post_logout_redirect_url(self.db_conn))
+
+    def post(self):
+        self._finish_logout()
 
     def get(self):
         logging.warning(
@@ -1023,8 +1030,7 @@ class LogoutHandler(XSRFTokenMixin, BaseHandler):
         )
         # Still clear the session: a bare redirect to /login leaves cookies
         # intact and LoginHandler immediately bounces the user back in.
-        terminate_server_session(self)
-        self.redirect(f"{LOGIN_URL}?logged_out=1")
+        self._finish_logout()
 
 
 def _session_public_view(session: dict, current_session_id: str | None) -> dict:
