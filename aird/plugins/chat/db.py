@@ -62,7 +62,29 @@ def user_record(conn: sqlite3.Connection, username: str) -> dict | None:
     row = get_user_by_username(conn, username)
     if not row or not row.get("active", True):
         return None
-    return {"id": int(row["id"]), "username": row["username"]}
+    from aird.db.users import effective_display_name
+
+    return {
+        "id": int(row["id"]),
+        "username": row["username"],
+        "display_name": effective_display_name(row),
+    }
+
+
+def _attach_display_names(central: sqlite3.Connection | None, members: list[dict]) -> list[dict]:
+    if not members:
+        return members
+    from aird.db.users import display_names_for_usernames
+
+    labels = (
+        display_names_for_usernames(central, [m.get("username") or "" for m in members])
+        if central is not None
+        else {}
+    )
+    for member in members:
+        name = str(member.get("username") or "")
+        member["display_name"] = labels.get(name) or name
+    return members
 
 
 def _loads(raw: str | None) -> dict:
@@ -170,7 +192,12 @@ def user_in_conversation(username: str, conversation_id: str) -> bool:
         return row is not None
 
 
-def get_conversation(username: str, conversation_id: str) -> dict | None:
+def get_conversation(
+    username: str,
+    conversation_id: str,
+    *,
+    central: sqlite3.Connection | None = None,
+) -> dict | None:
     with mailbox(username) as box:
         row = box.conn.execute(
             "SELECT id, kind, title, muted, created_at, updated_at FROM conversations WHERE id = ?",
@@ -178,7 +205,7 @@ def get_conversation(username: str, conversation_id: str) -> dict | None:
         ).fetchone()
         if not row:
             return None
-        members = _members_local(box.conn, conversation_id)
+        members = _attach_display_names(central, _members_local(box.conn, conversation_id))
         return {
             "id": row[0],
             "kind": row[1],
@@ -579,12 +606,20 @@ def list_conversations(central: sqlite3.Connection, username: str) -> list[dict]
         ).fetchall()
         out = []
         for conv_id, kind, title, muted, updated_at in rows:
-            members = _members_local(box.conn, conv_id)
+            members = _attach_display_names(central, _members_local(box.conn, conv_id))
             last = _last_message(box.conn, conv_id)
             preview, last_type, last_e2e = _conversation_list_preview(
                 last, kind=kind, members=members, username=username
             )
             peer = _peer_name(members, username) if kind == "dm" else None
+            peer_label = next(
+                (
+                    m.get("display_name") or m.get("username")
+                    for m in members
+                    if m.get("username") == peer
+                ),
+                peer,
+            )
             state = request_state(kind, members, username)
             out.append(
                 {
@@ -592,6 +627,7 @@ def list_conversations(central: sqlite3.Connection, username: str) -> list[dict]
                     "kind": kind,
                     "title": title or "",
                     "peer_username": peer or (title or "Group"),
+                    "peer_display_name": peer_label or (title or "Group"),
                     "members": members,
                     "request": state,
                     "muted": bool(muted),
@@ -720,6 +756,7 @@ def list_messages(
     before_id: str | None = None,
     after_id: str | None = None,
     limit: int = 50,
+    central: sqlite3.Connection | None = None,
 ) -> list[dict]:
     limit = max(1, min(100, int(limit)))
     with mailbox(username) as box:
@@ -732,7 +769,31 @@ def list_messages(
         )
         ids = [r[0] for r in rows]
         rmap = _reactions_map(box.conn, ids)
-        return [_row_to_message(r, reactions=rmap.get(r[0], [])) for r in rows]
+        messages = [_row_to_message(r, reactions=rmap.get(r[0], [])) for r in rows]
+        return _attach_sender_display_names(central, messages)
+
+
+def _attach_sender_display_names(
+    central: sqlite3.Connection | None, messages: list[dict]
+) -> list[dict]:
+    if not messages:
+        return messages
+    from aird.db.users import display_names_for_usernames
+
+    labels = (
+        display_names_for_usernames(
+            central, [m.get("sender_username") or "" for m in messages]
+        )
+        if central is not None
+        else {}
+    )
+    for msg in messages:
+        sender = str(msg.get("sender_username") or "")
+        msg["sender_display_name"] = labels.get(sender) or sender
+        for reaction in msg.get("reactions") or []:
+            uname = str(reaction.get("username") or "")
+            reaction["display_name"] = labels.get(uname) or uname
+    return messages
 
 
 def get_message(username: str, message_id: str) -> dict | None:

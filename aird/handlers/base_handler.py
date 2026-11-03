@@ -570,16 +570,17 @@ def get_username_string_for_db(handler) -> str | None:
 def _display_username_from_dict(user):
     """Return display string for dict user (from get_current_user)."""
     username = user.get("username", "")
+    label = str(user.get("display_name") or "").strip() or username
     role = user.get("role", "")
     if username == "admin_token" and role == "admin":
         return DISPLAY_ADMIN_TOKEN
     if username == "token_user" and role == "user":
         return DISPLAY_ACCESS_TOKEN
     if role == "admin":
-        return f"{username} (Admin)"
+        return f"{label} (Admin)"
     if role:
-        return f"{username} (User)"
-    return username or "Guest"
+        return f"{label} (User)"
+    return label or "Guest"
 
 
 def _display_username_from_legacy(user, handler):

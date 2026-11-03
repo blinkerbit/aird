@@ -847,6 +847,34 @@ def _validate_user_edit(
     return None
 
 
+def _validate_authentik_username(conn, user_id: int, authentik_username: str) -> str | None:
+    """Return an error if the Authentik mapping is invalid or already taken."""
+    name = (authentik_username or "").strip()
+    if not name:
+        return None
+    if len(name) > 128:
+        return "Authentik username is too long"
+    if not re.fullmatch(r"[A-Za-z0-9_@.+-]+", name):
+        return "Authentik username has invalid characters"
+    from aird.db.users import get_user_by_authentik_username
+
+    linked = get_user_by_authentik_username(conn, name)
+    if linked is not None and int(linked["id"]) != int(user_id):
+        return "That Authentik username is already linked to another AIRD user"
+    return None
+
+
+def _validate_display_name(display_name: str) -> str | None:
+    name = (display_name or "").strip()
+    if not name:
+        return None
+    if len(name) > 80:
+        return "Display name is too long"
+    if "\x00" in name:
+        return "Display name has invalid characters"
+    return None
+
+
 class UserEditHandler(BaseHandler):
     @tornado.web.authenticated
     @require_admin(deny_status=HTTP_FORBIDDEN, deny_body=ACCESS_DENIED)
@@ -901,13 +929,51 @@ class UserEditHandler(BaseHandler):
             password = self.get_argument("password", "").strip()
             role = self.get_argument("role", "user").strip()
             active = self.get_argument("active", "off") == "on"
+            authentik_username = self.get_argument("authentik_username", "").strip()
+            display_name = self.get_argument("display_name", "").strip()
 
             error = _validate_user_edit(username, password, role, self.settings)
             if error:
                 self.render(TEMPLATE_USER_EDIT, user=user, error=error, settings=self.settings)
                 return
+            map_error = _validate_authentik_username(
+                self.db_conn, user_id, authentik_username
+            )
+            if map_error:
+                self.render(
+                    TEMPLATE_USER_EDIT, user=user, error=map_error, settings=self.settings
+                )
+                return
+            display_error = _validate_display_name(display_name)
+            if display_error:
+                self.render(
+                    TEMPLATE_USER_EDIT,
+                    user=user,
+                    error=display_error,
+                    settings=self.settings,
+                )
+                return
 
-            update_data = {"username": username, "role": role, "active": active}
+            if username != user.get("username"):
+                from aird.db.rename_user import RenameError, rename_user
+
+                try:
+                    rename_user(self.db_conn, user_id, username)
+                except RenameError as exc:
+                    self.render(
+                        TEMPLATE_USER_EDIT,
+                        user=user,
+                        error=str(exc),
+                        settings=self.settings,
+                    )
+                    return
+
+            update_data = {
+                "role": role,
+                "active": active,
+                "authentik_username": authentik_username,
+                "display_name": display_name,
+            }
             if password:
                 update_data["password"] = password
                 update_data["must_change_password"] = False

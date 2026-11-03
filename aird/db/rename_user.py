@@ -60,12 +60,17 @@ def sync_authentik_display_name(
     conn: sqlite3.Connection,
     user_id: int,
     stable_username: str,
-    display_name: str,
+    display_name: str = "",
     *,
     root_dir: str | None = None,
     multi_user: bool | None = None,
 ) -> str:
-    """Remember the Authentik username and rename the AIRD account when the display name changes."""
+    """Link the stable Authentik username. AIRD username and display_name stay admin-managed.
+
+    ``display_name`` / ``root_dir`` / ``multi_user`` are kept for call-site compatibility
+    and are ignored: renaming from Authentik broke chat keys, so only the mapping is stored.
+    """
+    _ = (display_name, root_dir, multi_user)
     from aird.db.users import set_authentik_username
 
     row = conn.execute("SELECT username FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -75,25 +80,7 @@ def sync_authentik_display_name(
     stable = (stable_username or "").strip()
     if stable:
         set_authentik_username(conn, user_id, stable)
-    desired = username_from_display_name(display_name)
-    if not desired or desired == current:
-        return current
-    try:
-        rename_user(
-            conn,
-            user_id,
-            desired,
-            root_dir=root_dir,
-            multi_user=multi_user,
-        )
-    except RenameError:
-        logger.warning(
-            "Authentik display name %r was not applied to %s",
-            display_name,
-            current,
-        )
-        return current
-    return desired
+    return current
 
 
 def rename_user(
@@ -237,8 +224,60 @@ def _rename_storage(
             _rename_single_user_mailbox_dir(root, old, new)
         if os.path.isdir(root):
             _rewrite_mailboxes(root, old, new)
+        _migrate_e2e_identity(root, old, new, multi)
     except OSError:
         logger.exception("Renamed %s to %s in the database, but file storage could not be moved", old, new)
+
+
+def _migrate_e2e_identity(root: str, old: str, new: str, multi: bool) -> None:
+    """Keep chat E2E private keys across a rename; only the username label changes."""
+    from aird.constants import CHAT_STORE_FOLDER
+    from aird.plugins.chat.e2e import IDENTITY_FILENAME
+
+    old_safe = sanitize_username_for_folder(old)
+    new_safe = sanitize_username_for_folder(new)
+    if not old_safe or not new_safe:
+        return
+
+    candidates: list[str] = []
+    if multi:
+        candidates.append(os.path.join(root, new_safe, CHAT_STORE_FOLDER, IDENTITY_FILENAME))
+        candidates.append(os.path.join(root, old_safe, CHAT_STORE_FOLDER, IDENTITY_FILENAME))
+    candidates.append(os.path.join(root, CHAT_STORE_FOLDER, new_safe, IDENTITY_FILENAME))
+    candidates.append(os.path.join(root, CHAT_STORE_FOLDER, old_safe, IDENTITY_FILENAME))
+
+    src = next((path for path in candidates if os.path.isfile(path)), None)
+    if src is None:
+        return
+
+    if multi:
+        dest_dir = os.path.join(root, new_safe, CHAT_STORE_FOLDER)
+    else:
+        dest_dir = os.path.join(root, CHAT_STORE_FOLDER, new_safe)
+    dest = os.path.join(dest_dir, IDENTITY_FILENAME)
+
+    try:
+        import json
+
+        with open(src, encoding="utf-8") as fh:
+            data = json.load(fh)
+        if not isinstance(data, dict):
+            return
+        data["username"] = new
+        os.makedirs(dest_dir, exist_ok=True)
+        tmp = f"{dest}.{os.getpid()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, separators=(",", ":"))
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, dest)
+        if os.path.normcase(os.path.abspath(src)) != os.path.normcase(os.path.abspath(dest)):
+            try:
+                os.remove(src)
+            except OSError:
+                pass
+    except (OSError, TypeError, ValueError):
+        logger.exception("Could not migrate chat E2E identity from %s to %s", old, new)
 
 
 def _rename_single_user_mailbox_dir(root: str, old: str, new: str) -> None:

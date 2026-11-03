@@ -2,10 +2,10 @@
 // DaisyUI themes are activated via data-theme on <html>
 
 (function applySavedThemeBeforePaint() {
-    const THEMES = ['light', 'dark', 'nord', 'dracula', 'cyberpunk', 'retro', 'autumn'];
-    const DARK = { dark: true, dracula: true };
+    const THEMES = ['light', 'dark', 'midnight', 'nord', 'dracula', 'cyberpunk', 'retro', 'autumn'];
+    const DARK = { dark: true, midnight: true, dracula: true };
     const BG = {
-        light: '#ffffff', dark: '#1d232a', nord: '#eceff4', dracula: '#282a36',
+        light: '#ffffff', dark: '#1d232a', midnight: '#000000', nord: '#eceff4', dracula: '#282a36',
         cyberpunk: '#ffee00', retro: '#e4d8b4', autumn: '#faf1e9',
     };
     const key = 'aird_theme';
@@ -31,13 +31,14 @@ class ThemeManager {
 
     get availableThemes() {
         return [
-            { id: 'light',     label: '☀️ Light',     dark: false },
-            { id: 'dark',      label: '🌙 Dark',      dark: true  },
-            { id: 'nord',      label: '❄️ Nord',      dark: false },
-            { id: 'dracula',   label: '🧛 Dracula',   dark: true  },
-            { id: 'cyberpunk', label: '🤖 Cyberpunk', dark: false },
-            { id: 'retro',     label: '📺 Retro',     dark: false },
-            { id: 'autumn',    label: '🍂 Autumn',    dark: false },
+            { id: 'light',     label: '☀️ Light',          dark: false },
+            { id: 'dark',      label: '🌙 Dark',           dark: true  },
+            { id: 'midnight',  label: '🌑 Midnight OLED',  dark: true  },
+            { id: 'nord',      label: '❄️ Nord',           dark: false },
+            { id: 'dracula',   label: '🧛 Dracula',        dark: true  },
+            { id: 'cyberpunk', label: '🤖 Cyberpunk',      dark: false },
+            { id: 'retro',     label: '📺 Retro',          dark: false },
+            { id: 'autumn',    label: '🍂 Autumn',         dark: false },
         ];
     }
 
@@ -87,9 +88,9 @@ class ThemeManager {
     }
 
     setTheme(theme, save) {
-        const DARK = { dark: true, dracula: true };
+        const DARK = { dark: true, midnight: true, dracula: true };
         const BG = {
-            light: '#ffffff', dark: '#1d232a', nord: '#eceff4', dracula: '#282a36',
+            light: '#ffffff', dark: '#1d232a', midnight: '#000000', nord: '#eceff4', dracula: '#282a36',
             cyberpunk: '#ffee00', retro: '#e4d8b4', autumn: '#faf1e9',
         };
         const root = document.documentElement;

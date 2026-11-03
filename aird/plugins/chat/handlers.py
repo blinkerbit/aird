@@ -851,6 +851,7 @@ class ChatConversationMessagesHandler(BaseHandler, XSRFTokenMixin):
             before_id=self.get_argument("before_id", None) or None,
             after_id=self.get_argument("after_id", None) or None,
             limit=int(self.get_argument("limit", "50")),
+            central=self.db_conn,
         )
         pins = chat_db.list_pins(name, conversation_id)
         receipts = chat_db.list_receipts(name, conversation_id)

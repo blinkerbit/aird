@@ -120,15 +120,42 @@ def create_user(
         raise RuntimeError(f"Failed to create user: {str(e)}") from e
 
 
-def _users_have_authentik(conn: sqlite3.Connection) -> bool:
+def _users_columns(conn: sqlite3.Connection) -> set[str]:
     try:
-        cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+        return {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
     except sqlite3.Error:
-        return False
-    return "authentik_username" in cols
+        return set()
 
 
-def _user_from_row(row, *, with_authentik: bool) -> dict:
+def _users_have_authentik(conn: sqlite3.Connection) -> bool:
+    return "authentik_username" in _users_columns(conn)
+
+
+def _users_have_display_name(conn: sqlite3.Connection) -> bool:
+    return "display_name" in _users_columns(conn)
+
+
+def effective_display_name(user: dict | None) -> str:
+    """Public label for a user: admin-set display name, else login username."""
+    if not user:
+        return ""
+    name = str(user.get("display_name") or "").strip()
+    if name:
+        return name
+    return str(user.get("username") or "").strip()
+
+
+def _user_select_suffix(conn: sqlite3.Connection) -> str:
+    cols = _users_columns(conn)
+    parts = []
+    if "authentik_username" in cols:
+        parts.append("authentik_username")
+    if "display_name" in cols:
+        parts.append("display_name")
+    return (", " + ", ".join(parts)) if parts else ""
+
+
+def _user_from_row(row, *, cols: set[str]) -> dict:
     user = {
         "id": row[0],
         "username": row[1],
@@ -139,24 +166,28 @@ def _user_from_row(row, *, with_authentik: bool) -> dict:
         "last_login": row[6],
         "must_change_password": bool(row[7]),
     }
-    if with_authentik:
-        user["authentik_username"] = row[8] or ""
+    idx = 8
+    if "authentik_username" in cols:
+        user["authentik_username"] = (row[idx] or "") if idx < len(row) else ""
+        idx += 1
+    if "display_name" in cols:
+        user["display_name"] = (row[idx] or "") if idx < len(row) else ""
     return user
 
 
 def get_user_by_username(conn: sqlite3.Connection, username: str) -> dict | None:
     """Get user by username"""
     try:
-        linked = _users_have_authentik(conn)
+        cols = _users_columns(conn)
         sql = (
             "SELECT id, username, password_hash, role, created_at, active, last_login, "
             "must_change_password"
-            + (", authentik_username" if linked else "")
+            + _user_select_suffix(conn)
             + " FROM users WHERE username = ?"
         )
         row = conn.execute(sql, (username,)).fetchone()
         if row:
-            return _user_from_row(row, with_authentik=linked)
+            return _user_from_row(row, cols=cols)
         return None
     except Exception:
         return None
@@ -167,13 +198,16 @@ def get_user_by_authentik_username(conn: sqlite3.Connection, username: str) -> d
     if not username or not _users_have_authentik(conn):
         return None
     try:
-        row = conn.execute(
+        cols = _users_columns(conn)
+        sql = (
             "SELECT id, username, password_hash, role, created_at, active, last_login, "
-            "must_change_password, authentik_username FROM users WHERE authentik_username = ?",
-            (username,),
-        ).fetchone()
+            "must_change_password"
+            + _user_select_suffix(conn)
+            + " FROM users WHERE authentik_username = ?"
+        )
+        row = conn.execute(sql, (username,)).fetchone()
         if row:
-            return _user_from_row(row, with_authentik=True)
+            return _user_from_row(row, cols=cols)
         return None
     except sqlite3.Error:
         return None
@@ -189,15 +223,59 @@ def set_authentik_username(conn: sqlite3.Connection, user_id: int, authentik_use
         )
 
 
+def display_names_for_usernames(
+    conn: sqlite3.Connection, usernames: list[str]
+) -> dict[str, str]:
+    """Map login username → display label for the given accounts."""
+    names = [str(n).strip() for n in usernames if str(n or "").strip()]
+    if not names or conn is None:
+        return {}
+    uniq = list(dict.fromkeys(names))
+    has_display = _users_have_display_name(conn)
+    q = ",".join("?" * len(uniq))
+    sql = (
+        "SELECT username, display_name FROM users WHERE username IN (" + q + ")"
+        if has_display
+        else "SELECT username FROM users WHERE username IN (" + q + ")"
+    )
+    try:
+        rows = conn.execute(sql, uniq).fetchall()
+    except sqlite3.Error:
+        return {n: n for n in uniq}
+    out: dict[str, str] = {}
+    for row in rows:
+        username = str(row[0])
+        if has_display:
+            label = str(row[1] or "").strip() or username
+        else:
+            label = username
+        out[username] = label
+    for name in uniq:
+        out.setdefault(name, name)
+    return out
+
+
 def get_all_users(conn: sqlite3.Connection) -> list[dict]:
     """Get all users from the database"""
     try:
-        rows = conn.execute(
-            "SELECT id, username, role, created_at, active, last_login, must_change_password FROM users ORDER BY created_at DESC"
-        ).fetchall()
+        cols = _users_columns(conn)
+        linked = "authentik_username" in cols
+        has_display = "display_name" in cols
+        extra = []
+        if linked:
+            extra.append("authentik_username")
+        if has_display:
+            extra.append("display_name")
+        sql = (
+            "SELECT id, username, role, created_at, active, last_login, must_change_password"
+            + ((", " + ", ".join(extra)) if extra else "")
+            + " FROM users ORDER BY created_at DESC"
+        )
+        rows = conn.execute(sql).fetchall()
 
-        return [
-            {
+        users = []
+        for row in rows:
+            item = {
                 "id": row[0],
                 "username": row[1],
                 "role": row[2],
@@ -206,25 +284,44 @@ def get_all_users(conn: sqlite3.Connection) -> list[dict]:
                 "last_login": row[5],
                 "must_change_password": bool(row[6]),
             }
-            for row in rows
-        ]
+            idx = 7
+            if linked:
+                item["authentik_username"] = (row[idx] or "") if idx < len(row) else ""
+                idx += 1
+            if has_display:
+                item["display_name"] = (row[idx] or "") if idx < len(row) else ""
+            users.append(item)
+        return users
     except Exception:
         return []
 
 
 def search_users(conn: sqlite3.Connection, query: str) -> list[dict]:
-    """Search users by username (case-insensitive)"""
+    """Search users by username or display name (case-insensitive)"""
     try:
         escaped_query = (
             query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         )
-        rows = conn.execute(
-            "SELECT id, username, role, created_at, active, last_login, must_change_password FROM users WHERE username LIKE ? ESCAPE '\\' AND active = 1 ORDER BY username LIMIT 20",
-            (f"%{escaped_query}%",),
-        ).fetchall()
+        has_display = _users_have_display_name(conn)
+        where = "username LIKE ? ESCAPE '\\'"
+        params: list = [f"%{escaped_query}%"]
+        if has_display:
+            where = (
+                "(username LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\')"
+            )
+            params = [f"%{escaped_query}%", f"%{escaped_query}%"]
+        select = (
+            "SELECT id, username, role, created_at, active, last_login, must_change_password"
+            + (", display_name" if has_display else "")
+            + " FROM users WHERE "
+            + where
+            + " AND active = 1 ORDER BY username LIMIT 20"
+        )
+        rows = conn.execute(select, params).fetchall()
 
-        return [
-            {
+        out = []
+        for row in rows:
+            item = {
                 "id": row[0],
                 "username": row[1],
                 "role": row[2],
@@ -233,8 +330,10 @@ def search_users(conn: sqlite3.Connection, query: str) -> list[dict]:
                 "last_login": row[5],
                 "must_change_password": bool(row[6]),
             }
-            for row in rows
-        ]
+            if has_display:
+                item["display_name"] = row[7] or ""
+            out.append(item)
+        return out
     except Exception:
         return []
 
@@ -249,6 +348,8 @@ def _maybe_user_update_clause(field: str, value) -> tuple[str, ...] | None:
             "active",
             "last_login",
             "must_change_password",
+            "authentik_username",
+            "display_name",
         ]
     )
     plain_field_sql = {
@@ -257,6 +358,8 @@ def _maybe_user_update_clause(field: str, value) -> tuple[str, ...] | None:
         "role": "role = ?",
         "last_login": "last_login = ?",
         "must_change_password": "must_change_password = ?",
+        "authentik_username": "authentik_username = ?",
+        "display_name": "display_name = ?",
     }
 
     if field == "password":
@@ -267,6 +370,12 @@ def _maybe_user_update_clause(field: str, value) -> tuple[str, ...] | None:
         return ("active = ?", 1 if value else 0)
     if field == "must_change_password":
         return ("must_change_password = ?", 1 if value else 0)
+    if field == "authentik_username":
+        cleaned = (value or "").strip() if isinstance(value, str) else ""
+        return ("authentik_username = ?", cleaned or None)
+    if field == "display_name":
+        cleaned = (value or "").strip() if isinstance(value, str) else ""
+        return ("display_name = ?", cleaned or None)
     if field in plain_field_sql:
         return (plain_field_sql[field], value)
     return None

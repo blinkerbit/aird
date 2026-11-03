@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/static/css/app.css?v=20261023d" />
-  <link rel="stylesheet" href="/static/css/chat.css?v=20261104b" />
+  <link rel="stylesheet" href="/static/css/chat.css?v=20261104e" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   {% include '_pwa_head.html' %}
   <title>Chat · Aird</title>
@@ -99,6 +99,14 @@
           </div>
         </div>
         <div id="chatPinBar" class="chat-pin-bar" hidden></div>
+        <div id="chatSelectBar" class="chat-select-bar" hidden>
+          <span id="chatSelectCount" class="chat-select-count">0 selected</span>
+          <div class="chat-select-actions">
+            <button type="button" id="chatSelectForward" class="btn btn-sm btn-primary">Forward</button>
+            <button type="button" id="chatSelectDelete" class="btn btn-sm btn-error btn-outline">Delete</button>
+            <button type="button" id="chatSelectCancel" class="btn btn-sm btn-ghost">Cancel</button>
+          </div>
+        </div>
         <div id="chatE2eStatus" class="chat-e2e-status" hidden></div>
         <div id="chatRequest" class="chat-request hidden">
           <p id="chatRequestText"></p>
@@ -212,7 +220,7 @@
 
   <dialog id="chatForwardModal" class="modal">
     <div class="modal-box max-w-md">
-      <h3 class="font-bold text-lg">Forward message</h3>
+      <h3 id="chatForwardTitle" class="font-bold text-lg">Forward message</h3>
       <div id="chatForwardList" class="mt-3 max-h-64 overflow-y-auto divide-y divide-base-300"></div>
       <div class="modal-action">
         <button type="button" id="chatForwardCancel" class="btn btn-sm">Cancel</button>
@@ -265,6 +273,6 @@
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/onedrive-fe/index.js?v=20260929c"></script>
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/chat-key-backup.js?v=20260906p"></script>
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/chat-secret.js?v=20260927c"></script>
-  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/pages/chat.js?v=20261104b"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/pages/chat.js?v=20261104e"></script>
 </body>
 </html>

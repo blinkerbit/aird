@@ -42,7 +42,16 @@
             <input type="text" id="username" name="username" class="input input-bordered w-full" required
                    pattern="[a-zA-Z0-9_-]+" title="Letters, numbers, underscore, and hyphen only"
                    minlength="3" maxlength="50" value="{{ escape(user['username']) }}">
-            <p class="label-text-alt text-base-content/50 px-1 pt-1">3–50 characters · letters, numbers, underscore (_), hyphen (-)</p>
+            <p class="label-text-alt text-base-content/50 px-1 pt-1">Stable login id and folder name. 3–50 characters · letters, numbers, underscore (_), hyphen (-)</p>
+          </div>
+
+          <div class="form-control">
+            <label class="label" for="display_name"><span class="label-text font-semibold">Display name</span></label>
+            <input type="text" id="display_name" name="display_name" class="input input-bordered w-full"
+                   maxlength="80" autocomplete="off" spellcheck="false"
+                   value="{{ escape(user.get('display_name') or '') }}"
+                   placeholder="Shown in chat and the UI">
+            <p class="label-text-alt text-base-content/50 px-1 pt-1">Only admins can change this. Leave blank to show the username.</p>
           </div>
 
           {% if not settings.get('ldap_server') %}
@@ -69,6 +78,15 @@
               <option value="admin" {% if user['role'] == 'admin' %}selected{% end %}>Admin</option>
             </select>
             <p class="label-text-alt text-base-content/50 px-1 pt-1">Admin users can manage other users and system settings.</p>
+          </div>
+
+          <div class="form-control">
+            <label class="label" for="authentik_username"><span class="label-text font-semibold">Authentik username</span></label>
+            <input type="text" id="authentik_username" name="authentik_username" class="input input-bordered w-full"
+                   maxlength="128" autocomplete="off" spellcheck="false"
+                   value="{{ escape(user.get('authentik_username') or '') }}"
+                   placeholder="Stable Authentik login name">
+            <p class="label-text-alt text-base-content/50 px-1 pt-1">Maps this AIRD account to the Authentik user from <code>X-authentik-username</code>. Leave blank for no link. This stays put when the AIRD display username changes.</p>
           </div>
 
           <div class="form-control">

@@ -7,6 +7,49 @@
   themes: light --default, dark --prefersdark, nord, dracula, cyberpunk, retro, autumn;
 }
 
+/* True-black OLED dark theme — pure base-100, soft cool accents, no noise/depth. */
+@plugin "daisyui/theme" {
+  name: "midnight";
+  default: false;
+  prefersdark: false;
+  color-scheme: dark;
+
+  --color-base-100: oklch(0% 0 0);
+  --color-base-200: oklch(12% 0.012 255);
+  --color-base-300: oklch(18% 0.016 255);
+  --color-base-content: oklch(93% 0.008 255);
+
+  --color-primary: oklch(74% 0.13 245);
+  --color-primary-content: oklch(14% 0.03 245);
+
+  --color-secondary: oklch(70% 0.11 195);
+  --color-secondary-content: oklch(14% 0.03 195);
+
+  --color-accent: oklch(76% 0.12 155);
+  --color-accent-content: oklch(14% 0.03 155);
+
+  --color-neutral: oklch(16% 0.01 255);
+  --color-neutral-content: oklch(92% 0.008 255);
+
+  --color-info: oklch(72% 0.11 230);
+  --color-info-content: oklch(14% 0.03 230);
+  --color-success: oklch(74% 0.14 150);
+  --color-success-content: oklch(14% 0.03 150);
+  --color-warning: oklch(82% 0.13 85);
+  --color-warning-content: oklch(22% 0.04 85);
+  --color-error: oklch(66% 0.2 25);
+  --color-error-content: oklch(98% 0.01 25);
+
+  --radius-selector: 1rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
 /* Self-hosted mono — CSP font-src 'self'. UI uses system sans (Segoe / SF Pro). */
 @font-face {
   font-family: "IBM Plex Mono";
@@ -170,9 +213,11 @@ code, kbd, pre, samp {
 .theme-icon-moon { display: inline-block; }
 [data-theme="dark"] .theme-icon-sun,
 [data-theme="dracula"] .theme-icon-sun,
+[data-theme="midnight"] .theme-icon-sun,
 [data-theme="cyberpunk"] .theme-icon-sun { display: inline-block; }
 [data-theme="dark"] .theme-icon-moon,
 [data-theme="dracula"] .theme-icon-moon,
+[data-theme="midnight"] .theme-icon-moon,
 [data-theme="cyberpunk"] .theme-icon-moon { display: none; }
 
 /* ================================================================

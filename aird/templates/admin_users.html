@@ -99,6 +99,8 @@
               <tr>
                 <th>ID</th>
                 <th>Username</th>
+                <th>Display name</th>
+                <th>Authentik</th>
                 <th>Role</th>
                 <th>Status</th>
                 <th>Created</th>
@@ -111,6 +113,8 @@
               <tr class="hover">
                 <td class="text-xs text-base-content/50 font-mono">#{{ user['id'] }}</td>
                 <td class="font-semibold">{{ escape(user['username']) }}</td>
+                <td>{{ escape(user.get('display_name') or '—') }}</td>
+                <td class="text-xs font-mono text-base-content/70">{{ escape(user.get('authentik_username') or '—') }}</td>
                 <td>
                   {% if user['role'] == 'admin' %}
                   <span class="badge badge-primary badge-sm">Admin</span>
