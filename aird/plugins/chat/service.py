@@ -31,6 +31,7 @@ class ChatHub:
         self._by_user: dict[int, set[ChatWebSocketHandler]] = {}
         self._username: dict[int, str] = {}
         self._remote: dict[int, dict[int, str]] = {}
+        self._remote_visible: dict[int, set[int]] = {}
         self._loop: tornado.ioloop.IOLoop | None = None
 
     def add(self, user_id: int, handler: ChatWebSocketHandler, username: str = "") -> None:
@@ -64,11 +65,42 @@ class ChatHub:
             return bool(self._by_user.get(user_id)) or self._remote_has(user_id)
 
     def online_user_ids(self) -> set[int]:
+        """Users shown as online. A connected phone with a locked screen is not included."""
         with self._lock:
-            ids = {uid for uid, bucket in self._by_user.items() if bucket}
-            for bucket in self._remote.values():
+            ids = {uid for uid, bucket in self._by_user.items() if self._bucket_visible(bucket)}
+            for bucket in self._remote_visible.values():
                 ids.update(bucket)
             return ids
+
+    def is_visible(self, user_id: int) -> bool:
+        with self._lock:
+            if self._bucket_visible(self._by_user.get(user_id, ())):
+                return True
+            return any(user_id in bucket for bucket in self._remote_visible.values())
+
+    def set_available(self, handler: ChatWebSocketHandler, available: bool) -> tuple[bool, bool]:
+        """Mark one socket available. Return whether this user was and is shown online."""
+        with self._lock:
+            user_id = next(
+                (uid for uid, bucket in self._by_user.items() if handler in bucket),
+                None,
+            )
+            was = self._visible_locked(user_id) if user_id is not None else False
+            handler._available = bool(available)
+            now = self._visible_locked(user_id) if user_id is not None else False
+        self.publish_presence()
+        return was, now
+
+    @staticmethod
+    def _bucket_visible(bucket) -> bool:
+        return any(getattr(handler, "_available", True) for handler in bucket)
+
+    def _visible_locked(self, user_id: int | None) -> bool:
+        if user_id is None:
+            return False
+        if self._bucket_visible(self._by_user.get(user_id, ())):
+            return True
+        return any(user_id in bucket for bucket in self._remote_visible.values())
 
     def username_for(self, user_id: int) -> str | None:
         with self._lock:
@@ -99,7 +131,17 @@ class ChatHub:
                 for uid, sockets in self._by_user.items()
                 if sockets
             ]
-        self._bus({"op": "presence", "worker": os.getpid(), "online": online})
+            visible = [
+                uid
+                for uid, sockets in self._by_user.items()
+                if self._bucket_visible(sockets)
+            ]
+        self._bus({
+            "op": "presence",
+            "worker": os.getpid(),
+            "online": online,
+            "visible": visible,
+        })
 
     def handle_bus_frame(self, frame: dict) -> None:
         op = frame.get("op")
@@ -115,8 +157,18 @@ class ChatHub:
                     mapped[int(item["id"])] = str(item.get("username") or "")
                 except (KeyError, TypeError, ValueError):
                     continue
+            if "visible" in frame:
+                shown: set[int] = set()
+                for uid in frame.get("visible") or []:
+                    try:
+                        shown.add(int(uid))
+                    except (TypeError, ValueError):
+                        continue
+            else:
+                shown = set(mapped)
             with self._lock:
                 self._remote[worker] = mapped
+                self._remote_visible[worker] = shown
             return
         if op != "deliver":
             return
@@ -218,12 +270,16 @@ def _attachment_names(meta: dict) -> list[str]:
 
 
 def _preview_with_attachments(body: str, names: list[str], meta: dict) -> str:
+    entries = attachment_entries(meta)
+    kind = (entries[0] or {}).get("media_kind") if len(entries) == 1 else None
+    if kind == "voice":
+        return f"{body} · Voice message" if body else "Voice message"
     if body:
         if len(names) == 1:
             return f"{body} · {names[0]}"
         return f"{body} · {len(names)} files"
     if len(names) == 1:
-        folder = (attachment_entries(meta)[0] or {}).get("media_kind") == "folder"
+        folder = kind == "folder"
         return f"Shared {names[0]}{'/' if folder else ''}"
     return f"Shared {len(names)} files"
 

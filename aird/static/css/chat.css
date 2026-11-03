@@ -652,6 +652,123 @@ body.chat-page {
   content: "📁";
 }
 
+.chat-voice {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 11.5rem;
+  max-width: 16rem;
+  padding: 0.15rem 0.1rem;
+}
+
+.chat-voice-play {
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: color-mix(in oklch, var(--color-base-content) 14%, transparent);
+  color: inherit;
+  padding: 0;
+}
+
+.chat-voice-play svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.aird-chat-bubble--mine .chat-voice-play {
+  background: color-mix(in oklch, var(--color-primary-content, white) 18%, transparent);
+}
+
+.chat-voice-seek {
+  flex: 1;
+  min-width: 0;
+  accent-color: currentColor;
+  height: 0.35rem;
+  cursor: pointer;
+}
+
+.chat-voice-time {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  opacity: 0.78;
+  font-variant-numeric: tabular-nums;
+  min-width: 4.4rem;
+  text-align: right;
+}
+
+.chat-voice audio {
+  display: none;
+}
+
+.chat-voice-bar,
+.chat-voice-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0 0 0.45rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 0.75rem;
+  background: color-mix(in oklch, var(--color-error, #c44) 12%, var(--color-base-200));
+  border: 1px solid color-mix(in oklch, var(--color-error, #c44) 28%, var(--color-base-300));
+}
+
+.chat-voice-preview {
+  background: color-mix(in oklch, var(--color-primary) 10%, var(--color-base-200));
+  border-color: color-mix(in oklch, var(--color-primary) 28%, var(--color-base-300));
+}
+
+.chat-voice-bar[hidden],
+.chat-voice-preview[hidden] {
+  display: none;
+}
+
+.chat-voice-bar-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--color-error, #c44);
+  animation: chat-voice-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes chat-voice-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.chat-voice-bar-timer,
+.chat-voice-preview-label {
+  flex: 1;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.chat-voice-bar-btn {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.4rem;
+}
+
+.chat-voice-bar-btn:hover {
+  background: color-mix(in oklch, var(--color-base-content) 8%, transparent);
+}
+
+.chat-voice-bar-btn--stop,
+.chat-voice-bar-btn--send {
+  color: var(--color-primary);
+}
+
 .chat-pending-chip.is-folder .truncate::before {
   content: "📁 ";
 }

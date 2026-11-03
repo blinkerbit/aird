@@ -346,10 +346,15 @@ export function createPendingStore({ limit = ATTACH_LIMIT } = {}) {
     return { ok: true };
   }
 
-  function stageBlob(file) {
+  function stageBlob(file, opts = {}) {
     if (!file) return { ok: false, reason: 'No file.' };
     if (items.length >= limit) return { ok: false, reason: `Up to ${limit} files per message` };
-    items.push({ id: `b:${Date.now()}:${file.name}:${items.length}`, name: file.name, file });
+    items.push({
+      id: `b:${Date.now()}:${file.name}:${items.length}`,
+      name: file.name,
+      file,
+      voice: !!opts.voice,
+    });
     return { ok: true };
   }
 

@@ -31,6 +31,11 @@ logger = logging.getLogger(__name__)
 _ENHANCED_MESSAGE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{12,80}$")
 
 
+def _query_available(handler) -> bool:
+    raw = str(handler.get_argument("available", "1") or "1").strip().lower()
+    return raw not in {"0", "false", "off", "no"}
+
+
 def msg_is_heartbeat(message) -> bool:
     if isinstance(message, bytes) or len(message) > 64:
         return False
@@ -114,6 +119,7 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
             return
         self._user_id = uid
         self._username = username
+        self._available = _query_available(self)
         chat_db.maybe_migrate_user(conn, username)
         get_chat_hub().add(uid, self, username)
         get_enhanced_secure_hub().clear_offline(username)
@@ -133,14 +139,17 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
                     self.write_message(json.dumps(missed))
         except Exception:
             pass
-        dispatch_presence(username, uid, True)
+        if get_chat_hub().is_visible(uid):
+            dispatch_presence(username, uid, True)
 
     def on_close(self):
         if self._user_id is not None and self._username:
+            was_visible = get_chat_hub().is_visible(self._user_id)
             still = get_chat_hub().is_online(self._user_id)
             get_chat_hub().remove(self._user_id, self)
-            if still and not get_chat_hub().is_online(self._user_id):
+            if was_visible and not get_chat_hub().is_visible(self._user_id):
                 dispatch_presence(self._username, self._user_id, False)
+            if still and not get_chat_hub().is_online(self._user_id):
                 self._arm_enhanced_secure_grace(self._username, self._user_id)
         super().on_close()
 
@@ -195,6 +204,8 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
             self._handle_send(conn, data)
         elif msg_type == "chat_read":
             self._handle_read(data)
+        elif msg_type == "chat_available":
+            self._handle_available(data)
         elif msg_type == "chat_typing":
             self._handle_typing(data)
         elif msg_type == "chat_e2e_need_key":
@@ -293,6 +304,18 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
             self._user_id,
             decrypted=decrypted,
         )
+
+    def _handle_available(self, data: dict) -> None:
+        if self._user_id is None or not self._username:
+            return
+        raw = data.get("online")
+        if isinstance(raw, str):
+            available = raw.strip().lower() in {"1", "true", "on", "yes"}
+        else:
+            available = bool(raw)
+        was, now = get_chat_hub().set_available(self, available)
+        if was != now:
+            dispatch_presence(self._username, self._user_id, now)
 
     def _handle_typing(self, data: dict) -> None:
         conversation_id = str(data.get("conversation_id") or "")

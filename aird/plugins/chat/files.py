@@ -19,6 +19,23 @@ from aird.core.user_storage import (
 from aird.core.zip_download import MAX_ZIP_UNCOMPRESSED_BYTES
 
 _ERR_INVALID_FILENAME = "Invalid filename"
+_VOICE_EXTS = {".m4a", ".mp4", ".aac", ".mp3", ".ogg", ".opus", ".webm", ".wav", ".flac", ".caf"}
+_ALLOWED_MEDIA_KIND_OVERRIDE = frozenset({"voice"})
+
+
+def is_voice_filename(filename: str) -> bool:
+    name = os.path.basename(filename or "").lower()
+    stem, ext = os.path.splitext(name)
+    return stem.startswith("voice_") and ext in _VOICE_EXTS
+
+
+def resolve_media_kind(filename: str, requested: str | None = None) -> str:
+    req = (requested or "").strip().lower()
+    if req in _ALLOWED_MEDIA_KIND_OVERRIDE:
+        return req
+    if is_voice_filename(filename):
+        return "voice"
+    return media_kind_for_name(filename)
 
 
 def media_kind_for_name(filename: str) -> str:
@@ -27,6 +44,8 @@ def media_kind_for_name(filename: str) -> str:
         return "gif"
     if ext in IMAGE_VIEWER_EXTENSIONS:
         return "image"
+    if is_voice_filename(filename):
+        return "voice"
     return "file"
 
 
@@ -223,7 +242,7 @@ def attachment_meta(
         "owner_username": owner_username,
         "owner_rel": owner_rel.replace("\\", "/"),
         "size_bytes": int(size_bytes),
-        "media_kind": media_kind or media_kind_for_name(original_name),
+        "media_kind": media_kind or resolve_media_kind(original_name),
     }
     if saved_rel:
         meta["saved_rel"] = saved_rel

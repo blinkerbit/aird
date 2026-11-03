@@ -35,6 +35,7 @@ from aird.plugins.chat.files import (
     dir_tree_size,
     owner_abs_path,
     pack_attachments,
+    resolve_media_kind,
     save_copy_to_data,
     store_upload,
 )
@@ -358,6 +359,7 @@ def _store_uploaded_chat_attachment(
     meta: dict,
     conversation_id: str,
     tmps: list[str],
+    media_kind: str | None = None,
 ) -> dict | None:
     original_name = os.path.basename(meta.get("filename") or "file")
     tmp = meta.get("tmp_path")
@@ -385,6 +387,7 @@ def _store_uploaded_chat_attachment(
         owner_username=name,
         owner_rel=owner_rel,
         size_bytes=size,
+        media_kind=resolve_media_kind(original_name, media_kind),
     )
 
 
@@ -451,6 +454,7 @@ def _collect_chat_attachments(
         handler.set_status(400)
         handler.write({"error": f"Up to {CHAT_MAX_ATTACHMENTS} files per message"})
         return None
+    requested_kind = (handler.get_argument("media_kind", "") or "").strip().lower() or None
     atts: list[dict] = []
     for meta in uploads:
         att = _store_uploaded_chat_attachment(
@@ -459,6 +463,7 @@ def _collect_chat_attachments(
             meta=meta,
             conversation_id=conversation_id,
             tmps=tmps,
+            media_kind=requested_kind,
         )
         if att is None:
             return None

@@ -17,7 +17,7 @@ import {
   restyleCompleted,
   sameBrowseValue,
   takePendingBrowseAttachAll,
-} from '../chat-attach.js?v=20261024b';
+} from '../chat-attach.js?v=20261104b';
 import { escapeHtml as esc, escapeCssAttrValue as cssEscape } from '../core/dom-safe.js';
 import { apiFetch } from '../core/http.js';
 import { getXSRFToken } from '../core/xsrf.js';
@@ -108,6 +108,13 @@ import { getXSRFToken } from '../core/xsrf.js';
   let searchSeq = 0;
   let pollTimer = null;
   let uploading = false;
+  let voiceRecorder = null;
+  let voiceStream = null;
+  let voiceChunks = [];
+  let voiceTimerId = null;
+  let voiceStartedAt = 0;
+  let voiceBlob = null;
+  let voiceMime = '';
   let loadGen = 0;
   let typingTimer = null;
   let forwardMsgId = null;
@@ -539,11 +546,13 @@ import { getXSRFToken } from '../core/xsrf.js';
 
   function showEmptyThread() {
     if (!messagesEl) return;
+    stopAllVoicePlayback();
     messagesEl.innerHTML = '<div class="chat-empty"><div class="chat-empty-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><p>No messages yet</p><p class="chat-empty-hint">Say hello.</p></div>';
   }
 
   function clearMessagesView() {
     if (!messagesEl) return;
+    stopAllVoicePlayback();
     messagesEl.innerHTML = '';
   }
 
@@ -659,13 +668,137 @@ import { getXSRFToken } from '../core/xsrf.js';
     return String(att?.original_name || '').toLowerCase().endsWith('.gif');
   }
 
+  function isVoiceAtt(att) {
+    if (!att) return false;
+    if (att.media_kind === 'voice') return true;
+    const name = String(att.original_name || att.name || '').toLowerCase();
+    const stem = name.replace(/\.[^.]+$/, '');
+    const ext = name.split('.').pop();
+    const audioExt = new Set(['m4a', 'mp4', 'aac', 'mp3', 'ogg', 'opus', 'webm', 'wav', 'flac']);
+    return stem.startsWith('voice_') && audioExt.has(ext);
+  }
+
   function isImageAtt(att, msg) {
-    if (isFolderAtt(att)) return false;
+    if (isFolderAtt(att) || isVoiceAtt(att)) return false;
     const kind = att?.media_kind || (msg?.msg_type === 'gif' ? 'gif' : '');
     if (kind === 'image' || kind === 'gif') return true;
     const name = String(att?.original_name || '').toLowerCase();
     const ext = name.split('.').pop();
     return IMAGE_EXTS.has(ext);
+  }
+
+  function formatVoiceClock(sec) {
+    const n = Math.max(0, Math.floor(Number(sec) || 0));
+    const m = Math.floor(n / 60);
+    const s = n % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  const VOICE_PLAY_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
+  const VOICE_PAUSE_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>';
+  let activeVoiceAudio = null;
+
+  function pauseOtherVoice(except) {
+    if (activeVoiceAudio && activeVoiceAudio !== except) {
+      activeVoiceAudio.pause();
+    }
+    activeVoiceAudio = except?.paused === false ? except : (except || null);
+  }
+
+  function stopAllVoicePlayback() {
+    if (activeVoiceAudio) {
+      activeVoiceAudio.pause();
+      activeVoiceAudio = null;
+    }
+    messagesEl?.querySelectorAll('.chat-voice audio').forEach((audio) => {
+      try { audio.pause(); } catch { /* ignore */ }
+    });
+  }
+
+  function voicePlayerHtml(msg, att, index) {
+    const src = fileUrl(msg, index);
+    const menu = msg.sender_username === me
+      ? ''
+      : `<button type="button" class="chat-link-btn" data-att="save" data-id="${esc(msg.id)}" data-i="${index}">Save a copy</button>`;
+    return `<div class="chat-att-wrap"><div class="chat-voice" data-voice="1">`
+      + `<button type="button" class="chat-voice-play" aria-label="Play voice message">${VOICE_PLAY_SVG}</button>`
+      + `<input type="range" class="chat-voice-seek" min="0" max="0" value="0" step="0.01" aria-label="Seek">`
+      + `<span class="chat-voice-time">0:00</span>`
+      + `<audio preload="metadata" src="${esc(src)}"></audio>`
+      + `</div>${menu}</div>`;
+  }
+
+  function bindVoicePlayers(root) {
+    const scope = root || messagesEl;
+    if (!scope) return;
+    scope.querySelectorAll('.chat-voice[data-voice="1"]').forEach((wrap) => {
+      if (wrap.dataset.bound === '1') return;
+      wrap.dataset.bound = '1';
+      const audio = wrap.querySelector('audio');
+      const playBtn = wrap.querySelector('.chat-voice-play');
+      const seek = wrap.querySelector('.chat-voice-seek');
+      const timeEl = wrap.querySelector('.chat-voice-time');
+      if (!audio || !playBtn || !seek || !timeEl) return;
+      let scrubbing = false;
+      const syncPlayBtn = () => {
+        playBtn.innerHTML = audio.paused ? VOICE_PLAY_SVG : VOICE_PAUSE_SVG;
+        playBtn.setAttribute('aria-label', audio.paused ? 'Play voice message' : 'Pause voice message');
+      };
+      const syncTimes = () => {
+        const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
+        const cur = audio.currentTime || 0;
+        if (!scrubbing && dur > 0) {
+          seek.max = String(dur);
+          seek.value = String(cur);
+        }
+        timeEl.textContent = dur > 0
+          ? `${formatVoiceClock(cur)} / ${formatVoiceClock(dur)}`
+          : formatVoiceClock(cur);
+      };
+      playBtn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (audio.paused) {
+          pauseOtherVoice(audio);
+          audio.play().catch(() => {});
+        } else {
+          audio.pause();
+        }
+      });
+      seek.addEventListener('pointerdown', () => { scrubbing = true; });
+      seek.addEventListener('pointerup', () => {
+        scrubbing = false;
+        audio.currentTime = Number(seek.value) || 0;
+      });
+      seek.addEventListener('input', () => {
+        scrubbing = true;
+        timeEl.textContent = Number.isFinite(audio.duration)
+          ? `${formatVoiceClock(seek.value)} / ${formatVoiceClock(audio.duration)}`
+          : formatVoiceClock(seek.value);
+      });
+      seek.addEventListener('change', () => {
+        audio.currentTime = Number(seek.value) || 0;
+        scrubbing = false;
+      });
+      audio.addEventListener('play', () => {
+        pauseOtherVoice(audio);
+        syncPlayBtn();
+      });
+      audio.addEventListener('pause', () => {
+        if (activeVoiceAudio === audio) activeVoiceAudio = null;
+        syncPlayBtn();
+      });
+      audio.addEventListener('ended', () => {
+        audio.currentTime = 0;
+        if (activeVoiceAudio === audio) activeVoiceAudio = null;
+        syncPlayBtn();
+        syncTimes();
+      });
+      audio.addEventListener('loadedmetadata', syncTimes);
+      audio.addEventListener('timeupdate', syncTimes);
+      syncPlayBtn();
+      syncTimes();
+    });
   }
 
   function gifDurationMs(bytes) {
@@ -860,6 +993,9 @@ import { getXSRFToken } from '../core/xsrf.js';
       const openUrl = attOpenUrl(att, msg, i);
       const blank = att.share_url ? '' : ' target="_blank" rel="noopener"';
       const menu = mine ? '' : `<button type="button" class="chat-link-btn" data-att="save" data-id="${esc(msg.id)}" data-i="${i}">Save a copy</button>`;
+      if (isVoiceAtt(att)) {
+        return voicePlayerHtml(msg, att, i);
+      }
       if (isImageAtt(att, msg)) {
         const gif = isGifAtt(att, msg) ? ' data-gif="1"' : '';
         return `<div class="chat-att-wrap"><img src="${esc(previewUrl)}" alt="${esc(name)}" class="chat-msg-image" data-full="${esc(previewUrl)}"${gif} onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'chat-file-unavailable',textContent:'File unavailable'}))">${menu}</div>`;
@@ -903,6 +1039,7 @@ import { getXSRFToken } from '../core/xsrf.js';
     if (att) {
       const name = att.original_name || att.name || '';
       if (isGifAtt(att, msg)) return name || 'GIF';
+      if (isVoiceAtt(att)) return 'Voice message';
       if (isImageAtt(att, msg)) return name || 'Photo';
       if (isFolderAtt(att)) return `${name || 'Folder'}/`;
       return name || 'File';
@@ -1057,6 +1194,7 @@ import { getXSRFToken } from '../core/xsrf.js';
       }
       img.addEventListener('click', () => openLightbox(img));
     });
+    bindVoicePlayers(scope);
     scope.querySelectorAll('[data-att="open"]').forEach((btn) => {
       btn.addEventListener('click', () => window.open(btn.dataset.url, '_blank', 'noopener'));
     });
@@ -1415,7 +1553,9 @@ import { getXSRFToken } from '../core/xsrf.js';
       pending.forEach(function (p) { revokePendingPreview(p); });
       pendingStore.clear();
       renderPending();
+      resetVoiceCapture();
     }
+    stopAllVoicePlayback();
     const gen = ++loadGen;
     activeConvId = convId;
     replyLabelCache.clear();
@@ -2035,6 +2175,9 @@ import { getXSRFToken } from '../core/xsrf.js';
       fd.append('caption', body);
     }
     if (reply) fd.append('reply_to_id', reply);
+    if (staged.length && staged.every((item) => item.voice)) {
+      fd.append('media_kind', 'voice');
+    }
     for (const item of staged) {
       if (item.path) fd.append('source_path', item.path);
       else fd.append('file', item.file, item.file.name);
@@ -2662,6 +2805,203 @@ import { getXSRFToken } from '../core/xsrf.js';
     pathSuggestIdx = 0;
     if (next) renderPathSuggest(next);
   }
+
+  const voiceBtn = qs('#chatVoiceBtn');
+  const voiceBar = qs('#chatVoiceBar');
+  const voicePreview = qs('#chatVoicePreview');
+  const voiceTimer = qs('#chatVoiceTimer');
+  const voiceCancel = qs('#chatVoiceCancel');
+  const voiceStop = qs('#chatVoiceStop');
+  const voiceDiscard = qs('#chatVoiceDiscard');
+  const voiceSend = qs('#chatVoiceSend');
+  function voiceExtForMime(mime) {
+    const m = String(mime || '').toLowerCase();
+    if (m.includes('mp4')) return 'm4a';
+    if (m.includes('ogg')) return 'ogg';
+    if (m.includes('mpeg') || m.includes('mp3')) return 'mp3';
+    return 'webm';
+  }
+
+  function pickVoiceMime() {
+    const candidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus',
+    ];
+    if (!globalThis.MediaRecorder?.isTypeSupported) return '';
+    return candidates.find((c) => MediaRecorder.isTypeSupported(c)) || '';
+  }
+
+  function setVoiceUi(mode) {
+    if (voiceBar) voiceBar.hidden = mode !== 'record';
+    if (voicePreview) voicePreview.hidden = mode !== 'preview';
+    if (composer) composer.classList.toggle('chat-composer--voice', mode !== 'idle');
+  }
+
+  function clearVoiceTimer() {
+    if (voiceTimerId) {
+      clearInterval(voiceTimerId);
+      voiceTimerId = null;
+    }
+  }
+
+  function stopVoiceTracks() {
+    (voiceStream?.getTracks() || []).forEach((t) => t.stop());
+    voiceStream = null;
+  }
+
+  function resetVoiceCapture({ keepPreview = false } = {}) {
+    clearVoiceTimer();
+    if (voiceRecorder && voiceRecorder.state !== 'inactive') {
+      try { voiceRecorder.stop(); } catch { /* ignore */ }
+    }
+    voiceRecorder = null;
+    stopVoiceTracks();
+    voiceChunks = [];
+    if (!keepPreview) {
+      voiceBlob = null;
+      voiceMime = '';
+      setVoiceUi('idle');
+    }
+  }
+
+  function tickVoiceTimer() {
+    if (!voiceTimer) return;
+    voiceTimer.textContent = formatVoiceClock((Date.now() - voiceStartedAt) / 1000);
+  }
+
+  async function beginVoiceRecord() {
+    const gate = canAttachFiles();
+    if (!gate.ok) {
+      setE2eStatus(gate.reason);
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia || !globalThis.MediaRecorder) {
+      setE2eStatus('Voice recording is not supported in this browser.');
+      return;
+    }
+    resetVoiceCapture();
+    try {
+      voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setE2eStatus('Microphone permission is required for voice messages.');
+      return;
+    }
+    voiceMime = pickVoiceMime();
+    try {
+      voiceRecorder = voiceMime
+        ? new MediaRecorder(voiceStream, { mimeType: voiceMime })
+        : new MediaRecorder(voiceStream);
+      voiceMime = voiceRecorder.mimeType || voiceMime || 'audio/webm';
+    } catch (err) {
+      stopVoiceTracks();
+      setE2eStatus(err.message || 'Could not start recording.');
+      return;
+    }
+    voiceChunks = [];
+    voiceRecorder.addEventListener('dataavailable', (ev) => {
+      if (ev.data?.size) voiceChunks.push(ev.data);
+    });
+    voiceRecorder.addEventListener('stop', () => {
+      stopVoiceTracks();
+      clearVoiceTimer();
+      const blob = new Blob(voiceChunks, { type: voiceMime || 'audio/webm' });
+      voiceChunks = [];
+      voiceRecorder = null;
+      if (!blob.size) {
+        setE2eStatus('Recording was empty.');
+        setVoiceUi('idle');
+        return;
+      }
+      voiceBlob = blob;
+      setVoiceUi('preview');
+      const label = qs('#chatVoicePreviewLabel');
+      if (label) label.textContent = `Voice message · ${formatVoiceClock((Date.now() - voiceStartedAt) / 1000)}`;
+    });
+    voiceStartedAt = Date.now();
+    if (voiceTimer) voiceTimer.textContent = '0:00';
+    voiceTimerId = setInterval(tickVoiceTimer, 250);
+    voiceRecorder.start(250);
+    setVoiceUi('record');
+  }
+
+  function stopVoiceRecord() {
+    if (!voiceRecorder || voiceRecorder.state === 'inactive') return;
+    try { voiceRecorder.stop(); } catch { /* ignore */ }
+  }
+
+  function cancelVoiceRecord() {
+    resetVoiceCapture();
+  }
+
+  function discardVoicePreview() {
+    voiceBlob = null;
+    voiceMime = '';
+    setVoiceUi('idle');
+  }
+
+  async function sendVoicePreview() {
+    if (!voiceBlob || !activeConvId || uploading) return;
+    const gate = canAttachFiles();
+    if (!gate.ok) {
+      setE2eStatus(gate.reason);
+      return;
+    }
+    const mime = voiceMime || voiceBlob.type || 'audio/webm';
+    const file = new File(
+      [voiceBlob],
+      `voice_${Date.now()}.${voiceExtForMime(mime)}`,
+      { type: mime },
+    );
+    const reply = replyToId;
+    discardVoicePreview();
+    clearReply();
+    const staged = [{ id: `voice:${Date.now()}`, name: file.name, file, voice: true }];
+    const convId = activeConvId;
+    uploading = true;
+    try {
+      let e2e = null;
+      let mentions = [];
+      try {
+        const encrypted = await encryptOutgoingBody('');
+        if (encrypted) {
+          e2e = encrypted.e2e;
+          mentions = encrypted.mentions;
+        }
+      } catch {
+        /* caption-less attach may omit e2e like other file-only sends */
+      }
+      await postStagedAttachments(staged, {
+        e2e,
+        mentions,
+        hasText: false,
+        body: '',
+        reply,
+        convId,
+      });
+    } catch (err) {
+      clearUploadProgress();
+      setE2eStatus(err.message || 'Could not send voice message');
+    } finally {
+      uploading = false;
+    }
+  }
+
+  voiceBtn?.addEventListener('click', () => {
+    if (voiceBar && !voiceBar.hidden) {
+      stopVoiceRecord();
+      return;
+    }
+    if (voicePreview && !voicePreview.hidden) return;
+    beginVoiceRecord().catch((err) => setE2eStatus(err.message || 'Could not record'));
+  });
+  voiceCancel?.addEventListener('click', cancelVoiceRecord);
+  voiceStop?.addEventListener('click', stopVoiceRecord);
+  voiceDiscard?.addEventListener('click', discardVoicePreview);
+  voiceSend?.addEventListener('click', () => {
+    sendVoicePreview().catch((err) => setE2eStatus(err.message || 'Could not send voice message'));
+  });
 
   fileInput?.addEventListener('change', () => attachUpload(fileInput));
   gifInput?.addEventListener('change', () => attachUpload(gifInput));
