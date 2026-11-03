@@ -145,6 +145,33 @@ def _valid_username(username: str) -> bool:
     )
 
 
+def _validate_authentik_username(conn, user_id: int, authentik_username: str) -> str | None:
+    name = (authentik_username or "").strip()
+    if not name:
+        return None
+    if len(name) > 128:
+        return "Authentik username is too long"
+    if not re.fullmatch(r"[A-Za-z0-9_@.+-]+", name):
+        return "Authentik username has invalid characters"
+    from aird.db.users import get_user_by_authentik_username
+
+    linked = get_user_by_authentik_username(conn, name)
+    if linked is not None and int(linked["id"]) != int(user_id):
+        return "That Authentik username is already linked to another AIRD user"
+    return None
+
+
+def _validate_display_name(display_name: str) -> str | None:
+    name = (display_name or "").strip()
+    if not name:
+        return None
+    if len(name) > 80:
+        return "Display name is too long"
+    if "\x00" in name:
+        return "Display name has invalid characters"
+    return None
+
+
 async def admin_user_create(request: Request) -> Response:
     try:
         require_admin(request)
@@ -196,7 +223,7 @@ async def admin_user_edit(request: Request) -> Response:
     if request.method == "GET":
         return render_html(
             request,
-            "admin_user_edit.html",
+            "user_edit.html",
             user=user,
             error=None,
             settings=get_state_settings(request),
@@ -210,6 +237,8 @@ async def admin_user_edit(request: Request) -> Response:
     password = str(form.get("password") or "")
     role = str(form.get("role") or "user")
     active = str(form.get("active") or "") == "on"
+    authentik_username = str(form.get("authentik_username") or "").strip()
+    display_name = str(form.get("display_name") or "").strip()
     error = None
     if not _valid_username(username):
         error = "Invalid username"
@@ -219,15 +248,37 @@ async def admin_user_edit(request: Request) -> Response:
         valid, error = validate_password(password)
         if valid:
             error = None
+    if not error:
+        error = _validate_authentik_username(conn, user_id, authentik_username)
+    if not error:
+        error = _validate_display_name(display_name)
     if error:
         return render_html(
             request,
-            "admin_user_edit.html",
+            "user_edit.html",
             user=user,
             error=error,
             settings=get_state_settings(request),
         )
-    updates = {"username": username, "role": role, "active": active}
+    if username != user.get("username"):
+        from aird.db.rename_user import RenameError, rename_user
+
+        try:
+            rename_user(conn, user_id, username)
+        except RenameError as exc:
+            return render_html(
+                request,
+                "user_edit.html",
+                user=user,
+                error=str(exc),
+                settings=get_state_settings(request),
+            )
+    updates = {
+        "role": role,
+        "active": active,
+        "authentik_username": authentik_username,
+        "display_name": display_name,
+    }
     if password:
         updates["password"] = password
     if not service.update_user(conn, user_id, **updates):

@@ -599,16 +599,9 @@ def test_tornado_login_get_unknown_user_forbidden(conn):
 
 
 @pytest.mark.asyncio
-async def test_display_name_renames_account_and_later_login_uses_stable_id(conn, tmp_path, monkeypatch):
+async def test_authentik_login_links_stable_id_without_renaming(conn, tmp_path, monkeypatch):
     monkeypatch.setattr("aird.constants.ROOT_DIR", str(tmp_path))
     monkeypatch.setattr("aird.constants.MULTI_USER", False)
-    mailbox = tmp_path / ".aird-chats" / "alice"
-    mailbox.mkdir(parents=True)
-    box = sqlite3.connect(mailbox / "mailbox.sqlite3")
-    box.execute("CREATE TABLE members (username TEXT)")
-    box.execute("INSERT INTO members (username) VALUES ('alice')")
-    box.commit()
-    box.close()
 
     save_authentik_sso(
         conn,
@@ -622,21 +615,18 @@ async def test_display_name_renames_account_and_later_login_uses_stable_id(conn,
     }
     first = await login_get(_request(conn, headers))
     assert first.status_code == 302
-    renamed = get_user_by_username(conn, "Jane_Doe")
-    assert renamed is not None
-    assert renamed["authentik_username"] == "alice"
-    assert get_user_by_username(conn, "alice") is None
-    box = sqlite3.connect(tmp_path / ".aird-chats" / "Jane_Doe" / "mailbox.sqlite3")
-    assert box.execute("SELECT username FROM members").fetchone()[0] == "Jane_Doe"
-    box.close()
+    linked = get_user_by_username(conn, "alice")
+    assert linked is not None
+    assert linked["authentik_username"] == "alice"
+    assert get_user_by_username(conn, "Jane_Doe") is None
 
     second = await login_get(_request(conn, headers))
     assert second.status_code == 302
-    assert get_user_by_username(conn, "Jane_Doe")["authentik_username"] == "alice"
+    assert get_user_by_username(conn, "alice")["authentik_username"] == "alice"
 
 
 @pytest.mark.asyncio
-async def test_display_name_collision_or_invalid_keeps_username(conn, tmp_path, monkeypatch):
+async def test_authentik_login_keeps_username_when_display_header_changes(conn, tmp_path, monkeypatch):
     monkeypatch.setattr("aird.constants.ROOT_DIR", str(tmp_path))
     monkeypatch.setattr("aird.constants.MULTI_USER", False)
     save_authentik_sso(
@@ -644,7 +634,6 @@ async def test_display_name_collision_or_invalid_keeps_username(conn, tmp_path, 
         {"enabled": True, "username_header": "X-authentik-username", "secret": _SECRET},
     )
     _insert_user(conn, "alice")
-    _insert_user(conn, "Jane_Doe")
     taken = await login_get(
         _request(
             conn,
@@ -670,6 +659,50 @@ async def test_display_name_collision_or_invalid_keeps_username(conn, tmp_path, 
     )
     assert short.status_code == 302
     assert get_user_by_username(conn, "alice") is not None
+    assert get_user_by_username(conn, "Jane_Doe") is None
+
+
+def test_rename_user_preserves_e2e_identity(tmp_path, monkeypatch):
+    import aird.constants as constants_module
+    from aird.db.rename_user import rename_user
+    from aird.db.users import create_user
+
+    monkeypatch.setattr(constants_module, "ROOT_DIR", str(tmp_path))
+    monkeypatch.setattr(constants_module, "MULTI_USER", True)
+    chats = tmp_path / "alice" / ".aird-chats"
+    chats.mkdir(parents=True)
+    identity = {
+        "v": 1,
+        "kind": "aird-chat-e2e-identity",
+        "username": "alice",
+        "exported_at": "2026-01-01T00:00:00Z",
+        "publicJwk": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "WosxnRD8jEYpsKbjZu9Ca1ryFC1fpVwku96C3M1_97o",
+            "y": "Du4meh1eo-C5zlb3Pg_NrcJiK02uiuJROdUC5qurM14",
+        },
+        "privateJwk": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "WosxnRD8jEYpsKbjZu9Ca1ryFC1fpVwku96C3M1_97o",
+            "y": "Du4meh1eo-C5zlb3Pg_NrcJiK02uiuJROdUC5qurM14",
+            "d": "p7zvciOHTlkOl0UFYPGFb9-Hg1rYl08l_tEB3vy_uYk",
+        },
+        "kid": "sxMAtUN4ScYc6UZ13uMgcjV50/VmGG7tRBvSy5bXZjc",
+    }
+    (chats / "e2e-identity.json").write_text(json.dumps(identity), encoding="utf-8")
+    conn = sqlite3.connect(":memory:")
+    init_db(conn)
+    create_user(conn, "alice", "Password1!", "user")
+    uid = get_user_by_username(conn, "alice")["id"]
+    rename_user(conn, uid, "bob")
+    dest = tmp_path / "bob" / ".aird-chats" / "e2e-identity.json"
+    assert dest.is_file()
+    data = json.loads(dest.read_text(encoding="utf-8"))
+    assert data["username"] == "bob"
+    assert data["kid"] == identity["kid"]
+    assert data["privateJwk"]["d"] == identity["privateJwk"]["d"]
 
 
 def test_name_header_round_trip_and_display_name_shape():

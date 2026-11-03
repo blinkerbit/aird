@@ -227,11 +227,11 @@ import { getXSRFToken } from '../core/xsrf.js';
     stopKeyWait();
     if (conv.request === 'incoming') {
       text.textContent = conv.kind === 'dm'
-        ? `${conv.peer_username || 'Someone'} wants to chat.`
+        ? `${conv.peer_display_name || conv.peer_username || 'Someone'} wants to chat.`
         : `You were added to ${convTitle(conv)}.`;
       actions?.classList.remove('hidden');
     } else {
-      text.textContent = `Waiting for ${conv.peer_username || 'them'} to accept.`;
+      text.textContent = `Waiting for ${conv.peer_display_name || conv.peer_username || 'them'} to accept.`;
       actions?.classList.add('hidden');
     }
     return true;
@@ -426,10 +426,22 @@ import { getXSRFToken } from '../core/xsrf.js';
     return msg;
   }
 
+  function memberLabel(member, fallback) {
+    if (!member) return fallback || '';
+    return member.display_name || member.username || fallback || '';
+  }
+
+  function userLabel(username, conv) {
+    const name = username || '';
+    const members = conv?.members || conversations.flatMap((c) => c.members || []);
+    const hit = members.find((m) => m.username === name);
+    return memberLabel(hit, name);
+  }
+
   function convTitle(c) {
     if (!c) return '';
     if (c.kind === 'group') return c.title || 'Group';
-    return c.peer_username || 'Chat';
+    return c.peer_display_name || c.peer_username || 'Chat';
   }
 
   function isOnlineUser(username) {
@@ -1014,7 +1026,7 @@ import { getXSRFToken } from '../core/xsrf.js';
     if (msg.edited_at) body += '<span class="chat-edited">edited</span>';
     const nameLine = msg._mine
       ? ''
-      : `<div class="chat-msg-name">${esc(msg.sender_username)}</div>`;
+      : `<div class="chat-msg-name">${esc(msg.sender_display_name || userLabel(msg.sender_username, activeConv()) || msg.sender_username)}</div>`;
     const delBtn = msg._mine
       ? `<button type="button" class="btn btn-ghost btn-xs text-error chat-msg-delete" data-act="delete" data-id="${esc(msg.id)}" title="Delete message" aria-label="Delete message">×</button>`
       : '';
@@ -1531,7 +1543,7 @@ import { getXSRFToken } from '../core/xsrf.js';
     if (!sub || data.username === me) return;
     const prev = sub.dataset.base || sub.textContent;
     sub.dataset.base = prev;
-    sub.textContent = `${data.username} is typing…`;
+    sub.textContent = `${userLabel(data.username, activeConv()) || data.username} is typing…`;
     clearTimeout(typingTimer);
     typingTimer = setTimeout(() => { sub.textContent = sub.dataset.base || prev; }, 1500);
   }

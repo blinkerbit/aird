@@ -68,7 +68,8 @@ function createUserPicker({
 
       const span = document.createElement('span');
       const role = user.role === 'admin' ? ' (Admin)' : '';
-      span.textContent = `${user.username}${role}`;
+      const label = user.display_name || user.username;
+      span.textContent = label === user.username ? `${label}${role}` : `${label} (${user.username})${role}`;
       label.append(checkbox, span);
       userDiv.appendChild(label);
       userList.appendChild(userDiv);

@@ -341,7 +341,7 @@
           Authentik auto-login
           <span id="airdAuthentikSaveStatus" class="text-xs font-normal text-base-content/50 ml-2" aria-live="polite"></span>
         </h2>
-        <p class="text-sm text-base-content/70">Off by default. When Authentik already authenticated the browser, skip this login form only if that username is an existing active AIRD user. AIRD does not create an account. If the Authentik display name changes, AIRD renames that account to match. The shared secret is optional and is only needed when AIRD can be reached without the proxy that strips client-supplied X-authentik-* headers.</p>
+        <p class="text-sm text-base-content/70">Off by default. When Authentik already authenticated the browser, skip this login form only if that Authentik username is linked to an existing active AIRD user (see <a class="link" href="/admin/users">Users</a> → Authentik username) or matches an AIRD username. AIRD does not create an account. The AIRD username and display name stay admin-managed; Authentik does not rename accounts. The shared secret is optional and is only needed when AIRD can be reached without the proxy that strips client-supplied X-authentik-* headers.</p>
         <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 w-fit">
           <input type="checkbox" id="authentikSsoEnabled" class="toggle toggle-primary toggle-sm" {% if authentik_sso_view.get('enabled') %}checked{% end %}>
           <span class="label-text">Enable Authentik auto-login</span>
@@ -354,7 +354,7 @@
         <label class="form-control max-w-md" for="authentikSsoNameHeader">
           <span class="label-text text-sm font-semibold">Display name header</span>
           <input type="text" id="authentikSsoNameHeader" class="input input-bordered input-sm w-full" maxlength="128" autocomplete="off" spellcheck="false" value="{{ authentik_sso_view.get('name_header', 'X-authentik-name') }}">
-          <span class="label-text-alt text-base-content/50">Default X-authentik-name. Spaces become underscores. AIRD renames the account when this value changes.</span>
+          <span class="label-text-alt text-base-content/50">Default X-authentik-name. Kept for proxy compatibility; AIRD display names are set by admins under Users.</span>
         </label>
         <label class="form-control max-w-md" for="authentikSsoSecret">
           <span class="label-text text-sm font-semibold">Shared secret</span>

@@ -106,7 +106,7 @@ import { apiFetch } from './core/http.js';
         privateJwk: stored.privateJwk,
         kid: stored.kid || await fingerprint(stored.publicJwk),
       };
-      if (api) void adoptServerIdentity(user, api);
+      if (api) await adoptServerIdentity(user, api);
       return identity;
     }
     if (api) {
@@ -147,6 +147,10 @@ import { apiFetch } from './core/http.js';
       remoteKid = (await api('/api/chat/e2e/identity'))?.backup?.kid || '';
       seenRemote = true;
     } catch (_) { /* keep any existing server copy */ }
+    if (seenRemote && remoteKid && remoteKid !== identity.kid) {
+      await adoptServerIdentity(username, api);
+      return;
+    }
     if (seenRemote && !remoteKid) {
       await api('/api/chat/e2e/identity', {
         method: 'PUT',

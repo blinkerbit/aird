@@ -959,8 +959,18 @@ class UserSearchAPIHandler(BaseHandler):
             return
 
         def action():
+            from aird.db.users import effective_display_name
+
             users = self.get_service("user_service").search_users(self.db_conn, query)
-            return {"users": [{"username": u["username"]} for u in users]}
+            return {
+                "users": [
+                    {
+                        "username": u["username"],
+                        "display_name": effective_display_name(u),
+                    }
+                    for u in users
+                ]
+            }
 
         self.run_json_action(action, on_error_message="Search failed")
 
