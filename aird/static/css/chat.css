@@ -657,9 +657,13 @@ body.chat-page {
 }
 
 .chat-msg-delete {
+  position: absolute;
+  top: 0.15rem;
+  right: 0.15rem;
+  z-index: 3;
   min-height: 0;
-  height: 1.1rem;
-  min-width: 1.1rem;
+  height: 1.35rem;
+  min-width: 1.35rem;
   padding: 0;
   line-height: 1;
   font-size: 0.95rem;
@@ -667,13 +671,31 @@ body.chat-page {
   transition: opacity 0.12s ease;
 }
 
-.chat-msg-row:hover .chat-msg-delete,
-.chat-msg-delete:focus-visible {
-  opacity: 0.65;
+.chat-msg-row--mine .chat-msg-delete {
+  right: auto;
+  left: 0.15rem;
 }
 
-.chat-msg-delete:hover {
+.chat-msg-row:hover .chat-msg-delete,
+.chat-msg-row:focus-within .chat-msg-delete,
+.chat-msg-delete:focus-visible {
+  opacity: 0.75;
+}
+
+.chat-msg-delete:hover,
+.chat-msg-delete:focus-visible {
   opacity: 1 !important;
+}
+
+@media (hover: none) {
+  .chat-msg-delete {
+    opacity: 0.55;
+  }
+
+  .chat-hover-bar {
+    display: inline-flex;
+    opacity: 0.9;
+  }
 }
 
 /* Composer */

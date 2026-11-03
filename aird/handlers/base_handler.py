@@ -908,19 +908,28 @@ class BaseHandler(tornado.web.RequestHandler):
             self.set_status(500)
             self.write({"error": client_err_msg})
 
+    def auth_cookie_clear_opts(self) -> dict:
+        """Kwargs for clear_cookie that match session_cookie_opts (path/samesite/secure)."""
+        opts = self.session_cookie_opts()
+        return {
+            "path": "/",
+            "httponly": bool(opts.get("httponly", True)),
+            "secure": bool(opts.get("secure", False)),
+            "samesite": str(opts.get("samesite") or "Strict"),
+        }
+
     def clear_auth_cookies(self) -> None:
         """Remove authentication cookies from the response."""
         from aird.db.sessions import SESSION_COOKIE_NAME
 
-        self.clear_cookie(SESSION_COOKIE_NAME)
-        self.clear_cookie("user")
-        self.clear_cookie("user_role")
-        self.clear_cookie("admin")
+        clear_opts = self.auth_cookie_clear_opts()
+        for name in (SESSION_COOKIE_NAME, "user", "user_role", "admin"):
+            self.clear_cookie(name, **clear_opts)
 
     def regenerate_session(self) -> None:
         """Invalidate prior session state before establishing an authenticated session."""
         self.clear_auth_cookies()
-        self.clear_cookie("_xsrf")
+        self.clear_cookie("_xsrf", **self.auth_cookie_clear_opts())
         for attr in ("_xsrf_token", "_raw_xsrf_token"):
             if hasattr(self, attr):
                 delattr(self, attr)

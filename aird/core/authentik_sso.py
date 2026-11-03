@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 CONFIG_KEY = "authentik_sso"
 DEFAULT_USERNAME_HEADER = "X-authentik-username"
+DEFAULT_NAME_HEADER = "X-authentik-name"
 SECRET_HEADER = "X-Aird-Authentik-Secret"
 ACTION_FORM = "form"
 ACTION_FORBIDDEN = "forbidden"
@@ -54,6 +55,7 @@ def default_authentik_sso() -> dict:
     return {
         "enabled": False,
         "username_header": DEFAULT_USERNAME_HEADER,
+        "name_header": DEFAULT_NAME_HEADER,
         "secret": "",
     }
 
@@ -69,6 +71,7 @@ def public_authentik_sso(config: dict | None) -> dict:
     return {
         "enabled": bool(cfg.get("enabled")),
         "username_header": header,
+        "name_header": _stored_name_header(cfg),
         "secret_set": bool(cfg.get("secret")),
     }
 
@@ -86,6 +89,7 @@ def load_authentik_sso(conn) -> dict:
     return {
         "enabled": bool(raw.get("enabled")),
         "username_header": header,
+        "name_header": _stored_name_header(raw),
         "secret": secret,
     }
 
@@ -108,6 +112,11 @@ def merge_authentik_sso(current: dict, payload: dict) -> dict:
             str(current.get("username_header") or DEFAULT_USERNAME_HEADER)
         )
 
+    if "name_header" in payload and str(payload.get("name_header") or "").strip():
+        name_header = validate_username_header(str(payload.get("name_header")))
+    else:
+        name_header = _stored_name_header(current)
+
     secret = str(current.get("secret") or "")
     if "secret" in payload and payload.get("secret") is not None:
         submitted = payload.get("secret")
@@ -122,6 +131,7 @@ def merge_authentik_sso(current: dict, payload: dict) -> dict:
     return {
         "enabled": enabled,
         "username_header": header,
+        "name_header": name_header,
         "secret": secret,
     }
 
@@ -135,6 +145,7 @@ def save_authentik_sso(conn, payload: dict) -> dict:
         {
             "enabled": updated["enabled"],
             "username_header": updated["username_header"],
+            "name_header": updated["name_header"],
             "secret": updated["secret"],
         },
     )
@@ -186,6 +197,31 @@ def decide_authentik_login(config: dict, headers, lookup_user) -> AuthentikLogin
             "must_change_password": bool(user.get("must_change_password")),
         },
     )
+
+
+def _stored_name_header(raw: dict | None) -> str:
+    raw = raw or {}
+    header = str(raw.get("name_header") or DEFAULT_NAME_HEADER).strip()
+    try:
+        return validate_username_header(header)
+    except ValueError:
+        return DEFAULT_NAME_HEADER
+
+
+def display_name_from_headers(config: dict, headers) -> str:
+    """Authentik display name from the configured X-* header."""
+    return _header_value(headers, _stored_name_header(config))
+
+
+def stable_username_from_headers(config: dict, headers) -> str:
+    """Authentik username, which stays put when the display name changes."""
+    try:
+        header_name = validate_username_header(
+            str((config or {}).get("username_header") or DEFAULT_USERNAME_HEADER)
+        )
+    except ValueError:
+        return ""
+    return _header_value(headers, header_name)
 
 
 def _as_bool(value) -> bool:

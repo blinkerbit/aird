@@ -528,6 +528,9 @@ class _TornadoLogin:
     def get_service(self, name, default=None):
         return self.services.get(name, default)
 
+    def get_argument(self, name, default=""):
+        return default
+
     def _get_safe_next_url(self):
         return "/files/"
 
@@ -593,6 +596,109 @@ def test_tornado_login_get_unknown_user_forbidden(conn):
     assert handler.rendered is None
     assert handler.cookies == []
     assert get_all_users(conn) == []
+
+
+@pytest.mark.asyncio
+async def test_display_name_renames_account_and_later_login_uses_stable_id(conn, tmp_path, monkeypatch):
+    monkeypatch.setattr("aird.constants.ROOT_DIR", str(tmp_path))
+    monkeypatch.setattr("aird.constants.MULTI_USER", False)
+    mailbox = tmp_path / ".aird-chats" / "alice"
+    mailbox.mkdir(parents=True)
+    box = sqlite3.connect(mailbox / "mailbox.sqlite3")
+    box.execute("CREATE TABLE members (username TEXT)")
+    box.execute("INSERT INTO members (username) VALUES ('alice')")
+    box.commit()
+    box.close()
+
+    save_authentik_sso(
+        conn,
+        {"enabled": True, "username_header": "X-authentik-username", "secret": _SECRET},
+    )
+    _insert_user(conn, "alice")
+    headers = {
+        SECRET_HEADER: _SECRET,
+        "X-authentik-username": "alice",
+        "X-authentik-name": "Jane Doe",
+    }
+    first = await login_get(_request(conn, headers))
+    assert first.status_code == 302
+    renamed = get_user_by_username(conn, "Jane_Doe")
+    assert renamed is not None
+    assert renamed["authentik_username"] == "alice"
+    assert get_user_by_username(conn, "alice") is None
+    box = sqlite3.connect(tmp_path / ".aird-chats" / "Jane_Doe" / "mailbox.sqlite3")
+    assert box.execute("SELECT username FROM members").fetchone()[0] == "Jane_Doe"
+    box.close()
+
+    second = await login_get(_request(conn, headers))
+    assert second.status_code == 302
+    assert get_user_by_username(conn, "Jane_Doe")["authentik_username"] == "alice"
+
+
+@pytest.mark.asyncio
+async def test_display_name_collision_or_invalid_keeps_username(conn, tmp_path, monkeypatch):
+    monkeypatch.setattr("aird.constants.ROOT_DIR", str(tmp_path))
+    monkeypatch.setattr("aird.constants.MULTI_USER", False)
+    save_authentik_sso(
+        conn,
+        {"enabled": True, "username_header": "X-authentik-username", "secret": _SECRET},
+    )
+    _insert_user(conn, "alice")
+    _insert_user(conn, "Jane_Doe")
+    taken = await login_get(
+        _request(
+            conn,
+            {
+                SECRET_HEADER: _SECRET,
+                "X-authentik-username": "alice",
+                "X-authentik-name": "Jane Doe",
+            },
+        )
+    )
+    assert taken.status_code == 302
+    assert get_user_by_username(conn, "alice")["authentik_username"] == "alice"
+
+    short = await login_get(
+        _request(
+            conn,
+            {
+                SECRET_HEADER: _SECRET,
+                "X-authentik-username": "alice",
+                "X-authentik-name": "Jo",
+            },
+        )
+    )
+    assert short.status_code == 302
+    assert get_user_by_username(conn, "alice") is not None
+
+
+def test_name_header_round_trip_and_display_name_shape():
+    from aird.db.rename_user import username_from_display_name
+
+    assert username_from_display_name("Jane Doe") == "Jane_Doe"
+    assert username_from_display_name("  Jo  ") == ""
+    conn = sqlite3.connect(":memory:")
+    init_db(conn)
+    save_authentik_sso(
+        conn,
+        {
+            "enabled": True,
+            "username_header": "X-authentik-username",
+            "name_header": "X-proxy-name",
+            "secret": _SECRET,
+        },
+    )
+    stored = load_authentik_sso(conn)
+    assert stored["name_header"] == "X-proxy-name"
+    kept = save_authentik_sso(
+        conn,
+        {"enabled": True, "username_header": "X-authentik-username", "secret": ""},
+    )
+    assert kept["name_header"] == "X-proxy-name"
+    assert kept["secret"] == _SECRET
+    view = public_authentik_sso(kept)
+    assert view["name_header"] == "X-proxy-name"
+    assert "secret" not in view
 
 
 def test_tornado_login_get_disabled_renders_form(conn):

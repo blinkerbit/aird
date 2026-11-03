@@ -88,7 +88,7 @@ class TestLogoutHandler:
         ) as mock_redirect:
             handler.post()
             assert mock_clear.call_count == 4  # session, user, user_role, admin
-            mock_redirect.assert_called_with("/login")
+            mock_redirect.assert_called_with("/login?logged_out=1")
 
     def test_logout_get_deprecated(self):
         handler = prepare_handler(LogoutHandler(self.mock_app, self.mock_request))
@@ -96,8 +96,8 @@ class TestLogoutHandler:
             handler, "redirect"
         ) as mock_redirect:
             handler.get()
-            mock_clear.assert_not_called()
-            mock_redirect.assert_called_with("/login")
+            assert mock_clear.call_count == 4  # still ends the session
+            mock_redirect.assert_called_with("/login?logged_out=1")
 
 
 class TestAdminLoginHandler:

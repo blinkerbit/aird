@@ -56,7 +56,12 @@ def _migrate_user_columns(conn: sqlite3.Connection) -> None:
         {
             "quota_bytes": "ALTER TABLE users ADD COLUMN quota_bytes INTEGER",
             "used_bytes": "ALTER TABLE users ADD COLUMN used_bytes INTEGER NOT NULL DEFAULT 0",
+            "authentik_username": "ALTER TABLE users ADD COLUMN authentik_username TEXT",
         },
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_authentik_username "
+        "ON users(authentik_username) WHERE authentik_username IS NOT NULL AND authentik_username != ''"
     )
 
 

@@ -341,7 +341,7 @@
           Authentik auto-login
           <span id="airdAuthentikSaveStatus" class="text-xs font-normal text-base-content/50 ml-2" aria-live="polite"></span>
         </h2>
-        <p class="text-sm text-base-content/70">Off by default. When Authentik already authenticated the browser, skip this login form only if that username is an existing active AIRD user. AIRD does not create an account. The shared secret is optional and is only needed when AIRD can be reached without the proxy that strips client-supplied X-authentik-* headers.</p>
+        <p class="text-sm text-base-content/70">Off by default. When Authentik already authenticated the browser, skip this login form only if that username is an existing active AIRD user. AIRD does not create an account. If the Authentik display name changes, AIRD renames that account to match. The shared secret is optional and is only needed when AIRD can be reached without the proxy that strips client-supplied X-authentik-* headers.</p>
         <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 w-fit">
           <input type="checkbox" id="authentikSsoEnabled" class="toggle toggle-primary toggle-sm" {% if authentik_sso_view.get('enabled') %}checked{% end %}>
           <span class="label-text">Enable Authentik auto-login</span>
@@ -349,7 +349,12 @@
         <label class="form-control max-w-md" for="authentikSsoHeader">
           <span class="label-text text-sm font-semibold">Username header</span>
           <input type="text" id="authentikSsoHeader" class="input input-bordered input-sm w-full" maxlength="128" autocomplete="off" spellcheck="false" value="{{ authentik_sso_view.get('username_header', 'X-authentik-username') }}">
-          <span class="label-text-alt text-base-content/50">Must start with X-. Default X-authentik-username. The proxy must keep stripping client-supplied X-authentik-* headers.</span>
+          <span class="label-text-alt text-base-content/50">Must start with X-. Default X-authentik-username. This stays the same when the display name changes. The proxy must keep stripping client-supplied X-authentik-* headers.</span>
+        </label>
+        <label class="form-control max-w-md" for="authentikSsoNameHeader">
+          <span class="label-text text-sm font-semibold">Display name header</span>
+          <input type="text" id="authentikSsoNameHeader" class="input input-bordered input-sm w-full" maxlength="128" autocomplete="off" spellcheck="false" value="{{ authentik_sso_view.get('name_header', 'X-authentik-name') }}">
+          <span class="label-text-alt text-base-content/50">Default X-authentik-name. Spaces become underscores. AIRD renames the account when this value changes.</span>
         </label>
         <label class="form-control max-w-md" for="authentikSsoSecret">
           <span class="label-text text-sm font-semibold">Shared secret</span>
@@ -447,6 +452,7 @@
           var statusEl = document.getElementById('airdAuthentikSaveStatus');
           var enabledEl = document.getElementById('authentikSsoEnabled');
           var headerEl = document.getElementById('authentikSsoHeader');
+          var nameEl = document.getElementById('authentikSsoNameHeader');
           var secretEl = document.getElementById('authentikSsoSecret');
           var hintEl = document.getElementById('authentikSsoSecretHint');
           function setAuthentikStatus(text, ok) {
@@ -466,6 +472,7 @@
             body: JSON.stringify({
               enabled: !!(enabledEl && enabledEl.checked),
               username_header: headerEl ? headerEl.value : '',
+              name_header: nameEl ? nameEl.value : '',
               secret: secretEl ? secretEl.value : ''
             })
           }).then(function (res) {
@@ -482,6 +489,7 @@
             }
             if (enabledEl) enabledEl.checked = !!data.enabled;
             if (headerEl && data.username_header) headerEl.value = data.username_header;
+            if (nameEl && data.name_header) nameEl.value = data.name_header;
             if (secretEl) secretEl.value = '';
             if (hintEl) {
               hintEl.textContent = data.secret_set ? 'A secret is stored. It is required on each login.' : 'No secret stored. The username header is enough behind the proxy.';

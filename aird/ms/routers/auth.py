@@ -92,7 +92,7 @@ class _HandlerBridge:
         self._json: Any = None
         self._headers: dict[str, str] = {}
         self._cookie_sets: list[tuple[str, str, dict[str, Any]]] = []
-        self._cookie_clears: list[str] = []
+        self._cookie_clears: list[tuple[str, dict[str, Any]]] = []
 
     @property
     def db_conn(self):
@@ -141,16 +141,26 @@ class _HandlerBridge:
     def set_secure_cookie(self, name: str, value: str | bytes, **opts: Any) -> None:
         self._cookie_sets.append((name, str(value), opts))
 
-    def clear_cookie(self, name: str) -> None:
-        self._cookie_clears.append(name)
+    def clear_cookie(self, name: str, **opts: Any) -> None:
+        self._cookie_clears.append((name, opts))
+
+    def auth_cookie_clear_opts(self) -> dict[str, Any]:
+        opts = self.session_cookie_opts()
+        return {
+            "path": "/",
+            "httponly": bool(opts.get("httponly", True)),
+            "secure": bool(opts.get("secure", False)),
+            "samesite": str(opts.get("samesite") or "Strict"),
+        }
 
     def clear_auth_cookies(self) -> None:
+        clear_opts = self.auth_cookie_clear_opts()
         for name in (SESSION_COOKIE_NAME, "user", "user_role", "admin"):
-            self.clear_cookie(name)
+            self.clear_cookie(name, **clear_opts)
 
     def regenerate_session(self) -> None:
         self.clear_auth_cookies()
-        self.clear_cookie("_xsrf")
+        self.clear_cookie("_xsrf", **self.auth_cookie_clear_opts())
 
     def session_cookie_opts(self, expires_days: int = 1) -> dict[str, Any]:
         return {
@@ -181,8 +191,22 @@ class _HandlerBridge:
         self._headers[name] = value
 
     def apply_cookies(self, response: Response) -> None:
-        for name in self._cookie_clears:
-            clear_cookie(response, name)
+        for entry in self._cookie_clears:
+            if isinstance(entry, tuple):
+                name, opts = entry
+            else:
+                name, opts = entry, {}
+            secure = bool(opts.get("secure", False))
+            httponly = bool(opts.get("httponly", True))
+            samesite = str(opts.get("samesite") or "lax")
+            clear_cookie(
+                response, name, secure=secure, samesite=samesite, httponly=httponly
+            )
+            # Older MS cookies were written as SameSite=lax; drop those too.
+            if samesite.lower() != "lax":
+                clear_cookie(
+                    response, name, secure=secure, samesite="lax", httponly=httponly
+                )
         for name, value, opts in self._cookie_sets:
             days = opts.get("expires_days", 1)
             max_age = int(float(days) * 86400)
@@ -192,6 +216,9 @@ class _HandlerBridge:
                 name,
                 value,
                 max_age=max_age,
+                httponly=bool(opts.get("httponly", True)),
+                secure=bool(opts.get("secure", False)),
+                samesite=str(opts.get("samesite") or "lax"),
             )
 
 
@@ -256,18 +283,20 @@ async def _form_dict(request: Request) -> dict[str, str]:
 
 async def login_get(request: Request):
     settings = _settings(request)
+    logged_out = request.query_params.get("logged_out", "") == "1"
     user = current_user(request)
     next_url = _safe_next_url(request)
 
-    if user:
+    if user and not logged_out:
         if isinstance(user, dict) and user.get("must_change_password"):
             mq = quote(next_url)
             return RedirectResponse(f"/auth/mandatory-password?next={mq}", status_code=302)
         return RedirectResponse(next_url, status_code=302)
 
-    sso_response = _authentik_sso_response(request, settings, next_url)
-    if sso_response is not None:
-        return sso_response
+    if not logged_out:
+        sso_response = _authentik_sso_response(request, settings, next_url)
+        if sso_response is not None:
+            return sso_response
 
     return render_html(
         request,
@@ -314,8 +343,11 @@ def _authentik_sso_response(
     from aird.core.authentik_sso import (
         ACCESS_DENIED_HTML,
         decide_authentik_login,
+        display_name_from_headers,
         load_authentik_sso,
+        stable_username_from_headers,
     )
+    from aird.db.users import get_user_by_authentik_username, get_user_by_username
     from aird.ms.deps import db_conn as request_db
     from aird.ms.deps import get_service
 
@@ -325,18 +357,33 @@ def _authentik_sso_response(
     def lookup(username: str):
         if conn is None:
             return None
+        linked = get_user_by_authentik_username(conn, username)
+        if linked is not None:
+            return linked
         service = get_service(request, "user_service")
         if service is not None:
             return service.get_user(conn, username)
-        from aird.db.users import get_user_by_username
-
         return get_user_by_username(conn, username)
 
     decision = decide_authentik_login(config, request.headers, lookup)
     if decision.action == "forbidden":
         return HTMLResponse(ACCESS_DENIED_HTML, status_code=403)
     if decision.action == "session" and decision.user and decision.user.get("username"):
-        return _finish_authentik_login(request, settings, decision.user, next_url)
+        user = dict(decision.user)
+        user_id = user.get("id")
+        if user_id is not None and conn is not None:
+            from aird.db.rename_user import sync_authentik_display_name
+
+            stable = stable_username_from_headers(config, request.headers)
+            display = display_name_from_headers(config, request.headers)
+            try:
+                renamed = sync_authentik_display_name(conn, int(user_id), stable, display)
+            except Exception:
+                logger.warning("Authentik display name was not applied", exc_info=True)
+                renamed = str(user.get("username") or "")
+            if renamed:
+                user["username"] = renamed
+        return _finish_authentik_login(request, settings, user, next_url)
     return None
 
 
@@ -429,7 +476,11 @@ async def logout_get(request: Request):
         "Deprecated GET /logout from %s; use POST with XSRF",
         _client_ip(request),
     )
-    return RedirectResponse("/login", status_code=302)
+    settings = _settings(request)
+    bridge = _HandlerBridge(request, settings)
+    terminate_server_session(bridge)
+    bridge.redirect("/login?logged_out=1")
+    return _bridge_response(request, bridge)
 
 
 async def logout_post(request: Request):
@@ -438,11 +489,15 @@ async def logout_post(request: Request):
     try:
         check_xsrf_token(request, form.get("_xsrf"))
     except PermissionError:
-        return RedirectResponse("/login", status_code=302)
+        # Still end the session; a bare /login redirect would bounce them back in.
+        bridge = _HandlerBridge(request, settings, form)
+        terminate_server_session(bridge)
+        bridge.redirect("/login?logged_out=1")
+        return _bridge_response(request, bridge)
 
     bridge = _HandlerBridge(request, settings, form)
     terminate_server_session(bridge)
-    bridge.redirect("/login")
+    bridge.redirect("/login?logged_out=1")
     return _bridge_response(request, bridge)
 
 

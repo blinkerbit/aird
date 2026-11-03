@@ -410,9 +410,10 @@ class TestLogoutHandler:
             handler, "redirect"
         ) as mock_redirect:
             handler.post()
-            mock_clear.assert_any_call("user")
-            mock_clear.assert_any_call("admin")
-            mock_redirect.assert_called_with("/login")
+            cleared = [c.args[0] for c in mock_clear.call_args_list]
+            assert "user" in cleared
+            assert "admin" in cleared
+            mock_redirect.assert_called_with("/login?logged_out=1")
 
     def test_get_deprecated(self):
         handler = LogoutHandler(self.mock_app, self.mock_request)
@@ -420,8 +421,9 @@ class TestLogoutHandler:
             handler, "redirect"
         ) as mock_redirect:
             handler.get()
-            mock_clear.assert_not_called()
-            mock_redirect.assert_called_with("/login")
+            cleared = [c.args[0] for c in mock_clear.call_args_list]
+            assert "user" in cleared
+            mock_redirect.assert_called_with("/login?logged_out=1")
 
 
 class TestProfileHandlerExtended:

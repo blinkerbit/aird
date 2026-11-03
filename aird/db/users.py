@@ -120,28 +120,73 @@ def create_user(
         raise RuntimeError(f"Failed to create user: {str(e)}") from e
 
 
+def _users_have_authentik(conn: sqlite3.Connection) -> bool:
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+    except sqlite3.Error:
+        return False
+    return "authentik_username" in cols
+
+
+def _user_from_row(row, *, with_authentik: bool) -> dict:
+    user = {
+        "id": row[0],
+        "username": row[1],
+        "password_hash": row[2],
+        "role": row[3],
+        "created_at": row[4],
+        "active": bool(row[5]),
+        "last_login": row[6],
+        "must_change_password": bool(row[7]),
+    }
+    if with_authentik:
+        user["authentik_username"] = row[8] or ""
+    return user
+
+
 def get_user_by_username(conn: sqlite3.Connection, username: str) -> dict | None:
     """Get user by username"""
     try:
-        row = conn.execute(
-            "SELECT id, username, password_hash, role, created_at, active, last_login, must_change_password FROM users WHERE username = ?",
-            (username,),
-        ).fetchone()
-
+        linked = _users_have_authentik(conn)
+        sql = (
+            "SELECT id, username, password_hash, role, created_at, active, last_login, "
+            "must_change_password"
+            + (", authentik_username" if linked else "")
+            + " FROM users WHERE username = ?"
+        )
+        row = conn.execute(sql, (username,)).fetchone()
         if row:
-            return {
-                "id": row[0],
-                "username": row[1],
-                "password_hash": row[2],
-                "role": row[3],
-                "created_at": row[4],
-                "active": bool(row[5]),
-                "last_login": row[6],
-                "must_change_password": bool(row[7]),
-            }
+            return _user_from_row(row, with_authentik=linked)
         return None
     except Exception:
         return None
+
+
+def get_user_by_authentik_username(conn: sqlite3.Connection, username: str) -> dict | None:
+    """Get the AIRD account linked to a stable Authentik username."""
+    if not username or not _users_have_authentik(conn):
+        return None
+    try:
+        row = conn.execute(
+            "SELECT id, username, password_hash, role, created_at, active, last_login, "
+            "must_change_password, authentik_username FROM users WHERE authentik_username = ?",
+            (username,),
+        ).fetchone()
+        if row:
+            return _user_from_row(row, with_authentik=True)
+        return None
+    except sqlite3.Error:
+        return None
+
+
+def set_authentik_username(conn: sqlite3.Connection, user_id: int, authentik_username: str) -> None:
+    if not _users_have_authentik(conn):
+        return
+    with conn:
+        conn.execute(
+            "UPDATE users SET authentik_username = ? WHERE id = ?",
+            (authentik_username, user_id),
+        )
 
 
 def get_all_users(conn: sqlite3.Connection) -> list[dict]:

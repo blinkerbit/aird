@@ -735,6 +735,16 @@ class TestSessionSecurity:
         opts = BaseHandler.session_cookie_opts(handler, expires_days=7)
         assert opts["expires_days"] == 7
 
+    def test_auth_cookie_clear_opts_match_session(self):
+        handler = MagicMock()
+        handler.request.protocol = "https"
+        handler.session_cookie_opts = lambda: BaseHandler.session_cookie_opts(handler)
+        opts = BaseHandler.auth_cookie_clear_opts(handler)
+        assert opts["secure"] is True
+        assert opts["samesite"] == "Strict"
+        assert opts["path"] == "/"
+        assert "expires_days" not in opts
+
 
 # ===================================================================
 # 11. SECURITY HEADERS

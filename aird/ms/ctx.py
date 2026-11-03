@@ -77,6 +77,8 @@ def set_signed_cookie(
     *,
     httponly: bool = True,
     max_age: int | None = None,
+    secure: bool = False,
+    samesite: str = "lax",
 ) -> None:
     secret = settings.get("cookie_secret")
     if not secret:
@@ -88,14 +90,29 @@ def set_signed_cookie(
         name,
         signed,
         httponly=httponly,
-        samesite="lax",
+        secure=secure,
+        samesite=(samesite or "lax").lower(),
         max_age=max_age,
         path="/",
     )
 
 
-def clear_cookie(response, name: str) -> None:
-    response.delete_cookie(name, path="/")
+def clear_cookie(
+    response,
+    name: str,
+    *,
+    secure: bool = False,
+    samesite: str = "strict",
+    httponly: bool = True,
+) -> None:
+    # Attribute match is required for browsers to drop SameSite/Secure cookies.
+    response.delete_cookie(
+        name,
+        path="/",
+        secure=secure,
+        httponly=httponly,
+        samesite=samesite.lower() if samesite else "lax",
+    )
 
 
 def user_root_for(user: Any) -> str:

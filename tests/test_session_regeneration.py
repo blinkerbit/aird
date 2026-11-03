@@ -29,8 +29,11 @@ class TestRegenerateSession:
             mock_xsrf.return_value = b"new-token"
             handler.regenerate_session()
 
-        cleared = [c[0][0] for c in mock_clear.call_args_list]
+        cleared = [c.args[0] for c in mock_clear.call_args_list]
         assert cleared == [SESSION_COOKIE_NAME, "user", "user_role", "admin", "_xsrf"]
+        for call in mock_clear.call_args_list:
+            assert call.kwargs.get("samesite") == "Strict"
+            assert call.kwargs.get("path") == "/"
         assert not hasattr(handler, "_xsrf_token")
         assert not hasattr(handler, "_raw_xsrf_token")
         mock_xsrf.assert_called_once()

@@ -80,6 +80,12 @@ def dispatch_message_deleted(username: str, conversation_id: str, message_id: st
             "message_id": message_id,
         },
     )
+    # Pins for the deleted message are removed in DB; refresh pin bars live.
+    try:
+        pins = chat_db.list_pins(username, conversation_id)
+    except Exception:
+        pins = []
+    dispatch_pin(username, conversation_id, pins, pinned=False)
 
 
 def dispatch_message_edited(username: str, msg: dict) -> None:

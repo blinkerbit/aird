@@ -682,8 +682,11 @@ def _try_authentik_auto_login(handler: BaseHandler) -> bool:
     from aird.core.authentik_sso import (
         ACCESS_DENIED_HTML,
         decide_authentik_login,
+        display_name_from_headers,
         load_authentik_sso,
+        stable_username_from_headers,
     )
+    from aird.db.users import get_user_by_authentik_username, get_user_by_username
 
     conn = handler.db_conn
     config = load_authentik_sso(conn)
@@ -691,11 +694,12 @@ def _try_authentik_auto_login(handler: BaseHandler) -> bool:
     def lookup(username: str):
         if conn is None:
             return None
+        linked = get_user_by_authentik_username(conn, username)
+        if linked is not None:
+            return linked
         service = handler.get_service("user_service")
         if service is not None:
             return service.get_user(conn, username)
-        from aird.db.users import get_user_by_username
-
         return get_user_by_username(conn, username)
 
     decision = decide_authentik_login(config, handler.request.headers, lookup)
@@ -711,6 +715,20 @@ def _try_authentik_auto_login(handler: BaseHandler) -> bool:
     if not username:
         return False
     user_id = user.get("id")
+    if user_id is not None and conn is not None:
+        from aird.db.rename_user import sync_authentik_display_name
+
+        stable = str(user.get("authentik_username") or "") or stable_username_from_headers(
+            config, handler.request.headers
+        )
+        display = display_name_from_headers(config, handler.request.headers)
+        try:
+            renamed = sync_authentik_display_name(conn, int(user_id), stable, display)
+        except Exception:
+            logging.warning("Authentik display name was not applied", exc_info=True)
+            renamed = username
+        if renamed:
+            username = renamed
     if user_id is not None and conn is not None:
         stamp = datetime.now().isoformat()
         try:
@@ -751,8 +769,9 @@ class LoginHandler(BaseHandler):
         return FILES_BASE_URL
 
     def get(self):
+        logged_out = self.get_argument("logged_out", "") == "1"
         user = self.current_user
-        if user:
+        if user and not logged_out:
             if isinstance(user, dict) and user.get("must_change_password"):
                 next_url = self._get_safe_next_url()
                 mq = tornado.escape.url_escape(next_url)
@@ -763,7 +782,8 @@ class LoginHandler(BaseHandler):
             logging.info("User already authenticated, redirecting to safe URL")
             self.redirect(next_url)
             return
-        if _try_authentik_auto_login(self):
+        # After an explicit logout, skip SSO auto-login so the login form shows.
+        if not logged_out and _try_authentik_auto_login(self):
             return
         # Not logged in, show login form with next URL preserved
         next_url = self._get_safe_next_url()
@@ -994,14 +1014,17 @@ class MandatoryPasswordHandler(BaseHandler):
 class LogoutHandler(XSRFTokenMixin, BaseHandler):
     def post(self):
         terminate_server_session(self)
-        self.redirect(LOGIN_URL)
+        self.redirect(f"{LOGIN_URL}?logged_out=1")
 
     def get(self):
         logging.warning(
             "Deprecated GET /logout from %s; use POST with XSRF",
             getattr(self.request, "remote_ip", ""),
         )
-        self.redirect(LOGIN_URL)
+        # Still clear the session: a bare redirect to /login leaves cookies
+        # intact and LoginHandler immediately bounces the user back in.
+        terminate_server_session(self)
+        self.redirect(f"{LOGIN_URL}?logged_out=1")
 
 
 def _session_public_view(session: dict, current_session_id: str | None) -> dict:

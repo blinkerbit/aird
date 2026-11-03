@@ -1015,7 +1015,10 @@ import { getXSRFToken } from '../core/xsrf.js';
     const nameLine = msg._mine
       ? ''
       : `<div class="chat-msg-name">${esc(msg.sender_username)}</div>`;
-    return `<div class="chat-msg-row ${rowClass}" data-msg-id="${esc(msg.id)}" data-e2e="${msg._e2e ? '1' : '0'}" data-decrypt-ok="${msg._decryptOk ? '1' : '0'}" data-created-at="${esc(msg.created_at || '')}">${avatarHtml(msg.sender_username)}<div class="chat-msg-stack">${nameLine}<div class="chat-msg-main">${hoverBarHtml(msg)}<div class="aird-chat-bubble ${bubbleClass}"><div class="aird-chat-bubble-body">${body}</div>${reactionsHtml(msg)}</div></div><div class="chat-msg-time">${esc(formatTime(msg.created_at))}</div>${seenHtml(msg)}</div></div>`;
+    const delBtn = msg._mine
+      ? `<button type="button" class="btn btn-ghost btn-xs text-error chat-msg-delete" data-act="delete" data-id="${esc(msg.id)}" title="Delete message" aria-label="Delete message">×</button>`
+      : '';
+    return `<div class="chat-msg-row ${rowClass}" data-msg-id="${esc(msg.id)}" data-e2e="${msg._e2e ? '1' : '0'}" data-decrypt-ok="${msg._decryptOk ? '1' : '0'}" data-created-at="${esc(msg.created_at || '')}">${avatarHtml(msg.sender_username)}<div class="chat-msg-stack">${nameLine}<div class="chat-msg-main">${hoverBarHtml(msg)}<div class="aird-chat-bubble ${bubbleClass}"><div class="aird-chat-bubble-body">${body}</div>${reactionsHtml(msg)}</div>${delBtn}</div><div class="chat-msg-time">${esc(formatTime(msg.created_at))}</div>${seenHtml(msg)}</div></div>`;
   }
 
   function refreshSeenIndicator(messageId) {
@@ -1343,8 +1346,14 @@ import { getXSRFToken } from '../core/xsrf.js';
   }
 
   function removeMessageEl(messageId) {
-    const el = messagesEl?.querySelector(`[data-msg-id="${cssEscape(messageId)}"]`);
+    const id = String(messageId || '');
+    if (!id) return;
+    const el = messagesEl?.querySelector(`[data-msg-id="${cssEscape(id)}"]`);
     el?.remove();
+    if (pins.some((p) => String(p.message_id) === id)) {
+      pins = pins.filter((p) => String(p.message_id) !== id);
+      renderPins();
+    }
     if (messagesEl && !messagesEl.querySelector('[data-msg-id]')) showEmptyThread();
   }
 
@@ -1530,7 +1539,8 @@ import { getXSRFToken } from '../core/xsrf.js';
   const WS_HANDLERS = {
     chat_message: onWsChatMessage,
     chat_message_deleted: (data) => {
-      if (!enhancedSecureView && data.conversation_id === activeConvId) removeMessageEl(data.message_id);
+      const mid = data.message_id || data.id;
+      if (!enhancedSecureView && data.conversation_id === activeConvId) removeMessageEl(mid);
       runAsync(() => loadConversations(), 'loadConversations');
       runAsync(() => updateNavBadge(), 'updateNavBadge');
     },
