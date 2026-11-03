@@ -17,7 +17,13 @@ from aird.plugins.calls.config import (
     livekit_url,
     room_name,
 )
-from aird.plugins.calls.notify import dispatch_call_invite, dispatch_call_signal, read_call_ring
+from aird.plugins.calls.notify import (
+    call_status,
+    dispatch_call_invite,
+    dispatch_call_signal,
+    peek_missed,
+    read_call_ring,
+)
 from aird.plugins.calls.token import create_participant_token
 from aird.plugins.chat import db as chat_db
 from aird.plugins.chat import is_chat_enabled
@@ -80,6 +86,12 @@ class ChatCallHandler(BaseHandler, XSRFTokenMixin):
             name=username,
         )
         joining = body.get("invite") is False and bool(supplied_call_id)
+        if joining:
+            status = call_status(supplied_call_id)
+            if status in ("ended", "missed"):
+                self.set_status(409)
+                self.write({"error": "Call ended"})
+                return
         if not joining:
             dispatch_call_invite(
                 conversation_id=conversation_id,
@@ -156,4 +168,5 @@ class CallRingHandler(BaseHandler):
         self.set_header("Cache-Control", "no-store")
         username = get_username_string_for_db(self)
         ring = read_call_ring(self.db_conn, username) if username else None
-        self.write({"ring": ring})
+        missed = None if ring or not username else peek_missed(username)
+        self.write({"ring": ring, "missed": missed})

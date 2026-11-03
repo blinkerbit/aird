@@ -34,30 +34,31 @@ function meName() {
 
 function ensureCallStyles() {
   const existing = document.getElementById('chatCallStyles');
-  if (existing?.dataset.version === '14') return;
+  if (existing?.dataset.version === '15') return;
   existing?.remove();
   const style = document.createElement('style');
   style.id = 'chatCallStyles';
-  style.dataset.version = '14';
+  style.dataset.version = '15';
   style.textContent = `
     .chat-call-btn.btn{min-height:2rem;height:2rem;width:2rem;padding:0}
     .chat-call-btn svg{width:16px;height:16px}
-    .chat-call-incoming{position:fixed;inset:0;z-index:2147483000;display:flex !important;align-items:center;justify-content:center;padding:1rem;background:rgba(0,0,0,.55)}
-    .chat-call-pagebar{position:fixed;top:0;left:0;right:0;z-index:2147483001;display:flex !important;align-items:center;justify-content:space-between;gap:.75rem;padding:calc(.65rem + env(safe-area-inset-top,0)) .8rem .65rem;background:#111827;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.28)}
-    .chat-call-pagebar p{margin:0;font-weight:700;font-size:.95rem}
-    .chat-call-pagebar div{display:flex;gap:.45rem;flex-shrink:0}
+    .chat-call-incoming{position:fixed;inset:0;z-index:2147483000;display:flex !important;align-items:center;justify-content:center;padding:calc(1rem + env(safe-area-inset-top,0)) calc(1rem + env(safe-area-inset-right,0)) calc(1rem + env(safe-area-inset-bottom,0)) calc(1rem + env(safe-area-inset-left,0));background:rgba(0,0,0,.55)}
+    .chat-call-pagebar{position:fixed;top:0;left:0;right:0;z-index:2147483001;display:flex !important;align-items:center;justify-content:space-between;gap:.75rem;padding:calc(.65rem + env(safe-area-inset-top,0)) calc(.8rem + env(safe-area-inset-right,0)) .65rem calc(.8rem + env(safe-area-inset-left,0));background:#111827;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.28)}
+    .chat-call-pagebar p{margin:0;font-weight:700;font-size:.95rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .chat-call-pagebar div{display:flex;gap:.45rem;flex-shrink:0;align-items:flex-end}
     .chat-call-overlay.hidden,.chat-call-incoming.hidden,.chat-call-pagebar.hidden,.chat-call-minimized.hidden,.chat-call-device-menu.hidden,.chat-call-inchat.hidden{display:none !important}
     .chat-call-inchat{display:flex !important;align-items:center;justify-content:space-between;gap:.75rem;margin:.65rem .75rem 0;padding:.9rem 1rem;border-radius:.9rem;background:#111827;color:#fff;position:relative;z-index:6}
     .chat-call-inchat p{margin:0;font-weight:700}
-    .chat-call-inchat div{display:flex;gap:.45rem;flex-shrink:0}
+    .chat-call-inchat div{display:flex;gap:.45rem;flex-shrink:0;align-items:flex-end}
     .chat-call-modal-card{width:min(22rem,92vw);padding:1.15rem;border-radius:1.1rem;background:var(--color-base-100,#fff);text-align:center;box-shadow:0 18px 48px rgba(0,0,0,.32)}
+    .chat-call-modal-actions{display:flex;flex-wrap:nowrap;justify-content:center;align-items:flex-end;gap:1rem;margin-top:.95rem}
     .chat-call-overlay{position:fixed;inset:0;z-index:90;display:flex !important;flex-direction:column !important;align-items:stretch !important;justify-content:flex-start !important;width:100% !important;height:100% !important;background:#0c0c10 !important;color:#fff}
     .chat-call-top{display:flex;align-items:center;justify-content:space-between;gap:.75rem;width:100%;padding:.7rem .8rem;padding-top:calc(.7rem + env(safe-area-inset-top,0));position:relative;z-index:4}
     .chat-call-status{margin:0;font-size:.85rem;font-weight:600;opacity:.8}
     .chat-call-top-actions{display:flex;gap:.4rem}
     .chat-call-iconbtn{width:2.2rem;height:2.2rem;border:0;border-radius:999px;background:rgba(255,255,255,.14);color:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:1.15rem;line-height:1}
     .chat-call-iconbtn svg{width:1.05rem;height:1.05rem}
-    .chat-call-device-menu{position:absolute;top:calc(3.2rem + env(safe-area-inset-top,0));right:.7rem;z-index:6;width:min(18rem,calc(100vw - 1.4rem));padding:.75rem;border-radius:.85rem;background:#1b1b22;box-shadow:0 16px 40px rgba(0,0,0,.45);display:grid;gap:.55rem}
+    .chat-call-device-menu{position:absolute;top:calc(3.2rem + env(safe-area-inset-top,0));right:.7rem;z-index:5;box-sizing:border-box;width:min(18rem,calc(100vw - 1.4rem));max-height:calc(100% - 3.2rem - env(safe-area-inset-top,0) - 6.5rem - env(safe-area-inset-bottom,0));overflow:auto;padding:.75rem;border-radius:.85rem;background:#1b1b22;box-shadow:0 16px 40px rgba(0,0,0,.45);display:grid;grid-template-columns:minmax(0,1fr);align-content:start;gap:.55rem}
     .chat-call-device-menu label{display:grid;gap:.25rem;font-size:.75rem;font-weight:650;text-align:left}
     .chat-call-device-menu select{width:100%;padding:.4rem .45rem;border-radius:.45rem;border:1px solid rgba(255,255,255,.16);background:#111;color:#fff;font:inherit}
     .chat-call-stage{position:relative;flex:1;width:100%;min-height:0}
@@ -95,23 +96,26 @@ function ensureCallStyles() {
     .chat-call-mute svg{width:100%;height:100%}
     .chat-call-tile.is-muted .chat-call-mute{display:inline-flex}
     .chat-call-face .chat-call-mute{width:1.35rem;height:1.35rem}
-    .chat-call-popup-btn,.chat-call-ctrl{min-width:6.2rem;padding:.7rem 1rem;border:0;border-radius:999px;font-weight:700;color:#fff;cursor:pointer}
-    .chat-call-popup-btn--accept{background:#16a34a}
-    .chat-call-popup-btn--decline,.chat-call-ctrl--danger{background:#dc2626}
-    .chat-call-ctrl{background:#e5e7eb;color:#111}
-    .chat-call-ctrl[aria-pressed="true"]{background:#2563eb;color:#fff}
-    .chat-call-route{min-width:2.75rem;width:2.75rem;height:2.75rem;padding:0;display:inline-flex;align-items:center;justify-content:center}
-    .chat-call-route svg{width:1.25rem;height:1.25rem}
+    .chat-call-ctrl{appearance:none;box-sizing:border-box;width:3.25rem;min-width:3.25rem;margin:0;padding:0;border:0;background:transparent;color:inherit;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:.28rem;font:inherit;line-height:1;flex:0 0 auto}
+    .chat-call-ctrl.hidden{display:none !important}
+    .chat-call-ctrl-icon{width:2.75rem;height:2.75rem;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;background:rgba(255,255,255,.16);color:#fff;flex:0 0 auto}
+    .chat-call-ctrl-icon svg{width:1.2rem;height:1.2rem;display:block}
+    .chat-call-ctrl-label{display:block;max-width:100%;font-size:.62rem;font-weight:700;letter-spacing:.01em;line-height:1.15;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .chat-call-ctrl[aria-pressed="true"] .chat-call-ctrl-icon{background:var(--color-primary);color:#fff}
+    .chat-call-ctrl--answer .chat-call-ctrl-icon{background:var(--color-primary);color:#fff}
+    .chat-call-ctrl--danger .chat-call-ctrl-icon,.chat-call-ctrl--danger[aria-pressed="true"] .chat-call-ctrl-icon{background:var(--color-error);color:#fff}
     .chat-call-route-toast{position:absolute;left:50%;top:42%;z-index:8;transform:translate(-50%,-40%);padding:.5rem .95rem;border-radius:.75rem;background:rgba(0,0,0,.78);color:#fff;font-size:1.05rem;font-weight:700;letter-spacing:.01em;pointer-events:none;opacity:0;transition:opacity .2s ease}
     .chat-call-route-toast.is-on{opacity:1}
-    .chat-call-controls{display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;width:100%;position:relative;z-index:3;padding:.75rem .8rem;padding-bottom:calc(.8rem + env(safe-area-inset-bottom,0))}
-    .chat-call-minimized{position:fixed;z-index:91;left:50%;transform:translateX(-50%);bottom:calc(.75rem + env(safe-area-inset-bottom,0));display:flex;align-items:center;gap:.5rem;padding:.55rem .65rem;border-radius:999px;background:var(--color-primary,#2563eb);color:#fff;box-shadow:0 8px 28px rgba(0,0,0,.28);min-width:min(92vw,20rem);max-width:92vw;cursor:pointer}
+    .chat-call-controls{display:flex;flex-wrap:nowrap;align-items:flex-end;justify-content:center;gap:.4rem;width:100%;min-width:0;box-sizing:border-box;position:relative;z-index:6;padding:.55rem .7rem calc(.7rem + env(safe-area-inset-bottom,0));padding-left:calc(.7rem + env(safe-area-inset-left,0));padding-right:calc(.7rem + env(safe-area-inset-right,0))}
+    .chat-call-controls-scroll{display:flex;flex:0 1 auto;flex-wrap:nowrap;align-items:flex-end;gap:.35rem;min-width:0;max-width:100%;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+    .chat-call-controls-scroll::-webkit-scrollbar{display:none}
+    .chat-call-controls > .chat-call-ctrl--danger{flex:0 0 auto}
+    .chat-call-minimized{position:fixed;z-index:91;left:50%;transform:translateX(-50%);bottom:calc(.75rem + env(safe-area-inset-bottom,0));display:flex;align-items:center;gap:.5rem;padding:.45rem calc(.65rem + env(safe-area-inset-right,0)) .45rem calc(.65rem + env(safe-area-inset-left,0));border-radius:999px;background:var(--color-primary,#2563eb);color:#fff;box-shadow:0 8px 28px rgba(0,0,0,.28);min-width:min(92vw,20rem);max-width:calc(100vw - env(safe-area-inset-left,0) - env(safe-area-inset-right,0) - 1rem);cursor:pointer}
     .chat-call-minimized-pulse{width:.55rem;height:.55rem;border-radius:50%;background:#4ade80;flex-shrink:0}
     .chat-call-minimized.is-live .chat-call-minimized-pulse{animation:chat-call-pulse 1s ease infinite}
     @keyframes chat-call-pulse{50%{opacity:.35}}
     .chat-call-minimized-label{flex:1;font-weight:700;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
-    .chat-call-minimized-actions{display:flex;gap:.35rem;flex-shrink:0}
-    .chat-call-minimized-actions button{background:rgba(255,255,255,.22);border:0;color:#fff;border-radius:999px;padding:.3rem .55rem;font-size:.75rem;font-weight:700;cursor:pointer}
+    .chat-call-minimized-actions{display:flex;gap:.35rem;flex-shrink:0;align-items:flex-end}
   `;
   document.head.appendChild(style);
 }
@@ -123,6 +127,36 @@ function muteIcon() {
 const CALL_MINIMIZE_ICON = '<svg class="icon-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/></svg><svg class="icon-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 14v6h6M20 10V4h-6M14 10l6-6M10 14l-6 6"/></svg>';
 const SPEAKER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>';
 const HEADSET_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>';
+const MIC_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>';
+const MIC_OFF_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="2" y1="2" x2="22" y2="22"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V5a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2c0 .28-.02.56-.05.83"/><line x1="12" x2="12" y1="19" y2="22"/></svg>';
+const FIT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M20 15h-5v5M4 15h5v5"/></svg>';
+const FILL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>';
+const VIDEO_MODE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 13 5 3V8l-5 3"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>';
+const PHONE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
+const HANGUP_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="22" x2="2" y1="2" y2="22"/></svg>';
+const CAM_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>';
+const CAM_OFF_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/><line x1="2" y1="2" x2="22" y2="22"/></svg>';
+const OPEN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>';
+
+function callCtrlButton(id, label, icon, className, attrs) {
+  const idAttr = id ? ` id="${id}"` : '';
+  const cls = className ? `chat-call-ctrl ${className}` : 'chat-call-ctrl';
+  const extra = attrs ? ` ${attrs}` : '';
+  return `<button type="button"${idAttr} class="${cls}"${extra}><span class="chat-call-ctrl-icon" aria-hidden="true">${icon}</span><span class="chat-call-ctrl-label">${label}</span></button>`;
+}
+
+function paintCallCtrl(btn, label, icon) {
+  if (!btn) return;
+  const text = btn.querySelector('.chat-call-ctrl-label');
+  const glyph = btn.querySelector('.chat-call-ctrl-icon');
+  if (text) text.textContent = label;
+  else btn.textContent = label;
+  if (icon && glyph) glyph.innerHTML = icon;
+}
+
+function answerCtrlButtons() {
+  return `${callCtrlButton('', 'Decline', HANGUP_ICON, 'chat-call-ctrl--danger', 'data-call-reject aria-label="Decline"')}${callCtrlButton('', 'Answer', PHONE_ICON, 'chat-call-ctrl--answer', 'data-call-accept aria-label="Answer"')}`;
+}
 
 function tileMarkup(which, name) {
   const face = which === 'local' ? 'chatCallLocalFace' : 'chatCallRemoteFace';
@@ -186,7 +220,7 @@ function wireSelfPreview(overlay) {
 
 function ensureOverlay() {
   const existing = document.getElementById('chatCallOverlay');
-  if (existing && existing.dataset.version === '11') return existing;
+  if (existing && existing.dataset.version === '12') return existing;
   existing?.remove();
   const el = document.createElement('div');
   el.id = 'chatCallOverlay';
@@ -218,15 +252,17 @@ function ensureOverlay() {
     </div>
     <div id="chatCallRouteToast" class="chat-call-route-toast" role="status"></div>
     <div class="chat-call-controls">
-      <button type="button" id="chatCallRouteBtn" class="chat-call-ctrl chat-call-route" aria-pressed="false" aria-label="Headset">${HEADSET_ICON}</button>
-      <button type="button" id="chatCallHearBtn" class="chat-call-ctrl hidden">Speaker</button>
-      <button type="button" id="chatCallMuteBtn" class="chat-call-ctrl">Mute</button>
-      <button type="button" id="chatCallFitBtn" class="chat-call-ctrl" aria-pressed="true">Fit</button>
-      <button type="button" id="chatCallModeBtn" class="chat-call-ctrl">Video</button>
-      <button type="button" id="chatCallCamBtn" class="chat-call-ctrl hidden">Camera</button>
-      <button type="button" id="chatCallHangupBtn" class="chat-call-ctrl chat-call-ctrl--danger">End</button>
+      <div class="chat-call-controls-scroll">
+        ${callCtrlButton('chatCallMuteBtn', 'Mute', MIC_ICON, '', 'aria-label="Mute"')}
+        ${callCtrlButton('chatCallRouteBtn', 'Headset', HEADSET_ICON, 'chat-call-route', 'aria-pressed="false" aria-label="Headset"')}
+        ${callCtrlButton('chatCallFitBtn', 'Fit', FIT_ICON, '', 'aria-pressed="true" aria-label="Fit"')}
+        ${callCtrlButton('chatCallModeBtn', 'Video', VIDEO_MODE_ICON, '', 'aria-label="Video"')}
+        ${callCtrlButton('chatCallCamBtn', 'Camera', CAM_ICON, 'hidden', 'aria-label="Camera"')}
+        ${callCtrlButton('chatCallHearBtn', 'Sound', SPEAKER_ICON, 'hidden', 'aria-label="Speaker"')}
+      </div>
+      ${callCtrlButton('chatCallHangupBtn', 'End', HANGUP_ICON, 'chat-call-ctrl--danger', 'aria-label="End call"')}
     </div>`;
-  el.dataset.version = '11';
+  el.dataset.version = '12';
   document.body.appendChild(el);
   el.querySelector('#chatCallHangupBtn')?.addEventListener('click', () => { void hangUp(); });
   wireSelfPreview(el);
@@ -291,10 +327,13 @@ function toggleDeviceMenu() {
 
 function ensureMinimizedBar() {
   let el = document.getElementById('chatCallMinimized');
-  if (el) return el;
+  if (el?.dataset.version === '1') return el;
+  const hidden = !el || el.classList.contains('hidden');
+  el?.remove();
   el = document.createElement('div');
   el.id = 'chatCallMinimized';
-  el.className = 'chat-call-minimized hidden';
+  el.dataset.version = '1';
+  el.className = hidden ? 'chat-call-minimized hidden' : 'chat-call-minimized';
   el.setAttribute('role', 'button');
   el.setAttribute('tabindex', '0');
   el.setAttribute('aria-label', 'Return to call');
@@ -302,8 +341,8 @@ function ensureMinimizedBar() {
     <span class="chat-call-minimized-pulse" aria-hidden="true"></span>
     <span id="chatCallMinimizedLabel" class="chat-call-minimized-label">On a call</span>
     <span class="chat-call-minimized-actions">
-      <button type="button" id="chatCallMiniExpand" aria-label="Open call">Open</button>
-      <button type="button" id="chatCallMiniEnd" aria-label="End call">End</button>
+      ${callCtrlButton('chatCallMiniExpand', 'Open', OPEN_ICON, '', 'aria-label="Open call"')}
+      ${callCtrlButton('chatCallMiniEnd', 'End', HANGUP_ICON, 'chat-call-ctrl--danger', 'aria-label="End call"')}
     </span>`;
   document.body.appendChild(el);
   el.addEventListener('click', (event) => {
@@ -373,11 +412,11 @@ function bindIncomingClick(root) {
 
 function ensureIncomingBar() {
   let el = document.getElementById('chatCallIncoming');
-  if (el?.dataset.version === '3') return el;
+  if (el?.dataset.version === '4') return el;
   el?.remove();
   el = document.createElement('div');
   el.id = 'chatCallIncoming';
-  el.dataset.version = '3';
+  el.dataset.version = '4';
   el.className = 'chat-call-incoming hidden';
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-modal', 'true');
@@ -386,8 +425,7 @@ function ensureIncomingBar() {
       <div class="chat-call-modal-icon" aria-hidden="true">📞</div>
       <p id="chatCallIncomingText" class="chat-call-incoming-text"></p>
       <div class="chat-call-modal-actions">
-        <button type="button" data-call-reject class="chat-call-popup-btn chat-call-popup-btn--decline">Reject</button>
-        <button type="button" data-call-accept class="chat-call-popup-btn chat-call-popup-btn--accept">Accept</button>
+        ${answerCtrlButtons()}
       </div>
     </div>`;
   document.body.appendChild(el);
@@ -397,17 +435,16 @@ function ensureIncomingBar() {
 
 function ensureChatPopup() {
   let el = document.getElementById('chatCallInChat');
-  if (el?.dataset.version === '1') return el;
+  if (el?.dataset.version === '2') return el;
   el?.remove();
   el = document.createElement('div');
   el.id = 'chatCallInChat';
-  el.dataset.version = '1';
+  el.dataset.version = '2';
   el.className = 'chat-call-inchat hidden';
   el.innerHTML = `
     <p id="chatCallInChatText"></p>
     <div>
-      <button type="button" data-call-reject class="chat-call-popup-btn chat-call-popup-btn--decline">Reject</button>
-      <button type="button" data-call-accept class="chat-call-popup-btn chat-call-popup-btn--accept">Accept</button>
+      ${answerCtrlButtons()}
     </div>`;
   const thread = document.querySelector('.chat-thread-panel');
   if (thread) thread.insertBefore(el, thread.firstChild);
@@ -418,17 +455,16 @@ function ensureChatPopup() {
 
 function ensurePageBar() {
   let el = document.getElementById('chatCallPageBar');
-  if (el?.dataset.version === '1') return el;
+  if (el?.dataset.version === '2') return el;
   el?.remove();
   el = document.createElement('div');
   el.id = 'chatCallPageBar';
-  el.dataset.version = '1';
+  el.dataset.version = '2';
   el.className = 'chat-call-pagebar hidden';
   el.innerHTML = `
     <p id="chatCallPageBarText"></p>
     <div>
-      <button type="button" data-call-reject class="chat-call-popup-btn chat-call-popup-btn--decline">Reject</button>
-      <button type="button" data-call-accept class="chat-call-popup-btn chat-call-popup-btn--accept">Accept</button>
+      ${answerCtrlButtons()}
     </div>`;
   document.body.appendChild(el);
   bindIncomingClick(el);
@@ -506,7 +542,7 @@ function paintRouteButton() {
   const speaker = audioRoute === 'speaker';
   btn.setAttribute('aria-pressed', speaker ? 'true' : 'false');
   btn.setAttribute('aria-label', speaker ? 'Speaker' : 'Headset');
-  btn.innerHTML = speaker ? SPEAKER_ICON : HEADSET_ICON;
+  paintCallCtrl(btn, speaker ? 'Speaker' : 'Headset', speaker ? SPEAKER_ICON : HEADSET_ICON);
 }
 
 function showRouteToast(text) {
@@ -697,9 +733,17 @@ function syncCallModeUi() {
   const video = activeMode === 'video';
   document.getElementById('chatCallCamBtn')?.classList.toggle('hidden', !video);
   const modeBtn = document.getElementById('chatCallModeBtn');
-  if (modeBtn) modeBtn.textContent = video ? 'Voice' : 'Video';
+  if (modeBtn) {
+    const label = video ? 'Voice' : 'Video';
+    paintCallCtrl(modeBtn, label, video ? PHONE_ICON : VIDEO_MODE_ICON);
+    modeBtn.setAttribute('aria-label', label);
+  }
   const camBtn = document.getElementById('chatCallCamBtn');
-  if (camBtn && video) camBtn.textContent = room?.localParticipant?.isCameraEnabled ? 'Camera off' : 'Camera on';
+  if (camBtn && video) {
+    const on = Boolean(room?.localParticipant?.isCameraEnabled);
+    paintCallCtrl(camBtn, 'Camera', on ? CAM_ICON : CAM_OFF_ICON);
+    camBtn.setAttribute('aria-label', on ? 'Camera off' : 'Camera on');
+  }
   if (!waitingForAnswer) setStatus(video ? 'Video call' : 'Voice call');
   try { globalThis.AndroidHost?.setInVideoCall?.(video); } catch { /* host missing */ }
 }
@@ -1156,8 +1200,9 @@ function applyVideoFit(mode) {
   const btn = document.getElementById('chatCallFitBtn');
   if (btn) {
     const fitting = videoFit === 'fit';
-    btn.textContent = fitting ? 'Fit' : 'Fill';
+    paintCallCtrl(btn, fitting ? 'Fit' : 'Fill', fitting ? FIT_ICON : FILL_ICON);
     btn.setAttribute('aria-pressed', fitting ? 'true' : 'false');
+    btn.setAttribute('aria-label', fitting ? 'Fit' : 'Fill');
     btn.title = fitting
       ? 'Whole frame, not enlarged past the camera size'
       : 'Fill the screen';
@@ -1430,7 +1475,10 @@ async function toggleMute() {
   const enabled = live.localParticipant.isMicrophoneEnabled;
   await live.localParticipant.setMicrophoneEnabled(!enabled);
   const btn = document.getElementById('chatCallMuteBtn');
-  if (btn) btn.textContent = enabled ? 'Unmute' : 'Mute';
+  if (btn) {
+    paintCallCtrl(btn, enabled ? 'Unmute' : 'Mute', enabled ? MIC_OFF_ICON : MIC_ICON);
+    btn.setAttribute('aria-label', enabled ? 'Unmute' : 'Mute');
+  }
 }
 
 async function toggleCamera() {
@@ -1440,7 +1488,11 @@ async function toggleCamera() {
   const cameraId = document.getElementById('chatCallCamSelect')?.value || preferredDeviceId('videoinput');
   await live.localParticipant.setCameraEnabled(!enabled, cameraId ? { deviceId: cameraId } : undefined);
   const btn = document.getElementById('chatCallCamBtn');
-  if (btn) btn.textContent = enabled ? 'Camera on' : 'Camera off';
+  if (btn) {
+    const on = !enabled;
+    paintCallCtrl(btn, 'Camera', on ? CAM_ICON : CAM_OFF_ICON);
+    btn.setAttribute('aria-label', on ? 'Camera off' : 'Camera on');
+  }
 }
 
 function hideIncoming() {

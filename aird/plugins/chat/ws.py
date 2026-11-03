@@ -123,10 +123,14 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
         for note in get_enhanced_secure_hub().pending_for(username):
             self.write_message(json.dumps(note))
         try:
-            from aird.plugins.calls.notify import peek_call_ring
+            from aird.plugins.calls.notify import peek_call_ring, peek_missed
             ring = peek_call_ring(username)
             if ring:
                 self.write_message(json.dumps(ring))
+            else:
+                missed = peek_missed(username)
+                if missed:
+                    self.write_message(json.dumps(missed))
         except Exception:
             pass
         dispatch_presence(username, uid, True)

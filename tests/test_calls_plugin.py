@@ -97,3 +97,35 @@ def test_ended_call_is_not_missed(monkeypatch, tmp_path):
     hub.sent.clear()
     call_notify._expire_ring("alice", "c1", "k4")
     assert hub.sent == []
+
+
+def test_peek_missed_for_callee_not_caller(monkeypatch, tmp_path):
+    _call_env(monkeypatch, tmp_path)
+    call_notify._record_call("k5", "c1", "alice")
+    call_notify._settle_call("c1", "k5", "missed")
+    monkeypatch.setattr(
+        call_notify.chat_db,
+        "members_of",
+        lambda caller, conv: [{"username": "alice"}, {"username": "bob"}],
+    )
+    missed = call_notify.peek_missed("bob")
+    assert missed["call_id"] == "k5"
+    assert missed["type"] == "call_missed"
+    assert call_notify.peek_missed("alice") is None
+
+
+def test_answered_call_can_be_reminted(monkeypatch, tmp_path):
+    _call_env(monkeypatch, tmp_path)
+    call_notify._record_call("k7", "c1", "alice")
+    call_notify._settle_call("c1", "k7", "answered")
+    assert call_notify.call_status("k7") == "answered"
+    assert call_notify.call_status("k7") not in ("ended", "missed")
+
+
+def test_call_status_tracks_lifecycle(monkeypatch, tmp_path):
+    _call_env(monkeypatch, tmp_path)
+    call_notify._record_call("k6", "c1", "alice")
+    assert call_notify.call_status("k6") == "ringing"
+    call_notify._settle_call("c1", "k6", "ended")
+    assert call_notify.call_status("k6") == "ended"
+    assert call_notify.call_status("missing") == ""

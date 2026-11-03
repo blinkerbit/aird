@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 _RING_TTL = 45
 _MISSED_GRACE = 2
 _STATE_KEEP_S = 3600
+_MISSED_KEEP_S = 900
 
 
 def _ring_conn():
@@ -336,6 +337,57 @@ def peek_call_ring(username: str) -> dict | None:
         return read_call_ring(conn, username)
     finally:
         conn.close()
+
+
+def call_status(call_id: str) -> str:
+    """ringing / answered / ended / missed, or empty if unknown."""
+    if not call_id:
+        return ""
+    conn = _ring_conn()
+    if conn is None:
+        return ""
+    try:
+        row = conn.execute(
+            "SELECT state FROM call_state WHERE call_id=?", (call_id,)
+        ).fetchone()
+        return str(row[0]) if row else ""
+    except Exception:
+        return ""
+    finally:
+        conn.close()
+
+
+def peek_missed(username: str) -> dict | None:
+    """A recent missed call for this user, for devices that were offline when it rang out."""
+    if not username:
+        return None
+    conn = _ring_conn()
+    if conn is None:
+        return None
+    try:
+        rows = conn.execute(
+            "SELECT call_id, conversation_id, caller FROM call_state "
+            "WHERE state='missed' AND caller != ? AND created_at > ? "
+            "ORDER BY created_at DESC LIMIT 8",
+            (username, time.time() - _MISSED_KEEP_S),
+        ).fetchall()
+    except Exception:
+        rows = []
+    finally:
+        conn.close()
+    for call_id, conversation_id, caller in rows:
+        try:
+            members = chat_db.members_of(str(caller), str(conversation_id))
+        except Exception:
+            continue
+        if any(str(member.get("username") or "") == username for member in members):
+            return {
+                "type": "call_missed",
+                "conversation_id": str(conversation_id),
+                "from": str(caller),
+                "call_id": str(call_id),
+            }
+    return None
 
 
 def dispatch_call_signal(

@@ -105,6 +105,7 @@ import { getXSRFToken } from '../core/xsrf.js';
   const pending = pendingStore.items;
   let userSearchTimer = null;
   let searchTimer = null;
+  let searchSeq = 0;
   let pollTimer = null;
   let uploading = false;
   let loadGen = 0;
@@ -1772,38 +1773,96 @@ import { getXSRFToken } from '../core/xsrf.js';
       const idx = text.toLowerCase().indexOf(q);
       const start = Math.max(0, idx - 24);
       const snippet = (start ? '…' : '') + text.slice(start, start + 90);
-      hits.push({ id: row.dataset.msgId, sender, snippet });
+      hits.push({
+        id: row.dataset.msgId,
+        conversation_id: activeConvId,
+        sender,
+        snippet,
+      });
     });
     return hits.slice(0, 30);
+  }
+
+  function serverSearchHit(msg) {
+    if (msg?.id == null || msg.id === '') return null;
+    const sender = String(msg.sender || msg.sender_username || '').trim();
+    let snippet = String(msg.snippet ?? '').replace(/\s+/g, ' ').trim();
+    if (!snippet) {
+      const body = String(msg.body ?? '').replace(/\s+/g, ' ').trim();
+      snippet = body.length > 90 ? `${body.slice(0, 90)}…` : body;
+    }
+    return {
+      id: String(msg.id),
+      conversation_id: msg.conversation_id ? String(msg.conversation_id) : '',
+      sender,
+      snippet,
+    };
+  }
+
+  function mergeSearchHits(localHits, remoteHits) {
+    const seen = new Set(localHits.map((h) => String(h.id)));
+    const merged = localHits.slice();
+    remoteHits.forEach((hit) => {
+      if (!hit?.id || seen.has(hit.id)) return;
+      seen.add(hit.id);
+      merged.push(hit);
+    });
+    return merged;
+  }
+
+  function searchHitTitle(hit) {
+    const cid = hit.conversation_id || activeConvId;
+    if (!cid || cid === activeConvId) return convTitle(activeConv()) || 'This chat';
+    return convTitle(conversations.find((c) => c.id === cid)) || 'Chat';
+  }
+
+  function renderSearchHits(query, hits) {
+    if (!searchResults) return;
+    if (!query || !hits.length) {
+      searchResults.classList.add('hidden');
+      searchResults.innerHTML = '';
+      return;
+    }
+    searchResults.innerHTML = hits.map((r) =>
+      `<button type="button" class="chat-search-hit" data-mid="${esc(r.id)}" data-cid="${esc(r.conversation_id || '')}"><strong>${esc(r.sender)}</strong> <span class="opacity-60">${esc(searchHitTitle(r))}</span> ${esc(r.snippet)}</button>`
+    ).join('');
+    searchResults.classList.remove('hidden');
+    searchResults.querySelectorAll('.chat-search-hit').forEach((btn) => {
+      btn.addEventListener('click', () => openSearchHit(btn.dataset.mid, btn.dataset.cid));
+    });
+  }
+
+  function openSearchHit(mid, cid) {
+    if (!mid) return;
+    searchSeq += 1;
+    searchResults?.classList.add('hidden');
+    if (cid && cid !== activeConvId) {
+      runAsync(async () => {
+        await openConversation(cid);
+        if (activeConvId === cid) await jumpTo(mid);
+      }, 'searchHit');
+      return;
+    }
+    void jumpTo(mid);
   }
 
   function runSearch(q) {
     const query = (q || '').trim();
     convFilter = query;
-    const hits = query ? loadedMessageHits(query) : [];
-    convFilterKeepId = hits.length ? activeConvId : '';
+    const localHits = query ? loadedMessageHits(query) : [];
+    convFilterKeepId = localHits.length ? activeConvId : '';
     renderConvList();
+    const seq = ++searchSeq;
     if (!searchResults) return;
-    if (!query) {
-      searchResults.classList.add('hidden');
-      searchResults.innerHTML = '';
-      return;
-    }
-    if (!hits.length) {
-      searchResults.classList.add('hidden');
-      searchResults.innerHTML = '';
-      return;
-    }
-    const title = convTitle(activeConv()) || 'This chat';
-    searchResults.innerHTML = hits.map((r) =>
-      `<button type="button" class="chat-search-hit" data-mid="${esc(r.id)}"><strong>${esc(r.sender)}</strong> <span class="opacity-60">${esc(title)}</span> ${esc(r.snippet)}</button>`
-    ).join('');
-    searchResults.classList.remove('hidden');
-    searchResults.querySelectorAll('.chat-search-hit').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        jumpTo(btn.dataset.mid);
-        searchResults.classList.add('hidden');
-      });
+    renderSearchHits(query, localHits);
+    if (query.length < 2) return;
+    api(`/api/chat/search?q=${encodeURIComponent(query)}`).then((data) => {
+      if (seq !== searchSeq) return;
+      const freshLocal = loadedMessageHits(query);
+      const remote = (Array.isArray(data?.results) ? data.results : []).map(serverSearchHit).filter(Boolean);
+      renderSearchHits(query, mergeSearchHits(freshLocal, remote));
+    }).catch((err) => {
+      console.debug('message search failed', err);
     });
   }
 
@@ -2885,7 +2944,7 @@ import { getXSRFToken } from '../core/xsrf.js';
       WS.subscribe(handleWsEvent);
     }
     if (globalThis.__AIRD_CALLS_ENABLED__) {
-      import('../chat-calls.js?v=20261028d').then((m) => {
+      import('../chat-calls.js?v=20261103b').then((m) => {
         globalThis.AirdChatCalls = m;
         m.initCalls({
           api,
