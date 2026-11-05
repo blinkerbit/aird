@@ -3,7 +3,7 @@ build==1.6.1
 coverage==7.16.2
 mock==5.2.0
 pytest==9.2.0
-pytest-asyncio==1.4.1
+pytest-asyncio==1.4.1.post1
 pytest-cov==7.1.0
 pytest-mock==3.17.0
 pytest-xdist==3.8.0
