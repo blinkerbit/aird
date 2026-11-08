@@ -19,6 +19,9 @@ PLUGIN_CALLS = "voice_video"
 PLUGIN_GITLAB = "gitlab"
 PLUGIN_ONEDRIVE = "onedrive"
 PLUGIN_ONEDRIVE_BROWSER = "onedrive_browser"
+PLUGIN_POLLS = "polls"
+PLUGIN_LISTS = "lists"
+PLUGIN_MEET = "meet"
 
 # Missing row: keep existing plugins usable when their flag is on.
 _DEFAULT_SCOPE = {
@@ -27,6 +30,9 @@ _DEFAULT_SCOPE = {
     PLUGIN_GITLAB: SCOPE_ALL,
     PLUGIN_ONEDRIVE: SCOPE_NONE,
     PLUGIN_ONEDRIVE_BROWSER: SCOPE_ALL,
+    PLUGIN_POLLS: SCOPE_ALL,
+    PLUGIN_LISTS: SCOPE_ALL,
+    PLUGIN_MEET: SCOPE_ALL,
 }
 
 
@@ -81,6 +87,30 @@ def catalog() -> list[dict]:
             "available": True,
             "audience": "user",
             "href": "/files/",
+        },
+        {
+            "id": PLUGIN_POLLS,
+            "label": "Polls",
+            "flag": "polls",
+            "available": True,
+            "audience": "user",
+            "href": "/polls",
+        },
+        {
+            "id": PLUGIN_LISTS,
+            "label": "Lists",
+            "flag": "lists",
+            "available": True,
+            "audience": "user",
+            "href": "/lists",
+        },
+        {
+            "id": PLUGIN_MEET,
+            "label": "Meet",
+            "flag": "meet",
+            "available": True,
+            "audience": "user",
+            "href": "/meet",
         },
     ]
 
@@ -198,6 +228,9 @@ def bind_template_plugin_checks(username: str | None, conn: sqlite3.Connection |
     from aird.plugins.gitlab import is_gitlab_enabled
     from aird.plugins.onedrive import is_onedrive_enabled
     from aird.plugins.onedrive_browser import is_onedrive_browser_enabled
+    from aird.plugins.polls import is_polls_enabled
+    from aird.plugins.lists import is_lists_enabled
+    from aird.plugins.meet import is_meet_enabled
 
     from aird.plugins.calls import is_calls_enabled as _calls_on
 
@@ -212,6 +245,12 @@ def bind_template_plugin_checks(username: str | None, conn: sqlite3.Connection |
         and user_may_use_plugin(PLUGIN_ONEDRIVE, username, conn),
         "is_onedrive_browser_enabled": lambda: is_onedrive_browser_enabled()
         and user_may_use_plugin(PLUGIN_ONEDRIVE_BROWSER, username, conn),
+        "is_polls_enabled": lambda: is_polls_enabled()
+        and user_may_use_plugin(PLUGIN_POLLS, username, conn),
+        "is_lists_enabled": lambda: is_lists_enabled()
+        and user_may_use_plugin(PLUGIN_LISTS, username, conn),
+        "is_meet_enabled": lambda: is_meet_enabled()
+        and user_may_use_plugin(PLUGIN_MEET, username, conn),
         "onedrive_browser_public_config": lambda: _onedrive_browser_public_config(conn),
     }
 

@@ -14,9 +14,12 @@
     document.querySelectorAll('[data-aird-feature]').forEach(function (el) {
       const key = el.dataset.airdFeature;
       if (!key) return;
+      // Missing key → leave server-rendered visibility alone (avoids nav flicker).
+      if (!Object.prototype.hasOwnProperty.call(flags, key)) return;
       const val = flags[key];
       const enabled = val !== false && val !== 0 && val !== '0' && val !== 'false';
-      el.hidden = !enabled;
+      const nextHidden = !enabled;
+      if (el.hidden !== nextHidden) el.hidden = nextHidden;
       el.classList.toggle('aird-feature-off', !enabled);
     });
     global.dispatchEvent(new CustomEvent('aird:features-changed', {

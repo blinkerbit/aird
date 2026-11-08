@@ -1119,6 +1119,7 @@ class BaseHandler(tornado.web.RequestHandler):
         namespace = super().get_template_namespace()
         namespace["csp_nonce"] = self.get_csp_nonce()
         namespace["is_feature_enabled"] = is_feature_enabled
+        from aird.core.nav import nav_active_for_path
         from aird.plugins.access import bind_template_plugin_checks
 
         username = get_username_string_for_db(self)
@@ -1129,6 +1130,11 @@ class BaseHandler(tornado.web.RequestHandler):
         namespace.setdefault("nav_title", "")
         namespace.setdefault("ldap_enabled", self.settings.get("ldap_server") is not None)
         namespace["is_admin_user"] = self.is_admin_user()
+        try:
+            req_path = getattr(self.request, "path", "") or ""
+        except Exception:
+            req_path = ""
+        namespace["nav_active"] = nav_active_for_path(req_path)
         return namespace
 
     def get_current_user(self):

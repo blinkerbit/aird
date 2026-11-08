@@ -4,8 +4,9 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="/static/css/app.css?v=20261023d" />
-  <link rel="stylesheet" href="/static/css/chat.css?v=20261104e" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261106b" />
+  <link rel="stylesheet" href="/static/css/chat.css?v=20261104f" />
+  <link rel="stylesheet" href="/static/css/collab.css?v=20261107d" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   {% include '_pwa_head.html' %}
   <title>Chat · Aird</title>
@@ -99,6 +100,7 @@
           </div>
         </div>
         <div id="chatPinBar" class="chat-pin-bar" hidden></div>
+        <div id="chatCollabShelf" class="chat-collab-shelf" hidden></div>
         <div id="chatSelectBar" class="chat-select-bar" hidden>
           <span id="chatSelectCount" class="chat-select-count">0 selected</span>
           <div class="chat-select-actions">
@@ -149,6 +151,9 @@
                 GIF
                 <input type="file" id="chatGifInput" accept="image/gif,.gif" class="hidden">
               </label>
+              {% if is_polls_enabled() %}<button type="button" class="chat-toolbar-btn chat-collab-only" id="chatQuickPollBtn" title="Poll" aria-label="Poll">Poll</button>{% end %}
+              {% if is_lists_enabled() %}<button type="button" class="chat-toolbar-btn chat-collab-only" id="chatQuickListBtn" title="List" aria-label="List">List</button>{% end %}
+              {% if is_meet_enabled() %}<button type="button" class="chat-toolbar-btn chat-collab-only" id="chatQuickMeetBtn" title="Meet" aria-label="Meet">Meet</button>{% end %}
               <button type="button" class="chat-toolbar-btn chat-attach-only" id="chatVoiceBtn" title="Voice message" aria-label="Voice message">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
               </button>
@@ -273,6 +278,6 @@
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/onedrive-fe/index.js?v=20260929c"></script>
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/chat-key-backup.js?v=20260906p"></script>
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/chat-secret.js?v=20260927c"></script>
-  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/pages/chat.js?v=20261104e"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/pages/chat.js?v=20261107d"></script>
 </body>
 </html>

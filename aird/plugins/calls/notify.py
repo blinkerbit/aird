@@ -179,9 +179,17 @@ def clear_user_ring(username: str, conversation_id: str, call_id: str = "") -> N
         conn.close()
 
 
-def save_call_rings(caller: str, conversation_id: str, mode: str, call_id: str) -> None:
+def save_call_rings(
+    caller: str,
+    conversation_id: str,
+    mode: str,
+    call_id: str,
+    *,
+    targets: list[str] | None = None,
+) -> None:
     try:
         members = chat_db.members_of(caller, conversation_id)
+        target_set = {str(t).strip() for t in (targets or []) if str(t).strip()}
         payload = json.dumps({
             "type": "call_invite",
             "conversation_id": conversation_id,
@@ -197,6 +205,8 @@ def save_call_rings(caller: str, conversation_id: str, mode: str, call_id: str) 
             for member in members:
                 name = member["username"]
                 if name == caller:
+                    continue
+                if target_set and name not in target_set:
                     continue
                 conn.execute(
                     """INSERT INTO call_rings(username, payload, created_at) VALUES(?,?,?)
@@ -280,12 +290,13 @@ def dispatch_call_invite(
     mode: str,
     room: str,
     call_id: str,
+    targets: list[str] | None = None,
 ) -> None:
     mode_name = "video" if mode == "video" else "audio"
     label = "Video call" if mode_name == "video" else "Voice call"
     # Store the ring first. A device that gets the invite can then ask
     # /api/chat/call-ring whether the call is still live.
-    save_call_rings(caller_username, conversation_id, mode, call_id)
+    save_call_rings(caller_username, conversation_id, mode, call_id, targets=targets)
     _record_call(call_id, conversation_id, caller_username)
     _arm_ring_timeout(caller_username, conversation_id, call_id)
     socket_payload = {
@@ -309,8 +320,70 @@ def dispatch_call_invite(
         "url": f"/chat?c={conversation_id}",
         "tag": f"aird-call.{conversation_id}.{call_id}.{mode_name}",
     }
+    target_set = {str(t).strip() for t in (targets or []) if str(t).strip()}
     for member in chat_db.members_of(caller_username, conversation_id):
         if member["user_id"] == caller_id or member["username"] == caller_username:
+            continue
+        if target_set and member["username"] not in target_set:
+            continue
+        try:
+            muted = chat_db.is_muted(member["username"], conversation_id)
+        except Exception:
+            muted = False
+        deliver(
+            username=member["username"],
+            user_id=member["user_id"],
+            kind="call",
+            socket_payload=socket_payload,
+            push_payload=push_payload,
+            push=not muted,
+            expire_s=45,
+            push_ttl=30,
+            immediate=True,
+        )
+
+
+def dispatch_call_invite_more(
+    *,
+    conversation_id: str,
+    caller_username: str,
+    caller_id: int,
+    mode: str,
+    room: str,
+    call_id: str,
+    targets: list[str] | None = None,
+) -> None:
+    """Ring additional participants into an existing call."""
+    if not targets:
+        return
+    mode_name = "video" if mode == "video" else "audio"
+    label = "Group video call" if mode_name == "video" else "Group voice call"
+    save_call_rings(caller_username, conversation_id, mode, call_id, targets=targets)
+    socket_payload = {
+        "type": "call_invite",
+        "conversation_id": conversation_id,
+        "room": room,
+        "mode": mode_name,
+        "from": caller_username,
+        "call_id": call_id,
+        "ttl": _RING_TTL,
+        "group": True,
+    }
+    push_payload = {
+        "title": label,
+        "body": f"{caller_username} invited you to a group call.",
+        "sender": caller_username,
+        "preview": label,
+        "mode": mode_name,
+        "kind": "call",
+        "call_id": call_id,
+        "conversation_id": conversation_id,
+        "url": f"/chat?c={conversation_id}",
+        "tag": f"aird-call.{conversation_id}.{call_id}.{mode_name}",
+    }
+    target_set = {str(t).strip() for t in targets if str(t).strip()}
+    for member in chat_db.members_of(caller_username, conversation_id):
+        if member["username"] not in target_set:
             continue
         try:
             muted = chat_db.is_muted(member["username"], conversation_id)
@@ -427,6 +500,22 @@ def dispatch_call_signal(
             mode = "audio"
         payload["mode"] = mode
         get_chat_hub().broadcast_user_ids(ids, payload)
+        return
+    if signal_type == "call_invite_more":
+        targets = (extra or {}).get("targets")
+        if isinstance(targets, list) and targets:
+            mode = str((extra or {}).get("mode") or "audio").lower()
+            room = str((extra or {}).get("room") or "")
+            cid = str((extra or {}).get("call_id") or "")
+            dispatch_call_invite_more(
+                conversation_id=conversation_id,
+                caller_username=username,
+                caller_id=actor_id,
+                mode=mode,
+                room=room or f"aird-call-{cid}",
+                call_id=cid,
+                targets=[str(t) for t in targets],
+            )
         return
     if signal_type == "call_accept":
         accepted_id = str((extra or {}).get("call_id") or "")

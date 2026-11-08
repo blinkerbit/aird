@@ -291,6 +291,8 @@ def _preview_by_msg_type(msg_type: str | None, body: str) -> str:
         return "Sent a GIF"
     if msg_type == "file":
         return "Shared a file"
+    if msg_type == "card":
+        return "Shared a card"
     return "New message"
 
 
@@ -298,6 +300,13 @@ def message_preview(msg: dict) -> str:
     from aird.plugins.chat.e2e import ENCRYPTED_PREVIEW, is_e2e_meta
 
     meta = msg.get("metadata") or {}
+    if msg.get("msg_type") == "card":
+        card = meta.get("card") if isinstance(meta, dict) else None
+        if isinstance(card, dict):
+            kind = str(card.get("kind") or "").strip().lower()
+            title = str(card.get("title") or "").strip()
+            prefix = {"poll": "Poll", "list": "List", "meet": "Meet"}.get(kind, "Card")
+            return f"{prefix}: {title}" if title else prefix
     if is_e2e_meta(meta) or msg.get("e2e"):
         return ENCRYPTED_PREVIEW
     names = _attachment_names(meta)

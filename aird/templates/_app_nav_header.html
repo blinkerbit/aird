@@ -1,8 +1,9 @@
-{# Main app header: Aird + settings + Browse + feature nav + theme selector.
-   Optional overrides: nav_search_path, nav_title.
-   Layout: place this include inside the same outer wrapper as page content, e.g.
-   <div class="container mx-auto p-4"> …header… …content… </div> (same as browse/share/search). #}
-<div class="navbar aird-nav bg-base-200 shadow-sm rounded-box mb-4 gap-2">
+{# Main app chrome — same include on every authenticated page.
+   Feature links are decided once by server flags for this user; pages do not
+   customize the item set. Optional: nav_search_path (Browse→Search deep link).
+   nav_active is set in the template namespace from the request path. #}
+{% set _nav = nav_active or '' %}
+<div class="navbar aird-nav bg-base-200 shadow-sm rounded-box mb-4 gap-2" data-aird-chrome="1">
   <div class="aird-nav-brand flex-1">
     <a href="/files/" class="btn btn-ghost text-xl font-extrabold tracking-wide gap-1.5 px-2 text-base-content" aria-label="Aird Home">
       <img src="/static/img/logo-icon.png" alt="" aria-hidden="true" class="h-8 w-auto shrink-0">
@@ -16,7 +17,7 @@
   </button>
   <div class="aird-nav-actions flex items-center gap-1" id="airdNavActions">
     {% if current_user %}
-    <a href="/profile" class="btn btn-ghost btn-sm gap-1 max-w-[10rem] sm:max-w-[14rem]" title="User settings">
+    <a href="/profile" class="btn btn-ghost btn-sm gap-1 max-w-[10rem] sm:max-w-[14rem]{% if _nav == 'profile' %} aird-nav-link--active{% end %}" title="User settings"{% if _nav == 'profile' %} aria-current="page"{% end %}>
       <svg class="hdr-ico shrink-0" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
       <span class="truncate font-medium">{{ escape(handler.get_display_username()) }}</span>
     </a>
@@ -35,24 +36,24 @@
       </button>
     </div>
 
-    <a href="/files/" class="btn btn-ghost btn-sm gap-1" title="Browse files">
+    <a href="/files/" class="btn btn-ghost btn-sm gap-1{% if _nav == 'browse' %} aird-nav-link--active{% end %}" title="Browse files"{% if _nav == 'browse' %} aria-current="page"{% end %}>
       <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
       <span class="hidden sm:inline">Browse</span>
     </a>
     {% if is_feature_enabled('super_search', True) %}
-    <a href="/search?path={{ escape(nav_search_path or '') }}" data-aird-feature="super_search" class="btn btn-ghost btn-sm gap-1" title="Super Search">
+    <a href="/search{% if nav_search_path %}?path={{ escape(nav_search_path) }}{% end %}" data-aird-feature="super_search" class="btn btn-ghost btn-sm gap-1{% if _nav == 'search' %} aird-nav-link--active{% end %}" title="Super Search"{% if _nav == 'search' %} aria-current="page"{% end %}>
       <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <span class="hidden sm:inline">Search</span>
     </a>
     {% end %}
     {% if is_feature_enabled('file_share', True) %}
-    <a href="/share" data-aird-feature="file_share" class="btn btn-ghost btn-sm gap-1" title="Share files">
+    <a href="/share" data-aird-feature="file_share" class="btn btn-ghost btn-sm gap-1{% if _nav == 'share' %} aird-nav-link--active{% end %}" title="Share files"{% if _nav == 'share' %} aria-current="page"{% end %}>
       <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
       <span class="hidden sm:inline">Share</span>
     </a>
     {% end %}
     {% if is_chat_enabled() %}
-    <a href="/chat" class="btn btn-ghost btn-sm gap-1" title="Direct messages">
+    <a href="/chat" data-aird-feature="direct_messages" class="btn btn-ghost btn-sm gap-1{% if _nav == 'chat' %} aird-nav-link--active{% end %}" title="Direct messages"{% if _nav == 'chat' %} aria-current="page"{% end %}>
       <span class="chat-nav-ico">
         <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         <span id="chatUnreadBadge" class="badge badge-primary badge-xs chat-nav-badge hidden">0</span>
@@ -60,8 +61,26 @@
       <span class="hidden sm:inline">Chat</span>
     </a>
     {% end %}
+    {% if is_polls_enabled() %}
+    <a href="/polls" class="btn btn-ghost btn-sm gap-1{% if _nav == 'polls' %} aird-nav-link--active{% end %}" title="Polls"{% if _nav == 'polls' %} aria-current="page"{% end %}>
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><line x1="8" y1="16" x2="8" y2="10" stroke="currentColor" stroke-width="2"/><line x1="12" y1="16" x2="12" y2="6" stroke="currentColor" stroke-width="2"/><line x1="16" y1="16" x2="16" y2="12" stroke="currentColor" stroke-width="2"/></svg>
+      <span class="hidden sm:inline">Polls</span>
+    </a>
+    {% end %}
+    {% if is_lists_enabled() %}
+    <a href="/lists" class="btn btn-ghost btn-sm gap-1{% if _nav == 'lists' %} aird-nav-link--active{% end %}" title="Lists"{% if _nav == 'lists' %} aria-current="page"{% end %}>
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="2"/><line x1="8" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="2"/><line x1="8" y1="18" x2="21" y2="18" stroke="currentColor" stroke-width="2"/><circle cx="4" cy="6" r="1" fill="currentColor"/><circle cx="4" cy="12" r="1" fill="currentColor"/><circle cx="4" cy="18" r="1" fill="currentColor"/></svg>
+      <span class="hidden sm:inline">Lists</span>
+    </a>
+    {% end %}
+    {% if is_meet_enabled() %}
+    <a href="/meet" class="btn btn-ghost btn-sm gap-1{% if _nav == 'meet' %} aird-nav-link--active{% end %}" title="Meet"{% if _nav == 'meet' %} aria-current="page"{% end %}>
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="14" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M22 10l-5 3v-2l5-3z" fill="currentColor"/></svg>
+      <span class="hidden sm:inline">Meet</span>
+    </a>
+    {% end %}
     {% if is_feature_enabled('p2p_transfer', True) %}
-    <a href="/p2p" data-aird-feature="p2p_transfer" class="btn btn-ghost btn-sm gap-1" title="Peer-to-peer transfer">
+    <a href="/p2p" data-aird-feature="p2p_transfer" class="btn btn-ghost btn-sm gap-1{% if _nav == 'p2p' %} aird-nav-link--active{% end %}" title="Peer-to-peer transfer"{% if _nav == 'p2p' %} aria-current="page"{% end %}>
       <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
       <span class="hidden sm:inline">P2P</span>
     </a>
@@ -120,6 +139,15 @@
   var mq = window.matchMedia('(max-width: 767px)');
   var measuring = false;
   var lastWidth = 0;
+  var COLLAPSE_KEY = 'aird-nav-collapsed';
+  function readStoredCollapse() {
+    try { return sessionStorage.getItem(COLLAPSE_KEY) === '1'; } catch (e) { return false; }
+  }
+  function writeStoredCollapse(on) {
+    try { sessionStorage.setItem(COLLAPSE_KEY, on ? '1' : '0'); } catch (e) { /* private mode */ }
+  }
+  // Avoid hamburger/full flip flash when shell width differs across pages.
+  if (!mq.matches && readStoredCollapse()) nav.classList.add('is-collapsed');
   function setOpen(open) {
     nav.classList.toggle('is-menu-open', open);
     btn.setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -164,6 +192,7 @@
     if (brand) brand.style.flex = prevFlex;
     var collapse = was ? slack < 16 : slack < -0.5;
     nav.classList.toggle('is-collapsed', collapse);
+    writeStoredCollapse(collapse);
     if (was && !collapse) setOpen(false);
     lastWidth = nav.getBoundingClientRect().width;
     measuring = false;

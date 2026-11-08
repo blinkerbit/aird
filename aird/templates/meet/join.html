@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  {% include '../_theme_early.html' %}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/static/css/app.css?v=20261106b" />
+  <link rel="stylesheet" href="/static/css/collab.css?v=20261107b" />
+  <title>{{ escape(meet.get('title', 'Meet')) }} · Aird</title>
+</head>
+<body class="meet-join-page">
+  <div class="aird-shell aird-shell--wide">
+{% include '../_app_nav_header.html' %}
+    <main class="meet-join" data-meet-id="{{ escape(meet['id']) }}" data-slug="{{ escape(slug) }}">
+      <h1 class="text-xl font-bold">{{ escape(meet.get('title', 'Meeting')) }}</h1>
+      <p class="text-sm opacity-70">{% if meet.get('live') %}Live until {{ escape(meet.get('expires_at', ''))[:16] }}{% else %}This meeting has ended or expired.{% end %}</p>
+      <div class="meet-join-actions">
+        <a class="btn btn-ghost btn-sm" href="/meet">Back to Meet</a>
+        {% if meet.get('live') %}
+        <button type="button" class="btn btn-primary btn-sm" id="meetJoinBtn">Join</button>
+        {% end %}
+      </div>
+    </main>
+  </div>
+  <script nonce="{{ csp_nonce }}">globalThis.__AIRD_MEET__ = {% raw json_encode(meet) %};</script>
+  <script nonce="{{ csp_nonce }}" src="/static/js/theme.js"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/pages/meet-join.js?v=20261107a"></script>
+</body>
+</html>

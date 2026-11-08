@@ -52,6 +52,9 @@ FEATURE_FLAGS = {
     "gitlab_integration": False,
     "onedrive_backup": False,
     "onedrive_browser": False,
+    "polls": False,
+    "lists": False,
+    "meet": False,
     "transfer_sendfile": True,
 }
 

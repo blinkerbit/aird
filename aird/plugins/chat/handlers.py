@@ -1756,3 +1756,74 @@ class ChatConversationE2EHandler(BaseHandler, XSRFTokenMixin):
         except Exception:
             logger.debug("e2e key ready dispatch failed", exc_info=True)
         self.write({"wraps": {k: v for k, v in wraps.items() if k in accepted}})
+
+
+class ChatConversationCardsHandler(BaseHandler, XSRFTokenMixin):
+    @tornado.web.authenticated
+    @require_db
+    def post(self, conversation_id: str):
+        if not _require_chat(self):
+            return
+        self.check_xsrf_cookie()
+        name = _username(self)
+        uid = _uid(self)
+        if uid is None or not chat_db.user_in_conversation(name, conversation_id):
+            self.set_status(403)
+            self.write({"error": _ERR_FORBIDDEN})
+            return
+        if _exchange_blocked(self, name, conversation_id):
+            return
+        try:
+            body = self.parse_json_body()
+        except tornado.web.HTTPError:
+            return
+        kind = str(body.get("kind") or "").strip().lower()
+        artifact_id = str(body.get("id") or body.get("artifact_id") or "").strip()
+        if not kind or not artifact_id:
+            self.set_status(400)
+            self.write({"error": "kind and id required"})
+            return
+        from aird.plugins.collab.access_check import user_can_access_artifact
+        from aird.plugins.collab.chat_cards import share_card_to_conversation
+        from aird.plugins.collab.schema import collab_conn
+        from aird.plugins.collab import meet_db, polls_db, lists_db
+
+        conn = collab_conn()
+        if conn is None:
+            self.set_status(503)
+            self.write({"error": "Database unavailable"})
+            return
+        try:
+            if not user_can_access_artifact(conn, username=name, kind=kind, artifact_id=artifact_id):
+                self.set_status(403)
+                self.write({"error": _ERR_FORBIDDEN})
+                return
+            title = str(body.get("title") or "").strip()
+            snapshot = body.get("snapshot") if isinstance(body.get("snapshot"), dict) else None
+            if not title:
+                if kind == "poll":
+                    detail = polls_db.poll_detail(conn, artifact_id, name)
+                    title = (detail or {}).get("question") or "Poll"
+                    snapshot = snapshot or polls_db.poll_snapshot(conn, artifact_id, name)
+                elif kind == "list":
+                    detail = lists_db.list_detail(conn, artifact_id, name)
+                    title = (detail or {}).get("title") or "List"
+                    snapshot = snapshot or lists_db.list_snapshot(conn, artifact_id, name)
+                elif kind == "meet":
+                    detail = meet_db.meet_detail(conn, artifact_id, name)
+                    title = (detail or {}).get("title") or "Meet"
+                    snapshot = snapshot or meet_db.meet_snapshot(conn, artifact_id, name)
+            msg = share_card_to_conversation(
+                self.db_conn,
+                username=name,
+                user_id=uid,
+                conversation_id=conversation_id,
+                kind=kind,
+                artifact_id=artifact_id,
+                title=title or kind.title(),
+                snapshot=snapshot,
+                reply_to_id=str(body.get("reply_to_id") or "") or None,
+            )
+        finally:
+            conn.close()
+        self.write({"message": msg})

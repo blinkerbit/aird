@@ -4,7 +4,7 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261023d" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261106b" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <title>Admin · Aird</title>
 </head>
@@ -162,6 +162,18 @@
             <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
               <input type="checkbox" name="onedrive_browser" class="toggle toggle-primary toggle-sm" {% if features.get('onedrive_browser') %}checked{% end %}>
               <span class="label-text">OneDrive browser SSO <span class="badge badge-ghost badge-xs">Experimental</span></span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
+              <input type="checkbox" name="polls" class="toggle toggle-primary toggle-sm" {% if features.get('polls') %}checked{% end %}>
+              <span class="label-text">Polls <span class="badge badge-ghost badge-xs">Experimental</span></span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
+              <input type="checkbox" name="lists" class="toggle toggle-primary toggle-sm" {% if features.get('lists') %}checked{% end %}>
+              <span class="label-text">Lists <span class="badge badge-ghost badge-xs">Experimental</span></span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
+              <input type="checkbox" name="meet" class="toggle toggle-primary toggle-sm" {% if features.get('meet') %}checked{% end %}>
+              <span class="label-text">Meet (48h rooms) <span class="badge badge-ghost badge-xs">Experimental</span></span>
             </label>
           </div>
         </div>

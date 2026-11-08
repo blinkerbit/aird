@@ -1,0 +1,43 @@
+"""Central SQLite schema for polls, lists, and meet."""
+
+from __future__ import annotations
+
+import sqlite3
+
+from aird.plugins.collab.lists_db import LISTS_SCHEMA
+from aird.plugins.collab.meet_db import MEET_SCHEMA
+from aird.plugins.collab.polls_db import POLLS_SCHEMA
+from aird.plugins.collab.refs import REFS_SCHEMA
+from aird.plugins.collab.slugs import assign_slug
+
+_SCHEMA = POLLS_SCHEMA + LISTS_SCHEMA + MEET_SCHEMA + REFS_SCHEMA
+
+
+def collab_conn() -> sqlite3.Connection | None:
+    import aird.constants as constants_module
+
+    path = getattr(constants_module, "DB_PATH", None)
+    if not path:
+        return None
+    conn = sqlite3.connect(path, timeout=10)
+    conn.row_factory = sqlite3.Row
+    ensure_collab_schema(conn)
+    return conn
+
+
+def ensure_collab_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(_SCHEMA)
+    for table in ("polls", "collab_lists", "meets"):
+        cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if "slug" not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN slug TEXT")
+        title_col = "question" if table == "polls" else "title"
+        missing = conn.execute(
+            f"SELECT id, {title_col} FROM {table} WHERE slug IS NULL OR slug = ''"
+        ).fetchall()
+        for row in missing:
+            assign_slug(conn, table, row[0], row[1] or "")
+        conn.execute(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{table}_slug ON {table}(slug)"
+        )
+    conn.commit()

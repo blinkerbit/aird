@@ -220,7 +220,7 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
             self._handle_enhanced_receipt(conn, data)
         elif msg_type == "enhanced_close":
             self._handle_enhanced_close(conn, data)
-        elif msg_type in ("call_accept", "call_end", "call_decline", "call_mode"):
+        elif msg_type in ("call_accept", "call_end", "call_decline", "call_mode", "call_invite_more"):
             self._handle_call_signal(data, msg_type)
 
     def _handle_call_signal(self, data: dict, msg_type: str) -> None:
@@ -239,6 +239,10 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
             extra["mode"] = data.get("mode")
         if data.get("call_id"):
             extra["call_id"] = str(data.get("call_id"))
+        if data.get("targets"):
+            extra["targets"] = data.get("targets")
+        if data.get("room"):
+            extra["room"] = str(data.get("room"))
         dispatch_call_signal(
             username=self._username,
             conversation_id=conversation_id,

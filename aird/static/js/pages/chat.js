@@ -21,6 +21,15 @@ import {
 import { escapeHtml as esc, escapeCssAttrValue as cssEscape } from '../core/dom-safe.js';
 import { apiFetch } from '../core/http.js';
 import { getXSRFToken } from '../core/xsrf.js';
+import {
+  collabMentionKey,
+  hideCollabMentions,
+  linkMentionTokens,
+  openMentionToken,
+  renderShelf,
+  triggerFromToken,
+  updateCollabMention,
+} from '../chat-collab-mentions.js?v=20261107c';
 
 (function () {
   'use strict';
@@ -108,6 +117,8 @@ import { getXSRFToken } from '../core/xsrf.js';
   let searchSeq = 0;
   let pollTimer = null;
   let uploading = false;
+  /** Active upload UI state — only painted while viewing this conversation. */
+  let uploadProgressState = null;
   let voiceRecorder = null;
   let voiceStream = null;
   let voiceChunks = [];
@@ -748,6 +759,63 @@ import { getXSRFToken } from '../core/xsrf.js';
       + `</div>${menu}</div>`;
   }
 
+  function finiteAudioDuration(audio) {
+    const d = Number(audio?.duration);
+    return Number.isFinite(d) && d > 0 ? d : 0;
+  }
+
+  /** MediaRecorder webm/opus often reports Infinity until forced. */
+  function resolveVoiceDuration(audio, getIntent) {
+    return new Promise((resolve) => {
+      const known = () => finiteAudioDuration(audio);
+      if (known()) {
+        resolve(known());
+        return;
+      }
+      let settled = false;
+      const restoreIntent = (dur) => {
+        const raw = typeof getIntent === 'function' ? Number(getIntent()) : 0;
+        const intent = Number.isFinite(raw) && raw > 0 ? raw : 0;
+        const t = dur > 0 ? Math.min(intent, dur) : intent;
+        try { audio.currentTime = t; } catch { /* ignore */ }
+      };
+      const finish = () => {
+        if (settled) return;
+        const d = known();
+        if (!d) return;
+        settled = true;
+        cleanup();
+        restoreIntent(d);
+        resolve(d);
+      };
+      const force = () => {
+        try { audio.currentTime = 1e101; } catch { /* ignore */ }
+      };
+      const cleanup = () => {
+        audio.removeEventListener('loadedmetadata', onReady);
+        audio.removeEventListener('durationchange', finish);
+        audio.removeEventListener('seeked', finish);
+      };
+      const onReady = () => {
+        if (known()) finish();
+        else force();
+      };
+      audio.addEventListener('loadedmetadata', onReady);
+      audio.addEventListener('durationchange', finish);
+      audio.addEventListener('seeked', finish);
+      if (audio.readyState >= 1) onReady();
+      else audio.load();
+      setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        const d = known();
+        if (d) restoreIntent(d);
+        resolve(d);
+      }, 2500);
+    });
+  }
+
   function bindVoicePlayers(root) {
     const scope = root || messagesEl;
     if (!scope) return;
@@ -760,44 +828,83 @@ import { getXSRFToken } from '../core/xsrf.js';
       const timeEl = wrap.querySelector('.chat-voice-time');
       if (!audio || !playBtn || !seek || !timeEl) return;
       let scrubbing = false;
+      let knownDur = 0;
+      let intentTime = 0;
       const syncPlayBtn = () => {
         playBtn.innerHTML = audio.paused ? VOICE_PLAY_SVG : VOICE_PAUSE_SVG;
         playBtn.setAttribute('aria-label', audio.paused ? 'Play voice message' : 'Pause voice message');
       };
+      const applySeekMax = (dur) => {
+        if (!(dur > 0)) return;
+        knownDur = dur;
+        seek.max = String(dur);
+        seek.disabled = false;
+      };
       const syncTimes = () => {
-        const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
-        const cur = audio.currentTime || 0;
-        if (!scrubbing && dur > 0) {
-          seek.max = String(dur);
-          seek.value = String(cur);
+        const dur = knownDur || finiteAudioDuration(audio);
+        if (dur > 0 && Number(seek.max) !== dur) applySeekMax(dur);
+        const cur = scrubbing ? intentTime : (audio.currentTime || 0);
+        // Until duration is known, grow the track so scrubbing still works.
+        if (!scrubbing && !(dur > 0)) {
+          const floor = Math.max(Number(seek.max) || 0, cur + 0.5, 1);
+          seek.max = String(floor);
         }
-        timeEl.textContent = dur > 0
-          ? `${formatVoiceClock(cur)} / ${formatVoiceClock(dur)}`
+        if (!scrubbing) {
+          seek.value = String(Math.min(cur, Number(seek.max) || cur || 0));
+          intentTime = Number(seek.value) || 0;
+        }
+        const showDur = knownDur || finiteAudioDuration(audio);
+        timeEl.textContent = showDur > 0
+          ? `${formatVoiceClock(cur)} / ${formatVoiceClock(showDur)}`
           : formatVoiceClock(cur);
+      };
+      const seekTo = (raw) => {
+        const t = Number(raw);
+        if (!Number.isFinite(t) || t < 0) return;
+        const dur = knownDur || finiteAudioDuration(audio);
+        const capped = dur > 0 ? Math.min(t, dur) : t;
+        intentTime = capped;
+        seek.value = String(capped);
+        try { audio.currentTime = capped; } catch { /* ignore */ }
+        syncTimes();
       };
       playBtn.addEventListener('click', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
         if (audio.paused) {
+          // Honor scrubber position — duration probing used to reset to 0.
+          seekTo(seek.value);
           pauseOtherVoice(audio);
           audio.play().catch(() => {});
         } else {
           audio.pause();
         }
       });
-      seek.addEventListener('pointerdown', () => { scrubbing = true; });
-      seek.addEventListener('pointerup', () => {
-        scrubbing = false;
-        audio.currentTime = Number(seek.value) || 0;
-      });
-      seek.addEventListener('input', () => {
+      seek.addEventListener('pointerdown', (ev) => {
         scrubbing = true;
-        timeEl.textContent = Number.isFinite(audio.duration)
-          ? `${formatVoiceClock(seek.value)} / ${formatVoiceClock(audio.duration)}`
-          : formatVoiceClock(seek.value);
+        ev.stopPropagation();
+        try { seek.setPointerCapture(ev.pointerId); } catch { /* ignore */ }
       });
-      seek.addEventListener('change', () => {
-        audio.currentTime = Number(seek.value) || 0;
+      seek.addEventListener('pointerup', (ev) => {
+        ev.stopPropagation();
+        seekTo(seek.value);
+        scrubbing = false;
+      });
+      seek.addEventListener('pointercancel', () => { scrubbing = false; });
+      seek.addEventListener('click', (ev) => ev.stopPropagation());
+      seek.addEventListener('input', (ev) => {
+        scrubbing = true;
+        ev.stopPropagation();
+        const t = Number(seek.value) || 0;
+        intentTime = t;
+        timeEl.textContent = (knownDur || finiteAudioDuration(audio)) > 0
+          ? `${formatVoiceClock(t)} / ${formatVoiceClock(knownDur || finiteAudioDuration(audio))}`
+          : formatVoiceClock(t);
+        try { audio.currentTime = t; } catch { /* ignore */ }
+      });
+      seek.addEventListener('change', (ev) => {
+        ev.stopPropagation();
+        seekTo(seek.value);
         scrubbing = false;
       });
       audio.addEventListener('play', () => {
@@ -809,15 +916,25 @@ import { getXSRFToken } from '../core/xsrf.js';
         syncPlayBtn();
       });
       audio.addEventListener('ended', () => {
+        intentTime = 0;
         audio.currentTime = 0;
         if (activeVoiceAudio === audio) activeVoiceAudio = null;
         syncPlayBtn();
         syncTimes();
       });
       audio.addEventListener('loadedmetadata', syncTimes);
+      audio.addEventListener('durationchange', syncTimes);
       audio.addEventListener('timeupdate', syncTimes);
+      seek.disabled = false;
+      if (!(Number(seek.max) > 0)) seek.max = '1';
       syncPlayBtn();
       syncTimes();
+      resolveVoiceDuration(audio, () => intentTime).then((dur) => {
+        if (dur > 0) applySeekMax(dur);
+        // Re-apply scrub position after duration probe (it seeks internally).
+        if (intentTime > 0) seekTo(intentTime);
+        else syncTimes();
+      });
     });
   }
 
@@ -991,6 +1108,25 @@ import { getXSRFToken } from '../core/xsrf.js';
     }).catch(() => {});
   }
 
+  function refPreviewHtml(token, slug) {
+    const named = /^(?:#list:|\$\$poll:|\/\/meet:)/i.test(token);
+    if (!named && !String(slug).includes('-')) return '';
+    let kind = 'list';
+    if (/^\$\$/i.test(token)) kind = 'poll';
+    else if (token.startsWith('//')) kind = 'meet';
+    return `<div class="chat-collab-card chat-collab-preview" data-kind="${kind}" data-slug="${esc(String(slug).toLowerCase())}"><div class="chat-collab-live"><h4>${esc(token)}</h4><div class="chat-collab-meta">Loading…</div></div></div>`;
+  }
+
+  function highlightRefs(html) {
+    return String(html || '').replace(
+      /(^|<br>|\s)((?:\$\$poll:|\$\$|\/\/meet:|\/\/|#list:|#)([a-z0-9]+(?:-[a-z0-9]+)*))/gi,
+      (all, pre, token, slug) => {
+        const block = refPreviewHtml(token, slug);
+        return block ? `${pre}${block}` : all;
+      },
+    );
+  }
+
   function highlightMentions(html) {
     return String(html || '').replace(/@([A-Za-z0-9_.\-@]+)/g, (all, name) => {
       const members = (activeConv()?.members || []).map((m) => m.username);
@@ -1049,7 +1185,7 @@ import { getXSRFToken } from '../core/xsrf.js';
       .replace(/\n{3,}/g, '\n\n')
       .replace(/^\n+|\n+$/g, '');
     if (!plain.trim()) return '';
-    return highlightMentions(esc(plain).replace(/\n/g, '<br>'));
+    return highlightRefs(highlightMentions(esc(plain).replace(/\n/g, '<br>')));
   }
 
   function messageLabel(msg) {
@@ -1156,6 +1292,23 @@ import { getXSRFToken } from '../core/xsrf.js';
     return '<div class="chat-seen">Seen</div>';
   }
 
+  function cardHtml(msg) {
+    const card = msg?.metadata?.card;
+    if (!card || msg.msg_type !== 'card') return '';
+    const kind = String(card.kind || '').toLowerCase();
+    const title = esc(card.title || kind);
+    const snap = card.snapshot || {};
+    let meta = '';
+    if (kind === 'poll') meta = `${snap.total_votes || 0} votes`;
+    if (kind === 'list') meta = `${snap.done || 0}/${snap.total || 0} done`;
+    if (kind === 'meet') meta = snap.live ? 'Live' : 'Ended';
+    const href = kind === 'poll' ? `/polls#${card.id}` : kind === 'list' ? `/lists#${card.id}` : (snap.slug ? `/meet/${snap.slug}` : '/meet');
+    return `<div class="chat-collab-card" data-kind="${esc(kind)}" data-id="${esc(card.id)}">
+      <div class="chat-collab-live"><h4>${title}</h4><div class="chat-collab-meta">${esc(meta)}</div></div>
+      <a class="btn btn-ghost btn-xs" href="${esc(href)}">Open full page</a>
+    </div>`;
+  }
+
   function messageHtml(msg) {
     rememberMsgLabel(msg);
     const rowClass = msg._mine ? 'chat-msg-row--mine' : 'chat-msg-row--theirs';
@@ -1166,6 +1319,9 @@ import { getXSRFToken } from '../core/xsrf.js';
     }
     body += replyQuoteHtml(msg);
     const hasAtt = msgAttachments(msg).length > 0 || msg.msg_type === 'file' || msg.msg_type === 'gif';
+    if (msg.msg_type === 'card') {
+      body += cardHtml(msg);
+    }
     const rendered = chatBodyHtml(msg.body);
     if (rendered) {
       body += `<div class="chat-msg-text">${rendered}</div>`;
@@ -1230,6 +1386,16 @@ import { getXSRFToken } from '../core/xsrf.js';
     });
     scope.querySelectorAll('.chat-react-chip, .chat-react-emoji').forEach((btn) => {
       btn.addEventListener('click', handleReactClick);
+    });
+    scope.querySelectorAll('[data-ref-token]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        openMentionToken(btn.dataset.refToken, me).catch((err) => alert(err.message));
+      });
+    });
+    scope.querySelectorAll('.chat-collab-card').forEach((node) => {
+      if (node.dataset.bound === '1') return;
+      node.dataset.bound = '1';
+      import('../collab-ui.js?v=20261107d').then((mod) => mod.hydrateCard(node, { me })).catch(() => {});
     });
   }
 
@@ -1653,8 +1819,11 @@ import { getXSRFToken } from '../core/xsrf.js';
     activeConvId = convId;
     replyLabelCache.clear();
     loadingOlder = false;
+    // Hide composer/thread upload UI unless this chat owns the in-flight upload.
+    renderUploadProgressUi();
     const conv = conversations.find((c) => c.id === convId);
     setThreadHeader(conv || null);
+    renderShelf(convId, me).catch(() => {});
     hideRequest();
     composer.classList.add('hidden');
     messagesEl.innerHTML = '<div class="chat-empty"><p>Loading…</p></div>';
@@ -1670,6 +1839,7 @@ import { getXSRFToken } from '../core/xsrf.js';
       const params = new URLSearchParams(location.search);
       params.set('c', convId);
       history.replaceState(null, '', `${location.pathname}?${params}`);
+      renderUploadProgressUi();
       return;
     }
     composer.classList.remove('hidden');
@@ -1696,6 +1866,7 @@ import { getXSRFToken } from '../core/xsrf.js';
     params.delete('attachBatch');
     history.replaceState(null, '', `${location.pathname}?${params}`);
     applyPendingBrowseAttach();
+    renderUploadProgressUi();
   }
 
   function applyPendingBrowseAttach() {
@@ -2242,23 +2413,28 @@ import { getXSRFToken } from '../core/xsrf.js';
     meta.textContent = detail;
   }
 
-  function paintUploadProgress(staged, loaded, total) {
-    const label = uploadNames(staged);
-    const known = total > 0;
-    const pct = known ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
-    const detail = !known
-      ? 'Uploading…'
-      : (pct >= 100
-        ? 'Finishing…'
-        : `Uploading ${pct}% · ${formatUploadSize(loaded)} / ${formatUploadSize(total)}`);
+  function hideUploadProgressUi() {
+    document.getElementById('chatUploadStatus')?.remove();
+    document.getElementById('chatUploadProgress')?.remove();
+  }
+
+  function renderUploadProgressUi() {
+    const state = uploadProgressState;
+    if (!state || state.convId !== activeConvId) {
+      hideUploadProgressUi();
+      return;
+    }
+    const { label, pct, detail } = state;
     let status = document.getElementById('chatUploadStatus');
     if (!status && editor) {
       status = document.createElement('div');
       status.id = 'chatUploadStatus';
       status.className = 'chat-upload-status';
+      status.dataset.convId = state.convId;
       editor.before(status);
     }
     if (status) {
+      status.dataset.convId = state.convId;
       status.hidden = false;
       paintUploadSlot(status, label, pct, detail);
     }
@@ -2269,17 +2445,32 @@ import { getXSRFToken } from '../core/xsrf.js';
       row = document.createElement('div');
       row.id = 'chatUploadProgress';
       row.className = 'chat-msg-row chat-msg-row--mine chat-upload-row';
+      row.dataset.convId = state.convId;
       row.innerHTML = `${avatarHtml(me)}<div class="chat-msg-stack"><div class="aird-chat-bubble aird-chat-bubble--mine"><div class="aird-chat-bubble-body chat-upload-slot"></div></div></div>`;
       messagesEl.appendChild(row);
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
+    row.dataset.convId = state.convId;
     paintUploadSlot(row.querySelector('.chat-upload-slot'), label, pct, detail);
     if (messagesEl.lastElementChild !== row) messagesEl.appendChild(row);
   }
 
+  function paintUploadProgress(staged, loaded, total, convId) {
+    const label = uploadNames(staged);
+    const known = total > 0;
+    const pct = known ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
+    const detail = !known
+      ? 'Uploading…'
+      : (pct >= 100
+        ? 'Finishing…'
+        : `Uploading ${pct}% · ${formatUploadSize(loaded)} / ${formatUploadSize(total)}`);
+    uploadProgressState = { convId, label, pct, detail };
+    renderUploadProgressUi();
+  }
+
   function clearUploadProgress() {
-    document.getElementById('chatUploadStatus')?.remove();
-    document.getElementById('chatUploadProgress')?.remove();
+    uploadProgressState = null;
+    hideUploadProgressUi();
   }
 
   async function postStagedAttachments(staged, { e2e, mentions, hasText, body, reply, convId }) {
@@ -2298,8 +2489,8 @@ import { getXSRFToken } from '../core/xsrf.js';
       if (item.path) fd.append('source_path', item.path);
       else fd.append('file', item.file, item.file.name);
     }
-    paintUploadProgress(staged, 0, 0);
-    await uploadChatForm(convId, fd, (loaded, total) => paintUploadProgress(staged, loaded, total));
+    paintUploadProgress(staged, 0, 0, convId);
+    await uploadChatForm(convId, fd, (loaded, total) => paintUploadProgress(staged, loaded, total, convId));
     clearUploadProgress();
     if (activeConvId === convId) await openConversation(convId);
     await loadConversations();
@@ -2380,6 +2571,7 @@ import { getXSRFToken } from '../core/xsrf.js';
       return;
     }
     if (!hasText) return;
+    linkMentionTokens(activeConvId, body).then(() => renderShelf(activeConvId, me)).catch(() => {});
     const sentHttp = await sendTextOverWire({ e2e, mentions, body, reply });
     if (sentHttp) {
       await openConversation(activeConvId);
@@ -2453,9 +2645,20 @@ import { getXSRFToken } from '../core/xsrf.js';
     return false;
   }
 
+  function mentionCtx() {
+    return {
+      anchor: document.querySelector('.chat-editor-wrap'),
+      convId: () => activeConvId,
+      token: caretPathToken,
+      replace: replaceCaretToken,
+      onLinked: () => renderShelf(activeConvId, me).catch(() => {}),
+    };
+  }
+
   editor?.addEventListener('keydown', (e) => {
     const tokenInfo = caretPathToken();
-    const pathMode = (tokenInfo && looksLikePath(tokenInfo.token)) || pathPopupVisible();
+    if (collabMentionKey(e, tokenInfo, mentionCtx())) return;
+    const pathMode = (tokenInfo && looksLikePath(tokenInfo.token) && !triggerFromToken(tokenInfo.token)) || pathPopupVisible();
     if (pathMode && handleEditorPathKeys(e, tokenInfo)) return;
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && enterToSendEnabled()) {
       e.preventDefault();
@@ -2471,6 +2674,12 @@ import { getXSRFToken } from '../core/xsrf.js';
       const text = editor.innerText || '';
       const at = text.split(/\s/).pop() || '';
       const tokenInfo = caretPathToken();
+      if (tokenInfo && triggerFromToken(tokenInfo.token)) {
+        hidePathSuggest();
+        updateCollabMention(tokenInfo, mentionCtx()).catch(() => {});
+        return;
+      }
+      hideCollabMentions();
       if (tokenInfo && looksLikePath(tokenInfo.token)) {
         updateComposerPathSuggest(tokenInfo).catch((err) => {
           console.debug('path suggest update failed', err);
@@ -3453,12 +3662,13 @@ import { getXSRFToken } from '../core/xsrf.js';
       WS.subscribe(handleWsEvent);
     }
     if (globalThis.__AIRD_CALLS_ENABLED__) {
-      import('../chat-calls.js?v=20261103b').then((m) => {
+      import('../chat-calls.js?v=20261107a').then((m) => {
         globalThis.AirdChatCalls = m;
         m.initCalls({
           api,
           me,
           getActiveConvId: () => activeConvId,
+          getActiveConv: () => activeConv(),
           sendWs: (payload) => window.AirdChatWS?.send(payload),
           openConversation,
         });
@@ -3487,5 +3697,30 @@ import { getXSRFToken } from '../core/xsrf.js';
     });
   }
 
+  async function wireCollabQuick() {
+    const pollBtn = qs('#chatQuickPollBtn');
+    const listBtn = qs('#chatQuickListBtn');
+    const meetBtn = qs('#chatQuickMeetBtn');
+    if (!pollBtn && !listBtn && !meetBtn) return;
+    const mod = await import('../chat-collab-quick.js');
+    const run = (fn) => {
+      if (!activeConvId) {
+        alert('Select a conversation first.');
+        return;
+      }
+      fn(activeConvId).then((ref) => {
+        if (ref?.token) {
+          editor?.focus();
+          document.execCommand('insertText', false, `${ref.token} `);
+        }
+        return renderShelf(activeConvId, me);
+      }).catch((e) => alert(e.message));
+    };
+    pollBtn?.addEventListener('click', () => run(mod.quickPoll));
+    listBtn?.addEventListener('click', () => run(mod.quickList));
+    meetBtn?.addEventListener('click', () => run(mod.quickMeet));
+  }
+
   boot();
+  wireCollabQuick().catch(() => {});
 })();

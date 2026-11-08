@@ -88,9 +88,38 @@
     }
   }
 
+  /* Same chrome width on every page that has the shared top nav, so the
+     collapse script does not flip hamburger ↔ full bar between Chat / Search / P2P. */
+  .aird-shell:has(> .aird-nav) {
+    max-width: 90rem;
+  }
+
+  @media (min-width: 1600px) {
+    .aird-shell:has(> .aird-nav) {
+      max-width: 100rem;
+    }
+  }
+
   /* Create/edit forms */
   .aird-shell--form {
     max-width: 42rem;
+  }
+
+  /* Keep form pages' top nav on the shared chrome width; constrain the body. */
+  .aird-shell--form:has(> .aird-nav) {
+    max-width: 90rem;
+  }
+
+  @media (min-width: 1600px) {
+    .aird-shell--form:has(> .aird-nav) {
+      max-width: 100rem;
+    }
+  }
+
+  .aird-shell--form:has(> .aird-nav) > :not(.aird-nav):not(script):not(style):not(.tt-sidebar):not(.tt-backdrop) {
+    max-width: 42rem;
+    width: 100%;
+    margin-inline: auto;
   }
 
   /* Legacy: keep bare .container from exploding on ultrawide */

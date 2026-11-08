@@ -199,12 +199,19 @@ def template_globals(request: Request, nonce: str, **extra: Any) -> dict[str, An
             DISPLAY_ADMIN_TOKEN,
         )
     username = user.get("username") if isinstance(user, dict) else None
+    from aird.core.nav import nav_active_for_path
+
+    try:
+        req_path = request.url.path
+    except Exception:
+        req_path = ""
     ns = {
         "csp_nonce": nonce,
         "is_feature_enabled": is_feature_enabled,
         "json_encode_for_script": json_encode_for_script,
-        "nav_search_path": "/search",
+        "nav_search_path": "",
         "nav_title": "",
+        "nav_active": nav_active_for_path(req_path),
         "is_admin_user": show_admin,
         "ldap_enabled": bool(state.settings.get("ldap_server")),
         "current_user": user,

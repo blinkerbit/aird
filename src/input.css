@@ -521,6 +521,13 @@ code, kbd, pre, samp {
   flex-wrap: nowrap;
 }
 
+/* Current section — only intentional chrome change between views. */
+.aird-nav-actions > a.aird-nav-link--active {
+  background: color-mix(in oklch, var(--color-primary) 14%, transparent);
+  color: var(--color-primary);
+  font-weight: 650;
+}
+
 .aird-nav > .aird-nav-actions {
   flex-shrink: 0;
 }

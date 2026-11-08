@@ -357,12 +357,18 @@ def make_app(
     from aird.plugins.gitlab import register_gitlab
     from aird.plugins.onedrive_host import register_onedrive_host
     from aird.plugins.onedrive_browser import register_onedrive_browser
+    from aird.plugins.polls import register_polls
+    from aird.plugins.lists import register_lists
+    from aird.plugins.meet import register_meet
 
     register_chat(routes)
     register_calls(routes)
     register_gitlab(routes)
     register_onedrive_host(routes)
     register_onedrive_browser(routes)
+    register_polls(routes)
+    register_lists(routes)
+    register_meet(routes)
 
     # Add LDAP routes only if LDAP is enabled
     if ldap_enabled:

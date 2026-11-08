@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  {% include '../_theme_early.html' %}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/static/css/app.css?v=20261106b" />
+  <link rel="stylesheet" href="/static/css/collab.css?v=20261107c" />
+  <title>Meet · Aird</title>
+</head>
+<body>
+  <div class="aird-shell aird-shell--wide">
+{% include '../_app_nav_header.html' %}
+    <main class="collab-hub" data-hub="meet" data-me="{{ escape(current_user.get('username') if current_user else '') }}">
+      <header class="collab-hub-head">
+        <h1 class="text-2xl font-bold">Meet</h1>
+        <button type="button" class="btn btn-primary btn-sm" id="meetNewBtn">Start meeting</button>
+      </header>
+      <div class="collab-layout">
+        <aside class="collab-index" id="meetIndex" aria-label="Your meetings"></aside>
+        <section class="collab-detail" id="meetDetail" aria-live="polite">
+          <div class="collab-empty">Start a meeting — link stays live for 48 hours.</div>
+        </section>
+      </div>
+    </main>
+  </div>
+  <script nonce="{{ csp_nonce }}">globalThis.__AIRD_ME_USER__ = {% raw json_encode(current_user.get('username') if current_user else '') %};</script>
+  <script nonce="{{ csp_nonce }}" src="/static/js/theme.js"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/pages/meet.js?v=20261107b"></script>
+</body>
+</html>

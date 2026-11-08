@@ -34,6 +34,7 @@ def register_chat(routes: list) -> None:
     from aird.plugins.chat.handlers import (
         ChatAttachHandler,
         ChatConversationE2EHandler,
+        ChatConversationCardsHandler,
         ChatConversationMessagesHandler,
         ChatConversationsHandler,
         ChatE2EIdentityHandler,
@@ -54,6 +55,10 @@ def register_chat(routes: list) -> None:
         ChatSharedWithMeHandler,
         ChatUnreadHandler,
     )
+    from aird.plugins.chat.collab_refs_http import (
+        ChatCollabSuggestHandler,
+        ChatConversationRefsHandler,
+    )
     from aird.plugins.chat.ws import ChatWebSocketHandler
 
     cid = r"([^/]+)"
@@ -71,6 +76,9 @@ def register_chat(routes: list) -> None:
             (rf"/api/chat/conversations/{cid}/messages/{mid}/pin", ChatPinHandler),
             (rf"/api/chat/conversations/{cid}/messages/{mid}/forward", ChatForwardHandler),
             (rf"/api/chat/conversations/{cid}/messages/{mid}", ChatMessageHandler),
+            (rf"/api/chat/conversations/{cid}/refs", ChatConversationRefsHandler),
+            (r"/api/chat/collab-suggest", ChatCollabSuggestHandler),
+            (rf"/api/chat/conversations/{cid}/cards", ChatConversationCardsHandler),
             (rf"/api/chat/conversations/{cid}/messages", ChatConversationMessagesHandler),
             (rf"/api/chat/conversations/{cid}/attach", ChatAttachHandler),
             (rf"/api/chat/conversations/{cid}/members", ChatMembersHandler),

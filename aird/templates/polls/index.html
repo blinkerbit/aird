@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  {% include '../_theme_early.html' %}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/static/css/app.css?v=20261106b" />
+  <link rel="stylesheet" href="/static/css/collab.css?v=20261107c" />
+  <title>Polls · Aird</title>
+</head>
+<body>
+  <div class="aird-shell aird-shell--wide">
+{% include '../_app_nav_header.html' %}
+    <main class="collab-hub" data-hub="polls" data-me="{{ escape(current_user.get('username') if current_user else '') }}">
+      <header class="collab-hub-head">
+        <h1 class="text-2xl font-bold">Polls</h1>
+        <button type="button" class="btn btn-primary btn-sm" id="pollsNewBtn">New poll</button>
+      </header>
+      <div class="collab-layout">
+        <aside class="collab-index" id="pollsIndex" aria-label="Your polls"></aside>
+        <section class="collab-detail" id="pollsDetail" aria-live="polite">
+          <div class="collab-empty">Create or select a poll.</div>
+        </section>
+      </div>
+    </main>
+  </div>
+  <script nonce="{{ csp_nonce }}" src="/static/js/theme.js"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/pages/polls.js?v=20261107b"></script>
+</body>
+</html>

@@ -12,14 +12,15 @@ from aird.handlers.base_handler import BaseHandler, XSRFTokenMixin, get_username
 from aird.plugins.access import PLUGIN_CALLS, user_may_use_plugin
 from aird.plugins.calls import is_calls_enabled
 from aird.plugins.calls.config import (
+    call_room_name,
     livekit_api_key,
     livekit_api_secret,
     livekit_url,
-    room_name,
 )
 from aird.plugins.calls.notify import (
     call_status,
     dispatch_call_invite,
+    dispatch_call_invite_more,
     dispatch_call_signal,
     peek_missed,
     read_call_ring,
@@ -75,9 +76,13 @@ class ChatCallHandler(BaseHandler, XSRFTokenMixin):
             self.set_status(403)
             self.write({"error": "Forbidden"})
             return
-        room = room_name(conversation_id)
         supplied_call_id = str(body.get("call_id") or "").strip()
         call_id = supplied_call_id or uuid.uuid4().hex
+        room = call_room_name(call_id)
+        targets_raw = body.get("targets")
+        targets = None
+        if isinstance(targets_raw, list) and targets_raw:
+            targets = [str(t).strip() for t in targets_raw if str(t).strip()]
         token = create_participant_token(
             api_key=livekit_api_key(),
             api_secret=livekit_api_secret(),
@@ -92,7 +97,17 @@ class ChatCallHandler(BaseHandler, XSRFTokenMixin):
                 self.set_status(409)
                 self.write({"error": "Call ended"})
                 return
-        if not joining:
+        if body.get("invite_more") and supplied_call_id:
+            dispatch_call_invite_more(
+                conversation_id=conversation_id,
+                caller_username=username,
+                caller_id=uid,
+                mode=mode,
+                room=room,
+                call_id=call_id,
+                targets=targets,
+            )
+        elif not joining:
             dispatch_call_invite(
                 conversation_id=conversation_id,
                 caller_username=username,
@@ -100,6 +115,7 @@ class ChatCallHandler(BaseHandler, XSRFTokenMixin):
                 mode=mode,
                 room=room,
                 call_id=call_id,
+                targets=targets,
             )
         self.write(
             {
@@ -112,7 +128,7 @@ class ChatCallHandler(BaseHandler, XSRFTokenMixin):
         )
 
 
-_SIGNALS = frozenset({"call_accept", "call_decline", "call_end", "call_mode"})
+_SIGNALS = frozenset({"call_accept", "call_decline", "call_end", "call_mode", "call_invite_more"})
 
 
 class CallSignalHandler(BaseHandler, XSRFTokenMixin):
@@ -146,6 +162,11 @@ class CallSignalHandler(BaseHandler, XSRFTokenMixin):
             extra["mode"] = str(body.get("mode"))
         if body.get("call_id"):
             extra["call_id"] = str(body.get("call_id"))
+        if signal_type == "call_invite_more":
+            if body.get("targets"):
+                extra["targets"] = body.get("targets")
+            if body.get("room"):
+                extra["room"] = str(body.get("room"))
         dispatch_call_signal(
             username=username,
             conversation_id=conversation_id,

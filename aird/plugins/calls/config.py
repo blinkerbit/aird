@@ -27,6 +27,11 @@ def room_name(conversation_id: str) -> str:
     return f"aird-{safe}"
 
 
+def call_room_name(call_id: str) -> str:
+    safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in call_id)
+    return f"aird-call-{safe}"
+
+
 def livekit_ws_origin() -> str:
     """Origin for CSP connect-src (wss/ws host)."""
     raw = livekit_url()

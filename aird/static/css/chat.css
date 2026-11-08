@@ -687,9 +687,48 @@ body.chat-page {
 
 .chat-voice-seek {
   flex: 1;
-  min-width: 0;
+  min-width: 3.5rem;
   accent-color: currentColor;
-  height: 0.35rem;
+  height: 1.25rem;
+  margin: 0;
+  cursor: pointer;
+  touch-action: none;
+  pointer-events: auto;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+
+.chat-voice-seek::-webkit-slider-runnable-track {
+  height: 0.28rem;
+  border-radius: 999px;
+  background: color-mix(in oklch, currentColor 28%, transparent);
+}
+
+.chat-voice-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 0.95rem;
+  height: 0.95rem;
+  margin-top: -0.34rem;
+  border-radius: 999px;
+  background: currentColor;
+  border: 0;
+  cursor: pointer;
+}
+
+.chat-voice-seek::-moz-range-track {
+  height: 0.28rem;
+  border-radius: 999px;
+  background: color-mix(in oklch, currentColor 28%, transparent);
+}
+
+.chat-voice-seek::-moz-range-thumb {
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 999px;
+  background: currentColor;
+  border: 0;
   cursor: pointer;
 }
 

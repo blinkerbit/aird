@@ -154,6 +154,9 @@ def _apply_admin_feature_flags(handler: BaseHandler) -> str:
         plugin_notice = plugin_notice or "calls_livekit_required"
     else:
         FEATURE_FLAGS["voice_video"] = voice_video_requested
+    FEATURE_FLAGS["polls"] = _admin_checkbox(handler, "polls")
+    FEATURE_FLAGS["lists"] = _admin_checkbox(handler, "lists")
+    FEATURE_FLAGS["meet"] = _admin_checkbox(handler, "meet")
     return plugin_notice
 
 

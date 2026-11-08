@@ -75,7 +75,8 @@ function ensureCallStyles() {
     .chat-call-tile--local.is-pip-collapsed .chat-call-pipmin .icon-show{display:block}
     .chat-call-tile video,.chat-call-video{position:absolute;inset:0;z-index:0;width:100% !important;height:100% !important;max-height:none !important;border-radius:0 !important;object-fit:cover;background:#000;display:block}
     .chat-call-stage.is-fit .chat-call-tile--remote video{object-fit:contain !important;width:var(--call-vw,auto) !important;height:var(--call-vh,auto) !important;max-width:100% !important;max-height:100% !important;inset:auto !important;left:50% !important;top:50% !important;transform:translate(-50%,-50%) !important}
-    .chat-call-tile--local video{transform:scaleX(-1)}
+    /* Self-view like a mirror; remote stays true-sided so text/gestures match the other person. */
+    .chat-call-tile--local video,.chat-call-video--mirror{-webkit-transform:scaleX(-1) !important;transform:scaleX(-1) !important}
     .chat-call-face{position:absolute;inset:0;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.55rem;padding:.6rem;text-align:center}
     .chat-call-face-name{font-weight:650;font-size:1.55rem;letter-spacing:-.02em}
     .chat-call-tile--local .chat-call-face-name{font-size:.95rem}
@@ -247,7 +248,9 @@ function ensureOverlay() {
       </label>
     </div>
     <div class="chat-call-stage">
-      <div class="chat-call-tile chat-call-tile--remote" id="chatCallRemoteTile">${tileMarkup('remote', 'Other')}</div>
+      <div class="chat-call-remote-grid" id="chatCallRemoteGrid">
+        <div class="chat-call-tile chat-call-tile--remote" id="chatCallRemoteTile">${tileMarkup('remote', 'Other')}</div>
+      </div>
       <div class="chat-call-tile chat-call-tile--local" id="chatCallLocalTile">${tileMarkup('local', 'You')}</div>
     </div>
     <div id="chatCallRouteToast" class="chat-call-route-toast" role="status"></div>
@@ -895,14 +898,17 @@ function participantMuted(participant) {
 function paintSpeaking() {
   const live = room;
   const local = live?.localParticipant;
-  const remote = live ? [...live.remoteParticipants.values()][0] : null;
   const speaking = (participant) => Boolean(
     participant && !participantMuted(participant) && (participant.isSpeaking || (participant.audioLevel || 0) > 0.04),
   );
   document.getElementById('chatCallLocalTile')?.classList.toggle('is-speaking', speaking(local));
   document.getElementById('chatCallLocalTile')?.classList.toggle('is-muted', participantMuted(local));
-  document.getElementById('chatCallRemoteTile')?.classList.toggle('is-speaking', speaking(remote));
-  document.getElementById('chatCallRemoteTile')?.classList.toggle('is-muted', participantMuted(remote));
+  const remotes = live ? [...live.remoteParticipants.values()] : [];
+  remotes.forEach((participant) => {
+    const tile = remoteTileFor(participant);
+    tile?.classList.toggle('is-speaking', speaking(participant));
+    tile?.classList.toggle('is-muted', participantMuted(participant));
+  });
 }
 
 function paintLevel() {}
@@ -1219,9 +1225,31 @@ function watchFitLayout(root) {
   }).observe(stage);
 }
 
+function remoteTileFor(participant) {
+  if (!participant || participant.isLocal) return document.getElementById('chatCallLocalTile');
+  const identity = String(participant.identity || participant.sid || 'guest');
+  const safe = identity.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const grid = document.getElementById('chatCallRemoteGrid');
+  if (!grid) return document.getElementById('chatCallRemoteTile');
+  let tile = document.getElementById(`chatCallRemote-${safe}`);
+  if (!tile) {
+    tile = document.createElement('div');
+    tile.className = 'chat-call-tile chat-call-tile--remote';
+    tile.id = `chatCallRemote-${safe}`;
+    tile.dataset.identity = identity;
+    const label = participant.name || identity.split(':')[0] || 'Guest';
+    tile.innerHTML = tileMarkup('remote', label);
+    const legacy = document.getElementById('chatCallRemoteTile');
+    if (legacy && legacy.parentElement === grid && !legacy.querySelector('video')) legacy.remove();
+    grid.appendChild(tile);
+    grid.classList.toggle('is-multi', grid.querySelectorAll('.chat-call-tile--remote').length > 1);
+  }
+  return tile;
+}
+
 function attachVideoTrack(track, participant) {
   const local = Boolean(participant?.isLocal);
-  const tile = document.getElementById(local ? 'chatCallLocalTile' : 'chatCallRemoteTile');
+  const tile = local ? document.getElementById('chatCallLocalTile') : remoteTileFor(participant);
   if (!tile || !track) return;
   let node = tile.querySelector('video');
   if (!node) {
@@ -1231,6 +1259,14 @@ function attachVideoTrack(track, participant) {
     node.playsInline = true;
     node.muted = true;
     tile.prepend(node);
+  }
+  node.classList.toggle('chat-call-video--mirror', local);
+  if (local) {
+    node.style.setProperty('transform', 'scaleX(-1)', 'important');
+    node.style.setProperty('-webkit-transform', 'scaleX(-1)', 'important');
+  } else {
+    node.style.removeProperty('transform');
+    node.style.removeProperty('-webkit-transform');
   }
   track.attach(node);
   const markLive = () => {
@@ -1255,11 +1291,18 @@ function bindRemoteVideo(liveRoom) {
 }
 
 function clearVideos() {
-  ['chatCallLocalTile', 'chatCallRemoteTile'].forEach((id) => {
-    const tile = document.getElementById(id);
-    tile?.querySelectorAll('video').forEach((node) => node.remove());
-    tile?.classList.remove('has-video', 'is-speaking');
-  });
+  const local = document.getElementById('chatCallLocalTile');
+  local?.querySelectorAll('video').forEach((node) => node.remove());
+  local?.classList.remove('has-video', 'is-speaking');
+  const grid = document.getElementById('chatCallRemoteGrid');
+  if (grid) {
+    grid.innerHTML = `<div class="chat-call-tile chat-call-tile--remote" id="chatCallRemoteTile">${tileMarkup('remote', 'Other')}</div>`;
+    grid.classList.remove('is-multi');
+  } else {
+    const legacy = document.getElementById('chatCallRemoteTile');
+    legacy?.querySelectorAll('video').forEach((node) => node.remove());
+    legacy?.classList.remove('has-video', 'is-speaking');
+  }
 }
 
 async function joinSession(session, opts = {}) {
@@ -1320,7 +1363,9 @@ async function joinSession(session, opts = {}) {
   room.on(RoomEvent.TrackUnsubscribed, (track, _pub, participant) => {
     track.detach().forEach((el) => el.remove());
     if (track.kind !== 'video') return;
-    const tile = document.getElementById(participant?.isLocal ? 'chatCallLocalTile' : 'chatCallRemoteTile');
+    const tile = participant?.isLocal
+      ? document.getElementById('chatCallLocalTile')
+      : remoteTileFor(participant);
     if (tile && !tile.querySelector('video')) tile.classList.remove('has-video');
   });
   room.on(RoomEvent.ParticipantConnected, (participant) => {
@@ -1330,7 +1375,11 @@ async function joinSession(session, opts = {}) {
     bindRemoteVideo(room);
     paintSpeaking();
   });
-  room.on(RoomEvent.ParticipantDisconnected, () => {
+  room.on(RoomEvent.ParticipantDisconnected, (participant) => {
+    const tile = participant ? remoteTileFor(participant) : null;
+    tile?.remove();
+    const grid = document.getElementById('chatCallRemoteGrid');
+    grid?.classList.toggle('is-multi', (grid?.querySelectorAll('.chat-call-tile--remote').length || 0) > 1);
     const live = room;
     if (waitingForAnswer || !live?.remoteParticipants) return;
     if (live.remoteParticipants.size === 0) scheduleRemoteDropCheck();
@@ -1394,7 +1443,7 @@ async function joinSession(session, opts = {}) {
   syncCallModeUi();
 }
 
-async function startCall(mode, permission) {
+async function startCall(mode, permission, targets) {
   if (phase === 'outgoing' || phase === 'joining' || phase === 'live') return;
   const convId = ctx?.getActiveConvId?.();
   if (!convId || !ctx?.api) return;
@@ -1414,9 +1463,11 @@ async function startCall(mode, permission) {
   try {
     await (permission || ensureMediaPermission(activeMode));
     if (phase !== 'outgoing') return;
+    const body = { mode: activeMode };
+    if (Array.isArray(targets) && targets.length) body.targets = targets;
     const data = await ctx.api(`/api/chat/conversations/${convId}/call`, {
       method: 'POST',
-      body: JSON.stringify({ mode: activeMode }),
+      body: JSON.stringify(body),
     });
     if (phase !== 'outgoing') return;
     callId = data.call_id || '';
@@ -1710,10 +1761,15 @@ function bindHeaderButtons() {
   document.addEventListener('click', (event) => {
     const voice = event.target.closest?.('#chatVoiceCallBtn');
     const video = event.target.closest?.('#chatVideoCallBtn');
-    if (!voice && !video) return;
+    const group = event.target.closest?.('#chatGroupCallBtn');
+    if (!voice && !video && !group) return;
     event.preventDefault();
     primeAudio();
     unlockCallAudio();
+    if (group) {
+      startGroupCall('video');
+      return;
+    }
     const mode = video ? 'video' : 'audio';
     const permission = beginMediaPermission(mode);
     startCall(mode, permission).catch((err) => reportCallError(err));
@@ -1795,7 +1851,32 @@ export function initCalls(options) {
 const CALL_VOICE_ICON = '<svg class="hdr-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
 const CALL_VIDEO_ICON = '<svg class="hdr-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="m16 13 5.2 3.1a.8.8 0 0 0 1.2-.7V8.6a.8.8 0 0 0-1.2-.7L16 11"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>';
 
+export async function joinStandaloneCall(session, { title } = {}) {
+  phase = 'live';
+  activeCallConvId = '';
+  waitingForAnswer = false;
+  showOverlay(true);
+  setStatus(title || 'Meeting');
+  await joinSession(session, {});
+}
+
+export function startGroupCall(mode) {
+  const conv = ctx?.getActiveConv?.() || null;
+  const members = (conv?.members || []).map((m) => m.username).filter((n) => n && n !== meName());
+  if (!members.length) {
+    alert('No members to invite.');
+    return;
+  }
+  const picked = prompt(`Group call — invite (comma-separated):\n${members.join(', ')}`, members.join(', '));
+  if (picked == null) return;
+  const targets = picked.split(',').map((s) => s.trim()).filter(Boolean);
+  if (!targets.length) return;
+  const permission = beginMediaPermission(mode === 'video' ? 'video' : 'audio');
+  startCall(mode === 'video' ? 'video' : 'audio', permission, targets).catch((err) => reportCallError(err));
+}
+
 export function headerCallButtonsHtml() {
   return `<button type="button" id="chatVoiceCallBtn" class="btn btn-ghost btn-sm btn-square chat-call-btn" title="Voice call" aria-label="Voice call">${CALL_VOICE_ICON}</button>`
-    + `<button type="button" id="chatVideoCallBtn" class="btn btn-ghost btn-sm btn-square chat-call-btn" title="Video call" aria-label="Video call">${CALL_VIDEO_ICON}</button>`;
+    + `<button type="button" id="chatVideoCallBtn" class="btn btn-ghost btn-sm btn-square chat-call-btn" title="Video call" aria-label="Video call">${CALL_VIDEO_ICON}</button>`
+    + `<button type="button" id="chatGroupCallBtn" class="btn btn-ghost btn-sm chat-call-btn hidden sm:inline-flex" title="Group call" aria-label="Group call">Group</button>`;
 }
