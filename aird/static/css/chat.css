@@ -681,6 +681,15 @@ body.chat-page {
   height: 0.95rem;
 }
 
+.chat-voice-play .chat-voice-icon-pause,
+.chat-voice-play.is-playing .chat-voice-icon-play {
+  display: none;
+}
+
+.chat-voice-play.is-playing .chat-voice-icon-pause {
+  display: block;
+}
+
 .aird-chat-bubble--mine .chat-voice-play {
   background: color-mix(in oklch, var(--color-primary-content, white) 18%, transparent);
 }
@@ -760,6 +769,23 @@ body.chat-page {
 .chat-voice-preview {
   background: color-mix(in oklch, var(--color-primary) 10%, var(--color-base-200));
   border-color: color-mix(in oklch, var(--color-primary) 28%, var(--color-base-300));
+}
+
+.chat-voice-bar:not([hidden]),
+.chat-voice-preview:not([hidden]) {
+  animation: chat-voice-in 180ms ease;
+}
+
+@keyframes chat-voice-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-voice-bar:not([hidden]),
+  .chat-voice-preview:not([hidden]) {
+    animation: none;
+  }
 }
 
 .chat-voice-bar[hidden],

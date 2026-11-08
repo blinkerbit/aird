@@ -3138,7 +3138,11 @@ import {
   const voiceCancel = qs('#chatVoiceCancel');
   const voiceStop = qs('#chatVoiceStop');
   const voiceDiscard = qs('#chatVoiceDiscard');
+  const voicePlay = qs('#chatVoicePlay');
+  const voiceSeek = qs('#chatVoiceSeek');
+  const voiceAudio = qs('#chatVoiceAudio');
   const voiceSend = qs('#chatVoiceSend');
+  let voicePreviewUrl = '';
   function voiceExtForMime(mime) {
     const m = String(mime || '').toLowerCase();
     if (m.includes('mp4')) return 'm4a';
@@ -3176,6 +3180,23 @@ import {
     voiceStream = null;
   }
 
+  function releaseVoicePreview() {
+    if (voiceAudio) {
+      voiceAudio.pause();
+      voiceAudio.removeAttribute('src');
+      voiceAudio.load();
+    }
+    if (voicePreviewUrl) {
+      URL.revokeObjectURL(voicePreviewUrl);
+      voicePreviewUrl = '';
+    }
+    if (voiceSeek) {
+      voiceSeek.value = '0';
+      voiceSeek.max = '0';
+    }
+    if (voicePlay) voicePlay.classList.remove('is-playing');
+  }
+
   function resetVoiceCapture({ keepPreview = false } = {}) {
     clearVoiceTimer();
     if (voiceRecorder && voiceRecorder.state !== 'inactive') {
@@ -3187,6 +3208,7 @@ import {
     if (!keepPreview) {
       voiceBlob = null;
       voiceMime = '';
+      releaseVoicePreview();
       setVoiceUi('idle');
     }
   }
@@ -3240,9 +3262,17 @@ import {
         return;
       }
       voiceBlob = blob;
+      releaseVoicePreview();
+      voicePreviewUrl = URL.createObjectURL(blob);
+      if (voiceAudio) voiceAudio.src = voicePreviewUrl;
       setVoiceUi('preview');
       const label = qs('#chatVoicePreviewLabel');
-      if (label) label.textContent = `Voice message · ${formatVoiceClock((Date.now() - voiceStartedAt) / 1000)}`;
+      const seconds = (Date.now() - voiceStartedAt) / 1000;
+      if (label) label.textContent = formatVoiceClock(seconds);
+      if (voiceSeek) {
+        voiceSeek.max = String(Math.max(seconds, 0.1));
+        voiceSeek.value = '0';
+      }
     });
     voiceStartedAt = Date.now();
     if (voiceTimer) voiceTimer.textContent = '0:00';
@@ -3263,6 +3293,7 @@ import {
   function discardVoicePreview() {
     voiceBlob = null;
     voiceMime = '';
+    releaseVoicePreview();
     setVoiceUi('idle');
   }
 
@@ -3324,6 +3355,35 @@ import {
   voiceCancel?.addEventListener('click', cancelVoiceRecord);
   voiceStop?.addEventListener('click', stopVoiceRecord);
   voiceDiscard?.addEventListener('click', discardVoicePreview);
+  voicePlay?.addEventListener('click', () => {
+    if (!voiceAudio || !voicePreviewUrl) return;
+    if (voiceAudio.paused) voiceAudio.play().catch(() => {});
+    else voiceAudio.pause();
+  });
+  voiceAudio?.addEventListener('play', () => voicePlay?.classList.add('is-playing'));
+  voiceAudio?.addEventListener('pause', () => voicePlay?.classList.remove('is-playing'));
+  voiceAudio?.addEventListener('ended', () => {
+    voicePlay?.classList.remove('is-playing');
+    if (voiceSeek) voiceSeek.value = '0';
+    const label = qs('#chatVoicePreviewLabel');
+    if (label && voiceAudio.duration) label.textContent = formatVoiceClock(voiceAudio.duration);
+  });
+  voiceAudio?.addEventListener('timeupdate', () => {
+    if (!voiceAudio || !voiceSeek || voiceSeek.dataset.scrubbing === '1') return;
+    if (Number.isFinite(voiceAudio.duration)) voiceSeek.max = String(voiceAudio.duration);
+    voiceSeek.value = String(voiceAudio.currentTime || 0);
+    const label = qs('#chatVoicePreviewLabel');
+    if (label) {
+      const total = Number.isFinite(voiceAudio.duration) ? voiceAudio.duration : Number(voiceSeek.max) || 0;
+      label.textContent = `${formatVoiceClock(voiceAudio.currentTime || 0)} / ${formatVoiceClock(total)}`;
+    }
+  });
+  voiceSeek?.addEventListener('pointerdown', () => { voiceSeek.dataset.scrubbing = '1'; });
+  voiceSeek?.addEventListener('pointerup', () => { delete voiceSeek.dataset.scrubbing; });
+  voiceSeek?.addEventListener('input', () => {
+    if (!voiceAudio) return;
+    voiceAudio.currentTime = Number(voiceSeek.value) || 0;
+  });
   voiceSend?.addEventListener('click', () => {
     sendVoicePreview().catch((err) => setE2eStatus(err.message || 'Could not send voice message'));
   });

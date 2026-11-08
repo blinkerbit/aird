@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="/static/css/app.css?v=20261106b" />
-  <link rel="stylesheet" href="/static/css/chat.css?v=20261104f" />
+  <link rel="stylesheet" href="/static/css/chat.css?v=20261108a" />
   <link rel="stylesheet" href="/static/css/collab.css?v=20261107d" />
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   {% include '_pwa_head.html' %}
@@ -166,8 +166,14 @@
             </div>
             <div id="chatVoicePreview" class="chat-voice-preview" hidden>
               <button type="button" id="chatVoiceDiscard" class="chat-voice-bar-btn" title="Discard" aria-label="Discard voice message">Discard</button>
-              <span id="chatVoicePreviewLabel" class="chat-voice-preview-label">Voice message</span>
+              <button type="button" id="chatVoicePlay" class="chat-voice-play" title="Play" aria-label="Play voice message">
+                <svg class="chat-voice-icon-play" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+                <svg class="chat-voice-icon-pause" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+              </button>
+              <input id="chatVoiceSeek" class="chat-voice-seek" type="range" min="0" max="0" value="0" step="0.1" aria-label="Voice position">
+              <span id="chatVoicePreviewLabel" class="chat-voice-preview-label">0:00</span>
               <button type="button" id="chatVoiceSend" class="chat-voice-bar-btn chat-voice-bar-btn--send" title="Send" aria-label="Send voice message">Send</button>
+              <audio id="chatVoiceAudio" hidden></audio>
             </div>
             <div class="chat-editor-wrap">
               <div id="chatEmojiPicker" class="chat-emoji-picker hidden" hidden></div>
@@ -278,6 +284,6 @@
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/onedrive-fe/index.js?v=20260929c"></script>
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/chat-key-backup.js?v=20260906p"></script>
   <script nonce="{{ csp_nonce }}" type="module" src="/static/js/chat-secret.js?v=20260927c"></script>
-  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/pages/chat.js?v=20261107d"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/pages/chat.js?v=20261108a"></script>
 </body>
 </html>
