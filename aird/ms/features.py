@@ -15,11 +15,11 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 from starlette.routing import Mount
-from starlette.staticfiles import StaticFiles
 
 from aird.ms.common import mesh_secret_ok, require_mesh_configuration
 from aird.ms.ctx import AppState
 from aird.ms.render import static_dir, templates_dir
+from aird.ms.staticfiles import HashedStaticFiles
 from aird.ms.routers.admin import routes as admin_routes
 from aird.ms.routers.auth import routes as auth_routes
 from aird.ms.routers.auth_verify import routes as auth_verify_routes
@@ -106,7 +106,7 @@ def create_app(state: AppState | None = None) -> Starlette:
         *extra_api_routes,
         *ws_routes,
         *ws_extra_routes,
-        Mount("/static", StaticFiles(directory=static_dir()), name="static"),
+        Mount("/static", HashedStaticFiles(directory=static_dir()), name="static"),
     ]
     if config.LDAP_ENABLED:
         from aird.ms.routers.ldap_admin import routes as ldap_admin_routes

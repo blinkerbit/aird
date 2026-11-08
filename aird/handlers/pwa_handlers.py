@@ -51,6 +51,17 @@ class ManifestHandler(tornado.web.RequestHandler):
             self.write(body)
 
 
+class StaticManifestHandler(tornado.web.RequestHandler):
+    """GET /api/static-manifest — content hashes for the service worker. No-store."""
+
+    def get(self):
+        from aird.assets import manifest_payload
+
+        self.set_header("Content-Type", "application/json; charset=utf-8")
+        self.set_header("Cache-Control", "no-store")
+        self.write(json.dumps(manifest_payload()))
+
+
 class ServiceWorkerHandler(tornado.web.RequestHandler):
     """Serve the PWA service worker from site root (scope /)."""
 

@@ -4,8 +4,8 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261106b" />
-  <link rel="icon" href="/static/favicon.png" type="image/png" />
+  <link rel="stylesheet" href="{{ static_url('css/app.css') }}" />
+  <link rel="icon" href="{{ static_url('favicon.png') }}" type="image/png" />
   <title>LDAP management · Aird</title>
   <script nonce="{{ csp_nonce }}">
     function confirmDelete(configName, configId) {
@@ -188,6 +188,6 @@
   <form class="hidden">
     {% raw xsrf_form_html() %}
   </form>
-  <script src="/static/js/theme.js"></script>
+  <script src="{{ static_url('js/theme.js') }}"></script>
 </body>
 </html>

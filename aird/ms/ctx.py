@@ -184,10 +184,13 @@ class _TemplateHandler:
         return str(self.current_user)
 
     def static_url(self, path: str) -> str:
-        return f"/static/{path.lstrip('/')}"
+        from aird.assets import static_url
+
+        return static_url(path)
 
 
 def template_globals(request: Request, nonce: str, **extra: Any) -> dict[str, Any]:
+    from aird.assets import template_assets
     from aird.plugins.access import bind_template_plugin_checks
 
     user = current_user(request)
@@ -217,8 +220,8 @@ def template_globals(request: Request, nonce: str, **extra: Any) -> dict[str, An
         "current_user": user,
         "handler": _TemplateHandler(request, user),
         "request": request,
-        "static_url": lambda p: f"/static/{p.lstrip('/')}",
         "xsrf_form_html": lambda: _xsrf_form_html(request),
+        **template_assets(),
         **bind_template_plugin_checks(username, state.db_conn),
         **extra,
     }

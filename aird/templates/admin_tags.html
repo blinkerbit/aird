@@ -4,8 +4,8 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261106b" />
-  <link rel="icon" href="/static/favicon.png" type="image/png" />
+  <link rel="stylesheet" href="{{ static_url('css/app.css') }}" />
+  <link rel="icon" href="{{ static_url('favicon.png') }}" type="image/png" />
   <title>Resource tags · Aird</title>
 </head>
 <body class="bg-base-200 min-h-screen">
@@ -212,8 +212,8 @@
     </div>
   </dialog>
 
-  <script src="/static/js/theme.js"></script>
-  <script src="/static/js/aird-core.js"></script>
+  <script src="{{ static_url('js/theme.js') }}"></script>
+  <script src="{{ static_url('js/aird-core.js') }}"></script>
   <script nonce="{{ csp_nonce }}">
   (function () {
     const m = /(?:^|; )_xsrf=([^;]*)/.exec(document.cookie);

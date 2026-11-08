@@ -4,9 +4,9 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261106b" />
-  <link rel="stylesheet" href="/static/css/admin-plugins.css" />
-  <link rel="icon" href="/static/favicon.png" type="image/png" />
+  <link rel="stylesheet" href="{{ static_url('css/app.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('css/admin-plugins.css') }}" />
+  <link rel="icon" href="{{ static_url('favicon.png') }}" type="image/png" />
   <title>Plugins · Aird</title>
 </head>
 <body class="bg-base-200 min-h-screen">
@@ -296,6 +296,6 @@
       gitlabBoards: {% raw json_encode_for_script(gitlab_settings['boards']) %}
     };
   </script>
-  <script nonce="{{ csp_nonce }}" src="/static/js/admin-plugins.js"></script>
+  <script nonce="{{ csp_nonce }}" src="{{ static_url('js/admin-plugins.js') }}"></script>
 </body>
 </html>

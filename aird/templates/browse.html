@@ -5,9 +5,9 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261106b" />
-  <link rel="stylesheet" href="/static/css/gitlab.css" />
-  <link rel="icon" href="/static/favicon.png" type="image/png" />
+  <link rel="stylesheet" href="{{ static_url('css/app.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('css/gitlab.css') }}" />
+  <link rel="icon" href="{{ static_url('favicon.png') }}" type="image/png" />
   {% include '_pwa_head.html' %}
   <title>Browse · Aird</title>
 </head>
@@ -457,52 +457,16 @@
     }) %};
     globalThis.__GITLAB_BROWSE_CONFIG = { enabled: {{ 'true' if is_gitlab_enabled() else 'false' }} };
   </script>
-  <script nonce="{{ csp_nonce }}" type="importmap">
-  {
-    "imports": {
-      "/static/js/browse/app.js": "/static/js/browse/app.js?v=20261008b",
-      "/static/js/browse/upload.js": "/static/js/browse/upload.js?v=20261008b",
-      "/static/js/browse/listing.js": "/static/js/browse/listing.js?v=20261008b",
-      "/static/js/browse/type-filter.js": "/static/js/browse/type-filter.js?v=20261008a",
-      "/static/js/browse/util.js": "/static/js/browse/util.js?v=20260930h",
-      "/static/js/browse/upload-errors.js": "/static/js/browse/upload-errors.js?v=20261001d",
-      "/static/js/browse/selection-ui.js": "/static/js/browse/selection-ui.js?v=20260726d",
-      "/static/js/browse/selection-store.js": "/static/js/browse/selection-store.js?v=20260726d",
-      "/static/js/browse/bulk-actions.js": "/static/js/browse/bulk-actions.js?v=20260930h",
-      "/static/js/browse/tags.js": "/static/js/browse/tags.js?v=20261020a",
-      "/static/js/browse/tag-api.js": "/static/js/browse/tag-api.js?v=20260930h",
-      "/static/js/browse/shares.js": "/static/js/browse/shares.js?v=20260726d",
-      "/static/js/browse/table-ui.js": "/static/js/browse/table-ui.js?v=20261023c",
-      "/static/js/browse/row-more-menu.js": "/static/js/browse/row-more-menu.js?v=20261023c",
-      "/static/js/browse/onedrive-fe-actions.js": "/static/js/browse/onedrive-fe-actions.js?v=20260902d",
-      "/static/js/browse/gitlab-panel.js": "/static/js/browse/gitlab-panel.js?v=20260825d",
-      "/static/js/onedrive-fe/index.js": "/static/js/onedrive-fe/index.js?v=20260929c",
-      "/static/js/onedrive-fe/auth.js": "/static/js/onedrive-fe/auth.js?v=20260902c",
-      "/static/js/onedrive-fe/sign-in.js": "/static/js/onedrive-fe/sign-in.js?v=20260902c",
-      "/static/js/onedrive-fe/settings.js": "/static/js/onedrive-fe/settings.js?v=20260929c",
-      "/static/js/onedrive-fe/graph.js": "/static/js/onedrive-fe/graph.js?v=20260902c",
-      "/static/js/onedrive-fe/tokens.js": "/static/js/onedrive-fe/tokens.js?v=20260902a",
-      "/static/js/chat-attach.js": "/static/js/chat-attach.js?v=20261009a",
-      "/static/js/core/xsrf.js": "/static/js/core/xsrf.js?v=20261009a",
-      "/static/js/core/dom-safe.js": "/static/js/core/dom-safe.js?v=20261009a",
-      "/static/js/core/format.js": "/static/js/core/format.js?v=20261009a",
-      "/static/js/core/clipboard.js": "/static/js/core/clipboard.js?v=20261009a",
-      "/static/js/core/dialog.js": "/static/js/core/dialog.js?v=20261009a",
-      "/static/js/core/anchor.js": "/static/js/core/anchor.js?v=20261023c",
-      "/static/js/core/http.js": "/static/js/core/http.js?v=20261009a"
-    }
-  }
-  </script>
-  <script src="/static/js/runtime-config.js?v=20260821a"></script>
-  <script src="/static/js/transfer-background.js?v=20260821a"></script>
-  <script src="/static/js/transfer-engine/scheduler.js"></script>
-  <script src="/static/js/file-transfer-http.js?v=20261025a"></script>
-  <script src="/static/js/transfer-manager.js?v=20260821a"></script>
-  <script src="/static/js/download-manager.js?v=20260821a"></script>
-  <script type="module" src="/static/js/components/folder-picker.js"></script>
-  <script type="module" src="/static/js/browse/upload.js?v=20261008b"></script>
-  <script type="module" src="/static/js/browse/app.js?v=20261008b"></script>
-  <script src="/static/js/folder-size-scan.js"></script>
+<script src="{{ static_url('js/runtime-config.js') }}"></script>
+  <script src="{{ static_url('js/transfer-background.js') }}"></script>
+  <script src="{{ static_url('js/transfer-engine/scheduler.js') }}"></script>
+  <script src="{{ static_url('js/file-transfer-http.js') }}"></script>
+  <script src="{{ static_url('js/transfer-manager.js') }}"></script>
+  <script src="{{ static_url('js/download-manager.js') }}"></script>
+  <script type="module" src="{{ static_url('js/components/folder-picker.js') }}"></script>
+  <script type="module" src="{{ static_url('js/browse/upload.js') }}"></script>
+  <script type="module" src="{{ static_url('js/browse/app.js') }}"></script>
+  <script src="{{ static_url('js/folder-size-scan.js') }}"></script>
 
   <!-- Hover popup: all tags for a row (overflow) -->
   <div id="fileTagsHoverPopover" class="file-tags-hover-popover" role="tooltip" hidden>
@@ -597,7 +561,7 @@
     </div>
     <form method="dialog" class="modal-backdrop"><button type="submit">close</button></form>
   </dialog>
-  <script src="/static/js/theme.js" defer></script>
+  <script src="{{ static_url('js/theme.js') }}" defer></script>
 </body>
 
 </html>

@@ -1141,7 +1141,7 @@ function beginMediaPermission(mode) {
 
 async function loadLiveKit() {
   if (livekit) return livekit;
-  livekit = await import('./vendor/livekit-client.bundle.js?v=20261021t');
+  livekit = await import('./vendor/livekit-client.bundle.js');
   return livekit;
 }
 
@@ -1306,6 +1306,7 @@ function clearVideos() {
 }
 
 async function joinSession(session, opts = {}) {
+  document.documentElement.dataset.airdCall = '1';
   const { url, token, mode } = session;
   const keepRing = Boolean(opts.keepRing);
   const { Room, RoomEvent, VideoPresets } = await loadLiveKit();
@@ -1404,8 +1405,17 @@ async function joinSession(session, opts = {}) {
     if (phase === 'idle') return;
     void endLocal('Call ended', false);
   });
-  await current.connect(url, token);
+  try {
+    await current.connect(url, token);
+  } catch (err) {
+    if (room === current) {
+      room = null;
+      document.documentElement.dataset.airdCall = '';
+    }
+    throw err;
+  }
   if (phase === 'idle' || room !== current) {
+    if (room === current || !room) document.documentElement.dataset.airdCall = '';
     try { await current.disconnect(); } catch { /* ignore */ }
     return;
   }
@@ -1497,6 +1507,7 @@ function cutCallNow(convId, endingId) {
 }
 
 async function endLocal(message, notify) {
+  document.documentElement.dataset.airdCall = '';
   const convId = activeCallConvId || incoming?.conversation_id || '';
   const endingId = callId;
   const was = phase;

@@ -3,7 +3,7 @@
  */
 'use strict';
 
-const STATIC_CACHE = 'aird-static-v3';
+const STATIC_CACHE = 'aird-static-v4';
 const viewingChatByClient = new Map();
 const shownNotifyIds = new Set();
 const endedCallIds = new Set();
@@ -11,25 +11,14 @@ let pendingCallAction = null;
 let ringingCall = null;
 const PAGE_CACHE = 'aird-pages-v1';
 const SHELL = '/static/pwa-shell.html';
-const PRECACHE = [
-  SHELL,
-  '/manifest.webmanifest',
-  '/static/img/pwa-icon-192.png',
-  '/static/img/pwa-icon-512.png',
-];
+const MANIFEST_MS = 30 * 60 * 1000;
+let fontHashes = Object.create(null);
+let manifestBuild = '';
+let manifestLoadedAt = 0;
+let manifestFlight = null;
 
-globalThis.addEventListener('install', (event) => {
-  event.waitUntil((async () => {
-    const cache = await caches.open(STATIC_CACHE);
-    await Promise.all(PRECACHE.map(async (url) => {
-      try {
-        await cache.add(url);
-      } catch {
-        /* one missing asset must not block install */
-      }
-    }));
-    await globalThis.skipWaiting();
-  })());
+globalThis.addEventListener('install', () => {
+  /* A new worker waits until the page is idle and posts aird-skip-waiting. */
 });
 
 globalThis.addEventListener('activate', (event) => {
@@ -57,28 +46,39 @@ function isStaticAsset(url) {
   return url.pathname.startsWith('/static/') || url.pathname === '/manifest.webmanifest';
 }
 
-function isCodeAsset(url) {
-  return /\.(js|mjs|css|html)$/.test(url.pathname);
+function isHashedStatic(url) {
+  if (!url.pathname.startsWith('/static/')) return false;
+  if (!url.searchParams.get('v')) return false;
+  return /\.(js|mjs|css|png|svg|webp|gif|jpg|jpeg|ico|woff2?)$/.test(url.pathname);
+}
+
+function isFont(url) {
+  return url.pathname.startsWith('/static/fonts/') && /\.woff2?$/.test(url.pathname);
 }
 
 function canStore(response) {
   return response && response.ok && response.type === 'basic' && !response.headers.has('set-cookie');
 }
 
-async function staleWhileRevalidate(event, request, cacheName) {
-  const cache = await caches.open(cacheName);
+async function cacheFirst(request) {
+  const cache = await caches.open(STATIC_CACHE);
   const cached = await cache.match(request);
-  const refresh = fetch(request).then((response) => {
-    if (!canStore(response)) return response;
-    return cache.put(request, response.clone()).then(() => response);
-  }).catch(() => null);
-  if (cached) {
-    event.waitUntil(refresh);
-    return cached;
+  if (cached) return cached;
+  try {
+    const response = await fetch(request);
+    if (canStore(response)) await cache.put(request, response.clone());
+    return response;
+  } catch {
+    return Response.error();
   }
-  const response = await refresh;
-  if (response) return response;
-  return Response.error();
+}
+
+async function networkOnly(request) {
+  try {
+    return await fetch(request, { cache: 'reload' });
+  } catch {
+    return Response.error();
+  }
 }
 
 async function networkFirstAsset(request, cacheName) {
@@ -113,6 +113,118 @@ async function networkFirstPage(request) {
   }
 }
 
+async function rememberManifest(data, allowPrune) {
+  if (!data || typeof data !== 'object') return;
+  const build = String(data.build || '');
+  const files = data.files && typeof data.files === 'object' ? data.files : {};
+  const nextFonts = data.fonts && typeof data.fonts === 'object' ? data.fonts : {};
+  const nextValid = new Set();
+  for (const hash of Object.values(files)) {
+    if (hash) nextValid.add(String(hash));
+  }
+  const changed = Boolean(manifestBuild && build && manifestBuild !== build);
+  fontHashes = nextFonts;
+  manifestBuild = build || manifestBuild;
+  manifestLoadedAt = Date.now();
+  if (allowPrune && changed && nextValid.size) await pruneStatic(nextValid, nextFonts);
+}
+
+async function pruneStatic(valid, fonts) {
+  const cache = await caches.open(STATIC_CACHE);
+  const keys = await cache.keys();
+  await Promise.all(keys.map(async (req) => {
+    let url;
+    try { url = new URL(req.url); } catch { return; }
+    const version = url.searchParams.get('v');
+    if (version) {
+      if (!valid.has(version)) await cache.delete(req);
+      return;
+    }
+    if (!url.pathname.startsWith('/static/fonts/')) return;
+    const expected = fonts[url.pathname];
+    const cached = await cache.match(req);
+    const got = cached && cached.headers.get('X-Aird-Hash');
+    if (expected && got && got !== expected) await cache.delete(req);
+  }));
+}
+
+function loadManifest(force) {
+  if (!force && manifestBuild && Date.now() - manifestLoadedAt < MANIFEST_MS) {
+    return Promise.resolve();
+  }
+  if (manifestFlight) return manifestFlight;
+  manifestFlight = (async () => {
+    try {
+      const res = await fetch(new URL('/api/static-manifest', globalThis.location.origin), { cache: 'reload' });
+      if (!res.ok) return;
+      await rememberManifest(await res.json(), false);
+    } catch {
+      /* offline: keep the last stashed fonts */
+    } finally {
+      manifestFlight = null;
+    }
+  })();
+  return manifestFlight;
+}
+
+async function fontCacheFirst(request, url) {
+  const cache = await caches.open(STATIC_CACHE);
+  const cached = await cache.match(request);
+  try {
+    await loadManifest(false);
+  } catch {
+    /* manifest stays empty offline */
+  }
+  const expected = fontHashes[url.pathname];
+  const cachedHash = cached && cached.headers.get('X-Aird-Hash');
+  if (cached && expected && cachedHash === expected) return cached;
+  if (cached && !manifestBuild) return cached;
+  try {
+    const response = await fetch(request, { cache: 'reload' });
+    if (!canStore(response) || !expected) return response;
+    const headers = new Headers(response.headers);
+    headers.delete('content-encoding');
+    headers.delete('content-length');
+    headers.set('X-Aird-Hash', expected);
+    const stored = new Response(await response.blob(), {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+    await cache.put(request, stored.clone());
+    return stored;
+  } catch {
+    if (cached) return cached;
+    return Response.error();
+  }
+}
+
+function warmUrlOk(value) {
+  try {
+    const url = new URL(value, globalThis.location.origin);
+    return url.origin === globalThis.location.origin
+      && url.pathname.startsWith('/static/')
+      && Boolean(url.searchParams.get('v'));
+  } catch {
+    return false;
+  }
+}
+
+async function warmUrls(urls) {
+  if (!Array.isArray(urls) || !urls.length) return;
+  const cache = await caches.open(STATIC_CACHE);
+  const list = urls.filter(warmUrlOk).slice(0, 200);
+  await Promise.all(list.map(async (url) => {
+    try {
+      if (await cache.match(url)) return;
+      const response = await fetch(url);
+      if (canStore(response)) await cache.put(url, response);
+    } catch {
+      /* one asset must not block the rest */
+    }
+  }));
+}
+
 globalThis.addEventListener('fetch', (event) => {
   let url;
   try {
@@ -121,9 +233,20 @@ globalThis.addEventListener('fetch', (event) => {
     return;
   }
   if (bypassCache(event.request, url)) return;
+  if (url.pathname === SHELL || url.pathname === '/manifest.webmanifest') {
+    event.respondWith(networkFirstAsset(event.request, STATIC_CACHE));
+    return;
+  }
+  if (isHashedStatic(url)) {
+    event.respondWith(cacheFirst(event.request));
+    return;
+  }
+  if (isFont(url)) {
+    event.respondWith(fontCacheFirst(event.request, url));
+    return;
+  }
   if (isStaticAsset(url)) {
-    if (isCodeAsset(url)) event.respondWith(networkFirstAsset(event.request, STATIC_CACHE));
-    else event.respondWith(staleWhileRevalidate(event, event.request, STATIC_CACHE));
+    event.respondWith(networkOnly(event.request));
     return;
   }
   event.respondWith(networkFirstPage(event.request));
@@ -361,6 +484,12 @@ async function openOrFocus(url) {
 globalThis.addEventListener('message', (event) => {
   if (event.origin !== globalThis.location.origin) return;
   const data = event.data || {};
+  if (data.type === 'aird-warm') {
+    event.waitUntil((async () => {
+      await rememberManifest(data, data.prune !== false);
+      await warmUrls(data.urls);
+    })());
+  }
   if ((data.type === 'aird-calls-ready' || data.type === 'aird-call-peek') && event.source && ringingCall) {
     const ringingId = String(ringingCall.payload?.call_id || '');
     if (ringingId && endedCallIds.has(ringingId)) ringingCall = null;

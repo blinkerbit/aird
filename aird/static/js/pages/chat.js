@@ -17,7 +17,7 @@ import {
   restyleCompleted,
   sameBrowseValue,
   takePendingBrowseAttachAll,
-} from '../chat-attach.js?v=20261104e';
+} from '../chat-attach.js';
 import { escapeHtml as esc, escapeCssAttrValue as cssEscape } from '../core/dom-safe.js';
 import { apiFetch } from '../core/http.js';
 import { getXSRFToken } from '../core/xsrf.js';
@@ -29,7 +29,7 @@ import {
   renderShelf,
   triggerFromToken,
   updateCollabMention,
-} from '../chat-collab-mentions.js?v=20261107c';
+} from '../chat-collab-mentions.js';
 
 (function () {
   'use strict';
@@ -1395,7 +1395,7 @@ import {
     scope.querySelectorAll('.chat-collab-card').forEach((node) => {
       if (node.dataset.bound === '1') return;
       node.dataset.bound = '1';
-      import('../collab-ui.js?v=20261107d').then((mod) => mod.hydrateCard(node, { me })).catch(() => {});
+      import('../collab-ui.js').then((mod) => mod.hydrateCard(node, { me })).catch(() => {});
     });
   }
 
@@ -3722,7 +3722,7 @@ import {
       WS.subscribe(handleWsEvent);
     }
     if (globalThis.__AIRD_CALLS_ENABLED__) {
-      import('../chat-calls.js?v=20261107a').then((m) => {
+      import('../chat-calls.js').then((m) => {
         globalThis.AirdChatCalls = m;
         m.initCalls({
           api,

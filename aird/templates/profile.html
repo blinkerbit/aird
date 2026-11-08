@@ -4,8 +4,8 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261106b" />
-  <link rel="icon" href="/static/favicon.png" type="image/png" />
+  <link rel="stylesheet" href="{{ static_url('css/app.css') }}" />
+  <link rel="icon" href="{{ static_url('favicon.png') }}" type="image/png" />
   {% include '_pwa_head.html' %}
   <title>Settings · Aird</title>
 </head>
@@ -380,8 +380,8 @@
     </div>
     </div>
   </div>
-  <script src="/static/js/theme.js" defer></script>
-  <script src="/static/js/webauthn.js" type="module"></script>
+  <script src="{{ static_url('js/theme.js') }}" defer></script>
+  <script src="{{ static_url('js/webauthn.js') }}" type="module"></script>
   {% if is_onedrive_browser_enabled() or is_chat_enabled() %}
   <script nonce="{{ csp_nonce }}">globalThis.__ONEDRIVE_BROWSER_CONFIG = {% raw json_encode_for_script({
     'enabled': is_onedrive_browser_enabled(),
@@ -389,10 +389,10 @@
     'tenant': onedrive_browser_public_config().get('tenant') or 'common',
     'configured': onedrive_browser_public_config().get('configured', False),
   }) %};</script>
-  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/onedrive-fe/index.js?v=20260929c"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="{{ static_url('js/onedrive-fe/index.js') }}"></script>
   {% end %}
   {% if is_chat_enabled() %}
-  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/chat-key-backup.js?v=20260906p"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="{{ static_url('js/chat-key-backup.js') }}"></script>
   {% end %}
   <script nonce="{{ csp_nonce }}">
   function getXsrfToken() {

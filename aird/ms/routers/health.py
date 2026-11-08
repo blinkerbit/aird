@@ -58,6 +58,12 @@ async def service_worker(_request):
     return _sw_response()
 
 
+async def static_manifest(_request: Request):
+    from aird.assets import manifest_payload
+
+    return JSONResponse(manifest_payload(), headers={"Cache-Control": "no-store"})
+
+
 async def manifest(_request):
     path = Path(static_dir()) / "manifest.webmanifest"
     return FileResponse(
@@ -149,6 +155,7 @@ routes = [
     Route("/sw.js", service_worker, methods=["GET"]),
     Route("/sw-transfer.js", service_worker, methods=["GET"]),
     Route("/manifest.webmanifest", manifest, methods=["GET"]),
+    Route("/api/static-manifest", static_manifest, methods=["GET"]),
     Route("/api/pwa/vapid-public-key", vapid_public_key, methods=["GET"]),
     Route("/api/pwa/push-subscribe", push_subscribe, methods=["POST"]),
     Route("/api/pwa/push-unsubscribe", push_unsubscribe, methods=["POST"]),

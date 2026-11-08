@@ -4,8 +4,8 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261106b" />
-  <link rel="icon" href="/static/favicon.png" type="image/png" />
+  <link rel="stylesheet" href="{{ static_url('css/app.css') }}" />
+  <link rel="icon" href="{{ static_url('favicon.png') }}" type="image/png" />
   <title>Network shares · Aird</title>
   <style>
     .mount-panel {
@@ -335,6 +335,6 @@
       });
     })();
   </script>
-  <script src="/static/js/theme.js" defer></script>
+  <script src="{{ static_url('js/theme.js') }}" defer></script>
 </body>
 </html>

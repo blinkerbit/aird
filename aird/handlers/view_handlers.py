@@ -718,9 +718,13 @@ class TaggedFilesHandler(BaseHandler):
 
 class NoCacheStaticFileHandler(tornado.web.StaticFileHandler):
     def set_extra_headers(self, path):
-        self.set_header("Cache-Control", "no-cache, no-store, must-revalidate")
-        self.set_header("Pragma", "no-cache")
-        self.set_header("Expires", "0")
+        version = self.get_query_argument("v", default="")
+        if version:
+            self.set_header("Cache-Control", "public, max-age=31536000, immutable")
+        else:
+            self.set_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.set_header("Pragma", "no-cache")
+            self.set_header("Expires", "0")
         # The document is cross-origin isolated. Dedicated workers must return
         # compatible isolation/resource headers too, otherwise Chromium blocks
         # the worker before any upload request is sent.

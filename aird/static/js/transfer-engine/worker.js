@@ -3,7 +3,7 @@
  */
 importScripts(
   './scheduler.js',
-  './worker-lib.js?v=20260725c'
+  './worker-lib.js'
 );
 
 globalThis.onmessage = (ev) => {

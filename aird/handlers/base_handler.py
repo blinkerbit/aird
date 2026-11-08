@@ -1117,6 +1117,9 @@ class BaseHandler(tornado.web.RequestHandler):
     def get_template_namespace(self):
         """Add CSP nonce to template namespace so templates can use it."""
         namespace = super().get_template_namespace()
+        from aird.assets import template_assets
+
+        namespace.update(template_assets())
         namespace["csp_nonce"] = self.get_csp_nonce()
         namespace["is_feature_enabled"] = is_feature_enabled
         from aird.core.nav import nav_active_for_path

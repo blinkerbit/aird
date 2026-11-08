@@ -45,7 +45,10 @@
 
   function getWorker() {
     if (worker) return worker;
-    worker = new Worker('/static/js/transfer-engine/worker.js?v=20260725c');
+    worker = new Worker(
+      (global.__AIRD_ASSETS && global.__AIRD_ASSETS['js/transfer-engine/worker.js'])
+        || '/static/js/transfer-engine/worker.js'
+    );
     worker.postMessage({
       type: 'visibility',
       visible: document.visibilityState === 'visible',

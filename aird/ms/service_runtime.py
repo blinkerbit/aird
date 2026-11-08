@@ -12,11 +12,11 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 from starlette.routing import BaseRoute, Mount
-from starlette.staticfiles import StaticFiles
 
 from aird.ms.common import mesh_secret_ok, require_mesh_configuration
 from aird.ms.ctx import AppState
 from aird.ms.render import static_dir, templates_dir
+from aird.ms.staticfiles import HashedStaticFiles
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +118,7 @@ def create_service_app(
     service_routes = list(routes)
     if mount_static:
         service_routes.append(
-            Mount("/static", StaticFiles(directory=static_dir()), name="static")
+            Mount("/static", HashedStaticFiles(directory=static_dir()), name="static")
         )
     application = Starlette(routes=service_routes, lifespan=lifespan)
     application.state.aird_service = service

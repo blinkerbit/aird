@@ -70,7 +70,10 @@
 
   function getCompressWorker() {
     if (compressWorker) return compressWorker;
-    compressWorker = new Worker('/static/js/transfer-engine/compress-worker.js');
+    compressWorker = new Worker(
+      (global.__AIRD_ASSETS && global.__AIRD_ASSETS['js/transfer-engine/compress-worker.js'])
+        || '/static/js/transfer-engine/compress-worker.js'
+    );
     return compressWorker;
   }
 

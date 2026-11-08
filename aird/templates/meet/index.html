@@ -4,8 +4,8 @@
   {% include '../_theme_early.html' %}
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="/static/css/app.css?v=20261106b" />
-  <link rel="stylesheet" href="/static/css/collab.css?v=20261107c" />
+  <link rel="stylesheet" href="{{ static_url('css/app.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('css/collab.css') }}" />
   <title>Meet · Aird</title>
 </head>
 <body>
@@ -25,7 +25,7 @@
     </main>
   </div>
   <script nonce="{{ csp_nonce }}">globalThis.__AIRD_ME_USER__ = {% raw json_encode(current_user.get('username') if current_user else '') %};</script>
-  <script nonce="{{ csp_nonce }}" src="/static/js/theme.js"></script>
-  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/pages/meet.js?v=20261107b"></script>
+  <script nonce="{{ csp_nonce }}" src="{{ static_url('js/theme.js') }}"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="{{ static_url('js/pages/meet.js') }}"></script>
 </body>
 </html>

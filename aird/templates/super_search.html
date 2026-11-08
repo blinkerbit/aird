@@ -5,8 +5,8 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261106b" />
-  <link rel="icon" href="/static/favicon.png" type="image/png" />
+  <link rel="stylesheet" href="{{ static_url('css/app.css') }}" />
+  <link rel="icon" href="{{ static_url('favicon.png') }}" type="image/png" />
   {% include '_pwa_head.html' %}
   <title>Super Search · Aird</title>
 </head>
@@ -136,8 +136,8 @@
   </div>
 
   <!-- aird-core.js loads once via _app_nav_header.html above -->
-  <script type="module" src="/static/js/pages/super-search.js?v=20261009a"></script>
-  <script src="/static/js/theme.js" defer></script>
+  <script type="module" src="{{ static_url('js/pages/super-search.js') }}"></script>
+  <script src="{{ static_url('js/theme.js') }}" defer></script>
 </body>
 
 </html>

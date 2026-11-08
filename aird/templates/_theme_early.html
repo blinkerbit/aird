@@ -28,3 +28,6 @@
   root.classList.add('theme-early');
 })();
 </script>
+<meta name="aird-build" content="{{ asset_build_id }}">
+<script nonce="{{ csp_nonce }}" type="importmap">{% raw asset_import_map_json %}</script>
+<script nonce="{{ csp_nonce }}">globalThis.__AIRD_ASSETS = {% raw asset_worker_json %};</script>

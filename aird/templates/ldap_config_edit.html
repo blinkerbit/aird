@@ -4,7 +4,7 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261106b" />
+  <link rel="stylesheet" href="{{ static_url('css/app.css') }}" />
   <title>Edit LDAP configuration · Aird</title>
 </head>
 <body class="bg-base-200 min-h-screen">
@@ -92,6 +92,6 @@
       </div>
     </div>
   </main>
-  </div><script src="/static/js/theme.js"></script>
+  </div><script src="{{ static_url('js/theme.js') }}"></script>
 </body>
 </html>

@@ -590,6 +590,14 @@
     _render();
   }
 
+  function hasActiveWork() {
+    var busy = false;
+    _items.forEach(function (it) {
+      if (it.status !== 'done' && it.status !== 'error') busy = true;
+    });
+    return busy;
+  }
+
   document.addEventListener('click', function (ev) {
     var closeHit = ev.target && ev.target.closest && ev.target.closest('#transferTrackerClose');
     if (!closeHit) return;
@@ -617,6 +625,7 @@
     failByExternalId: failByExternalId,
     updateProgressByExternalId: updateProgressByExternalId,
     clearAll: clearAll,
+    hasActiveWork: hasActiveWork,
     openSidebar: _openSidebar,
     closeSidebar: _closeSidebar,
   };

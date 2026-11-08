@@ -473,8 +473,10 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
             };
 
             peerConnection.onconnectionstatechange = () => {
-                log(`Connection state: ${peerConnection.connectionState}`, 'info');
-                if (peerConnection.connectionState === 'connected') {
+                const state = peerConnection.connectionState;
+                document.documentElement.dataset.airdP2p = (state === 'connected' || state === 'connecting') ? '1' : '';
+                log(`Connection state: ${state}`, 'info');
+                if (state === 'connected') {
                     if (currentMode === 'send') {
                         updateSendStatus('connected', 'P2P connection established!');
                     } else {
@@ -1097,6 +1099,7 @@ let isAnonymous = document.body.dataset.isAnonymous === 'true';
         }
 
         function closePeerConnection() {
+            document.documentElement.dataset.airdP2p = '';
             if (dataChannel) {
                 dataChannel.close();
                 dataChannel = null;

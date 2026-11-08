@@ -4,9 +4,9 @@
   {% include '_theme_early.html' %}
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="/static/css/app.css?v=20261106b" />
-  <link rel="stylesheet" href="/static/css/gitlab.css" />
-  <link rel="icon" href="/static/favicon.png" type="image/png" />
+  <link rel="stylesheet" href="{{ static_url('css/app.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('css/gitlab.css') }}" />
+  <link rel="icon" href="{{ static_url('favicon.png') }}" type="image/png" />
   <title>GitLab · Aird</title>
 </head>
 <body>
@@ -67,7 +67,7 @@
   <script nonce="{{ csp_nonce }}">
     globalThis.__GITLAB_CONFIG = { enabled: true, shareId: null };
   </script>
-  <script nonce="{{ csp_nonce }}" type="module" src="/static/js/gitlab-boot.js?v=20261005b"></script>
-  <script src="/static/js/theme.js" defer></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="{{ static_url('js/gitlab-boot.js') }}"></script>
+  <script src="{{ static_url('js/theme.js') }}" defer></script>
 </body>
 </html>

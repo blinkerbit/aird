@@ -222,6 +222,131 @@ import { apiFetch } from './core/http.js';
     if (Notification.permission === 'default') showPushBanner();
   }
 
+  const UPDATE_MS = 30 * 60 * 1000;
+  let lastCheck = 0;
+  let updateTimer = 0;
+  let reloadArmed = false;
+  let reloading = false;
+  let lastManifest = null;
+
+  function pageBuild() {
+    return document.querySelector('meta[name="aird-build"]')?.content || '';
+  }
+
+  function workBusy() {
+    if (globalThis.AirdTransferTracker?.hasActiveWork?.()) return true;
+    if (document.documentElement.dataset.airdCall === '1') return true;
+    if (document.documentElement.dataset.airdP2p === '1') return true;
+    return false;
+  }
+
+  function reloadOnce() {
+    if (reloading) return;
+    reloading = true;
+    location.reload();
+  }
+
+  function postWarm(data) {
+    if (!data) return;
+    lastManifest = data;
+    const controller = navigator.serviceWorker?.controller;
+    if (!controller) return;
+    controller.postMessage({
+      type: 'aird-warm',
+      build: data.build || '',
+      files: data.files || {},
+      fonts: data.fonts || {},
+      urls: data.warm || [],
+      prune: true,
+    });
+  }
+
+  function tryApply() {
+    if (!reloadArmed || reloading) return;
+    if (workBusy()) {
+      setTimeout(tryApply, 5000);
+      return;
+    }
+    const waiting = swReg && swReg.waiting;
+    if (waiting) {
+      waiting.postMessage({ type: 'aird-skip-waiting' });
+      setTimeout(reloadOnce, 1500);
+      return;
+    }
+    reloadOnce();
+  }
+
+  function armReload() {
+    reloadArmed = true;
+    tryApply();
+  }
+
+  function scheduleUpdate() {
+    if (updateTimer) clearTimeout(updateTimer);
+    updateTimer = 0;
+    if (document.hidden || reloadArmed) return;
+    const wait = Math.max(1000, UPDATE_MS - (Date.now() - lastCheck));
+    updateTimer = setTimeout(() => { void checkForUpdate(); }, wait);
+  }
+
+  async function checkForUpdate() {
+    lastCheck = Date.now();
+    const reg = await ensureServiceWorker();
+    try { await reg?.update(); } catch { /* offline or unsupported */ }
+    let data = null;
+    try {
+      const res = await fetch('/api/static-manifest', {
+        cache: 'no-store',
+        credentials: 'same-origin',
+      });
+      if (res.ok) data = await res.json();
+    } catch { /* offline */ }
+    const local = pageBuild();
+    const buildMoved = Boolean(data && data.build && local && data.build !== local);
+    const waiting = Boolean((reg || swReg)?.waiting);
+    if (buildMoved || waiting) {
+      const stamp = (data && data.build) || 'waiting';
+      try {
+        if (sessionStorage.getItem('aird.swReload') === stamp) {
+          postWarm(data);
+          scheduleUpdate();
+          return;
+        }
+        sessionStorage.setItem('aird.swReload', stamp);
+      } catch { /* private mode */ }
+      armReload();
+      return;
+    }
+    postWarm(data);
+    scheduleUpdate();
+  }
+
+  function onVisibility() {
+    if (document.hidden) {
+      if (updateTimer) clearTimeout(updateTimer);
+      updateTimer = 0;
+      return;
+    }
+    if (reloadArmed) {
+      tryApply();
+      return;
+    }
+    if (!lastCheck || Date.now() - lastCheck >= UPDATE_MS) void checkForUpdate();
+    else scheduleUpdate();
+  }
+
+  function startUpdateWatch() {
+    document.addEventListener('visibilitychange', onVisibility);
+    navigator.serviceWorker?.addEventListener('controllerchange', () => {
+      if (reloadArmed) reloadOnce();
+      else postWarm(lastManifest);
+    });
+    if (document.hidden) return;
+    const run = () => { void checkForUpdate(); };
+    if ('requestIdleCallback' in globalThis) requestIdleCallback(run, { timeout: 2000 });
+    else setTimeout(run, 400);
+  }
+
   function boot() {
     const btn = qs('airdPwaInstallBtn');
     if (btn) {
@@ -259,6 +384,7 @@ import { apiFetch } from './core/http.js';
 
     updateInstallButton();
     ensureInstalledPush();
+    startUpdateWatch();
     void ensureServiceWorker().then((reg) => {
       if (!reg) return;
       // Re-sync subscription if permission already granted

@@ -157,6 +157,7 @@ from aird.handlers.pwa_handlers import (
     PwaPushUnsubscribeHandler,
     PwaVapidPublicKeyHandler,
     ServiceWorkerHandler,
+    StaticManifestHandler,
 )
 from aird.handlers.share_handlers import (
     ShareCreateHandler,
@@ -253,6 +254,7 @@ def make_app(
         (r"/health", HealthHandler),
         (r"/api/openapi.json", OpenAPISpecHandler),
         (r"/api/docs", OpenAPIDocsHandler),
+        (r"/api/static-manifest", StaticManifestHandler),
         (r"/sw.js", ServiceWorkerHandler),
         (r"/sw-transfer.js", ServiceWorkerHandler),
         (r"/manifest.webmanifest", ManifestHandler),
