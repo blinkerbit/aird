@@ -114,11 +114,49 @@ def _handler_db_conn(handler):
 
 
 def resolve_handler_rel(handler, rel: str) -> tuple[str | None, str | None]:
-    """Resolve a browse-relative path for the current user (mounts + personal data)."""
-    from aird.core.browse_paths import resolve_for_user
+    """Resolve a browse-relative path for the current user (mounts + personal data).
+
+    Paths may start with ``@owner/`` to browse another user's tree when a tag
+    grants read or write access to that path.
+    """
+    from aird.core.browse_paths import mounts_for_username, normalize_rel, resolve_for_user, resolve_rel, split_first
+    from aird.core.user_storage import user_data_dir_for_username
+    from aird.services.user_tag_access import ACCESS_NONE, file_tag_access
 
     username = get_username_string_for_db(handler) or ""
-    return resolve_for_user(username, rel, get_user_root(handler), _handler_db_conn(handler))
+    conn = _handler_db_conn(handler)
+    norm = normalize_rel(rel)
+    first, rest = split_first(norm) if norm else ("", "")
+    if first.startswith("@") and len(first) > 1 and conn is not None:
+        owner = first[1:].strip()
+        if owner and file_tag_access(
+            conn, viewer=username, owner_username=owner, rel_path=rest
+        ) != ACCESS_NONE:
+            data_root = user_data_dir_for_username(
+                owner,
+                root_dir=constants_module.ROOT_DIR,
+                multi_user=constants_module.MULTI_USER,
+            )
+            return resolve_rel(data_root, rest, mounts_for_username(conn, owner))
+    return resolve_for_user(username, rel, get_user_root(handler), conn)
+
+
+def tag_grant_file_access(handler, rel: str) -> str | None:
+    """When *rel* is ``@owner/...``, return ``read`` or ``write`` for tag grant."""
+    from aird.core.browse_paths import normalize_rel, split_first
+    from aird.services.user_tag_access import ACCESS_NONE, file_tag_access
+
+    norm = normalize_rel(rel)
+    first, rest = split_first(norm) if norm else ("", "")
+    if not first.startswith("@") or len(first) <= 1:
+        return None
+    owner = first[1:].strip()
+    conn = _handler_db_conn(handler)
+    username = get_username_string_for_db(handler) or ""
+    if not conn or not owner:
+        return None
+    level = file_tag_access(conn, viewer=username, owner_username=owner, rel_path=rest)
+    return None if level == ACCESS_NONE else level
 
 
 # ---------------------------------------------------------------------------

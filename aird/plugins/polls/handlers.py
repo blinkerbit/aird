@@ -82,6 +82,21 @@ class PollListHandler(BaseHandler, XSRFTokenMixin):
                 participants=body.get("participants"),
                 slug=body.get("slug"),
             )
+            from aird.db import user_tags as user_tags_db
+
+            main = self.db_conn
+            if main is not None and poll.get("id"):
+                for raw_id in body.get("tag_ids") or []:
+                    try:
+                        user_tags_db.add_link(
+                            main,
+                            int(raw_id),
+                            owner_username=name,
+                            kind=user_tags_db.KIND_POLL,
+                            resource_key=str(poll["id"]),
+                        )
+                    except (TypeError, ValueError):
+                        continue
             self.write(poll)
         finally:
             conn.close()

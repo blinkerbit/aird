@@ -159,6 +159,13 @@ from aird.handlers.pwa_handlers import (
     ServiceWorkerHandler,
     StaticManifestHandler,
 )
+from aird.handlers.user_tag_handlers import (
+    UserTagBrowseCatalogAPIHandler,
+    UserTagDetailAPIHandler,
+    UserTagLinksAPIHandler,
+    UserTagsAPIHandler,
+    UserTagsPageHandler,
+)
 from aird.handlers.share_handlers import (
     ShareCreateHandler,
     ShareFilesHandler,
@@ -300,6 +307,11 @@ def make_app(
         (r"/admin/api/abac/tag-rename", AdminTagRenameAPIHandler),
         (r"/admin/api/abac/tag-colors", AdminTagColorAPIHandler),
         (r"/api/tags", TagCatalogAPIHandler),
+        (r"/tags", UserTagsPageHandler),
+        (r"/api/user-tags", UserTagsAPIHandler),
+        (r"/api/user-tags/browse-catalog", UserTagBrowseCatalogAPIHandler),
+        (r"/api/user-tags/([0-9]+)", UserTagDetailAPIHandler),
+        (r"/api/user-tags/([0-9]+)/links", UserTagLinksAPIHandler),
         (r"/admin/policies", AdminPoliciesHandler),
         (r"/admin/api/abac/policies", AdminPolicyAPIHandler),
         (r"/admin/api/abac/policies/([0-9]+)", AdminPolicyAPIHandler),

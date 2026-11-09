@@ -463,6 +463,37 @@ class FolderSizeAPIHandler(BaseHandler):
         )
 
 
+def _attach_listing_tags(handler, files, path) -> dict:
+    """Add per-user tag names to each row and return a name→color map."""
+    import sqlite3
+
+    from aird.core.security import join_path
+    from aird.db import user_tags as user_tags_db
+    from aird.handlers.base_handler import get_username_string_for_db
+
+    colors: dict = {}
+    conn = getattr(handler, "db_conn", None)
+    owner = get_username_string_for_db(handler) or ""
+    if isinstance(conn, sqlite3.Connection) and owner:
+        try:
+            for tag in user_tags_db.list_tags_for_owner(conn, owner):
+                colors[str(tag["name"])] = tag["color"]
+        except Exception:
+            logging.debug("listing user tags unavailable", exc_info=True)
+            colors = {}
+    for info in files:
+        name = str(info.get("name") or "")
+        rel = join_path(path, name) if path else name
+        if isinstance(conn, sqlite3.Connection) and owner:
+            info["tags"] = [
+                t["display_name"]
+                for t in user_tags_db.tags_for_file(conn, owner, rel, viewer=owner)
+            ]
+        else:
+            info["tags"] = []
+    return colors
+
+
 class FileListAPIHandler(BaseHandler):
     @tornado.web.authenticated
     @require_action("file.list", resource_arg="path")
@@ -503,11 +534,14 @@ class FileListAPIHandler(BaseHandler):
                     viewer_is_admin=self.is_admin_user(),
                 )
 
+            tag_colors = _attach_listing_tags(self, files, path)
             result = {
                 "path": path,
                 "files": files,
                 "is_video": is_video_file(path),
                 "is_audio": is_audio_file(path),
+                "tag_colors": tag_colors,
+                "can_tag": bool(get_username_string_for_db(self)),
             }
             self.write(result)
         except Exception:
@@ -1186,7 +1220,20 @@ class ShareListAPIHandler(BaseHandler):
                 redacted = _redact_share_secret_token(share)
                 shared_with_me.append(_attach_share_capabilities(self, redacted))
 
-        self.write({"shares": my_shares, "shared_with_me": shared_with_me})
+        tag_grants: list = []
+        try:
+            from aird.db.user_tags import list_granted_files
+
+            tag_grants = list_granted_files(db_conn, current_user)
+        except Exception:
+            logging.debug("tag_granted_files unavailable", exc_info=True)
+        self.write(
+            {
+                "shares": my_shares,
+                "shared_with_me": shared_with_me,
+                "tag_granted_files": tag_grants,
+            }
+        )
 
 
 class FavoriteToggleAPIHandler(BaseHandler):

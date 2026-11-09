@@ -11,6 +11,24 @@
       {% include '_logo_text.html' %}
     </a>
   </div>
+  <div class="aird-nav-switch" aria-label="Files, search, and chat">
+    <a href="/files/" class="aird-nav-switch-btn{% if _nav == 'browse' %} is-on{% end %}" data-switch="to-files" title="Files" aria-label="Files"{% if _nav == 'browse' %} aria-current="page"{% end %}>
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+    </a>
+    {% if is_feature_enabled('super_search', True) %}
+    <a href="/search{% if nav_search_path %}?path={{ escape(nav_search_path) }}{% end %}" class="aird-nav-switch-btn{% if _nav == 'search' %} is-on{% end %}" data-switch="to-search" data-aird-feature="super_search" title="Search" aria-label="Search"{% if _nav == 'search' %} aria-current="page"{% end %}>
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    </a>
+    {% end %}
+    {% if is_chat_enabled() %}
+    <a href="/chat" class="aird-nav-switch-btn{% if _nav == 'chat' %} is-on{% end %}" data-switch="to-chat" data-aird-feature="direct_messages" title="Chat" aria-label="Chat"{% if _nav == 'chat' %} aria-current="page"{% end %}>
+      <span class="chat-nav-ico">
+        <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span class="badge badge-primary badge-xs chat-nav-badge hidden">0</span>
+      </span>
+    </a>
+    {% end %}
+  </div>
   <button type="button" class="aird-nav-burger btn btn-ghost btn-sm btn-square" id="airdNavBurger" aria-label="Open menu" aria-expanded="false" aria-controls="airdNavActions">
     <svg class="aird-nav-burger-open hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
     <svg class="aird-nav-burger-close hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
@@ -61,6 +79,10 @@
       <span class="hidden sm:inline">Chat</span>
     </a>
     {% end %}
+    <a href="/tags" class="btn btn-ghost btn-sm gap-1{% if _nav == 'tags' %} aird-nav-link--active{% end %}" title="Tags"{% if _nav == 'tags' %} aria-current="page"{% end %}>
+      <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h.01M7 3h5a1.99 1.99 0 0 1 1.42.59l7.57 7.57a2 2 0 0 1 0 2.83l-4.24 4.24a2 2 0 0 1-2.83 0l-7.57-7.57A1.99 1.99 0 0 1 3 12V7a4 4 0 0 1 4-4z" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+      <span class="hidden sm:inline">Tags</span>
+    </a>
     {% if is_polls_enabled() %}
     <a href="/polls" class="btn btn-ghost btn-sm gap-1{% if _nav == 'polls' %} aird-nav-link--active{% end %}" title="Polls"{% if _nav == 'polls' %} aria-current="page"{% end %}>
       <svg class="hdr-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><line x1="8" y1="16" x2="8" y2="10" stroke="currentColor" stroke-width="2"/><line x1="12" y1="16" x2="12" y2="6" stroke="currentColor" stroke-width="2"/><line x1="16" y1="16" x2="16" y2="12" stroke="currentColor" stroke-width="2"/></svg>
@@ -300,6 +322,20 @@
   if (android || window.matchMedia('(max-width: 767px)').matches) {
     document.documentElement.classList.add('aird-compact');
   }
+  document.querySelectorAll('.aird-nav-switch a[data-switch]').forEach(function (link) {
+    link.addEventListener('click', function () {
+      try { sessionStorage.setItem('aird-switch', link.getAttribute('data-switch') || ''); } catch (err) { /* private mode */ }
+    });
+  });
+  window.addEventListener('pagereveal', function (event) {
+    if (!event.viewTransition) return;
+    var dir = '';
+    try {
+      dir = sessionStorage.getItem('aird-switch') || '';
+      sessionStorage.removeItem('aird-switch');
+    } catch (err) { /* private mode */ }
+    if (dir) event.viewTransition.types.add(dir);
+  });
   if (!android || !window.HTMLDialogElement) return;
   var show = HTMLDialogElement.prototype.show;
   HTMLDialogElement.prototype.showModal = function () {

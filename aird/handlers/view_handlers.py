@@ -363,12 +363,22 @@ class MainHandler(BaseHandler):
                         db_conn, username
                     )
                 )
-        tag_rules = list_resource_tags(db_conn) if db_conn else []
-        tag_colors = get_tag_colors_map(db_conn) if db_conn else {}
+        from aird.db import user_tags as user_tags_db
+
+        owner = get_username_string_for_db(self) or ""
+        tag_colors: dict[str, str] = {}
         file_tags_map: dict[str, list[str]] = {}
-        for f in files:
-            rel = join_path(path, f["name"]) if path else f["name"]
-            file_tags_map[f["name"]] = get_tags_for_path(tag_rules, rel)
+        if db_conn and owner:
+            for tag in user_tags_db.list_tags_for_owner(db_conn, owner):
+                tag_colors[str(tag["name"])] = tag["color"]
+            for f in files:
+                rel = join_path(path, f["name"]) if path else f["name"]
+                file_tags_map[f["name"]] = [
+                    t["display_name"]
+                    for t in user_tags_db.tags_for_file(db_conn, owner, rel, viewer=owner)
+                ]
+        else:
+            tag_colors = {}
 
         runtime_config = self.get_service("config_service").get_runtime_config(
             self.db_conn

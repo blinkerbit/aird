@@ -107,10 +107,40 @@ def _handler_mounts(handler) -> list[dict]:
     return mounts_for_username(handler.db_conn, get_username_string_for_db(handler) or "")
 
 
+def _mounts_for_rel(handler, rel: str) -> list[dict]:
+    from aird.core.browse_paths import normalize_rel, split_first
+
+    norm = normalize_rel(rel)
+    first, _rest = split_first(norm) if norm else ("", "")
+    if first.startswith("@") and len(first) > 1:
+        owner = first[1:].strip()
+        if owner:
+            return mounts_for_username(handler.db_conn, owner)
+    return _handler_mounts(handler)
+
+
+def _strip_tag_owner_prefix(rel: str) -> str:
+    from aird.core.browse_paths import normalize_rel, split_first
+
+    norm = normalize_rel(rel)
+    first, rest = split_first(norm) if norm else ("", "")
+    if first.startswith("@") and len(first) > 1:
+        return rest
+    return rel
+
+
 def _deny_write_rel(handler, *rels, as_target: bool = False) -> bool:
-    mounts = _handler_mounts(handler)
+    from aird.handlers.base_handler import tag_grant_file_access
+
     for rel in rels:
-        if write_blocked_reason(rel, mounts, as_target=as_target):
+        grant = tag_grant_file_access(handler, rel)
+        if grant == "read":
+            handler.set_status(403)
+            handler.write(ACCESS_DENIED)
+            return True
+        mount_rel = _strip_tag_owner_prefix(rel)
+        mounts = _mounts_for_rel(handler, rel)
+        if write_blocked_reason(mount_rel, mounts, as_target=as_target):
             handler.set_status(403)
             handler.write(ACCESS_DENIED)
             return True

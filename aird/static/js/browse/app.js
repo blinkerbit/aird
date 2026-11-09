@@ -17,6 +17,7 @@ import { initOneDriveFeUi } from '../onedrive-fe/index.js';
 import { registerOneDriveFeBrowseActions } from './onedrive-fe-actions.js';
 import { initBrowseGitlabPanel } from './gitlab-panel.js';
 import { initBrowseTypeFilter } from './type-filter.js';
+import { initFileSheet } from './file-sheet.js';
 import {
   initFileListViewToggle,
   initFileGridToggle,
@@ -77,6 +78,7 @@ export function initBrowsePage() {
 
   runInitStep('FolderPicker', () => globalThis.AirdFolderPicker?.init?.());
   runInitStep('upload', initUploadUi);
+  runInitStep('fileSheet', initFileSheet);
   runInitStep('rowActions', wireBrowseRowActions);
   runInitStep('sharePopupClose', wireSharePopupClose);
   runInitStep('selectionUi', initBrowseSelectionUi);

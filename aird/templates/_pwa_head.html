@@ -1,5 +1,25 @@
 {# PWA / installability meta — include inside <head> on app pages. #}
 <link rel="manifest" href="/manifest.webmanifest" />
+<meta name="view-transition" content="same-origin" />
+<style>
+  @view-transition { navigation: auto; }
+  @keyframes aird-switch-out-left { to { transform: translateX(-22%); } }
+  @keyframes aird-switch-in-right { from { transform: translateX(22%); } }
+  @keyframes aird-switch-out-right { to { transform: translateX(22%); } }
+  @keyframes aird-switch-in-left { from { transform: translateX(-22%); } }
+  @keyframes aird-switch-deeper-out { to { transform: translateX(-12%); } }
+  @keyframes aird-switch-deeper-in { from { transform: translateX(12%); } }
+  :root:active-view-transition-type(to-files)::view-transition-old(root),
+  :root:active-view-transition-type(deeper)::view-transition-old(root) { animation: 260ms ease both aird-switch-out-left; }
+  :root:active-view-transition-type(to-files)::view-transition-new(root),
+  :root:active-view-transition-type(deeper)::view-transition-new(root) { animation: 260ms ease both aird-switch-in-right; }
+  :root:active-view-transition-type(to-chat)::view-transition-old(root),
+  :root:active-view-transition-type(to-search)::view-transition-old(root) { animation: 260ms ease both aird-switch-out-right; }
+  :root:active-view-transition-type(to-chat)::view-transition-new(root),
+  :root:active-view-transition-type(to-search)::view-transition-new(root) { animation: 260ms ease both aird-switch-in-left; }
+  :root:active-view-transition-type(deeper)::view-transition-old(root) { animation-name: aird-switch-deeper-out; }
+  :root:active-view-transition-type(deeper)::view-transition-new(root) { animation-name: aird-switch-deeper-in; }
+</style>
 <meta name="theme-color" content="#1d232a" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />

@@ -7,6 +7,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 
 from aird.plugins.collab.acl import can_access, normalize_visibility
+from aird.services.user_tag_access import ACCESS_READ, ACCESS_WRITE, meet_tag_access
 from aird.plugins.collab.status import is_active
 from aird.plugins.collab.slugs import unique_slug, assign_slug
 
@@ -57,12 +58,15 @@ def _participants(conn: sqlite3.Connection, meet_id: str) -> set[str]:
 
 
 def _user_may_view(conn: sqlite3.Connection, row: sqlite3.Row, username: str) -> bool:
-    return can_access(
+    if can_access(
         visibility=row["visibility"],
         organizer=row["organizer"],
         username=username,
         participants=_participants(conn, row["id"]),
-    )
+    ):
+        return True
+    level = meet_tag_access(conn, username, row["organizer"], row["id"])
+    return level in (ACCESS_READ, ACCESS_WRITE)
 
 
 def _is_live(row: sqlite3.Row) -> bool:
@@ -204,12 +208,27 @@ def end_meet(conn: sqlite3.Connection, meet_id: str, username: str) -> bool:
     return True
 
 
+def _user_may_join(conn: sqlite3.Connection, row: sqlite3.Row, username: str) -> bool:
+    if row["organizer"] == username:
+        return True
+    if can_access(
+        visibility=row["visibility"],
+        organizer=row["organizer"],
+        username=username,
+        participants=_participants(conn, row["id"]),
+    ):
+        return True
+    return meet_tag_access(conn, username, row["organizer"], row["id"]) == ACCESS_WRITE
+
+
 def meet_join_allowed(conn: sqlite3.Connection, meet_id: str, username: str) -> tuple[bool, str]:
     row = conn.execute("SELECT * FROM meets WHERE id = ?", (meet_id,)).fetchone()
     if not row:
         return False, "Not found"
     if not _user_may_view(conn, row, username):
         return False, "Forbidden"
+    if not _user_may_join(conn, row, username):
+        return False, "Write access required to join"
     if not _is_live(row):
         return False, "Meeting expired or ended"
     return True, ""

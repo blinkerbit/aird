@@ -3620,13 +3620,15 @@ import {
   });
 
   async function updateNavBadge(fallbackTotal) {
-    const badge = document.getElementById('chatUnreadBadge');
-    if (!badge) return;
+    const badges = document.querySelectorAll('.chat-nav-badge');
+    if (!badges.length) return;
     if (typeof fallbackTotal === 'number') {
-      if (fallbackTotal > 0) {
-        badge.textContent = fallbackTotal > 99 ? '99+' : String(fallbackTotal);
-        badge.classList.remove('hidden');
-      } else badge.classList.add('hidden');
+      badges.forEach((badge) => {
+        if (fallbackTotal > 0) {
+          badge.textContent = fallbackTotal > 99 ? '99+' : String(fallbackTotal);
+          badge.classList.remove('hidden');
+        } else badge.classList.add('hidden');
+      });
       return;
     }
     try {

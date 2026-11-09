@@ -193,7 +193,7 @@ code, kbd, pre, samp {
   line-height: 0;
 }
 
-#chatUnreadBadge.chat-nav-badge {
+.chat-nav-badge {
   position: absolute;
   top: -6px;
   right: -8px;
@@ -532,6 +532,29 @@ code, kbd, pre, samp {
   flex-shrink: 0;
 }
 
+.aird-nav-switch {
+  display: none;
+  align-items: center;
+  gap: 0.1rem;
+  flex-shrink: 0;
+  margin-left: 0.15rem;
+}
+
+.aird-nav-switch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.65rem;
+  color: inherit;
+}
+
+.aird-nav-switch-btn.is-on {
+  background: color-mix(in oklch, var(--color-primary) 16%, transparent);
+  color: var(--color-primary);
+}
+
 .aird-nav-burger {
   display: none;
   flex-shrink: 0;
@@ -564,6 +587,11 @@ code, kbd, pre, samp {
   .aird-nav {
     flex-wrap: nowrap;
     align-items: center;
+  }
+
+  .aird-nav > .aird-nav-switch,
+  html.aird-android .aird-nav > .aird-nav-switch {
+    display: inline-flex;
   }
 
   .aird-nav > .aird-nav-burger {
@@ -634,6 +662,11 @@ code, kbd, pre, samp {
 }
 
 /* Desktop / tablet: if any action would spill past the bar, stack them all. */
+.aird-nav.is-collapsed > .aird-nav-switch,
+html.aird-android .aird-nav > .aird-nav-switch {
+  display: inline-flex;
+}
+
 .aird-nav.is-collapsed > .aird-nav-burger {
   display: inline-flex;
   margin-left: 0.15rem;

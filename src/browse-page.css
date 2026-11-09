@@ -2284,3 +2284,105 @@
   gap: 8px;
   margin-top: 16px;
 }
+
+html.aird-android .aird-page-lead,
+html.aird-compact .aird-page-lead { display: none; }
+
+html.aird-android .aird-dropzone,
+html.aird-compact .aird-dropzone {
+  margin-bottom: 0.75rem;
+  padding: 0.85rem 1rem;
+}
+
+html.aird-android .aird-dropzone-hint,
+html.aird-compact .aird-dropzone-hint { display: none; }
+
+.aird-file-sheet[hidden] { display: none !important; }
+
+.aird-file-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+}
+
+.aird-file-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: color-mix(in oklch, var(--color-base-content) 35%, transparent);
+}
+
+.aird-file-sheet-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  gap: 0.75rem;
+  max-height: min(78vh, 34rem);
+  overflow: auto;
+  padding: 0.55rem 1rem calc(1rem + env(safe-area-inset-bottom));
+  border-radius: 1.1rem 1.1rem 0 0;
+  background: var(--color-base-100);
+  color: var(--color-base-content);
+  box-shadow: 0 -12px 40px color-mix(in oklch, var(--color-base-content) 18%, transparent);
+  animation: aird-file-sheet-in 220ms ease;
+}
+
+@keyframes aird-file-sheet-in {
+  from { transform: translateY(100%); }
+}
+
+.aird-file-sheet-grab {
+  width: 2.4rem;
+  height: 0.28rem;
+  margin: 0.15rem auto 0;
+  border-radius: 999px;
+  background: var(--color-base-300);
+}
+
+.aird-file-sheet-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.aird-file-sheet-note {
+  margin: -0.35rem 0 0;
+  font-size: 0.78rem;
+  opacity: 0.65;
+}
+
+.aird-file-sheet-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  min-height: 1.6rem;
+}
+
+.aird-file-sheet-actions {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.aird-file-sheet-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0 0.9rem;
+  border: 1px solid var(--color-base-300);
+  border-radius: 0.75rem;
+  background: var(--color-base-200);
+  color: inherit;
+  font: inherit;
+  font-weight: 650;
+  text-align: left;
+}
+
+.aird-file-sheet-actions button.is-danger {
+  color: var(--color-error);
+}

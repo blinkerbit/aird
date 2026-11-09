@@ -102,6 +102,8 @@ def _components() -> dict[str, Any]:
                     "size_str": {"type": "string"},
                     "modified": {"type": "string"},
                     "modified_timestamp": {"type": "integer"},
+                    "is_shared": {"type": "boolean"},
+                    "tags": {"type": "array", "items": {"type": "string"}},
                 },
             },
             "FileList": {
@@ -111,6 +113,8 @@ def _components() -> dict[str, Any]:
                     "files": {"type": "array", "items": {"$ref": "#/components/schemas/FileEntry"}},
                     "is_video": {"type": "boolean"},
                     "is_audio": {"type": "boolean"},
+                    "tag_colors": {"type": "object", "additionalProperties": {"type": "string"}},
+                    "can_tag": {"type": "boolean"},
                 },
             },
             "Health": {

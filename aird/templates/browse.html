@@ -179,7 +179,7 @@
             </div>
           </td>
           {% set _file_tags = file_tags_map.get(file['name'], []) %}
-          {% set _can_tag = current_user and current_user.get('role') == 'admin' %}
+          {% set _can_tag = bool(current_user) %}
           <td class="tags-cell" data-label="Tags" data-path="{{ escape(join_path(current_path, file['name'])) }}"
             data-tags="{{ escape(','.join(_file_tags)) if _file_tags else '' }}">
             <div class="tags-cell-inner">
@@ -439,14 +439,15 @@
       rangePipelineDepth: {{ range_pipeline_depth }},
       wsChunkBytes: {{ ws_chunk_bytes }},
       transferStrategy: {% raw json_encode_for_script(transfer_strategy) %},
-      canTag: {{ 'true' if current_user and current_user.get('role') == 'admin' else 'false' }},
+      canTag: {{ 'true' if current_user else 'false' }},
       chat: {{ 'true' if features.get('direct_messages') else 'false' }},
       tagColors: {% raw json_encode_for_script(tag_colors) %},
       features: {
         download: {{ 'true' if features.get('file_download') else 'false' }},
         edit: {{ 'true' if features.get('file_edit') else 'false' }},
         rename: {{ 'true' if features.get('file_rename') else 'false' }},
-        delete: {{ 'true' if features.get('file_delete') else 'false' }}
+        delete: {{ 'true' if features.get('file_delete') else 'false' }},
+        share: {{ 'true' if features.get('file_share') else 'false' }}
       }
     };
     globalThis.__ONEDRIVE_BROWSER_CONFIG = {% raw json_encode_for_script({

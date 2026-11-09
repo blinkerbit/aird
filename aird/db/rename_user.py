@@ -25,6 +25,7 @@ _IDENTITY_COLUMNS = frozenset(
         "created_by",
         "updated_by",
         "pinned_by",
+        "owner_username",
     }
 )
 _JSON_LISTS = (

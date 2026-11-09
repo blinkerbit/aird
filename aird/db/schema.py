@@ -215,6 +215,59 @@ def init_db(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS user_tags (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_username TEXT NOT NULL,
+            name TEXT NOT NULL,
+            access TEXT NOT NULL DEFAULT 'none'
+                CHECK (access IN ('none', 'read', 'write')),
+            color TEXT NOT NULL DEFAULT '#6366f1',
+            created_at TEXT NOT NULL,
+            UNIQUE(owner_username, name)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_user_tags_owner
+        ON user_tags (owner_username)
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_tag_members (
+            tag_id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            PRIMARY KEY (tag_id, username),
+            FOREIGN KEY (tag_id) REFERENCES user_tags(id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_user_tag_members_user
+        ON user_tag_members (username)
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_tag_links (
+            tag_id INTEGER NOT NULL,
+            kind TEXT NOT NULL CHECK (kind IN ('file', 'poll', 'list', 'meet')),
+            resource_key TEXT NOT NULL,
+            PRIMARY KEY (tag_id, kind, resource_key),
+            FOREIGN KEY (tag_id) REFERENCES user_tags(id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_user_tag_links_kind_key
+        ON user_tag_links (kind, resource_key)
+        """
+    )
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS policies (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL,

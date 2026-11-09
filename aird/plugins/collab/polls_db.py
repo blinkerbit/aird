@@ -7,7 +7,8 @@ import secrets
 import sqlite3
 from datetime import datetime, timezone
 
-from aird.plugins.collab.acl import can_access, normalize_visibility
+from aird.plugins.collab.acl import VISIBILITY_PUBLIC, can_access, normalize_visibility
+from aird.services.user_tag_access import ACCESS_READ, ACCESS_WRITE, poll_tag_access
 from aird.plugins.collab.slugs import assign_slug
 from aird.plugins.collab.status import is_active
 
@@ -80,12 +81,31 @@ def _participants(conn: sqlite3.Connection, poll_id: str) -> set[str]:
 
 
 def _user_may_view(conn: sqlite3.Connection, row: sqlite3.Row, username: str) -> bool:
-    return can_access(
+    if can_access(
         visibility=row["visibility"],
         organizer=row["organizer"],
         username=username,
         participants=_participants(conn, row["id"]),
-    )
+    ):
+        return True
+    level = poll_tag_access(conn, username, row["organizer"], row["id"])
+    return level in (ACCESS_READ, ACCESS_WRITE)
+
+
+def _user_may_vote(conn: sqlite3.Connection, row: sqlite3.Row, username: str) -> bool:
+    if row["organizer"] == username:
+        return True
+    if can_access(
+        visibility=row["visibility"],
+        organizer=row["organizer"],
+        username=username,
+        participants=_participants(conn, row["id"]),
+    ):
+        if normalize_visibility(row["visibility"]) == VISIBILITY_PUBLIC:
+            return True
+        if username in _participants(conn, row["id"]):
+            return True
+    return poll_tag_access(conn, username, row["organizer"], row["id"]) == ACCESS_WRITE
 
 
 def create_poll(
@@ -182,7 +202,15 @@ def update_poll(
 ) -> dict | None:
     """Organizer edit. Changing the question, options, or multi-choice clears every vote."""
     row = conn.execute("SELECT * FROM polls WHERE id = ?", (poll_id,)).fetchone()
-    if not row or row["organizer"] != username:
+    if not row:
+        return None
+    is_org = row["organizer"] == username
+    tag_write = poll_tag_access(conn, username, row["organizer"], poll_id) == ACCESS_WRITE
+    if not is_org and not tag_write:
+        return None
+    if not is_org and (
+        visibility is not None or participants is not None or slug is not None
+    ):
         return None
     now = _now()
     new_question = row["question"] if question is None else question.strip()
@@ -210,7 +238,11 @@ def update_poll(
         ]
         options_changed = labels != existing
     reset_votes = question_changed or options_changed or multi_changed
-    vis = row["visibility"] if visibility is None else normalize_visibility(visibility)
+    vis = (
+        row["visibility"]
+        if not is_org or visibility is None
+        else normalize_visibility(visibility)
+    )
     conn.execute(
         "UPDATE polls SET question = ?, visibility = ?, allow_multi = ?, updated_at = ? WHERE id = ?",
         (new_question, vis, 1 if multi else 0, now, poll_id),
@@ -224,7 +256,7 @@ def update_poll(
             )
     if reset_votes:
         conn.execute("DELETE FROM poll_votes WHERE poll_id = ?", (poll_id,))
-    if visibility is not None or participants is not None:
+    if is_org and (visibility is not None or participants is not None):
         if vis == "private":
             names = {username}
             source = participants if participants is not None else _participants(conn, poll_id)
@@ -239,7 +271,7 @@ def update_poll(
                 )
         else:
             conn.execute("DELETE FROM poll_participants WHERE poll_id = ?", (poll_id,))
-    if slug is not None:
+    if is_org and slug is not None:
         assign_slug(conn, "polls", poll_id, new_question, slug)
     conn.commit()
     return poll_detail(conn, poll_id, username)
@@ -253,6 +285,8 @@ def cast_vote(
 ) -> dict | None:
     row = conn.execute("SELECT * FROM polls WHERE id = ?", (poll_id,)).fetchone()
     if not row or not _user_may_view(conn, row, username):
+        return None
+    if not _user_may_vote(conn, row, username):
         return None
     if not is_active("poll", {"closes_at": row["closes_at"]}):
         return None

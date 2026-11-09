@@ -3,8 +3,15 @@
 // Repository pattern: all tag endpoints sit behind `tagsRequest`, which
 // goes through the shared HTTP gateway (XSRF + parsing in one place).
 import { apiFetch } from '../core/http.js';
-import { isAutoColorEnabled, setTagColorLocal } from './util.js';
+import { setTagColorLocal } from './util.js';
 import { normalizeRelPath } from './rows.js';
+import {
+  applyUserTagsToPaths,
+  attachTagToFile,
+  detachTagFromFile,
+  fetchUserTagCatalog,
+  updateUserTag,
+} from '../user-tag-api.js';
 
 const TAGS_URL = '/admin/api/abac/tags';
 const TAG_COLORS_URL = '/admin/api/abac/tag-colors';
@@ -25,29 +32,23 @@ export function pathToGlob(path) {
 }
 
 export async function fetchTagCatalog() {
-  try {
-    const { ok, data } = await tagsRequest('/api/tags', 'GET');
-    if (!ok) return { names: [], colors: {} };
-    return { names: Array.isArray(data.names) ? data.names : [], colors: data.colors || {} };
-  } catch {
-    return { names: [], colors: {} };
-  }
+  return fetchUserTagCatalog();
 }
 
 export async function postTagRule(tag, globPattern, { color, autoColor } = {}) {
-  const body = { tag, glob_pattern: globPattern };
-  if (color) body.color = color;
-  body.auto_color = autoColor ?? isAutoColorEnabled();
-  const { ok: resOk, status, data } = await tagsRequest(TAGS_URL, 'POST', body);
-  const ok = resOk || status === 409;
-  if (ok && data.color) setTagColorLocal(tag, data.color);
-  return { ok, created: status === 201, color: data.color || '' };
+  const path = globPattern.replace(/^\//, '');
+  const result = await attachTagToFile(tag, path, { color, autoColor });
+  return { ok: !!result.ok, created: !!result.ok, color: result.color || '' };
 }
 
 export async function putTagColor(tag, color) {
-  const { ok, data } = await tagsRequest(TAG_COLORS_URL, 'PUT', { tag, color });
-  if (ok && data.color) setTagColorLocal(tag, data.color);
-  return { ok, color: data.color || color };
+  const catalog = await fetchUserTagCatalog();
+  const row = (catalog.tags || []).find(function (t) { return t.name === tag; });
+  if (!row) return { ok: false, color };
+  const { ok, data } = await updateUserTag(row.id, { color });
+  const hex = data?.color || color;
+  if (ok && hex) setTagColorLocal(tag, hex);
+  return { ok, color: hex };
 }
 
 export async function deleteTagRuleIds(ids) {
@@ -58,9 +59,7 @@ export async function deleteTagRuleIds(ids) {
 }
 
 export async function untagPath(tag, path) {
-  const { ok, data } = await tagsRequest(TAGS_URL, 'DELETE', { tag, glob_pattern: pathToGlob(path) });
-  if (!ok) return { ok: false, count: 0 };
-  return { ok: true, count: data.count || 0 };
+  return detachTagFromFile(tag, path);
 }
 
 export async function fetchAllTagRules() {
@@ -90,26 +89,5 @@ export async function fetchTagExport() {
 }
 
 export async function applyTagRules(tags, paths, { colors = {} } = {}) {
-  const autoColor = isAutoColorEnabled();
-  const jobs = [];
-  for (const path of paths) {
-    const glob = pathToGlob(path);
-    for (const tag of tags) {
-      jobs.push({ tag, glob });
-    }
-  }
-  const outcomes = await Promise.all(jobs.map(async ({ tag, glob }) => {
-    try {
-      return await postTagRule(tag, glob, { color: colors[tag], autoColor });
-    } catch {
-      return { ok: false };
-    }
-  }));
-  let created = 0;
-  let failed = 0;
-  for (const result of outcomes) {
-    if (result.ok) created++;
-    else failed++;
-  }
-  return { created, failed };
+  return applyUserTagsToPaths(tags, paths, { colors });
 }

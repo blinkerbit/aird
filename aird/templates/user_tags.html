@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  {% include '_theme_early.html' %}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{ static_url('css/app.css') }}" />
+  <title>Tags · Aird</title>
+</head>
+<body>
+  <div class="aird-shell aird-shell--wide">
+    {% include '_app_nav_header.html' %}
+    <main class="p-4 max-w-4xl mx-auto" id="userTagsPage">
+      <header class="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 class="text-2xl font-bold">My tags</h1>
+          <p class="text-sm opacity-70">Organize your files and collab items. Set read or write to grant members access.</p>
+        </div>
+      </header>
+      <form id="userTagCreate" class="flex flex-wrap gap-2 mb-6">
+        <input type="text" name="name" class="input input-bordered input-sm" placeholder="Tag name" maxlength="64" required />
+        <select name="access" class="select select-bordered select-sm">
+          <option value="none">Simple (label only)</option>
+          <option value="read">Read</option>
+          <option value="write">Write</option>
+        </select>
+        <button type="submit" class="btn btn-primary btn-sm">Create</button>
+      </form>
+      <div id="userTagsList" class="space-y-4" aria-live="polite"></div>
+      <section class="mt-10">
+        <h2 class="text-lg font-semibold mb-2">Shared with me (via tags)</h2>
+        <ul id="userTagGrants" class="list-disc pl-5 text-sm"></ul>
+      </section>
+    </main>
+  </div>
+  <script nonce="{{ csp_nonce }}" src="{{ static_url('js/theme.js') }}"></script>
+  <script nonce="{{ csp_nonce }}" type="module" src="{{ static_url('js/pages/user-tags.js') }}"></script>
+</body>
+</html>

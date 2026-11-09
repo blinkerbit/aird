@@ -10,14 +10,14 @@ import { setAppIconBadge } from './core/app-badge.js';
   function updateBadge(total) {
     if (total == null || Number.isNaN(Number(total))) return;
     void setAppIconBadge(total);
-    const badge = document.getElementById('chatUnreadBadge');
-    if (!badge) return;
-    if (total > 0) {
-      badge.textContent = total > 99 ? '99+' : String(total);
-      badge.classList.remove('hidden');
-    } else {
-      badge.classList.add('hidden');
-    }
+    document.querySelectorAll('.chat-nav-badge').forEach((badge) => {
+      if (total > 0) {
+        badge.textContent = total > 99 ? '99+' : String(total);
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    });
   }
 
   async function refreshUnread() {

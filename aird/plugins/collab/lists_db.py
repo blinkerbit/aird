@@ -8,6 +8,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 from aird.plugins.collab.acl import can_access, normalize_visibility
+from aird.services.user_tag_access import ACCESS_READ, ACCESS_WRITE, list_tag_access
 from aird.plugins.collab.slugs import assign_slug
 from aird.plugins.collab.status import is_active
 
@@ -57,12 +58,21 @@ def _participants(conn: sqlite3.Connection, list_id: str) -> set[str]:
 
 
 def _user_may_view(conn: sqlite3.Connection, row: sqlite3.Row, username: str) -> bool:
-    return can_access(
+    if can_access(
         visibility=row["visibility"],
         organizer=row["organizer"],
         username=username,
         participants=_participants(conn, row["id"]),
-    )
+    ):
+        return True
+    level = list_tag_access(conn, username, row["organizer"], row["id"])
+    return level in (ACCESS_READ, ACCESS_WRITE)
+
+
+def _user_may_edit_items(conn: sqlite3.Connection, row: sqlite3.Row, username: str) -> bool:
+    if row["organizer"] == username:
+        return True
+    return list_tag_access(conn, username, row["organizer"], row["id"]) == ACCESS_WRITE
 
 
 def list_lists_for_user(conn: sqlite3.Connection, username: str) -> list[dict]:
@@ -211,7 +221,7 @@ def add_item(
     labels: list | None = None,
 ) -> dict | None:
     row = conn.execute("SELECT * FROM collab_lists WHERE id = ?", (list_id,)).fetchone()
-    if not row or not _user_may_view(conn, row, username):
+    if not row or not _user_may_edit_items(conn, row, username):
         return None
     body = str(text or "").strip()
     if not body:
@@ -238,7 +248,7 @@ def delete_item(
     username: str,
 ) -> dict | None:
     row = conn.execute("SELECT * FROM collab_lists WHERE id = ?", (list_id,)).fetchone()
-    if not row or not _user_may_view(conn, row, username):
+    if not row or not _user_may_edit_items(conn, row, username):
         return None
     conn.execute("DELETE FROM list_items WHERE id = ? AND list_id = ?", (item_id, list_id))
     conn.execute("UPDATE collab_lists SET updated_at = ? WHERE id = ?", (_now(), list_id))
@@ -257,7 +267,7 @@ def patch_item(
     labels: list | None = None,
 ) -> dict | None:
     row = conn.execute("SELECT * FROM collab_lists WHERE id = ?", (list_id,)).fetchone()
-    if not row or not _user_may_view(conn, row, username):
+    if not row or not _user_may_edit_items(conn, row, username):
         return None
     item = conn.execute(
         "SELECT * FROM list_items WHERE id = ? AND list_id = ?", (item_id, list_id)
