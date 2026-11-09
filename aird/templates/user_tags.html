@@ -14,19 +14,70 @@
       <header class="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 class="text-2xl font-bold">My tags</h1>
-          <p class="text-sm opacity-70">Organize your files and collab items. Set read or write to grant members access.</p>
+          <p class="text-sm opacity-70">Organize files and collab items. Open Access on any tag to choose who can view or edit, and change it whenever you want.</p>
         </div>
       </header>
       <form id="userTagCreate" class="flex flex-wrap gap-2 mb-6">
         <input type="text" name="name" class="input input-bordered input-sm" placeholder="Tag name" maxlength="64" required />
-        <select name="access" class="select select-bordered select-sm">
-          <option value="none">Simple (label only)</option>
-          <option value="read">Read</option>
-          <option value="write">Write</option>
-        </select>
         <button type="submit" class="btn btn-primary btn-sm">Create</button>
       </form>
-      <div id="userTagsList" class="space-y-4" aria-live="polite"></div>
+      <style>
+        .tag-card { display: flex; flex-direction: column; gap: .45rem; padding: .45rem .7rem; }
+        .tag-card-head { display: flex; align-items: center; gap: .55rem; min-height: 0; }
+        .tag-card-name { font-weight: 650; text-decoration: none; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .tag-card-name:hover { text-decoration: underline; }
+        .tag-card-summary { font-size: .75rem; opacity: .65; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+        .tag-access-toggle { margin-left: auto; flex: 0 0 auto; }
+        .tag-access-panel {
+          display: grid; gap: .75rem; padding: .75rem;
+          border: 1px solid var(--color-base-300); border-radius: .75rem;
+          background: var(--color-base-100);
+        }
+        .tag-access-panel[hidden] { display: none !important; }
+        .tag-access-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }
+        .tag-access-choice {
+          text-align: left; border: 1px solid var(--color-base-300); border-radius: .65rem;
+          background: transparent; color: inherit; padding: .55rem .65rem; cursor: pointer;
+        }
+        .tag-access-choice strong { display: block; font-size: .82rem; }
+        .tag-access-choice span { display: block; margin-top: .15rem; font-size: .72rem; opacity: .7; line-height: 1.3; }
+        .tag-access-choice.is-on {
+          border-color: var(--color-primary);
+          background: color-mix(in srgb, var(--color-primary) 12%, var(--color-base-100));
+        }
+        .tag-people[hidden] { display: none !important; }
+        .tag-people-label { font-size: .75rem; font-weight: 650; margin: 0 0 .35rem; }
+        .tag-people-chips { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .4rem; }
+        .tag-person {
+          display: inline-flex; align-items: center; gap: .2rem;
+          border-radius: 999px; padding: .15rem .2rem .15rem .55rem;
+          background: var(--color-base-200); font-size: .78rem;
+        }
+        .tag-person button {
+          border: 0; background: transparent; color: inherit; cursor: pointer;
+          width: 1.3rem; height: 1.3rem; border-radius: 999px;
+        }
+        .tag-person button:hover { background: var(--color-base-300); }
+        .tag-person-box { position: relative; }
+        .tag-person-suggest {
+          position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + .2rem);
+          background: var(--color-base-100); border: 1px solid var(--color-base-300);
+          border-radius: .55rem; box-shadow: 0 8px 24px rgba(0,0,0,.12); overflow: hidden;
+        }
+        .tag-person-suggest[hidden] { display: none !important; }
+        .tag-person-suggest button {
+          display: block; width: 100%; text-align: left; border: 0; background: transparent;
+          color: inherit; padding: .45rem .65rem; cursor: pointer;
+        }
+        .tag-person-suggest button:hover { background: var(--color-base-200); }
+        .tag-access-status { margin: 0; font-size: .75rem; min-height: 1em; }
+        .tag-access-status.is-error { color: var(--color-error); }
+        .tag-card-foot { display: flex; justify-content: flex-end; }
+        @media (max-width: 640px) {
+          .tag-access-choices { grid-template-columns: 1fr; }
+        }
+      </style>
+      <div id="userTagsList" class="space-y-2" aria-live="polite"></div>
       <section class="mt-10">
         <h2 class="text-lg font-semibold mb-2">Shared with me (via tags)</h2>
         <ul id="userTagGrants" class="list-disc pl-5 text-sm"></ul>

@@ -151,17 +151,34 @@ function addForm(canEdit, compact) {
   </form>`;
 }
 
+function listFacts(list) {
+  const prog = list.progress || {};
+  const bits = [
+    visibilityChip(list.visibility),
+    list.kind === 'bullet' ? 'Bullets' : 'Checklist',
+    `${prog.done || 0}/${prog.total || 0}`,
+  ];
+  return `<span class="lists-editor-facts">${bits.map((bit) => esc(bit)).join(' · ')}</span>`;
+}
+
 function headerActions(list, me) {
   const mine = list.organizer === me;
-  const prog = list.progress || {};
   return `
     ${readOnlyControl(list, me)}
-    ${mine ? '<button type="button" class="btn btn-ghost btn-sm" data-act="edit">List settings</button>' : ''}
-    ${mine ? '<button type="button" class="btn btn-error btn-sm" data-act="delete">Delete</button>' : ''}
-    ${(list.may_share || mine) ? '<button type="button" class="btn btn-ghost btn-sm" data-act="share">Add to chat</button>' : ''}
-    <span class="collab-chip">${visibilityChip(list.visibility)}</span>
-    <span class="collab-chip">${list.kind === 'bullet' ? 'Bullets' : 'Checklist'}</span>
-    <span class="collab-chip">${prog.done || 0}/${prog.total || 0}</span>`;
+    ${mine ? '<button type="button" class="btn btn-ghost btn-xs" data-act="edit">Settings</button>' : ''}
+    ${(list.may_share || mine) ? '<button type="button" class="btn btn-ghost btn-xs" data-act="share">Chat</button>' : ''}
+    ${mine ? '<button type="button" class="btn btn-ghost btn-xs" data-act="delete">Delete</button>' : ''}`;
+}
+
+function editorTitle(list) {
+  const tags = (list.tags || []).map((t) => tagChipHtml(t)).join('');
+  return `<div class="lists-editor-titleline">
+      <h2>${esc(list.title)}</h2>
+      <span class="lists-author">${esc(list.organizer || '')}</span>
+      ${listFacts(list)}
+    </div>
+    ${list.notes ? `<p class="collab-hint lists-editor-notes">${esc(list.notes)}</p>` : ''}
+    ${tags ? `<div class="lists-tag-row lists-editor-tags">${tags}</div>` : ''}`;
 }
 
 function paintGrid(root, list, me) {
@@ -171,12 +188,7 @@ function paintGrid(root, list, me) {
   root.innerHTML = `
     <div class="lists-editor-body">
       <header class="lists-editor-head">
-        <div>
-          <h2 class="text-lg font-bold">${esc(list.title)}</h2>
-          <p class="lists-author">Author ${esc(list.organizer || '')}</p>
-          ${list.notes ? `<p class="collab-hint">${esc(list.notes)}</p>` : ''}
-          <div class="lists-tag-row lists-editor-tags">${(list.tags || []).map((t) => tagChipHtml(t)).join('')}</div>
-        </div>
+        ${editorTitle(list)}
         <div class="lists-editor-actions">${headerActions(list, me)}</div>
       </header>
       <div class="lists-table-wrap">
@@ -191,16 +203,10 @@ function paintGlance(root, list, me) {
   const canEdit = canEditList(list, me);
   const openIds = root._glanceOpen || new Set();
   root.classList.toggle('is-locked', !canEdit);
-  const tags = (list.tags || []).map((t) => tagChipHtml(t)).join('');
   root.innerHTML = `
     <div class="lists-editor-body lists-glance">
       <header class="lists-editor-head">
-        <div>
-          <h2 class="text-lg font-bold">${esc(list.title)}</h2>
-          <p class="lists-author">Author ${esc(list.organizer || '')}</p>
-          ${list.notes ? `<p class="collab-hint">${esc(list.notes)}</p>` : ''}
-          ${tags ? `<div class="lists-tag-row lists-editor-tags">${tags}</div>` : ''}
-        </div>
+        ${editorTitle(list)}
         <div class="lists-editor-actions">${headerActions(list, me)}</div>
       </header>
       <div class="lists-glance-list">${glanceItems(list, canEdit, openIds) || '<div class="collab-empty">No items yet.</div>'}</div>
@@ -213,13 +219,11 @@ function paintStack(root, list, me, onBack) {
   root.classList.toggle('is-locked', !canEdit);
   root.innerHTML = `
     <div class="lists-editor-body">
-      <header class="lists-mobile-bar">
-        ${onBack ? '<button type="button" class="btn btn-ghost btn-sm" data-act="back">Lists</button>' : ''}
-        <span class="lists-mobile-title">${esc(list.title)}</span>
-        <span class="lists-author">Author ${esc(list.organizer || '')}</span>
+      <header class="lists-editor-head">
+        ${onBack ? '<button type="button" class="btn btn-ghost btn-xs" data-act="back">Lists</button>' : ''}
+        ${editorTitle(list)}
+        <div class="lists-editor-actions">${headerActions(list, me)}</div>
       </header>
-      <div class="lists-editor-actions lists-editor-actions--stack">${headerActions(list, me)}</div>
-      <div class="lists-tag-row">${(list.tags || []).map((t) => tagChipHtml(t)).join('')}</div>
       <div class="lists-mobile-checklist">${stackItems(list, canEdit) || '<p class="collab-empty">No items yet.</p>'}</div>
       ${addForm(canEdit, true)}
     </div>`;

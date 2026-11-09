@@ -278,19 +278,22 @@ export function initListsHub(root) {
     return `<button type="button" class="lists-add-tag" data-add-tag="${esc(list.id)}" draggable="false" aria-label="Add tag" title="Add tag">+</button>`;
   }
 
-  function listCard(list) {
+  function listMeta(list) {
     const due = list.next_due ? dueHint(list.next_due) : '';
     const prog = progressLabel(list);
+    const bits = [list.organizer || '', prog, due ? `Due ${due}` : ''].filter(Boolean);
+    return bits.join(' · ');
+  }
+
+  function listCard(list) {
+    const tags = list.tags || [];
     return `<article class="lists-card ${list.id === activeListId ? 'is-active' : ''}" draggable="true" data-list-id="${esc(list.id)}">
       <button type="button" class="lists-card-open" data-open-list="${esc(list.id)}">
         <strong class="lists-card-title">${esc(list.title)}</strong>
-        <span class="lists-author">Author ${esc(list.organizer || '')}</span>
-        <span class="collab-hint">${esc(prog)}${due ? ` · Due ${esc(due)}` : ''}</span>
+        <span class="lists-card-aside">${esc(listMeta(list))}</span>
+        ${tags.length ? tagChipsRow(tags) : ''}
       </button>
-      <div class="lists-card-meta">
-        ${tagChipsRow(list.tags || [])}
-        ${addTagButton(list)}
-      </div>
+      ${addTagButton(list)}
     </article>`;
   }
 
@@ -309,12 +312,11 @@ export function initListsHub(root) {
           <span class="lists-mobile-title">${esc(groupName)}</span>
         </header>
         <div class="lists-mobile-rows">
-          ${rows.length ? rows.map((l) => `<div class="lists-row">
+          ${rows.length ? rows.map((l) => `<div class="lists-row ${l.id === activeListId ? 'is-active' : ''}">
             <button type="button" class="lists-row-open" data-open-list="${esc(l.id)}">
               <span class="lists-row-title">${esc(l.title)}</span>
-              <span class="lists-author">Author ${esc(l.organizer || '')}</span>
-              <span class="collab-hint">${esc(progressLabel(l))}</span>
-              ${tagChipsRow(l.tags || [])}
+              <span class="lists-card-aside">${esc(listMeta(l))}</span>
+              ${(l.tags || []).length ? tagChipsRow(l.tags || []) : ''}
             </button>
             ${addTagButton(l)}
           </div>`).join('') : '<div class="collab-empty">No lists here.</div>'}
@@ -326,7 +328,7 @@ export function initListsHub(root) {
     return;
   }
     boardEl.innerHTML = `
-      <header class="lists-board-head"><h2 class="text-base font-semibold">Lists</h2></header>
+      <header class="lists-board-head"><span>Lists</span><span class="lists-rail-count">${rows.length}</span></header>
       <div class="lists-card-grid">${rows.length ? rows.map(listCard).join('') : '<div class="collab-empty">No lists in this group.</div>'}</div>`;
     boardEl.querySelectorAll('.lists-card').forEach((card) => {
       card.addEventListener('dragstart', (e) => {
