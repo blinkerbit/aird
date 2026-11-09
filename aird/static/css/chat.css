@@ -233,6 +233,22 @@ body.chat-page {
   display: none !important;
 }
 
+.chat-share-head {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  margin: 0.55rem 0 0.1rem;
+}
+
+.chat-share-kind {
+  margin-left: auto;
+  font-size: 0.68rem;
+  font-weight: 650;
+  opacity: 0.65;
+}
+
 .chat-chips {
   display: flex;
   flex-wrap: wrap;
@@ -1592,6 +1608,72 @@ body.chat-page {
   flex-direction: column;
   gap: 0.4rem;
   margin-top: 0.35rem;
+}
+
+.chat-att-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  max-width: 100%;
+}
+
+.chat-att-body {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.chat-att-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.chat-att-save {
+  font-weight: 650;
+}
+
+.chat-att-pick {
+  display: flex;
+  align-items: center;
+  padding-top: 0.45rem;
+}
+
+.chat-att-pick input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--color-primary);
+}
+
+.chat-att-bulk {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.chat-att-bulk[hidden] {
+  display: none !important;
+}
+
+.chat-att-bulk-count {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.chat-att-item .chat-att-menu summary {
+  opacity: 0.75;
+  font-size: 1.05rem;
+  line-height: 1;
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.35rem;
+}
+
+.chat-att-item .chat-att-menu summary:hover,
+.chat-att-item .chat-att-menu[open] summary {
+  opacity: 1;
+  background: var(--color-base-200);
 }
 
 .chat-att-wrap {

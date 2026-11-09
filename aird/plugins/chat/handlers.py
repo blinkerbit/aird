@@ -1165,6 +1165,88 @@ async def _serve_chat_folder_zip(handler: BaseHandler, owner: str, rel: str) -> 
             pass
 
 
+def _content_disposition(filename: str, *, inline: bool) -> str:
+    clean = (filename or "file").replace("\\", "/").split("/")[-1]
+    clean = clean.replace('"', "").replace("\r", "").replace("\n", "") or "file"
+    kind = "inline" if inline else "attachment"
+    return f'{kind}; filename="{clean}"'
+
+
+def _unique_arcname(name: str, used: set[str]) -> str:
+    base = name.strip("/") or "file"
+    candidate = base
+    n = 2
+    while candidate in used:
+        stem, ext = os.path.splitext(base)
+        candidate = f"{stem}-{n}{ext}" if ext else f"{base}-{n}"
+        n += 1
+    used.add(candidate)
+    return candidate
+
+
+def selected_attachment_entries(msg: dict, indexes: list[int]) -> list[tuple[str, str]]:
+    """Absolute path and zip name for the chosen attachments on one message."""
+    entries: list[tuple[str, str]] = []
+    used: set[str] = set()
+    for idx in indexes:
+        att = _att_at(msg, idx)
+        if not att:
+            continue
+        owner = str(att.get("owner_username") or "")
+        rel = str(att.get("owner_rel") or "")
+        if not owner or not rel:
+            continue
+        abs_path = owner_abs_path(owner, rel)
+        label = os.path.basename(str(att.get("original_name") or "").replace("\\", "/")) or f"file-{idx}"
+        if os.path.isfile(abs_path):
+            entries.append((abs_path, _unique_arcname(label, used)))
+            continue
+        if not os.path.isdir(abs_path):
+            continue
+        root = attachment_store_root(owner, rel)
+        rel_norm = rel.replace("\\", "/").strip("/")
+        for file_abs, arc in collect_zip_entries(root, [rel]):
+            arc_norm = arc.replace("\\", "/")
+            tail = arc_norm[len(rel_norm):].lstrip("/") if arc_norm.startswith(rel_norm) else os.path.basename(arc_norm)
+            name = f"{label}/{tail}" if tail else label
+            entries.append((file_abs, _unique_arcname(name, used)))
+    return entries
+
+
+async def _serve_zip_entries(handler: BaseHandler, entries: list[tuple[str, str]], filename: str) -> None:
+    if not entries:
+        handler.set_status(404)
+        handler.write({"error": "No files to download"})
+        return
+    try:
+        zip_path = await asyncio.to_thread(build_zip_file, entries)
+    except ZipDownloadError as exc:
+        handler.set_status(exc.status)
+        handler.write({"error": str(exc)})
+        return
+    try:
+        handler.set_header("Content-Type", "application/zip")
+        handler.set_header("Cache-Control", _CACHE_PRIVATE_60)
+        handler.set_header("Content-Length", str(os.path.getsize(zip_path)))
+        handler.set_header("Content-Disposition", _content_disposition(filename, inline=False))
+        await _stream_file_chunks(handler, zip_path)
+    finally:
+        try:
+            os.unlink(zip_path)
+        except OSError:
+            pass
+
+
+async def _serve_chat_file_download(handler: BaseHandler, abs_path: str, att: dict) -> None:
+    filename = att.get("original_name") or os.path.basename(abs_path)
+    mime, _ = mimetypes.guess_type(str(filename))
+    handler.set_header("Content-Type", mime or "application/octet-stream")
+    handler.set_header("Cache-Control", _CACHE_PRIVATE_60)
+    handler.set_header("Content-Length", str(os.path.getsize(abs_path)))
+    handler.set_header("Content-Disposition", _content_disposition(str(filename), inline=False))
+    await _stream_file_chunks(handler, abs_path)
+
+
 async def _serve_chat_file_attachment(
     handler: BaseHandler, abs_path: str, att: dict
 ) -> None:
@@ -1202,10 +1284,29 @@ class ChatMessageFileHandler(BaseHandler):
             self.set_status(404)
             self.write({"error": _ERR_MESSAGE_NOT_FOUND})
             return
-        try:
-            idx = int(self.get_argument("i", "0") or 0)
-        except (TypeError, ValueError):
-            idx = 0
+        indexes: list[int] = []
+        for raw in self.get_arguments("i"):
+            try:
+                indexes.append(int(raw))
+            except (TypeError, ValueError):
+                continue
+        if not indexes:
+            indexes = [0]
+        download = self.get_argument("dl", "") == "1"
+        if download and len(indexes) > 1:
+            try:
+                entries = selected_attachment_entries(msg, indexes)
+            except ValueError as exc:
+                self.set_status(400)
+                self.write({"error": str(exc)})
+                return
+            except ZipDownloadError as exc:
+                self.set_status(exc.status)
+                self.write({"error": str(exc)})
+                return
+            await _serve_zip_entries(self, entries, "files.zip")
+            return
+        idx = indexes[0]
         att = _att_at(msg, idx)
         if not att:
             self.set_status(404)
@@ -1224,6 +1325,9 @@ class ChatMessageFileHandler(BaseHandler):
             self.write({"error": "Invalid attachment"})
             return
         if os.path.isdir(abs_path):
+            if download:
+                await _serve_chat_folder_zip(self, owner, rel)
+                return
             share_url = _ensure_chat_folder_share(
                 self,
                 actor=name,
@@ -1242,6 +1346,9 @@ class ChatMessageFileHandler(BaseHandler):
         if not os.path.isfile(abs_path):
             self.set_status(410)
             self.write({"error": "File unavailable"})
+            return
+        if download:
+            await _serve_chat_file_download(self, abs_path, att)
             return
         await _serve_chat_file_attachment(self, abs_path, att)
 

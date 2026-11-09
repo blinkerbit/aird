@@ -109,8 +109,6 @@ def suggest(conn: sqlite3.Connection, username: str, kind: str, query: str) -> l
         detail = _detail(conn, kind, row["id"], username)
         if not detail:
             continue
-        if kind == "list" and not lists_db.user_may_share(conn, row["id"], username):
-            continue
         slug = str(detail.get("slug") or "").lower()
         title = str(detail.get("title") or detail.get("question") or "").lower()
         if needle and needle not in slug and needle not in title:
@@ -142,6 +140,7 @@ def _public(kind: str, detail: dict) -> dict:
         "visibility": detail.get("visibility"),
         "live": detail.get("live"),
         "active": is_active(kind, detail),
+        "may_share": detail.get("may_share", True),
     }
 
 

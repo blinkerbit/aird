@@ -33,7 +33,7 @@ from aird.plugins.collab.meet_db import (
     meet_join_allowed,
 )
 from aird.plugins.collab.polls_db import cast_vote, create_poll, delete_poll, get_poll, poll_detail, update_poll
-from aird.plugins.collab.refs import link_ref, list_refs
+from aird.plugins.collab.refs import link_ref, list_refs, suggest
 from aird.plugins.collab.slugs import slugify
 from aird.plugins.collab.schema import ensure_collab_schema
 
@@ -327,6 +327,9 @@ def test_list_forwarding_is_per_list_and_author_only(collab_db):
         artifact_id=lst["id"],
         member_names=["carol"],
     ) is None
+    visible = suggest(collab_db, "bob", "list", "trip")
+    assert visible and visible[0]["id"] == lst["id"]
+    assert visible[0]["may_share"] is False
     assert list_detail(collab_db, lst["id"], "carol") is None
     turned = update_list(collab_db, lst["id"], "alice", allow_forward=True)
     assert turned["allow_forward"] is True

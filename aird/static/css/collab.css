@@ -43,11 +43,19 @@
 .lists-ro-switch input { margin: 0; accent-color: var(--color-primary); }
 .lists-ro-switch.is-locked { cursor: default; opacity: .8; }
 .lists-editor.is-locked [data-add],
+.lists-editor-mount.is-locked [data-add],
 .lists-editor.is-locked .lists-drag-handle,
+.lists-editor-mount.is-locked .lists-drag-handle,
 .lists-editor.is-locked [data-save-item],
-.lists-editor.is-locked [data-del-item] { display: none; }
+.lists-editor-mount.is-locked [data-save-item],
+.lists-editor.is-locked [data-del-item],
+.lists-editor-mount.is-locked [data-del-item] { display: none; }
 .lists-editor.is-locked input,
-.lists-editor.is-locked textarea { pointer-events: none; }
+.lists-editor.is-locked textarea,
+.lists-editor-mount.is-locked input,
+.lists-editor-mount.is-locked textarea { pointer-events: none; }
+.lists-editor-mount.is-locked .lists-ro-switch,
+.lists-editor.is-locked .lists-ro-switch { pointer-events: auto; }
 .chat-collab-preview .text-lg { font-size: 1.05rem; }
 .chat-collab-card h4 { margin: 0 0 .35rem; font-size: .95rem; font-weight: 700; }
 .chat-collab-card .chat-collab-meta { font-size: .78rem; opacity: .75; margin-bottom: .5rem; }
@@ -204,7 +212,18 @@
 .lists-author { font-size: .75rem; opacity: .7; }
 .lists-editor-head { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: .75rem; }
 .lists-editor-tags { margin-top: .35rem; }
-.lists-editor-actions { display: flex; flex-wrap: wrap; gap: .35rem; align-items: flex-start; }
+.lists-editor-actions { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; justify-content: flex-end; }
+.lists-editor-actions--stack { justify-content: flex-start; margin: .15rem 0 .65rem; }
+.lists-editor-body { container-type: inline-size; }
+.collab-dialog .lists-editor-head h2 { display: none; }
+@container (max-width: 42rem) {
+  .lists-items-head { display: none; }
+  .lists-item-row { grid-template-columns: 1.5rem 1.5rem minmax(0, 1fr) auto; }
+  .lists-item-row [data-field="notes"],
+  .lists-item-row [data-field="due"],
+  .lists-item-row [data-field="labels"] { grid-column: 3 / -1; }
+  .lists-add-row { display: grid; grid-template-columns: 1fr; }
+}
 .lists-table-wrap { overflow: auto; margin-bottom: .65rem; }
 .lists-items-head,
 .lists-item-row {
@@ -279,6 +298,30 @@ body.lists-is-reordering { cursor: grabbing; user-select: none; }
 .lists-tag-menu button:hover { background: var(--color-base-200); }
 .lists-tag-menu p { margin: .35rem .45rem; }
 .lists-item-row.is-done .lists-col-text input { text-decoration: line-through; opacity: .65; }
+.lists-glance-list { display: flex; flex-direction: column; }
+.lists-glance-item { padding: .35rem 0; border-bottom: 1px solid var(--color-base-200); }
+.lists-glance-line { display: flex; align-items: center; gap: .35rem; }
+.lists-glance-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.lists-glance-item.is-done .lists-glance-text { text-decoration: line-through; opacity: .6; }
+.lists-glance-meta { display: flex; flex-wrap: wrap; gap: .35rem .6rem; align-items: center; margin: .2rem 0 0 2rem; font-size: .78rem; }
+.lists-glance-note, .lists-glance-due { opacity: .75; }
+.lists-glance-labels { display: inline-flex; flex-wrap: wrap; gap: .25rem; }
+.lists-glance-edit { display: grid; gap: .35rem; margin: .4rem 0 .15rem 2rem; }
+.lists-glance-edit[hidden] { display: none !important; }
+.lists-glance-toggle {
+  flex: 0 0 auto; width: 1.85rem; height: 1.85rem; border: 1px solid var(--color-base-content);
+  border-radius: .45rem; background: var(--color-base-200); color: var(--color-base-content);
+  cursor: pointer; opacity: 1; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+}
+.lists-glance-toggle:hover,
+.lists-glance-toggle[aria-expanded="true"] {
+  border-color: var(--color-primary); color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 16%, var(--color-base-100));
+}
+.lists-glance-chevron { display: block; transition: transform .15s ease; }
+.lists-glance-toggle[aria-expanded="true"] .lists-glance-chevron { transform: rotate(90deg); }
+.lists-glance-add { display: grid; gap: .35rem; margin-top: .55rem; }
+.lists-glance-add .input { flex: 1; min-width: 0; }
 .lists-add-row { flex-wrap: wrap; }
 .lists-mobile-groups,
 .lists-mobile-tags { display: flex; flex-wrap: wrap; gap: .35rem; padding: .35rem .15rem; }

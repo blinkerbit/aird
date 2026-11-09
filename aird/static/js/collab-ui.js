@@ -1,5 +1,6 @@
 import { apiJson, expiresLabel, visibilityChip } from './collab-api.js';
 import { hydrateTagPicker, readTagIds, tagIdsFieldHtml } from './collab-tags.js';
+import { renderListEditor } from './collab/list-editor.js';
 
 function esc(s) {
   const d = document.createElement('div');
@@ -420,149 +421,14 @@ export function mountPoll(root, poll, { me, onChange, onDelete }) {
   root.querySelector('[data-act="share"]')?.addEventListener('click', () => sharePicker('poll', poll.id).catch((e) => alert(e.message)));
 }
 
-export function mountList(root, list, { me, onChange, onDelete, groups = [], inline = false }) {
-  const mine = list.organizer === me;
-  const canEdit = typeof list.can_edit === 'boolean' ? list.can_edit : mine;
-  const prog = list.progress || {};
-  const lockControl = inline && list.kind !== 'bullet'
-    ? (mine
-      ? `<label class="lists-ro-switch"><input type="checkbox" data-act="readonly" ${list.read_only ? 'checked' : ''}><span>Read only</span></label>`
-      : (list.read_only ? '<span class="lists-ro-switch is-locked">Read only</span>' : ''))
-    : '';
-  const items = (list.items || []).map((it) => `
-    <div class="collab-item ${it.done ? 'is-done' : ''}">
-      ${list.kind === 'todo' ? `<input type="checkbox" data-done="${esc(it.id)}" ${it.done ? 'checked' : ''} ${canEdit ? '' : 'disabled'}>` : '<span class="collab-bullet"></span>'}
-      <div class="collab-item-main">
-        <span>${esc(it.text)}</span>
-        ${it.due_at ? `<span class="collab-hint">${esc(new Date(it.due_at).toLocaleString())}</span>` : ''}
-        ${it.notes ? `<span class="collab-hint">${esc(it.notes)}</span>` : ''}
-        ${(it.labels || []).map((lb) => `<span class="collab-chip">${esc(lb)}</span>`).join('')}
-      </div>
-      ${canEdit ? `<button type="button" class="btn btn-ghost btn-xs" data-up="${esc(it.id)}">Up</button>
-      <button type="button" class="btn btn-ghost btn-xs" data-edit-item="${esc(it.id)}">Edit</button>
-      <button type="button" class="btn btn-ghost btn-xs" data-del-item="${esc(it.id)}" aria-label="Remove">×</button>` : ''}
-    </div>`).join('');
-  root.innerHTML = `
-    <div class="lists-inline-head">
-      <div>
-        <h2 class="text-lg font-bold">${esc(list.title)}</h2>
-        <p class="collab-hint">Author ${esc(list.organizer || '')}</p>
-      </div>
-      ${lockControl}
-    </div>
-    ${list.notes ? `<p class="collab-hint">${esc(list.notes)}</p>` : ''}
-    <div class="collab-chips">
-      <span class="collab-chip">${visibilityChip(list.visibility)}</span>
-      <span class="collab-chip">${list.kind === 'bullet' ? 'Bullets' : 'Checklist'}</span>
-      <span class="collab-chip">${prog.done || 0}/${prog.total || 0}</span>
-      ${stateChip('list', list)}
-    </div>
-    <div class="collab-ribbon">
-      ${mine ? '<button type="button" class="btn btn-ghost btn-sm" data-act="edit">Edit</button>' : ''}
-      ${mine ? '<button type="button" class="btn btn-error btn-sm" data-act="delete">Delete</button>' : ''}
-      ${(list.may_share || list.organizer === me) ? '<button type="button" class="btn btn-ghost btn-sm" data-act="share">Add to chat</button>' : ''}
-      <select class="select select-bordered select-sm" data-group>
-        <option value="">Ungrouped</option>
-        ${groups.map((group) => `<option value="${esc(group.id)}" ${list.group_id === group.id ? 'selected' : ''}>${esc(group.name)}</option>`).join('')}
-      </select>
-    </div>
-    <div class="collab-items">${items || '<p class="collab-empty">No items yet.</p>'}</div>
-    ${canEdit ? `<form class="collab-add" data-add>
-      <input class="input input-bordered input-sm" name="text" placeholder="Add an item" required>
-      <input class="input input-bordered input-sm" name="notes" placeholder="Note">
-      <input class="input input-bordered input-sm" type="datetime-local" name="due">
-      <input class="input input-bordered input-sm" name="labels" placeholder="Labels">
-      <button class="btn btn-primary btn-sm" type="submit">Add</button>
-    </form>` : ''}`;
-  root.querySelectorAll('[data-done]').forEach((box) => {
-    box.addEventListener('change', async () => {
-      const detail = await apiJson(`/api/lists/${list.id}/items/${box.dataset.done}`, {
-        method: 'PATCH',
-        body: { done: box.checked },
-      });
-      onChange(detail);
-    });
-  });
-  root.querySelectorAll('[data-del-item]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const detail = await apiJson(`/api/lists/${list.id}/items/${btn.dataset.delItem}`, { method: 'DELETE' });
-      onChange(detail);
-    });
-  });
-  root.querySelectorAll('[data-edit-item]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const item = (list.items || []).find((it) => it.id === btn.dataset.editItem);
-      if (!item) return;
-      const draft = await openForm({
-        title: 'Edit item',
-        submitLabel: 'Save item',
-        html: `<label class="collab-field"><span>Text</span><input class="input input-bordered input-sm" data-text value="${esc(item.text)}" required></label>
-          <label class="collab-field"><span>Note</span><textarea class="textarea textarea-bordered textarea-sm" data-notes rows="3">${esc(item.notes || '')}</textarea></label>
-          <label class="collab-field"><span>Due</span><input class="input input-bordered input-sm" type="datetime-local" data-due value="${esc(localStamp(item.due_at))}"></label>
-          <label class="collab-field"><span>Labels</span><input class="input input-bordered input-sm" data-labels value="${esc((item.labels || []).join(', '))}"></label>`,
-        onSubmit(node) {
-          return {
-            text: node.querySelector('[data-text]').value.trim(),
-            notes: node.querySelector('[data-notes]').value.trim(),
-            due_at: isoStamp(node.querySelector('[data-due]').value),
-            labels: node.querySelector('[data-labels]').value.split(',').map((s) => s.trim()).filter(Boolean),
-          };
-        },
-      });
-      if (!draft?.text) return;
-      if (remindersEnabled()) draft.remind_at = draft.due_at;
-      const detail = await apiJson(`/api/lists/${list.id}/items/${item.id}`, { method: 'PATCH', body: draft });
-      onChange(detail);
-    });
-  });
-  root.querySelector('[data-add]')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const fd = new FormData(event.currentTarget);
-    const body = {
-      text: String(fd.get('text') || ''),
-      notes: String(fd.get('notes') || ''),
-      due_at: isoStamp(String(fd.get('due') || '')),
-      labels: String(fd.get('labels') || '').split(',').map((s) => s.trim()).filter(Boolean),
-    };
-    if (remindersEnabled()) body.remind_at = body.due_at;
-    const detail = await apiJson(`/api/lists/${list.id}/items`, {
-      method: 'POST',
-      body,
-    });
-    onChange(detail);
-  });
-  root.querySelector('[data-group]')?.addEventListener('change', async (event) => {
-    await apiJson(`/api/lists/${list.id}/group`, { method: 'POST', body: { group_id: event.target.value } });
-    onChange(list);
-  });
-  root.querySelectorAll('[data-up]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const ids = (list.items || []).map((item) => item.id);
-      const index = ids.indexOf(btn.dataset.up);
-      if (index <= 0) return;
-      const previous = ids[index - 1];
-      ids[index - 1] = ids[index];
-      ids[index] = previous;
-      const detail = await apiJson(`/api/lists/${list.id}/order`, { method: 'POST', body: { ids } });
-      onChange(detail);
-    });
-  });
-  root.querySelector('[data-act="edit"]')?.addEventListener('click', async () => {
-    const draft = await listDialog(list);
-    if (!draft) return;
-    const detail = await apiJson(`/api/lists/${list.id}`, { method: 'PATCH', body: draft });
-    onChange(detail);
-  });
-  root.querySelector('[data-act="delete"]')?.addEventListener('click', () => {
-    deleteArtifact(`/api/lists/${list.id}`, 'list', onDelete).catch((e) => alert(e.message));
-  });
-  root.querySelector('[data-act="share"]')?.addEventListener('click', () => sharePicker('list', list.id).catch((e) => alert(e.message)));
-  root.querySelector('[data-act="readonly"]')?.addEventListener('change', async (event) => {
-    const detail = await apiJson(`/api/lists/${list.id}`, {
-      method: 'PATCH',
-      body: { read_only: event.target.checked },
-    });
-    onChange(detail);
+export function mountList(root, list, { me, onChange, onDelete } = {}) {
+  renderListEditor(root, list, {
+    me,
+    reminders: remindersEnabled(),
+    layout: 'glance',
+    onChange,
+    onDelete,
+    onRevert() { mountList(root, list, { me, onChange, onDelete }); },
   });
 }
 
