@@ -39,6 +39,7 @@ def test_simple_tag_grants_nothing(conn):
     tag = user_tags_db.create_tag(conn, owner_username="alice", name="label", access="none", members=["bob"])
     user_tags_db.add_link(conn, tag["id"], owner_username="alice", kind="file", resource_key="a.txt")
     assert file_tag_access(conn, viewer="bob", owner_username="alice", rel_path="a.txt") == "none"
+    assert user_tags_db.get_tag(conn, tag["id"])["files"] == ["a.txt"]
 
 
 def test_folder_inheritance_and_write_wins(conn):

@@ -331,6 +331,16 @@ def _tag_row_from_cols(conn: sqlite3.Connection, row, viewer: str | None) -> dic
     ]
     owner = row["owner_username"]
     name = row["name"]
+    try:
+        file_paths = [
+            str(r[0])
+            for r in conn.execute(
+                "SELECT resource_key FROM user_tag_links WHERE tag_id = ? AND kind = ? ORDER BY resource_key",
+                (tag_id, KIND_FILE),
+            ).fetchall()
+        ]
+    except sqlite3.Error:
+        file_paths = []
     return {
         "id": tag_id,
         "owner_username": owner,
@@ -340,4 +350,5 @@ def _tag_row_from_cols(conn: sqlite3.Connection, row, viewer: str | None) -> dic
         "color": row["color"],
         "created_at": row["created_at"],
         "members": members,
+        "files": file_paths,
     }
