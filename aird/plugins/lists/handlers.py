@@ -8,7 +8,7 @@ from aird.plugins.chat import db as chat_db, is_chat_enabled
 from aird.plugins.collab import lists_db
 from aird.plugins.collab.chat_cards import share_card_to_conversation
 from aird.plugins.collab.http import parse_json, require_username
-from aird.plugins.collab.live import notify_changed
+from aird.plugins.collab.live import notify_changed, notify_event
 from aird.plugins.collab.schema import collab_conn
 from aird.plugins.lists import is_lists_enabled
 
@@ -152,6 +152,7 @@ class ListDetailHandler(BaseHandler, XSRFTokenMixin):
                 self.write({"error": "Could not update list"})
                 return
             notify_changed(conn, "list", list_id)
+            notify_event(conn, kind="list", artifact_id=list_id, actor=name, preview="Updated the list")
             self.write(detail)
         finally:
             conn.close()
@@ -181,6 +182,7 @@ class ListItemsHandler(BaseHandler, XSRFTokenMixin):
                 self.write({"error": "Could not add item"})
                 return
             notify_changed(conn, "list", list_id)
+            notify_event(conn, kind="list", artifact_id=list_id, actor=name, preview="Added an item")
             self.write(detail)
         finally:
             conn.close()
@@ -214,6 +216,11 @@ class ListItemHandler(BaseHandler, XSRFTokenMixin):
                 self.write({"error": "Forbidden"})
                 return
             notify_changed(conn, "list", list_id)
+            if "done" in body and "text" not in body and "labels" not in body:
+                preview = "Checked an item" if body.get("done") else "Unchecked an item"
+            else:
+                preview = "Updated an item"
+            notify_event(conn, kind="list", artifact_id=list_id, actor=name, preview=preview)
             self.write(detail)
         finally:
             conn.close()
@@ -237,6 +244,7 @@ class ListItemHandler(BaseHandler, XSRFTokenMixin):
                 self.write({"error": "Forbidden"})
                 return
             notify_changed(conn, "list", list_id)
+            notify_event(conn, kind="list", artifact_id=list_id, actor=name, preview="Removed an item")
             self.write(detail)
         finally:
             conn.close()

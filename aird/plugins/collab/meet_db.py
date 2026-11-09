@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS meets (
     livekit_room TEXT NOT NULL,
     created_at TEXT NOT NULL,
     expires_at TEXT NOT NULL,
-    ended_at TEXT
+    ended_at TEXT,
+    session_started_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_meets_slug ON meets(slug);
 CREATE TABLE IF NOT EXISTS meet_participants (
@@ -201,11 +202,45 @@ def end_meet(conn: sqlite3.Connection, meet_id: str, username: str) -> bool:
     if not row or row["organizer"] != username:
         return False
     conn.execute(
-        "UPDATE meets SET ended_at = ? WHERE id = ?",
+        "UPDATE meets SET ended_at = ?, session_started_at = NULL WHERE id = ?",
         (_iso(_now()), meet_id),
     )
     conn.commit()
     return True
+
+
+def claim_session_start(conn: sqlite3.Connection, meet_id: str, username: str) -> bool:
+    """True when this join is the first of a session, including after the meeting ended."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute("SELECT * FROM meets WHERE id = ?", (meet_id,)).fetchone()
+        if not row or not _user_may_view(conn, row, username) or not _user_may_join(conn, row, username):
+            conn.rollback()
+            return False
+        if row["ended_at"]:
+            try:
+                exp = datetime.fromisoformat(str(row["expires_at"]))
+            except ValueError:
+                exp = _now()
+            if _now() >= exp:
+                exp = _now() + timedelta(hours=MEET_TTL_HOURS)
+            conn.execute(
+                "UPDATE meets SET ended_at = NULL, session_started_at = NULL, expires_at = ? WHERE id = ?",
+                (_iso(exp), meet_id),
+            )
+        elif not _is_live(row):
+            conn.rollback()
+            return False
+        cur = conn.execute(
+            """UPDATE meets SET session_started_at = ?
+               WHERE id = ? AND (session_started_at IS NULL OR session_started_at = '')""",
+            (_iso(_now()), meet_id),
+        )
+        conn.commit()
+        return cur.rowcount == 1
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def _user_may_join(conn: sqlite3.Connection, row: sqlite3.Row, username: str) -> bool:

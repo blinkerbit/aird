@@ -49,7 +49,8 @@ import { setAppIconBadge } from './core/app-badge.js';
     toast.className = 'alert alert-info shadow-lg cursor-pointer max-w-sm';
     toast.innerHTML = `<span><strong>${escapeHtml(sender)}:</strong> ${escapeHtml(preview)}</span>`;
     toast.addEventListener('click', () => {
-      location.href = `/chat?c=${encodeURIComponent(convId)}`;
+      if (payload.url) location.href = payload.url;
+      else if (convId) location.href = `/chat?c=${encodeURIComponent(convId)}`;
     });
     host.appendChild(toast);
     setTimeout(() => toast.remove(), 5000);
@@ -207,7 +208,7 @@ import { setAppIconBadge } from './core/app-badge.js';
     if (payload.unread_total == null) void refreshUnread();
     if (!pageIsLive()) return;
     markShown(payload);
-    if (!viewingConversation(payload.conversation_id)) showToast(payload);
+    if (payload.kind === 'collab' || !viewingConversation(payload.conversation_id)) showToast(payload);
   }
 
   async function ensureCallsListener() {

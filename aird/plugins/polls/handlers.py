@@ -8,7 +8,7 @@ from aird.plugins.chat import db as chat_db, is_chat_enabled
 from aird.plugins.collab import polls_db
 from aird.plugins.collab.chat_cards import share_card_to_conversation
 from aird.plugins.collab.http import parse_json, require_username
-from aird.plugins.collab.live import notify_changed
+from aird.plugins.collab.live import notify_changed, notify_event
 from aird.plugins.collab.schema import collab_conn
 from aird.plugins.polls import is_polls_enabled
 
@@ -187,6 +187,16 @@ class PollVoteHandler(BaseHandler, XSRFTokenMixin):
                 self.write({"error": "Forbidden"})
                 return
             notify_changed(conn, "poll", poll_id)
+            organizer = str(detail.get("organizer") or "")
+            if organizer:
+                notify_event(
+                    conn,
+                    kind="poll",
+                    artifact_id=poll_id,
+                    actor=name,
+                    preview="Voted",
+                    recipients={organizer},
+                )
             self.write(detail)
         finally:
             conn.close()

@@ -31,6 +31,8 @@ def ensure_collab_schema(conn: sqlite3.Connection) -> None:
         cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         if "slug" not in cols:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN slug TEXT")
+        if table == "meets" and "session_started_at" not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN session_started_at TEXT")
         title_col = "question" if table == "polls" else "title"
         missing = conn.execute(
             f"SELECT id, {title_col} FROM {table} WHERE slug IS NULL OR slug = ''"

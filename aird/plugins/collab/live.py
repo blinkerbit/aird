@@ -15,6 +15,184 @@ def notify_changed(conn: sqlite3.Connection, kind: str, artifact_id: str) -> Non
         logger.debug("collab fanout failed", exc_info=True)
 
 
+_TABLE = {
+    "poll": ("polls", "poll_participants", "poll_id", "question", "/polls"),
+    "list": ("collab_lists", "list_participants", "list_id", "title", "/lists"),
+    "meet": ("meets", "meet_participants", "meet_id", "title", "/meet"),
+}
+
+
+def audience_names(conn: sqlite3.Connection, kind: str, artifact_id: str) -> set[str]:
+    """Organizer, explicit participants, chat members, and tag members."""
+    spec = _TABLE.get(str(kind or "").strip().lower())
+    artifact_id = str(artifact_id or "").strip()
+    if not spec or not artifact_id:
+        return set()
+    table, part, col, _title, _url = spec
+    try:
+        row = conn.execute(f"SELECT * FROM {table} WHERE id = ?", (artifact_id,)).fetchone()
+    except sqlite3.Error:
+        return set()
+    if not row:
+        return set()
+    names = {str(row["organizer"] or "").strip()}
+    try:
+        for person in conn.execute(
+            f"SELECT username FROM {part} WHERE {col} = ?", (artifact_id,)
+        ).fetchall():
+            name = str(person[0] or "").strip()
+            if name:
+                names.add(name)
+    except sqlite3.Error:
+        pass
+    try:
+        refs = conn.execute(
+            "SELECT conversation_id, created_by FROM collab_conv_refs WHERE kind = ? AND artifact_id = ?",
+            (kind, artifact_id),
+        ).fetchall()
+    except sqlite3.Error:
+        refs = []
+    from aird.plugins.chat import db as chat_db
+
+    for ref in refs:
+        cid = str(ref["conversation_id"] or "")
+        actor = str(ref["created_by"] or "")
+        if not cid or not actor:
+            continue
+        try:
+            for member in chat_db.members_of(actor, cid):
+                name = str(member.get("username") or "").strip()
+                if name:
+                    names.add(name)
+        except Exception:
+            continue
+    try:
+        tagged = conn.execute(
+            """
+            SELECT m.username
+            FROM user_tags ut
+            JOIN user_tag_members m ON m.tag_id = ut.id
+            JOIN user_tag_links l ON l.tag_id = ut.id
+            WHERE ut.owner_username = ?
+              AND l.kind = ?
+              AND l.resource_key = ?
+              AND ut.access != 'none'
+            """,
+            (str(row["organizer"] or ""), kind, artifact_id),
+        ).fetchall()
+        for person in tagged:
+            name = str(person[0] or "").strip()
+            if name:
+                names.add(name)
+    except sqlite3.Error:
+        pass
+    names.discard("")
+    return names
+
+
+def notify_event(
+    conn: sqlite3.Connection,
+    *,
+    kind: str,
+    artifact_id: str,
+    actor: str,
+    preview: str,
+    recipients: set[str] | None = None,
+) -> None:
+    try:
+        _notify_event(
+            conn,
+            kind=kind,
+            artifact_id=artifact_id,
+            actor=actor,
+            preview=preview,
+            recipients=recipients,
+        )
+    except Exception:
+        logger.debug("collab notify failed", exc_info=True)
+
+
+def _place(conn: sqlite3.Connection, kind: str, artifact_id: str) -> tuple[str, str, str]:
+    spec = _TABLE.get(kind)
+    if not spec:
+        return "Aird", "/chat", ""
+    table, _part, _col, title_col, url = spec
+    row = conn.execute(f"SELECT * FROM {table} WHERE id = ?", (artifact_id,)).fetchone()
+    title = str(row[title_col] or kind) if row else kind
+    if kind == "meet" and row is not None:
+        slug = str(row["slug"] or "") if "slug" in row.keys() else ""
+        if slug:
+            url = f"/meet/{slug}"
+    conv = ""
+    try:
+        ref = conn.execute(
+            """SELECT conversation_id FROM collab_conv_refs
+               WHERE kind = ? AND artifact_id = ?
+               ORDER BY created_at DESC LIMIT 1""",
+            (kind, artifact_id),
+        ).fetchone()
+        if ref:
+            conv = str(ref[0] or "")
+    except sqlite3.Error:
+        conv = ""
+    return title, url, conv
+
+
+def _notify_event(
+    conn: sqlite3.Connection,
+    *,
+    kind: str,
+    artifact_id: str,
+    actor: str,
+    preview: str,
+    recipients: set[str] | None,
+) -> None:
+    kind = str(kind or "").strip().lower()
+    artifact_id = str(artifact_id or "").strip()
+    actor = str(actor or "").strip()
+    if not kind or not artifact_id or not preview:
+        return
+    names = set(recipients) if recipients is not None else audience_names(conn, kind, artifact_id)
+    names = {n.strip() for n in names if n and n.strip() and n.strip().lower() != actor.lower()}
+    if not names:
+        return
+    title, url, conv = _place(conn, kind, artifact_id)
+    text = preview if title.lower() in preview.lower() else f"{preview} · {title}"
+    from aird.notifications.engine import deliver
+    from aird.plugins.chat import db as chat_db
+
+    for name in names:
+        uid = chat_db.resolve_user_id(conn, name)
+        if not uid:
+            continue
+        deliver(
+            username=name,
+            user_id=int(uid),
+            kind="collab",
+            socket_payload={
+                "type": "chat_notify",
+                "kind": "collab",
+                "conversation_id": conv,
+                "sender": actor or title,
+                "preview": text,
+                "title": title,
+                "url": url,
+                "collab_kind": kind,
+                "collab_id": artifact_id,
+            },
+            push_payload={
+                "title": title,
+                "body": text,
+                "sender": actor or title,
+                "preview": text,
+                "conversation_id": conv,
+                "url": url,
+                "tag": f"aird-{kind}-{artifact_id}",
+                "kind": "collab",
+            },
+        )
+
+
 def pin_for_chat(
     conn: sqlite3.Connection,
     *,

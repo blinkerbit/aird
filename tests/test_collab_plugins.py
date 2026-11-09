@@ -9,7 +9,14 @@ import pytest
 
 from aird.plugins.collab.acl import VISIBILITY_PRIVATE, VISIBILITY_PUBLIC, can_access
 from aird.plugins.collab.lists_db import create_list, list_detail
-from aird.plugins.collab.meet_db import MEET_TTL_HOURS, create_meet, end_meet, meet_join_allowed
+from aird.plugins.collab.live import audience_names
+from aird.plugins.collab.meet_db import (
+    MEET_TTL_HOURS,
+    claim_session_start,
+    create_meet,
+    end_meet,
+    meet_join_allowed,
+)
 from aird.plugins.collab.polls_db import cast_vote, create_poll, poll_detail, update_poll
 from aird.plugins.collab.refs import link_ref, list_refs
 from aird.plugins.collab.slugs import slugify
@@ -174,3 +181,26 @@ def test_inactive_poll_list_and_meet(collab_db):
     assert end_meet(collab_db, meet["id"], "alice")
     shelf = list_refs(collab_db, "conv1", "alice")
     assert shelf[0]["active"] is False
+
+
+def test_list_audience_is_shared_people(collab_db):
+    lst = create_list(
+        collab_db,
+        organizer="alice",
+        title="Groceries",
+        kind="todo",
+        visibility="private",
+        items=[{"text": "Milk"}],
+        participants=["bob"],
+    )
+    assert audience_names(collab_db, "list", lst["id"]) == {"alice", "bob"}
+
+
+def test_meet_first_join_starts_again_after_end(collab_db):
+    meet = create_meet(collab_db, organizer="alice", title="Standup", visibility="public")
+    assert claim_session_start(collab_db, meet["id"], "alice") is True
+    assert claim_session_start(collab_db, meet["id"], "bob") is False
+    assert end_meet(collab_db, meet["id"], "alice")
+    assert claim_session_start(collab_db, meet["id"], "bob") is True
+    ok, _reason = meet_join_allowed(collab_db, meet["id"], "carol")
+    assert ok

@@ -12,7 +12,7 @@ from aird.plugins.chat import db as chat_db, is_chat_enabled
 from aird.plugins.collab import meet_db
 from aird.plugins.collab.chat_cards import share_card_to_conversation
 from aird.plugins.collab.http import parse_json, require_username
-from aird.plugins.collab.live import notify_changed
+from aird.plugins.collab.live import notify_changed, notify_event
 from aird.plugins.collab.schema import collab_conn
 from aird.plugins.meet import is_meet_enabled
 
@@ -217,11 +217,21 @@ class MeetTokenHandler(BaseHandler, XSRFTokenMixin):
             self.write({"error": "Database unavailable"})
             return
         try:
+            started = meet_db.claim_session_start(conn, meet_id, name)
             ok, reason = meet_db.meet_join_allowed(conn, meet_id, name)
             if not ok:
                 self.set_status(403 if reason == "Forbidden" else 410)
                 self.write({"error": reason})
                 return
+            if started:
+                notify_changed(conn, "meet", meet_id)
+                notify_event(
+                    conn,
+                    kind="meet",
+                    artifact_id=meet_id,
+                    actor=name,
+                    preview="Meeting started",
+                )
             row = conn.execute(
                 "SELECT livekit_room FROM meets WHERE id = ?", (meet_id,)
             ).fetchone()
