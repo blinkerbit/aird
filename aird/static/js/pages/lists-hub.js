@@ -305,6 +305,8 @@ export function initListsHub(root) {
   function paintEditor(list) {
     if (!editorEl) return;
     detail = list;
+    const canEdit = !list || (typeof list.can_edit === 'boolean' ? list.can_edit : list.organizer === me);
+    editorEl.classList.toggle('is-locked', Boolean(list) && !canEdit);
     if (!list) {
       editorEl.innerHTML = '<div class="collab-empty">Select a list to edit items.</div>';
       return;
@@ -340,6 +342,7 @@ export function initListsHub(root) {
         <div>
           <h2 class="text-lg font-bold">${esc(list.title)}</h2>
           <p class="lists-author">Author ${esc(list.organizer || '')}</p>
+          ${list.can_edit === false ? '<p class="collab-hint">Read only</p>' : ''}
           ${list.notes ? `<p class="collab-hint">${esc(list.notes)}</p>` : ''}
           <div class="lists-tag-row lists-editor-tags">${(list.tags || []).map((t) => tagChipHtml(t)).join('')}</div>
           <div class="collab-chips">

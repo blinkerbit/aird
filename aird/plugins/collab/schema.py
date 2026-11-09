@@ -39,6 +39,10 @@ def ensure_collab_schema(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "ALTER TABLE collab_lists ADD COLUMN allow_forward INTEGER NOT NULL DEFAULT 0"
             )
+        if table == "collab_lists" and "read_only" not in cols:
+            conn.execute(
+                "ALTER TABLE collab_lists ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0"
+            )
         title_col = "question" if table == "polls" else "title"
         missing = conn.execute(
             f"SELECT id, {title_col} FROM {table} WHERE slug IS NULL OR slug = ''"

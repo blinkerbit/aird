@@ -32,6 +32,22 @@
 }
 .chat-collab-preview .collab-add { flex-wrap: wrap; }
 .chat-collab-preview [data-act="share"] { display: none; }
+.chat-collab-preview .collab-ribbon { display: none; }
+.lists-inline-head { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+.lists-ro-switch {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: .35rem;
+  margin-top: .15rem; font-size: .72rem; font-weight: 650; white-space: nowrap;
+  padding: .18rem .5rem .18rem .35rem; border: 1px solid var(--color-base-300); border-radius: 999px;
+  background: var(--color-base-200); cursor: pointer;
+}
+.lists-ro-switch input { margin: 0; accent-color: var(--color-primary); }
+.lists-ro-switch.is-locked { cursor: default; opacity: .8; }
+.lists-editor.is-locked [data-add],
+.lists-editor.is-locked .lists-drag-handle,
+.lists-editor.is-locked [data-save-item],
+.lists-editor.is-locked [data-del-item] { display: none; }
+.lists-editor.is-locked input,
+.lists-editor.is-locked textarea { pointer-events: none; }
 .chat-collab-preview .text-lg { font-size: 1.05rem; }
 .chat-collab-card h4 { margin: 0 0 .35rem; font-size: .95rem; font-weight: 700; }
 .chat-collab-card .chat-collab-meta { font-size: .78rem; opacity: .75; margin-bottom: .5rem; }

@@ -171,6 +171,7 @@ class ListDetailHandler(BaseHandler, XSRFTokenMixin):
                 slug=body.get("slug") if "slug" in body else None,
                 notes=body.get("notes") if "notes" in body else None,
                 allow_forward=bool(body.get("allow_forward")) if "allow_forward" in body else None,
+                read_only=bool(body.get("read_only")) if "read_only" in body else None,
             )
             if not detail:
                 self.set_status(400)

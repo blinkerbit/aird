@@ -420,25 +420,36 @@ export function mountPoll(root, poll, { me, onChange, onDelete }) {
   root.querySelector('[data-act="share"]')?.addEventListener('click', () => sharePicker('poll', poll.id).catch((e) => alert(e.message)));
 }
 
-export function mountList(root, list, { me, onChange, onDelete, groups = [] }) {
+export function mountList(root, list, { me, onChange, onDelete, groups = [], inline = false }) {
   const mine = list.organizer === me;
+  const canEdit = typeof list.can_edit === 'boolean' ? list.can_edit : mine;
   const prog = list.progress || {};
+  const lockControl = inline && list.kind !== 'bullet'
+    ? (mine
+      ? `<label class="lists-ro-switch"><input type="checkbox" data-act="readonly" ${list.read_only ? 'checked' : ''}><span>Read only</span></label>`
+      : (list.read_only ? '<span class="lists-ro-switch is-locked">Read only</span>' : ''))
+    : '';
   const items = (list.items || []).map((it) => `
     <div class="collab-item ${it.done ? 'is-done' : ''}">
-      ${list.kind === 'todo' ? `<input type="checkbox" data-done="${esc(it.id)}" ${it.done ? 'checked' : ''}>` : '<span class="collab-bullet"></span>'}
+      ${list.kind === 'todo' ? `<input type="checkbox" data-done="${esc(it.id)}" ${it.done ? 'checked' : ''} ${canEdit ? '' : 'disabled'}>` : '<span class="collab-bullet"></span>'}
       <div class="collab-item-main">
         <span>${esc(it.text)}</span>
         ${it.due_at ? `<span class="collab-hint">${esc(new Date(it.due_at).toLocaleString())}</span>` : ''}
         ${it.notes ? `<span class="collab-hint">${esc(it.notes)}</span>` : ''}
         ${(it.labels || []).map((lb) => `<span class="collab-chip">${esc(lb)}</span>`).join('')}
       </div>
-      <button type="button" class="btn btn-ghost btn-xs" data-up="${esc(it.id)}">Up</button>
+      ${canEdit ? `<button type="button" class="btn btn-ghost btn-xs" data-up="${esc(it.id)}">Up</button>
       <button type="button" class="btn btn-ghost btn-xs" data-edit-item="${esc(it.id)}">Edit</button>
-      <button type="button" class="btn btn-ghost btn-xs" data-del-item="${esc(it.id)}" aria-label="Remove">×</button>
+      <button type="button" class="btn btn-ghost btn-xs" data-del-item="${esc(it.id)}" aria-label="Remove">×</button>` : ''}
     </div>`).join('');
   root.innerHTML = `
-    <h2 class="text-lg font-bold">${esc(list.title)}</h2>
-    <p class="collab-hint">Author ${esc(list.organizer || '')}</p>
+    <div class="lists-inline-head">
+      <div>
+        <h2 class="text-lg font-bold">${esc(list.title)}</h2>
+        <p class="collab-hint">Author ${esc(list.organizer || '')}</p>
+      </div>
+      ${lockControl}
+    </div>
     ${list.notes ? `<p class="collab-hint">${esc(list.notes)}</p>` : ''}
     <div class="collab-chips">
       <span class="collab-chip">${visibilityChip(list.visibility)}</span>
@@ -456,13 +467,13 @@ export function mountList(root, list, { me, onChange, onDelete, groups = [] }) {
       </select>
     </div>
     <div class="collab-items">${items || '<p class="collab-empty">No items yet.</p>'}</div>
-    <form class="collab-add" data-add>
+    ${canEdit ? `<form class="collab-add" data-add>
       <input class="input input-bordered input-sm" name="text" placeholder="Add an item" required>
       <input class="input input-bordered input-sm" name="notes" placeholder="Note">
       <input class="input input-bordered input-sm" type="datetime-local" name="due">
       <input class="input input-bordered input-sm" name="labels" placeholder="Labels">
       <button class="btn btn-primary btn-sm" type="submit">Add</button>
-    </form>`;
+    </form>` : ''}`;
   root.querySelectorAll('[data-done]').forEach((box) => {
     box.addEventListener('change', async () => {
       const detail = await apiJson(`/api/lists/${list.id}/items/${box.dataset.done}`, {
@@ -546,6 +557,13 @@ export function mountList(root, list, { me, onChange, onDelete, groups = [] }) {
     deleteArtifact(`/api/lists/${list.id}`, 'list', onDelete).catch((e) => alert(e.message));
   });
   root.querySelector('[data-act="share"]')?.addEventListener('click', () => sharePicker('list', list.id).catch((e) => alert(e.message)));
+  root.querySelector('[data-act="readonly"]')?.addEventListener('change', async (event) => {
+    const detail = await apiJson(`/api/lists/${list.id}`, {
+      method: 'PATCH',
+      body: { read_only: event.target.checked },
+    });
+    onChange(detail);
+  });
 }
 
 export function mountMeet(root, meet, { me, onChange, onDelete }) {
@@ -662,7 +680,7 @@ export async function hydrateCard(node, { me }) {
     const apply = (next) => {
       markInactive(node, next);
       if (kind === 'poll') mountPoll(live, next, { me, onChange: apply, onDelete: drop });
-      else if (kind === 'list') mountList(live, next, { me, onChange: apply, onDelete: drop });
+      else if (kind === 'list') mountList(live, next, { me, onChange: apply, onDelete: drop, inline: true });
       else mountMeet(live, next, { me, onChange: apply, onDelete: drop });
     };
     apply(data);

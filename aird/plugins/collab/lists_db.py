@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS collab_lists (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     notes TEXT NOT NULL DEFAULT '',
-    allow_forward INTEGER NOT NULL DEFAULT 0
+    allow_forward INTEGER NOT NULL DEFAULT 0,
+    read_only INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS list_items (
     id TEXT PRIMARY KEY,
@@ -121,8 +122,18 @@ def user_may_share(conn: sqlite3.Connection, list_id: str, username: str) -> boo
     return bool(row["allow_forward"])
 
 
+def _is_read_only(row: sqlite3.Row) -> bool:
+    if "read_only" not in row.keys():
+        return False
+    return bool(row["read_only"])
+
+
 def _user_may_edit_items(conn: sqlite3.Connection, row: sqlite3.Row, username: str) -> bool:
     if row["organizer"] == username:
+        return True
+    if not _user_may_view(conn, row, username):
+        return False
+    if str(row["kind"] or "") == "todo" and not _is_read_only(row):
         return True
     return list_tag_access(conn, username, row["organizer"], row["id"]) == ACCESS_WRITE
 
@@ -165,6 +176,7 @@ def list_detail(conn: sqlite3.Connection, list_id: str, username: str) -> dict |
     ).fetchone()
     data["group_id"] = str(filed[0]) if filed else ""
     data["may_share"] = user_may_share(conn, list_id, username)
+    data["can_edit"] = _user_may_edit_items(conn, row, username)
     return data
 
 
@@ -242,6 +254,7 @@ def update_list(
     slug: str | None = None,
     notes: str | None = None,
     allow_forward: bool | None = None,
+    read_only: bool | None = None,
 ) -> dict | None:
     row = conn.execute("SELECT * FROM collab_lists WHERE id = ?", (list_id,)).fetchone()
     if not row or row["organizer"] != username:
@@ -258,9 +271,12 @@ def update_list(
     forwarded = row["allow_forward"] if "allow_forward" in row.keys() else 0
     if allow_forward is not None:
         forwarded = 1 if allow_forward else 0
+    locked = row["read_only"] if "read_only" in row.keys() else 0
+    if read_only is not None:
+        locked = 1 if read_only else 0
     conn.execute(
-        "UPDATE collab_lists SET title = ?, kind = ?, visibility = ?, notes = ?, allow_forward = ?, updated_at = ? WHERE id = ?",
-        (new_title, k, vis, list_notes, forwarded, now, list_id),
+        "UPDATE collab_lists SET title = ?, kind = ?, visibility = ?, notes = ?, allow_forward = ?, read_only = ?, updated_at = ? WHERE id = ?",
+        (new_title, k, vis, list_notes, forwarded, locked, now, list_id),
     )
     if visibility is not None or participants is not None:
         if vis == "private":
@@ -414,6 +430,7 @@ def _list_row(row: sqlite3.Row) -> dict:
         "slug": row["slug"] if "slug" in row.keys() else "",
         "notes": row["notes"] if "notes" in row.keys() else "",
         "allow_forward": bool(row["allow_forward"]) if "allow_forward" in row.keys() else False,
+        "read_only": _is_read_only(row),
     }
 
 
@@ -467,6 +484,7 @@ def list_index(conn: sqlite3.Connection, username: str, query: str = "") -> dict
         ).fetchone()
         data["group_id"] = str(filed[0]) if filed else ""
         data["may_share"] = data["organizer"] == username or bool(data.get("allow_forward"))
+        data["can_edit"] = _user_may_edit_items(conn, row, username)
         data["tags"] = tags_for_resource_display(
             conn, data["organizer"], KIND_LIST, data["id"], username
         )

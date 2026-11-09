@@ -11,6 +11,7 @@ from aird.plugins.collab.acl import VISIBILITY_PRIVATE, VISIBILITY_PUBLIC, can_a
 from aird.plugins.collab.lists_db import (
     claim_due_reminders,
     create_group,
+    add_item,
     create_list,
     delete_list,
     get_list,
@@ -314,3 +315,24 @@ def test_only_author_can_delete_list_poll_and_meet(collab_db):
     assert get_poll(collab_db, poll["id"]) is None
     assert get_meet(collab_db, meet["id"]) is None
     assert collab_db.execute("SELECT COUNT(*) FROM list_items WHERE list_id = ?", (lst["id"],)).fetchone()[0] == 0
+
+
+def test_shared_todo_is_writable_until_author_locks(collab_db):
+    lst = create_list(
+        collab_db,
+        organizer="alice",
+        title="Veges",
+        kind="todo",
+        visibility="private",
+        items=[{"text": "Peas"}],
+        participants=["bob"],
+    )
+    assert lst["read_only"] is False
+    assert add_item(collab_db, lst["id"], "bob", "Carrots")
+    locked = update_list(collab_db, lst["id"], "alice", read_only=True)
+    assert locked["read_only"] is True
+    assert locked["can_edit"] is True
+    assert add_item(collab_db, lst["id"], "bob", "More") is None
+    detail = list_detail(collab_db, lst["id"], "bob")
+    assert detail["can_edit"] is False
+    assert add_item(collab_db, lst["id"], "alice", "Still mine")
