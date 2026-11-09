@@ -1823,6 +1823,7 @@ class ChatConversationCardsHandler(BaseHandler, XSRFTokenMixin):
                 title=title or kind.title(),
                 snapshot=snapshot,
                 reply_to_id=str(body.get("reply_to_id") or "") or None,
+                collab=conn,
             )
         finally:
             conn.close()

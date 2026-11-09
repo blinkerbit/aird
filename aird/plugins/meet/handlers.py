@@ -12,6 +12,7 @@ from aird.plugins.chat import db as chat_db, is_chat_enabled
 from aird.plugins.collab import meet_db
 from aird.plugins.collab.chat_cards import share_card_to_conversation
 from aird.plugins.collab.http import parse_json, require_username
+from aird.plugins.collab.live import notify_changed
 from aird.plugins.collab.schema import collab_conn
 from aird.plugins.meet import is_meet_enabled
 
@@ -155,6 +156,7 @@ class MeetDetailHandler(BaseHandler, XSRFTokenMixin):
                 self.set_status(400)
                 self.write({"error": "Could not update meeting"})
                 return
+            notify_changed(conn, "meet", meet_id)
             self.write(detail)
         finally:
             conn.close()
@@ -176,6 +178,7 @@ class MeetDetailHandler(BaseHandler, XSRFTokenMixin):
                 self.set_status(403)
                 self.write({"error": "Forbidden"})
                 return
+            notify_changed(conn, "meet", meet_id)
             self.write({"ok": True})
         finally:
             conn.close()
@@ -260,6 +263,7 @@ class MeetShareHandler(BaseHandler, XSRFTokenMixin):
                 artifact_id=meet_id,
                 title=detail["title"],
                 snapshot=snap,
+                collab=conn,
             )
             self.write({"message": msg})
         finally:

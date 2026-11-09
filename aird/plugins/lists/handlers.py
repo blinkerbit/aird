@@ -8,6 +8,7 @@ from aird.plugins.chat import db as chat_db, is_chat_enabled
 from aird.plugins.collab import lists_db
 from aird.plugins.collab.chat_cards import share_card_to_conversation
 from aird.plugins.collab.http import parse_json, require_username
+from aird.plugins.collab.live import notify_changed
 from aird.plugins.collab.schema import collab_conn
 from aird.plugins.lists import is_lists_enabled
 
@@ -135,6 +136,7 @@ class ListDetailHandler(BaseHandler, XSRFTokenMixin):
                 self.set_status(400)
                 self.write({"error": "Could not update list"})
                 return
+            notify_changed(conn, "list", list_id)
             self.write(detail)
         finally:
             conn.close()
@@ -163,6 +165,7 @@ class ListItemsHandler(BaseHandler, XSRFTokenMixin):
                 self.set_status(400)
                 self.write({"error": "Could not add item"})
                 return
+            notify_changed(conn, "list", list_id)
             self.write(detail)
         finally:
             conn.close()
@@ -195,6 +198,7 @@ class ListItemHandler(BaseHandler, XSRFTokenMixin):
                 self.set_status(403)
                 self.write({"error": "Forbidden"})
                 return
+            notify_changed(conn, "list", list_id)
             self.write(detail)
         finally:
             conn.close()
@@ -217,6 +221,7 @@ class ListItemHandler(BaseHandler, XSRFTokenMixin):
                 self.set_status(403)
                 self.write({"error": "Forbidden"})
                 return
+            notify_changed(conn, "list", list_id)
             self.write(detail)
         finally:
             conn.close()
@@ -262,6 +267,7 @@ class ListShareHandler(BaseHandler, XSRFTokenMixin):
                 artifact_id=list_id,
                 title=detail["title"],
                 snapshot=snap,
+                collab=conn,
             )
             self.write({"message": msg})
         finally:

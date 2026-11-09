@@ -7,6 +7,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 
 from aird.plugins.collab.acl import can_access, normalize_visibility
+from aird.plugins.collab.status import is_active
 from aird.plugins.collab.slugs import unique_slug, assign_slug
 
 MEET_TTL_HOURS = 48
@@ -104,6 +105,7 @@ def meet_detail(conn: sqlite3.Connection, meet_id: str, username: str) -> dict |
     data = _meet_row(row)
     data["participants"] = sorted(_participants(conn, meet_id))
     data["live"] = _is_live(row)
+    data["active"] = is_active("meet", data)
     return data
 
 

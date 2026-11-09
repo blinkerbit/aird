@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 from aird.plugins.collab.acl import can_access, normalize_visibility
 from aird.plugins.collab.slugs import assign_slug
+from aird.plugins.collab.status import is_active
 
 POLLS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS polls (
@@ -163,6 +164,7 @@ def poll_detail(conn: sqlite3.Connection, poll_id: str, username: str) -> dict |
     ]
     poll["participants"] = sorted(_participants(conn, poll_id))
     poll["total_votes"] = sum(counts.values())
+    poll["active"] = is_active("poll", poll)
     return poll
 
 
@@ -251,6 +253,8 @@ def cast_vote(
 ) -> dict | None:
     row = conn.execute("SELECT * FROM polls WHERE id = ?", (poll_id,)).fetchone()
     if not row or not _user_may_view(conn, row, username):
+        return None
+    if not is_active("poll", {"closes_at": row["closes_at"]}):
         return None
     allow_multi = bool(row["allow_multi"])
     valid = {

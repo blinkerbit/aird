@@ -217,7 +217,7 @@ export async function renderShelf(convId, me) {
   }
   shelf.hidden = false;
   shelf.innerHTML = refs.map((ref, i) => (
-    `<button type="button" data-i="${i}" title="${esc(ref.token)}">${esc(ref.token)} ${esc(ref.title)}</button>`
+    `<button type="button" data-i="${i}" class="${ref.active === false ? 'is-inactive' : ''}" title="${esc(ref.token)}">${esc(ref.token)} ${esc(ref.title)}</button>`
   )).join('');
   shelf.querySelectorAll('button').forEach((btn) => {
     btn.addEventListener('click', () => {

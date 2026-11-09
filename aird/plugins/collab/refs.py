@@ -6,6 +6,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 from aird.plugins.collab import lists_db, meet_db, polls_db
+from aird.plugins.collab.status import is_active
 
 REFS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS collab_conv_refs (
@@ -136,6 +137,7 @@ def _public(kind: str, detail: dict) -> dict:
         "token": _token(kind, detail.get("slug") or ""),
         "visibility": detail.get("visibility"),
         "live": detail.get("live"),
+        "active": is_active(kind, detail),
     }
 
 

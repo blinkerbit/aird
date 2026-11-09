@@ -7,6 +7,7 @@ import tornado.web
 from aird.handlers.base_handler import BaseHandler, XSRFTokenMixin, require_db
 from aird.plugins.chat import db as chat_db
 from aird.plugins.chat.handlers import _require_chat, _username
+from aird.plugins.collab.live import notify_changed
 from aird.plugins.collab.refs import link_ref, list_refs, suggest
 from aird.plugins.collab.schema import collab_conn
 
@@ -84,6 +85,7 @@ class ChatConversationRefsHandler(BaseHandler, XSRFTokenMixin):
                 self.set_status(403)
                 self.write({"error": "Forbidden"})
                 return
+            notify_changed(conn, kind, str(ref.get("id") or ""))
             self.write({"ref": ref})
         finally:
             conn.close()

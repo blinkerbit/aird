@@ -32,7 +32,18 @@ def share_card_to_conversation(
     title: str,
     snapshot: dict | None = None,
     reply_to_id: str | None = None,
+    collab=None,
 ) -> dict:
+    if collab is not None:
+        from aird.plugins.collab.live import pin_for_chat
+
+        pin_for_chat(
+            collab,
+            conversation_id=conversation_id,
+            kind=kind,
+            artifact_id=artifact_id,
+            username=username,
+        )
     msg = chat_db.insert_message(
         conn,
         username=username,

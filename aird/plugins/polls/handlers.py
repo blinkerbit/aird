@@ -8,6 +8,7 @@ from aird.plugins.chat import db as chat_db, is_chat_enabled
 from aird.plugins.collab import polls_db
 from aird.plugins.collab.chat_cards import share_card_to_conversation
 from aird.plugins.collab.http import parse_json, require_username
+from aird.plugins.collab.live import notify_changed
 from aird.plugins.collab.schema import collab_conn
 from aird.plugins.polls import is_polls_enabled
 
@@ -137,6 +138,7 @@ class PollDetailHandler(BaseHandler, XSRFTokenMixin):
                 self.set_status(400)
                 self.write({"error": "Could not update poll"})
                 return
+            notify_changed(conn, "poll", poll_id)
             self.write(detail)
         finally:
             conn.close()
@@ -169,6 +171,7 @@ class PollVoteHandler(BaseHandler, XSRFTokenMixin):
                 self.set_status(403)
                 self.write({"error": "Forbidden"})
                 return
+            notify_changed(conn, "poll", poll_id)
             self.write(detail)
         finally:
             conn.close()
@@ -214,6 +217,7 @@ class PollShareHandler(BaseHandler, XSRFTokenMixin):
                 artifact_id=poll_id,
                 title=detail["question"],
                 snapshot=snap,
+                collab=conn,
             )
             self.write({"message": msg})
         finally:

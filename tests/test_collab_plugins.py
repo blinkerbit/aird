@@ -8,7 +8,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from aird.plugins.collab.acl import VISIBILITY_PRIVATE, VISIBILITY_PUBLIC, can_access
-from aird.plugins.collab.meet_db import MEET_TTL_HOURS, create_meet, meet_join_allowed
+from aird.plugins.collab.lists_db import create_list, list_detail
+from aird.plugins.collab.meet_db import MEET_TTL_HOURS, create_meet, end_meet, meet_join_allowed
 from aird.plugins.collab.polls_db import cast_vote, create_poll, poll_detail, update_poll
 from aird.plugins.collab.refs import link_ref, list_refs
 from aird.plugins.collab.slugs import slugify
@@ -124,3 +125,52 @@ def test_slug_and_conversation_shelf(collab_db):
         slug="grocery-nov1",
     )
     assert again["slug"] != poll["slug"]
+
+
+def test_inactive_poll_list_and_meet(collab_db):
+    poll = create_poll(
+        collab_db,
+        organizer="alice",
+        question="Lunch?",
+        visibility="public",
+        allow_multi=False,
+        options=["Pizza", "Salad"],
+    )
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    collab_db.execute("UPDATE polls SET closes_at = ? WHERE id = ?", (past, poll["id"]))
+    collab_db.commit()
+    closed = poll_detail(collab_db, poll["id"], "alice")
+    assert closed["active"] is False
+    assert cast_vote(collab_db, poll["id"], "alice", [closed["options"][0]["id"]]) is None
+
+    done = create_list(
+        collab_db,
+        organizer="alice",
+        title="Groceries",
+        kind="todo",
+        visibility="public",
+        items=[{"text": "Milk", "done": True}],
+    )
+    assert list_detail(collab_db, done["id"], "alice")["active"] is False
+    open_list = create_list(
+        collab_db,
+        organizer="alice",
+        title="Notes",
+        kind="bullet",
+        visibility="public",
+        items=[{"text": "Milk", "done": True}],
+    )
+    assert list_detail(collab_db, open_list["id"], "alice")["active"] is True
+
+    meet = create_meet(collab_db, organizer="alice", title="Standup", visibility="public")
+    pinned = link_ref(
+        collab_db,
+        conversation_id="conv1",
+        kind="meet",
+        username="alice",
+        artifact_id=meet["id"],
+    )
+    assert pinned["active"] is True
+    assert end_meet(collab_db, meet["id"], "alice")
+    shelf = list_refs(collab_db, "conv1", "alice")
+    assert shelf[0]["active"] is False

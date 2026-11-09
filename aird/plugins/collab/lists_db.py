@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 from aird.plugins.collab.acl import can_access, normalize_visibility
 from aird.plugins.collab.slugs import assign_slug
+from aird.plugins.collab.status import is_active
 
 LISTS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS collab_lists (
@@ -95,6 +96,7 @@ def list_detail(conn: sqlite3.Connection, list_id: str, username: str) -> dict |
     data["participants"] = sorted(_participants(conn, list_id))
     done = sum(1 for it in data["items"] if it.get("done"))
     data["progress"] = {"done": done, "total": len(data["items"])}
+    data["active"] = is_active("list", data)
     return data
 
 

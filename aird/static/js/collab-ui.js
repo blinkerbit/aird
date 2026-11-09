@@ -297,6 +297,24 @@ export async function sharePicker(kind, id) {
   });
 }
 
+let dialogWatch = null;
+
+function inactiveLabel(kind) {
+  if (kind === 'meet') return 'Ended';
+  if (kind === 'poll') return 'Closed';
+  return 'Done';
+}
+
+function stateChip(kind, data) {
+  if (data?.active !== false || kind === 'meet') return '';
+  return `<span class="collab-chip">${inactiveLabel(kind)}</span>`;
+}
+
+function markInactive(node, data) {
+  if (!node) return;
+  node.classList.toggle('is-inactive', data?.active === false);
+}
+
 function bars(poll) {
   const max = Math.max(1, ...(poll.options || []).map((o) => o.votes || 0));
   return (poll.options || []).map((o) => {
@@ -316,6 +334,7 @@ export function mountPoll(root, poll, { me, onChange }) {
     <div class="collab-chips">
       <span class="collab-chip">${visibilityChip(poll.visibility)}</span>
       <span class="collab-chip">${poll.total_votes || 0} votes</span>
+      ${stateChip('poll', poll)}
       ${poll.allow_multi ? '<span class="collab-chip">Multiple choice</span>' : ''}
     </div>
     <div class="collab-ribbon">
@@ -324,9 +343,13 @@ export function mountPoll(root, poll, { me, onChange }) {
     </div>
     <div class="collab-votes">${bars(poll)}</div>
     <p class="collab-hint">${poll.allow_multi ? 'Select any options, then vote.' : 'Choose one option.'}</p>
-    ${poll.allow_multi ? '<button type="button" class="btn btn-primary btn-sm" data-act="vote">Save vote</button>' : ''}`;
+    ${poll.allow_multi && poll.active !== false ? '<button type="button" class="btn btn-primary btn-sm" data-act="vote">Save vote</button>' : ''}`;
   const selected = new Set((poll.options || []).filter((o) => o.mine).map((o) => o.id));
   root.querySelectorAll('[data-option]').forEach((btn) => {
+    if (poll.active === false) {
+      btn.disabled = true;
+      return;
+    }
     btn.addEventListener('click', async () => {
       const id = btn.dataset.option;
       if (poll.allow_multi) {
@@ -371,6 +394,7 @@ export function mountList(root, list, { me, onChange }) {
       <span class="collab-chip">${visibilityChip(list.visibility)}</span>
       <span class="collab-chip">${list.kind === 'bullet' ? 'Bullets' : 'Checklist'}</span>
       <span class="collab-chip">${prog.done || 0}/${prog.total || 0}</span>
+      ${stateChip('list', list)}
     </div>
     <div class="collab-ribbon">
       ${mine ? '<button type="button" class="btn btn-ghost btn-sm" data-act="edit">Edit</button>' : ''}
@@ -477,6 +501,8 @@ export async function openArtifact(item, me) {
   const dlg = ensureDialog();
   const path = kind === 'list' ? `/api/lists/${id}` : kind === 'meet' ? `/api/meet/${id}` : `/api/polls/${id}`;
   const data = await apiJson(path);
+  dlg.dataset.kind = kind;
+  dlg.dataset.id = id;
   dlg.querySelector('#collabDialogTitle').textContent = data.title || data.question || 'Shared';
   dlg.querySelector('#collabDialogSubmit').textContent = 'Close';
   const body = dlg.querySelector('#collabDialogBody');
@@ -488,6 +514,17 @@ export async function openArtifact(item, me) {
     else mountMeet(body, next, { me, onChange: paint });
   };
   paint(data);
+  markInactive(dlg.querySelector('.collab-dialog-card'), data);
+  const reload = async () => {
+    if (body.contains(document.activeElement)) return;
+    const next = await apiJson(path);
+    paint(next);
+    markInactive(dlg.querySelector('.collab-dialog-card'), next);
+  };
+  dialogWatch = { kind, id, reload };
+  dlg.addEventListener('close', () => {
+    if (dialogWatch && dialogWatch.kind === kind && dialogWatch.id === id) dialogWatch = null;
+  }, { once: true });
   const form = dlg.querySelector('#collabDialogForm');
   const submit = (event) => {
     event.preventDefault();
@@ -496,6 +533,18 @@ export async function openArtifact(item, me) {
   form.addEventListener('submit', submit);
   dlg.addEventListener('close', () => form.removeEventListener('submit', submit), { once: true });
   dlg.showModal();
+}
+
+export function refreshLive(kind, id, me) {
+  if (!kind || !id) return;
+  const selector = `.chat-collab-card[data-kind="${CSS.escape(kind)}"][data-id="${CSS.escape(id)}"]`;
+  document.querySelectorAll(selector).forEach((node) => {
+    if (node.contains(document.activeElement)) return;
+    hydrateCard(node, { me }).catch(() => {});
+  });
+  if (dialogWatch && dialogWatch.kind === kind && dialogWatch.id === id) {
+    dialogWatch.reload().catch(() => {});
+  }
 }
 
 export async function hydrateCard(node, { me }) {
@@ -518,6 +567,7 @@ export async function hydrateCard(node, { me }) {
   try {
     const data = await apiJson(path);
     const apply = (next) => {
+      markInactive(node, next);
       if (kind === 'poll') mountPoll(live, next, { me, onChange: apply });
       else if (kind === 'list') mountList(live, next, { me, onChange: apply });
       else mountMeet(live, next, { me, onChange: apply });

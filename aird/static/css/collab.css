@@ -84,6 +84,9 @@
 .chat-collab-shelf { display: flex; gap: .4rem; overflow-x: auto; padding: .35rem .75rem .15rem; }
 .chat-collab-shelf[hidden] { display: none !important; }
 .chat-collab-shelf button { flex: 0 0 auto; border: 1px solid var(--color-base-300); background: var(--color-base-100); color: inherit; border-radius: 999px; padding: .25rem .7rem; font-size: .75rem; cursor: pointer; }
+.chat-collab-shelf button.is-inactive,
+.chat-collab-card.is-inactive,
+.collab-dialog-card.is-inactive { opacity: .5; filter: grayscale(.75); }
 .chat-ref-chip { border: 0; border-radius: 999px; padding: 0 .4rem; background: color-mix(in srgb, var(--color-primary) 18%, transparent); color: inherit; font: inherit; cursor: pointer; }
 .chat-collab-suggest { position: absolute; left: .5rem; right: .5rem; bottom: calc(100% + .35rem); z-index: 30; max-height: 16rem; overflow: auto; background: var(--color-base-100); color: var(--color-base-content); border: 1px solid var(--color-base-300); border-radius: .8rem; box-shadow: 0 16px 40px rgba(0,0,0,.28); padding: .3rem; }
 .chat-collab-suggest button { display: flex; width: 100%; text-align: left; gap: .5rem; border: 0; background: transparent; color: inherit; border-radius: .5rem; padding: .45rem .55rem; cursor: pointer; }
