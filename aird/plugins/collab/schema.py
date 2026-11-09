@@ -33,6 +33,8 @@ def ensure_collab_schema(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN slug TEXT")
         if table == "meets" and "session_started_at" not in cols:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN session_started_at TEXT")
+        if table == "collab_lists" and "notes" not in cols:
+            conn.execute("ALTER TABLE collab_lists ADD COLUMN notes TEXT NOT NULL DEFAULT ''")
         title_col = "question" if table == "polls" else "title"
         missing = conn.execute(
             f"SELECT id, {title_col} FROM {table} WHERE slug IS NULL OR slug = ''"
@@ -42,4 +44,13 @@ def ensure_collab_schema(conn: sqlite3.Connection) -> None:
         conn.execute(
             f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{table}_slug ON {table}(slug)"
         )
+    item_cols = {row[1] for row in conn.execute("PRAGMA table_info(list_items)")}
+    for name, decl in (
+        ("notes", "TEXT NOT NULL DEFAULT ''"),
+        ("due_at", "TEXT"),
+        ("remind_at", "TEXT"),
+        ("reminded_at", "TEXT"),
+    ):
+        if name not in item_cols:
+            conn.execute(f"ALTER TABLE list_items ADD COLUMN {name} {decl}")
     conn.commit()

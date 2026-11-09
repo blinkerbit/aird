@@ -8,7 +8,14 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from aird.plugins.collab.acl import VISIBILITY_PRIVATE, VISIBILITY_PUBLIC, can_access
-from aird.plugins.collab.lists_db import create_list, list_detail
+from aird.plugins.collab.lists_db import (
+    claim_due_reminders,
+    create_group,
+    create_list,
+    list_detail,
+    list_index,
+    set_list_group,
+)
 from aird.plugins.collab.live import audience_names
 from aird.plugins.collab.meet_db import (
     MEET_TTL_HOURS,
@@ -204,3 +211,30 @@ def test_meet_first_join_starts_again_after_end(collab_db):
     assert claim_session_start(collab_db, meet["id"], "bob") is True
     ok, _reason = meet_join_allowed(collab_db, meet["id"], "carol")
     assert ok
+
+
+def test_list_notes_groups_and_one_reminder(collab_db):
+    past = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    lst = create_list(
+        collab_db,
+        organizer="alice",
+        title="Groceries",
+        kind="todo",
+        visibility="public",
+        notes="Bring bags",
+        items=[{"text": "Milk", "notes": "Oat", "due_at": past}],
+    )
+    detail = list_detail(collab_db, lst["id"], "alice")
+    assert detail["notes"] == "Bring bags"
+    assert detail["items"][0]["notes"] == "Oat"
+    home = create_group(collab_db, "alice", "Home")
+    family = create_group(collab_db, "bob", "Family")
+    assert set_list_group(collab_db, lst["id"], "bob", home["id"]) is False
+    assert set_list_group(collab_db, lst["id"], "alice", home["id"])
+    assert set_list_group(collab_db, lst["id"], "bob", family["id"])
+    alice = list_index(collab_db, "alice")["lists"][0]["group_id"]
+    bob = list_index(collab_db, "bob")["lists"][0]["group_id"]
+    assert alice == home["id"]
+    assert bob == family["id"]
+    assert len(claim_due_reminders(collab_db)) == 1
+    assert claim_due_reminders(collab_db) == []

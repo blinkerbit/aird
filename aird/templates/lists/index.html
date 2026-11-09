@@ -14,7 +14,10 @@
     <main class="collab-hub" data-hub="lists" data-me="{{ escape(current_user.get('username') if current_user else '') }}">
       <header class="collab-hub-head">
         <h1 class="text-2xl font-bold">Lists</h1>
-        <button type="button" class="btn btn-primary btn-sm" id="listsNewBtn">New list</button>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <button type="button" class="btn btn-ghost btn-sm" id="listsGroupBtn">New group</button>
+          <button type="button" class="btn btn-primary btn-sm" id="listsNewBtn">New list</button>
+        </div>
       </header>
       <div class="collab-layout">
         <aside class="collab-index" id="listsIndex" aria-label="Your lists"></aside>

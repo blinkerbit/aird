@@ -573,6 +573,13 @@ def _run_cleanup_expired_shares():
     tornado.ioloop.IOLoop.current().call_later(3600, _run_cleanup_expired_shares)
 
 
+def _run_list_reminders():
+    from aird.plugins.collab.reminders import fire_due_reminders
+
+    fire_due_reminders()
+    tornado.ioloop.IOLoop.current().call_later(60, _run_list_reminders)
+
+
 def _build_app_context() -> AppContext:
     """Construct application-level dependencies in one place."""
     room_manager = P2PRoomManager()
@@ -763,6 +770,7 @@ def _run_http_server(app, ssl_options, sockets, http_port: int) -> None:
     start_retry_loop()
     if tornado.process.task_id() in (0, None):
         io_loop.call_later(3600, _run_cleanup_expired_shares)
+        io_loop.call_later(60, _run_list_reminders)
         from aird.plugins.onedrive_host.sync_queue import start_host_scheduler
         from aird.plugins.onedrive_host.watcher import reload_watchers
 

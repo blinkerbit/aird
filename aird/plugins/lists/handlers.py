@@ -48,7 +48,7 @@ class ListListHandler(BaseHandler, XSRFTokenMixin):
             self.write({"error": "Database unavailable"})
             return
         try:
-            self.write({"lists": lists_db.list_lists_for_user(conn, name)})
+            self.write(lists_db.list_index(conn, name, self.get_argument("q", "")))
         finally:
             conn.close()
 
@@ -80,7 +80,11 @@ class ListListHandler(BaseHandler, XSRFTokenMixin):
                 items=body.get("items") or [],
                 participants=body.get("participants"),
                 slug=body.get("slug"),
+                notes=str(body.get("notes") or ""),
             )
+            if lst.get("id") and body.get("group_id"):
+                lists_db.set_list_group(conn, str(lst["id"]), name, str(body.get("group_id")))
+                lst = lists_db.list_detail(conn, str(lst["id"]), name) or lst
             from aird.db import user_tags as user_tags_db
             from aird.db.user_tag_collab import augment_detail_tag_ids, replace_artifact_tag_links
 
@@ -97,6 +101,9 @@ class ListListHandler(BaseHandler, XSRFTokenMixin):
                 main, lst, viewer=name, kind=user_tags_db.KIND_LIST
             ) or lst
             self.write(lst)
+        except ValueError as err:
+            self.set_status(400)
+            self.write({"error": str(err)})
         finally:
             conn.close()
 
@@ -152,6 +159,7 @@ class ListDetailHandler(BaseHandler, XSRFTokenMixin):
                 visibility=body.get("visibility") if "visibility" in body else None,
                 participants=body.get("participants") if "participants" in body else None,
                 slug=body.get("slug") if "slug" in body else None,
+                notes=body.get("notes") if "notes" in body else None,
             )
             if not detail:
                 self.set_status(400)
@@ -197,7 +205,16 @@ class ListItemsHandler(BaseHandler, XSRFTokenMixin):
             self.write({"error": "Database unavailable"})
             return
         try:
-            detail = lists_db.add_item(conn, list_id, name, str(body.get("text") or ""), labels)
+            detail = lists_db.add_item(
+                conn,
+                list_id,
+                name,
+                str(body.get("text") or ""),
+                labels,
+                notes=str(body.get("notes") or ""),
+                due_at=body.get("due_at"),
+                remind_at=body.get("remind_at"),
+            )
             if not detail:
                 self.set_status(400)
                 self.write({"error": "Could not add item"})
@@ -205,6 +222,9 @@ class ListItemsHandler(BaseHandler, XSRFTokenMixin):
             notify_changed(conn, "list", list_id)
             notify_event(conn, kind="list", artifact_id=list_id, actor=name, preview="Added an item")
             self.write(detail)
+        except ValueError as err:
+            self.set_status(400)
+            self.write({"error": str(err)})
         finally:
             conn.close()
 
@@ -230,7 +250,19 @@ class ListItemHandler(BaseHandler, XSRFTokenMixin):
             return
         try:
             detail = lists_db.patch_item(
-                conn, list_id, item_id, name, done=done, text=text, labels=labels
+                conn,
+                list_id,
+                item_id,
+                name,
+                done=done,
+                text=text,
+                labels=labels,
+                notes=body.get("notes") if "notes" in body else None,
+                due_at=body.get("due_at") if "due_at" in body else None,
+                remind_at=body.get("remind_at") if "remind_at" in body else None,
+                due_set="due_at" in body,
+                remind_set="remind_at" in body,
+                sort_order=body.get("sort_order") if "sort_order" in body else None,
             )
             if not detail:
                 self.set_status(403)
@@ -243,6 +275,9 @@ class ListItemHandler(BaseHandler, XSRFTokenMixin):
                 preview = "Updated an item"
             notify_event(conn, kind="list", artifact_id=list_id, actor=name, preview=preview)
             self.write(detail)
+        except ValueError as err:
+            self.set_status(400)
+            self.write({"error": str(err)})
         finally:
             conn.close()
 
@@ -314,5 +349,137 @@ class ListShareHandler(BaseHandler, XSRFTokenMixin):
                 collab=conn,
             )
             self.write({"message": msg})
+        finally:
+            conn.close()
+
+
+class ListGroupListHandler(BaseHandler, XSRFTokenMixin):
+    @tornado.web.authenticated
+    @require_db
+    def post(self):
+        if not _require(self):
+            return
+        self.check_xsrf_cookie()
+        name = require_username(self)
+        body = parse_json(self)
+        conn = collab_conn()
+        if conn is None:
+            self.set_status(503)
+            self.write({"error": "Database unavailable"})
+            return
+        try:
+            group = lists_db.create_group(conn, name, str(body.get("name") or ""))
+            if not group:
+                self.set_status(400)
+                self.write({"error": "Name required"})
+                return
+            self.write(group)
+        finally:
+            conn.close()
+
+
+class ListGroupHandler(BaseHandler, XSRFTokenMixin):
+    @tornado.web.authenticated
+    @require_db
+    def patch(self, group_id: str):
+        if not _require(self):
+            return
+        self.check_xsrf_cookie()
+        name = require_username(self)
+        body = parse_json(self)
+        conn = collab_conn()
+        if conn is None:
+            self.set_status(503)
+            self.write({"error": "Database unavailable"})
+            return
+        try:
+            group = lists_db.update_group(
+                conn,
+                name,
+                group_id,
+                name=body.get("name") if "name" in body else None,
+                sort_order=body.get("sort_order") if "sort_order" in body else None,
+            )
+            if not group:
+                self.set_status(404)
+                self.write({"error": "Not found"})
+                return
+            self.write(group)
+        finally:
+            conn.close()
+
+    @tornado.web.authenticated
+    @require_db
+    def delete(self, group_id: str):
+        if not _require(self):
+            return
+        self.check_xsrf_cookie()
+        name = require_username(self)
+        conn = collab_conn()
+        if conn is None:
+            self.set_status(503)
+            self.write({"error": "Database unavailable"})
+            return
+        try:
+            if not lists_db.delete_group(conn, name, group_id):
+                self.set_status(404)
+                self.write({"error": "Not found"})
+                return
+            self.write({"ok": True})
+        finally:
+            conn.close()
+
+
+class ListPlaceHandler(BaseHandler, XSRFTokenMixin):
+    @tornado.web.authenticated
+    @require_db
+    def post(self, list_id: str):
+        if not _require(self):
+            return
+        self.check_xsrf_cookie()
+        name = require_username(self)
+        body = parse_json(self)
+        conn = collab_conn()
+        if conn is None:
+            self.set_status(503)
+            self.write({"error": "Database unavailable"})
+            return
+        try:
+            if not lists_db.set_list_group(conn, list_id, name, str(body.get("group_id") or "")):
+                self.set_status(403)
+                self.write({"error": "Forbidden"})
+                return
+            self.write({"ok": True, "group_id": str(body.get("group_id") or "")})
+        finally:
+            conn.close()
+
+
+class ListOrderHandler(BaseHandler, XSRFTokenMixin):
+    @tornado.web.authenticated
+    @require_db
+    def post(self, list_id: str):
+        if not _require(self):
+            return
+        self.check_xsrf_cookie()
+        name = require_username(self)
+        body = parse_json(self)
+        ids = body.get("ids") or []
+        if not isinstance(ids, list):
+            self.set_status(400)
+            self.write({"error": "ids required"})
+            return
+        conn = collab_conn()
+        if conn is None:
+            self.set_status(503)
+            self.write({"error": "Database unavailable"})
+            return
+        try:
+            detail = lists_db.reorder_items(conn, list_id, name, [str(item) for item in ids])
+            if not detail:
+                self.set_status(403)
+                self.write({"error": "Forbidden"})
+                return
+            notify_changed(conn, "list", list_id)
+            self.write(detail)
         finally:
             conn.close()

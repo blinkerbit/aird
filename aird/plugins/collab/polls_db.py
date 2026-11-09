@@ -62,7 +62,13 @@ def list_polls_for_user(conn: sqlite3.Connection, username: str) -> list[dict]:
     out = []
     for row in rows:
         if _user_may_view(conn, row, username):
-            out.append(_poll_row(row))
+            data = _poll_row(row)
+            votes = conn.execute(
+                "SELECT COUNT(*) FROM poll_votes WHERE poll_id = ?", (row["id"],)
+            ).fetchone()[0]
+            data["total_votes"] = int(votes or 0)
+            data["active"] = is_active("poll", data)
+            out.append(data)
     return out
 
 

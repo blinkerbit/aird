@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS collab_lists (
     kind TEXT NOT NULL DEFAULT 'todo',
     visibility TEXT NOT NULL DEFAULT 'public',
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS list_items (
     id TEXT PRIMARY KEY,
@@ -29,6 +30,10 @@ CREATE TABLE IF NOT EXISTS list_items (
     done INTEGER NOT NULL DEFAULT 0,
     sort_order INTEGER NOT NULL DEFAULT 0,
     labels_json TEXT NOT NULL DEFAULT '[]',
+    notes TEXT NOT NULL DEFAULT '',
+    due_at TEXT,
+    remind_at TEXT,
+    reminded_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY(list_id) REFERENCES collab_lists(id) ON DELETE CASCADE
@@ -39,11 +44,45 @@ CREATE TABLE IF NOT EXISTS list_participants (
     username TEXT NOT NULL,
     UNIQUE(list_id, username)
 );
+CREATE TABLE IF NOT EXISTS list_groups (
+    id TEXT PRIMARY KEY,
+    owner_username TEXT NOT NULL,
+    name TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_list_groups_owner ON list_groups(owner_username);
+CREATE TABLE IF NOT EXISTS list_group_items (
+    owner_username TEXT NOT NULL,
+    list_id TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    UNIQUE(owner_username, list_id)
+);
 """
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def parse_stamp(value) -> str | None:
+    """Empty clears the time. A bad value raises ValueError."""
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        when = datetime.fromisoformat(raw)
+    except ValueError as err:
+        raise ValueError("Invalid time") from err
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return when.astimezone(timezone.utc).isoformat()
+
+
+def _note(value) -> str:
+    return str(value or "").strip()[:4000]
 
 
 def _new_id() -> str:
@@ -107,6 +146,11 @@ def list_detail(conn: sqlite3.Connection, list_id: str, username: str) -> dict |
     done = sum(1 for it in data["items"] if it.get("done"))
     data["progress"] = {"done": done, "total": len(data["items"])}
     data["active"] = is_active("list", data)
+    filed = conn.execute(
+        "SELECT group_id FROM list_group_items WHERE owner_username = ? AND list_id = ?",
+        (username, list_id),
+    ).fetchone()
+    data["group_id"] = str(filed[0]) if filed else ""
     return data
 
 
@@ -120,15 +164,16 @@ def create_list(
     items: list[dict],
     participants: list[str] | None = None,
     slug: str | None = None,
+    notes: str = "",
 ) -> dict:
     list_id = _new_id()
     now = _now()
     k = "bullet" if str(kind).strip().lower() == "bullet" else "todo"
     vis = normalize_visibility(visibility)
     conn.execute(
-        "INSERT INTO collab_lists (id, organizer, title, kind, visibility, created_at, updated_at) "
-        "VALUES (?,?,?,?,?,?,?)",
-        (list_id, organizer, title.strip(), k, vis, now, now),
+        "INSERT INTO collab_lists (id, organizer, title, kind, visibility, created_at, updated_at, notes) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (list_id, organizer, title.strip(), k, vis, now, now, _note(notes)),
     )
     for i, raw in enumerate(items):
         text = str((raw or {}).get("text") or "").strip()
@@ -137,9 +182,11 @@ def create_list(
         labels = (raw or {}).get("labels") or []
         if not isinstance(labels, list):
             labels = []
+        due = parse_stamp((raw or {}).get("due_at")) if (raw or {}).get("due_at") else None
+        remind = parse_stamp((raw or {}).get("remind_at")) if (raw or {}).get("remind_at") else None
         conn.execute(
-            "INSERT INTO list_items (id, list_id, text, done, sort_order, labels_json, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            "INSERT INTO list_items (id, list_id, text, done, sort_order, labels_json, notes, due_at, remind_at, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (
                 _new_id(),
                 list_id,
@@ -147,6 +194,9 @@ def create_list(
                 1 if (raw or {}).get("done") else 0,
                 i,
                 json.dumps(labels),
+                _note((raw or {}).get("notes")),
+                due,
+                remind or due,
                 now,
                 now,
             ),
@@ -176,6 +226,7 @@ def update_list(
     visibility: str | None = None,
     participants: list[str] | None = None,
     slug: str | None = None,
+    notes: str | None = None,
 ) -> dict | None:
     row = conn.execute("SELECT * FROM collab_lists WHERE id = ?", (list_id,)).fetchone()
     if not row or row["organizer"] != username:
@@ -188,9 +239,10 @@ def update_list(
         k = "bullet" if str(kind).strip().lower() == "bullet" else "todo"
     vis = row["visibility"] if visibility is None else normalize_visibility(visibility)
     now = _now()
+    list_notes = row["notes"] if notes is None else _note(notes)
     conn.execute(
-        "UPDATE collab_lists SET title = ?, kind = ?, visibility = ?, updated_at = ? WHERE id = ?",
-        (new_title, k, vis, now, list_id),
+        "UPDATE collab_lists SET title = ?, kind = ?, visibility = ?, notes = ?, updated_at = ? WHERE id = ?",
+        (new_title, k, vis, list_notes, now, list_id),
     )
     if visibility is not None or participants is not None:
         if vis == "private":
@@ -219,6 +271,10 @@ def add_item(
     username: str,
     text: str,
     labels: list | None = None,
+    *,
+    notes: str = "",
+    due_at: str | None = None,
+    remind_at: str | None = None,
 ) -> dict | None:
     row = conn.execute("SELECT * FROM collab_lists WHERE id = ?", (list_id,)).fetchone()
     if not row or not _user_may_edit_items(conn, row, username):
@@ -231,10 +287,12 @@ def add_item(
         "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM list_items WHERE list_id = ?",
         (list_id,),
     ).fetchone()[0]
+    due = parse_stamp(due_at) if due_at else None
+    remind = parse_stamp(remind_at) if remind_at else due
     conn.execute(
-        "INSERT INTO list_items (id, list_id, text, done, sort_order, labels_json, created_at, updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?)",
-        (_new_id(), list_id, body, 0, order, json.dumps(labels or []), now, now),
+        "INSERT INTO list_items (id, list_id, text, done, sort_order, labels_json, notes, due_at, remind_at, created_at, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (_new_id(), list_id, body, 0, order, json.dumps(labels or []), _note(notes), due, remind, now, now),
     )
     conn.execute("UPDATE collab_lists SET updated_at = ? WHERE id = ?", (now, list_id))
     conn.commit()
@@ -265,6 +323,12 @@ def patch_item(
     done: bool | None = None,
     text: str | None = None,
     labels: list | None = None,
+    notes: str | None = None,
+    due_at: str | None = None,
+    remind_at: str | None = None,
+    due_set: bool = False,
+    remind_set: bool = False,
+    sort_order: int | None = None,
 ) -> dict | None:
     row = conn.execute("SELECT * FROM collab_lists WHERE id = ?", (list_id,)).fetchone()
     if not row or not _user_may_edit_items(conn, row, username):
@@ -291,6 +355,30 @@ def patch_item(
             "UPDATE list_items SET labels_json = ?, updated_at = ? WHERE id = ?",
             (json.dumps(clean), now, item_id),
         )
+    if notes is not None:
+        conn.execute(
+            "UPDATE list_items SET notes = ?, updated_at = ? WHERE id = ?",
+            (_note(notes), now, item_id),
+        )
+    if sort_order is not None:
+        conn.execute(
+            "UPDATE list_items SET sort_order = ?, updated_at = ? WHERE id = ?",
+            (int(sort_order), now, item_id),
+        )
+    due = parse_stamp(due_at) if due_set else item["due_at"]
+    remind = parse_stamp(remind_at) if remind_set else item["remind_at"]
+    if due_set and not remind_set and not remind:
+        remind = due
+    time_changed = (due_set and due != item["due_at"]) or (remind_set and remind != item["remind_at"])
+    if due_set or remind_set:
+        conn.execute(
+            "UPDATE list_items SET due_at = ?, remind_at = ?, updated_at = ? WHERE id = ?",
+            (due, remind, now, item_id),
+        )
+    if done:
+        conn.execute("UPDATE list_items SET reminded_at = ? WHERE id = ?", (now, item_id))
+    elif time_changed or done is False:
+        conn.execute("UPDATE list_items SET reminded_at = NULL WHERE id = ?", (item_id,))
     conn.execute("UPDATE collab_lists SET updated_at = ? WHERE id = ?", (now, list_id))
     conn.commit()
     return list_detail(conn, list_id, username)
@@ -306,6 +394,7 @@ def _list_row(row: sqlite3.Row) -> dict:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "slug": row["slug"] if "slug" in row.keys() else "",
+        "notes": row["notes"] if "notes" in row.keys() else "",
     }
 
 
@@ -320,7 +409,214 @@ def _item_row(row: sqlite3.Row) -> dict:
         "done": bool(row["done"]),
         "sort_order": row["sort_order"],
         "labels": labels,
+        "notes": row["notes"] if "notes" in row.keys() else "",
+        "due_at": row["due_at"] if "due_at" in row.keys() else None,
+        "remind_at": row["remind_at"] if "remind_at" in row.keys() else None,
     }
+
+
+def list_index(conn: sqlite3.Connection, username: str, query: str = "") -> dict:
+    needle = query.strip().casefold()
+    lists = []
+    reminders = []
+    now = _now()
+    for row in conn.execute(
+        "SELECT * FROM collab_lists ORDER BY updated_at DESC LIMIT 200"
+    ).fetchall():
+        if not _user_may_view(conn, row, username):
+            continue
+        data = _list_row(row)
+        items = conn.execute(
+            "SELECT * FROM list_items WHERE list_id = ?", (row["id"],)
+        ).fetchall()
+        done = sum(1 for item in items if item["done"])
+        data["progress"] = {"done": done, "total": len(items)}
+        data["active"] = is_active("list", {**data, "kind": data["kind"], "progress": data["progress"]})
+        open_due = [
+            str(item["due_at"])
+            for item in items
+            if not item["done"] and item["due_at"]
+        ]
+        data["next_due"] = min(open_due) if open_due else ""
+        filed = conn.execute(
+            "SELECT group_id FROM list_group_items WHERE owner_username = ? AND list_id = ?",
+            (username, row["id"]),
+        ).fetchone()
+        data["group_id"] = str(filed[0]) if filed else ""
+        if needle and not _matches(data, items, needle):
+            continue
+        lists.append(data)
+        for item in items:
+            if item["done"] or item["reminded_at"]:
+                continue
+            when = item["remind_at"] or item["due_at"]
+            if not when or when < now:
+                continue
+            reminders.append(
+                {
+                    "list_id": row["id"],
+                    "item_id": item["id"],
+                    "text": item["text"],
+                    "title": data["title"],
+                    "remind_at": when,
+                }
+            )
+    groups = [
+        {
+            "id": group["id"],
+            "name": group["name"],
+            "sort_order": group["sort_order"],
+        }
+        for group in conn.execute(
+            "SELECT * FROM list_groups WHERE owner_username = ? ORDER BY sort_order, name",
+            (username,),
+        ).fetchall()
+    ]
+    return {"lists": lists, "groups": groups, "reminders": reminders}
+
+
+def _matches(data: dict, items, needle: str) -> bool:
+    hay = [data.get("title") or "", data.get("notes") or ""]
+    for item in items:
+        hay.append(item["text"] or "")
+        hay.append(item["notes"] or "")
+    return any(needle in str(part).casefold() for part in hay)
+
+
+def create_group(conn: sqlite3.Connection, owner: str, name: str) -> dict | None:
+    title = name.strip()[:80]
+    if not owner or not title:
+        return None
+    order = conn.execute(
+        "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM list_groups WHERE owner_username = ?",
+        (owner,),
+    ).fetchone()[0]
+    group_id = _new_id()
+    conn.execute(
+        "INSERT INTO list_groups (id, owner_username, name, sort_order, created_at) VALUES (?,?,?,?,?)",
+        (group_id, owner, title, order, _now()),
+    )
+    conn.commit()
+    return {"id": group_id, "name": title, "sort_order": order}
+
+
+def update_group(conn: sqlite3.Connection, owner: str, group_id: str, *, name: str | None, sort_order: int | None) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM list_groups WHERE id = ? AND owner_username = ?",
+        (group_id, owner),
+    ).fetchone()
+    if not row:
+        return None
+    title = row["name"] if name is None else name.strip()[:80]
+    if not title:
+        return None
+    order = row["sort_order"] if sort_order is None else int(sort_order)
+    conn.execute(
+        "UPDATE list_groups SET name = ?, sort_order = ? WHERE id = ?",
+        (title, order, group_id),
+    )
+    conn.commit()
+    return {"id": group_id, "name": title, "sort_order": order}
+
+
+def delete_group(conn: sqlite3.Connection, owner: str, group_id: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM list_groups WHERE id = ? AND owner_username = ?",
+        (group_id, owner),
+    ).fetchone()
+    if not row:
+        return False
+    conn.execute(
+        "DELETE FROM list_group_items WHERE owner_username = ? AND group_id = ?",
+        (owner, group_id),
+    )
+    conn.execute("DELETE FROM list_groups WHERE id = ? AND owner_username = ?", (group_id, owner))
+    conn.commit()
+    return True
+
+
+def set_list_group(conn: sqlite3.Connection, list_id: str, username: str, group_id: str) -> bool:
+    row = conn.execute("SELECT * FROM collab_lists WHERE id = ?", (list_id,)).fetchone()
+    if not row or not _user_may_view(conn, row, username):
+        return False
+    if not group_id:
+        conn.execute(
+            "DELETE FROM list_group_items WHERE owner_username = ? AND list_id = ?",
+            (username, list_id),
+        )
+        conn.commit()
+        return True
+    owned = conn.execute(
+        "SELECT 1 FROM list_groups WHERE id = ? AND owner_username = ?",
+        (group_id, username),
+    ).fetchone()
+    if not owned:
+        return False
+    conn.execute(
+        """INSERT INTO list_group_items (owner_username, list_id, group_id) VALUES (?,?,?)
+           ON CONFLICT(owner_username, list_id) DO UPDATE SET group_id = excluded.group_id""",
+        (username, list_id, group_id),
+    )
+    conn.commit()
+    return True
+
+
+def reorder_items(conn: sqlite3.Connection, list_id: str, username: str, ids: list[str]) -> dict | None:
+    row = conn.execute("SELECT * FROM collab_lists WHERE id = ?", (list_id,)).fetchone()
+    if not row or not _user_may_edit_items(conn, row, username):
+        return None
+    for index, item_id in enumerate(ids):
+        conn.execute(
+            "UPDATE list_items SET sort_order = ? WHERE id = ? AND list_id = ?",
+            (index, str(item_id), list_id),
+        )
+    conn.execute("UPDATE collab_lists SET updated_at = ? WHERE id = ?", (_now(), list_id))
+    conn.commit()
+    return list_detail(conn, list_id, username)
+
+
+def claim_due_reminders(conn: sqlite3.Connection) -> list[dict]:
+    now = _now()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        rows = conn.execute(
+            """
+            SELECT i.id, i.list_id, i.text, l.title
+            FROM list_items i
+            JOIN collab_lists l ON l.id = i.list_id
+            WHERE i.done = 0
+              AND (i.reminded_at IS NULL OR i.reminded_at = '')
+              AND (
+                (i.remind_at IS NOT NULL AND i.remind_at != '' AND i.remind_at <= ?)
+                OR (
+                  (i.remind_at IS NULL OR i.remind_at = '')
+                  AND i.due_at IS NOT NULL AND i.due_at != '' AND i.due_at <= ?
+                )
+              )
+            """,
+            (now, now),
+        ).fetchall()
+        claimed = []
+        for row in rows:
+            cur = conn.execute(
+                """UPDATE list_items SET reminded_at = ?
+                   WHERE id = ? AND (reminded_at IS NULL OR reminded_at = '')""",
+                (now, row["id"]),
+            )
+            if cur.rowcount:
+                claimed.append(
+                    {
+                        "list_id": row["list_id"],
+                        "item_id": row["id"],
+                        "text": row["text"],
+                        "title": row["title"],
+                    }
+                )
+        conn.commit()
+        return claimed
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def list_snapshot(conn: sqlite3.Connection, list_id: str, username: str) -> dict:

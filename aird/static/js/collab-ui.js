@@ -7,6 +7,20 @@ function esc(s) {
   return d.innerHTML;
 }
 
+function isoStamp(value) {
+  if (!value) return '';
+  const when = new Date(value);
+  return Number.isNaN(when.getTime()) ? '' : when.toISOString();
+}
+
+function localStamp(iso) {
+  if (!iso) return '';
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}T${pad(when.getHours())}:${pad(when.getMinutes())}`;
+}
+
 function ensureDialog() {
   let dlg = document.getElementById('collabDialog');
   if (dlg) return dlg;
@@ -213,6 +227,9 @@ export function listDialog(existing) {
       <label class="collab-field"><span>Title</span>
         <input class="input input-bordered input-sm" data-title value="${esc(existing?.title || '')}" required>
       </label>
+      <label class="collab-field"><span>Description</span>
+        <textarea class="textarea textarea-bordered textarea-sm" data-notes rows="3">${esc(existing?.notes || '')}</textarea>
+      </label>
       ${slugField(existing, 'In chat, type #name. Example: #grocery-nov1')}
       <label class="collab-field"><span>Type</span>
         <select class="select select-bordered select-sm" data-kind>
@@ -234,6 +251,7 @@ export function listDialog(existing) {
       if (!title) throw new Error('Add a title.');
       const payload = {
         title,
+        notes: root.querySelector('[data-notes]')?.value.trim() || '',
         slug: root.querySelector('[data-slug]')?.value.trim(),
         kind: root.querySelector('[data-kind]').value,
         visibility: root.querySelector('[data-visibility]').value,
@@ -386,7 +404,7 @@ export function mountPoll(root, poll, { me, onChange }) {
   root.querySelector('[data-act="share"]')?.addEventListener('click', () => sharePicker('poll', poll.id).catch((e) => alert(e.message)));
 }
 
-export function mountList(root, list, { me, onChange }) {
+export function mountList(root, list, { me, onChange, groups = [] }) {
   const mine = list.organizer === me;
   const prog = list.progress || {};
   const items = (list.items || []).map((it) => `
@@ -394,13 +412,17 @@ export function mountList(root, list, { me, onChange }) {
       ${list.kind === 'todo' ? `<input type="checkbox" data-done="${esc(it.id)}" ${it.done ? 'checked' : ''}>` : '<span class="collab-bullet"></span>'}
       <div class="collab-item-main">
         <span>${esc(it.text)}</span>
+        ${it.due_at ? `<span class="collab-hint">${esc(new Date(it.due_at).toLocaleString())}</span>` : ''}
+        ${it.notes ? `<span class="collab-hint">${esc(it.notes)}</span>` : ''}
         ${(it.labels || []).map((lb) => `<span class="collab-chip">${esc(lb)}</span>`).join('')}
       </div>
+      <button type="button" class="btn btn-ghost btn-xs" data-up="${esc(it.id)}">Up</button>
       <button type="button" class="btn btn-ghost btn-xs" data-edit-item="${esc(it.id)}">Edit</button>
       <button type="button" class="btn btn-ghost btn-xs" data-del-item="${esc(it.id)}" aria-label="Remove">×</button>
     </div>`).join('');
   root.innerHTML = `
     <h2 class="text-lg font-bold">${esc(list.title)}</h2>
+    ${list.notes ? `<p class="collab-hint">${esc(list.notes)}</p>` : ''}
     <div class="collab-chips">
       <span class="collab-chip">${visibilityChip(list.visibility)}</span>
       <span class="collab-chip">${list.kind === 'bullet' ? 'Bullets' : 'Checklist'}</span>
@@ -410,10 +432,16 @@ export function mountList(root, list, { me, onChange }) {
     <div class="collab-ribbon">
       ${mine ? '<button type="button" class="btn btn-ghost btn-sm" data-act="edit">Edit</button>' : ''}
       <button type="button" class="btn btn-ghost btn-sm" data-act="share">Add to chat</button>
+      <select class="select select-bordered select-sm" data-group>
+        <option value="">Ungrouped</option>
+        ${groups.map((group) => `<option value="${esc(group.id)}" ${list.group_id === group.id ? 'selected' : ''}>${esc(group.name)}</option>`).join('')}
+      </select>
     </div>
     <div class="collab-items">${items || '<p class="collab-empty">No items yet.</p>'}</div>
     <form class="collab-add" data-add>
       <input class="input input-bordered input-sm" name="text" placeholder="Add an item" required>
+      <input class="input input-bordered input-sm" name="notes" placeholder="Note">
+      <input class="input input-bordered input-sm" type="datetime-local" name="due">
       <input class="input input-bordered input-sm" name="labels" placeholder="Labels">
       <button class="btn btn-primary btn-sm" type="submit">Add</button>
     </form>`;
@@ -440,10 +468,15 @@ export function mountList(root, list, { me, onChange }) {
         title: 'Edit item',
         submitLabel: 'Save item',
         html: `<label class="collab-field"><span>Text</span><input class="input input-bordered input-sm" data-text value="${esc(item.text)}" required></label>
+          <label class="collab-field"><span>Note</span><textarea class="textarea textarea-bordered textarea-sm" data-notes rows="3">${esc(item.notes || '')}</textarea></label>
+          <label class="collab-field"><span>Due</span><input class="input input-bordered input-sm" type="datetime-local" data-due value="${esc(localStamp(item.due_at))}"></label>
           <label class="collab-field"><span>Labels</span><input class="input input-bordered input-sm" data-labels value="${esc((item.labels || []).join(', '))}"></label>`,
         onSubmit(node) {
           return {
             text: node.querySelector('[data-text]').value.trim(),
+            notes: node.querySelector('[data-notes]').value.trim(),
+            due_at: isoStamp(node.querySelector('[data-due]').value),
+            remind_at: isoStamp(node.querySelector('[data-due]').value),
             labels: node.querySelector('[data-labels]').value.split(',').map((s) => s.trim()).filter(Boolean),
           };
         },
@@ -460,10 +493,29 @@ export function mountList(root, list, { me, onChange }) {
       method: 'POST',
       body: {
         text: String(fd.get('text') || ''),
+        notes: String(fd.get('notes') || ''),
+        due_at: isoStamp(String(fd.get('due') || '')),
+        remind_at: isoStamp(String(fd.get('due') || '')),
         labels: String(fd.get('labels') || '').split(',').map((s) => s.trim()).filter(Boolean),
       },
     });
     onChange(detail);
+  });
+  root.querySelector('[data-group]')?.addEventListener('change', async (event) => {
+    await apiJson(`/api/lists/${list.id}/group`, { method: 'POST', body: { group_id: event.target.value } });
+    onChange(list);
+  });
+  root.querySelectorAll('[data-up]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const ids = (list.items || []).map((item) => item.id);
+      const index = ids.indexOf(btn.dataset.up);
+      if (index <= 0) return;
+      const previous = ids[index - 1];
+      ids[index - 1] = ids[index];
+      ids[index] = previous;
+      const detail = await apiJson(`/api/lists/${list.id}/order`, { method: 'POST', body: { ids } });
+      onChange(detail);
+    });
   });
   root.querySelector('[data-act="edit"]')?.addEventListener('click', async () => {
     const draft = await listDialog(list);

@@ -12,10 +12,14 @@ def is_lists_enabled() -> bool:
 def register_lists(routes: list) -> None:
     from aird.plugins.lists.handlers import (
         ListDetailHandler,
+        ListGroupHandler,
+        ListGroupListHandler,
         ListItemHandler,
         ListItemsHandler,
         ListListHandler,
+        ListOrderHandler,
         ListPageHandler,
+        ListPlaceHandler,
         ListShareHandler,
     )
 
@@ -24,7 +28,11 @@ def register_lists(routes: list) -> None:
     routes.extend(
         [
             (r"/lists", ListPageHandler),
+            (r"/api/list-groups", ListGroupListHandler),
+            (rf"/api/list-groups/{lid}", ListGroupHandler),
             (r"/api/lists", ListListHandler),
+            (rf"/api/lists/{lid}/group", ListPlaceHandler),
+            (rf"/api/lists/{lid}/order", ListOrderHandler),
             (rf"/api/lists/{lid}/items/{iid}", ListItemHandler),
             (rf"/api/lists/{lid}/items", ListItemsHandler),
             (rf"/api/lists/{lid}", ListDetailHandler),
