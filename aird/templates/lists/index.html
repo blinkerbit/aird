@@ -11,7 +11,7 @@
 <body>
   <div class="aird-shell aird-shell--wide">
 {% include '../_app_nav_header.html' %}
-    <main class="collab-hub" data-hub="lists" data-me="{{ escape(current_user.get('username') if current_user else '') }}">
+    <main class="lists-hub collab-hub" data-hub="lists" data-me="{{ escape(current_user.get('username') if current_user else '') }}" data-reminders="{{ '1' if is_feature_enabled('reminders') else '0' }}">
       <header class="collab-hub-head">
         <h1 class="text-2xl font-bold">Lists</h1>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap">
@@ -19,9 +19,10 @@
           <button type="button" class="btn btn-primary btn-sm" id="listsNewBtn">New list</button>
         </div>
       </header>
-      <div class="collab-layout">
-        <aside class="collab-index" id="listsIndex" aria-label="Your lists"></aside>
-        <section class="collab-detail" id="listsDetail" aria-live="polite">
+      <div class="lists-hub-body" id="listsHubBody" data-mobile-view="lists">
+        <aside class="lists-rail" id="listsRail" aria-label="Groups and tags"></aside>
+        <section class="lists-board" id="listsBoard" aria-label="Lists in group"></section>
+        <section class="lists-editor" id="listsEditor" aria-live="polite" aria-label="List editor">
           <div class="collab-empty">Create or select a list.</div>
         </section>
       </div>

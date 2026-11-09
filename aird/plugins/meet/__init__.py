@@ -15,6 +15,7 @@ def register_meet(routes: list) -> None:
         MeetJoinPageHandler,
         MeetListHandler,
         MeetPageHandler,
+        MeetRemoveHandler,
         MeetShareHandler,
         MeetTokenHandler,
     )
@@ -26,6 +27,7 @@ def register_meet(routes: list) -> None:
             (r"/meet", MeetPageHandler),
             (rf"/meet/{slug}", MeetJoinPageHandler),
             (r"/api/meet", MeetListHandler),
+            (rf"/api/meet/{mid}/remove", MeetRemoveHandler),
             (rf"/api/meet/{mid}", MeetDetailHandler),
             (rf"/api/meet/{mid}/token", MeetTokenHandler),
             (rf"/api/meet/{mid}/share", MeetShareHandler),

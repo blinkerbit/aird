@@ -12,19 +12,25 @@ from aird.plugins.collab.lists_db import (
     claim_due_reminders,
     create_group,
     create_list,
+    delete_list,
+    get_list,
     list_detail,
     list_index,
     set_list_group,
+    update_list,
+    user_may_share,
 )
 from aird.plugins.collab.live import audience_names
 from aird.plugins.collab.meet_db import (
     MEET_TTL_HOURS,
     claim_session_start,
     create_meet,
+    delete_meet,
     end_meet,
+    get_meet,
     meet_join_allowed,
 )
-from aird.plugins.collab.polls_db import cast_vote, create_poll, poll_detail, update_poll
+from aird.plugins.collab.polls_db import cast_vote, create_poll, delete_poll, get_poll, poll_detail, update_poll
 from aird.plugins.collab.refs import link_ref, list_refs
 from aird.plugins.collab.slugs import slugify
 from aird.plugins.collab.schema import ensure_collab_schema
@@ -238,3 +244,73 @@ def test_list_notes_groups_and_one_reminder(collab_db):
     assert bob == family["id"]
     assert len(claim_due_reminders(collab_db)) == 1
     assert claim_due_reminders(collab_db) == []
+
+
+def test_list_forwarding_is_per_list_and_author_only(collab_db):
+    lst = create_list(
+        collab_db,
+        organizer="alice",
+        title="Trip",
+        kind="todo",
+        visibility="private",
+        items=[{"text": "Pack"}],
+        participants=["bob"],
+    )
+    assert lst["allow_forward"] is False
+    assert lst["organizer"] == "alice"
+    assert user_may_share(collab_db, lst["id"], "alice")
+    assert not user_may_share(collab_db, lst["id"], "bob")
+    assert update_list(collab_db, lst["id"], "bob", allow_forward=True) is None
+    assert link_ref(
+        collab_db,
+        conversation_id="conv-bob",
+        kind="list",
+        username="bob",
+        artifact_id=lst["id"],
+        member_names=["carol"],
+    ) is None
+    assert list_detail(collab_db, lst["id"], "carol") is None
+    turned = update_list(collab_db, lst["id"], "alice", allow_forward=True)
+    assert turned["allow_forward"] is True
+    assert user_may_share(collab_db, lst["id"], "bob")
+    pinned = link_ref(
+        collab_db,
+        conversation_id="conv-bob",
+        kind="list",
+        username="bob",
+        artifact_id=lst["id"],
+        member_names=["carol"],
+    )
+    assert pinned["id"] == lst["id"]
+    assert list_detail(collab_db, lst["id"], "carol") is not None
+
+
+def test_only_author_can_delete_list_poll_and_meet(collab_db):
+    lst = create_list(
+        collab_db,
+        organizer="alice",
+        title="Trip",
+        kind="todo",
+        visibility="public",
+        items=[{"text": "Pack"}],
+    )
+    poll = create_poll(
+        collab_db,
+        organizer="alice",
+        question="Lunch?",
+        visibility="public",
+        allow_multi=False,
+        options=["Pizza", "Salad"],
+    )
+    meet = create_meet(collab_db, organizer="alice", title="Standup", visibility="public")
+    assert delete_list(collab_db, lst["id"], "bob") is False
+    assert delete_poll(collab_db, poll["id"], "bob") is False
+    assert delete_meet(collab_db, meet["id"], "bob") is False
+    assert get_list(collab_db, lst["id"])
+    assert delete_list(collab_db, lst["id"], "alice") is True
+    assert delete_poll(collab_db, poll["id"], "alice") is True
+    assert delete_meet(collab_db, meet["id"], "alice") is True
+    assert get_list(collab_db, lst["id"]) is None
+    assert get_poll(collab_db, poll["id"]) is None
+    assert get_meet(collab_db, meet["id"]) is None
+    assert collab_db.execute("SELECT COUNT(*) FROM list_items WHERE list_id = ?", (lst["id"],)).fetchone()[0] == 0

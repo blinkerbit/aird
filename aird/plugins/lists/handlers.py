@@ -10,6 +10,7 @@ from aird.plugins.collab.chat_cards import share_card_to_conversation
 from aird.plugins.collab.http import parse_json, require_username
 from aird.plugins.collab.live import notify_changed, notify_event
 from aird.plugins.collab.schema import collab_conn
+from aird.plugins.collab.reminders import is_reminders_enabled
 from aird.plugins.lists import is_lists_enabled
 
 
@@ -132,6 +133,15 @@ class ListDetailHandler(BaseHandler, XSRFTokenMixin):
             detail = augment_detail_tag_ids(
                 self.db_conn, detail, viewer=name, kind=user_tags_db.KIND_LIST
             )
+            from aird.db.user_tag_collab import tags_for_resource_display
+
+            detail["tags"] = tags_for_resource_display(
+                self.db_conn,
+                str(detail.get("organizer") or ""),
+                user_tags_db.KIND_LIST,
+                list_id,
+                name,
+            )
             self.write(detail)
         finally:
             conn.close()
@@ -160,6 +170,7 @@ class ListDetailHandler(BaseHandler, XSRFTokenMixin):
                 participants=body.get("participants") if "participants" in body else None,
                 slug=body.get("slug") if "slug" in body else None,
                 notes=body.get("notes") if "notes" in body else None,
+                allow_forward=bool(body.get("allow_forward")) if "allow_forward" in body else None,
             )
             if not detail:
                 self.set_status(400)
@@ -183,6 +194,28 @@ class ListDetailHandler(BaseHandler, XSRFTokenMixin):
             notify_changed(conn, "list", list_id)
             notify_event(conn, kind="list", artifact_id=list_id, actor=name, preview="Updated the list")
             self.write(detail)
+        finally:
+            conn.close()
+
+    @tornado.web.authenticated
+    @require_db
+    def delete(self, list_id: str):
+        if not _require(self):
+            return
+        self.check_xsrf_cookie()
+        name = require_username(self)
+        conn = collab_conn()
+        if conn is None:
+            self.set_status(503)
+            self.write({"error": "Database unavailable"})
+            return
+        try:
+            notify_changed(conn, "list", list_id)
+            if not lists_db.delete_list(conn, list_id, name):
+                self.set_status(403)
+                self.write({"error": "Forbidden"})
+                return
+            self.write({"ok": True})
         finally:
             conn.close()
 
@@ -213,7 +246,7 @@ class ListItemsHandler(BaseHandler, XSRFTokenMixin):
                 labels,
                 notes=str(body.get("notes") or ""),
                 due_at=body.get("due_at"),
-                remind_at=body.get("remind_at"),
+                remind_at=body.get("remind_at") if is_reminders_enabled() else None,
             )
             if not detail:
                 self.set_status(400)
@@ -259,9 +292,13 @@ class ListItemHandler(BaseHandler, XSRFTokenMixin):
                 labels=labels,
                 notes=body.get("notes") if "notes" in body else None,
                 due_at=body.get("due_at") if "due_at" in body else None,
-                remind_at=body.get("remind_at") if "remind_at" in body else None,
+                remind_at=(
+                    body.get("remind_at")
+                    if is_reminders_enabled() and "remind_at" in body
+                    else None
+                ),
                 due_set="due_at" in body,
-                remind_set="remind_at" in body,
+                remind_set=is_reminders_enabled() and "remind_at" in body,
                 sort_order=body.get("sort_order") if "sort_order" in body else None,
             )
             if not detail:
@@ -332,9 +369,9 @@ class ListShareHandler(BaseHandler, XSRFTokenMixin):
             return
         try:
             detail = lists_db.list_detail(conn, list_id, name)
-            if not detail:
+            if not detail or not lists_db.user_may_share(conn, list_id, name):
                 self.set_status(403)
-                self.write({"error": "Forbidden"})
+                self.write({"error": "Only the author can share this list"})
                 return
             snap = lists_db.list_snapshot(conn, list_id, name)
             msg = share_card_to_conversation(

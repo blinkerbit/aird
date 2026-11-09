@@ -10,7 +10,7 @@ from aird.db.schema import init_db
 from aird.db import user_tags as user_tags_db
 from aird.services.user_tag_access import file_tag_access, poll_tag_access
 from aird.plugins.collab.schema import ensure_collab_schema
-from aird.plugins.collab import polls_db
+from aird.plugins.collab import polls_db, lists_db
 
 
 def _seed_user(conn: sqlite3.Connection, username: str) -> None:
@@ -110,6 +110,64 @@ def test_normalize_members_unknown_user(conn):
         normalize_members(conn, "alice", ["nobody"])
 
 
+def test_tagged_page_includes_collab_links(conn, tmp_path):
+    from aird.db.user_tag_collab import build_tagged_page_context
+    from aird.plugins.collab import lists_db
+
+    poll = polls_db.create_poll(
+        conn,
+        organizer="alice",
+        question="Ship Friday?",
+        visibility="public",
+        allow_multi=False,
+        options=["yes", "no"],
+        participants=[],
+    )
+    lst = lists_db.create_list(
+        conn,
+        organizer="alice",
+        title="Packing",
+        kind="todo",
+        visibility="public",
+        items=[{"text": "bag"}],
+        participants=[],
+    )
+    tag = user_tags_db.create_tag(conn, owner_username="alice", name="trip", access="none")
+    user_tags_db.add_link(conn, tag["id"], owner_username="alice", kind="poll", resource_key=poll["id"])
+    user_tags_db.add_link(conn, tag["id"], owner_username="alice", kind="list", resource_key=lst["id"])
+    root = tmp_path / "files"
+    root.mkdir()
+    (root / "ticket.txt").write_text("x")
+    user_tags_db.add_link(conn, tag["id"], owner_username="alice", kind="file", resource_key="ticket.txt")
+    ctx = build_tagged_page_context(conn, username="alice", tag_name="trip", data_root=str(root))
+    assert ctx["tag_source"] == "user"
+    assert ctx["file_count"] == 1
+    assert ctx["poll_count"] == 1
+    assert ctx["list_count"] == 1
+    assert ctx["polls"][0]["title"] == "Ship Friday?"
+    assert ctx["lists"][0]["title"] == "Packing"
+
+
+def test_tags_for_file_works_without_row_factory(tmp_path):
+    """Production connections often return tuples, not sqlite3.Row."""
+    db = tmp_path / "plain.sqlite3"
+    c = sqlite3.connect(db)
+    init_db(c)
+    ensure_collab_schema(c)
+    _seed_user(c, "alice")
+    c.commit()
+    tag = user_tags_db.create_tag(c, owner_username="alice", name="docs", access="none")
+    assert tag
+    assert user_tags_db.add_link(
+        c, tag["id"], owner_username="alice", kind="file", resource_key="a.txt"
+    )
+    found = user_tags_db.tags_for_file(c, "alice", "a.txt", viewer="alice")
+    assert [t["name"] for t in found] == ["docs"]
+    colors = {t["name"]: t["color"] for t in user_tags_db.list_tags_for_owner(c, "alice")}
+    assert "docs" in colors
+    c.close()
+
+
 def test_replace_artifact_tag_links(conn):
     from aird.db.user_tag_collab import replace_artifact_tag_links, tag_ids_for_resource
 
@@ -140,3 +198,26 @@ def test_replace_artifact_tag_links(conn):
         tag_ids=[],
     )
     assert tag_ids_for_resource(conn, "alice", "poll", poll["id"]) == []
+
+
+def test_list_index_includes_tag_chips(conn):
+    lst = lists_db.create_list(
+        conn,
+        organizer="alice",
+        title="Trip",
+        kind="todo",
+        visibility="public",
+        items=[{"text": "Pack"}],
+    )
+    tag = user_tags_db.create_tag(conn, owner_username="alice", name="travel", access="none", members=[])
+    user_tags_db.add_link(
+        conn,
+        tag["id"],
+        owner_username="alice",
+        kind=user_tags_db.KIND_LIST,
+        resource_key=lst["id"],
+    )
+    idx = lists_db.list_index(conn, "alice")
+    row = next(item for item in idx["lists"] if item["id"] == lst["id"])
+    assert row["tags"][0]["name"] == "travel"
+    assert idx["tag_catalog"][0]["name"] == "travel"

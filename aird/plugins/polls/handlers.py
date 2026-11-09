@@ -179,6 +179,28 @@ class PollDetailHandler(BaseHandler, XSRFTokenMixin):
         finally:
             conn.close()
 
+    @tornado.web.authenticated
+    @require_db
+    def delete(self, poll_id: str):
+        if not _require(self):
+            return
+        self.check_xsrf_cookie()
+        name = require_username(self)
+        conn = collab_conn()
+        if conn is None:
+            self.set_status(503)
+            self.write({"error": "Database unavailable"})
+            return
+        try:
+            notify_changed(conn, "poll", poll_id)
+            if not polls_db.delete_poll(conn, poll_id, name):
+                self.set_status(403)
+                self.write({"error": "Forbidden"})
+                return
+            self.write({"ok": True})
+        finally:
+            conn.close()
+
 
 class PollVoteHandler(BaseHandler, XSRFTokenMixin):
     @tornado.web.authenticated

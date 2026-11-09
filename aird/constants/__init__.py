@@ -55,6 +55,7 @@ FEATURE_FLAGS = {
     "polls": False,
     "lists": False,
     "meet": False,
+    "reminders": False,
     "transfer_sendfile": True,
 }
 

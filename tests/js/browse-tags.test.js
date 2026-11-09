@@ -60,7 +60,8 @@ describe('row tag popover contract', () => {
     expect(js).not.toMatch(/openRowTagPopover[\s\S]*fetchAllTagRules/);
     expect(html).toContain('data-tags=');
     expect(html).toContain('tagPickerRemove');
-    expect(html).toContain('/files/?tag=');
+    expect(html).toContain('/tagged/');
+    expect(js).toContain('/tagged/');
     expect(html).toContain('rowTagPopoverSuggestions');
     expect(html).toContain('tag-picker-input-wrap');
     expect(js).toContain('tag-color-btn--chip');
@@ -95,9 +96,9 @@ describe('paintTagColor', () => {
   it('recolors every listing chip for that tag without a reload', async () => {
     const { paintTagColor } = await import('/static/js/browse/tags.js');
     document.body.innerHTML = [
-      '<a class="file-tag-chip" data-tag="yellow-tag" href="/files/?tag=yellow-tag" style="background:#111111">yellow-tag</a>',
-      '<a class="file-tag-chip" data-tag="yellow-tag" href="/files/?tag=yellow-tag" style="background:#111111">yellow-tag</a>',
-      '<a class="file-tag-chip" data-tag="green-tag" href="/files/?tag=green-tag" style="background:#00aa00">green-tag</a>',
+      '<a class="file-tag-chip" data-tag="yellow-tag" href="/tagged/yellow-tag" style="background:#111111">yellow-tag</a>',
+      '<a class="file-tag-chip" data-tag="yellow-tag" href="/tagged/yellow-tag" style="background:#111111">yellow-tag</a>',
+      '<a class="file-tag-chip" data-tag="green-tag" href="/tagged/green-tag" style="background:#00aa00">green-tag</a>',
     ].join('');
     paintTagColor('yellow-tag', '#ef4444');
     const yellow = [...document.querySelectorAll('a.file-tag-chip[data-tag="yellow-tag"]')];

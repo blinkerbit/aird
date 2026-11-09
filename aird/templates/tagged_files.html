@@ -7,6 +7,69 @@
   <link rel="stylesheet" href="{{ static_url('css/app.css') }}" />
   <link rel="icon" href="{{ static_url('favicon.png') }}" type="image/png" />
   <title>Tag: {{ escape(tag_name) }} · Aird</title>
+  <style>
+    .tagged-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin: 0.75rem 0 1.25rem;
+    }
+    .tagged-summary span {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.25rem 0.7rem;
+      border-radius: 999px;
+      border: 1px solid var(--color-base-300);
+      background: var(--color-base-100);
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    .tagged-section {
+      margin-bottom: 1.5rem;
+    }
+    .tagged-section h2 {
+      margin: 0 0 0.65rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .tagged-section-card {
+      border: 1px solid var(--color-base-300);
+      border-radius: 0.85rem;
+      background: var(--color-base-100);
+      overflow: hidden;
+    }
+    .tagged-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.7rem 0.9rem;
+      border-top: 1px solid var(--color-base-300);
+    }
+    .tagged-item:first-child { border-top: 0; }
+    .tagged-item-main {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      min-width: 0;
+    }
+    .tagged-item-main a {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tagged-item-kind {
+      flex-shrink: 0;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      opacity: 0.55;
+    }
+  </style>
 </head>
 <body class="bg-base-200 min-h-screen">
   <div class="aird-shell">
@@ -17,14 +80,14 @@
 
     <div class="aird-page">
 
-      <header class="flex flex-wrap items-center justify-between gap-3 pb-3 mb-4 border-b border-base-300">
+      <header class="flex flex-wrap items-center justify-between gap-3 pb-3 mb-2 border-b border-base-300">
         <div>
           <h1 class="flex flex-wrap items-center gap-2 m-0">
             <span class="aird-page-title">Tag</span>
             {% set _can_tag = can_edit_tag_color or (current_user and current_user.get('role') == 'admin' and tag_source == 'abac') %}
             {% set _htc = tag_colors.get(tag_name) %}
             <span class="inline-flex items-center gap-1">
-              <a href="/tagged/{{ escape(tag_name) }}" class="file-tag-chip" id="taggedPageChip"
+              <a href="/tagged/{{ url_escape(tag_name) }}" class="file-tag-chip" id="taggedPageChip"
                 data-tag="{{ escape(tag_name) }}"{% if _htc %} style="{{ tag_chip_style(_htc) }};max-width:none"{% else %} style="max-width:none"{% end %}>{{ escape(tag_name) }}</a>
               {% if _can_tag %}
               <label class="tag-color-btn" for="taggedPageColor"
@@ -54,31 +117,11 @@
           <p id="taggedPageColorError" class="text-error text-xs mt-1 hidden"></p>
           <p class="text-sm text-base-content/60 mt-1">
             {% if tag_source == 'user' %}
-              {% if patterns %}
-                {% if file_count and folder_count %}
-                  {{ file_count }} file(s) and {{ folder_count }} folder(s) linked via {{ len(patterns) }} path(s):
-                {% elif folder_count %}
-                  {{ folder_count }} folder(s) linked via {{ len(patterns) }} path(s):
-                {% else %}
-                  {{ file_count }} file(s) linked via {{ len(patterns) }} path(s):
-                {% end %}
-                {% for p in patterns %}<code class="ml-1 bg-base-300 rounded px-1 text-xs">{{ escape(p) }}</code>{% end %}
-              {% elif entries %}
-                {{ file_count }} file(s){% if folder_count %} and {{ folder_count }} folder(s){% end %} linked to this tag.
-              {% else %}
-                No files linked to this tag yet. Link paths from <a href="/tags" class="link">My tags</a> or file browse.
-              {% end %}
+              Everything linked to this tag across your workspace.
             {% elif patterns %}
-              {% if file_count and folder_count %}
-                {{ file_count }} file(s) and {{ folder_count }} folder(s) matching {{ len(patterns) }} pattern(s):
-              {% elif folder_count %}
-                {{ folder_count }} folder(s) matching {{ len(patterns) }} pattern(s):
-              {% else %}
-                {{ file_count }} file(s) matching {{ len(patterns) }} pattern(s):
-              {% end %}
-              {% for p in patterns %}<code class="ml-1 bg-base-300 rounded px-1 text-xs">{{ escape(p) }}</code>{% end %}
+              Files matching {{ len(patterns) }} ABAC pattern(s).
             {% else %}
-              No glob patterns registered for this tag.
+              No items linked to this tag yet.
             {% end %}
           </p>
         </div>
@@ -88,7 +131,7 @@
             <button tabindex="0" class="btn btn-ghost btn-sm">Switch tag ▾</button>
             <ul class="dropdown-content menu bg-base-100 rounded-box shadow-lg z-[100] w-48 max-w-[calc(100vw-1rem)] p-1 border border-base-300 aird-app-dropdown-panel">
               {% for t in all_tags %}
-              <li><a href="/tagged/{{ escape(t) }}" data-tag="{{ escape(t) }}" class="{% if t == tag_name %}font-bold text-primary{% end %}"{% set _stc = tag_colors.get(t) %}{% if _stc %} style="{{ tag_chip_style(_stc) }};display:inline-block"{% end %}>{{ escape(t) }}</a></li>
+              <li><a href="/tagged/{{ url_escape(t) }}" data-tag="{{ escape(t) }}" class="{% if t == tag_name %}font-bold text-primary{% end %}"{% set _stc = tag_colors.get(t) %}{% if _stc %} style="{{ tag_chip_style(_stc) }};display:inline-block"{% end %}>{{ escape(t) }}</a></li>
               {% end %}
             </ul>
           </div>
@@ -97,70 +140,107 @@
         </div>
       </header>
 
-      {% if tag_source != 'user' and not patterns %}
+      {% if total_items %}
+      <div class="tagged-summary" aria-label="Tag contents summary">
+        {% if file_count %}<span>{{ file_count }} file{{ 's' if file_count != 1 else '' }}</span>{% end %}
+        {% if folder_count %}<span>{{ folder_count }} folder{{ 's' if folder_count != 1 else '' }}</span>{% end %}
+        {% if poll_count %}<span>{{ poll_count }} poll{{ 's' if poll_count != 1 else '' }}</span>{% end %}
+        {% if list_count %}<span>{{ list_count }} list{{ 's' if list_count != 1 else '' }}</span>{% end %}
+        {% if meet_count %}<span>{{ meet_count }} meeting{{ 's' if meet_count != 1 else '' }}</span>{% end %}
+      </div>
+      {% end %}
+
+      {% if tag_source != 'user' and not patterns and not total_items %}
       <div class="alert alert-warning shadow-sm">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-        </svg>
-        <span>Tag <strong>{{ escape(tag_name) }}</strong> has no glob patterns configured.
+        <span>Tag <strong>{{ escape(tag_name) }}</strong> has nothing linked yet.
           {% if current_user and current_user.get('role') == 'admin' %}
-          <a href="/admin/tags" class="link link-primary ml-1">Configure patterns →</a>
+          <a href="/admin/tags" class="link link-primary ml-1">Configure ABAC patterns →</a>
           {% else %}
-          <a href="/tags" class="link link-primary ml-1">Create as a personal tag →</a>
+          <a href="/tags" class="link link-primary ml-1">Manage tags →</a>
           {% end %}
         </span>
       </div>
-      {% elif not entries %}
+      {% elif not total_items %}
       <div class="alert shadow-sm">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-        </svg>
-        <span>{% if tag_source == 'user' %}No files or folders are linked to this tag yet.{% else %}No files or folders currently match this tag's patterns.{% end %}</span>
+        <span>Nothing is linked to <strong>{{ escape(tag_name) }}</strong> yet. Tag files from Browse, or attach this tag when creating a poll or list.</span>
       </div>
-      {% else %}
-      <div class="card bg-base-100 shadow-sm border border-base-300">
-        <div class="card-body p-0">
-          <table class="table table-zebra table-sm w-full">
-            <thead>
-              <tr>
-                <th class="pl-4 w-24">Type</th>
-                <th>Name</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for entry in entries %}
-              <tr>
-                <td class="pl-4">
-                  {% if entry['is_dir'] %}
-                  <span class="badge badge-ghost badge-sm">Folder</span>
-                  {% else %}
-                  <span class="badge badge-outline badge-sm">File</span>
-                  {% end %}
-                </td>
-                <td>
-                  <a href="/files/{{ escape(entry['path']) }}" class="link link-hover font-mono text-sm inline-flex items-center gap-1">
-                    {% if entry['is_dir'] %}
-                    <span class="file-icon">📁</span>{{ escape(entry['name']) }}
-                    {% else %}
-                    <span class="file-icon">{{ get_file_icon(entry['name']) }}</span>{{ escape(entry['name']) }}
-                    {% end %}
-                  </a>
-                </td>
-                <td class="flex gap-2 items-center">
-                  {% if entry['is_dir'] %}
-                  <a href="/files/{{ escape(entry['path']) }}" class="btn btn-xs btn-ghost">Open</a>
-                  {% else %}
-                  <a href="/files/{{ escape(entry['path']) }}" class="btn btn-xs btn-ghost">View</a>
-                  <a href="/files/{{ escape(entry['path']) }}?download=1" class="btn btn-xs btn-ghost">Download</a>
-                  {% end %}
-                </td>
-              </tr>
+      {% end %}
+
+      {% if entries %}
+      <section class="tagged-section">
+        <h2>Files &amp; folders</h2>
+        <div class="tagged-section-card">
+          {% for entry in entries %}
+          <div class="tagged-item">
+            <div class="tagged-item-main">
+              <span class="tagged-item-kind">{% if entry['is_dir'] %}Folder{% else %}File{% end %}</span>
+              <a href="/files/{{ escape(entry['path']) }}" class="link link-hover font-mono text-sm">
+                {% if entry['is_dir'] %}📁 {% else %}<span class="file-icon">{{ get_file_icon(entry['name']) }}</span> {% end %}{{ escape(entry['name']) }}
+              </a>
+            </div>
+            <div class="flex gap-1 shrink-0">
+              {% if entry['is_dir'] %}
+              <a href="/files/{{ escape(entry['path']) }}" class="btn btn-xs btn-ghost">Open</a>
+              {% else %}
+              <a href="/files/{{ escape(entry['path']) }}" class="btn btn-xs btn-ghost">View</a>
+              <a href="/files/{{ escape(entry['path']) }}?download=1" class="btn btn-xs btn-ghost">Download</a>
               {% end %}
-            </tbody>
-          </table>
+            </div>
+          </div>
+          {% end %}
         </div>
-      </div>
+      </section>
+      {% end %}
+
+      {% if polls %}
+      <section class="tagged-section">
+        <h2>Polls</h2>
+        <div class="tagged-section-card">
+          {% for item in polls %}
+          <div class="tagged-item">
+            <div class="tagged-item-main">
+              <span class="tagged-item-kind">Poll</span>
+              <a href="{{ escape(item['href']) }}" class="link link-hover text-sm">{{ escape(item['title']) }}</a>
+            </div>
+            <a href="{{ escape(item['href']) }}" class="btn btn-xs btn-ghost shrink-0">Open</a>
+          </div>
+          {% end %}
+        </div>
+      </section>
+      {% end %}
+
+      {% if lists %}
+      <section class="tagged-section">
+        <h2>Lists</h2>
+        <div class="tagged-section-card">
+          {% for item in lists %}
+          <div class="tagged-item">
+            <div class="tagged-item-main">
+              <span class="tagged-item-kind">List</span>
+              <a href="{{ escape(item['href']) }}" class="link link-hover text-sm">{{ escape(item['title']) }}</a>
+            </div>
+            <a href="{{ escape(item['href']) }}" class="btn btn-xs btn-ghost shrink-0">Open</a>
+          </div>
+          {% end %}
+        </div>
+      </section>
+      {% end %}
+
+      {% if meets %}
+      <section class="tagged-section">
+        <h2>Meetings</h2>
+        <div class="tagged-section-card">
+          {% for item in meets %}
+          <div class="tagged-item">
+            <div class="tagged-item-main">
+              <span class="tagged-item-kind">Meet</span>
+              <a href="{{ escape(item['href']) }}" class="link link-hover text-sm">{{ escape(item['title']) }}</a>
+            </div>
+            <a href="{{ escape(item['href']) }}" class="btn btn-xs btn-ghost shrink-0">Open</a>
+          </div>
+          {% end %}
+        </div>
+      </section>
       {% end %}
 
     </div>

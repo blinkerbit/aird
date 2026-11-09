@@ -12,6 +12,9 @@ from aird.db.resource_tags import list_resource_tags
 from aird.db.tag_colors import get_tag_colors_map
 from aird.db.user_tags import (
     KIND_FILE,
+    KIND_LIST,
+    KIND_MEET,
+    KIND_POLL,
     add_link,
     get_tag,
     normalize_rel_path,
@@ -167,6 +170,90 @@ def _count_entries(entries: list[dict]) -> tuple[int, int]:
     return file_count, folder_count
 
 
+def _row_val(row, key: str, index: int):
+    try:
+        return row[key]
+    except (TypeError, KeyError, IndexError):
+        return row[index]
+
+
+def list_user_tag_collab_items(
+    conn: sqlite3.Connection,
+    *,
+    tag_id: int,
+) -> dict[str, list[dict]]:
+    """Polls / lists / meets linked to a user tag."""
+    out: dict[str, list[dict]] = {"polls": [], "lists": [], "meets": []}
+    try:
+        rows = conn.execute(
+            """
+            SELECT kind, resource_key FROM user_tag_links
+            WHERE tag_id = ? AND kind IN (?, ?, ?)
+            ORDER BY kind, resource_key
+            """,
+            (int(tag_id), KIND_POLL, KIND_LIST, KIND_MEET),
+        ).fetchall()
+    except sqlite3.Error:
+        return out
+
+    for row in rows:
+        kind = str(_row_val(row, "kind", 0) or "").strip().lower()
+        rid = str(_row_val(row, "resource_key", 1) or "").strip()
+        if not rid:
+            continue
+        if kind == KIND_POLL:
+            title, href = _poll_label(conn, rid)
+            out["polls"].append({"id": rid, "title": title, "href": href, "kind": "poll"})
+        elif kind == KIND_LIST:
+            title, href = _list_label(conn, rid)
+            out["lists"].append({"id": rid, "title": title, "href": href, "kind": "list"})
+        elif kind == KIND_MEET:
+            title, href = _meet_label(conn, rid)
+            out["meets"].append({"id": rid, "title": title, "href": href, "kind": "meet"})
+    return out
+
+
+def _poll_label(conn: sqlite3.Connection, poll_id: str) -> tuple[str, str]:
+    href = f"/polls#{poll_id}"
+    try:
+        row = conn.execute(
+            "SELECT question FROM polls WHERE id = ?", (poll_id,)
+        ).fetchone()
+    except sqlite3.Error:
+        return poll_id, href
+    if not row:
+        return f"Poll {poll_id[:8]}…", href
+    return str(_row_val(row, "question", 0) or poll_id), href
+
+
+def _list_label(conn: sqlite3.Connection, list_id: str) -> tuple[str, str]:
+    href = f"/lists#{list_id}"
+    try:
+        row = conn.execute(
+            "SELECT title FROM collab_lists WHERE id = ?", (list_id,)
+        ).fetchone()
+    except sqlite3.Error:
+        return list_id, href
+    if not row:
+        return f"List {list_id[:8]}…", href
+    return str(_row_val(row, "title", 0) or list_id), href
+
+
+def _meet_label(conn: sqlite3.Connection, meet_id: str) -> tuple[str, str]:
+    try:
+        row = conn.execute(
+            "SELECT title, slug FROM meets WHERE id = ?", (meet_id,)
+        ).fetchone()
+    except sqlite3.Error:
+        return meet_id, "/meet"
+    if not row:
+        return f"Meeting {meet_id[:8]}…", "/meet"
+    title = str(_row_val(row, "title", 0) or meet_id)
+    slug = str(_row_val(row, "slug", 1) or "").strip()
+    href = f"/meet/{slug}" if slug else f"/meet#{meet_id}"
+    return title, href
+
+
 def build_tagged_page_context(
     conn: sqlite3.Connection | None,
     *,
@@ -182,6 +269,9 @@ def build_tagged_page_context(
     entries: list[dict] = []
     file_count = 0
     folder_count = 0
+    polls: list[dict] = []
+    lists: list[dict] = []
+    meets: list[dict] = []
 
     if conn and username:
         entries, patterns, user_tag = list_user_tag_file_entries(
@@ -191,6 +281,10 @@ def build_tagged_page_context(
             tag_source = "user"
             user_tag_id = int(user_tag["id"])
             file_count, folder_count = _count_entries(entries)
+            collab = list_user_tag_collab_items(conn, tag_id=user_tag_id)
+            polls = collab["polls"]
+            lists = collab["lists"]
+            meets = collab["meets"]
 
     if tag_source != "user" and conn:
         rules = list_resource_tags(conn)
@@ -229,6 +323,7 @@ def build_tagged_page_context(
         tag_colors[tag_name] = str(user_tag["color"])
 
     can_edit_tag_color = bool(user_tag and str(user_tag.get("owner_username") or "") == username)
+    total_items = file_count + folder_count + len(polls) + len(lists) + len(meets)
 
     return {
         "tag_name": tag_name,
@@ -238,10 +333,45 @@ def build_tagged_page_context(
         "entries": entries,
         "file_count": file_count,
         "folder_count": folder_count,
+        "polls": polls,
+        "lists": lists,
+        "meets": meets,
+        "poll_count": len(polls),
+        "list_count": len(lists),
+        "meet_count": len(meets),
+        "total_items": total_items,
         "all_tags": sorted(all_tags),
         "tag_colors": tag_colors,
         "can_edit_tag_color": can_edit_tag_color,
     }
+
+
+def tags_for_resource_display(
+    conn: sqlite3.Connection | None,
+    owner_username: str,
+    kind: str,
+    resource_key: str,
+    viewer: str | None,
+) -> list[dict]:
+    """Tag name, color, and display label for chips on list/poll/meet cards."""
+    if conn is None or not owner_username or not resource_key:
+        return []
+    out: list[dict] = []
+    for tid in tag_ids_for_resource(conn, owner_username, kind, resource_key):
+        tag = get_tag(conn, tid)
+        if not tag:
+            continue
+        name = str(tag.get("name") or "")
+        owner = str(tag.get("owner_username") or owner_username)
+        out.append(
+            {
+                "id": int(tag["id"]),
+                "name": name,
+                "color": str(tag.get("color") or ""),
+                "display_name": user_tags_db.format_tag_display(name, owner, viewer),
+            }
+        )
+    return out
 
 
 def augment_detail_tag_ids(

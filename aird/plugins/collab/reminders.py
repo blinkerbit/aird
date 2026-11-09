@@ -7,11 +7,20 @@ import logging
 from aird.plugins.collab.live import notify_event
 from aird.plugins.collab.schema import collab_conn
 from aird.plugins.collab import lists_db
+from aird.utils.util import is_feature_enabled
 
 logger = logging.getLogger(__name__)
 
+PLUGIN_FLAG = "reminders"
+
+
+def is_reminders_enabled() -> bool:
+    return is_feature_enabled(PLUGIN_FLAG, False)
+
 
 def fire_due_reminders() -> int:
+    if not is_reminders_enabled():
+        return 0
     conn = collab_conn()
     if conn is None:
         return 0

@@ -71,6 +71,8 @@ def link_ref(
     detail = _detail(conn, kind, row["id"], username)
     if not detail:
         return None
+    if kind == "list" and not lists_db.user_may_share(conn, row["id"], username):
+        return None
     _grant(conn, kind, row, member_names or [])
     conn.execute(
         """INSERT INTO collab_conv_refs (conversation_id, kind, artifact_id, created_by, created_at)
@@ -106,6 +108,8 @@ def suggest(conn: sqlite3.Connection, username: str, kind: str, query: str) -> l
     for row in rows:
         detail = _detail(conn, kind, row["id"], username)
         if not detail:
+            continue
+        if kind == "list" and not lists_db.user_may_share(conn, row["id"], username):
             continue
         slug = str(detail.get("slug") or "").lower()
         title = str(detail.get("title") or detail.get("question") or "").lower()

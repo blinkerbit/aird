@@ -1798,6 +1798,10 @@ class ChatConversationCardsHandler(BaseHandler, XSRFTokenMixin):
                 self.set_status(403)
                 self.write({"error": _ERR_FORBIDDEN})
                 return
+            if kind == "list" and not lists_db.user_may_share(conn, artifact_id, name):
+                self.set_status(403)
+                self.write({"error": "Only the author can share this list"})
+                return
             title = str(body.get("title") or "").strip()
             snapshot = body.get("snapshot") if isinstance(body.get("snapshot"), dict) else None
             if not title:

@@ -21,6 +21,10 @@ function localStamp(iso) {
   return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}T${pad(when.getHours())}:${pad(when.getMinutes())}`;
 }
 
+function remindersEnabled() {
+  return document.querySelector('[data-hub="lists"]')?.dataset?.reminders === '1';
+}
+
 function ensureDialog() {
   let dlg = document.getElementById('collabDialog');
   if (dlg) return dlg;
@@ -243,6 +247,7 @@ export function listDialog(existing) {
       </div>`}
       ${visibilityField(existing?.visibility)}
       ${peopleField((existing?.participants || []).filter((n) => n !== existing?.organizer))}
+      ${existing ? `<label class="collab-check"><input type="checkbox" data-forward ${existing.allow_forward ? 'checked' : ''}> Let people this list is shared with share it onward</label>` : ''}
       ${tagIdsFieldHtml()}
     `,
     afterRender: (body) => hydrateTagPicker(body, existing?.tag_ids),
@@ -258,6 +263,7 @@ export function listDialog(existing) {
         participants: readPeople(root),
         tag_ids: readTagIds(root),
       };
+      if (existing) payload.allow_forward = Boolean(root.querySelector('[data-forward]')?.checked);
       if (!existing) {
         payload.items = [...root.querySelectorAll('[data-rows] .collab-row')].map((row) => ({
           text: row.querySelector('[data-text]').value.trim(),
@@ -356,7 +362,13 @@ function bars(poll) {
   }).join('');
 }
 
-export function mountPoll(root, poll, { me, onChange }) {
+async function deleteArtifact(path, label, onDelete) {
+  if (!window.confirm(`Delete this ${label}? This cannot be undone.`)) return;
+  await apiJson(path, { method: 'DELETE' });
+  if (onDelete) onDelete();
+}
+
+export function mountPoll(root, poll, { me, onChange, onDelete }) {
   const mine = poll.organizer === me;
   root.innerHTML = `
     <h2 class="text-lg font-bold">${esc(poll.question)}</h2>
@@ -368,6 +380,7 @@ export function mountPoll(root, poll, { me, onChange }) {
     </div>
     <div class="collab-ribbon">
       ${mine ? '<button type="button" class="btn btn-ghost btn-sm" data-act="edit">Edit</button>' : ''}
+      ${mine ? '<button type="button" class="btn btn-error btn-sm" data-act="delete">Delete</button>' : ''}
       <button type="button" class="btn btn-ghost btn-sm" data-act="share">Add to chat</button>
     </div>
     <div class="collab-votes">${bars(poll)}</div>
@@ -401,10 +414,13 @@ export function mountPoll(root, poll, { me, onChange }) {
     const detail = await apiJson(`/api/polls/${poll.id}`, { method: 'PATCH', body: draft });
     onChange(detail);
   });
+  root.querySelector('[data-act="delete"]')?.addEventListener('click', () => {
+    deleteArtifact(`/api/polls/${poll.id}`, 'poll', onDelete).catch((e) => alert(e.message));
+  });
   root.querySelector('[data-act="share"]')?.addEventListener('click', () => sharePicker('poll', poll.id).catch((e) => alert(e.message)));
 }
 
-export function mountList(root, list, { me, onChange, groups = [] }) {
+export function mountList(root, list, { me, onChange, onDelete, groups = [] }) {
   const mine = list.organizer === me;
   const prog = list.progress || {};
   const items = (list.items || []).map((it) => `
@@ -422,6 +438,7 @@ export function mountList(root, list, { me, onChange, groups = [] }) {
     </div>`).join('');
   root.innerHTML = `
     <h2 class="text-lg font-bold">${esc(list.title)}</h2>
+    <p class="collab-hint">Author ${esc(list.organizer || '')}</p>
     ${list.notes ? `<p class="collab-hint">${esc(list.notes)}</p>` : ''}
     <div class="collab-chips">
       <span class="collab-chip">${visibilityChip(list.visibility)}</span>
@@ -431,7 +448,8 @@ export function mountList(root, list, { me, onChange, groups = [] }) {
     </div>
     <div class="collab-ribbon">
       ${mine ? '<button type="button" class="btn btn-ghost btn-sm" data-act="edit">Edit</button>' : ''}
-      <button type="button" class="btn btn-ghost btn-sm" data-act="share">Add to chat</button>
+      ${mine ? '<button type="button" class="btn btn-error btn-sm" data-act="delete">Delete</button>' : ''}
+      ${(list.may_share || list.organizer === me) ? '<button type="button" class="btn btn-ghost btn-sm" data-act="share">Add to chat</button>' : ''}
       <select class="select select-bordered select-sm" data-group>
         <option value="">Ungrouped</option>
         ${groups.map((group) => `<option value="${esc(group.id)}" ${list.group_id === group.id ? 'selected' : ''}>${esc(group.name)}</option>`).join('')}
@@ -476,12 +494,12 @@ export function mountList(root, list, { me, onChange, groups = [] }) {
             text: node.querySelector('[data-text]').value.trim(),
             notes: node.querySelector('[data-notes]').value.trim(),
             due_at: isoStamp(node.querySelector('[data-due]').value),
-            remind_at: isoStamp(node.querySelector('[data-due]').value),
             labels: node.querySelector('[data-labels]').value.split(',').map((s) => s.trim()).filter(Boolean),
           };
         },
       });
       if (!draft?.text) return;
+      if (remindersEnabled()) draft.remind_at = draft.due_at;
       const detail = await apiJson(`/api/lists/${list.id}/items/${item.id}`, { method: 'PATCH', body: draft });
       onChange(detail);
     });
@@ -489,15 +507,16 @@ export function mountList(root, list, { me, onChange, groups = [] }) {
   root.querySelector('[data-add]')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const fd = new FormData(event.currentTarget);
+    const body = {
+      text: String(fd.get('text') || ''),
+      notes: String(fd.get('notes') || ''),
+      due_at: isoStamp(String(fd.get('due') || '')),
+      labels: String(fd.get('labels') || '').split(',').map((s) => s.trim()).filter(Boolean),
+    };
+    if (remindersEnabled()) body.remind_at = body.due_at;
     const detail = await apiJson(`/api/lists/${list.id}/items`, {
       method: 'POST',
-      body: {
-        text: String(fd.get('text') || ''),
-        notes: String(fd.get('notes') || ''),
-        due_at: isoStamp(String(fd.get('due') || '')),
-        remind_at: isoStamp(String(fd.get('due') || '')),
-        labels: String(fd.get('labels') || '').split(',').map((s) => s.trim()).filter(Boolean),
-      },
+      body,
     });
     onChange(detail);
   });
@@ -523,10 +542,13 @@ export function mountList(root, list, { me, onChange, groups = [] }) {
     const detail = await apiJson(`/api/lists/${list.id}`, { method: 'PATCH', body: draft });
     onChange(detail);
   });
+  root.querySelector('[data-act="delete"]')?.addEventListener('click', () => {
+    deleteArtifact(`/api/lists/${list.id}`, 'list', onDelete).catch((e) => alert(e.message));
+  });
   root.querySelector('[data-act="share"]')?.addEventListener('click', () => sharePicker('list', list.id).catch((e) => alert(e.message)));
 }
 
-export function mountMeet(root, meet, { me, onChange }) {
+export function mountMeet(root, meet, { me, onChange, onDelete }) {
   const mine = meet.organizer === me;
   const link = `${location.origin}${meet.join_path || `/meet/${meet.slug}`}`;
   root.innerHTML = `
@@ -539,8 +561,9 @@ export function mountMeet(root, meet, { me, onChange }) {
       ${meet.live ? `<a class="btn btn-primary btn-sm" href="${esc(meet.join_path)}">Join</a>` : ''}
       <button type="button" class="btn btn-ghost btn-sm" data-act="copy">Copy link</button>
       ${mine ? '<button type="button" class="btn btn-ghost btn-sm" data-act="edit">Edit</button>' : ''}
+      ${mine ? '<button type="button" class="btn btn-error btn-sm" data-act="delete">Delete</button>' : ''}
       <button type="button" class="btn btn-ghost btn-sm" data-act="share">Add to chat</button>
-      ${mine && meet.live ? '<button type="button" class="btn btn-error btn-sm" data-act="end">End</button>' : ''}
+      ${mine && meet.live ? '<button type="button" class="btn btn-ghost btn-sm" data-act="end">End</button>' : ''}
     </div>
     <p class="collab-hint break-all">${esc(link)}</p>`;
   root.querySelector('[data-act="copy"]')?.addEventListener('click', () => navigator.clipboard?.writeText(link));
@@ -554,6 +577,9 @@ export function mountMeet(root, meet, { me, onChange }) {
     await apiJson(`/api/meet/${meet.id}`, { method: 'DELETE' });
     const detail = await apiJson(`/api/meet/${meet.id}`);
     onChange(detail);
+  });
+  root.querySelector('[data-act="delete"]')?.addEventListener('click', () => {
+    deleteArtifact(`/api/meet/${meet.id}/remove`, 'meeting', onDelete).catch((e) => alert(e.message));
   });
   root.querySelector('[data-act="share"]')?.addEventListener('click', () => sharePicker('meet', meet.id).catch((e) => alert(e.message)));
 }
@@ -571,10 +597,11 @@ export async function openArtifact(item, me) {
   const body = dlg.querySelector('#collabDialogBody');
   const err = dlg.querySelector('#collabDialogError');
   err.hidden = true;
+  const drop = () => dlg.close();
   const paint = (next) => {
-    if (kind === 'poll') mountPoll(body, next, { me, onChange: paint });
-    else if (kind === 'list') mountList(body, next, { me, onChange: paint });
-    else mountMeet(body, next, { me, onChange: paint });
+    if (kind === 'poll') mountPoll(body, next, { me, onChange: paint, onDelete: drop });
+    else if (kind === 'list') mountList(body, next, { me, onChange: paint, onDelete: drop });
+    else mountMeet(body, next, { me, onChange: paint, onDelete: drop });
   };
   paint(data);
   markInactive(dlg.querySelector('.collab-dialog-card'), data);
@@ -629,11 +656,14 @@ export async function hydrateCard(node, { me }) {
   const path = kind === 'list' ? `/api/lists/${id}` : kind === 'meet' ? `/api/meet/${id}` : `/api/polls/${id}`;
   try {
     const data = await apiJson(path);
+    const drop = () => {
+      live.innerHTML = `<p class="collab-hint">This ${esc(kind)} was deleted.</p>`;
+    };
     const apply = (next) => {
       markInactive(node, next);
-      if (kind === 'poll') mountPoll(live, next, { me, onChange: apply });
-      else if (kind === 'list') mountList(live, next, { me, onChange: apply });
-      else mountMeet(live, next, { me, onChange: apply });
+      if (kind === 'poll') mountPoll(live, next, { me, onChange: apply, onDelete: drop });
+      else if (kind === 'list') mountList(live, next, { me, onChange: apply, onDelete: drop });
+      else mountMeet(live, next, { me, onChange: apply, onDelete: drop });
     };
     apply(data);
   } catch (err) {

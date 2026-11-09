@@ -35,7 +35,16 @@ async function openPoll(id) {
   const poll = await apiJson(`/api/polls/${id}`);
   history.replaceState(null, '', `/polls?id=${encodeURIComponent(id)}`);
   renderIndex((await apiJson('/api/polls')).polls || []);
-  mountPoll(detailEl, poll, { me, onChange: () => openPoll(id) });
+  mountPoll(detailEl, poll, {
+    me,
+    onChange: () => openPoll(id),
+    onDelete() {
+      activeId = '';
+      history.replaceState(null, '', '/polls');
+      detailEl.innerHTML = '<div class="collab-empty">Create or select a poll.</div>';
+      refresh();
+    },
+  });
 }
 
 async function refresh() {
