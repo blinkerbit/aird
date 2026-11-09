@@ -45,13 +45,12 @@ from aird.handlers.constants import (
 from aird.constants import CHUNK_SIZE
 from aird.cloud import CloudManager
 from aird.constants.file_ops import PROVIDER_NOT_CONFIGURED
-from aird.core.file_operations import get_files_by_tag_patterns, get_tags_for_path
+from aird.core.file_operations import get_tags_for_path
 from aird.core.http_range import parse_range_header
 from aird.core.compression import negotiate_encoding, should_compress, compress_file
 from aird.core.file_send import sendfile_available, sendfile_to_socket
 from aird.core.rate_limit import TransferRateLimiter
-from aird.db.resource_tags import list_resource_tags
-from aird.db.tag_colors import get_tag_colors_map
+from aird.db.user_tag_collab import build_tagged_page_context
 
 # ---------------------------------------------------------------------------
 # Helpers for MainHandler.serve_file (reduce cognitive complexity)
@@ -686,43 +685,21 @@ class FourOhFourHandler(BaseHandler):
 
 
 class TaggedFilesHandler(BaseHandler):
-    """Browse all files that match a given ABAC resource tag."""
+    """Browse files for a per-user tag name, or ABAC glob patterns when no user tag."""
 
     @tornado.web.authenticated
     def get(self, tag_name: str):
-        db_conn = self.db_conn
-        rules = list_resource_tags(db_conn) if db_conn else []
-        patterns = [r["glob_pattern"] for r in rules if r.get("tag") == tag_name]
-        all_tags = sorted({r["tag"] for r in rules if r.get("tag")})
-
-        entries: list[dict] = []
-        file_count = 0
-        folder_count = 0
-        if patterns:
-            root = get_user_root(self)
-            for path in get_files_by_tag_patterns(patterns, root):
-                is_dir = path.endswith("/")
-                if is_dir:
-                    folder_count += 1
-                    name = path.rstrip("/")
-                else:
-                    file_count += 1
-                    name = path
-                entries.append({"path": path, "name": name, "is_dir": is_dir})
-
-        tag_colors = get_tag_colors_map(db_conn) if db_conn else {}
+        name = get_username_string_for_db(self)
+        root = get_user_root(self)
+        ctx = build_tagged_page_context(
+            self.db_conn, username=name, tag_name=tag_name, data_root=root
+        )
         self.render(
             "tagged_files.html",
-            tag_name=tag_name,
-            patterns=patterns,
-            entries=entries,
-            file_count=file_count,
-            folder_count=folder_count,
-            all_tags=all_tags,
-            tag_colors=tag_colors,
             tag_chip_style=tag_chip_inline_style,
             user=self.current_user,
             get_file_icon=get_file_icon,
+            **ctx,
         )
 
 

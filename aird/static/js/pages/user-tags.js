@@ -46,6 +46,12 @@ function renderTags(tags) {
   }).join('');
 }
 
+function tagGrantBrowseHref(browsePath) {
+  const parts = String(browsePath || '').split('/').filter(Boolean);
+  if (!parts.length) return '/files/';
+  return '/files/' + parts.map(encodeURIComponent).join('/');
+}
+
 function renderGrants(grants) {
   const ul = document.getElementById('userTagGrants');
   if (!ul) return;
@@ -54,7 +60,7 @@ function renderGrants(grants) {
     return;
   }
   ul.innerHTML = grants.map(function (g) {
-    const href = '/files/' + encodeURIComponent(g.browse_path || '');
+    const href = tagGrantBrowseHref(g.browse_path);
     return '<li><a href="' + href + '">' + escapeHtml(g.tag_name) + '</a> — '
       + escapeHtml(g.owner_username) + '/' + escapeHtml(g.path) + ' (' + escapeHtml(g.access) + ')</li>';
   }).join('');

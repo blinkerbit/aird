@@ -1,4 +1,5 @@
 import { apiJson, expiresLabel, visibilityChip } from './collab-api.js';
+import { hydrateTagPicker, readTagIds, tagIdsFieldHtml } from './collab-tags.js';
 
 function esc(s) {
   const d = document.createElement('div');
@@ -32,7 +33,7 @@ function ensureDialog() {
   return dlg;
 }
 
-function openForm({ title, submitLabel, html, onSubmit }) {
+async function openForm({ title, submitLabel, html, onSubmit, afterRender }) {
   const dlg = ensureDialog();
   dlg.querySelector('#collabDialogTitle').textContent = title;
   dlg.querySelector('#collabDialogSubmit').textContent = submitLabel || 'Save';
@@ -76,6 +77,7 @@ function openForm({ title, submitLabel, html, onSubmit }) {
     slugInput.addEventListener('input', () => { slugInput.dataset.touched = '1'; });
     if (!slugInput.value) fill();
   }
+  if (afterRender) await afterRender(body);
   return new Promise((resolve) => {
     let settled = false;
     let result;
@@ -180,7 +182,9 @@ export function pollDialog(existing) {
       <label class="collab-check"><input type="checkbox" data-multi ${existing?.allow_multi ? 'checked' : ''}> Allow more than one choice</label>
       ${visibilityField(existing?.visibility)}
       ${peopleField((existing?.participants || []).filter((n) => n !== existing?.organizer))}
+      ${tagIdsFieldHtml()}
     `,
+    afterRender: (body) => hydrateTagPicker(body, existing?.tag_ids),
     onSubmit(root) {
       const question = root.querySelector('[data-question]').value.trim();
       const optionsOut = [...root.querySelectorAll('[data-rows] [data-text]')].map((n) => n.value.trim()).filter(Boolean);
@@ -193,6 +197,7 @@ export function pollDialog(existing) {
         allow_multi: root.querySelector('[data-multi]').checked,
         visibility: root.querySelector('[data-visibility]').value,
         participants: readPeople(root),
+        tag_ids: readTagIds(root),
       };
     },
   });
@@ -221,7 +226,9 @@ export function listDialog(existing) {
       </div>`}
       ${visibilityField(existing?.visibility)}
       ${peopleField((existing?.participants || []).filter((n) => n !== existing?.organizer))}
+      ${tagIdsFieldHtml()}
     `,
+    afterRender: (body) => hydrateTagPicker(body, existing?.tag_ids),
     onSubmit(root) {
       const title = root.querySelector('[data-title]').value.trim();
       if (!title) throw new Error('Add a title.');
@@ -231,6 +238,7 @@ export function listDialog(existing) {
         kind: root.querySelector('[data-kind]').value,
         visibility: root.querySelector('[data-visibility]').value,
         participants: readPeople(root),
+        tag_ids: readTagIds(root),
       };
       if (!existing) {
         payload.items = [...root.querySelectorAll('[data-rows] .collab-row')].map((row) => ({
@@ -255,7 +263,9 @@ export function meetDialog(existing) {
       <p class="collab-note">The join link stays live for 48 hours.</p>
       ${visibilityField(existing?.visibility)}
       ${peopleField((existing?.participants || []).filter((n) => n !== existing?.organizer))}
+      ${tagIdsFieldHtml()}
     `,
+    afterRender: (body) => hydrateTagPicker(body, existing?.tag_ids),
     onSubmit(root) {
       const title = root.querySelector('[data-title]').value.trim();
       if (!title) throw new Error('Add a title.');
@@ -264,6 +274,7 @@ export function meetDialog(existing) {
         slug: root.querySelector('[data-slug]')?.value.trim(),
         visibility: root.querySelector('[data-visibility]').value,
         participants: readPeople(root),
+        tag_ids: readTagIds(root),
       };
     },
   });

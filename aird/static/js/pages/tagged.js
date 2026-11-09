@@ -36,7 +36,16 @@ function setError(msg) {
   errEl.classList.toggle('hidden', !msg);
 }
 
-async function saveColor(tag, hex) {
+async function saveColor(tag, hex, input) {
+  const source = input?.dataset?.tagSource || 'abac';
+  const tagId = input?.dataset?.userTagId;
+  if (source === 'user' && tagId) {
+    const data = await globalThis.AirdCore.requestJson('/api/user-tags/' + tagId, {
+      method: 'PATCH',
+      json: { color: hex },
+    });
+    return data.color || hex;
+  }
   const data = await globalThis.AirdCore.requestJson('/admin/api/abac/tag-colors', {
     method: 'PUT',
     json: { tag: tag, color: hex },
@@ -53,7 +62,7 @@ function boot() {
   });
   input.addEventListener('change', function () {
     paintTagColor(tag, input.value);
-    saveColor(tag, input.value).then(function (saved) {
+    saveColor(tag, input.value, input).then(function (saved) {
       if (saved && saved !== input.value) input.value = saved;
       paintTagColor(tag, saved || input.value);
       setError('');

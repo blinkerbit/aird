@@ -519,7 +519,11 @@ import {
         </details>
       </div>`;
     qs('#chatBackBtn')?.addEventListener('click', () => setMobileView('list'));
-    qs('#chatMuteBtn')?.addEventListener('click', () => toggleMute(conv).catch((e) => alert(e.message)));
+    qs('#chatMuteBtn')?.addEventListener('click', (event) => {
+      event.preventDefault();
+      qs('.chat-head-more')?.removeAttribute('open');
+      toggleMute(conv).catch((e) => alert(e.message));
+    });
     qs('#chatEnhancedSecureBtn')?.addEventListener('click', () => {
       qs('.chat-head-more')?.removeAttribute('open');
       window.AirdEnhancedSecure?.start(conv.peer_username);
@@ -530,11 +534,14 @@ import {
 
   async function toggleMute(conv) {
     const next = !conv.muted;
-    await api(`/api/chat/conversations/${conv.id}/mute`, {
+    const data = await api(`/api/chat/conversations/${conv.id}/mute`, {
       method: 'POST',
       body: JSON.stringify({ muted: next }),
     });
-    conv.muted = next;
+    const muted = typeof data.muted === 'boolean' ? data.muted : next;
+    conv.muted = muted;
+    const row = conversations.find((c) => c.id === conv.id);
+    if (row) row.muted = muted;
     setThreadHeader(conv);
     renderConvList();
   }

@@ -13,6 +13,16 @@ from aird.plugins.collab.schema import ensure_collab_schema
 from aird.plugins.collab import polls_db
 
 
+def _seed_user(conn: sqlite3.Connection, username: str) -> None:
+    from datetime import datetime, timezone
+
+    ts = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT OR IGNORE INTO users (username, password_hash, role, created_at) VALUES (?, ?, 'user', ?)",
+        (username, "x", ts),
+    )
+
+
 @pytest.fixture
 def conn(tmp_path):
     db = tmp_path / "t.sqlite3"
@@ -20,6 +30,9 @@ def conn(tmp_path):
     c.row_factory = sqlite3.Row
     init_db(c)
     ensure_collab_schema(c)
+    for name in ("alice", "bob", "carol"):
+        _seed_user(c, name)
+    c.commit()
     return c
 
 
@@ -87,3 +100,43 @@ def test_rename_user_updates_tag_tables(conn):
         "SELECT username FROM user_tag_members WHERE tag_id = ?", (tag["id"],)
     ).fetchall()
     assert [m[0] for m in members] == ["bob"]
+
+
+def test_normalize_members_unknown_user(conn):
+    from aird.db.user_tags import MemberValidationError, normalize_members
+
+    assert normalize_members(conn, "alice", ["bob"]) == ["bob"]
+    with pytest.raises(MemberValidationError):
+        normalize_members(conn, "alice", ["nobody"])
+
+
+def test_replace_artifact_tag_links(conn):
+    from aird.db.user_tag_collab import replace_artifact_tag_links, tag_ids_for_resource
+
+    poll = polls_db.create_poll(
+        conn,
+        organizer="alice",
+        question="Q?",
+        visibility="public",
+        allow_multi=False,
+        options=["a", "b"],
+        participants=[],
+    )
+    t1 = user_tags_db.create_tag(conn, owner_username="alice", name="one", access="none")
+    t2 = user_tags_db.create_tag(conn, owner_username="alice", name="two", access="none")
+    replace_artifact_tag_links(
+        conn,
+        owner_username="alice",
+        kind="poll",
+        resource_key=poll["id"],
+        tag_ids=[t1["id"], t2["id"]],
+    )
+    assert set(tag_ids_for_resource(conn, "alice", "poll", poll["id"])) == {t1["id"], t2["id"]}
+    replace_artifact_tag_links(
+        conn,
+        owner_username="alice",
+        kind="poll",
+        resource_key=poll["id"],
+        tag_ids=[],
+    )
+    assert tag_ids_for_resource(conn, "alice", "poll", poll["id"]) == []

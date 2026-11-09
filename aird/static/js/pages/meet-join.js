@@ -8,7 +8,7 @@ const meetId = root?.dataset?.meetId || meet.id;
 document.getElementById('meetJoinBtn')?.addEventListener('click', async () => {
   const session = await apiJson(`/api/meet/${meetId}/token`, { method: 'POST', body: {} });
   initCalls({
-    me: document.cookie.match(/user=([^;]+)/)?.[1] || '',
+    me: globalThis.__AIRD_CHAT_USER__ || '',
     api: apiJson,
   });
   await joinStandaloneCall({ ...session, mode: 'video' }, { title: meet.title || 'Meet' });

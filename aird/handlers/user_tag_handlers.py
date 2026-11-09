@@ -7,6 +7,7 @@ import logging
 import tornado.web
 
 from aird.db import user_tags as user_tags_db
+from aird.db.user_tags import MemberValidationError, normalize_members
 from aird.db.user_tags import list_granted_files
 from aird.handlers.base_handler import (
     BaseHandler,
@@ -60,6 +61,13 @@ class UserTagsAPIHandler(XSRFTokenMixin, BaseHandler):
             self.set_status(400)
             self.write({"error": "members must be a list"})
             return
+        try:
+            if members is not None:
+                normalize_members(self.db_conn, name, members)
+        except MemberValidationError as exc:
+            self.set_status(400)
+            self.write({"error": str(exc)})
+            return
         created = user_tags_db.create_tag(
             self.db_conn,
             owner_username=name,
@@ -70,7 +78,7 @@ class UserTagsAPIHandler(XSRFTokenMixin, BaseHandler):
         )
         if not created:
             self.set_status(409)
-            self.write({"error": "Tag already exists or could not be created"})
+            self.write({"error": "Tag already exists, invalid members, or could not be created"})
             return
         self.set_status(201)
         self.set_header("Content-Type", CONTENT_TYPE_JSON)
@@ -94,6 +102,13 @@ class UserTagDetailAPIHandler(XSRFTokenMixin, BaseHandler):
         if members is not None and not isinstance(members, list):
             self.set_status(400)
             self.write({"error": "members must be a list"})
+            return
+        try:
+            if members is not None:
+                normalize_members(self.db_conn, name, members)
+        except MemberValidationError as exc:
+            self.set_status(400)
+            self.write({"error": str(exc)})
             return
         updated = user_tags_db.update_tag(
             self.db_conn,

@@ -186,13 +186,15 @@ async function loadActiveShares() {
     }
 
     const sharedWithMe = Array.isArray(data.shared_with_me) ? data.shared_with_me : [];
+    const tagGrants = Array.isArray(data.tag_granted_files) ? data.tag_granted_files : [];
     sharedWithMe.sort((a, b) => new Date(b.created || 0) - new Date(a.created || 0));
 
+    const sharedCount = sharedWithMe.length + tagGrants.length;
     if (elements.sharedWithMeCount) {
-      elements.sharedWithMeCount.textContent = sharedWithMe.length;
+      elements.sharedWithMeCount.textContent = String(sharedCount);
     }
     if (elements.sharedWithMeTableBody) {
-      if (sharedWithMe.length === 0) {
+      if (sharedCount === 0) {
         elements.sharedWithMeTableBody.innerHTML =
           '<tr><td colspan="6" class="p-8 text-center text-base-content/50">No shares from others</td></tr>';
       } else {
@@ -203,6 +205,22 @@ async function loadActiveShares() {
             allowManage: Boolean(share.can_edit_paths),
             allowRevoke: Boolean(share.can_revoke),
           }));
+        });
+        tagGrants.forEach((grant) => {
+          const tr = document.createElement('tr');
+          const href = '/files/' + String(grant.browse_path || '').split('/').filter(Boolean)
+            .map((p) => encodeURIComponent(p)).join('/');
+          const owner = escapeHtml(grant.owner_username || '');
+          const path = escapeHtml(grant.path || '');
+          const tag = escapeHtml(grant.tag_name || 'Tag');
+          const access = escapeHtml(grant.access || 'read');
+          tr.innerHTML = `<td class="align-middle"><span class="badge badge-ghost badge-sm">tag</span> ${tag}</td>`
+            + `<td class="align-middle text-sm"><code class="text-xs">${path}</code></td>`
+            + `<td class="align-middle text-sm opacity-70">${owner}</td>`
+            + `<td class="align-middle text-sm">${access}</td>`
+            + `<td class="align-middle text-sm opacity-60">—</td>`
+            + `<td class="align-middle text-right"><a class="btn btn-sm btn-primary btn-outline" href="${escapeAttr(href)}">Open</a></td>`;
+          elements.sharedWithMeTableBody.appendChild(tr);
         });
       }
     }

@@ -57,7 +57,7 @@ export function paintTagColor(tag, hex, opts) {
   if (!vars) return null;
   const fromRemote = !!opts?.fromRemote;
   setTagColorLocal(tag, vars.bg, { broadcast: !fromRemote });
-  const href = '/tagged/' + encodeURIComponent(tag);
+  const href = '/files/?tag=' + encodeURIComponent(tag);
   document.querySelectorAll('a.file-tag-chip').forEach(function (el) {
     if (el.dataset.tag ? el.dataset.tag !== tag : el.getAttribute('href') !== href) return;
     applyChipPaint(el, vars);
@@ -81,7 +81,7 @@ export function paintTagColor(tag, hex, opts) {
 
 export function fileTagChipHtml(tagName) {
   // No inline onclick (CSP). Clicks are stopped via delegation in initTagsUi.
-  return '<a href="/tagged/' + encodeURIComponent(tagName) + '" class="file-tag-chip" data-tag="'
+  return '<a href="/files/?tag=' + encodeURIComponent(tagName) + '" class="file-tag-chip" data-tag="'
     + escapeAttr(tagName) + '"'
     + tagChipStyleAttr(tagName)
     + '>' + escapeHtml(tagName) + '</a>';

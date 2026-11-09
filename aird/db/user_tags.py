@@ -10,6 +10,11 @@ from aird.utils.tag_display import next_auto_tag_color, normalize_tag_color
 
 logger = logging.getLogger(__name__)
 
+
+class MemberValidationError(ValueError):
+    """A tag member list references a username that does not exist."""
+
+
 ACCESS_NONE = "none"
 ACCESS_READ = "read"
 ACCESS_WRITE = "write"
@@ -29,6 +34,28 @@ def _utcnow_iso() -> str:
 def normalize_access(raw: str | None) -> str:
     v = str(raw or "").strip().lower()
     return v if v in ACCESS_VALUES else ACCESS_NONE
+
+
+def normalize_members(
+    conn: sqlite3.Connection,
+    owner_username: str,
+    members: list[str] | None,
+) -> list[str] | None:
+    if members is None:
+        return None
+    from aird.db.users import get_user_by_username
+
+    owner = (owner_username or "").strip()
+    out: list[str] = []
+    for raw in members:
+        u = str(raw or "").strip()
+        if not u or u == owner:
+            continue
+        if get_user_by_username(conn, u) is None:
+            raise MemberValidationError(f"Unknown user: {u}")
+        if u not in out:
+            out.append(u)
+    return out
 
 
 def normalize_rel_path(rel: str) -> str:
@@ -107,7 +134,11 @@ def create_tag(
                 (owner_username, tag_name, acc, hex_color, _utcnow_iso()),
             )
             tag_id = int(cur.lastrowid)
-            _replace_members(conn, tag_id, members or [])
+            try:
+                cleaned = normalize_members(conn, owner_username, members) if members is not None else []
+                _replace_members(conn, tag_id, cleaned or [])
+            except MemberValidationError:
+                return None
         return get_tag(conn, tag_id)
     except sqlite3.IntegrityError:
         return None
@@ -155,7 +186,11 @@ def update_tag(
                     values,
                 )
             if members is not None:
-                _replace_members(conn, tag_id, members)
+                try:
+                    cleaned = normalize_members(conn, owner_username, members)
+                    _replace_members(conn, tag_id, cleaned or [])
+                except MemberValidationError:
+                    return None
         return get_tag(conn, tag_id)
     except sqlite3.IntegrityError:
         return None

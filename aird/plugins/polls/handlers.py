@@ -83,20 +83,20 @@ class PollListHandler(BaseHandler, XSRFTokenMixin):
                 slug=body.get("slug"),
             )
             from aird.db import user_tags as user_tags_db
+            from aird.db.user_tag_collab import augment_detail_tag_ids, replace_artifact_tag_links
 
             main = self.db_conn
-            if main is not None and poll.get("id"):
-                for raw_id in body.get("tag_ids") or []:
-                    try:
-                        user_tags_db.add_link(
-                            main,
-                            int(raw_id),
-                            owner_username=name,
-                            kind=user_tags_db.KIND_POLL,
-                            resource_key=str(poll["id"]),
-                        )
-                    except (TypeError, ValueError):
-                        continue
+            if main is not None and poll.get("id") and "tag_ids" in body:
+                replace_artifact_tag_links(
+                    main,
+                    owner_username=name,
+                    kind=user_tags_db.KIND_POLL,
+                    resource_key=str(poll["id"]),
+                    tag_ids=body.get("tag_ids"),
+                )
+            poll = augment_detail_tag_ids(
+                main, poll, viewer=name, kind=user_tags_db.KIND_POLL
+            ) or poll
             self.write(poll)
         finally:
             conn.close()
@@ -120,6 +120,12 @@ class PollDetailHandler(BaseHandler, XSRFTokenMixin):
                 self.set_status(403)
                 self.write({"error": "Forbidden"})
                 return
+            from aird.db import user_tags as user_tags_db
+            from aird.db.user_tag_collab import augment_detail_tag_ids
+
+            detail = augment_detail_tag_ids(
+                self.db_conn, detail, viewer=name, kind=user_tags_db.KIND_POLL
+            )
             self.write(detail)
         finally:
             conn.close()
@@ -153,6 +159,21 @@ class PollDetailHandler(BaseHandler, XSRFTokenMixin):
                 self.set_status(400)
                 self.write({"error": "Could not update poll"})
                 return
+            from aird.db import user_tags as user_tags_db
+            from aird.db.user_tag_collab import augment_detail_tag_ids, replace_artifact_tag_links
+
+            main = self.db_conn
+            if main is not None and "tag_ids" in body:
+                replace_artifact_tag_links(
+                    main,
+                    owner_username=name,
+                    kind=user_tags_db.KIND_POLL,
+                    resource_key=poll_id,
+                    tag_ids=body.get("tag_ids"),
+                )
+            detail = augment_detail_tag_ids(
+                main, detail, viewer=name, kind=user_tags_db.KIND_POLL
+            )
             notify_changed(conn, "poll", poll_id)
             self.write(detail)
         finally:

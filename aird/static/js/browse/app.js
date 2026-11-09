@@ -7,6 +7,8 @@ import { initBrowseSelectionUi } from './selection-ui.js';
 import { wireBrowseBulkActions } from './bulk-actions.js';
 import { bulkAddTags, initTagsUi } from './tags.js';
 import { initRowMoreMenus, registerRowMoreAction } from './row-more-menu.js';
+import { renameItem } from './bulk-actions.js';
+import { encodeBrowsePath } from './rows.js';
 import { queueBrowseAttach } from '../chat-attach.js';
 import {
   openShareByTag,
@@ -62,6 +64,31 @@ function runInitStep(name, fn) {
   }
 }
 
+function gridLayout() {
+  return document.getElementById('browseListingPanel')?.classList.contains('browse-listing--grid');
+}
+
+function browseFeatures() {
+  return globalThis.__BROWSE_CONFIG?.features || {};
+}
+
+function registerGridRowActions() {
+  registerRowMoreAction({
+    id: 'rename',
+    label: 'Rename',
+    when: (ctx) => gridLayout() && !!ctx?.path && !!browseFeatures().rename,
+    run: (ctx) => renameItem(ctx.path),
+  });
+  registerRowMoreAction({
+    id: 'edit',
+    label: 'Edit',
+    when: (ctx) => gridLayout() && !!ctx?.path && !ctx.isDir && !!browseFeatures().edit,
+    run: (ctx) => {
+      globalThis.location.href = '/edit/' + encodeBrowsePath(ctx.path);
+    },
+  });
+}
+
 function registerSendToChatAction() {
   if (!getChatEnabled()) return;
   registerRowMoreAction({
@@ -95,6 +122,7 @@ export function initBrowsePage() {
   runInitStep('keyboard', initBrowseKeyboardShortcuts);
   runInitStep('columnResize', initBrowseColumnResize);
   runInitStep('onedriveFeActions', registerOneDriveFeBrowseActions);
+  runInitStep('gridRowActions', registerGridRowActions);
   runInitStep('chatSend', registerSendToChatAction);
   runInitStep('rowMoreMenu', initRowMoreMenus);
   runInitStep('onedriveFe', initOneDriveFeUi);

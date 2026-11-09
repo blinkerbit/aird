@@ -82,20 +82,20 @@ class ListListHandler(BaseHandler, XSRFTokenMixin):
                 slug=body.get("slug"),
             )
             from aird.db import user_tags as user_tags_db
+            from aird.db.user_tag_collab import augment_detail_tag_ids, replace_artifact_tag_links
 
             main = self.db_conn
-            if main is not None and lst.get("id"):
-                for raw_id in body.get("tag_ids") or []:
-                    try:
-                        user_tags_db.add_link(
-                            main,
-                            int(raw_id),
-                            owner_username=name,
-                            kind=user_tags_db.KIND_LIST,
-                            resource_key=str(lst["id"]),
-                        )
-                    except (TypeError, ValueError):
-                        continue
+            if main is not None and lst.get("id") and "tag_ids" in body:
+                replace_artifact_tag_links(
+                    main,
+                    owner_username=name,
+                    kind=user_tags_db.KIND_LIST,
+                    resource_key=str(lst["id"]),
+                    tag_ids=body.get("tag_ids"),
+                )
+            lst = augment_detail_tag_ids(
+                main, lst, viewer=name, kind=user_tags_db.KIND_LIST
+            ) or lst
             self.write(lst)
         finally:
             conn.close()
@@ -119,6 +119,12 @@ class ListDetailHandler(BaseHandler, XSRFTokenMixin):
                 self.set_status(403)
                 self.write({"error": "Forbidden"})
                 return
+            from aird.db import user_tags as user_tags_db
+            from aird.db.user_tag_collab import augment_detail_tag_ids
+
+            detail = augment_detail_tag_ids(
+                self.db_conn, detail, viewer=name, kind=user_tags_db.KIND_LIST
+            )
             self.write(detail)
         finally:
             conn.close()
@@ -151,6 +157,21 @@ class ListDetailHandler(BaseHandler, XSRFTokenMixin):
                 self.set_status(400)
                 self.write({"error": "Could not update list"})
                 return
+            from aird.db import user_tags as user_tags_db
+            from aird.db.user_tag_collab import augment_detail_tag_ids, replace_artifact_tag_links
+
+            main = self.db_conn
+            if main is not None and "tag_ids" in body:
+                replace_artifact_tag_links(
+                    main,
+                    owner_username=name,
+                    kind=user_tags_db.KIND_LIST,
+                    resource_key=list_id,
+                    tag_ids=body.get("tag_ids"),
+                )
+            detail = augment_detail_tag_ids(
+                main, detail, viewer=name, kind=user_tags_db.KIND_LIST
+            )
             notify_changed(conn, "list", list_id)
             notify_event(conn, kind="list", artifact_id=list_id, actor=name, preview="Updated the list")
             self.write(detail)

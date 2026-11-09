@@ -157,7 +157,7 @@
             <input type="checkbox" class="row-checkbox" data-path="{{ escape(join_path(current_path, file['name'])) }}" data-is-dir="{{ '1' if file['is_dir'] else '0' }}" aria-label="Select {{ escape(file['name']) }}" />
             {% if file['is_dir'] %}
             <a href="/files/{{ escape(join_path(current_path, file['name'])) }}" class="file-link">
-              <span class="file-icon">📁</span>{{ escape(file['name']) }}
+              <span class="file-icon">📁</span><span class="file-name">{{ escape(file['name']) }}</span>
               {% if file.get('is_shared') %}
               <span class="shared-icon" title="Click to view share details"
                 data-share-path="{{ escape(join_path(current_path, file['name'])) }}">🔗</span>
@@ -168,8 +168,7 @@
             {% set _is_media = _ext in ('jpg', 'jpeg', 'jpe', 'jif', 'jfif', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tif', 'tiff', 'pdf', 'avif', 'heic', 'heif', 'dng', 'cr2', 'nef', 'arw', 'orf', 'rw2', 'raf', 'raw') %}
             <a href="/files/{{ escape(join_path(current_path, file['name'])) }}{% if not _is_media %}?start_line=1&end_line=1000{% end %}"
               class="file-link">
-              <span class="file-icon">{{ get_file_icon(file["name"]) }}</span>{{
-              escape(file['name']) }}
+              <span class="file-icon">{{ get_file_icon(file["name"]) }}</span><span class="file-name">{{ escape(file['name']) }}</span>
               {% if file.get('is_shared') %}
               <span class="shared-icon" title="Click to view share details"
                 data-share-path="{{ escape(join_path(current_path, file['name'])) }}">🔗</span>
@@ -187,7 +186,7 @@
               {% set _max_show = 2 %}
               <span class="file-tag-list{% if len(_file_tags) > _max_show %} file-tag-list--overflow{% end %}">
                 {% for _t in _file_tags[:_max_show] %}
-                <a href="/tagged/{{ escape(_t) }}"
+                <a href="/files/?tag={{ escape(_t) }}"
                    class="file-tag-chip" data-tag="{{ escape(_t) }}"
                    onclick="event.stopPropagation()"{% set _tc = tag_colors.get(_t) %}{% if _tc %} style="{{ tag_chip_style(_tc) }}"{% end %}>{{ escape(_t) }}</a>
                 {% end %}
@@ -293,11 +292,19 @@
 
   </div>
 
-  <!-- Bottom pill: shows count, click opens the right-side drawer -->
-  <button type="button" id="selectionCountBtn" class="browse-selection-pill" hidden
-    aria-controls="browseSelectionDrawer" aria-expanded="false">
-    <span id="bulkCount">0</span> selected &mdash; click to manage &rsaquo;
-  </button>
+  <div id="browseSelectionBar" class="browse-selection-bar" hidden>
+    <button type="button" id="selectionCountBtn" class="browse-selection-pill"
+      aria-controls="browseSelectionDrawer" aria-expanded="false" title="Selected items">
+      <span id="bulkCount">0</span> selected
+    </button>
+    {% if features.get('file_download') %}
+    <button type="button" id="selectionBarDownload" class="browse-selection-bar-btn">Download</button>
+    {% end %}
+    {% if features.get('file_delete') %}
+    <button type="button" id="selectionBarDelete" class="browse-selection-bar-btn is-danger">Delete</button>
+    {% end %}
+    <button type="button" id="selectionBarMore" class="browse-selection-bar-btn" title="Share, move, copy, and tags">More</button>
+  </div>
 
   <!-- Backdrop -->
   <div id="browseSelectionBackdrop" class="browse-selection-backdrop" hidden></div>

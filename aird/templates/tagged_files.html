@@ -21,7 +21,7 @@
         <div>
           <h1 class="flex flex-wrap items-center gap-2 m-0">
             <span class="aird-page-title">Tag</span>
-            {% set _can_tag = current_user and current_user.get('role') == 'admin' %}
+            {% set _can_tag = can_edit_tag_color or (current_user and current_user.get('role') == 'admin' and tag_source == 'abac') %}
             {% set _htc = tag_colors.get(tag_name) %}
             <span class="inline-flex items-center gap-1">
               <a href="/tagged/{{ escape(tag_name) }}" class="file-tag-chip" id="taggedPageChip"
@@ -43,6 +43,8 @@
                 <span class="tag-color-btn-dot"></span>
                 <input type="color" class="tag-color-btn-input sr-only" id="taggedPageColor"
                   data-tag="{{ escape(tag_name) }}"
+                  data-tag-source="{{ escape(tag_source) }}"
+                  data-user-tag-id="{{ user_tag_id or '' }}"
                   value="{{ escape(_htc or '#6366f1') }}"
                   aria-label="Color for {{ escape(tag_name) }}" />
               </label>
@@ -51,7 +53,22 @@
           </h1>
           <p id="taggedPageColorError" class="text-error text-xs mt-1 hidden"></p>
           <p class="text-sm text-base-content/60 mt-1">
-            {% if patterns %}
+            {% if tag_source == 'user' %}
+              {% if patterns %}
+                {% if file_count and folder_count %}
+                  {{ file_count }} file(s) and {{ folder_count }} folder(s) linked via {{ len(patterns) }} path(s):
+                {% elif folder_count %}
+                  {{ folder_count }} folder(s) linked via {{ len(patterns) }} path(s):
+                {% else %}
+                  {{ file_count }} file(s) linked via {{ len(patterns) }} path(s):
+                {% end %}
+                {% for p in patterns %}<code class="ml-1 bg-base-300 rounded px-1 text-xs">{{ escape(p) }}</code>{% end %}
+              {% elif entries %}
+                {{ file_count }} file(s){% if folder_count %} and {{ folder_count }} folder(s){% end %} linked to this tag.
+              {% else %}
+                No files linked to this tag yet. Link paths from <a href="/tags" class="link">My tags</a> or file browse.
+              {% end %}
+            {% elif patterns %}
               {% if file_count and folder_count %}
                 {{ file_count }} file(s) and {{ folder_count }} folder(s) matching {{ len(patterns) }} pattern(s):
               {% elif folder_count %}
@@ -80,7 +97,7 @@
         </div>
       </header>
 
-      {% if not patterns %}
+      {% if tag_source != 'user' and not patterns %}
       <div class="alert alert-warning shadow-sm">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
@@ -88,6 +105,8 @@
         <span>Tag <strong>{{ escape(tag_name) }}</strong> has no glob patterns configured.
           {% if current_user and current_user.get('role') == 'admin' %}
           <a href="/admin/tags" class="link link-primary ml-1">Configure patterns →</a>
+          {% else %}
+          <a href="/tags" class="link link-primary ml-1">Create as a personal tag →</a>
           {% end %}
         </span>
       </div>
@@ -96,7 +115,7 @@
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
         </svg>
-        <span>No files or folders currently match this tag's patterns.</span>
+        <span>{% if tag_source == 'user' %}No files or folders are linked to this tag yet.{% else %}No files or folders currently match this tag's patterns.{% end %}</span>
       </div>
       {% else %}
       <div class="card bg-base-100 shadow-sm border border-base-300">
@@ -147,7 +166,7 @@
     </div>
   </div>
   <script src="{{ static_url('js/theme.js') }}" defer></script>
-  {% if current_user and current_user.get('role') == 'admin' %}
+  {% if _can_tag %}
   <script nonce="{{ csp_nonce }}" src="{{ static_url('js/pages/tagged.js') }}"></script>
   {% end %}
 </body>

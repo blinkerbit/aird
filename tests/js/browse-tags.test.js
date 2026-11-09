@@ -12,30 +12,42 @@ describe('browse tag API', () => {
     expect(pathToGlob('/docs/a.txt')).toBe('/docs/a.txt');
   });
 
-  it('loads the public catalog instead of the admin rule list', async () => {
+  it('loads the user tag browse catalog', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ names: ['pii'], colors: { pii: '#111111' } }),
+      json: async () => ({ names: ['work'], colors: { work: '#111111' }, tags: [{ id: 1, name: 'work' }] }),
     });
     vi.stubGlobal('fetch', fetchMock);
     const catalog = await fetchTagCatalog();
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/tags');
-    expect(catalog.names).toEqual(['pii']);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/user-tags/browse-catalog');
+    expect(catalog.names).toEqual(['work']);
   });
 
-  it('sends auto_color when creating a tag rule', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 201,
-      json: async () => ({ id: 1, color: '#6366f1' }),
-    });
+  it('attaches a user tag to a file path', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ names: [], colors: {}, tags: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({ id: 3, name: 'fresh', color: '#6366f1' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true }),
+      });
     vi.stubGlobal('fetch', fetchMock);
     document.cookie = '_xsrf=tok';
     const result = await postTagRule('fresh', '/a.txt', { autoColor: true });
     expect(result.ok).toBe(true);
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.auto_color).toBe(true);
-    expect(body.tag).toBe('fresh');
+    const createBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(createBody.name).toBe('fresh');
+    const linkBody = JSON.parse(fetchMock.mock.calls[2][1].body);
+    expect(linkBody.kind).toBe('file');
+    expect(linkBody.resource_key).toBe('a.txt');
   });
 });
 
@@ -48,6 +60,7 @@ describe('row tag popover contract', () => {
     expect(js).not.toMatch(/openRowTagPopover[\s\S]*fetchAllTagRules/);
     expect(html).toContain('data-tags=');
     expect(html).toContain('tagPickerRemove');
+    expect(html).toContain('/files/?tag=');
     expect(html).toContain('rowTagPopoverSuggestions');
     expect(html).toContain('tag-picker-input-wrap');
     expect(js).toContain('tag-color-btn--chip');
@@ -82,9 +95,9 @@ describe('paintTagColor', () => {
   it('recolors every listing chip for that tag without a reload', async () => {
     const { paintTagColor } = await import('/static/js/browse/tags.js');
     document.body.innerHTML = [
-      '<a class="file-tag-chip" data-tag="yellow-tag" href="/tagged/yellow-tag" style="background:#111111">yellow-tag</a>',
-      '<a class="file-tag-chip" data-tag="yellow-tag" href="/tagged/yellow-tag" style="background:#111111">yellow-tag</a>',
-      '<a class="file-tag-chip" data-tag="green-tag" href="/tagged/green-tag" style="background:#00aa00">green-tag</a>',
+      '<a class="file-tag-chip" data-tag="yellow-tag" href="/files/?tag=yellow-tag" style="background:#111111">yellow-tag</a>',
+      '<a class="file-tag-chip" data-tag="yellow-tag" href="/files/?tag=yellow-tag" style="background:#111111">yellow-tag</a>',
+      '<a class="file-tag-chip" data-tag="green-tag" href="/files/?tag=green-tag" style="background:#00aa00">green-tag</a>',
     ].join('');
     paintTagColor('yellow-tag', '#ef4444');
     const yellow = [...document.querySelectorAll('a.file-tag-chip[data-tag="yellow-tag"]')];
@@ -104,6 +117,7 @@ describe('tagged page color picker', () => {
     expect(html).toContain('id="taggedPageColor"');
     expect(html).toContain('tag-color-btn');
     expect(html).toContain('pages/tagged.js');
+    expect(js).toContain('/api/user-tags/');
     expect(js).toContain('/admin/api/abac/tag-colors');
     expect(js).toContain("addEventListener('input'");
     expect(js).toContain("addEventListener('change'");

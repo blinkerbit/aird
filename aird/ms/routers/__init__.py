@@ -11,6 +11,7 @@ from aird.ms.routers.extra_api import routes as extra_api_routes
 from aird.ms.routers.file_ops import routes as file_ops_routes
 from aird.ms.routers.health import routes as health_routes
 from aird.ms.routers.shares import routes as share_routes
+from aird.ms.routers.user_tags import routes as user_tag_routes
 from aird.ms.routers.ws import routes as ws_routes
 from aird.ms.routers.ws_extra import routes as ws_extra_routes
 
@@ -23,6 +24,7 @@ routes = [
     *config_routes,
     *admin_routes,
     *share_routes,
+    *user_tag_routes,
     *extra_api_routes,
     *ws_routes,
     *ws_extra_routes,

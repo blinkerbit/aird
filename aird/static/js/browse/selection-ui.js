@@ -107,13 +107,17 @@ function bulkDrawerMetaText(otherCount) {
 }
 
 function bulkToolbarClearEmpty(countBtn) {
-  if (countBtn) countBtn.hidden = true;
+  const bar = document.getElementById('browseSelectionBar');
+  if (bar) bar.hidden = true;
+  else if (countBtn) countBtn.hidden = true;
   closeSelectionDrawer();
 }
 
 function bulkToolbarShowSelection(countEl, countBtn, listEl, metaEl, allPaths, totalCount, otherCount) {
   countEl.textContent = bulkSelectionLabel(totalCount, otherCount);
-  if (countBtn) countBtn.hidden = false;
+  const bar = document.getElementById('browseSelectionBar');
+  if (bar) bar.hidden = false;
+  else if (countBtn) countBtn.hidden = false;
   renderBulkDrawerList(listEl, allPaths);
   if (metaEl) metaEl.textContent = bulkDrawerMetaText(otherCount);
 }
@@ -189,6 +193,7 @@ export function initBrowseSelectionUi() {
     updateBulkToolbar();
   });
   wireBrowseButton('selectionCountBtn', toggleSelectionDrawer);
+  wireBrowseButton('selectionBarMore', toggleSelectionDrawer);
   wireBrowseButton('selectionDrawerClose', closeSelectionDrawer);
   const browseSelectionBackdrop = document.getElementById('browseSelectionBackdrop');
   if (browseSelectionBackdrop) {

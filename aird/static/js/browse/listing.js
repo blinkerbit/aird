@@ -184,7 +184,7 @@ function buildListingRow({ name, sizeBytes, isDir, modifiedMs }) {
     + `<div class="name-cell-contents">`
     + `<input type="checkbox" class="row-checkbox" data-path="${pathAttr}" data-is-dir="${isDir ? '1' : '0'}" aria-label="Select ${nameAttr}" />`
     + `<a href="${escapeAttr(href)}" class="file-link">`
-    + `<span class="file-icon">${icon}</span>${nameHtml}`
+    + `<span class="file-icon">${icon}</span><span class="file-name">${nameHtml}</span>`
     + `</a></div></td>`
     + buildTagsHtml(fullPath)
     + `<td class="size-cell" data-label="Size" data-bytes="${isDir ? 0 : (Number(sizeBytes) || 0)}"${isDir ? ' data-is-dir="1"' : ''}>`

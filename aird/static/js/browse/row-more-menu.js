@@ -1,7 +1,7 @@
 'use strict';
 
 import { rowIsDir } from './rows.js';
-import { isCompactUi, placePortaledMenu, restorePortaledMenu } from '../core/anchor.js';
+import { placePortaledMenu, restorePortaledMenu } from '../core/anchor.js';
 
 function actionList() {
   if (!globalThis.__AIRD_ROW_MORE_ACTIONS) {
@@ -113,8 +113,14 @@ export function initRowMoreMenus() {
       menu.hidden = !open;
       menu._airdToggle = toggle;
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-      if (open && isCompactUi()) placePortaledMenu(menu, toggle, { width: 200, height: 160, display: 'block' });
-      else restorePortaledMenu(menu);
+      if (open) {
+        placePortaledMenu(menu, toggle, { width: 200, height: 160, display: 'block' });
+        requestAnimationFrame(() => {
+          if (!menu.hidden) placePortaledMenu(menu, toggle, { width: 200, display: 'block' });
+        });
+      } else {
+        restorePortaledMenu(menu);
+      }
       return;
     }
     const item = e.target.closest('.row-more-item');
@@ -135,4 +141,10 @@ export function initRowMoreMenus() {
     }
     if (!e.target.closest('.row-more-menu')) closeAllMenus();
   });
+
+  document.addEventListener('scroll', (e) => {
+    if (e.target?.closest?.('.row-more-menu')) return;
+    closeAllMenus();
+  }, true);
+  window.addEventListener('resize', () => closeAllMenus());
 }

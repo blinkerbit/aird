@@ -71,7 +71,10 @@ async function ensureUserTagByName(name, { color, autoColor } = {}) {
   const body = { name, access: 'none' };
   if (color) body.color = color;
   if (!color && (autoColor ?? isAutoColorEnabled())) body.auto_color = true;
-  const { ok, status, data } = await createUserTag(name, body);
+  const { ok, status, data } = await createUserTag(name, {
+    access: body.access,
+    color: body.color,
+  });
   if (ok || status === 201) return data;
   const again = await fetchUserTagCatalog();
   return (again.tags || []).find(function (t) { return t.name === name; });

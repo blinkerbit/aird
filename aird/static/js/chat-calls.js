@@ -305,6 +305,7 @@ function ensureOverlay() {
     void setCallMode(activeMode === 'video' ? 'audio' : 'video');
   });
   el.querySelector('#chatCallCamBtn')?.addEventListener('click', () => { void toggleCamera(); });
+  el.querySelector('#chatCallMuteBtn')?.addEventListener('click', () => { void toggleMute(); });
   el.querySelector('#chatCallFitBtn')?.addEventListener('click', () => {
     applyVideoFit(videoFit === 'fit' ? 'fill' : 'fit');
   });
@@ -1541,6 +1542,7 @@ async function toggleMute() {
     paintCallCtrl(btn, enabled ? 'Unmute' : 'Mute', enabled ? MIC_OFF_ICON : MIC_ICON);
     btn.setAttribute('aria-label', enabled ? 'Unmute' : 'Mute');
   }
+  paintSpeaking();
 }
 
 async function toggleCamera() {

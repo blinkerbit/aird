@@ -367,7 +367,9 @@ export function wireBrowseBulkActions({ bulkAddTags, openShareByTag }) {
   const bindings = {
     newFolderBtn: newFolder,
     bulkDownloadBtn: bulkDownload,
+    selectionBarDownload: bulkDownload,
     bulkDeleteBtn: bulkDelete,
+    selectionBarDelete: bulkDelete,
     bulkCopyBtn: bulkCopy,
     bulkMoveBtn: bulkMove,
     bulkAddToShareBtn: bulkAddToShare,
