@@ -289,11 +289,12 @@ def tags_for_file(
         return []
     matched: dict[int, dict] = {}
     for row in rows:
-        pattern = normalize_rel_path(row["resource_key"])
+        # id, owner_username, name, access, color, created_at, resource_key
+        pattern = normalize_rel_path(str(_row_get(row, "resource_key", 6) or ""))
         if not pattern:
             continue
         if rel == pattern or (rel and rel.startswith(pattern + "/")):
-            tid = int(row["id"])
+            tid = int(_row_get(row, "id", 0))
             if tid not in matched:
                 matched[tid] = _tag_row_from_cols(conn, row, viewer)
     return sorted(matched.values(), key=lambda t: t["name"])
@@ -324,17 +325,22 @@ def list_granted_files(conn: sqlite3.Connection, viewer_username: str) -> list[d
         return []
     out = []
     for row in rows:
+        # owner_username, name, access, color, tag_id, resource_key
+        owner = str(_row_get(row, "owner_username", 0) or "")
+        name = str(_row_get(row, "name", 1) or "")
+        access = str(_row_get(row, "access", 2) or "")
+        color = _row_get(row, "color", 3)
+        tag_id = int(_row_get(row, "tag_id", 4))
+        path = str(_row_get(row, "resource_key", 5) or "")
         out.append(
             {
-                "owner_username": row["owner_username"],
-                "path": row["resource_key"],
-                "browse_path": f"@{row['owner_username']}/{row['resource_key']}",
-                "access": row["access"],
-                "tag_id": row["tag_id"],
-                "tag_name": format_tag_display(
-                    row["name"], row["owner_username"], viewer_username
-                ),
-                "color": row["color"],
+                "owner_username": owner,
+                "path": path,
+                "browse_path": f"@{owner}/{path}",
+                "access": access,
+                "tag_id": tag_id,
+                "tag_name": format_tag_display(name, owner, viewer_username),
+                "color": color,
             }
         )
     return out
@@ -351,12 +357,21 @@ def _replace_members(conn: sqlite3.Connection, tag_id: int, members: list[str]) 
             )
 
 
+def _row_get(row, key: str, index: int):
+    """Read a column from sqlite3.Row or a plain tuple result."""
+    try:
+        return row[key]
+    except (TypeError, KeyError, IndexError):
+        return row[index]
+
+
 def _tag_row(conn: sqlite3.Connection, row) -> dict:
     return _tag_row_from_cols(conn, row, None)
 
 
 def _tag_row_from_cols(conn: sqlite3.Connection, row, viewer: str | None) -> dict:
-    tag_id = int(row["id"])
+    # SELECT id, owner_username, name, access, color, created_at
+    tag_id = int(_row_get(row, "id", 0))
     members = [
         str(r[0])
         for r in conn.execute(
@@ -364,8 +379,8 @@ def _tag_row_from_cols(conn: sqlite3.Connection, row, viewer: str | None) -> dic
             (tag_id,),
         ).fetchall()
     ]
-    owner = row["owner_username"]
-    name = row["name"]
+    owner = _row_get(row, "owner_username", 1)
+    name = _row_get(row, "name", 2)
     try:
         file_paths = [
             str(r[0])
@@ -381,9 +396,9 @@ def _tag_row_from_cols(conn: sqlite3.Connection, row, viewer: str | None) -> dic
         "owner_username": owner,
         "name": name,
         "display_name": format_tag_display(name, owner, viewer),
-        "access": row["access"],
-        "color": row["color"],
-        "created_at": row["created_at"],
+        "access": _row_get(row, "access", 3),
+        "color": _row_get(row, "color", 4),
+        "created_at": _row_get(row, "created_at", 5),
         "members": members,
         "files": file_paths,
     }

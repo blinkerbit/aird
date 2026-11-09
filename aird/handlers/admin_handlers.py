@@ -157,6 +157,7 @@ def _apply_admin_feature_flags(handler: BaseHandler) -> str:
     FEATURE_FLAGS["polls"] = _admin_checkbox(handler, "polls")
     FEATURE_FLAGS["lists"] = _admin_checkbox(handler, "lists")
     FEATURE_FLAGS["meet"] = _admin_checkbox(handler, "meet")
+    FEATURE_FLAGS["reminders"] = _admin_checkbox(handler, "reminders")
     return plugin_notice
 
 

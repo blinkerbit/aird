@@ -208,8 +208,12 @@ def template_globals(request: Request, nonce: str, **extra: Any) -> dict[str, An
         req_path = request.url.path
     except Exception:
         req_path = ""
+    from tornado.escape import url_escape, xhtml_escape
+
     ns = {
         "csp_nonce": nonce,
+        "escape": xhtml_escape,
+        "url_escape": url_escape,
         "is_feature_enabled": is_feature_enabled,
         "json_encode_for_script": json_encode_for_script,
         "nav_search_path": "",

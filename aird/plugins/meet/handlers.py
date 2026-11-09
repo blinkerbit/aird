@@ -220,6 +220,30 @@ class MeetDetailHandler(BaseHandler, XSRFTokenMixin):
             conn.close()
 
 
+class MeetRemoveHandler(BaseHandler, XSRFTokenMixin):
+    @tornado.web.authenticated
+    @require_db
+    def delete(self, meet_id: str):
+        if not _require(self):
+            return
+        self.check_xsrf_cookie()
+        name = require_username(self)
+        conn = collab_conn()
+        if conn is None:
+            self.set_status(503)
+            self.write({"error": "Database unavailable"})
+            return
+        try:
+            notify_changed(conn, "meet", meet_id)
+            if not meet_db.delete_meet(conn, meet_id, name):
+                self.set_status(403)
+                self.write({"error": "Forbidden"})
+                return
+            self.write({"ok": True})
+        finally:
+            conn.close()
+
+
 class MeetTokenHandler(BaseHandler, XSRFTokenMixin):
     @tornado.web.authenticated
     @require_db

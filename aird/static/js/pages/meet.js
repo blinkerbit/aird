@@ -35,7 +35,16 @@ async function openMeet(id) {
   const meet = await apiJson(`/api/meet/${id}`);
   history.replaceState(null, '', `/meet?id=${encodeURIComponent(id)}`);
   renderIndex((await apiJson('/api/meet')).meets || []);
-  mountMeet(detailEl, meet, { me, onChange: () => openMeet(id) });
+  mountMeet(detailEl, meet, {
+    me,
+    onChange: () => openMeet(id),
+    onDelete() {
+      activeId = '';
+      history.replaceState(null, '', '/meet');
+      detailEl.innerHTML = '<div class="collab-empty">Create or select a meeting.</div>';
+      refresh();
+    },
+  });
 }
 
 async function refresh() {

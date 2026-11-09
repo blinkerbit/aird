@@ -323,6 +323,29 @@ def cast_vote(
     return poll_detail(conn, poll_id, username)
 
 
+def delete_poll(conn: sqlite3.Connection, poll_id: str, username: str) -> bool:
+    row = conn.execute("SELECT organizer FROM polls WHERE id = ?", (poll_id,)).fetchone()
+    if not row or row["organizer"] != username:
+        return False
+    conn.execute("DELETE FROM poll_votes WHERE poll_id = ?", (poll_id,))
+    conn.execute("DELETE FROM poll_options WHERE poll_id = ?", (poll_id,))
+    conn.execute("DELETE FROM poll_participants WHERE poll_id = ?", (poll_id,))
+    conn.execute(
+        "DELETE FROM collab_conv_refs WHERE kind = 'poll' AND artifact_id = ?",
+        (poll_id,),
+    )
+    try:
+        conn.execute(
+            "DELETE FROM user_tag_links WHERE kind = 'poll' AND resource_key = ?",
+            (poll_id,),
+        )
+    except sqlite3.Error:
+        pass
+    conn.execute("DELETE FROM polls WHERE id = ?", (poll_id,))
+    conn.commit()
+    return True
+
+
 def _poll_row(row: sqlite3.Row) -> dict:
     return {
         "id": row["id"],

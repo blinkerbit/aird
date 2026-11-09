@@ -175,6 +175,10 @@
               <input type="checkbox" name="meet" class="toggle toggle-primary toggle-sm" {% if features.get('meet') %}checked{% end %}>
               <span class="label-text">Meet (48h rooms) <span class="badge badge-ghost badge-xs">Experimental</span></span>
             </label>
+            <label class="label cursor-pointer justify-start gap-3 border border-base-300 rounded-lg px-3 py-2 aird-row-interactive">
+              <input type="checkbox" name="reminders" class="toggle toggle-primary toggle-sm" {% if features.get('reminders') %}checked{% end %}>
+              <span class="label-text">Reminders <span class="badge badge-ghost badge-xs">Experimental</span></span>
+            </label>
           </div>
         </div>
       </div>

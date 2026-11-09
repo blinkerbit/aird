@@ -21,6 +21,10 @@ function localStamp(iso) {
   return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}T${pad(when.getHours())}:${pad(when.getMinutes())}`;
 }
 
+function remindersEnabled() {
+  return document.querySelector('[data-hub="lists"]')?.dataset?.reminders === '1';
+}
+
 function ensureDialog() {
   let dlg = document.getElementById('collabDialog');
   if (dlg) return dlg;
@@ -243,6 +247,7 @@ export function listDialog(existing) {
       </div>`}
       ${visibilityField(existing?.visibility)}
       ${peopleField((existing?.participants || []).filter((n) => n !== existing?.organizer))}
+      ${existing ? `<label class="collab-check"><input type="checkbox" data-forward ${existing.allow_forward ? 'checked' : ''}> Let people this list is shared with share it onward</label>` : ''}
       ${tagIdsFieldHtml()}
     `,
     afterRender: (body) => hydrateTagPicker(body, existing?.tag_ids),
@@ -258,6 +263,7 @@ export function listDialog(existing) {
         participants: readPeople(root),
         tag_ids: readTagIds(root),
       };
+      if (existing) payload.allow_forward = Boolean(root.querySelector('[data-forward]')?.checked);
       if (!existing) {
         payload.items = [...root.querySelectorAll('[data-rows] .collab-row')].map((row) => ({
           text: row.querySelector('[data-text]').value.trim(),
@@ -356,7 +362,13 @@ function bars(poll) {
   }).join('');
 }
 
-export function mountPoll(root, poll, { me, onChange }) {
+async function deleteArtifact(path, label, onDelete) {
+  if (!window.confirm(`Delete this ${label}? This cannot be undone.`)) return;
+  await apiJson(path, { method: 'DELETE' });
+  if (onDelete) onDelete();
+}
+
+export function mountPoll(root, poll, { me, onChange, onDelete }) {
   const mine = poll.organizer === me;
   root.innerHTML = `
     <h2 class="text-lg font-bold">${esc(poll.question)}</h2>
@@ -368,6 +380,7 @@ export function mountPoll(root, poll, { me, onChange }) {
     </div>
     <div class="collab-ribbon">
       ${mine ? '<button type="button" class="btn btn-ghost btn-sm" data-act="edit">Edit</button>' : ''}
+      ${mine ? '<button type="button" class="btn btn-error btn-sm" data-act="delete">Delete</button>' : ''}
       <button type="button" class="btn btn-ghost btn-sm" data-act="share">Add to chat</button>
     </div>
     <div class="collab-votes">${bars(poll)}</div>
@@ -401,27 +414,42 @@ export function mountPoll(root, poll, { me, onChange }) {
     const detail = await apiJson(`/api/polls/${poll.id}`, { method: 'PATCH', body: draft });
     onChange(detail);
   });
+  root.querySelector('[data-act="delete"]')?.addEventListener('click', () => {
+    deleteArtifact(`/api/polls/${poll.id}`, 'poll', onDelete).catch((e) => alert(e.message));
+  });
   root.querySelector('[data-act="share"]')?.addEventListener('click', () => sharePicker('poll', poll.id).catch((e) => alert(e.message)));
 }
 
-export function mountList(root, list, { me, onChange, groups = [] }) {
+export function mountList(root, list, { me, onChange, onDelete, groups = [], inline = false }) {
   const mine = list.organizer === me;
+  const canEdit = typeof list.can_edit === 'boolean' ? list.can_edit : mine;
   const prog = list.progress || {};
+  const lockControl = inline && list.kind !== 'bullet'
+    ? (mine
+      ? `<label class="lists-ro-switch"><input type="checkbox" data-act="readonly" ${list.read_only ? 'checked' : ''}><span>Read only</span></label>`
+      : (list.read_only ? '<span class="lists-ro-switch is-locked">Read only</span>' : ''))
+    : '';
   const items = (list.items || []).map((it) => `
     <div class="collab-item ${it.done ? 'is-done' : ''}">
-      ${list.kind === 'todo' ? `<input type="checkbox" data-done="${esc(it.id)}" ${it.done ? 'checked' : ''}>` : '<span class="collab-bullet"></span>'}
+      ${list.kind === 'todo' ? `<input type="checkbox" data-done="${esc(it.id)}" ${it.done ? 'checked' : ''} ${canEdit ? '' : 'disabled'}>` : '<span class="collab-bullet"></span>'}
       <div class="collab-item-main">
         <span>${esc(it.text)}</span>
         ${it.due_at ? `<span class="collab-hint">${esc(new Date(it.due_at).toLocaleString())}</span>` : ''}
         ${it.notes ? `<span class="collab-hint">${esc(it.notes)}</span>` : ''}
         ${(it.labels || []).map((lb) => `<span class="collab-chip">${esc(lb)}</span>`).join('')}
       </div>
-      <button type="button" class="btn btn-ghost btn-xs" data-up="${esc(it.id)}">Up</button>
+      ${canEdit ? `<button type="button" class="btn btn-ghost btn-xs" data-up="${esc(it.id)}">Up</button>
       <button type="button" class="btn btn-ghost btn-xs" data-edit-item="${esc(it.id)}">Edit</button>
-      <button type="button" class="btn btn-ghost btn-xs" data-del-item="${esc(it.id)}" aria-label="Remove">×</button>
+      <button type="button" class="btn btn-ghost btn-xs" data-del-item="${esc(it.id)}" aria-label="Remove">×</button>` : ''}
     </div>`).join('');
   root.innerHTML = `
-    <h2 class="text-lg font-bold">${esc(list.title)}</h2>
+    <div class="lists-inline-head">
+      <div>
+        <h2 class="text-lg font-bold">${esc(list.title)}</h2>
+        <p class="collab-hint">Author ${esc(list.organizer || '')}</p>
+      </div>
+      ${lockControl}
+    </div>
     ${list.notes ? `<p class="collab-hint">${esc(list.notes)}</p>` : ''}
     <div class="collab-chips">
       <span class="collab-chip">${visibilityChip(list.visibility)}</span>
@@ -431,20 +459,21 @@ export function mountList(root, list, { me, onChange, groups = [] }) {
     </div>
     <div class="collab-ribbon">
       ${mine ? '<button type="button" class="btn btn-ghost btn-sm" data-act="edit">Edit</button>' : ''}
-      <button type="button" class="btn btn-ghost btn-sm" data-act="share">Add to chat</button>
+      ${mine ? '<button type="button" class="btn btn-error btn-sm" data-act="delete">Delete</button>' : ''}
+      ${(list.may_share || list.organizer === me) ? '<button type="button" class="btn btn-ghost btn-sm" data-act="share">Add to chat</button>' : ''}
       <select class="select select-bordered select-sm" data-group>
         <option value="">Ungrouped</option>
         ${groups.map((group) => `<option value="${esc(group.id)}" ${list.group_id === group.id ? 'selected' : ''}>${esc(group.name)}</option>`).join('')}
       </select>
     </div>
     <div class="collab-items">${items || '<p class="collab-empty">No items yet.</p>'}</div>
-    <form class="collab-add" data-add>
+    ${canEdit ? `<form class="collab-add" data-add>
       <input class="input input-bordered input-sm" name="text" placeholder="Add an item" required>
       <input class="input input-bordered input-sm" name="notes" placeholder="Note">
       <input class="input input-bordered input-sm" type="datetime-local" name="due">
       <input class="input input-bordered input-sm" name="labels" placeholder="Labels">
       <button class="btn btn-primary btn-sm" type="submit">Add</button>
-    </form>`;
+    </form>` : ''}`;
   root.querySelectorAll('[data-done]').forEach((box) => {
     box.addEventListener('change', async () => {
       const detail = await apiJson(`/api/lists/${list.id}/items/${box.dataset.done}`, {
@@ -476,12 +505,12 @@ export function mountList(root, list, { me, onChange, groups = [] }) {
             text: node.querySelector('[data-text]').value.trim(),
             notes: node.querySelector('[data-notes]').value.trim(),
             due_at: isoStamp(node.querySelector('[data-due]').value),
-            remind_at: isoStamp(node.querySelector('[data-due]').value),
             labels: node.querySelector('[data-labels]').value.split(',').map((s) => s.trim()).filter(Boolean),
           };
         },
       });
       if (!draft?.text) return;
+      if (remindersEnabled()) draft.remind_at = draft.due_at;
       const detail = await apiJson(`/api/lists/${list.id}/items/${item.id}`, { method: 'PATCH', body: draft });
       onChange(detail);
     });
@@ -489,15 +518,16 @@ export function mountList(root, list, { me, onChange, groups = [] }) {
   root.querySelector('[data-add]')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const fd = new FormData(event.currentTarget);
+    const body = {
+      text: String(fd.get('text') || ''),
+      notes: String(fd.get('notes') || ''),
+      due_at: isoStamp(String(fd.get('due') || '')),
+      labels: String(fd.get('labels') || '').split(',').map((s) => s.trim()).filter(Boolean),
+    };
+    if (remindersEnabled()) body.remind_at = body.due_at;
     const detail = await apiJson(`/api/lists/${list.id}/items`, {
       method: 'POST',
-      body: {
-        text: String(fd.get('text') || ''),
-        notes: String(fd.get('notes') || ''),
-        due_at: isoStamp(String(fd.get('due') || '')),
-        remind_at: isoStamp(String(fd.get('due') || '')),
-        labels: String(fd.get('labels') || '').split(',').map((s) => s.trim()).filter(Boolean),
-      },
+      body,
     });
     onChange(detail);
   });
@@ -523,10 +553,20 @@ export function mountList(root, list, { me, onChange, groups = [] }) {
     const detail = await apiJson(`/api/lists/${list.id}`, { method: 'PATCH', body: draft });
     onChange(detail);
   });
+  root.querySelector('[data-act="delete"]')?.addEventListener('click', () => {
+    deleteArtifact(`/api/lists/${list.id}`, 'list', onDelete).catch((e) => alert(e.message));
+  });
   root.querySelector('[data-act="share"]')?.addEventListener('click', () => sharePicker('list', list.id).catch((e) => alert(e.message)));
+  root.querySelector('[data-act="readonly"]')?.addEventListener('change', async (event) => {
+    const detail = await apiJson(`/api/lists/${list.id}`, {
+      method: 'PATCH',
+      body: { read_only: event.target.checked },
+    });
+    onChange(detail);
+  });
 }
 
-export function mountMeet(root, meet, { me, onChange }) {
+export function mountMeet(root, meet, { me, onChange, onDelete }) {
   const mine = meet.organizer === me;
   const link = `${location.origin}${meet.join_path || `/meet/${meet.slug}`}`;
   root.innerHTML = `
@@ -539,8 +579,9 @@ export function mountMeet(root, meet, { me, onChange }) {
       ${meet.live ? `<a class="btn btn-primary btn-sm" href="${esc(meet.join_path)}">Join</a>` : ''}
       <button type="button" class="btn btn-ghost btn-sm" data-act="copy">Copy link</button>
       ${mine ? '<button type="button" class="btn btn-ghost btn-sm" data-act="edit">Edit</button>' : ''}
+      ${mine ? '<button type="button" class="btn btn-error btn-sm" data-act="delete">Delete</button>' : ''}
       <button type="button" class="btn btn-ghost btn-sm" data-act="share">Add to chat</button>
-      ${mine && meet.live ? '<button type="button" class="btn btn-error btn-sm" data-act="end">End</button>' : ''}
+      ${mine && meet.live ? '<button type="button" class="btn btn-ghost btn-sm" data-act="end">End</button>' : ''}
     </div>
     <p class="collab-hint break-all">${esc(link)}</p>`;
   root.querySelector('[data-act="copy"]')?.addEventListener('click', () => navigator.clipboard?.writeText(link));
@@ -554,6 +595,9 @@ export function mountMeet(root, meet, { me, onChange }) {
     await apiJson(`/api/meet/${meet.id}`, { method: 'DELETE' });
     const detail = await apiJson(`/api/meet/${meet.id}`);
     onChange(detail);
+  });
+  root.querySelector('[data-act="delete"]')?.addEventListener('click', () => {
+    deleteArtifact(`/api/meet/${meet.id}/remove`, 'meeting', onDelete).catch((e) => alert(e.message));
   });
   root.querySelector('[data-act="share"]')?.addEventListener('click', () => sharePicker('meet', meet.id).catch((e) => alert(e.message)));
 }
@@ -571,20 +615,33 @@ export async function openArtifact(item, me) {
   const body = dlg.querySelector('#collabDialogBody');
   const err = dlg.querySelector('#collabDialogError');
   err.hidden = true;
+  const drop = () => dlg.close();
   const paint = (next) => {
-    if (kind === 'poll') mountPoll(body, next, { me, onChange: paint });
-    else if (kind === 'list') mountList(body, next, { me, onChange: paint });
-    else mountMeet(body, next, { me, onChange: paint });
+    if (kind === 'poll') mountPoll(body, next, { me, onChange: paint, onDelete: drop });
+    else if (kind === 'list') mountList(body, next, { me, onChange: paint, onDelete: drop });
+    else mountMeet(body, next, { me, onChange: paint, onDelete: drop });
   };
   paint(data);
   markInactive(dlg.querySelector('.collab-dialog-card'), data);
   const reload = async () => {
-    if (body.contains(document.activeElement)) return;
+    if (body.contains(document.activeElement)) {
+      if (dialogWatch) dialogWatch.pending = true;
+      return;
+    }
+    if (dialogWatch) dialogWatch.pending = false;
     const next = await apiJson(path);
     paint(next);
     markInactive(dlg.querySelector('.collab-dialog-card'), next);
   };
-  dialogWatch = { kind, id, reload };
+  dialogWatch = { kind, id, reload, pending: false };
+  if (!body.dataset.liveFlush) {
+    body.dataset.liveFlush = '1';
+    body.addEventListener('focusout', () => {
+      setTimeout(() => {
+        if (dialogWatch?.pending) dialogWatch.reload().catch(() => {});
+      }, 0);
+    });
+  }
   dlg.addEventListener('close', () => {
     if (dialogWatch && dialogWatch.kind === kind && dialogWatch.id === id) dialogWatch = null;
   }, { once: true });
@@ -598,14 +655,36 @@ export async function openArtifact(item, me) {
   dlg.showModal();
 }
 
+const pendingCards = new WeakMap();
+
+function cardBusy(node) {
+  const el = document.activeElement;
+  if (!el || !node.contains(el)) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+}
+
+function flushCard(node) {
+  if (!pendingCards.has(node) || cardBusy(node)) return;
+  const me = pendingCards.get(node);
+  pendingCards.delete(node);
+  hydrateCard(node, { me }).catch(() => {});
+}
+
 export function refreshLive(kind, id, me) {
   if (!kind || !id) return;
   const selector = `.chat-collab-card[data-kind="${CSS.escape(kind)}"]`;
   document.querySelectorAll(selector).forEach((node) => {
     if (node.dataset.id && node.dataset.id !== id) return;
-    const el = document.activeElement;
-    const typing = el && node.contains(el) && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
-    if (typing) return;
+    if (cardBusy(node)) {
+      pendingCards.set(node, me);
+      if (!node.dataset.liveFlush) {
+        node.dataset.liveFlush = '1';
+        node.addEventListener('focusout', () => { setTimeout(() => flushCard(node), 0); });
+      }
+      return;
+    }
+    pendingCards.delete(node);
     hydrateCard(node, { me }).catch(() => {});
   });
   if (dialogWatch && dialogWatch.kind === kind && dialogWatch.id === id) {
@@ -632,11 +711,14 @@ export async function hydrateCard(node, { me }) {
   const path = kind === 'list' ? `/api/lists/${id}` : kind === 'meet' ? `/api/meet/${id}` : `/api/polls/${id}`;
   try {
     const data = await apiJson(path);
+    const drop = () => {
+      live.innerHTML = `<p class="collab-hint">This ${esc(kind)} was deleted.</p>`;
+    };
     const apply = (next) => {
       markInactive(node, next);
-      if (kind === 'poll') mountPoll(live, next, { me, onChange: apply });
-      else if (kind === 'list') mountList(live, next, { me, onChange: apply });
-      else mountMeet(live, next, { me, onChange: apply });
+      if (kind === 'poll') mountPoll(live, next, { me, onChange: apply, onDelete: drop });
+      else if (kind === 'list') mountList(live, next, { me, onChange: apply, onDelete: drop, inline: true });
+      else mountMeet(live, next, { me, onChange: apply, onDelete: drop });
     };
     apply(data);
   } catch (err) {

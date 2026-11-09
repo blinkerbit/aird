@@ -269,6 +269,27 @@ def meet_join_allowed(conn: sqlite3.Connection, meet_id: str, username: str) -> 
     return True, ""
 
 
+def delete_meet(conn: sqlite3.Connection, meet_id: str, username: str) -> bool:
+    row = conn.execute("SELECT organizer FROM meets WHERE id = ?", (meet_id,)).fetchone()
+    if not row or row["organizer"] != username:
+        return False
+    conn.execute("DELETE FROM meet_participants WHERE meet_id = ?", (meet_id,))
+    conn.execute(
+        "DELETE FROM collab_conv_refs WHERE kind = 'meet' AND artifact_id = ?",
+        (meet_id,),
+    )
+    try:
+        conn.execute(
+            "DELETE FROM user_tag_links WHERE kind = 'meet' AND resource_key = ?",
+            (meet_id,),
+        )
+    except sqlite3.Error:
+        pass
+    conn.execute("DELETE FROM meets WHERE id = ?", (meet_id,))
+    conn.commit()
+    return True
+
+
 def _meet_row(row: sqlite3.Row) -> dict:
     live = _is_live(row)
     return {

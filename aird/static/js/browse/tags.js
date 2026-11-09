@@ -80,8 +80,8 @@ export function paintTagColor(tag, hex, opts) {
 }
 
 export function fileTagChipHtml(tagName) {
-  // No inline onclick (CSP). Clicks are stopped via delegation in initTagsUi.
-  return '<a href="/files/?tag=' + encodeURIComponent(tagName) + '" class="file-tag-chip" data-tag="'
+  // Plain click filters the listing; Ctrl/Cmd/middle-click opens /tagged/{name}.
+  return '<a href="/tagged/' + encodeURIComponent(tagName) + '" class="file-tag-chip" data-tag="'
     + escapeAttr(tagName) + '"'
     + tagChipStyleAttr(tagName)
     + '>' + escapeHtml(tagName) + '</a>';

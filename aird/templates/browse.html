@@ -186,9 +186,9 @@
               {% set _max_show = 2 %}
               <span class="file-tag-list{% if len(_file_tags) > _max_show %} file-tag-list--overflow{% end %}">
                 {% for _t in _file_tags[:_max_show] %}
-                <a href="/files/?tag={{ escape(_t) }}"
+                <a href="/tagged/{{ url_escape(_t) }}"
                    class="file-tag-chip" data-tag="{{ escape(_t) }}"
-                   onclick="event.stopPropagation()"{% set _tc = tag_colors.get(_t) %}{% if _tc %} style="{{ tag_chip_style(_tc) }}"{% end %}>{{ escape(_t) }}</a>
+                   title="Click to filter · Ctrl+click for tag page"{% set _tc = tag_colors.get(_t) %}{% if _tc %} style="{{ tag_chip_style(_tc) }}"{% end %}>{{ escape(_t) }}</a>
                 {% end %}
                 {% if len(_file_tags) > _max_show %}
                 <button type="button" class="file-tag-more file-tag-more-trigger"

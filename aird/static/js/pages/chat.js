@@ -1364,17 +1364,28 @@ import {
     saveCopy(btn.dataset.id, btn.dataset.i).catch((err) => alert(err.message));
   }
 
-  function handleReactClick(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    const btn = e.currentTarget;
-    react(btn.dataset.id, btn.dataset.emoji).catch((err) => alert(err.message));
+  function ensureReactDelegation() {
+    if (!messagesEl || messagesEl.dataset.reactBound === '1') return;
+    messagesEl.dataset.reactBound = '1';
+    messagesEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('.chat-react-chip, .chat-react-emoji');
+      if (!btn || !messagesEl.contains(btn)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const messageId = btn.dataset.id;
+      const emoji = btn.dataset.emoji;
+      if (!messageId || !emoji) return;
+      react(messageId, emoji).catch((err) => alert(err.message));
+    });
   }
 
   function bindMessageUi(root) {
     const scope = root || messagesEl;
     if (!scope) return;
+    ensureReactDelegation();
     scope.querySelectorAll('.chat-msg-image').forEach((img) => {
+      if (img.dataset.boundUi === '1') return;
+      img.dataset.boundUi = '1';
       if (img.dataset.gif === '1') {
         bindGifPause(img);
         return;
@@ -1383,18 +1394,23 @@ import {
     });
     bindVoicePlayers(scope);
     scope.querySelectorAll('[data-att="open"]').forEach((btn) => {
+      if (btn.dataset.boundUi === '1') return;
+      btn.dataset.boundUi = '1';
       btn.addEventListener('click', () => window.open(btn.dataset.url, '_blank', 'noopener'));
     });
     scope.querySelectorAll('[data-att="save"]').forEach((btn) => {
+      if (btn.dataset.boundUi === '1') return;
+      btn.dataset.boundUi = '1';
       btn.addEventListener('click', handleSaveCopyClick);
     });
     scope.querySelectorAll('[data-act]').forEach((btn) => {
+      if (btn.dataset.boundUi === '1') return;
+      btn.dataset.boundUi = '1';
       btn.addEventListener('click', () => onMsgAction(btn.dataset.act, btn.dataset.id));
     });
-    scope.querySelectorAll('.chat-react-chip, .chat-react-emoji').forEach((btn) => {
-      btn.addEventListener('click', handleReactClick);
-    });
     scope.querySelectorAll('[data-ref-token]').forEach((btn) => {
+      if (btn.dataset.boundUi === '1') return;
+      btn.dataset.boundUi = '1';
       btn.addEventListener('click', () => {
         openMentionToken(btn.dataset.refToken, me).catch((err) => alert(err.message));
       });
@@ -1471,11 +1487,17 @@ import {
   function applyReactions(messageId, reactions) {
     const row = messagesEl?.querySelector(`[data-msg-id="${cssEscape(messageId)}"]`);
     if (!row) return;
-    const fake = { id: messageId, reactions };
-    const next = reactionsHtml(fake);
+    const next = reactionsHtml({ id: messageId, reactions });
     const old = row.querySelector('.chat-react-row');
-    if (old) old.outerHTML = next;
-    bindMessageUi(row);
+    if (old) {
+      if (next) old.outerHTML = next;
+      else old.remove();
+      return;
+    }
+    if (!next) return;
+    const body = row.querySelector('.aird-chat-bubble-body');
+    if (body) body.insertAdjacentHTML('afterend', next);
+    else row.querySelector('.aird-chat-bubble')?.insertAdjacentHTML('beforeend', next);
   }
 
   function onMsgAction(act, id) {
