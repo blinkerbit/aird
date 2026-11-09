@@ -195,6 +195,15 @@ export async function linkMentionTokens(convId, text) {
   }
 }
 
+const FOCUS_KIND = { poll: 'Poll', list: 'List', meet: 'Meet' };
+
+function composerShowsFocus() {
+  const composer = document.getElementById('chatComposer');
+  if (!composer || composer.classList.contains('hidden')) return false;
+  if (composer.classList.contains('chat-composer--enhanced')) return false;
+  return true;
+}
+
 export async function renderShelf(convId, me) {
   const shelf = document.getElementById('chatCollabShelf');
   if (!shelf) return;
@@ -206,18 +215,18 @@ export async function renderShelf(convId, me) {
   let refs = [];
   try {
     const data = await apiJson(`/api/chat/conversations/${convId}/refs`);
-    refs = data.refs || [];
+    refs = (data.refs || []).filter((ref) => ref.active !== false);
   } catch {
     refs = [];
   }
-  if (!refs.length) {
+  if (!composerShowsFocus() || !refs.length) {
     shelf.hidden = true;
     shelf.innerHTML = '';
     return;
   }
   shelf.hidden = false;
   shelf.innerHTML = refs.map((ref, i) => (
-    `<button type="button" data-i="${i}" class="${ref.active === false ? 'is-inactive' : ''}" title="${esc(ref.token)}">${esc(ref.token)} ${esc(ref.title)}</button>`
+    `<button type="button" class="chat-focus-bubble" data-kind="${esc(ref.kind)}" data-i="${i}" title="${esc(ref.title)}"><span class="chat-focus-kind">${esc(FOCUS_KIND[ref.kind] || ref.kind)}</span><span class="chat-focus-title">${esc(ref.title)}</span></button>`
   )).join('');
   shelf.querySelectorAll('button').forEach((btn) => {
     btn.addEventListener('click', () => {

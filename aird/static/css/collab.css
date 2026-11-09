@@ -81,10 +81,41 @@
 .collab-add { display: flex; gap: .4rem; margin-top: .75rem; }
 .collab-add .input { flex: 1; }
 .chat-collab-live .text-lg { font-size: 1rem; }
-.chat-collab-shelf { display: flex; gap: .4rem; overflow-x: auto; padding: .35rem .75rem .15rem; }
-.chat-collab-shelf[hidden] { display: none !important; }
-.chat-collab-shelf button { flex: 0 0 auto; border: 1px solid var(--color-base-300); background: var(--color-base-100); color: inherit; border-radius: 999px; padding: .25rem .7rem; font-size: .75rem; cursor: pointer; }
-.chat-collab-shelf button.is-inactive,
+.chat-focus-bubbles {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: .45rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: .5rem .85rem .2rem;
+  background: var(--color-base-100);
+  border-top: 1px solid var(--color-base-300);
+  scrollbar-width: thin;
+}
+.chat-focus-bubbles[hidden] { display: none !important; }
+.chat-focus-bubbles::-webkit-scrollbar { height: .4rem; }
+.chat-focus-bubble {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  max-width: 16rem;
+  border: 1px solid var(--color-base-300);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-base-100));
+  color: inherit;
+  border-radius: 999px;
+  padding: .28rem .75rem;
+  font-size: .78rem;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.chat-focus-bubble[data-kind="list"] { background: color-mix(in srgb, var(--color-secondary, var(--color-primary)) 14%, var(--color-base-100)); }
+.chat-focus-bubble[data-kind="meet"] { background: color-mix(in srgb, var(--color-accent, var(--color-primary)) 16%, var(--color-base-100)); }
+.chat-focus-kind { font-size: .62rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; opacity: .7; }
+.chat-focus-title { overflow: hidden; text-overflow: ellipsis; }
+.chat-thread-body:has(.chat-focus-bubbles:not([hidden])) .chat-composer { border-top: 0; }
 .chat-collab-card.is-inactive,
 .collab-dialog-card.is-inactive { opacity: .5; filter: grayscale(.75); }
 .chat-ref-chip { border: 0; border-radius: 999px; padding: 0 .4rem; background: color-mix(in srgb, var(--color-primary) 18%, transparent); color: inherit; font: inherit; cursor: pointer; }
