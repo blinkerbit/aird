@@ -228,40 +228,53 @@ def pin_for_chat(
 
 
 def _fanout(conn: sqlite3.Connection, kind: str, artifact_id: str) -> None:
+    """Push a live refresh to everyone who can be looking at this list, poll, or meeting."""
     kind = str(kind or "").strip().lower()
     artifact_id = str(artifact_id or "").strip()
-    if not kind or not artifact_id:
+    spec = _TABLE.get(kind)
+    if not spec or not artifact_id:
         return
+    table = spec[0]
     try:
-        rows = conn.execute(
-            "SELECT conversation_id, created_by FROM collab_conv_refs WHERE kind = ? AND artifact_id = ?",
-            (kind, artifact_id),
-        ).fetchall()
+        row = conn.execute(f"SELECT * FROM {table} WHERE id = ?", (artifact_id,)).fetchone()
     except sqlite3.Error:
         return
-    if not rows:
+    if not row:
         return
+    from aird.plugins.collab.acl import VISIBILITY_PUBLIC, normalize_visibility
     from aird.plugins.chat import db as chat_db
     from aird.plugins.chat.service import get_chat_hub
 
-    user_ids: set[int] = set()
-    conversations: list[str] = []
-    for row in rows:
-        cid = str(row["conversation_id"] or "")
-        actor = str(row["created_by"] or "")
-        if not cid:
-            continue
-        conversations.append(cid)
-        if not actor:
-            continue
-        try:
-            for uid in chat_db.member_user_ids(actor, cid):
+    hub = get_chat_hub()
+    public = normalize_visibility(row["visibility"]) == VISIBILITY_PUBLIC
+    if public:
+        user_ids = set(hub.connected_user_ids())
+    else:
+        names = {name.casefold() for name in audience_names(conn, kind, artifact_id)}
+        user_ids = set()
+        for uid in hub.connected_user_ids():
+            shown = (hub.username_for(uid) or "").strip().casefold()
+            if shown and shown in names:
                 user_ids.add(int(uid))
-        except Exception:
-            continue
+        for name in names:
+            try:
+                uid = chat_db.resolve_user_id(conn, name)
+            except Exception:
+                uid = None
+            if uid:
+                user_ids.add(int(uid))
+    conversations: list[str] = []
+    try:
+        refs = conn.execute(
+            "SELECT conversation_id FROM collab_conv_refs WHERE kind = ? AND artifact_id = ?",
+            (kind, artifact_id),
+        ).fetchall()
+        conversations = [str(ref[0] or "") for ref in refs if ref[0]]
+    except sqlite3.Error:
+        conversations = []
     if not user_ids:
         return
-    get_chat_hub().broadcast_user_ids(
+    hub.broadcast_user_ids(
         list(user_ids),
         {
             "type": "collab_update",

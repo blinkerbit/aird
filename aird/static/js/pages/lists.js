@@ -1,5 +1,6 @@
 import { apiJson } from '../collab-api.js';
 import { listDialog, mountList } from '../collab-ui.js';
+import '../chat-ws.js';
 
 const root = document.querySelector('[data-hub="lists"]');
 const me = root?.dataset.me || '';
@@ -54,12 +55,41 @@ function renderIndex(lists) {
   });
 }
 
+function typingIn(root) {
+  const el = document.activeElement;
+  if (!root || !el || !root.contains(el)) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable;
+}
+
+let paintGen = 0;
+
+async function paintOpen(id) {
+  const gen = ++paintGen;
+  const list = await apiJson(`/api/lists/${id}`);
+  if (gen !== paintGen || activeId !== id) return;
+  if (typingIn(detailEl)) return;
+  mountList(detailEl, list, { me, groups, onChange: () => openList(id) });
+}
+
 async function openList(id) {
   activeId = id;
-  const list = await apiJson(`/api/lists/${id}`);
   history.replaceState(null, '', `/lists?id=${encodeURIComponent(id)}`);
-  renderIndex((await apiJson('/api/lists')).lists || []);
-  mountList(detailEl, list, { me, groups, onChange: () => openList(id) });
+  const data = await apiJson('/api/lists');
+  groups = data.groups || [];
+  renderIndex(data.lists || []);
+  await paintOpen(id);
+}
+
+function applyLive(id) {
+  reloadIndex().catch(() => {});
+  if (id && activeId === id) paintOpen(id).catch(() => {});
+}
+
+async function reloadIndex() {
+  const data = await apiJson('/api/lists');
+  groups = data.groups || [];
+  renderIndex(data.lists || []);
 }
 
 async function refresh() {
@@ -82,6 +112,11 @@ document.getElementById('listsNewBtn')?.addEventListener('click', async () => {
   const list = await apiJson('/api/lists', { method: 'POST', body: draft });
   activeId = list.id;
   await refresh();
+});
+
+globalThis.AirdChatWS?.subscribe((data) => {
+  if (data?.type !== 'collab_update' || data.kind !== 'list') return;
+  applyLive(String(data.id || ''));
 });
 
 refresh().catch((e) => { detailEl.innerHTML = `<div class="collab-empty">${esc(e.message)}</div>`; });

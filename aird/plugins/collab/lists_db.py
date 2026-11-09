@@ -109,7 +109,13 @@ def _user_may_view(conn: sqlite3.Connection, row: sqlite3.Row, username: str) ->
 
 
 def _user_may_edit_items(conn: sqlite3.Connection, row: sqlite3.Row, username: str) -> bool:
-    if row["organizer"] == username:
+    """Anyone who can open the list can check, add, and edit items. A read-only tag cannot."""
+    if can_access(
+        visibility=row["visibility"],
+        organizer=row["organizer"],
+        username=username,
+        participants=_participants(conn, row["id"]),
+    ):
         return True
     return list_tag_access(conn, username, row["organizer"], row["id"]) == ACCESS_WRITE
 

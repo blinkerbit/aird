@@ -14,9 +14,10 @@ from aird.plugins.collab.lists_db import (
     create_list,
     list_detail,
     list_index,
+    patch_item,
     set_list_group,
 )
-from aird.plugins.collab.live import audience_names
+from aird.plugins.collab.live import audience_names, notify_changed
 from aird.plugins.collab.meet_db import (
     MEET_TTL_HOURS,
     claim_session_start,
@@ -188,6 +189,62 @@ def test_inactive_poll_list_and_meet(collab_db):
     assert end_meet(collab_db, meet["id"], "alice")
     shelf = list_refs(collab_db, "conv1", "alice")
     assert shelf[0]["active"] is False
+
+
+def test_shared_list_items_can_be_checked(collab_db):
+    public = create_list(
+        collab_db,
+        organizer="alice",
+        title="Groceries",
+        kind="todo",
+        visibility="public",
+        items=[{"text": "Milk"}],
+    )
+    item_id = list_detail(collab_db, public["id"], "bob")["items"][0]["id"]
+    checked = patch_item(collab_db, public["id"], item_id, "bob", done=True)
+    assert checked["items"][0]["done"] is True
+    private = create_list(
+        collab_db,
+        organizer="alice",
+        title="Home",
+        kind="todo",
+        visibility="private",
+        items=[{"text": "Keys"}],
+        participants=["bob"],
+    )
+    private_item = list_detail(collab_db, private["id"], "bob")["items"][0]["id"]
+    assert patch_item(collab_db, private["id"], private_item, "bob", done=True)["items"][0]["done"] is True
+    assert patch_item(collab_db, private["id"], private_item, "carol", done=False) is None
+
+
+def test_public_list_change_reaches_open_clients(collab_db, monkeypatch):
+    sent = {}
+
+    class Hub:
+        def connected_user_ids(self):
+            return {4, 9}
+
+        def username_for(self, user_id):
+            return {4: "alice", 9: "bob"}.get(user_id)
+
+        def broadcast_user_ids(self, ids, payload):
+            sent["ids"] = set(ids)
+            sent["payload"] = payload
+
+    monkeypatch.setattr("aird.plugins.chat.service.get_chat_hub", lambda: Hub())
+    lst = create_list(
+        collab_db,
+        organizer="alice",
+        title="Groceries",
+        kind="todo",
+        visibility="public",
+        items=[{"text": "Milk"}],
+    )
+    notify_changed(collab_db, "list", lst["id"])
+    assert sent["ids"] == {4, 9}
+    assert sent["payload"]["type"] == "collab_update"
+    assert sent["payload"]["kind"] == "list"
+    assert sent["payload"]["id"] == lst["id"]
 
 
 def test_list_audience_is_shared_people(collab_db):

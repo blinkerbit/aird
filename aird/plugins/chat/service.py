@@ -64,6 +64,14 @@ class ChatHub:
         with self._lock:
             return bool(self._by_user.get(user_id)) or self._remote_has(user_id)
 
+    def connected_user_ids(self) -> set[int]:
+        """Every signed-in socket, including a phone that is not on screen."""
+        with self._lock:
+            ids = {uid for uid, sockets in self._by_user.items() if sockets}
+            for bucket in self._remote.values():
+                ids.update(bucket)
+            return ids
+
     def online_user_ids(self) -> set[int]:
         """Users shown as online. A connected phone with a locked screen is not included."""
         with self._lock:

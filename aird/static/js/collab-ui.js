@@ -600,9 +600,12 @@ export async function openArtifact(item, me) {
 
 export function refreshLive(kind, id, me) {
   if (!kind || !id) return;
-  const selector = `.chat-collab-card[data-kind="${CSS.escape(kind)}"][data-id="${CSS.escape(id)}"]`;
+  const selector = `.chat-collab-card[data-kind="${CSS.escape(kind)}"]`;
   document.querySelectorAll(selector).forEach((node) => {
-    if (node.contains(document.activeElement)) return;
+    if (node.dataset.id && node.dataset.id !== id) return;
+    const el = document.activeElement;
+    const typing = el && node.contains(el) && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+    if (typing) return;
     hydrateCard(node, { me }).catch(() => {});
   });
   if (dialogWatch && dialogWatch.kind === kind && dialogWatch.id === id) {
