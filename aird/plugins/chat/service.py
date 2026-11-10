@@ -293,7 +293,7 @@ def _preview_with_attachments(body: str, names: list[str], meta: dict) -> str:
 
 
 def _preview_by_msg_type(msg_type: str | None, body: str) -> str:
-    if msg_type == "text":
+    if msg_type == "text" or msg_type == "missed":
         return body
     if msg_type == "gif":
         return "Sent a GIF"

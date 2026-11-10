@@ -493,7 +493,7 @@ def _conversation_list_preview(
     if is_e2e_meta(meta):
         preview = ENCRYPTED_PREVIEW
         last_e2e = meta.get("e2e")
-    elif last[2] == "text":
+    elif last[2] == "text" or last[2] == "missed":
         preview = plain_preview(last[3] or "")
     else:
         preview = f"Shared {meta.get('original_name') or 'a file'}"
@@ -924,10 +924,77 @@ def edit_message(
     return updated
 
 
+def insert_private_message(
+    *,
+    owner: str,
+    sender_username: str,
+    sender_id: int,
+    conversation_id: str,
+    body: str,
+    call_id: str,
+    mode: str,
+) -> dict | None:
+    """A missed-call note stored only in this person's chat. They can delete it."""
+    if get_conversation(owner, conversation_id) is None:
+        return None
+    now = _now_iso()
+    meta = {"call_id": call_id, "mode": mode, "from": sender_username}
+    meta_json = json.dumps(meta)
+    with mailbox(owner) as box:
+        try:
+            box.conn.execute("BEGIN IMMEDIATE")
+            existing = box.conn.execute(
+                """
+                SELECT metadata_json FROM messages
+                WHERE conversation_id = ? AND msg_type = 'missed'
+                """,
+                (conversation_id,),
+            ).fetchall()
+            for row in existing:
+                try:
+                    stored = json.loads(row[0] or "{}")
+                except json.JSONDecodeError:
+                    stored = {}
+                if str(stored.get("call_id") or "") == call_id:
+                    box.conn.rollback()
+                    return None
+            mid = _new_id()
+            box.conn.execute(
+                """
+                INSERT INTO messages
+                    (id, conversation_id, sender_username, sender_id, msg_type, body,
+                     metadata_json, reply_to_id, edited_at, created_at)
+                VALUES (?, ?, ?, ?, 'missed', ?, ?, NULL, NULL, ?)
+                """,
+                (mid, conversation_id, sender_username, int(sender_id), body, meta_json, now),
+            )
+            box.conn.execute(_SQL_TOUCH_CONVERSATION, (now, conversation_id))
+            _fts_upsert(box, mid, body, "")
+            box.conn.commit()
+        except Exception:
+            try:
+                box.conn.rollback()
+            except Exception:
+                pass
+            raise
+    return get_message(owner, mid)
+
+
 def delete_message(*, actor: str, conversation_id: str, message_id: str) -> dict | None:
     current = get_message(actor, message_id)
     if current is None or current["conversation_id"] != conversation_id:
         return None
+    if str(current.get("msg_type") or "") == "missed":
+        with mailbox(actor) as box:
+            box.conn.execute("DELETE FROM reactions WHERE message_id = ?", (message_id,))
+            box.conn.execute(
+                "DELETE FROM pins WHERE conversation_id = ? AND message_id = ?",
+                (conversation_id, message_id),
+            )
+            box.conn.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+            _fts_delete(box, message_id)
+            box.conn.commit()
+        return {"id": message_id, "conversation_id": conversation_id}
     if current["sender_username"] != actor:
         return None
     members = members_of(actor, conversation_id)

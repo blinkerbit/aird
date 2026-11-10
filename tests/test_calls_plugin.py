@@ -46,6 +46,7 @@ def _call_env(monkeypatch, tmp_path):
     monkeypatch.setattr(call_notify, "clear_call_rings", lambda *a, **k: None)
     monkeypatch.setattr(call_notify, "_stop_remote_rings", lambda *a, **k: None)
     monkeypatch.setattr(call_notify, "drop_pending_calls", lambda *a, **k: None)
+    monkeypatch.setattr(call_notify.chat_db, "members_of", lambda username, conv: [])
     return hub
 
 
@@ -112,6 +113,31 @@ def test_peek_missed_for_callee_not_caller(monkeypatch, tmp_path):
     assert missed["call_id"] == "k5"
     assert missed["type"] == "call_missed"
     assert call_notify.peek_missed("alice") is None
+
+
+def test_missed_call_is_written_into_the_chat(monkeypatch, tmp_path):
+    hub = _call_env(monkeypatch, tmp_path)
+    notes = []
+    monkeypatch.setattr(
+        call_notify.chat_db,
+        "members_of",
+        lambda caller, conv: [
+            {"username": "alice", "user_id": 1},
+            {"username": "bob", "user_id": 2},
+        ],
+    )
+
+    def remember(**kwargs):
+        notes.append(kwargs)
+        return {"id": "m1", "conversation_id": kwargs["conversation_id"], "msg_type": "missed", "body": kwargs["body"]}
+
+    monkeypatch.setattr(call_notify.chat_db, "insert_private_message", remember)
+    call_notify._record_call("k9", "c1", "alice", "video")
+    call_notify._expire_ring("alice", "c1", "k9")
+    assert [note["owner"] for note in notes] == ["bob"]
+    assert notes[0]["mode"] == "video"
+    assert notes[0]["body"] == "Missed video call"
+    assert any(payload.get("type") == "chat_message" for _, payload, _ in hub.sent)
 
 
 def test_answered_call_can_be_reminted(monkeypatch, tmp_path):

@@ -1316,7 +1316,14 @@ import {
     </div>`;
   }
 
+  function missedBannerHtml(msg) {
+    const id = esc(msg.id);
+    const label = esc(msg.body || 'Missed call');
+    return `<div class="chat-missed" data-msg-id="${id}" data-mine="1" data-created-at="${esc(msg.created_at || '')}"><span>${label}</span><button type="button" class="chat-missed-x" data-act="delete" data-id="${id}" aria-label="Delete missed call">×</button></div>`;
+  }
+
   function messageHtml(msg) {
+    if (msg.msg_type === 'missed') return missedBannerHtml(msg);
     rememberMsgLabel(msg);
     const rowClass = msg._mine ? 'chat-msg-row--mine' : 'chat-msg-row--theirs';
     const bubbleClass = msg._mine ? 'aird-chat-bubble--mine' : 'aird-chat-bubble--theirs';
@@ -2165,7 +2172,8 @@ import {
 
   async function deleteMessage(messageId) {
     if (!activeConvId) return;
-    if (!confirm('Delete this message?')) return;
+    const row = findMessageRow(messageId);
+    if (!row?.classList.contains('chat-missed') && !confirm('Delete this message?')) return;
     await api(`/api/chat/conversations/${activeConvId}/messages/${messageId}`, { method: 'DELETE' });
     removeMessageEl(messageId);
     selectedIds.delete(messageId);

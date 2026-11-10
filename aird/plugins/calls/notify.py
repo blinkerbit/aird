@@ -42,10 +42,21 @@ def _ring_conn():
             created_at REAL NOT NULL
         )"""
     )
+    cols = {str(row[1]) for row in conn.execute("PRAGMA table_info(call_state)").fetchall()}
+    if "mode" not in cols:
+        conn.execute("ALTER TABLE call_state ADD COLUMN mode TEXT NOT NULL DEFAULT 'audio'")
+    if "targets" not in cols:
+        conn.execute("ALTER TABLE call_state ADD COLUMN targets TEXT NOT NULL DEFAULT ''")
     return conn
 
 
-def _record_call(call_id: str, conversation_id: str, caller: str) -> None:
+def _record_call(
+    call_id: str,
+    conversation_id: str,
+    caller: str,
+    mode: str = "audio",
+    targets: list[str] | None = None,
+) -> None:
     """Remember a ringing call so any worker can tell if it was answered."""
     if not call_id:
         return
@@ -56,9 +67,18 @@ def _record_call(call_id: str, conversation_id: str, caller: str) -> None:
         now = time.time()
         conn.execute("DELETE FROM call_state WHERE created_at < ?", (now - _STATE_KEEP_S,))
         conn.execute(
-            "INSERT OR REPLACE INTO call_state(call_id, conversation_id, caller, state, created_at) "
-            "VALUES(?,?,?,?,?)",
-            (call_id, conversation_id, caller, "ringing", now),
+            "INSERT OR REPLACE INTO call_state"
+            "(call_id, conversation_id, caller, state, created_at, mode, targets) "
+            "VALUES(?,?,?,?,?,?,?)",
+            (
+                call_id,
+                conversation_id,
+                caller,
+                "ringing",
+                now,
+                "video" if mode == "video" else "audio",
+                json.dumps([str(name) for name in (targets or []) if str(name).strip()]),
+            ),
         )
         conn.commit()
     except Exception:
@@ -90,23 +110,57 @@ def _settle_call(conversation_id: str, call_id: str, state: str) -> None:
         conn.close()
 
 
-def _claim_missed(call_id: str) -> str | None:
-    """Atomically flip a still-ringing call to missed. Returns the conversation id."""
+def _ringing_row(conn: sqlite3.Connection, call_id: str) -> dict | None:
+    row = conn.execute(
+        "SELECT conversation_id, caller, mode, targets FROM call_state "
+        "WHERE call_id=? AND state='ringing'",
+        (call_id,),
+    ).fetchone()
+    if not row:
+        return None
+    try:
+        targets = json.loads(row[3] or "[]")
+    except json.JSONDecodeError:
+        targets = []
+    if not isinstance(targets, list):
+        targets = []
+    return {
+        "conversation_id": str(row[0]),
+        "caller": str(row[1]),
+        "mode": "video" if row[2] == "video" else "audio",
+        "targets": [str(name) for name in targets if str(name).strip()],
+        "call_id": call_id,
+    }
+
+
+def _peek_ringing(call_id: str) -> dict | None:
+    if not call_id:
+        return None
+    conn = _ring_conn()
+    if conn is None:
+        return None
+    try:
+        return _ringing_row(conn, call_id)
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+def _claim_missed(call_id: str) -> dict | None:
+    """Atomically flip a still-ringing call to missed. Returns the call record."""
     conn = _ring_conn()
     if conn is None:
         return None
     try:
         conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute(
-            "SELECT conversation_id FROM call_state WHERE call_id=? AND state='ringing'",
-            (call_id,),
-        ).fetchone()
-        if not row:
+        claimed = _ringing_row(conn, call_id)
+        if not claimed:
             conn.rollback()
             return None
         conn.execute("UPDATE call_state SET state='missed' WHERE call_id=?", (call_id,))
         conn.commit()
-        return str(row[0])
+        return claimed
     except Exception:
         logger.debug("call missed claim failed", exc_info=True)
         try:
@@ -121,7 +175,7 @@ def _claim_missed(call_id: str) -> str | None:
 def _expire_ring(caller: str, conversation_id: str, call_id: str) -> None:
     """Nobody answered in time. Tell everyone the call is missed."""
     claimed = _claim_missed(call_id)
-    if not claimed or claimed != conversation_id:
+    if not claimed or claimed["conversation_id"] != conversation_id:
         return
     try:
         ids = _member_ids(caller, conversation_id)
@@ -132,12 +186,66 @@ def _expire_ring(caller: str, conversation_id: str, call_id: str) -> None:
                 "conversation_id": conversation_id,
                 "from": caller,
                 "call_id": call_id,
+                "mode": claimed["mode"],
             },
         )
         clear_call_rings(caller, conversation_id, call_id)
         _stop_remote_rings(caller, conversation_id, call_id)
+        _leave_missed_notes(claimed)
     except Exception:
         logger.warning("call missed dispatch failed", exc_info=True)
+
+
+def _leave_missed_notes(call: dict) -> None:
+    """Put a small deletable missed-call banner in each person's chat."""
+    caller = str(call.get("caller") or "")
+    conversation_id = str(call.get("conversation_id") or "")
+    call_id = str(call.get("call_id") or "")
+    if not caller or not conversation_id or not call_id:
+        return
+    try:
+        members = chat_db.members_of(caller, conversation_id)
+    except Exception:
+        logger.debug("missed call members failed", exc_info=True)
+        return
+    mode = "video" if call.get("mode") == "video" else "audio"
+    label = "Missed video call" if mode == "video" else "Missed voice call"
+    if len(members) > 2:
+        label = f"{label} · {caller}"
+    wanted = {str(name) for name in (call.get("targets") or []) if str(name).strip()}
+    caller_id = 0
+    for member in members:
+        if str(member.get("username") or "") == caller:
+            caller_id = int(member.get("user_id") or 0)
+            break
+    for member in members:
+        name = str(member.get("username") or "")
+        if not name or name == caller:
+            continue
+        if wanted and name not in wanted:
+            continue
+        try:
+            msg = chat_db.insert_private_message(
+                owner=name,
+                sender_username=caller,
+                sender_id=caller_id,
+                conversation_id=conversation_id,
+                body=label,
+                call_id=call_id,
+                mode=mode,
+            )
+        except Exception:
+            logger.debug("missed call note failed", exc_info=True)
+            continue
+        if not msg:
+            continue
+        try:
+            get_chat_hub().broadcast_user_ids(
+                [int(member.get("user_id") or 0)],
+                {"type": "chat_message", "message": msg},
+            )
+        except Exception:
+            logger.debug("missed call note fanout failed", exc_info=True)
 
 
 def _arm_ring_timeout(caller: str, conversation_id: str, call_id: str) -> None:
@@ -297,7 +405,7 @@ def dispatch_call_invite(
     # Store the ring first. A device that gets the invite can then ask
     # /api/chat/call-ring whether the call is still live.
     save_call_rings(caller_username, conversation_id, mode, call_id, targets=targets)
-    _record_call(call_id, conversation_id, caller_username)
+    _record_call(call_id, conversation_id, caller_username, mode_name, targets)
     _arm_ring_timeout(caller_username, conversation_id, call_id)
     socket_payload = {
         "type": "call_invite",
@@ -539,9 +647,12 @@ def dispatch_call_signal(
         return
     get_chat_hub().broadcast_user_ids(ids, payload)
     ended_id = str((extra or {}).get("call_id") or "")
+    ringing = _peek_ringing(ended_id)
     _settle_call(conversation_id, ended_id, "ended")
     clear_call_rings(username, conversation_id, ended_id)
     _stop_remote_rings(username, conversation_id, ended_id)
+    if ringing and ringing.get("caller") == username:
+        _leave_missed_notes(ringing)
 
 
 def _stop_remote_rings(username: str, conversation_id: str, call_id: str) -> None:
