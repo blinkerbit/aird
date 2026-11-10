@@ -61,6 +61,7 @@ function ensureCallStyles() {
     .chat-call-device-menu{position:absolute;top:calc(3.2rem + env(safe-area-inset-top,0));right:.7rem;z-index:5;box-sizing:border-box;width:min(18rem,calc(100vw - 1.4rem));max-height:calc(100% - 3.2rem - env(safe-area-inset-top,0) - 6.5rem - env(safe-area-inset-bottom,0));overflow:auto;padding:.75rem;border-radius:.85rem;background:#1b1b22;box-shadow:0 16px 40px rgba(0,0,0,.45);display:grid;grid-template-columns:minmax(0,1fr);align-content:start;gap:.55rem}
     .chat-call-device-menu label{display:grid;gap:.25rem;font-size:.75rem;font-weight:650;text-align:left}
     .chat-call-device-menu select{width:100%;padding:.4rem .45rem;border-radius:.45rem;border:1px solid rgba(255,255,255,.16);background:#111;color:#fff;font:inherit}
+    .chat-call-picture-hint{font-weight:500;opacity:.72}
     .chat-call-stage{position:relative;flex:1;width:100%;min-height:0}
     .chat-call-tile{position:absolute;overflow:hidden;background:#17171d}
     .chat-call-tile--remote{inset:0}
@@ -221,7 +222,7 @@ function wireSelfPreview(overlay) {
 
 function ensureOverlay() {
   const existing = document.getElementById('chatCallOverlay');
-  if (existing && existing.dataset.version === '12') return existing;
+  if (existing && existing.dataset.version === '13') return existing;
   existing?.remove();
   const el = document.createElement('div');
   el.id = 'chatCallOverlay';
@@ -246,6 +247,15 @@ function ensureOverlay() {
       <label>Camera
         <select id="chatCallCamSelect" aria-label="Camera"></select>
       </label>
+      <label>Picture
+        <select id="chatCallPicture" aria-label="Picture quality">
+          <option value="auto">Auto</option>
+          <option value="saver">Saver</option>
+          <option value="clear">Clear</option>
+          <option value="sharp">Sharp</option>
+        </select>
+        <span id="chatCallPictureHint" class="chat-call-picture-hint"></span>
+      </label>
     </div>
     <div class="chat-call-stage">
       <div class="chat-call-remote-grid" id="chatCallRemoteGrid">
@@ -265,7 +275,7 @@ function ensureOverlay() {
       </div>
       ${callCtrlButton('chatCallHangupBtn', 'End', HANGUP_ICON, 'chat-call-ctrl--danger', 'aria-label="End call"')}
     </div>`;
-  el.dataset.version = '12';
+  el.dataset.version = '13';
   document.body.appendChild(el);
   el.querySelector('#chatCallHangupBtn')?.addEventListener('click', () => { void hangUp(); });
   wireSelfPreview(el);
@@ -314,6 +324,12 @@ function ensureOverlay() {
   el.querySelector('#chatCallMicSelect')?.addEventListener('change', () => { void applySelectedMic(); });
   el.querySelector('#chatCallSpeakerSelect')?.addEventListener('change', () => { void applySelectedSpeaker(); });
   el.querySelector('#chatCallCamSelect')?.addEventListener('change', () => { void applySelectedCamera(); });
+  const picture = el.querySelector('#chatCallPicture');
+  if (picture) {
+    picture.value = pictureChoice();
+    picture.addEventListener('change', () => { void applyPictureChoice(picture.value); });
+  }
+  paintPictureHint();
   return el;
 }
 
@@ -770,16 +786,115 @@ function videoLinkIsTight() {
   return effective === 'slow-2g' || effective === '2g' || effective === '3g';
 }
 
+const PICTURE_KEY = 'aird.call.picture';
+
+function pictureChoice() {
+  try {
+    const saved = localStorage.getItem(PICTURE_KEY);
+    if (saved === 'saver' || saved === 'clear' || saved === 'sharp') return saved;
+  } catch { /* private mode */ }
+  return 'auto';
+}
+
+function preferredVideoCodec() {
+  const caps = globalThis.RTCRtpSender?.getCapabilities?.('video')?.codecs || [];
+  const has = (name) => caps.some((item) => String(item.mimeType || '').toLowerCase() === `video/${name}`);
+  const phone = globalThis.matchMedia('(max-width: 1023px)').matches;
+  if (!phone && has('av1')) return 'av1';
+  if (has('vp9')) return 'vp9';
+  if (has('vp8')) return 'vp8';
+  return 'h264';
+}
+
+const RUNGS = [
+  { height: 720, fps: 24, bitrate: 1100000 },
+  { height: 540, fps: 18, bitrate: 600000 },
+  { height: 360, fps: 15, bitrate: 320000 },
+  { height: 270, fps: 12, bitrate: 180000 },
+  { height: 180, fps: 8, bitrate: 90000 },
+];
+
+let adaptTimer = 0;
+let adaptRung = 0;
+let appliedRung = -1;
+let badStreak = 0;
+let goodStreak = 0;
+let linkQuality = 'unknown';
+let linkWatchBound = false;
+
+function captureCeiling() {
+  const phone = globalThis.matchMedia('(max-width: 1023px)').matches;
+  return phone ? { width: 960, height: 540 } : { width: 1280, height: 720 };
+}
+
+function rungForHeight(height) {
+  let index = 0;
+  let gap = Infinity;
+  RUNGS.forEach((rung, i) => {
+    const diff = Math.abs(rung.height - height);
+    if (diff < gap) {
+      gap = diff;
+      index = i;
+    }
+  });
+  const ceiling = captureCeiling().height;
+  while (RUNGS[index].height > ceiling && index < RUNGS.length - 1) index += 1;
+  return index;
+}
+
+function startRungIndex() {
+  if (videoLinkIsTight()) return rungForHeight(270);
+  if (globalThis.matchMedia('(max-width: 1023px)').matches) return rungForHeight(360);
+  return rungForHeight(720);
+}
+
 function videoCallProfile() {
-  const mobile = globalThis.matchMedia('(max-width: 1023px)').matches;
-  if (videoLinkIsTight()) return { width: 960, height: 540, maxBitrate: 900000, maxFramerate: 15 };
-  if (mobile) return { width: 960, height: 540, maxBitrate: 1200000, maxFramerate: 20 };
-  return { width: 1280, height: 720, maxBitrate: 2000000, maxFramerate: 24 };
+  const codec = preferredVideoCodec();
+  const choice = pictureChoice();
+  if (choice === 'saver') {
+    return { width: 640, height: 360, maxBitrate: 280000, maxFramerate: 12, degradation: 'maintain-framerate', codec };
+  }
+  if (choice === 'clear') {
+    return { width: 960, height: 540, maxBitrate: 700000, maxFramerate: 20, degradation: 'balanced', codec };
+  }
+  if (choice === 'sharp') {
+    return { width: 1280, height: 720, maxBitrate: 1500000, maxFramerate: 24, degradation: 'balanced', codec };
+  }
+  const ceiling = captureCeiling();
+  const rung = RUNGS[startRungIndex()];
+  return {
+    width: ceiling.width,
+    height: ceiling.height,
+    maxBitrate: rung.bitrate,
+    maxFramerate: rung.fps,
+    scale: Math.max(1, ceiling.height / rung.height),
+    degradation: rung.height <= 360 ? 'maintain-framerate' : 'balanced',
+    codec,
+    showHeight: rung.height,
+  };
 }
 
 function activeVideoProfile() {
-  if (!videoProfile) videoProfile = videoCallProfile();
+  videoProfile = videoCallProfile();
   return videoProfile;
+}
+
+function shownProfile() {
+  const profile = videoCallProfile();
+  if (pictureChoice() !== 'auto') return profile;
+  const rung = RUNGS[Math.max(0, Math.min(adaptRung || startRungIndex(), RUNGS.length - 1))];
+  return { ...profile, showHeight: rung.height, maxBitrate: rung.bitrate, maxFramerate: rung.fps };
+}
+
+function pictureHint(profile) {
+  const kbps = Math.round(profile.maxBitrate / 1000);
+  const body = `${profile.showHeight || profile.height}p · ${profile.maxFramerate} fps · ${String(profile.codec).toUpperCase()} · ${kbps} kbps`;
+  return pictureChoice() === 'auto' && adaptTimer ? `Adapting · ${body}` : body;
+}
+
+function paintPictureHint() {
+  const hint = document.getElementById('chatCallPictureHint');
+  if (hint) hint.textContent = pictureHint(shownProfile());
 }
 
 function videoCaptureOptions(profile, cameraId) {
@@ -790,14 +905,202 @@ function videoCaptureOptions(profile, cameraId) {
 }
 
 function videoPublishOptions(profile) {
-  const encoding = { maxBitrate: profile.maxBitrate, maxFramerate: profile.maxFramerate };
+  const encoding = {
+    maxBitrate: profile.maxBitrate,
+    maxFramerate: profile.maxFramerate,
+  };
+  if (profile.scale > 1.05) encoding.scaleResolutionDownBy = profile.scale;
+  const codec = profile.codec || 'vp9';
+  const layered = codec === 'vp9' || codec === 'av1';
   return {
     simulcast: false,
-    videoCodec: 'h264',
-    backupCodec: { codec: 'vp8', simulcast: false, encoding },
-    degradationPreference: 'maintain-resolution',
+    videoCodec: codec,
+    ...(layered ? { scalabilityMode: 'L1T3' } : {}),
+    backupCodec: { codec: codec === 'vp8' ? 'h264' : 'vp8', simulcast: false, encoding },
+    degradationPreference: profile.degradation || 'balanced',
     videoEncoding: encoding,
   };
+}
+
+function markCameraMotion(live) {
+  live?.localParticipant?.videoTrackPublications?.forEach((pub) => {
+    const track = pub.track?.mediaStreamTrack;
+    if (track) track.contentHint = 'motion';
+  });
+}
+
+async function publishCamera(live, profile) {
+  const cameraId = document.getElementById('chatCallCamSelect')?.value || preferredDeviceId('videoinput');
+  const capture = videoCaptureOptions(profile, cameraId);
+  const publish = videoPublishOptions(profile);
+  try {
+    await live.localParticipant.setCameraEnabled(true, capture, publish);
+  } catch {
+    await live.localParticipant.setCameraEnabled(true, videoCaptureOptions(profile), publish);
+  }
+  markCameraMotion(live);
+  live.localParticipant.videoTrackPublications.forEach((pub) => {
+    if (pub.track) attachVideoTrack(pub.track, live.localParticipant);
+  });
+  startAdapt(live);
+}
+
+async function applyPictureChoice(choice) {
+  const next = choice === 'saver' || choice === 'clear' || choice === 'sharp' ? choice : 'auto';
+  try { localStorage.setItem(PICTURE_KEY, next); } catch { /* ignore */ }
+  const profile = activeVideoProfile();
+  paintPictureHint();
+  const live = room;
+  if (!live?.localParticipant?.isCameraEnabled) return;
+  try {
+    await live.localParticipant.setCameraEnabled(false);
+    await publishCamera(live, profile);
+  } catch (err) {
+    setStatus(String(err?.message || 'Could not change picture'));
+  }
+}
+
+function cameraSender(live) {
+  let sender = null;
+  live?.localParticipant?.videoTrackPublications?.forEach((pub) => {
+    const next = pub.track?.sender;
+    if (!next) return;
+    if (pub.source === 'camera') sender = next;
+    else if (!sender) sender = next;
+  });
+  return sender;
+}
+
+async function readLink(sender) {
+  const report = await sender.getStats();
+  let loss = 0;
+  let rtt = 0;
+  let available = 0;
+  let limited = '';
+  report.forEach((stat) => {
+    const video = stat.kind === 'video' || stat.mediaType === 'video';
+    if (stat.type === 'remote-inbound-rtp' && video) {
+      if (typeof stat.fractionLost === 'number') loss = Math.max(loss, stat.fractionLost);
+      if (typeof stat.roundTripTime === 'number') rtt = Math.max(rtt, stat.roundTripTime);
+    }
+    if (stat.type === 'outbound-rtp' && video && stat.qualityLimitationReason) {
+      limited = stat.qualityLimitationReason;
+    }
+    if (stat.type === 'candidate-pair' && stat.state === 'succeeded' && (stat.nominated || stat.selected)) {
+      if (typeof stat.availableOutgoingBitrate === 'number') {
+        available = Math.max(available, stat.availableOutgoingBitrate);
+      }
+    }
+  });
+  return { loss, rtt, available, limited };
+}
+
+function linkIsWorse(sample) {
+  if (linkQuality === 'poor' || linkQuality === 'lost') return true;
+  if (sample.loss > 0.06 || sample.rtt > 0.4) return true;
+  if (sample.limited === 'bandwidth') return true;
+  const rung = RUNGS[adaptRung];
+  if (sample.available > 0 && rung && sample.available < rung.bitrate * 0.85) return true;
+  return videoLinkIsTight() && adaptRung < rungForHeight(360);
+}
+
+function linkIsBetter(sample) {
+  if (linkQuality === 'poor' || linkQuality === 'lost' || videoLinkIsTight()) return false;
+  if (sample.loss > 0.02 || sample.rtt > 0.25 || sample.limited === 'bandwidth') return false;
+  const higher = RUNGS[adaptRung - 1];
+  if (!higher) return false;
+  if (higher.height > captureCeiling().height) return false;
+  if (sample.available > 0 && sample.available < higher.bitrate * 1.35) return false;
+  return true;
+}
+
+async function applyRung(live, index) {
+  const ceiling = captureCeiling().height;
+  let next = Math.max(0, Math.min(RUNGS.length - 1, index));
+  while (RUNGS[next].height > ceiling && next < RUNGS.length - 1) next += 1;
+  if (next === appliedRung) return;
+  const sender = cameraSender(live);
+  if (!sender?.getParameters) return;
+  const rung = RUNGS[next];
+  const params = sender.getParameters();
+  if (!params.encodings?.[0]) return;
+  params.encodings[0].maxBitrate = rung.bitrate;
+  params.encodings[0].maxFramerate = rung.fps;
+  params.encodings[0].scaleResolutionDownBy = Math.max(1, ceiling / rung.height);
+  params.degradationPreference = rung.height <= 360 ? 'maintain-framerate' : 'balanced';
+  await sender.setParameters(params);
+  appliedRung = next;
+  adaptRung = next;
+  paintPictureHint();
+}
+
+async function adaptTick(live) {
+  if (room !== live || pictureChoice() !== 'auto') {
+    stopAdapt();
+    return;
+  }
+  if (!live.localParticipant?.isCameraEnabled) return;
+  const sender = cameraSender(live);
+  if (!sender?.getStats) return;
+  let sample;
+  try {
+    sample = await readLink(sender);
+  } catch {
+    return;
+  }
+  if (linkIsWorse(sample)) {
+    badStreak += 1;
+    goodStreak = 0;
+    if (badStreak >= 1 && adaptRung < RUNGS.length - 1) {
+      badStreak = 0;
+      await applyRung(live, adaptRung + 1).catch(() => {});
+    }
+  } else if (linkIsBetter(sample)) {
+    goodStreak += 1;
+    badStreak = 0;
+    if (goodStreak >= 4 && adaptRung > 0) {
+      goodStreak = 0;
+      await applyRung(live, adaptRung - 1).catch(() => {});
+    }
+  } else {
+    badStreak = 0;
+    goodStreak = 0;
+  }
+}
+
+function watchLinkChanges() {
+  const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (!conn || linkWatchBound) return;
+  linkWatchBound = true;
+  conn.addEventListener('change', () => {
+    if (!room || pictureChoice() !== 'auto') return;
+    if (videoLinkIsTight()) badStreak = 2;
+    else goodStreak = 4;
+    void adaptTick(room);
+  });
+}
+
+function stopAdapt() {
+  if (adaptTimer) clearInterval(adaptTimer);
+  adaptTimer = 0;
+  badStreak = 0;
+  goodStreak = 0;
+}
+
+function startAdapt(live) {
+  const keep = Boolean(adaptTimer) && pictureChoice() === 'auto';
+  stopAdapt();
+  if (pictureChoice() !== 'auto' || !live?.localParticipant?.isCameraEnabled) {
+    paintPictureHint();
+    return;
+  }
+  if (!keep) {
+    adaptRung = startRungIndex();
+    appliedRung = -1;
+  }
+  watchLinkChanges();
+  adaptTimer = setInterval(() => { void adaptTick(live); }, 2000);
+  paintPictureHint();
 }
 
 async function setCallMode(mode) {
@@ -810,20 +1113,10 @@ async function setCallMode(mode) {
   try {
     if (next === 'video') {
       await ensureMediaPermission('video');
-      const profile = activeVideoProfile();
-      const cameraId = document.getElementById('chatCallCamSelect')?.value || preferredDeviceId('videoinput');
-      const capture = videoCaptureOptions(profile, cameraId);
-      const publish = videoPublishOptions(profile);
-      try {
-        await live.localParticipant.setCameraEnabled(true, capture, publish);
-      } catch {
-        await live.localParticipant.setCameraEnabled(true, videoCaptureOptions(profile), publish);
-      }
-      live.localParticipant.videoTrackPublications.forEach((pub) => {
-        if (pub.track) attachVideoTrack(pub.track, live.localParticipant);
-      });
+      await publishCamera(live, activeVideoProfile());
       if (audioRoute !== 'speaker') applyAudioRoute('speaker', { toast: true });
     } else {
+      stopAdapt();
       await live.localParticipant.setCameraEnabled(false);
       clearLocalVideo();
     }
@@ -846,6 +1139,7 @@ function applyRemoteCallMode(mode) {
   }
   activeMode = next;
   if (next === 'audio') {
+    stopAdapt();
     const live = room;
     if (live?.localParticipant?.isCameraEnabled) {
       void live.localParticipant.setCameraEnabled(false);
@@ -1371,7 +1665,7 @@ async function joinSession(session, opts = {}) {
   const profile = videoProfile;
   room = new Room({
     disconnectOnPageLeave: false,
-    adaptiveStream: false,
+    adaptiveStream: true,
     dynacast: true,
     audioCaptureDefaults: {
       echoCancellation: true,
@@ -1380,6 +1674,14 @@ async function joinSession(session, opts = {}) {
     },
     videoCaptureDefaults: videoCaptureOptions(profile),
     publishDefaults: videoPublishOptions(profile),
+  });
+  room.on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
+    if (!participant?.isLocal) return;
+    linkQuality = String(quality || 'unknown');
+    if ((linkQuality === 'poor' || linkQuality === 'lost') && pictureChoice() === 'auto') {
+      badStreak = 2;
+      void adaptTick(room);
+    }
   });
   room.on(RoomEvent.TrackSubscribed, (track, _pub, participant) => {
     if (track.kind === 'video') attachVideoTrack(track, participant);
@@ -1466,18 +1768,7 @@ async function joinSession(session, opts = {}) {
   await applySavedAudioDevices();
   paintPeopleNames();
   if (activeMode === 'video') {
-    const cameraId = preferredDeviceId('videoinput');
-    const capture = videoCaptureOptions(profile, cameraId);
-    const publish = videoPublishOptions(profile);
-    try {
-      await current.localParticipant.setCameraEnabled(true, capture, publish);
-    } catch {
-      await current.localParticipant.setCameraEnabled(true, videoCaptureOptions(profile), publish);
-    }
-    if (room !== current) return;
-    current.localParticipant.videoTrackPublications.forEach((pub) => {
-      if (pub.track) attachVideoTrack(pub.track, current.localParticipant);
-    });
+    await publishCamera(current, profile);
   }
   syncCallModeUi();
 }
@@ -1550,6 +1841,9 @@ async function endLocal(message, notify) {
   const current = room;
   room = null;
   videoProfile = null;
+  stopAdapt();
+  appliedRung = -1;
+  linkQuality = 'unknown';
   stopMeters();
   clearVideos();
   clearRemoteAudio();
@@ -1578,8 +1872,12 @@ async function toggleCamera() {
   const live = room;
   if (!live?.localParticipant) return;
   const enabled = live.localParticipant.isCameraEnabled;
-  const cameraId = document.getElementById('chatCallCamSelect')?.value || preferredDeviceId('videoinput');
-  await live.localParticipant.setCameraEnabled(!enabled, cameraId ? { deviceId: cameraId } : undefined);
+  if (enabled) {
+    stopAdapt();
+    await live.localParticipant.setCameraEnabled(false);
+  } else {
+    await publishCamera(live, activeVideoProfile());
+  }
   const btn = document.getElementById('chatCallCamBtn');
   if (btn) {
     const on = !enabled;
