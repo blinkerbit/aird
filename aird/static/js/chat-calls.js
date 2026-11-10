@@ -759,6 +759,46 @@ function clearLocalVideo() {
 }
 
 let modeSwitching = false;
+let videoProfile = null;
+
+function videoLinkIsTight() {
+  const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (!conn) return false;
+  if (conn.saveData) return true;
+  if (String(conn.type || '') === 'cellular') return true;
+  const effective = String(conn.effectiveType || '');
+  return effective === 'slow-2g' || effective === '2g' || effective === '3g';
+}
+
+function videoCallProfile() {
+  const mobile = globalThis.matchMedia('(max-width: 1023px)').matches;
+  if (videoLinkIsTight()) return { width: 960, height: 540, maxBitrate: 900000, maxFramerate: 15 };
+  if (mobile) return { width: 960, height: 540, maxBitrate: 1200000, maxFramerate: 20 };
+  return { width: 1280, height: 720, maxBitrate: 2000000, maxFramerate: 24 };
+}
+
+function activeVideoProfile() {
+  if (!videoProfile) videoProfile = videoCallProfile();
+  return videoProfile;
+}
+
+function videoCaptureOptions(profile, cameraId) {
+  return {
+    resolution: { width: profile.width, height: profile.height, frameRate: profile.maxFramerate },
+    ...(cameraId ? { deviceId: cameraId } : {}),
+  };
+}
+
+function videoPublishOptions(profile) {
+  const encoding = { maxBitrate: profile.maxBitrate, maxFramerate: profile.maxFramerate };
+  return {
+    simulcast: false,
+    videoCodec: 'h264',
+    backupCodec: { codec: 'vp8', simulcast: false, encoding },
+    degradationPreference: 'maintain-resolution',
+    videoEncoding: encoding,
+  };
+}
 
 async function setCallMode(mode) {
   const live = room;
@@ -770,18 +810,14 @@ async function setCallMode(mode) {
   try {
     if (next === 'video') {
       await ensureMediaPermission('video');
-      const mobile = globalThis.matchMedia('(max-width: 1023px)').matches;
-      const { VideoPresets } = await loadLiveKit();
-      const preset = mobile ? VideoPresets.h540 : VideoPresets.h720;
+      const profile = activeVideoProfile();
       const cameraId = document.getElementById('chatCallCamSelect')?.value || preferredDeviceId('videoinput');
-      const capture = {
-        resolution: preset.resolution,
-        ...(cameraId ? { deviceId: cameraId } : {}),
-      };
+      const capture = videoCaptureOptions(profile, cameraId);
+      const publish = videoPublishOptions(profile);
       try {
-        await live.localParticipant.setCameraEnabled(true, capture);
+        await live.localParticipant.setCameraEnabled(true, capture, publish);
       } catch {
-        await live.localParticipant.setCameraEnabled(true, { resolution: preset.resolution });
+        await live.localParticipant.setCameraEnabled(true, videoCaptureOptions(profile), publish);
       }
       live.localParticipant.videoTrackPublications.forEach((pub) => {
         if (pub.track) attachVideoTrack(pub.track, live.localParticipant);
@@ -1310,7 +1346,7 @@ async function joinSession(session, opts = {}) {
   document.documentElement.dataset.airdCall = '1';
   const { url, token, mode } = session;
   const keepRing = Boolean(opts.keepRing);
-  const { Room, RoomEvent, VideoPresets } = await loadLiveKit();
+  const { Room, RoomEvent } = await loadLiveKit();
   activeMode = mode === 'video' ? 'video' : 'audio';
   notifyAndroidCall(true, activeMode);
   if (!keepRing) {
@@ -1331,24 +1367,19 @@ async function joinSession(session, opts = {}) {
   if (!keepRing) setStatus('Joining…');
   paintPeopleNames();
   if (!meterRaf) meterRaf = requestAnimationFrame(paintMeters);
-  const mobile = globalThis.matchMedia('(max-width: 1023px)').matches;
+  videoProfile = videoCallProfile();
+  const profile = videoProfile;
   room = new Room({
     disconnectOnPageLeave: false,
     adaptiveStream: false,
-    dynacast: false,
+    dynacast: true,
     audioCaptureDefaults: {
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: true,
     },
-    videoCaptureDefaults: {
-      resolution: mobile ? VideoPresets.h540.resolution : VideoPresets.h720.resolution,
-    },
-    publishDefaults: {
-      simulcast: false,
-      videoCodec: 'vp8',
-      backupCodec: false,
-    },
+    videoCaptureDefaults: videoCaptureOptions(profile),
+    publishDefaults: videoPublishOptions(profile),
   });
   room.on(RoomEvent.TrackSubscribed, (track, _pub, participant) => {
     if (track.kind === 'video') attachVideoTrack(track, participant);
@@ -1435,16 +1466,13 @@ async function joinSession(session, opts = {}) {
   await applySavedAudioDevices();
   paintPeopleNames();
   if (activeMode === 'video') {
-    const preset = mobile ? VideoPresets.h540 : VideoPresets.h720;
     const cameraId = preferredDeviceId('videoinput');
-    const capture = {
-      resolution: preset.resolution,
-      ...(cameraId ? { deviceId: cameraId } : {}),
-    };
+    const capture = videoCaptureOptions(profile, cameraId);
+    const publish = videoPublishOptions(profile);
     try {
-      await current.localParticipant.setCameraEnabled(true, capture);
+      await current.localParticipant.setCameraEnabled(true, capture, publish);
     } catch {
-      await current.localParticipant.setCameraEnabled(true, { resolution: preset.resolution });
+      await current.localParticipant.setCameraEnabled(true, videoCaptureOptions(profile), publish);
     }
     if (room !== current) return;
     current.localParticipant.videoTrackPublications.forEach((pub) => {
@@ -1521,6 +1549,7 @@ async function endLocal(message, notify) {
   if (notify && convId && was !== 'idle') signalCall('call_end', convId, endingId);
   const current = room;
   room = null;
+  videoProfile = null;
   stopMeters();
   clearVideos();
   clearRemoteAudio();

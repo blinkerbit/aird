@@ -103,9 +103,18 @@ def suggest(conn: sqlite3.Connection, username: str, kind: str, query: str) -> l
     if not table:
         return []
     needle = query.lower().strip()
-    rows = conn.execute(f"SELECT * FROM {table} ORDER BY rowid DESC LIMIT 300").fetchall()
     hits = []
+    seen: set[str] = set()
+    exact = _row_for(conn, kind, slug=needle) if needle else None
+    if exact is not None:
+        detail = _detail(conn, kind, exact["id"], username)
+        if detail:
+            hits.append(_public(kind, detail))
+            seen.add(str(detail.get("id") or ""))
+    rows = conn.execute(f"SELECT * FROM {table} ORDER BY rowid DESC LIMIT 300").fetchall()
     for row in rows:
+        if str(row["id"]) in seen:
+            continue
         detail = _detail(conn, kind, row["id"], username)
         if not detail:
             continue
@@ -114,6 +123,7 @@ def suggest(conn: sqlite3.Connection, username: str, kind: str, query: str) -> l
         if needle and needle not in slug and needle not in title:
             continue
         hits.append(_public(kind, detail))
+        seen.add(str(detail.get("id") or ""))
         if len(hits) >= 8:
             break
     return hits

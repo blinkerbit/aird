@@ -207,21 +207,28 @@ function composerShowsFocus() {
 export async function renderShelf(convId, me) {
   const shelf = document.getElementById('chatCollabShelf');
   if (!shelf) return;
+  const settle = (stuck) => {
+    if (stuck) requestAnimationFrame(() => globalThis.AirdChatThread?.end?.());
+  };
   if (!convId) {
+    const stuck = globalThis.AirdChatThread?.near?.();
     shelf.hidden = true;
     shelf.innerHTML = '';
+    settle(stuck);
     return;
   }
   let refs = [];
   try {
     const data = await apiJson(`/api/chat/conversations/${convId}/refs`);
-    refs = (data.refs || []).filter((ref) => ref.active !== false);
+    refs = (data.refs || []).filter((ref) => ref.active !== false && (ref.kind === 'list' || ref.kind === 'poll'));
   } catch {
     refs = [];
   }
+  const stuck = globalThis.AirdChatThread?.near?.();
   if (!composerShowsFocus() || !refs.length) {
     shelf.hidden = true;
     shelf.innerHTML = '';
+    settle(stuck);
     return;
   }
   shelf.hidden = false;
@@ -231,9 +238,11 @@ export async function renderShelf(convId, me) {
   shelf.querySelectorAll('button').forEach((btn) => {
     btn.addEventListener('click', () => {
       const ref = refs[Number(btn.dataset.i)];
-      if (ref) openArtifact(ref, me).catch((err) => alert(err.message));
+      if (!ref) return;
+      openArtifact(ref, me).catch((err) => alert(err.message));
     });
   });
+  settle(stuck);
 }
 
 export async function openMentionToken(token, me) {
@@ -243,7 +252,8 @@ export async function openMentionToken(token, me) {
   suppressed = '';
   const data = await apiJson(`/api/chat/collab-suggest?kind=${trig.kind}&q=${encodeURIComponent(trig.query)}`);
   suppressed = prev;
-  const item = (data.items || []).find((row) => row.slug === trig.query) || (data.items || [])[0];
+  const needle = String(trig.query || '').toLowerCase();
+  const item = (data.items || []).find((row) => String(row.slug || '').toLowerCase() === needle);
   if (!item) return;
   await openArtifact(item, me);
 }

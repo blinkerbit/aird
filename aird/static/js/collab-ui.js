@@ -369,8 +369,14 @@ async function deleteArtifact(path, label, onDelete) {
   if (onDelete) onDelete();
 }
 
-export function mountPoll(root, poll, { me, onChange, onDelete }) {
+export function mountPoll(root, poll, { me, onChange, onDelete, readOnly = false }) {
   const mine = poll.organizer === me;
+  const actions = readOnly ? '' : `<div class="collab-ribbon">
+      ${mine ? '<button type="button" class="btn btn-ghost btn-sm" data-act="edit">Edit</button>' : ''}
+      ${mine ? '<button type="button" class="btn btn-error btn-sm" data-act="delete">Delete</button>' : ''}
+      <button type="button" class="btn btn-ghost btn-sm" data-act="share">Add to chat</button>
+    </div>`;
+  const hint = readOnly || poll.active === false ? '' : `<p class="collab-hint">${poll.allow_multi ? 'Select any options, then vote.' : 'Choose one option.'}</p>`;
   root.innerHTML = `
     <h2 class="text-lg font-bold">${esc(poll.question)}</h2>
     <div class="collab-chips">
@@ -379,14 +385,10 @@ export function mountPoll(root, poll, { me, onChange, onDelete }) {
       ${stateChip('poll', poll)}
       ${poll.allow_multi ? '<span class="collab-chip">Multiple choice</span>' : ''}
     </div>
-    <div class="collab-ribbon">
-      ${mine ? '<button type="button" class="btn btn-ghost btn-sm" data-act="edit">Edit</button>' : ''}
-      ${mine ? '<button type="button" class="btn btn-error btn-sm" data-act="delete">Delete</button>' : ''}
-      <button type="button" class="btn btn-ghost btn-sm" data-act="share">Add to chat</button>
-    </div>
+    ${actions}
     <div class="collab-votes">${bars(poll)}</div>
-    <p class="collab-hint">${poll.allow_multi ? 'Select any options, then vote.' : 'Choose one option.'}</p>
-    ${poll.allow_multi && poll.active !== false ? '<button type="button" class="btn btn-primary btn-sm" data-act="vote">Save vote</button>' : ''}`;
+    ${hint}
+    ${!readOnly && poll.allow_multi && poll.active !== false ? '<button type="button" class="btn btn-primary btn-sm" data-act="vote">Save vote</button>' : ''}`;
   const selected = new Set((poll.options || []).filter((o) => o.mine).map((o) => o.id));
   root.querySelectorAll('[data-option]').forEach((btn) => {
     if (poll.active === false) {
@@ -432,16 +434,10 @@ export function mountList(root, list, { me, onChange, onDelete } = {}) {
   });
 }
 
-export function mountMeet(root, meet, { me, onChange, onDelete }) {
+export function mountMeet(root, meet, { me, onChange, onDelete, readOnly = false }) {
   const mine = meet.organizer === me;
   const link = `${location.origin}${meet.join_path || `/meet/${meet.slug}`}`;
-  root.innerHTML = `
-    <h2 class="text-lg font-bold">${esc(meet.title)}</h2>
-    <div class="collab-chips">
-      <span class="collab-chip">${visibilityChip(meet.visibility)}</span>
-      <span class="collab-chip">${meet.live ? expiresLabel(meet.expires_at) : 'Ended'}</span>
-    </div>
-    <div class="collab-ribbon">
+  const actions = readOnly ? '' : `<div class="collab-ribbon">
       ${meet.live ? `<a class="btn btn-primary btn-sm" href="${esc(meet.join_path)}">Join</a>` : ''}
       <button type="button" class="btn btn-ghost btn-sm" data-act="copy">Copy link</button>
       ${mine ? '<button type="button" class="btn btn-ghost btn-sm" data-act="edit">Edit</button>' : ''}
@@ -450,6 +446,13 @@ export function mountMeet(root, meet, { me, onChange, onDelete }) {
       ${mine && meet.live ? '<button type="button" class="btn btn-ghost btn-sm" data-act="end">End</button>' : ''}
     </div>
     <p class="collab-hint break-all">${esc(link)}</p>`;
+  root.innerHTML = `
+    <h2 class="text-lg font-bold">${esc(meet.title)}</h2>
+    <div class="collab-chips">
+      <span class="collab-chip">${visibilityChip(meet.visibility)}</span>
+      <span class="collab-chip">${meet.live ? expiresLabel(meet.expires_at) : 'Ended'}</span>
+    </div>
+    ${actions}`;
   root.querySelector('[data-act="copy"]')?.addEventListener('click', () => navigator.clipboard?.writeText(link));
   root.querySelector('[data-act="edit"]')?.addEventListener('click', async () => {
     const draft = await meetDialog(meet);
@@ -565,7 +568,7 @@ export async function hydrateCard(node, { me }) {
   if (!kind || !live) return;
   if (!id && node.dataset.slug) {
     const data = await apiJson(`/api/chat/collab-suggest?kind=${encodeURIComponent(kind)}&q=${encodeURIComponent(node.dataset.slug)}`);
-    const item = (data.items || []).find((row) => row.slug === node.dataset.slug) || (data.items || [])[0];
+    const item = (data.items || []).find((row) => String(row.slug || '').toLowerCase() === String(node.dataset.slug || '').toLowerCase());
     if (!item?.id) {
       live.innerHTML = `<p class="collab-hint">This ${esc(kind)} is not available.</p>`;
       return;
@@ -582,9 +585,11 @@ export async function hydrateCard(node, { me }) {
     };
     const apply = (next) => {
       markInactive(node, next);
-      if (kind === 'poll') mountPoll(live, next, { me, onChange: apply, onDelete: drop });
+      const readOnly = node.classList.contains('chat-collab-preview') && next.active === false && (kind === 'poll' || kind === 'meet');
+      node.classList.toggle('is-frozen', readOnly);
+      if (kind === 'poll') mountPoll(live, next, { me, onChange: apply, onDelete: drop, readOnly });
       else if (kind === 'list') mountList(live, next, { me, onChange: apply, onDelete: drop, inline: true });
-      else mountMeet(live, next, { me, onChange: apply, onDelete: drop });
+      else mountMeet(live, next, { me, onChange: apply, onDelete: drop, readOnly });
     };
     apply(data);
   } catch (err) {

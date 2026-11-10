@@ -15,5 +15,13 @@ rtc:
 room:
   auto_create: true
   empty_timeout: 300
+  # H.264 first. Clients request it; VP8 stays as the backup codec.
+  enabled_codecs:
+    - mime: audio/red
+    - mime: audio/opus
+    - mime: video/h264
+    - mime: video/vp8
+    - mime: video/vp9
+    - mime: video/av1
 
 # API keys are injected via LIVEKIT_KEYS in docker-compose (not committed).

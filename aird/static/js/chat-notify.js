@@ -248,6 +248,16 @@ import { setAppIconBadge } from './core/app-badge.js';
     if (!data?.type) return;
     if (data.type === 'chat_notify') {
       onNotify(data);
+    } else if (data.type === 'chat_request') {
+      const me = globalThis.__AIRD_CHAT_USER__ || '';
+      const fromMe = data.from && me && String(data.from) === String(me);
+      if (fromMe || !data.preview || !data.conversation_id || viewingConversation(data.conversation_id)) return;
+      showToast({
+        sender: data.from || 'Someone',
+        preview: data.preview,
+        conversation_id: data.conversation_id,
+        url: `/chat?c=${encodeURIComponent(data.conversation_id)}`,
+      });
     } else if (data.type === 'chat_message' || data.type === 'chat_message_deleted') {
       void refreshUnread();
     } else if (data.type === 'call_invite' || data.type === 'call_accept' || data.type === 'call_end' || data.type === 'call_decline' || data.type === 'call_missed' || data.type === 'call_answered') {

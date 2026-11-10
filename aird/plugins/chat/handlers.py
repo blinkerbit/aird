@@ -46,6 +46,7 @@ from aird.plugins.chat.notify import (
     dispatch_pin,
     dispatch_reaction,
     dispatch_receipt,
+    announce_chat_request,
     dispatch_chat_request,
     dispatch_e2e_key_ready,
 )
@@ -826,6 +827,10 @@ class ChatConversationsHandler(BaseHandler, XSRFTokenMixin):
         conv_id = _create_conversation_from_body(self, name, uid, body)
         if conv_id is None:
             return
+        try:
+            announce_chat_request(name, conv_id)
+        except Exception:
+            logger.debug("chat request announce failed", exc_info=True)
         convos = chat_db.list_conversations(self.db_conn, name)
         match = next((c for c in convos if c["id"] == conv_id), None)
         self.write({"conversation": match or {"id": conv_id}})
@@ -1579,6 +1584,10 @@ class ChatMembersHandler(BaseHandler, XSRFTokenMixin):
             self.set_status(400)
             self.write({"error": str(exc)})
             return
+        try:
+            announce_chat_request(name, conversation_id, targets=[str(rec.get("username") or "")])
+        except Exception:
+            logger.debug("chat request announce failed", exc_info=True)
         self.write({"member": rec, "conversation": chat_db.get_conversation(name, conversation_id)})
 
     @tornado.web.authenticated
@@ -1658,7 +1667,7 @@ class ChatRequestHandler(BaseHandler, XSRFTokenMixin):
             )
             delete_stored_conv_keys(names, conversation_id)
         try:
-            dispatch_chat_request(user_ids, conversation_id)
+            dispatch_chat_request(user_ids, conversation_id, actor=name)
         except Exception:
             logger.debug("chat request dispatch failed", exc_info=True)
         self.write({"ok": True, "conversation": result})

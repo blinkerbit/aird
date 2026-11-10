@@ -46,6 +46,16 @@ import {
   const qs = (sel) => document.querySelector(sel);
   const convList = qs('#chatConvList');
   const messagesEl = qs('#chatMessages');
+  let stickToEnd = true;
+  function threadNearEnd() {
+    if (!messagesEl) return true;
+    return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 96;
+  }
+  function scrollToEnd() {
+    if (!messagesEl || !stickToEnd) return;
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+  globalThis.AirdChatThread = { near: () => stickToEnd, end: scrollToEnd };
   const composer = qs('#chatComposer');
   const editor = qs('#chatEditor');
   const header = qs('#chatThreadHeader');
@@ -138,6 +148,9 @@ import {
   const selectedIds = new Set();
   let pressTimer = null;
   let pressId = '';
+  let pressOrigin = null;
+  let pressClaimed = false;
+  let suppressNextClick = false;
   const selectBar = qs('#chatSelectBar');
   const selectCountEl = qs('#chatSelectCount');
   const selectForwardBtn = qs('#chatSelectForward');
@@ -604,6 +617,12 @@ import {
     return esc(c.last_preview || 'No messages yet');
   }
 
+  function requestPill(c) {
+    if (c.request === 'incoming') return '<span class="chat-request-pill">Request</span>';
+    if (c.request === 'outgoing') return '<span class="chat-request-pill chat-request-pill--wait">Pending</span>';
+    return '';
+  }
+
   function handleConvItemClick(e) {
     e.preventDefault();
     runAsync(() => openConversation(e.currentTarget.dataset.id), 'openConversation');
@@ -645,7 +664,7 @@ import {
       const more = c.kind === 'dm' && c.peer_username
         ? `<details class="chat-conv-more"><summary aria-label="More">⋯</summary><div class="chat-head-menu"><button type="button" data-enhanced-peer="${esc(c.peer_username)}">Enhanced Secure Chat</button></div></details>`
         : '';
-      return `<li class="chat-conv-row"><a href="#" class="chat-conv-item${active}" data-id="${esc(c.id)}">${avatarHtml(title)}${dot}<span class="chat-conv-main"><span class="chat-conv-top"><span class="chat-conv-name">${esc(title)}${mute}</span><span class="chat-conv-meta">${when}${badge}</span></span><span class="chat-conv-preview">${preview}</span></span></a>${more}</li>`;
+      return `<li class="chat-conv-row"><a href="#" class="chat-conv-item${active}${c.request ? ' is-request' : ''}" data-id="${esc(c.id)}">${avatarHtml(title)}${dot}<span class="chat-conv-main"><span class="chat-conv-top"><span class="chat-conv-name">${esc(title)}${mute}</span><span class="chat-conv-meta">${when}${badge}</span></span><span class="chat-conv-preview">${requestPill(c)}${preview}</span></span></a>${more}</li>`;
     }).join('');
     convList.querySelectorAll('.chat-conv-item[data-id]').forEach((el) => {
       el.addEventListener('click', handleConvItemClick);
@@ -1316,6 +1335,7 @@ import {
         <summary aria-label="More">⋯</summary>
         <div class="chat-msg-more-list">
           <button type="button" data-act="reply" data-id="${id}">Reply</button>
+          <button type="button" data-act="copy" data-id="${id}">Copy</button>
           <button type="button" data-act="forward" data-id="${id}">Forward</button>
           <button type="button" data-act="select" data-id="${id}">Select</button>
           <button type="button" data-act="pin" data-id="${id}">Pin</button>
@@ -1549,7 +1569,7 @@ import {
       box.dataset.boundUi = '1';
       box.addEventListener('change', () => syncAttBulk(box.closest('[data-att-stack]')));
     });
-    scope.querySelectorAll('[data-act]').forEach((btn) => {
+    scope.querySelectorAll('.chat-hover-bar [data-act]').forEach((btn) => {
       if (btn.dataset.boundUi === '1') return;
       btn.dataset.boundUi = '1';
       btn.addEventListener('click', () => onMsgAction(btn.dataset.act, btn.dataset.id));
@@ -1647,7 +1667,9 @@ import {
   }
 
   function onMsgAction(act, id) {
+    closeMessageMenus();
     if (act === 'reply') setReply(id);
+    else if (act === 'copy') copyMessage(id);
     else if (act === 'delete') deleteMessage(id).catch((e) => alert(e.message));
     else if (act === 'edit') editMessage(id).catch((e) => alert(e.message));
     else if (act === 'pin') pinMessage(id).catch((e) => alert(e.message));
@@ -1708,6 +1730,32 @@ import {
       pressTimer = null;
     }
     pressId = '';
+    pressOrigin = null;
+  }
+
+  function closeMessageMenus() {
+    messagesEl?.querySelectorAll('.chat-msg-row.is-menu').forEach((el) => {
+      el.classList.remove('is-menu');
+      const open = el.querySelector('.chat-msg-more[open]');
+      if (open) open.open = false;
+    });
+  }
+
+  function openMessageMenu(row) {
+    if (!row) return;
+    closeMessageMenus();
+    row.classList.add('is-menu');
+    const more = row.querySelector('.chat-msg-more');
+    if (more) more.open = true;
+  }
+
+  function copyMessage(id) {
+    const row = findMessageRow(id);
+    const text = (row?.querySelector('.chat-msg-text')?.innerText
+      || row?.querySelector('.aird-chat-bubble-body')?.innerText
+      || '').trim();
+    if (!text || !navigator.clipboard?.writeText) return;
+    navigator.clipboard.writeText(text).catch(() => {});
   }
 
   function setReply(id) {
@@ -1900,7 +1948,7 @@ import {
     }
     messagesEl.insertAdjacentHTML('beforeend', messageHtml(msg));
     bindMessageUi(messagesEl.lastElementChild);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    scrollToEnd();
   }
 
   async function replaceMessage(msg) {
@@ -1938,40 +1986,48 @@ import {
     bindMessageUi(messagesEl.lastElementChild);
   }
 
+  function threadFits() {
+    return !!messagesEl && messagesEl.scrollHeight <= messagesEl.clientHeight + 1;
+  }
+
   async function loadOlderMessages() {
     if (!activeConvId || !messagesEl || loadingOlder || !hasOlder) return;
-    const beforeId = firstMessageId();
-    if (!beforeId) return;
     loadingOlder = true;
-    const prevH = messagesEl.scrollHeight;
-    const prevTop = messagesEl.scrollTop;
     try {
-      const data = await api(`/api/chat/conversations/${activeConvId}/messages?before_id=${encodeURIComponent(beforeId)}&limit=50`);
-      const msgs = data.messages || [];
-      hasOlder = msgs.length >= 50;
-      if (!msgs.length) return;
-      for await (const m of msgs) await prepareMessage(m);
-      const firstDay = messagesEl.querySelector('.chat-day');
-      const frag = document.createElement('div');
-      let prevDay = '';
-      msgs.forEach((m) => {
-        tagMine(m);
-        const day = dayKey(m.created_at);
-        if (day && day !== prevDay) {
-          frag.insertAdjacentHTML('beforeend', dateChipHtml(m.created_at));
-          prevDay = day;
-        }
-        frag.insertAdjacentHTML('beforeend', messageHtml(m));
-      });
-      if (firstDay?.dataset.day === prevDay) firstDay.remove();
-      const nodes = [...frag.childNodes];
-      const first = messagesEl.firstChild;
-      if (first) first.before(...nodes);
-      else nodes.forEach((n) => messagesEl.append(n));
-      nodes.forEach((n) => {
-        if (n.nodeType === 1 && n.matches?.('[data-msg-id]')) bindMessageUi(n);
-      });
-      messagesEl.scrollTop = messagesEl.scrollHeight - prevH + prevTop;
+      let guard = 0;
+      while (guard < 30 && hasOlder && messagesEl.scrollTop < 64 && (!stickToEnd || threadFits())) {
+        const beforeId = firstMessageId();
+        if (!beforeId) break;
+        guard += 1;
+        const prevH = messagesEl.scrollHeight;
+        const prevTop = messagesEl.scrollTop;
+        const data = await api(`/api/chat/conversations/${activeConvId}/messages?before_id=${encodeURIComponent(beforeId)}&limit=50`);
+        const msgs = data.messages || [];
+        hasOlder = msgs.length >= 50;
+        if (!msgs.length) break;
+        for await (const m of msgs) await prepareMessage(m);
+        const firstDay = messagesEl.querySelector('.chat-day');
+        const frag = document.createElement('div');
+        let prevDay = '';
+        msgs.forEach((m) => {
+          tagMine(m);
+          const day = dayKey(m.created_at);
+          if (day && day !== prevDay) {
+            frag.insertAdjacentHTML('beforeend', dateChipHtml(m.created_at));
+            prevDay = day;
+          }
+          frag.insertAdjacentHTML('beforeend', messageHtml(m));
+        });
+        if (firstDay?.dataset.day === prevDay) firstDay.remove();
+        const nodes = [...frag.childNodes];
+        const first = messagesEl.firstChild;
+        if (first) first.before(...nodes);
+        else nodes.forEach((n) => messagesEl.append(n));
+        nodes.forEach((n) => {
+          if (n.nodeType === 1 && n.matches?.('[data-msg-id]')) bindMessageUi(n);
+        });
+        messagesEl.scrollTop = messagesEl.scrollHeight - prevH + prevTop;
+      }
     } catch (err) {
       console.debug('load older failed', err);
     } finally {
@@ -1980,6 +2036,7 @@ import {
   }
 
   async function openConversation(convId) {
+    stickToEnd = true;
     window.AirdEnhancedSecure?.closeView?.();
     enhancedSecureView = false;
     setSelectMode(false);
@@ -2032,6 +2089,7 @@ import {
     if (!msgs.length) showEmptyThread();
     else msgs.forEach((m) => paintMessage(m));
     if (msgs.length) messagesEl.scrollTop = messagesEl.scrollHeight;
+    if (hasOlder && threadFits()) runAsync(() => loadOlderMessages(), 'loadOlderMessages');
     if (convFilter) runSearch(searchInput?.value || convFilter);
     const last = msgs.toReversed().find((msg) => !msg._e2e || msg._decryptOk);
     if (last) markRead(last);
@@ -2361,17 +2419,27 @@ import {
       const convId = data.conversation_id;
       try {
         await loadConversations();
+        if (!convId || convId !== activeConvId || enhancedSecureView) return;
         const conv = conversations.find((c) => c.id === convId);
-        if (conv && !conv.request) {
+        if (!conv) {
+          activeConvId = '';
+          hideRequest();
+          composer?.classList.add('hidden');
+          setThreadHeader(null);
+          clearMessagesView();
+          showEmptyThread();
+          setMobileView('list');
+          history.replaceState(null, '', location.pathname);
+          return;
+        }
+        if (!conv.request) {
           try {
             await e2eReady(convId);
           } catch (err) {
             console.debug('e2e ready after accept failed', err);
           }
         }
-        if (convId && convId === activeConvId && !enhancedSecureView) {
-          runAsync(() => openConversation(convId), 'openConversation');
-        }
+        await openConversation(convId);
       } catch (err) {
         console.debug('chat request refresh failed', err);
       }
@@ -2830,7 +2898,7 @@ import {
       row.dataset.convId = state.convId;
       row.innerHTML = `${avatarHtml(me)}<div class="chat-msg-stack"><div class="aird-chat-bubble aird-chat-bubble--mine"><div class="aird-chat-bubble-body chat-upload-slot"></div></div></div>`;
       messagesEl.appendChild(row);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
+      scrollToEnd();
     }
     row.dataset.convId = state.convId;
     paintUploadSlot(row.querySelector('.chat-upload-slot'), label, pct, detail);
@@ -3917,7 +3985,10 @@ import {
     void jumpTo(btn.dataset.jump);
   });
   messagesEl?.addEventListener('scroll', () => {
-    if (messagesEl.scrollTop < 64) {
+    if (!messagesEl) return;
+    closeMessageMenus();
+    stickToEnd = threadNearEnd();
+    if (messagesEl.scrollTop < 64 && (!stickToEnd || threadFits())) {
       runAsync(() => loadOlderMessages(), 'loadOlderMessages');
     }
   });
@@ -3961,31 +4032,70 @@ import {
     toggleSelected(box.dataset.selectId, box.checked);
   });
   messagesEl?.addEventListener('click', (e) => {
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      pressClaimed = false;
+      if (!e.target.closest('.chat-hover-bar')) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+    }
     if (!selectMode) return;
-    if (e.target.closest('a, button, input, summary, details, .chat-att-pick, .chat-att-menu, .chat-att-bulk, .chat-msg-image, .chat-react-chip, .chat-react-emoji, .chat-quote')) return;
+    if (e.target.closest('.chat-hover-bar, .chat-msg-select')) return;
     const row = e.target.closest('.chat-msg-row[data-msg-id]');
     if (!row) return;
     e.preventDefault();
+    e.stopPropagation();
     toggleSelected(row.dataset.msgId);
-  });
+  }, true);
+  function messagePressRow(target) {
+    if (target?.closest?.('.chat-hover-bar, .chat-msg-select, .chat-voice-seek')) return null;
+    const row = target?.closest?.('.chat-msg-row[data-msg-id]');
+    if (!row || row.classList.contains('chat-upload-row')) return null;
+    return row;
+  }
+  function finishPress() {
+    if (pressClaimed) suppressNextClick = true;
+    clearPressTimer();
+  }
   messagesEl?.addEventListener('pointerdown', (e) => {
+    suppressNextClick = false;
     if (selectMode || e.button) return;
-    if (e.target.closest('a, button, input, summary, details, .chat-att-pick, .chat-att-menu, .chat-att-bulk')) return;
-    const row = e.target.closest('.chat-msg-row[data-msg-id]');
+    const row = messagePressRow(e.target);
     if (!row) return;
     pressId = row.dataset.msgId || '';
+    pressOrigin = { x: e.clientX, y: e.clientY };
+    pressClaimed = false;
     clearTimeout(pressTimer);
     pressTimer = setTimeout(() => {
-      if (pressId) enterSelectMode(pressId);
-      clearPressTimer();
+      const id = pressId;
+      pressTimer = null;
+      const live = findMessageRow(id);
+      if (!live || selectMode) return;
+      pressClaimed = true;
+      openMessageMenu(live);
     }, 480);
-  });
-  messagesEl?.addEventListener('pointerup', clearPressTimer);
-  messagesEl?.addEventListener('pointercancel', clearPressTimer);
-  messagesEl?.addEventListener('pointerleave', clearPressTimer);
+  }, true);
+  messagesEl?.addEventListener('pointerup', finishPress);
+  messagesEl?.addEventListener('pointercancel', finishPress);
+  messagesEl?.addEventListener('pointerleave', finishPress);
   messagesEl?.addEventListener('pointermove', (e) => {
-    if (!pressTimer) return;
-    if (Math.abs(e.movementX) + Math.abs(e.movementY) > 8) clearPressTimer();
+    if (!pressTimer || !pressOrigin) return;
+    if (Math.hypot(e.clientX - pressOrigin.x, e.clientY - pressOrigin.y) > 10) clearPressTimer();
+  });
+  messagesEl?.addEventListener('contextmenu', (e) => {
+    const row = messagePressRow(e.target);
+    if (!row || selectMode) return;
+    e.preventDefault();
+    pressClaimed = true;
+    suppressNextClick = true;
+    clearPressTimer();
+    openMessageMenu(row);
+  });
+  document.addEventListener('pointerdown', (e) => {
+    if (e.target.closest?.('.chat-hover-bar')) return;
+    closeMessageMenus();
   });
 
   bindDropZone(qs('.chat-thread-panel'), {

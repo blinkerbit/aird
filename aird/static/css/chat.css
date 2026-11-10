@@ -393,6 +393,24 @@ body.chat-page {
   color: color-mix(in oklch, var(--color-base-content) 70%, transparent);
 }
 
+.chat-request-pill {
+  display: inline-block;
+  margin-right: 0.35rem;
+  padding: 0 0.35rem;
+  border-radius: 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--color-primary-content, #fff);
+  background: var(--color-primary);
+  vertical-align: baseline;
+}
+
+.chat-request-pill--wait {
+  color: var(--color-base-content);
+  background: var(--color-base-300);
+}
+
 .chat-thread-head {
   display: flex;
   align-items: center;
@@ -1937,6 +1955,7 @@ body.chat-page {
 
 .chat-msg-row:hover .chat-hover-bar,
 .chat-msg-row:focus-within .chat-hover-bar,
+.chat-msg-row.is-menu .chat-hover-bar,
 .chat-hover-bar:has(details[open]) {
   display: inline-flex;
 }

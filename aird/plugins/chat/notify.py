@@ -167,11 +167,68 @@ def dispatch_e2e_need_key(username: str, conversation_id: str, actor_id: int) ->
     )
 
 
-def dispatch_chat_request(user_ids: list[int], conversation_id: str) -> None:
+def dispatch_chat_request(
+    user_ids: list[int], conversation_id: str, *, actor: str = ""
+) -> None:
+    payload = {"type": "chat_request", "conversation_id": conversation_id}
+    if actor:
+        payload["from"] = actor
+    get_chat_hub().broadcast_user_ids(user_ids, payload)
+
+
+def announce_chat_request(
+    actor: str, conversation_id: str, *, targets: list[str] | None = None
+) -> None:
+    """Tell every member a chat invite changed, and push people who still have to accept."""
+    conv = chat_db.get_conversation(actor, conversation_id)
+    if not conv:
+        return
+    members = list(conv.get("members") or [])
+    pending = [m for m in members if not int(m.get("accepted", 1))]
+    if targets is not None:
+        wanted = {str(name) for name in targets if name and str(name) != actor}
+        pending = [m for m in pending if str(m.get("username") or "") in wanted]
+    if not pending:
+        return
+    user_ids = [int(m["user_id"]) for m in members if m.get("user_id") is not None]
+    kind = conv.get("kind") or "dm"
+    title = (conv.get("title") or "").strip() or "a group"
+    preview = f"{actor} wants to chat." if kind == "dm" else f"{actor} added you to {title}."
     get_chat_hub().broadcast_user_ids(
         user_ids,
-        {"type": "chat_request", "conversation_id": conversation_id},
+        {
+            "type": "chat_request",
+            "conversation_id": conversation_id,
+            "from": actor,
+            "preview": preview,
+        },
     )
+    from aird.notifications.engine import deliver
+
+    for member in pending:
+        username = str(member.get("username") or "")
+        uid = member.get("user_id")
+        if not username or username == actor or uid is None:
+            continue
+        try:
+            deliver(
+                username=username,
+                user_id=int(uid),
+                kind="chat_request",
+                socket_payload=None,
+                push_payload={
+                    "title": actor or "Aird",
+                    "body": preview,
+                    "sender": actor,
+                    "preview": preview,
+                    "conversation_id": conversation_id,
+                    "url": f"/chat?c={conversation_id}",
+                    "tag": f"aird-chat-request-{conversation_id}",
+                    "kind": "chat_request",
+                },
+            )
+        except Exception:
+            logger.debug("chat request push failed", exc_info=True)
 
 
 def dispatch_e2e_key_ready(username: str, conversation_id: str) -> None:
