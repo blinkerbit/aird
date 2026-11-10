@@ -40,7 +40,50 @@ function byChar() {
   return map;
 }
 
-const LOOKUP = byChar();
+let lookupMap = null;
+function lookup() {
+  if (!lookupMap) lookupMap = byChar();
+  return lookupMap;
+}
+
+const SIZE = 28;
+let probe = null;
+let blankSig = '';
+const supportCache = new Map();
+
+function signature(text) {
+  probe.clearRect(0, 0, SIZE * 2, SIZE);
+  probe.fillText(text, 0, SIZE * 0.82);
+  const data = probe.getImageData(0, 0, SIZE * 2, SIZE).data;
+  let sig = '';
+  for (let i = 0; i < data.length; i += 16) sig += data[i + 3] ? '1' : '0';
+  return sig;
+}
+
+/** True when this device draws the emoji as a real glyph (not a blank or tofu box). */
+function canRender(emoji) {
+  if (supportCache.has(emoji)) return supportCache.get(emoji);
+  let ok = true;
+  try {
+    if (!probe) {
+      const canvas = document.createElement('canvas');
+      canvas.width = SIZE * 2;
+      canvas.height = SIZE;
+      probe = canvas.getContext('2d', { willReadFrequently: true });
+      probe.font = `${SIZE - 6}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+      probe.textBaseline = 'alphabetic';
+      blankSig = signature('\u{10FFFE}');
+    }
+    const sig = signature(emoji);
+    const width = probe.measureText(emoji).width;
+    const single = probe.measureText('\u{1F600}').width || SIZE;
+    ok = sig !== blankSig && sig.includes('1') && width < single * 1.6;
+  } catch {
+    ok = true;
+  }
+  supportCache.set(emoji, ok);
+  return ok;
+}
 
 export function mountEmojiPicker(root, onPick) {
   if (!root || root.dataset.mounted === '1') return;
@@ -68,21 +111,31 @@ export function mountEmojiPicker(root, onPick) {
       .replaceAll('<', '&lt;');
   }
 
-  function groups() {
-    const recent = loadRecent()
-      .map((emoji) => LOOKUP.get(emoji))
-      .filter(Boolean);
-    return [{ name: 'Recent', items: recent }, ...EMOJI_GROUPS.map((group) => ({
-      name: group[0],
-      items: group[1].map((row) => ({ e: row[0], n: row[1], t: row[2] || [] })),
-    }))];
+  const groupCache = new Map();
+
+  function itemsFor(name) {
+    if (name === 'Recent') {
+      return loadRecent().map((emoji) => lookup().get(emoji)).filter(Boolean);
+    }
+    if (groupCache.has(name)) return groupCache.get(name);
+    const group = EMOJI_GROUPS.find((g) => g[0] === name);
+    const items = group
+      ? group[1].filter((row) => canRender(row[0])).map((row) => ({ e: row[0], n: row[1], t: row[2] || [] }))
+      : [];
+    groupCache.set(name, items);
+    return items;
   }
 
   function paintTabs() {
-    const names = ['Recent', ...EMOJI_GROUPS.map((group) => group[0])];
-    tabs.innerHTML = names.map((name) => (
-      `<button type="button" class="chat-emoji-tab${name === active ? ' is-on' : ''}" data-emoji-group="${name}" title="${name}" aria-label="${name}">${ICONS[name] || '•'}</button>`
-    )).join('');
+    if (!tabs.firstChild) {
+      const names = ['Recent', ...EMOJI_GROUPS.map((group) => group[0])];
+      tabs.innerHTML = names.map((name) => (
+        `<button type="button" class="chat-emoji-tab" data-emoji-group="${attr(name)}" title="${attr(name)}" aria-label="${attr(name)}">${ICONS[name] || '•'}</button>`
+      )).join('');
+    }
+    tabs.querySelectorAll('.chat-emoji-tab').forEach((btn) => {
+      btn.classList.toggle('is-on', btn.dataset.emojiGroup === active);
+    });
   }
 
   function paint(list) {
@@ -96,8 +149,7 @@ export function mountEmojiPicker(root, onPick) {
     active = name;
     search.value = '';
     tones.hidden = true;
-    const group = groups().find((item) => item.name === name);
-    paint(group ? group.items : []);
+    paint(itemsFor(name));
     paintTabs();
   }
 
@@ -123,7 +175,7 @@ export function mountEmojiPicker(root, onPick) {
     const hits = [];
     EMOJI_GROUPS.forEach((group) => {
       group[1].forEach((row) => {
-        if (row[1].includes(q) || row[0] === search.value.trim()) {
+        if ((row[1].includes(q) || row[0] === search.value.trim()) && canRender(row[0])) {
           hits.push({ e: row[0], n: row[1], t: row[2] || [] });
         }
       });
@@ -131,10 +183,16 @@ export function mountEmojiPicker(root, onPick) {
     paint(hits.slice(0, 240));
   });
 
+  tabs.addEventListener('pointerdown', (event) => {
+    if (event.target.closest('[data-emoji-group]')) event.preventDefault();
+  });
+
   tabs.addEventListener('click', (event) => {
     const btn = event.target.closest('[data-emoji-group]');
     if (!btn) return;
+    event.stopPropagation();
     showGroup(btn.dataset.emojiGroup);
+    grid.scrollTop = 0;
   });
 
   grid.addEventListener('pointerdown', (event) => {
@@ -148,9 +206,10 @@ export function mountEmojiPicker(root, onPick) {
     if (!item?.t?.length) return;
     holdTimer = setTimeout(() => {
       suppressClick = true;
-      toneList = item.t;
+      toneList = item.t.filter(canRender);
+      if (!toneList.length) return;
       tones.hidden = false;
-      tones.innerHTML = item.t.map((emoji, i) => `<button type="button" class="chat-emoji-item" data-tone-i="${i}">${emoji}</button>`).join('');
+      tones.innerHTML = toneList.map((emoji, i) => `<button type="button" class="chat-emoji-item" data-tone-i="${i}">${emoji}</button>`).join('');
     }, 450);
   });
 

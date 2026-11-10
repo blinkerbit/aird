@@ -33,8 +33,6 @@ import {
   triggerFromToken,
   updateCollabMention,
 } from '../chat-collab-mentions.js';
-import { mountEmojiPicker } from '../emoji-picker.js';
-
 (function () {
   'use strict';
 
@@ -660,21 +658,37 @@ import { mountEmojiPicker } from '../emoji-picker.js';
     }
   }
 
+  let previewsRunning = false;
+  let previewsAgain = false;
+
   async function fillEncryptedPreviews() {
-    if (!E2E?.ready()) return;
-    await Promise.all(conversations.map(async (c) => {
-      if (!c.last_e2e || c.request) return;
-      try {
-        await e2eReady(c.id);
-        const result = await decryptPayload(c.id, c.last_e2e);
-        const html = result.html;
-        const tmp = document.createElement('div');
-        tmp.innerHTML = html;
-        const text = (tmp.innerText || '').trim();
-        if (text) c.last_preview = text.slice(0, 80);
-      } catch (err) { console.debug('conv preview decrypt failed', err); }
-    }));
-    renderConvList();
+    if (previewsRunning) {
+      previewsAgain = true;
+      return;
+    }
+    previewsRunning = true;
+    try {
+      do {
+        previewsAgain = false;
+        await identityReady;
+        if (!E2E?.ready()) return;
+        const snapshot = conversations;
+        await Promise.all(snapshot.map(async (c) => {
+          if (!c.last_e2e || c.request) return;
+          try {
+            const result = await decryptPayload(c.id, c.last_e2e);
+            if (!result.decrypted) return;
+            const tmp = document.createElement('div');
+            tmp.innerHTML = result.html;
+            const text = (tmp.innerText || '').trim();
+            if (text) c.last_preview = text.slice(0, 80);
+          } catch (err) { console.debug('conv preview decrypt failed', err); }
+        }));
+        renderConvList();
+      } while (previewsAgain);
+    } finally {
+      previewsRunning = false;
+    }
   }
 
   async function loadConversations() {
@@ -682,7 +696,8 @@ import { mountEmojiPicker } from '../emoji-picker.js';
     conversations = data.conversations || [];
     conversations.forEach(mergeConvMemberPresence);
     renderConvList();
-    await fillEncryptedPreviews();
+    // Previews decrypt in the background so the list and thread never wait on key fetches.
+    runAsync(() => fillEncryptedPreviews(), 'fillEncryptedPreviews');
     runAsync(() => updateNavBadge(), 'updateNavBadge');
   }
 
@@ -2708,10 +2723,16 @@ import { mountEmojiPicker } from '../emoji-picker.js';
     return `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`;
   }
 
+  let activeUpload = null;
+
   function uploadChatForm(convId, fd, onProgress) {
     return new Promise((resolve, reject) => {
       const target = new URL(`/api/chat/conversations/${convId}/attach`, globalThis.location.origin);
       const xhr = new XMLHttpRequest();
+      activeUpload = xhr;
+      const finish = () => {
+        if (activeUpload === xhr) activeUpload = null;
+      };
       xhr.open('POST', `${target.pathname}${target.search}`);
       xhr.setRequestHeader('Accept', 'application/json');
       xhr.setRequestHeader('X-XSRFToken', getXSRFToken());
@@ -2719,6 +2740,7 @@ import { mountEmojiPicker } from '../emoji-picker.js';
         onProgress?.(ev.loaded, ev.lengthComputable ? ev.total : 0);
       });
       xhr.addEventListener('load', () => {
+        finish();
         let json = {};
         try { json = JSON.parse(xhr.responseText); } catch { json = { error: xhr.responseText }; }
         if (xhr.status < 200 || xhr.status >= 300) {
@@ -2727,10 +2749,22 @@ import { mountEmojiPicker } from '../emoji-picker.js';
         }
         resolve(json);
       });
-      xhr.addEventListener('error', () => reject(new Error('Upload failed')));
-      xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
+      xhr.addEventListener('error', () => {
+        finish();
+        reject(new Error('Upload failed'));
+      });
+      xhr.addEventListener('abort', () => {
+        finish();
+        const err = new Error('Upload stopped');
+        err.stopped = true;
+        reject(err);
+      });
       xhr.send(fd);
     });
+  }
+
+  function stopActiveUpload() {
+    activeUpload?.abort();
   }
 
   function uploadNames(staged) {
@@ -2745,7 +2779,8 @@ import { mountEmojiPicker } from '../emoji-picker.js';
     let fill = root.querySelector('.chat-upload-fill');
     let meta = root.querySelector('.chat-upload-meta');
     if (!name || !track || !fill || !meta) {
-      root.innerHTML = `<div class="chat-upload-label"></div>`
+      root.innerHTML = `<div class="chat-upload-head"><div class="chat-upload-label"></div>`
+        + `<button type="button" class="chat-upload-stop">Stop</button></div>`
         + `<div class="chat-upload-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">`
         + `<div class="chat-upload-fill"></div></div>`
         + `<div class="chat-upload-meta"></div>`;
@@ -2910,7 +2945,7 @@ import { mountEmojiPicker } from '../emoji-picker.js';
         renderPending();
         if (hasText && editor) editor.textContent = body;
         if (reply) setReply(reply);
-        setE2eStatus(err.message || 'Upload failed');
+        setE2eStatus(err.stopped ? 'Upload stopped' : (err.message || 'Upload failed'));
       } finally {
         uploading = false;
         staged.forEach(revokePendingPreview);
@@ -3119,16 +3154,29 @@ import { mountEmojiPicker } from '../emoji-picker.js';
   const emojiBtn = qs('#chatEmojiBtn');
   const emojiPicker = qs('#chatEmojiPicker');
   let emojiMode = { type: 'insert' };
-  const emojiUi = emojiPicker
-    ? mountEmojiPicker(emojiPicker, (emoji) => {
-      if (emojiMode.type === 'react' && emojiMode.id) {
-        react(emojiMode.id, emoji).catch((err) => alert(err.message));
-        hideEmojiPicker();
-        return;
-      }
-      insertEmoji(emoji);
-    })
-    : null;
+  let emojiUi = null;
+  let emojiLoading = null;
+
+  function ensureEmojiUi() {
+    if (emojiUi) return Promise.resolve(emojiUi);
+    if (!emojiPicker) return Promise.resolve(null);
+    emojiLoading ||= import('../emoji-picker.js').then((mod) => {
+      emojiUi = mod.mountEmojiPicker(emojiPicker, (emoji) => {
+        if (emojiMode.type === 'react' && emojiMode.id) {
+          react(emojiMode.id, emoji).catch((err) => alert(err.message));
+          hideEmojiPicker();
+          return;
+        }
+        insertEmoji(emoji);
+      });
+      return emojiUi;
+    }).catch((err) => {
+      emojiLoading = null;
+      console.debug('emoji picker load failed', err);
+      return null;
+    });
+    return emojiLoading;
+  }
 
   let editorRange = null;
 
@@ -3192,11 +3240,11 @@ import { mountEmojiPicker } from '../emoji-picker.js';
     const anchorEl = anchor || qs('.chat-editor-wrap') || editor;
     emojiMode = mode || { type: 'insert' };
     rememberEditorRange();
-    emojiUi?.reset();
     if (emojiPicker.parentElement !== document.body) document.body.appendChild(emojiPicker);
     emojiPicker.hidden = false;
     emojiPicker.classList.remove('hidden');
     placeEmojiPicker(anchorEl);
+    ensureEmojiUi().then((ui) => ui?.reset());
   }
 
   function toggleEmojiPicker() {
@@ -3213,7 +3261,18 @@ import { mountEmojiPicker } from '../emoji-picker.js';
     toggleEmojiPicker();
   });
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('#chatEmojiPicker, #chatEmojiBtn')) hideEmojiPicker();
+    // The picker re-renders on tab clicks, so the target may already be detached;
+    // composedPath() is captured at dispatch time and still lists the original ancestors.
+    const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+    if (path.includes(emojiPicker) || path.includes(emojiBtn)) return;
+    if (e.target.closest('#chatEmojiPicker, #chatEmojiBtn, [data-react-more]')) return;
+    hideEmojiPicker();
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.chat-upload-stop')) return;
+    e.preventDefault();
+    stopActiveUpload();
   });
 
   function revokePendingPreview(item) {
@@ -3746,7 +3805,16 @@ import { mountEmojiPicker } from '../emoji-picker.js';
       });
     } catch (err) {
       clearUploadProgress();
-      setE2eStatus(err.message || 'Could not send voice message');
+      if (err.stopped && staged[0]?.file) {
+        voiceBlob = staged[0].file;
+        voiceMime = staged[0].file.type || '';
+        releaseVoicePreview();
+        voicePreviewUrl = URL.createObjectURL(voiceBlob);
+        if (voiceAudio) voiceAudio.src = voicePreviewUrl;
+        setVoiceUi('preview');
+        if (reply) setReply(reply);
+      }
+      setE2eStatus(err.stopped ? 'Upload stopped' : (err.message || 'Could not send voice message'));
     } finally {
       uploading = false;
     }
@@ -4189,8 +4257,6 @@ import { mountEmojiPicker } from '../emoji-picker.js';
         ? E2E.init(me, api).catch((err) => { console.warn('chat e2e', err); })
         : Promise.resolve();
       await loadConversations();
-      await identityReady;
-      await fillEncryptedPreviews();
       const initialConv = new URLSearchParams(location.search).get('c');
       if (pendingBrowseAttachQueue.length) {
         openShareTargets(initialConv || '');

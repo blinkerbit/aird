@@ -284,6 +284,8 @@ describe('chat page attach contract', () => {
     expect(js).toContain('clipboardImageSrcs');
     expect(js).toContain('fileFromImageSrc');
     expect(js).toContain('attachEditorImages()');
+    expect(js).toContain('chat-upload-stop');
+    expect(js).toContain('activeUpload?.abort()');
     expect(js).toContain('chatUploadProgress');
     expect(js).toContain('xhr.upload.addEventListener');
     expect(js).toContain("addEventListener('beforeinput'");

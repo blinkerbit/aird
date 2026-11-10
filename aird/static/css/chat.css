@@ -1027,10 +1027,33 @@ body.chat-page {
   display: none !important;
 }
 
-.chat-upload-label {
+.chat-upload-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   margin-bottom: 0.28rem;
+}
+
+.chat-upload-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 0.78rem;
   font-weight: 600;
+}
+
+.chat-upload-stop {
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-error, #e11d48);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 650;
+  cursor: pointer;
+  padding: 0.1rem 0.2rem;
 }
 
 .chat-upload-track {
@@ -1127,8 +1150,15 @@ body.chat-page {
   overflow: hidden;
 }
 
+.chat-emoji-search,
+.chat-emoji-tabs,
+.chat-emoji-tones {
+  flex: 0 0 auto;
+}
+
 .chat-emoji-search {
   width: 100%;
+  box-sizing: border-box;
   border: 1px solid var(--color-base-300);
   border-radius: 0.5rem;
   background: var(--color-base-200);
@@ -1167,13 +1197,15 @@ body.chat-page {
 }
 
 .chat-emoji-tab {
-  flex: 1 0 1.7rem;
+  flex: 1 0 1.9rem;
+  height: 2rem;
+  padding: 0;
   border: 0;
   background: transparent;
   border-radius: 0.4rem;
   cursor: pointer;
-  font-size: 1rem;
-  line-height: 1.6;
+  font-size: 1.05rem;
+  line-height: 2rem;
   opacity: 0.55;
 }
 
