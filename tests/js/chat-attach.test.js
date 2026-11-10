@@ -5,8 +5,12 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   attachAllowed,
   bindDropZone,
+  asyncClipboardImageFiles,
   clipboardFiles,
+  clipboardImageFiles,
   clipboardImageSrcs,
+  clipboardOffersImage,
+  normalizeClipboardImageFile,
   completePath,
   createBrowsePicker,
   createPendingStore,
@@ -63,8 +67,9 @@ describe('chat attach path helpers', () => {
 });
 
 describe('chat attach gates', () => {
-  it('blocks attach in enhanced chat and without a conversation', () => {
-    expect(attachAllowed({ enhanced: true, convId: 'c1' }).ok).toBe(false);
+  it('allows attach in enhanced chat when a room is open', () => {
+    expect(attachAllowed({ enhanced: true, convId: 'room-1' }).ok).toBe(true);
+    expect(attachAllowed({ enhanced: true, convId: '' }).ok).toBe(false);
     expect(attachAllowed({ enhanced: false, convId: '' }).ok).toBe(false);
     expect(attachAllowed({ enhanced: false, convId: 'c1' }).ok).toBe(true);
   });
@@ -88,6 +93,36 @@ describe('chat attach gates', () => {
       files: [],
       items: [{ kind: 'file', getAsFile: () => img }, { kind: 'string', getAsFile: () => null }],
     })).toEqual([img]);
+  });
+
+  it('names unnamed snip png files for upload', () => {
+    const raw = new File([new Uint8Array([137, 80, 78, 71])], '', { type: 'image/png' });
+    const file = normalizeClipboardImageFile(raw);
+    expect(file.name).toBe('screenshot.png');
+    expect(file.type).toBe('image/png');
+    const [fromItems] = clipboardImageFiles({
+      files: [],
+      items: [{ kind: 'file', type: 'image/png', getAsFile: () => raw }],
+    });
+    expect(fromItems.name).toBe('screenshot.png');
+  });
+
+  it('detects bitmap clipboard offers and async reads image types', async () => {
+    expect(clipboardOffersImage({ types: ['text/plain', 'image/png'] })).toBe(true);
+    expect(clipboardOffersImage({ types: ['text/plain'] })).toBe(false);
+    const blob = new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' });
+    vi.stubGlobal('navigator', {
+      clipboard: {
+        read: vi.fn(async () => [{
+          types: ['image/png'],
+          getType: async (type) => (type === 'image/png' ? blob : null),
+        }]),
+      },
+    });
+    const files = await asyncClipboardImageFiles();
+    expect(files).toHaveLength(1);
+    expect(files[0].name).toBe('screenshot.png');
+    vi.unstubAllGlobals();
   });
 
   it('reads a gif clipboard item the file list misses and names it .gif', () => {

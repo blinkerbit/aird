@@ -26,6 +26,7 @@ CONV_KEY_FILENAME = "e2e-conv.json"
 _MAX_JWK_CHARS = 2_000
 _MAX_WRAP_CHARS = 8_000
 _MAX_CT_CHARS = 48_000
+_MAX_ENHANCED_CT_CHARS = 8_388_608
 _CONV_ID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
 _B64_RE = re.compile(r"^[A-Za-z0-9+/_-]+=*$")
 
@@ -76,11 +77,12 @@ def validate_public_jwk(raw) -> dict:
     return {"kty": "EC", "crv": "P-256", "x": str(x), "y": str(y)}
 
 
-def parse_e2e_payload(raw) -> dict:
+def parse_e2e_payload(raw, *, max_ct_chars: int | None = None) -> dict:
     if not isinstance(raw, dict):
         raise ValueError("Invalid encrypted payload")
     iv, ct = raw.get("iv"), raw.get("ct")
-    if raw.get("v") != 1 or not _b64_ok(iv, min_len=8, max_len=64) or not _b64_ok(ct, min_len=8, max_len=_MAX_CT_CHARS):
+    limit = _MAX_CT_CHARS if max_ct_chars is None else max_ct_chars
+    if raw.get("v") != 1 or not _b64_ok(iv, min_len=8, max_len=64) or not _b64_ok(ct, min_len=8, max_len=limit):
         raise ValueError("Invalid encrypted payload")
     return {"v": 1, "iv": str(iv), "ct": str(ct)}
 

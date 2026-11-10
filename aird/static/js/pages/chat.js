@@ -1,8 +1,11 @@
 import {
   attachAllowed,
   bindDropZone,
+  asyncClipboardImageFiles,
   clipboardFiles,
+  clipboardImageFiles,
   clipboardImageSrcs,
+  clipboardOffersImage,
   completePath,
   createBrowsePicker,
   createPendingStore,
@@ -30,6 +33,7 @@ import {
   triggerFromToken,
   updateCollabMention,
 } from '../chat-collab-mentions.js';
+import { mountEmojiPicker } from '../emoji-picker.js';
 
 (function () {
   'use strict';
@@ -61,6 +65,7 @@ import {
   const browseAttach = qs('#chatBrowseAttach');
   const browseBtn = qs('#chatBrowseBtn');
   const replyBar = qs('#chatReplyBar');
+  const typingStatus = qs('#chatTypingStatus');
   const replyPreview = qs('#chatReplyPreview');
   const searchInput = qs('#chatSearch');
   const searchResults = qs('#chatSearchResults');
@@ -1282,7 +1287,7 @@ import {
     const id = esc(msg.id);
     const emojis = REACTIONS.map((e) =>
       `<button type="button" class="chat-react-emoji" data-emoji="${e}" data-id="${id}" title="${e}">${e}</button>`
-    ).join('');
+    ).join('') + `<button type="button" class="chat-react-emoji" data-react-more="${id}" aria-label="All emoji">＋</button>`;
     const deleteBtn = msg._mine
       ? `<button type="button" class="chat-hover-delete" data-act="delete" data-id="${id}">Delete</button>`
       : '';
@@ -1464,6 +1469,10 @@ import {
       if (!btn || !messagesEl.contains(btn)) return;
       e.preventDefault();
       e.stopPropagation();
+      if (btn.dataset.reactMore) {
+        openEmojiPicker({ type: 'react', id: btn.dataset.reactMore }, btn);
+        return;
+      }
       const messageId = btn.dataset.id;
       const emoji = btn.dataset.emoji;
       if (!messageId || !emoji) return;
@@ -1968,6 +1977,7 @@ import {
     stopAllVoicePlayback();
     const gen = ++loadGen;
     activeConvId = convId;
+    clearTypingStatus();
     replyLabelCache.clear();
     loadingOlder = false;
     // Hide composer/thread upload UI unless this chat owns the in-flight upload.
@@ -2234,15 +2244,23 @@ import {
     runAsync(() => updateNavBadge(), 'updateNavBadge');
   }
 
+  function clearTypingStatus() {
+    if (!typingStatus) return;
+    typingStatus.textContent = '';
+    typingStatus.hidden = true;
+    typingStatus.classList.add('hidden');
+    clearTimeout(typingTimer);
+    typingTimer = null;
+  }
+
   function onWsTyping(data) {
     if (enhancedSecureView || data.conversation_id !== activeConvId) return;
-    const sub = header?.querySelector('.chat-thread-sub');
-    if (!sub || data.username === me) return;
-    const prev = sub.dataset.base || sub.textContent;
-    sub.dataset.base = prev;
-    sub.textContent = `${userLabel(data.username, activeConv()) || data.username} is typing…`;
+    if (data.username === me || !typingStatus) return;
+    typingStatus.textContent = `${userLabel(data.username, activeConv()) || data.username} is typing…`;
+    typingStatus.hidden = false;
+    typingStatus.classList.remove('hidden');
     clearTimeout(typingTimer);
-    typingTimer = setTimeout(() => { sub.textContent = sub.dataset.base || prev; }, 1500);
+    typingTimer = setTimeout(clearTypingStatus, 1500);
   }
 
   const WS_HANDLERS = {
@@ -2642,18 +2660,32 @@ import {
   }
 
   async function sendEnhancedSecureEditorMessage() {
-    const text = (editor?.innerText || '').replaceAll('\u00a0', ' ').trim();
-    if (pending.length) {
-      setE2eStatus('Enhanced Secure Chat is text only.');
+    const text = editorPlainText();
+    const hasText = text.trim().length > 0;
+    if (!hasText && !pending.length) return;
+    const paths = pending.filter((item) => item.path);
+    const blobs = pending.filter((item) => item.file).map((item) => item.file);
+    if (paths.length) {
+      setE2eStatus('Browse paths cannot be sent in Enhanced Secure Chat. Upload or paste the file instead.');
       return;
     }
-    if (!text) return;
+    pending.forEach((item) => revokePendingPreview(item));
+    const staged = pendingStore.take();
+    renderPending();
     try {
-      await window.AirdEnhancedSecure.sendText(text);
-      editor.innerHTML = '';
+      await window.AirdEnhancedSecure.sendMessage({ text, files: blobs });
+      if (editor) editor.innerHTML = '';
       setE2eStatus('');
     } catch (err) {
+      staged.forEach((item) => {
+        if (item.path) pendingStore.stagePath(item.path, { isDir: item.isDir });
+        else if (item.file) pendingStore.stageBlob(item.file);
+      });
+      renderPending();
+      if (hasText && editor) editor.textContent = text;
       setE2eStatus(err.message || 'Could not send.');
+    } finally {
+      staged.forEach(revokePendingPreview);
     }
   }
 
@@ -3081,9 +3113,19 @@ import {
     });
   });
 
-  const EMOJIS = ['😀','😁','😂','🤣','😊','😇','🙂','😉','😍','😘','😜','🤔','😎','🤩','🥳','😢','😭','😤','😡','🤯','😳','🤗','🙏','👍','👎','👏','🔥','❤️','💯','🎉','✨','⭐','👀','✅','❌'];
   const emojiBtn = qs('#chatEmojiBtn');
   const emojiPicker = qs('#chatEmojiPicker');
+  let emojiMode = { type: 'insert' };
+  const emojiUi = emojiPicker
+    ? mountEmojiPicker(emojiPicker, (emoji) => {
+      if (emojiMode.type === 'react' && emojiMode.id) {
+        react(emojiMode.id, emoji).catch((err) => alert(err.message));
+      } else {
+        insertEmoji(emoji);
+      }
+      hideEmojiPicker();
+    })
+    : null;
 
   function insertEmoji(ch) {
     if (!editor) return;
@@ -3095,25 +3137,41 @@ import {
     if (!emojiPicker) return;
     emojiPicker.hidden = true;
     emojiPicker.classList.add('hidden');
+    emojiPicker.classList.remove('is-floating');
+  }
+
+  function openEmojiPicker(mode, anchor) {
+    if (!emojiPicker) return;
+    emojiMode = mode || { type: 'insert' };
+    emojiUi?.reset();
+    emojiPicker.hidden = false;
+    emojiPicker.classList.remove('hidden');
+    if (anchor) {
+      const box = anchor.getBoundingClientRect();
+      const width = Math.min(352, window.innerWidth - 16);
+      let left = Math.min(box.left, window.innerWidth - width - 8);
+      left = Math.max(8, left);
+      let top = box.bottom + 6;
+      if (top + 280 > window.innerHeight) top = Math.max(8, box.top - 286);
+      emojiPicker.classList.add('is-floating');
+      emojiPicker.style.width = `${width}px`;
+      emojiPicker.style.left = `${left}px`;
+      emojiPicker.style.top = `${top}px`;
+    } else {
+      emojiPicker.classList.remove('is-floating');
+      emojiPicker.style.width = '';
+      emojiPicker.style.left = '';
+      emojiPicker.style.top = '';
+    }
   }
 
   function toggleEmojiPicker() {
     if (!emojiPicker) return;
-    if (!emojiPicker.dataset.ready) {
-      emojiPicker.innerHTML = EMOJIS.map((e) =>
-        `<button type="button" class="chat-emoji-item">${e}</button>`
-      ).join('');
-      emojiPicker.dataset.ready = '1';
-      emojiPicker.querySelectorAll('.chat-emoji-item').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          insertEmoji(btn.textContent);
-          hideEmojiPicker();
-        });
-      });
+    if (!emojiPicker.hidden && emojiMode.type === 'insert' && !emojiPicker.classList.contains('is-floating')) {
+      hideEmojiPicker();
+      return;
     }
-    const show = emojiPicker.hidden;
-    emojiPicker.hidden = !show;
-    emojiPicker.classList.toggle('hidden', !show);
+    openEmojiPicker({ type: 'insert' });
   }
 
   emojiBtn?.addEventListener('click', (e) => {
@@ -3209,9 +3267,10 @@ import {
   }
 
   function canAttachFiles() {
+    const enhanced = !!(enhancedSecureView || window.AirdEnhancedSecure?.viewing());
     return attachAllowed({
-      enhanced: !!(enhancedSecureView || window.AirdEnhancedSecure?.viewing()),
-      convId: activeConvId,
+      enhanced,
+      convId: enhanced ? (window.AirdEnhancedSecure?.viewing() || '') : activeConvId,
     });
   }
 
@@ -3849,6 +3908,7 @@ import {
     try {
       const text = String(clipboardData?.getData?.('text/plain') || '').trim();
       if (inlineImageSrc(text)) return '';
+      if (/^(?:[a-z]:\\|file:\/\/)/i.test(text)) return '';
       return text;
     } catch {
       return '';
@@ -3922,6 +3982,13 @@ import {
     setTimeout(attachEditorImages, 0);
   });
   editor?.addEventListener('paste', (e) => {
+    const images = clipboardImageFiles(e.clipboardData);
+    if (images.length) {
+      e.preventDefault();
+      markPastedImages();
+      acceptAttachedFiles(images);
+      return;
+    }
     const files = clipboardFiles(e.clipboardData);
     if (files.length) {
       e.preventDefault();
@@ -3930,7 +3997,10 @@ import {
       return;
     }
     const srcs = clipboardImageSrcs(e.clipboardData);
-    if (!srcs.length || clipboardPlainText(e.clipboardData).length > 64) return;
+    const plainLen = clipboardPlainText(e.clipboardData).length;
+    const bitmap = clipboardOffersImage(e.clipboardData);
+    if (!srcs.length && !bitmap) return;
+    if (!srcs.length && plainLen > 64 && !bitmap) return;
     e.preventDefault();
     markPastedImages();
     const gate = canAttachFiles();
@@ -3939,8 +4009,17 @@ import {
       return;
     }
     runAsync(async () => {
-      const lifted = (await Promise.all(srcs.map((src) => fileFromImageSrc(src)))).filter(Boolean);
-      acceptAttachedFiles(lifted);
+      if (srcs.length) {
+        const lifted = (await Promise.all(srcs.map((src) => fileFromImageSrc(src)))).filter(Boolean);
+        if (lifted.length) {
+          acceptAttachedFiles(lifted);
+          return;
+        }
+      }
+      if (bitmap) {
+        const lifted = await asyncClipboardImageFiles();
+        if (lifted.length) acceptAttachedFiles(lifted);
+      }
     }, 'paste image');
   });
 

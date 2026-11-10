@@ -82,6 +82,10 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
         "chat", default_max_connections=100, default_idle_timeout=600
     )
 
+    @property
+    def max_message_size(self):
+        return 12 * 1024 * 1024
+
     def __init__(self, application, request, **kwargs):
         super().__init__(application, request, **kwargs)
         self._user_id: int | None = None

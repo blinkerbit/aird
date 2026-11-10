@@ -17,6 +17,8 @@ import { escapeHtml as esc } from './core/dom-safe.js';
 
   const STORE = 'aird-enhanced-secure-v1';
   const INFO = new TextEncoder().encode('aird-enhanced-secure-chat-v1');
+  const MAX_FILE_BYTES = 3 * 1024 * 1024;
+  const MAX_SEND_BYTES = 5 * 1024 * 1024;
 
   const rooms = new Map();
   let viewing = null;
@@ -38,7 +40,18 @@ import { escapeHtml as esc } from './core/dom-safe.js';
       peer: room.peer,
       publicJwk: room.publicJwk,
       privateJwk: room.privateJwk,
-      messages: (room.messages || []).slice(-400),
+      messages: (room.messages || []).slice(-400).map((message) => ({
+        id: message.id,
+        mine: !!message.mine,
+        text: message.text || '',
+        attachments: (message.attachments || []).map((file) => ({
+          n: file.n,
+          m: file.m,
+          b: file.b,
+        })).filter((file) => file.b),
+        at: message.at,
+        status: message.status || '',
+      })),
       open: !!room.open,
       requested: !!room.requested,
       inviterEpk: room.inviterEpk || null,
@@ -49,7 +62,63 @@ import { escapeHtml as esc } from './core/dom-safe.js';
     } catch (_) { /* tab storage full: keep the in-memory copy */ }
   }
 
+  function revokeMsgMedia(message) {
+    for (const file of message?.attachments || []) {
+      if (file.url) URL.revokeObjectURL(file.url);
+      delete file.url;
+    }
+  }
+
+  function revokeRoomMedia(room) {
+    for (const message of room?.messages || []) revokeMsgMedia(message);
+  }
+
+  function attachmentsFromStored(stored) {
+    if (!Array.isArray(stored)) return [];
+    return stored.map((row) => {
+      if (!row?.b) return { ...row, url: '' };
+      const bytes = unb64(row.b);
+      const blob = new Blob([bytes], { type: row.m || 'application/octet-stream' });
+      return { ...row, url: URL.createObjectURL(blob) };
+    });
+  }
+
+  function parsePayload(text) {
+    const raw = String(text || '');
+    try {
+      const data = JSON.parse(raw);
+      if (data && typeof data === 'object' && (data.t != null || data.a)) {
+        return {
+          text: String(data.t || ''),
+          stored: Array.isArray(data.a) ? data.a : [],
+        };
+      }
+    } catch (_) { /* plain text */ }
+    return { text: raw, stored: [] };
+  }
+
+  function packPayload(text, stored) {
+    const body = String(text || '');
+    if (!stored?.length) return body;
+    return JSON.stringify({ t: body, a: stored });
+  }
+
+  async function fileToStored(file) {
+    if (!file || !file.size) throw new Error('No file to attach.');
+    if (file.size > MAX_FILE_BYTES) {
+      throw new Error('Each file can be up to 3 MB in Enhanced Secure Chat.');
+    }
+    const buf = await file.arrayBuffer();
+    return {
+      n: file.name || 'file',
+      m: file.type || 'application/octet-stream',
+      b: b64(new Uint8Array(buf)),
+    };
+  }
+
   function wipe(roomId) {
+    const room = rooms.get(roomId);
+    if (room) revokeRoomMedia(room);
     rooms.delete(roomId);
     saveStore();
     if (viewing === roomId) {
@@ -109,14 +178,31 @@ import { escapeHtml as esc } from './core/dom-safe.js';
     document.getElementById('chatEnhancedEnd')?.addEventListener('click', () => (
       room.requested ? decline(room.roomId) : end(room.roomId)
     ));
-    const banner = '<div class="chat-enhanced-banner">Enhanced Secure Chat exists only in this browser tab. Closing the tab deletes it. Nothing is saved on the server.</div>';
-    const body = (room.messages || []).map((m) => (
-      `<div class="chat-msg-row ${m.mine ? 'chat-msg-row--mine' : 'chat-msg-row--theirs'}"><div class="chat-msg-stack"><div class="aird-chat-bubble ${m.mine ? 'aird-chat-bubble--mine' : 'aird-chat-bubble--theirs'}"><div class="aird-chat-bubble-body">${esc(m.text)}</div></div>${m.mine && m.status ? `<div class="chat-seen">${m.status === 'seen' ? 'Decrypted &amp; seen' : 'Decrypted'}</div>` : ''}</div></div>`
-    )).join('');
+    const banner = '<div class="chat-enhanced-banner">Enhanced Secure Chat exists only in this browser tab. Messages and shared photos or files are removed when the chat ends. The server relays encrypted data only while you are both online.</div>';
+
+    function msgHtml(m) {
+      const text = m.text
+        ? `<div class="aird-chat-bubble-body">${esc(m.text)}</div>`
+        : '';
+      const files = (m.attachments || []).map((file) => {
+        if (String(file.m || '').startsWith('image/') && file.url) {
+          return `<img class="chat-enhanced-img" src="${esc(file.url)}" alt="" draggable="false" decoding="async">`;
+        }
+        if (file.n) {
+          return `<span class="chat-enhanced-file">${esc(file.n)}</span>`;
+        }
+        return '';
+      }).join('');
+      return `<div class="chat-msg-row ${m.mine ? 'chat-msg-row--mine' : 'chat-msg-row--theirs'}"><div class="chat-msg-stack"><div class="aird-chat-bubble ${m.mine ? 'aird-chat-bubble--mine' : 'aird-chat-bubble--theirs'}">${text}${files}</div>${m.mine && m.status ? `<div class="chat-seen">${m.status === 'seen' ? 'Decrypted &amp; seen' : 'Decrypted'}</div>` : ''}</div></div>`;
+    }
+    const body = (room.messages || []).map(msgHtml).join('');
     const request = room.requested
       ? `<div class="chat-enhanced-request"><p>${esc(room.peer)} wants to start an Enhanced Secure Chat.</p><div><button type="button" id="chatEnhancedAccept" class="btn btn-primary btn-sm">Accept</button><button type="button" id="chatEnhancedDecline" class="btn btn-ghost btn-sm">Decline</button></div></div>`
       : '';
     messages.innerHTML = banner + request + (body || (room.requested ? '' : '<div class="chat-empty"><p>No messages yet</p></div>'));
+    messages.querySelectorAll('.chat-enhanced-img').forEach((img) => {
+      img.addEventListener('dragstart', (e) => e.preventDefault());
+    });
     document.getElementById('chatEnhancedAccept')?.addEventListener('click', () => accept(room.roomId));
     document.getElementById('chatEnhancedDecline')?.addEventListener('click', () => decline(room.roomId));
     messages.scrollTop = messages.scrollHeight;
@@ -257,18 +343,14 @@ import { escapeHtml as esc } from './core/dom-safe.js';
     wipe(room.roomId);
   }
 
-  async function sendText(text) {
-    const room = viewing ? rooms.get(viewing) : null;
-    const body = String(text || '').trim();
-    if (!room || !body) return;
-    if (!room.open || !room.aes) throw new Error(`Waiting for ${room.peer}`);
+  async function encryptAndSend(room, plain) {
     const messageId = b64(crypto.getRandomValues(new Uint8Array(18)))
       .replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ct = await crypto.subtle.encrypt(
       { name: 'AES-GCM', iv },
       room.aes,
-      new TextEncoder().encode(body),
+      new TextEncoder().encode(plain),
     );
     if (!global.AirdChatWS?.send({
       type: 'enhanced_msg',
@@ -280,9 +362,39 @@ import { escapeHtml as esc } from './core/dom-safe.js';
     })) {
       throw new Error('Chat connection is not open');
     }
-    room.messages.push({ id: messageId, mine: true, text: body, at: Date.now(), status: '' });
+    return messageId;
+  }
+
+  async function sendMessage({ text = '', files = [] } = {}) {
+    const room = viewing ? rooms.get(viewing) : null;
+    const caption = String(text || '').trim();
+    const list = Array.isArray(files) ? files.filter(Boolean) : [];
+    if (!room || (!caption && !list.length)) return;
+    if (!room.open || !room.aes) throw new Error(`Waiting for ${room.peer}`);
+    const stored = [];
+    let total = 0;
+    for (const file of list) {
+      const row = await fileToStored(file);
+      total += file.size || 0;
+      if (total > MAX_SEND_BYTES) throw new Error('Up to 5 MB of attachments per message in Enhanced Secure Chat.');
+      stored.push(row);
+    }
+    const plain = packPayload(caption, stored);
+    const messageId = await encryptAndSend(room, plain);
+    room.messages.push({
+      id: messageId,
+      mine: true,
+      text: caption,
+      attachments: attachmentsFromStored(stored),
+      at: Date.now(),
+      status: '',
+    });
     saveStore();
     paint(room);
+  }
+
+  async function sendText(text) {
+    await sendMessage({ text });
   }
 
   async function ensureRoom(roomId, peer) {
@@ -354,11 +466,13 @@ import { escapeHtml as esc } from './core/dom-safe.js';
         room.aes,
         unb64(msg.ct),
       );
-      const text = new TextDecoder().decode(plain);
+      const decoded = new TextDecoder().decode(plain);
+      const parsed = parsePayload(decoded);
       room.messages.push({
         id: msg.message_id,
         mine: false,
-        text,
+        text: parsed.text,
+        attachments: attachmentsFromStored(parsed.stored),
         at: Date.now(),
         status: 'decrypted',
       });
@@ -429,7 +543,10 @@ import { escapeHtml as esc } from './core/dom-safe.js';
       if (row.requested) {
         rooms.set(row.roomId, {
           ...row,
-          messages: Array.isArray(row.messages) ? row.messages : [],
+          messages: (Array.isArray(row.messages) ? row.messages : []).map((message) => ({
+            ...message,
+            attachments: attachmentsFromStored(message.attachments),
+          })),
           privateKey: null,
           open: false,
         });
@@ -439,7 +556,10 @@ import { escapeHtml as esc } from './core/dom-safe.js';
       try {
         rooms.set(row.roomId, {
           ...row,
-          messages: Array.isArray(row.messages) ? row.messages : [],
+          messages: (Array.isArray(row.messages) ? row.messages : []).map((message) => ({
+            ...message,
+            attachments: attachmentsFromStored(message.attachments),
+          })),
           privateKey: await importPrivate(row.privateJwk),
           open: false,
         });
@@ -456,6 +576,15 @@ import { escapeHtml as esc } from './core/dom-safe.js';
       paint(room);
       global.AirdChatPage?.refreshList?.();
     });
+    const messages = document.getElementById('chatMessages');
+    messages?.addEventListener('contextmenu', (e) => {
+      if (!viewing) return;
+      if (e.target.closest('.chat-enhanced-img, .chat-enhanced-file')) e.preventDefault();
+    });
+    messages?.addEventListener('dragstart', (e) => {
+      if (!viewing) return;
+      if (e.target.closest('.chat-enhanced-img')) e.preventDefault();
+    });
   }
 
   global.AirdEnhancedSecure = {
@@ -467,6 +596,7 @@ import { escapeHtml as esc } from './core/dom-safe.js';
     closeView,
     viewing: () => viewing,
     sendText,
+    sendMessage,
     listHtml,
   };
 

@@ -109,11 +109,10 @@ export function filesApiUrl(relPath) {
 }
 
 export function attachAllowed({ enhanced = false, convId = '' } = {}) {
-  if (enhanced) {
-    return { ok: false, reason: 'Enhanced Secure Chat is text only. Open the normal chat to share files.' };
-  }
   if (!convId) {
-    return { ok: false, reason: 'Open a conversation before attaching files.' };
+    return enhanced
+      ? { ok: false, reason: 'Open Enhanced Secure Chat before attaching files.' }
+      : { ok: false, reason: 'Open a conversation before attaching files.' };
   }
   return { ok: true, reason: '' };
 }
@@ -139,6 +138,123 @@ function withGifExtension(file) {
   if (type !== 'image/gif' || /\.gif$/i.test(file.name || '')) return file;
   const stem = String(file.name || 'sticker').replace(/\.[^.]+$/, '') || 'sticker';
   return new File([file], `${stem}.gif`, { type: 'image/gif', lastModified: file.lastModified });
+}
+
+function isImageMime(type) {
+  return String(type || '').split(';')[0].trim().toLowerCase().startsWith('image/');
+}
+
+export function normalizeClipboardImageFile(file) {
+  if (!file) return null;
+  const named = withGifExtension(file);
+  if (!named) return null;
+  let type = String(named.type || '').split(';')[0].trim().toLowerCase();
+  if (!isImageMime(type)) {
+    type = 'image/png';
+  }
+  const ext = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/webp': 'webp',
+    'image/bmp': 'bmp',
+    'image/gif': 'gif',
+    'image/avif': 'avif',
+    'image/heic': 'heic',
+    'image/heif': 'heif',
+  }[type] || 'png';
+  let name = String(named.name || '').trim();
+  if (!name || !/\.\w{2,5}$/i.test(name) || /^image\d*\.[a-z]+$/i.test(name)) {
+    name = `screenshot.${ext}`;
+  }
+  if (name === named.name && type === named.type) return named;
+  return new File([named], name, { type, lastModified: named.lastModified || Date.now() });
+}
+
+function clipboardHtml(clipboardData) {
+  if (typeof clipboardData?.getData !== 'function') return '';
+  try {
+    return String(clipboardData.getData('text/html') || '');
+  } catch {
+    return '';
+  }
+}
+
+export function clipboardOffersImage(clipboardData) {
+  if (!clipboardData) return false;
+  if ([...(clipboardData.types || [])].some((t) => /^image\//i.test(t))) return true;
+  for (const item of clipboardData.items || []) {
+    const type = String(item?.type || '');
+    if (item?.kind === 'file' || /^image\//i.test(type)) return true;
+  }
+  const html = clipboardHtml(clipboardData);
+  return !!(html && /<img\b/i.test(html));
+}
+
+export function clipboardImageFiles(clipboardData) {
+  if (!clipboardData) return [];
+  const found = [];
+  const seen = new Set();
+  const push = (raw) => {
+    const file = normalizeClipboardImageFile(raw);
+    if (!file || !isImageMime(file.type)) return;
+    const key = `${file.size}:${file.type}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    found.push(file);
+  };
+  for (const file of clipboardData.files || []) {
+    if (isImageMime(file?.type)) push(file);
+  }
+  for (const item of clipboardData.items || []) {
+    const type = String(item?.type || '').toLowerCase();
+    if (item?.kind !== 'file' && !type.startsWith('image/')) continue;
+    if (typeof item.getAsFile !== 'function') continue;
+    try {
+      const file = item.getAsFile();
+      if (file) push(file);
+    } catch { /* ignore */ }
+  }
+  if (found.length) return found.slice(0, ATTACH_LIMIT);
+  for (const file of clipboardFiles(clipboardData)) {
+    if (isImageMime(file.type)) push(file);
+  }
+  return found.slice(0, ATTACH_LIMIT);
+}
+
+export async function asyncClipboardImageFiles() {
+  if (!navigator.clipboard?.read) return [];
+  try {
+    const items = await navigator.clipboard.read();
+    const found = [];
+    const seen = new Set();
+    for (const item of items) {
+      for (const type of item.types || []) {
+        if (!/^image\//i.test(type)) continue;
+        let blob;
+        try {
+          blob = await item.getType(type);
+        } catch {
+          continue;
+        }
+        if (!blob?.size) continue;
+        const file = normalizeClipboardImageFile(new File(
+          [blob],
+          `screenshot.${type.split('/')[1] || 'png'}`,
+          { type, lastModified: Date.now() },
+        ));
+        if (!file) continue;
+        const key = `${file.size}:${file.type}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        found.push(file);
+        if (found.length >= ATTACH_LIMIT) return found;
+      }
+    }
+    return found;
+  } catch {
+    return [];
+  }
 }
 
 export function clipboardFiles(clipboardData) {
@@ -170,15 +286,6 @@ export function inlineImageSrc(value) {
   if (/^blob:/i.test(src)) return src;
   if (/^data:image\/(?!svg\+xml)/i.test(src)) return src;
   return '';
-}
-
-function clipboardHtml(clipboardData) {
-  if (typeof clipboardData?.getData !== 'function') return '';
-  try {
-    return String(clipboardData.getData('text/html') || '');
-  } catch {
-    return '';
-  }
 }
 
 export function clipboardImageSrcs(clipboardData) {

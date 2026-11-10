@@ -15,7 +15,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-from aird.plugins.chat.e2e import parse_e2e_payload, validate_public_jwk
+from aird.plugins.chat.e2e import _MAX_ENHANCED_CT_CHARS, parse_e2e_payload, validate_public_jwk
 
 _GRACE_SEC = 20
 _WAIT_SEC = 15 * 60
@@ -190,7 +190,7 @@ class EnhancedSecureHub:
             return _view(room)
 
     def relay(self, username: str, room_id: str, payload) -> tuple[str, dict]:
-        blob = parse_e2e_payload(payload)
+        blob = parse_e2e_payload(payload, max_ct_chars=_MAX_ENHANCED_CT_CHARS)
         if self._db_path:
             return self._peer_shared(username, room_id)[0], blob
         with self._lock:

@@ -1127,7 +1127,7 @@ def unread_summary(central: sqlite3.Connection | None, username: str) -> dict:
 
 
 def toggle_reaction(*, actor: str, conversation_id: str, message_id: str, emoji: str) -> list[dict]:
-    emoji = (emoji or "").strip()[:16]
+    emoji = (emoji or "").strip()[:64]
     if not emoji:
         raise ValueError("emoji required")
     current = get_message(actor, message_id)
