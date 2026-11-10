@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS list_items (
     due_at TEXT,
     remind_at TEXT,
     reminded_at TEXT,
+    kind TEXT NOT NULL DEFAULT 'check',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY(list_id) REFERENCES collab_lists(id) ON DELETE CASCADE
@@ -85,6 +86,68 @@ def parse_stamp(value) -> str | None:
 
 def _note(value) -> str:
     return str(value or "").strip()[:4000]
+
+
+def item_kind(value, fallback: str = "check") -> str:
+    raw = str(value or "").strip().lower()
+    if raw in ("check", "todo"):
+        return "check"
+    if raw == "bullet":
+        return "bullet"
+    if raw == "note":
+        return "note"
+    return fallback
+
+
+def clip_item_text(kind: str, value) -> str:
+    body = str(value or "").strip()
+    limit = 100_000 if kind == "note" else 300
+    return body[:limit]
+
+
+def _row_kind(item) -> str:
+    if isinstance(item, sqlite3.Row):
+        return item_kind(item["kind"]) if "kind" in item.keys() else "check"
+    return item_kind(item.get("kind"))
+
+
+def _note_titles(items) -> list[dict]:
+    out = []
+    for item in items:
+        if _row_kind(item) != "note":
+            continue
+        raw = str(item["text"] or "").strip()
+        title = raw.splitlines()[0][:80] if raw else "Untitled"
+        out.append({"id": item["id"], "title": title})
+    return out
+
+
+def _preview_rows(items) -> list[dict]:
+    out = []
+    for item in items:
+        if len(out) >= 3:
+            break
+        kind = item_kind(item["kind"]) if "kind" in item.keys() else "check"
+        raw = str(item["text"] or "").strip()
+        title = raw.splitlines()[0][:80] if raw else ""
+        if not title:
+            continue
+        out.append({"id": item["id"], "kind": kind, "title": title})
+    return out
+
+
+def _progress_from_items(items) -> dict:
+    checks = []
+    for item in items:
+        if isinstance(item, sqlite3.Row):
+            kind = item_kind(item["kind"]) if "kind" in item.keys() else "check"
+            done = bool(item["done"])
+        else:
+            kind = item_kind(item.get("kind"))
+            done = bool(item.get("done"))
+        if kind == "check":
+            checks.append(done)
+    return {"done": sum(1 for done in checks if done), "total": len(checks)}
 
 
 def _new_id() -> str:
@@ -173,8 +236,7 @@ def list_detail(conn: sqlite3.Connection, list_id: str, username: str) -> dict |
     ).fetchall()
     data["items"] = [_item_row(i) for i in items]
     data["participants"] = sorted(_participants(conn, list_id))
-    done = sum(1 for it in data["items"] if it.get("done"))
-    data["progress"] = {"done": done, "total": len(data["items"])}
+    data["progress"] = _progress_from_items(data["items"])
     data["active"] = is_active("list", data)
     filed = conn.execute(
         "SELECT group_id FROM list_group_items WHERE owner_username = ? AND list_id = ?",
@@ -214,16 +276,20 @@ def create_list(
         labels = (raw or {}).get("labels") or []
         if not isinstance(labels, list):
             labels = []
-        due = parse_stamp((raw or {}).get("due_at")) if (raw or {}).get("due_at") else None
-        remind = parse_stamp((raw or {}).get("remind_at")) if (raw or {}).get("remind_at") else None
+        row_kind = item_kind((raw or {}).get("kind"), "bullet" if k == "bullet" else "check")
+        body = clip_item_text(row_kind, text)
+        if not body:
+            continue
+        due = parse_stamp((raw or {}).get("due_at")) if row_kind == "check" and (raw or {}).get("due_at") else None
+        remind = parse_stamp((raw or {}).get("remind_at")) if row_kind == "check" and (raw or {}).get("remind_at") else None
         conn.execute(
-            "INSERT INTO list_items (id, list_id, text, done, sort_order, labels_json, notes, due_at, remind_at, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO list_items (id, list_id, text, done, sort_order, labels_json, notes, due_at, remind_at, created_at, updated_at, kind) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 _new_id(),
                 list_id,
-                text,
-                1 if (raw or {}).get("done") else 0,
+                body,
+                1 if row_kind == "check" and (raw or {}).get("done") else 0,
                 i,
                 json.dumps(labels),
                 _note((raw or {}).get("notes")),
@@ -231,6 +297,7 @@ def create_list(
                 remind or due,
                 now,
                 now,
+                row_kind,
             ),
         )
     if vis == "private":
@@ -315,11 +382,13 @@ def add_item(
     notes: str = "",
     due_at: str | None = None,
     remind_at: str | None = None,
+    kind: str | None = None,
 ) -> dict | None:
     row = conn.execute("SELECT * FROM collab_lists WHERE id = ?", (list_id,)).fetchone()
     if not row or not _user_may_edit_items(conn, row, username):
         return None
-    body = str(text or "").strip()
+    row_kind = item_kind(kind)
+    body = clip_item_text(row_kind, text)
     if not body:
         return None
     now = _now()
@@ -327,12 +396,12 @@ def add_item(
         "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM list_items WHERE list_id = ?",
         (list_id,),
     ).fetchone()[0]
-    due = parse_stamp(due_at) if due_at else None
-    remind = parse_stamp(remind_at) if remind_at else due
+    due = parse_stamp(due_at) if row_kind == "check" and due_at else None
+    remind = parse_stamp(remind_at) if row_kind == "check" and remind_at else due
     conn.execute(
-        "INSERT INTO list_items (id, list_id, text, done, sort_order, labels_json, notes, due_at, remind_at, created_at, updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        (_new_id(), list_id, body, 0, order, json.dumps(labels or []), _note(notes), due, remind, now, now),
+        "INSERT INTO list_items (id, list_id, text, done, sort_order, labels_json, notes, due_at, remind_at, created_at, updated_at, kind) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (_new_id(), list_id, body, 0, order, json.dumps(labels or []), _note(notes), due, remind, now, now, row_kind),
     )
     conn.execute("UPDATE collab_lists SET updated_at = ? WHERE id = ?", (now, list_id))
     conn.commit()
@@ -369,6 +438,7 @@ def patch_item(
     due_set: bool = False,
     remind_set: bool = False,
     sort_order: int | None = None,
+    kind: str | None = None,
 ) -> dict | None:
     row = conn.execute("SELECT * FROM collab_lists WHERE id = ?", (list_id,)).fetchone()
     if not row or not _user_may_edit_items(conn, row, username):
@@ -379,15 +449,27 @@ def patch_item(
     if not item:
         return None
     now = _now()
-    if done is not None:
+    current_kind = item_kind(item["kind"]) if "kind" in item.keys() else "check"
+    if kind is not None:
+        current_kind = item_kind(kind)
+        conn.execute(
+            "UPDATE list_items SET kind = ?, updated_at = ? WHERE id = ?",
+            (current_kind, now, item_id),
+        )
+        if current_kind != "check":
+            conn.execute(
+                "UPDATE list_items SET done = 0, due_at = NULL, remind_at = NULL WHERE id = ?",
+                (item_id,),
+            )
+    if done is not None and current_kind == "check":
         conn.execute(
             "UPDATE list_items SET done = ?, updated_at = ? WHERE id = ?",
             (1 if done else 0, now, item_id),
         )
-    if text is not None and text.strip():
+    if text is not None and str(text).strip():
         conn.execute(
             "UPDATE list_items SET text = ?, updated_at = ? WHERE id = ?",
-            (text.strip(), now, item_id),
+            (clip_item_text(current_kind, text), now, item_id),
         )
     if labels is not None:
         clean = [str(x).strip() for x in labels if str(x).strip()]
@@ -405,6 +487,9 @@ def patch_item(
             "UPDATE list_items SET sort_order = ?, updated_at = ? WHERE id = ?",
             (int(sort_order), now, item_id),
         )
+    if current_kind != "check":
+        due_set = False
+        remind_set = False
     due = parse_stamp(due_at) if due_set else item["due_at"]
     remind = parse_stamp(remind_at) if remind_set else item["remind_at"]
     if due_set and not remind_set and not remind:
@@ -454,6 +539,7 @@ def _item_row(row: sqlite3.Row) -> dict:
         "notes": row["notes"] if "notes" in row.keys() else "",
         "due_at": row["due_at"] if "due_at" in row.keys() else None,
         "remind_at": row["remind_at"] if "remind_at" in row.keys() else None,
+        "kind": item_kind(row["kind"]) if "kind" in row.keys() else "check",
     }
 
 
@@ -475,13 +561,14 @@ def list_index(conn: sqlite3.Connection, username: str, query: str = "") -> dict
         items = conn.execute(
             "SELECT * FROM list_items WHERE list_id = ?", (row["id"],)
         ).fetchall()
-        done = sum(1 for item in items if item["done"])
-        data["progress"] = {"done": done, "total": len(items)}
+        data["progress"] = _progress_from_items(items)
+        data["preview"] = _preview_rows(items)
+        data["notes"] = _note_titles(items)
         data["active"] = is_active("list", {**data, "kind": data["kind"], "progress": data["progress"]})
         open_due = [
             str(item["due_at"])
             for item in items
-            if not item["done"] and item["due_at"]
+            if _row_kind(item) == "check" and not item["done"] and item["due_at"]
         ]
         data["next_due"] = min(open_due) if open_due else ""
         filed = conn.execute(
@@ -515,7 +602,7 @@ def list_index(conn: sqlite3.Connection, username: str, query: str = "") -> dict
                 {
                     "list_id": row["id"],
                     "item_id": item["id"],
-                    "text": item["text"],
+                    "text": str(item["text"] or "").splitlines()[0][:120],
                     "title": data["title"],
                     "remind_at": when,
                 }

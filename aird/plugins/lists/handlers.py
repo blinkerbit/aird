@@ -248,6 +248,7 @@ class ListItemsHandler(BaseHandler, XSRFTokenMixin):
                 notes=str(body.get("notes") or ""),
                 due_at=body.get("due_at"),
                 remind_at=body.get("remind_at") if is_reminders_enabled() else None,
+                kind=body.get("kind") if "kind" in body else None,
             )
             if not detail:
                 self.set_status(400)
@@ -301,6 +302,7 @@ class ListItemHandler(BaseHandler, XSRFTokenMixin):
                 due_set="due_at" in body,
                 remind_set=is_reminders_enabled() and "remind_at" in body,
                 sort_order=body.get("sort_order") if "sort_order" in body else None,
+                kind=body.get("kind") if "kind" in body else None,
             )
             if not detail:
                 self.set_status(403)

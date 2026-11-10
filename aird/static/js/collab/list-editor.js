@@ -287,7 +287,7 @@ function wireReorder(scope, list, hooks) {
           if (!dy) return;
           el.animate(
             [{ transform: `translateY(${dy}px)` }, { transform: 'translateY(0)' }],
-            { duration: 180, easing: 'cubic-bezier(.2,.7,.2,1)' },
+            { duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 60, easing: 'ease-out' },
           );
         });
       };

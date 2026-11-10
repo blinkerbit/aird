@@ -61,4 +61,10 @@ def ensure_collab_schema(conn: sqlite3.Connection) -> None:
     ):
         if name not in item_cols:
             conn.execute(f"ALTER TABLE list_items ADD COLUMN {name} {decl}")
+    if "kind" not in item_cols:
+        conn.execute("ALTER TABLE list_items ADD COLUMN kind TEXT NOT NULL DEFAULT 'check'")
+        conn.execute(
+            "UPDATE list_items SET kind = 'bullet' "
+            "WHERE list_id IN (SELECT id FROM collab_lists WHERE kind = 'bullet')"
+        )
     conn.commit()

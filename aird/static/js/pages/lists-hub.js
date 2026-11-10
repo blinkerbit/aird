@@ -1,8 +1,8 @@
 import { apiJson } from '../collab-api.js';
-import { listDialog } from '../collab-ui.js';
+import { listDialog, sharePicker } from '../collab-ui.js';
 import { tagChipHtml, tagChipsRow } from '../collab/tag-chips.js';
 import { fetchMyUserTags } from '../user-tag-api.js';
-import { renderListEditor } from '../collab/list-editor.js';
+import { renderOutline } from '../collab/list-outline.js';
 
 function esc(s) {
   const d = document.createElement('div');
@@ -45,9 +45,15 @@ export function initListsHub(root) {
   let lists = [];
   let tagCatalog = [];
   let selectedGroupId = '';
-  let activeListId = new URLSearchParams(location.search).get('id') || '';
+  const params = new URLSearchParams(location.search);
+  let activeListId = params.get('id') || '';
+  let noteId = params.get('note') || '';
+  let noteMode = 'write';
+  let focusMode = false;
+  let selected = [];
+  let armDraft = false;
   let tagFilter = '';
-  let mobileView = 'lists';
+  let mobileView = noteId ? 'note' : activeListId ? 'detail' : 'lists';
   let selectedGroupIdInit = false;
   let detail = null;
 
@@ -71,6 +77,7 @@ export function initListsHub(root) {
   function syncUrl() {
     const params = new URLSearchParams();
     if (activeListId) params.set('id', activeListId);
+    if (noteId) params.set('note', noteId);
     const q = params.toString();
     history.replaceState(null, '', q ? `/lists?${q}` : '/lists');
   }
@@ -167,10 +174,29 @@ export function initListsHub(root) {
         event.stopPropagation();
         const group = groups.find((g) => g.id === btn.dataset.renameGroup);
         if (!group) return;
-        const name = window.prompt('Group name', group.name);
-        if (!name || !name.trim()) return;
-        await apiJson(`/api/list-groups/${group.id}`, { method: 'PATCH', body: { name: name.trim() } });
-        await refresh(false);
+        const input = document.createElement('input');
+        input.className = 'list-rename';
+        input.value = group.name;
+        btn.replaceWith(input);
+        input.focus();
+        input.select();
+        let closed = false;
+        const finish = async (save) => {
+          if (closed) return;
+          closed = true;
+          const name = input.value.trim();
+          if (!save || !name || name === group.name) {
+            paintRail();
+            return;
+          }
+          await apiJson(`/api/list-groups/${group.id}`, { method: 'PATCH', body: { name } });
+          await refresh(false);
+        };
+        input.addEventListener('keydown', (key) => {
+          if (key.key === 'Enter') finish(true);
+          if (key.key === 'Escape') finish(false);
+        });
+        input.addEventListener('blur', () => finish(true));
       });
     });
   }
@@ -287,12 +313,18 @@ export function initListsHub(root) {
 
   function listCard(list) {
     const tags = list.tags || [];
+    const preview = (list.preview || []).map((row) => (
+      row.kind === 'note'
+        ? `<button type="button" class="lists-card-line" data-list-id="${esc(list.id)}" data-open-note="${esc(row.id)}">${esc(row.title)}</button>`
+        : `<span class="lists-card-line">${row.kind === 'bullet' ? '•' : '☐'} ${esc(row.title)}</span>`
+    )).join('');
     return `<article class="lists-card ${list.id === activeListId ? 'is-active' : ''}" draggable="true" data-list-id="${esc(list.id)}">
       <button type="button" class="lists-card-open" data-open-list="${esc(list.id)}">
         <strong class="lists-card-title">${esc(list.title)}</strong>
         <span class="lists-card-aside">${esc(listMeta(list))}</span>
         ${tags.length ? tagChipsRow(tags) : ''}
       </button>
+      ${preview ? `<div class="lists-card-preview">${preview}</div>` : ''}
       ${addTagButton(list)}
     </article>`;
   }
@@ -347,7 +379,26 @@ export function initListsHub(root) {
     boardEl.querySelectorAll('[data-open-list]').forEach((btn) => {
       btn.addEventListener('click', () => openList(btn.dataset.openList));
     });
+    boardEl.querySelectorAll('[data-open-note]').forEach((btn) => {
+      btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        openNote(btn.dataset.listId, btn.dataset.openNote);
+      });
+    });
     wireAddTag(boardEl);
+  }
+
+  function showError(message) {
+    let node = document.getElementById('listsBanner');
+    if (!node && editorEl) {
+      node = document.createElement('p');
+      node.id = 'listsBanner';
+      node.className = 'list-banner';
+      editorEl.before(node);
+    }
+    if (!node) return;
+    node.hidden = !message;
+    node.textContent = message || '';
   }
 
   function paintEditor(list) {
@@ -358,30 +409,74 @@ export function initListsHub(root) {
       editorEl.innerHTML = '<div class="collab-empty">Select a list to edit items.</div>';
       return;
     }
-    renderListEditor(editorEl, list, {
-      me,
+    renderOutline(editorEl, list, {
+      captureKeys: true,
+      noteId,
+      noteMode,
+      focus: focusMode,
+      selected,
       reminders: remindersEnabled(root),
-      layout: isMobile() ? 'stack' : 'grid',
+      onBack: (isMobile() || noteId) ? () => {
+        if (noteId) {
+          noteId = '';
+          noteMode = 'write';
+          syncUrl();
+          paint();
+          return;
+        }
+        setMobileView('lists');
+        paint();
+      } : null,
+      onFocus() {
+        focusMode = !focusMode;
+        paint();
+      },
       onChange: applyDetail,
-      onBack: isMobile() ? () => { setMobileView('lists'); paint(); } : null,
-      onDelete() {
+      onOpenNote(id) {
+        noteId = id;
+        noteMode = 'write';
+        selected = [];
+        syncUrl();
+        paint();
+      },
+      onCloseNote() {
+        noteId = '';
+        noteMode = 'write';
+        syncUrl();
+        paint();
+      },
+      onNoteMode(mode) {
+        noteMode = mode;
+        paintEditor(detail);
+      },
+      onSelect(id, mode) {
+        if (!id) selected = [];
+        else if (mode === 'add') selected = [...new Set([...selected, id])];
+        else selected = selected.includes(id) ? selected.filter((row) => row !== id) : [...selected, id];
+        paintEditor(detail);
+      },
+      onError: showError,
+      onEdit: async () => {
+        const draft = await listDialog(detail);
+        if (!draft) return;
+        const next = await apiJson(`/api/lists/${detail.id}`, { method: 'PATCH', body: draft });
+        applyDetail(next);
+      },
+      onShare: () => sharePicker('list', list.id).catch((err) => showError(err.message)),
+      onDeleteList: async () => {
+        if (!window.confirm('Delete this list?')) return;
+        await apiJson(`/api/lists/${list.id}`, { method: 'DELETE' });
         activeListId = '';
+        noteId = '';
         detail = null;
         syncUrl();
         if (isMobile()) setMobileView('lists');
-        editorEl.classList.remove('is-locked');
         editorEl.innerHTML = '<div class="collab-empty">Select a list to edit items.</div>';
         refresh(false);
       },
-      onRevert() { paintEditor(detail); },
-      onSettled() {
-        if (pendingBoard) reloadBoard().catch(() => {});
-        if (pendingLiveId !== list.id) return;
-        const id = pendingLiveId;
-        pendingLiveId = '';
-        pullOpen(id).catch(() => {});
-      },
+      focusDraft: armDraft,
     });
+    armDraft = false;
   }
 
   function applyDetail(next) {
@@ -392,18 +487,32 @@ export function initListsHub(root) {
     paintEditor(next);
   }
 
-  async function openList(id) {
+  async function openList(id, keepNote = false) {
+    if (!keepNote && id !== activeListId) noteId = '';
     activeListId = id;
     syncUrl();
     const list = await apiJson(`/api/lists/${id}`);
-    if (isMobile()) setMobileView('detail');
+    if (isMobile()) setMobileView(noteId ? 'note' : 'detail');
     paintBoard();
     paintEditor(list);
+  }
+
+  async function openNote(listId, itemId) {
+    noteId = itemId;
+    noteMode = 'read';
+    if (detail?.id !== listId) await openList(listId, true);
+    else {
+      syncUrl();
+      if (isMobile()) setMobileView('note');
+      paint();
+    }
   }
 
   function paint() {
     if (!bodyEl) return;
     bodyEl.classList.toggle('is-mobile', isMobile());
+    bodyEl.classList.toggle('is-focus', Boolean(focusMode || noteId));
+    if (noteId && isMobile()) mobileView = 'note';
     if (isMobile()) bodyEl.dataset.mobileView = mobileView;
     else delete bodyEl.dataset.mobileView;
     paintRail();
@@ -506,17 +615,35 @@ export function initListsHub(root) {
     }
   }
 
-  document.getElementById('listsGroupBtn')?.addEventListener('click', async () => {
-    const name = window.prompt('Group name');
-    if (!name || !name.trim()) return;
-    await apiJson('/api/list-groups', { method: 'POST', body: { name: name.trim() } });
-    await refresh();
+  document.getElementById('listsGroupBtn')?.addEventListener('click', () => {
+    const button = document.getElementById('listsGroupBtn');
+    const input = document.createElement('input');
+    input.className = 'list-rename';
+    input.placeholder = 'Group name';
+    button.replaceWith(input);
+    input.focus();
+    let closed = false;
+    const finish = async (save) => {
+      if (closed) return;
+      closed = true;
+      const name = input.value.trim();
+      input.replaceWith(button);
+      if (!save || !name) return;
+      await apiJson('/api/list-groups', { method: 'POST', body: { name } });
+      await refresh();
+    };
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') finish(true);
+      if (event.key === 'Escape') finish(false);
+    });
+    input.addEventListener('blur', () => finish(true));
   });
 
   document.getElementById('listsNewBtn')?.addEventListener('click', async () => {
     const draft = await listDialog();
     if (!draft) return;
     const list = await apiJson('/api/lists', { method: 'POST', body: draft });
+    armDraft = true;
     activeListId = list.id;
     detail = list;
     if (list.group_id) selectedGroupId = list.group_id;
@@ -524,6 +651,68 @@ export function initListsHub(root) {
     await refresh();
     await openList(list.id);
   });
+
+  document.addEventListener('keydown', (event) => {
+    if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'k') return;
+    event.preventDefault();
+    openPalette();
+  });
+
+  function openPalette() {
+    document.querySelector('.list-palette')?.remove();
+    const node = document.createElement('div');
+    node.className = 'list-palette';
+    const rows = [];
+    lists.forEach((list) => {
+      rows.push({ label: list.title, hint: 'List', run: () => openList(list.id) });
+      (list.notes || []).forEach((note) => {
+        rows.push({ label: note.title, hint: list.title, run: () => openNote(list.id, note.id) });
+      });
+    });
+    node.innerHTML = `<input class="list-palette-input" placeholder="Search lists and notes" />
+      <div class="list-palette-rows"></div>`;
+    document.body.appendChild(node);
+    const input = node.querySelector('input');
+    const box = node.querySelector('.list-palette-rows');
+    let active = 0;
+    const paintRows = () => {
+      const query = input.value.trim().toLowerCase();
+      const shown = rows.filter((row) => !query || row.label.toLowerCase().includes(query) || row.hint.toLowerCase().includes(query)).slice(0, 8);
+      if (active >= shown.length) active = 0;
+      box.innerHTML = shown.map((row, index) => `<button type="button" class="${index === active ? 'is-active' : ''}" data-index="${index}"><strong>${esc(row.label)}</strong><span>${esc(row.hint)}</span></button>`).join('')
+        || '<p class="collab-empty">Nothing matches.</p>';
+      box.querySelectorAll('button').forEach((button) => {
+        button.addEventListener('click', () => {
+          const pick = shown[Number(button.dataset.index)];
+          node.remove();
+          pick?.run();
+        });
+      });
+      return shown;
+    };
+    let shown = paintRows();
+    input.addEventListener('input', () => { active = 0; shown = paintRows(); });
+    input.addEventListener('keydown', (key) => {
+      if (key.key === 'Escape') {
+        key.preventDefault();
+        key.stopPropagation();
+        node.remove();
+      }
+      if (key.key === 'ArrowDown' || key.key === 'ArrowUp') {
+        key.preventDefault();
+        const count = box.querySelectorAll('button').length;
+        if (!count) return;
+        active = (active + (key.key === 'ArrowDown' ? 1 : count - 1)) % count;
+        shown = paintRows();
+      }
+      if (key.key === 'Enter') {
+        key.preventDefault();
+        shown[active]?.run();
+        node.remove();
+      }
+    });
+    input.focus();
+  }
 
   refresh().catch((e) => {
     if (editorEl) editorEl.innerHTML = `<div class="collab-empty">${esc(e.message)}</div>`;

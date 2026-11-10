@@ -27,8 +27,6 @@ def is_active(kind: str, detail: dict | None) -> bool:
     if kind == "poll":
         return poll_open(data.get("closes_at"))
     if kind == "list":
-        if str(data.get("kind") or "todo") != "todo":
-            return True
         prog = data.get("progress") or {}
         total = int(prog.get("total") or 0)
         done = int(prog.get("done") or 0)

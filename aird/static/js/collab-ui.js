@@ -1,6 +1,6 @@
 import { apiJson, expiresLabel, visibilityChip } from './collab-api.js';
 import { hydrateTagPicker, readTagIds, tagIdsFieldHtml } from './collab-tags.js';
-import { renderListEditor } from './collab/list-editor.js';
+import { renderChatList } from './collab/list-outline.js';
 
 function esc(s) {
   const d = document.createElement('div');
@@ -223,8 +223,6 @@ export function pollDialog(existing) {
 }
 
 export function listDialog(existing) {
-  const items = existing?.items?.length ? existing.items : [{ text: '', labels: [] }];
-  const kind = existing?.kind === 'bullet' ? 'bullet' : 'todo';
   return openForm({
     title: existing ? 'Edit list' : 'New list',
     submitLabel: existing ? 'Save list' : 'Create list',
@@ -236,16 +234,6 @@ export function listDialog(existing) {
         <textarea class="textarea textarea-bordered textarea-sm" data-notes rows="3">${esc(existing?.notes || '')}</textarea>
       </label>
       ${slugField(existing, 'In chat, type #name. Example: #grocery-nov1')}
-      <label class="collab-field"><span>Type</span>
-        <select class="select select-bordered select-sm" data-kind>
-          <option value="todo" ${kind === 'todo' ? 'selected' : ''}>Checklist</option>
-          <option value="bullet" ${kind === 'bullet' ? 'selected' : ''}>Bullet list</option>
-        </select>
-      </label>
-      ${existing ? '' : `<div class="collab-field"><span>Items</span>
-        <div class="collab-rows" data-rows data-min="0">${items.map((it) => rowHtml('item', it)).join('')}</div>
-        <button type="button" class="btn btn-ghost btn-xs" data-add-row="[data-rows]" data-row-kind="item">Add item</button>
-      </div>`}
       ${visibilityField(existing?.visibility)}
       ${peopleField((existing?.participants || []).filter((n) => n !== existing?.organizer))}
       ${existing ? `<label class="collab-check"><input type="checkbox" data-forward ${existing.allow_forward ? 'checked' : ''}> Let people this list is shared with share it onward</label>` : ''}
@@ -259,18 +247,12 @@ export function listDialog(existing) {
         title,
         notes: root.querySelector('[data-notes]')?.value.trim() || '',
         slug: root.querySelector('[data-slug]')?.value.trim(),
-        kind: root.querySelector('[data-kind]').value,
+        kind: 'todo',
         visibility: root.querySelector('[data-visibility]').value,
         participants: readPeople(root),
         tag_ids: readTagIds(root),
       };
       if (existing) payload.allow_forward = Boolean(root.querySelector('[data-forward]')?.checked);
-      if (!existing) {
-        payload.items = [...root.querySelectorAll('[data-rows] .collab-row')].map((row) => ({
-          text: row.querySelector('[data-text]').value.trim(),
-          labels: row.querySelector('[data-labels]').value.split(',').map((s) => s.trim()).filter(Boolean),
-        })).filter((it) => it.text);
-      }
       return payload;
     },
   });
@@ -424,14 +406,12 @@ export function mountPoll(root, poll, { me, onChange, onDelete, readOnly = false
 }
 
 export function mountList(root, list, { me, onChange, onDelete } = {}) {
-  renderListEditor(root, list, {
-    me,
-    reminders: remindersEnabled(),
-    layout: 'glance',
+  renderChatList(root, list, {
     onChange,
-    onDelete,
-    onRevert() { mountList(root, list, { me, onChange, onDelete }); },
+    onError(message) { window.alert(message); },
   });
+  void me;
+  void onDelete;
 }
 
 export function mountMeet(root, meet, { me, onChange, onDelete, readOnly = false }) {
