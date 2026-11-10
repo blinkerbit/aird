@@ -749,6 +749,74 @@ def _list_message_rows(
     return list(reversed(rows))
 
 
+def message_index(
+    username: str,
+    conversation_id: str,
+    *,
+    since_id: str | None = None,
+    until_id: str | None = None,
+    limit: int = 400,
+) -> tuple[list[dict], bool]:
+    """Ids in the loaded span. Cheap enough to compare with what the phone already has."""
+    limit = max(1, min(500, int(limit)))
+    with mailbox(username) as box:
+        since_at = _message_created(box.conn, since_id) if since_id else None
+        until_at = _message_created(box.conn, until_id) if until_id else None
+        if since_id and since_at is None:
+            return [], True
+        if until_id and until_at is None:
+            return [], True
+        where = ["conversation_id = ?"]
+        args: list = [conversation_id]
+        if since_at is not None:
+            where.append("(created_at > ? OR (created_at = ? AND id >= ?))")
+            args.extend([since_at, since_at, since_id])
+        if until_at is not None:
+            where.append("(created_at < ? OR (created_at = ? AND id <= ?))")
+            args.extend([until_at, until_at, until_id])
+        args.append(limit + 1)
+        rows = box.conn.execute(
+            f"""
+            SELECT id, created_at FROM messages
+            WHERE {' AND '.join(where)}
+            ORDER BY created_at ASC, id ASC
+            LIMIT ?
+            """,
+            args,
+        ).fetchall()
+        complete = len(rows) <= limit
+        return [{"id": row[0], "created_at": row[1]} for row in rows[:limit]], complete
+
+
+def list_messages_by_ids(
+    username: str,
+    conversation_id: str,
+    ids: list[str],
+    *,
+    central: sqlite3.Connection | None = None,
+) -> list[dict]:
+    clean: list[str] = []
+    for raw in ids:
+        item = str(raw or "").strip()
+        if item and item not in clean:
+            clean.append(item)
+        if len(clean) >= 40:
+            break
+    if not clean:
+        return []
+    marks = ",".join("?" * len(clean))
+    with mailbox(username) as box:
+        rows = box.conn.execute(
+            f"{_MSG_SELECT} WHERE conversation_id = ? AND id IN ({marks})",
+            [conversation_id, *clean],
+        ).fetchall()
+        found = [row[0] for row in rows]
+        reactions = _reactions_map(box.conn, found)
+        by_id = {row[0]: _row_to_message(row, reactions=reactions.get(row[0], [])) for row in rows}
+    ordered = [by_id[item] for item in clean if item in by_id]
+    return _attach_sender_display_names(central, ordered)
+
+
 def list_messages(
     username: str,
     conversation_id: str,

@@ -845,6 +845,25 @@ class ChatConversationMessagesHandler(BaseHandler, XSRFTokenMixin):
         if not chat_db.exchange_open(name, conversation_id):
             self.write({"messages": [], "pins": [], "receipts": []})
             return
+        index = self.get_argument("index", "")
+        if index in ("1", "true"):
+            ids, complete = chat_db.message_index(
+                name,
+                conversation_id,
+                since_id=self.get_argument("since_id", None) or None,
+                until_id=self.get_argument("until_id", None) or None,
+                limit=int(self.get_argument("limit", "400")),
+            )
+            self.write({"ids": ids, "complete": complete})
+            return
+        wanted = [part for part in (self.get_argument("ids", "") or "").split(",") if part]
+        if wanted:
+            self.write({
+                "messages": chat_db.list_messages_by_ids(
+                    name, conversation_id, wanted, central=self.db_conn
+                )
+            })
+            return
         messages = chat_db.list_messages(
             name,
             conversation_id,

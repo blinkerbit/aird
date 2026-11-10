@@ -95,6 +95,22 @@ def test_list_messages_after_id(chat_env):
     assert chat_db.get_message("bob", m1["id"])["body"] == "one"
 
 
+def test_message_index_finds_a_hole(chat_env):
+    from aird.plugins.chat import db as chat_db
+
+    a = chat_db.resolve_user_id(chat_env, "alice")
+    b = chat_db.resolve_user_id(chat_env, "bob")
+    conv = chat_db.create_dm_conversation(chat_env, a, b)
+    first = chat_db.insert_message(chat_env, username="alice", conversation_id=conv, msg_type="text", body="one")
+    middle = chat_db.insert_message(chat_env, username="alice", conversation_id=conv, msg_type="text", body="two")
+    last = chat_db.insert_message(chat_env, username="bob", conversation_id=conv, msg_type="text", body="three")
+    ids, complete = chat_db.message_index("bob", conv, since_id=first["id"], until_id=last["id"])
+    assert complete
+    assert [row["id"] for row in ids] == [first["id"], middle["id"], last["id"]]
+    fetched = chat_db.list_messages_by_ids("bob", conv, [middle["id"], first["id"]], central=chat_env)
+    assert [msg["body"] for msg in fetched] == ["two", "one"]
+
+
 def test_message_fanout_same_uuid(chat_env):
     from aird.plugins.chat import db as chat_db
 
