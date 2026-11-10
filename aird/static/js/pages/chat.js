@@ -3093,9 +3093,12 @@ import { mountEmojiPicker } from '../emoji-picker.js';
     const sel = window.getSelection();
     if (!sel?.rangeCount) return;
     const range = sel.getRangeAt(0);
+    if (editor && !editor.contains(range.startContainer)) return;
     range.deleteContents();
-    range.insertNode(document.createTextNode(text));
-    range.collapse(false);
+    const node = document.createTextNode(text);
+    range.insertNode(node);
+    range.setStartAfter(node);
+    range.collapse(true);
     sel.removeAllRanges();
     sel.addRange(range);
   }
@@ -3120,54 +3123,85 @@ import { mountEmojiPicker } from '../emoji-picker.js';
     ? mountEmojiPicker(emojiPicker, (emoji) => {
       if (emojiMode.type === 'react' && emojiMode.id) {
         react(emojiMode.id, emoji).catch((err) => alert(err.message));
-      } else {
-        insertEmoji(emoji);
+        hideEmojiPicker();
+        return;
       }
-      hideEmojiPicker();
+      insertEmoji(emoji);
     })
     : null;
+
+  let editorRange = null;
+
+  function rememberEditorRange() {
+    const sel = window.getSelection();
+    if (!editor || !sel?.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    if (!editor.contains(range.startContainer)) return;
+    editorRange = range.cloneRange();
+  }
+
+  function placeCaretInEditor() {
+    const sel = window.getSelection();
+    if (!editor || !sel) return;
+    if (editorRange && editor.contains(editorRange.startContainer)) {
+      sel.removeAllRanges();
+      sel.addRange(editorRange);
+      return;
+    }
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  editor?.addEventListener('keyup', rememberEditorRange);
+  editor?.addEventListener('mouseup', rememberEditorRange);
+  editor?.addEventListener('input', rememberEditorRange);
 
   function insertEmoji(ch) {
     if (!editor) return;
     editor.focus();
+    placeCaretInEditor();
     insertTextAtCaret(ch);
+    rememberEditorRange();
   }
 
   function hideEmojiPicker() {
     if (!emojiPicker) return;
     emojiPicker.hidden = true;
     emojiPicker.classList.add('hidden');
-    emojiPicker.classList.remove('is-floating');
+  }
+
+  function placeEmojiPicker(anchor) {
+    const box = (anchor || emojiPicker.parentElement || editor)?.getBoundingClientRect();
+    if (!box) return;
+    const width = Math.min(352, window.innerWidth - 16);
+    const height = Math.min(320, Math.round(window.innerHeight * 0.5));
+    let left = Math.min(Math.max(8, box.left), window.innerWidth - width - 8);
+    let top = box.top - height - 8;
+    if (top < 8) top = Math.min(box.bottom + 8, window.innerHeight - height - 8);
+    emojiPicker.style.width = `${width}px`;
+    emojiPicker.style.height = `${height}px`;
+    emojiPicker.style.left = `${left}px`;
+    emojiPicker.style.top = `${Math.max(8, top)}px`;
   }
 
   function openEmojiPicker(mode, anchor) {
     if (!emojiPicker) return;
+    const anchorEl = anchor || qs('.chat-editor-wrap') || editor;
     emojiMode = mode || { type: 'insert' };
+    rememberEditorRange();
     emojiUi?.reset();
+    if (emojiPicker.parentElement !== document.body) document.body.appendChild(emojiPicker);
     emojiPicker.hidden = false;
     emojiPicker.classList.remove('hidden');
-    if (anchor) {
-      const box = anchor.getBoundingClientRect();
-      const width = Math.min(352, window.innerWidth - 16);
-      let left = Math.min(box.left, window.innerWidth - width - 8);
-      left = Math.max(8, left);
-      let top = box.bottom + 6;
-      if (top + 280 > window.innerHeight) top = Math.max(8, box.top - 286);
-      emojiPicker.classList.add('is-floating');
-      emojiPicker.style.width = `${width}px`;
-      emojiPicker.style.left = `${left}px`;
-      emojiPicker.style.top = `${top}px`;
-    } else {
-      emojiPicker.classList.remove('is-floating');
-      emojiPicker.style.width = '';
-      emojiPicker.style.left = '';
-      emojiPicker.style.top = '';
-    }
+    placeEmojiPicker(anchorEl);
   }
 
   function toggleEmojiPicker() {
     if (!emojiPicker) return;
-    if (!emojiPicker.hidden && emojiMode.type === 'insert' && !emojiPicker.classList.contains('is-floating')) {
+    if (!emojiPicker.hidden && emojiMode.type === 'insert') {
       hideEmojiPicker();
       return;
     }

@@ -55,9 +55,18 @@ export function mountEmojiPicker(root, onPick) {
   const grid = root.querySelector('.chat-emoji-grid');
   const tabs = root.querySelector('.chat-emoji-tabs');
   let shown = [];
+  let toneList = [];
   let active = 'Recent';
   let holdTimer = 0;
-  let held = false;
+  let suppressClick = false;
+  let press = null;
+
+  function attr(value) {
+    return String(value || '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('"', '&quot;')
+      .replaceAll('<', '&lt;');
+  }
 
   function groups() {
     const recent = loadRecent()
@@ -79,7 +88,7 @@ export function mountEmojiPicker(root, onPick) {
   function paint(list) {
     shown = list;
     grid.innerHTML = list.length
-      ? list.map((item, i) => `<button type="button" class="chat-emoji-item" data-i="${i}" title="${item.n}">${item.e}</button>`).join('')
+      ? list.map((item, i) => `<button type="button" class="chat-emoji-item" data-i="${i}" title="${attr(item.n)}">${item.e}</button>`).join('')
       : '<p class="chat-emoji-empty">No matches</p>';
   }
 
@@ -97,6 +106,10 @@ export function mountEmojiPicker(root, onPick) {
     remember(emoji);
     onPick(emoji);
   }
+
+  search.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') event.preventDefault();
+  });
 
   search.addEventListener('input', () => {
     const q = search.value.trim().toLowerCase();
@@ -127,34 +140,53 @@ export function mountEmojiPicker(root, onPick) {
   grid.addEventListener('pointerdown', (event) => {
     const btn = event.target.closest('[data-i]');
     if (!btn) return;
+    event.preventDefault();
     const item = shown[Number(btn.dataset.i)];
-    held = false;
+    suppressClick = false;
+    press = { i: Number(btn.dataset.i), x: event.clientX, y: event.clientY };
     clearTimeout(holdTimer);
     if (!item?.t?.length) return;
     holdTimer = setTimeout(() => {
-      held = true;
+      suppressClick = true;
+      toneList = item.t;
       tones.hidden = false;
-      tones.innerHTML = item.t.map((emoji) => `<button type="button" class="chat-emoji-item" data-tone="${emoji}">${emoji}</button>`).join('');
-    }, 280);
+      tones.innerHTML = item.t.map((emoji, i) => `<button type="button" class="chat-emoji-item" data-tone-i="${i}">${emoji}</button>`).join('');
+    }, 450);
   });
 
-  grid.addEventListener('pointerup', () => clearTimeout(holdTimer));
-  grid.addEventListener('pointercancel', () => clearTimeout(holdTimer));
-
-  grid.addEventListener('click', (event) => {
-    const btn = event.target.closest('[data-i]');
-    if (!btn) return;
-    if (held) {
-      held = false;
+  function endPress(event) {
+    clearTimeout(holdTimer);
+    const start = press;
+    press = null;
+    if (!start || suppressClick) {
+      suppressClick = false;
       return;
     }
-    choose(shown[Number(btn.dataset.i)]?.e);
+    if (Math.abs(event.clientX - start.x) + Math.abs(event.clientY - start.y) > 10) return;
+    choose(shown[start.i]?.e);
+  }
+
+  grid.addEventListener('pointermove', (event) => {
+    if (!press) return;
+    if (Math.abs(event.clientX - press.x) + Math.abs(event.clientY - press.y) <= 10) return;
+    clearTimeout(holdTimer);
+    press = null;
   });
 
-  tones.addEventListener('click', (event) => {
-    const btn = event.target.closest('[data-tone]');
+  grid.addEventListener('pointerup', endPress);
+  grid.addEventListener('pointercancel', () => {
+    clearTimeout(holdTimer);
+    press = null;
+  });
+
+  tones.addEventListener('pointerdown', (event) => {
+    if (event.target.closest('[data-tone-i]')) event.preventDefault();
+  });
+
+  tones.addEventListener('pointerup', (event) => {
+    const btn = event.target.closest('[data-tone-i]');
     if (!btn) return;
-    choose(btn.dataset.tone);
+    choose(toneList[Number(btn.dataset.toneI)]);
   });
 
   showGroup(loadRecent().length ? 'Recent' : 'Smileys & Emotion');
