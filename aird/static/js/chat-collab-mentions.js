@@ -136,7 +136,7 @@ export async function updateCollabMention(info, ctx) {
   let items = [];
   try {
     const data = await apiJson(`/api/chat/collab-suggest?kind=${trig.kind}&q=${encodeURIComponent(trig.query)}`);
-    items = data.items || [];
+    items = (data.items || []).filter((item) => item.may_share !== false);
   } catch {
     items = [];
   }

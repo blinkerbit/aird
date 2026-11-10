@@ -341,6 +341,39 @@ def test_try_create_chat_share_skips_uploads():
     handler.check_access.assert_not_called()
 
 
+def test_selected_attachment_download_names(chat_env, tmp_path):
+    from aird.plugins.chat import db as chat_db
+    from aird.plugins.chat.files import attachment_meta, pack_attachments, store_upload
+    from aird.plugins.chat.handlers import selected_attachment_entries
+
+    a = chat_db.resolve_user_id(chat_env, "alice")
+    b = chat_db.resolve_user_id(chat_env, "bob")
+    conv = chat_db.create_dm_conversation(chat_env, a, b)
+    one = tmp_path / "one.txt"
+    two = tmp_path / "two.txt"
+    one.write_text("a")
+    two.write_text("bb")
+    rel1, size1 = store_upload(
+        sender_username="alice", conversation_id=conv, source_abs=str(one), original_name="one.txt"
+    )
+    rel2, size2 = store_upload(
+        sender_username="alice", conversation_id=conv, source_abs=str(two), original_name="two.txt"
+    )
+    msg = chat_db.insert_message(
+        chat_env,
+        username="alice",
+        conversation_id=conv,
+        msg_type="file",
+        metadata=pack_attachments([
+            attachment_meta(original_name="one.txt", owner_username="alice", owner_rel=rel1, size_bytes=size1),
+            attachment_meta(original_name="two.txt", owner_username="alice", owner_rel=rel2, size_bytes=size2),
+        ]),
+    )
+    stored = chat_db.get_message("bob", msg["id"])
+    names = [name for _path, name in selected_attachment_entries(stored, [1, 0])]
+    assert names == ["two.txt", "one.txt"]
+
+
 def test_save_copy_and_410_after_delete_upload(chat_env, tmp_path):
     from aird.plugins.chat import db as chat_db
     from aird.plugins.chat.files import (

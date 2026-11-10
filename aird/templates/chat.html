@@ -229,6 +229,30 @@
     <form method="dialog" class="modal-backdrop"><button type="submit">close</button></form>
   </dialog>
 
+  <dialog id="chatShareTargets" class="modal">
+    <div class="modal-box max-w-md">
+      <h3 class="font-bold text-lg">Send to chat</h3>
+      <p id="chatShareTargetsHint" class="text-sm opacity-70 mt-1"></p>
+      <div class="chat-new-user-wrap mt-3">
+        <label class="sr-only" for="chatShareUser">Add a person</label>
+        <input id="chatShareUser" type="text" class="input input-bordered input-sm w-full" placeholder="Add a person…" autocomplete="off">
+        <div id="chatShareSuggest" class="menu menu-sm bg-base-100 border border-base-300 rounded-box shadow-lg hidden"></div>
+      </div>
+      <div id="chatShareChips" class="chat-chips" hidden></div>
+      <div id="chatShareList" class="mt-2 max-h-64 overflow-y-auto"></div>
+      <label class="flex items-center gap-2 mt-3 text-sm">
+        <input id="chatShareNewGroup" type="checkbox">
+        Also start a group with the selected people
+      </label>
+      <input id="chatShareGroupTitle" type="text" class="input input-bordered input-sm w-full mt-2" maxlength="80" placeholder="Group name" hidden>
+      <div class="modal-action">
+        <button type="button" id="chatShareCancel" class="btn btn-sm">Cancel</button>
+        <button type="button" id="chatShareSend" class="btn btn-sm btn-primary">Send</button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button type="submit">close</button></form>
+  </dialog>
+
   <dialog id="chatForwardModal" class="modal">
     <div class="modal-box max-w-md">
       <h3 id="chatForwardTitle" class="font-bold text-lg">Forward message</h3>

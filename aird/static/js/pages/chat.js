@@ -38,6 +38,7 @@ import {
   let identityReady = Promise.resolve();
   const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'jpe', 'jif', 'jfif', 'png', 'gif', 'bmp', 'webp', 'tiff', 'tif', 'svg', 'ico', 'avif', 'heic', 'heif', 'dng', 'cr2', 'nef', 'arw', 'orf', 'rw2', 'raf', 'raw']);
   let pendingBrowseAttachQueue = takePendingBrowseAttachAll();
+  let shareExtraUsers = [];
   const replyLabelCache = new Map();
 
   const qs = (sel) => document.querySelector(sel);
@@ -755,15 +756,36 @@ import {
 
   function voicePlayerHtml(msg, att, index) {
     const src = fileUrl(msg, index);
-    const menu = msg.sender_username === me
-      ? ''
-      : `<button type="button" class="chat-link-btn" data-att="save" data-id="${esc(msg.id)}" data-i="${index}">Save a copy</button>`;
-    return `<div class="chat-att-wrap"><div class="chat-voice" data-voice="1">`
+    return `<div class="chat-voice" data-voice="1">`
       + `<button type="button" class="chat-voice-play" aria-label="Play voice message">${VOICE_PLAY_SVG}</button>`
       + `<input type="range" class="chat-voice-seek" min="0" max="0" value="0" step="0.01" aria-label="Seek">`
       + `<span class="chat-voice-time">0:00</span>`
       + `<audio preload="metadata" src="${esc(src)}"></audio>`
-      + `</div>${menu}</div>`;
+      + `</div>`;
+  }
+
+  function canSaveToAird(att, msg) {
+    const owner = att?.owner_username || msg?.sender_username || '';
+    return owner !== me;
+  }
+
+  function attMenuHtml(msg, att, index) {
+    const name = att.original_name || 'file';
+    const open = isVoiceAtt(att)
+      ? ''
+      : `<button type="button" data-att="open" data-url="${esc(attOpenUrl(att, msg, index))}">Open</button>`;
+    return `<details class="chat-att-menu"><summary aria-label="Actions for ${esc(name)}">⋯</summary><div class="chat-att-menu-list">${open}<button type="button" data-att="download" data-id="${esc(msg.id)}" data-i="${index}">Download</button></div></details>`;
+  }
+
+  function attFrame(msg, att, index, inner, multi) {
+    const name = att.original_name || 'file';
+    const pick = multi
+      ? `<label class="chat-att-pick"><input type="checkbox" data-att-pick data-i="${index}" aria-label="Select ${esc(name)}"></label>`
+      : '';
+    const save = canSaveToAird(att, msg)
+      ? `<button type="button" class="btn btn-xs btn-outline chat-att-save" data-att="save" data-id="${esc(msg.id)}" data-i="${index}">Save to Aird</button>`
+      : '';
+    return `<div class="chat-att-item">${pick}<div class="chat-att-body">${inner}${save ? `<div class="chat-att-actions">${save}</div>` : ''}</div>${attMenuHtml(msg, att, index)}</div>`;
   }
 
   function finiteAudioDuration(audio) {
@@ -1149,26 +1171,32 @@ import {
   function attachmentHtml(msg) {
     const atts = msgAttachments(msg);
     if (!atts.length) return '';
-    const mine = msg.sender_username === me;
+    const multi = atts.length > 1;
     const cards = atts.map((att, i) => {
       const name = att.original_name || 'file';
       const previewUrl = fileUrl(msg, i);
       const openUrl = attOpenUrl(att, msg, i);
       const blank = att.share_url ? '' : ' target="_blank" rel="noopener"';
-      const menu = mine ? '' : `<button type="button" class="chat-link-btn" data-att="save" data-id="${esc(msg.id)}" data-i="${i}">Save a copy</button>`;
+      let inner = '';
       if (isVoiceAtt(att)) {
-        return voicePlayerHtml(msg, att, i);
-      }
-      if (isImageAtt(att, msg)) {
+        inner = voicePlayerHtml(msg, att, i);
+      } else if (isImageAtt(att, msg)) {
         const gif = isGifAtt(att, msg) ? ' data-gif="1"' : '';
-        return `<div class="chat-att-wrap"><img src="${esc(previewUrl)}" alt="${esc(name)}" class="chat-msg-image" data-full="${esc(previewUrl)}"${gif} onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'chat-file-unavailable',textContent:'File unavailable'}))">${menu}</div>`;
+        inner = `<img src="${esc(previewUrl)}" alt="${esc(name)}" class="chat-msg-image" data-full="${esc(previewUrl)}"${gif} onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'chat-file-unavailable',textContent:'File unavailable'}))">`;
+      } else if (isFolderAtt(att)) {
+        inner = `<a class="chat-file-card chat-file-card--folder" href="${esc(openUrl)}">${esc(name)}/</a>`;
+      } else {
+        inner = `<a class="chat-file-card" href="${esc(openUrl)}"${blank}>${esc(name)}</a>`;
       }
-      if (isFolderAtt(att)) {
-        return `<div class="chat-att-wrap"><a class="chat-file-card chat-file-card--folder" href="${esc(openUrl)}">${esc(name)}/</a>${menu}</div>`;
-      }
-      return `<div class="chat-att-wrap"><a class="chat-file-card" href="${esc(openUrl)}"${blank}>${esc(name)}</a>${menu}</div>`;
+      return attFrame(msg, att, i, inner, multi);
     }).join('');
-    return `<div class="chat-att-stack">${cards}</div>`;
+    const saveBulk = atts.some((att) => canSaveToAird(att, msg))
+      ? `<button type="button" class="btn btn-xs btn-outline" data-att-bulk="save" data-id="${esc(msg.id)}">Save to Aird</button>`
+      : '';
+    const bulk = multi
+      ? `<div class="chat-att-bulk" hidden><span class="chat-att-bulk-count"></span>${saveBulk}<button type="button" class="btn btn-xs btn-ghost" data-att-bulk="download" data-id="${esc(msg.id)}">Download</button></div>`
+      : '';
+    return `<div class="chat-att-stack" data-att-stack="${esc(msg.id)}">${cards}${bulk}</div>`;
   }
 
   function chatPlain(body) {
@@ -1368,7 +1396,64 @@ import {
 
   function handleSaveCopyClick(e) {
     const btn = e.currentTarget;
+    btn.closest('details')?.removeAttribute('open');
     saveCopy(btn.dataset.id, btn.dataset.i).catch((err) => alert(err.message));
+  }
+
+  function syncAttBulk(stack) {
+    if (!stack) return;
+    const n = stack.querySelectorAll('[data-att-pick]:checked').length;
+    const bar = stack.querySelector('.chat-att-bulk');
+    if (!bar) return;
+    bar.hidden = n === 0;
+    const count = bar.querySelector('.chat-att-bulk-count');
+    if (count) count.textContent = n === 1 ? '1 selected' : `${n} selected`;
+  }
+
+  function pickedIndexes(stack) {
+    return [...stack.querySelectorAll('[data-att-pick]:checked')].map((box) => box.dataset.i);
+  }
+
+  function triggerFileDownload(messageId, indexes) {
+    if (!activeConvId || !messageId || !indexes.length) return;
+    const params = new URLSearchParams();
+    indexes.forEach((index) => params.append('i', String(index)));
+    params.set('dl', '1');
+    const link = document.createElement('a');
+    link.href = `/api/chat/conversations/${activeConvId}/messages/${messageId}/file?${params}`;
+    link.rel = 'noopener';
+    document.body.append(link);
+    link.click();
+    link.remove();
+  }
+
+  async function saveCopies(messageId, indexes) {
+    if (!activeConvId || !indexes.length) return;
+    const picker = globalThis.AirdFolderPicker;
+    if (!picker?.open) throw new Error('Folder picker unavailable');
+    picker.init?.();
+    const dest = await picker.open('copy', { title: 'Save to a folder in your Aird', confirmLabel: 'Save here' });
+    if (dest === null || dest === undefined) return;
+    let saved = 0;
+    let owned = 0;
+    const errors = [];
+    for (const index of indexes) {
+      try {
+        const data = await api(`/api/chat/conversations/${activeConvId}/messages/${messageId}/save-copy?i=${encodeURIComponent(index)}`, {
+          method: 'POST',
+          body: JSON.stringify({ dest_dir: dest }),
+        });
+        if (data.already_owner) owned += 1;
+        else saved += 1;
+      } catch (err) {
+        errors.push(err.message || 'Could not save');
+      }
+    }
+    const bits = [];
+    if (saved) bits.push(`Saved ${saved} to your Aird.`);
+    if (owned) bits.push(`${owned} already in your Aird.`);
+    if (errors.length) bits.push(errors[0]);
+    if (bits.length) alert(bits.join(' '));
   }
 
   function ensureReactDelegation() {
@@ -1403,12 +1488,42 @@ import {
     scope.querySelectorAll('[data-att="open"]').forEach((btn) => {
       if (btn.dataset.boundUi === '1') return;
       btn.dataset.boundUi = '1';
-      btn.addEventListener('click', () => window.open(btn.dataset.url, '_blank', 'noopener'));
+      btn.addEventListener('click', () => {
+        btn.closest('details')?.removeAttribute('open');
+        window.open(btn.dataset.url, '_blank', 'noopener');
+      });
     });
     scope.querySelectorAll('[data-att="save"]').forEach((btn) => {
       if (btn.dataset.boundUi === '1') return;
       btn.dataset.boundUi = '1';
       btn.addEventListener('click', handleSaveCopyClick);
+    });
+    scope.querySelectorAll('[data-att="download"]').forEach((btn) => {
+      if (btn.dataset.boundUi === '1') return;
+      btn.dataset.boundUi = '1';
+      btn.addEventListener('click', () => {
+        btn.closest('details')?.removeAttribute('open');
+        triggerFileDownload(btn.dataset.id, [btn.dataset.i || '0']);
+      });
+    });
+    scope.querySelectorAll('[data-att-bulk]').forEach((btn) => {
+      if (btn.dataset.boundUi === '1') return;
+      btn.dataset.boundUi = '1';
+      btn.addEventListener('click', () => {
+        const stack = btn.closest('[data-att-stack]');
+        const indexes = stack ? pickedIndexes(stack) : [];
+        if (!indexes.length) return;
+        if (btn.dataset.attBulk === 'download') {
+          triggerFileDownload(btn.dataset.id, indexes);
+          return;
+        }
+        saveCopies(btn.dataset.id, indexes).catch((err) => alert(err.message));
+      });
+    });
+    scope.querySelectorAll('[data-att-pick]').forEach((box) => {
+      if (box.dataset.boundUi === '1') return;
+      box.dataset.boundUi = '1';
+      box.addEventListener('change', () => syncAttBulk(box.closest('[data-att-stack]')));
     });
     scope.querySelectorAll('[data-act]').forEach((btn) => {
       if (btn.dataset.boundUi === '1') return;
@@ -1472,7 +1587,7 @@ import {
     const picker = globalThis.AirdFolderPicker;
     if (!picker?.open) throw new Error('Folder picker unavailable');
     picker.init?.();
-    const dest = await picker.open('copy', { title: 'Save a copy to…', confirmLabel: 'Save here' });
+    const dest = await picker.open('copy', { title: 'Save to a folder in your Aird', confirmLabel: 'Save here' });
     if (dest === null || dest === undefined) return;
     const q = index != null && index !== '' ? `?i=${encodeURIComponent(index)}` : '';
     const data = await api(`/api/chat/conversations/${activeConvId}/messages/${messageId}/save-copy${q}`, {
@@ -1903,6 +2018,160 @@ import {
     history.replaceState(null, '', `${location.pathname}?${params}`);
     applyPendingBrowseAttach();
     renderUploadProgressUi();
+  }
+
+  function shareTargetRows(items, precheck) {
+    return items.map((c) => {
+      const kind = c.kind === 'group' ? '<span class="chat-share-kind">Group</span>' : '';
+      const checked = c.id === precheck ? ' checked' : '';
+      return `<label class="flex items-center gap-2 py-2 px-1"><input type="checkbox" data-share-conv value="${esc(c.id)}"${checked}> <span>${esc(convTitle(c))}</span>${kind}</label>`;
+    }).join('');
+  }
+
+  function renderShareChips() {
+    const box = qs('#chatShareChips');
+    if (!box) return;
+    if (!shareExtraUsers.length) {
+      box.hidden = true;
+      box.innerHTML = '';
+      return;
+    }
+    box.hidden = false;
+    box.innerHTML = shareExtraUsers.map((name) =>
+      `<span class="chat-chip">${esc(name)}<button type="button" data-share-rm="${esc(name)}" aria-label="Remove ${esc(name)}">×</button></span>`
+    ).join('');
+    box.querySelectorAll('[data-share-rm]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        shareExtraUsers = shareExtraUsers.filter((name) => name !== btn.dataset.shareRm);
+        renderShareChips();
+      });
+    });
+  }
+
+  function addShareUser(username) {
+    const name = (username || '').trim();
+    if (!name || name === me || shareExtraUsers.includes(name)) return;
+    const existing = conversations.find((c) => c.kind === 'dm' && c.peer_username === name);
+    if (existing) {
+      const box = qs(`#chatShareList input[data-share-conv][value="${CSS.escape(existing.id)}"]`);
+      if (box) box.checked = true;
+      return;
+    }
+    shareExtraUsers.push(name);
+    renderShareChips();
+  }
+
+  function openShareTargets(precheck) {
+    const dlg = qs('#chatShareTargets');
+    if (!dlg || !pendingBrowseAttachQueue.length) return;
+    const hint = qs('#chatShareTargetsHint');
+    const names = pendingBrowseAttachQueue.map((item) => item.path.split('/').pop() || item.path);
+    if (hint) hint.textContent = names.join(', ');
+    const groups = conversations.filter((c) => c.kind === 'group');
+    const people = conversations.filter((c) => c.kind !== 'group');
+    const list = qs('#chatShareList');
+    if (list) {
+      const html = [
+        groups.length ? `<p class="chat-share-head">Groups</p>${shareTargetRows(groups, precheck)}` : '',
+        people.length ? `<p class="chat-share-head">People</p>${shareTargetRows(people, precheck)}` : '',
+      ].join('');
+      list.innerHTML = html || '<p class="text-sm opacity-60">No conversations yet. Add people below.</p>';
+    }
+    shareExtraUsers = [];
+    renderShareChips();
+    const groupBox = qs('#chatShareNewGroup');
+    const groupTitle = qs('#chatShareGroupTitle');
+    if (groupBox) groupBox.checked = false;
+    if (groupTitle) {
+      groupTitle.hidden = true;
+      groupTitle.value = '';
+    }
+    if (qs('#chatShareUser')) qs('#chatShareUser').value = '';
+    dlg.showModal();
+  }
+
+  function selectedSharePeople() {
+    const names = new Set(shareExtraUsers);
+    qs('#chatShareList')?.querySelectorAll('[data-share-conv]:checked').forEach((box) => {
+      const conv = conversations.find((c) => c.id === box.value);
+      if (conv?.kind === 'dm' && conv.peer_username) names.add(conv.peer_username);
+    });
+    names.delete(me);
+    return [...names];
+  }
+
+  async function deliverBrowseFiles(convId, staged) {
+    const fd = new FormData();
+    staged.forEach((item) => fd.append('source_path', item.path));
+    await uploadChatForm(convId, fd);
+  }
+
+  async function sendShareTargets() {
+    const btn = qs('#chatShareSend');
+    const convIds = [...(qs('#chatShareList')?.querySelectorAll('[data-share-conv]:checked') || [])].map((box) => box.value);
+    const makeGroup = !!qs('#chatShareNewGroup')?.checked;
+    const people = selectedSharePeople();
+    if (!convIds.length && !shareExtraUsers.length && !makeGroup) {
+      alert('Select at least one person or group.');
+      return;
+    }
+    if (makeGroup && people.length < 2) {
+      alert('A group needs at least two people.');
+      return;
+    }
+    const staged = pendingBrowseAttachQueue.map((item) => ({
+      path: item.path,
+      name: item.path.split('/').pop() || item.path,
+    }));
+    if (btn) btn.disabled = true;
+    const errors = [];
+    const sent = [];
+    try {
+      if (!makeGroup) {
+        for (const username of shareExtraUsers) {
+          try {
+            const data = await api('/api/chat/conversations', {
+              method: 'POST',
+              body: JSON.stringify({ username }),
+            });
+            const id = data.conversation?.id;
+            if (id && !convIds.includes(id)) convIds.push(id);
+          } catch (err) {
+            errors.push(`${username}: ${err.message}`);
+          }
+        }
+      }
+      if (makeGroup) {
+        try {
+          const title = qs('#chatShareGroupTitle')?.value.trim() || 'Group';
+          const data = await api('/api/chat/conversations', {
+            method: 'POST',
+            body: JSON.stringify({ title, members: people }),
+          });
+          if (data.conversation?.id) convIds.push(data.conversation.id);
+        } catch (err) {
+          errors.push(`Group: ${err.message}`);
+        }
+      }
+      for (const convId of convIds) {
+        try {
+          await deliverBrowseFiles(convId, staged);
+          sent.push(convId);
+        } catch (err) {
+          const conv = conversations.find((c) => c.id === convId);
+          errors.push(`${conv ? convTitle(conv) : 'Chat'}: ${err.message}`);
+        }
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+    if (sent.length) {
+      pendingBrowseAttachQueue = [];
+      qs('#chatShareTargets')?.close();
+      await loadConversations();
+      await openConversation(sent[0]);
+    }
+    if (errors.length) alert(errors.join('\n'));
   }
 
   function applyPendingBrowseAttach() {
@@ -3492,6 +3761,25 @@ import {
     }
   });
   qs('#chatReplyCancel')?.addEventListener('click', clearReply);
+  qs('#chatShareCancel')?.addEventListener('click', () => qs('#chatShareTargets')?.close());
+  qs('#chatShareSend')?.addEventListener('click', () => {
+    sendShareTargets().catch((err) => alert(err.message));
+  });
+  qs('#chatShareNewGroup')?.addEventListener('change', (event) => {
+    const title = qs('#chatShareGroupTitle');
+    if (title) title.hidden = !event.target.checked;
+  });
+  qs('#chatShareUser')?.addEventListener('input', () => {
+    const input = qs('#chatShareUser');
+    clearTimeout(userSearchTimer);
+    userSearchTimer = setTimeout(() => {
+      searchUsers(input?.value || '', qs('#chatShareSuggest'), (name) => {
+        addShareUser(name);
+        if (input) input.value = '';
+        qs('#chatShareSuggest')?.classList.add('hidden');
+      }).catch(() => {});
+    }, 250);
+  });
   qs('#chatForwardCancel')?.addEventListener('click', () => {
     forwardMsgIds = [];
     qs('#chatForwardModal')?.close();
@@ -3513,7 +3801,7 @@ import {
   });
   messagesEl?.addEventListener('click', (e) => {
     if (!selectMode) return;
-    if (e.target.closest('a, button, input, summary, details, .chat-msg-image, .chat-react-chip, .chat-react-emoji, .chat-quote')) return;
+    if (e.target.closest('a, button, input, summary, details, .chat-att-pick, .chat-att-menu, .chat-att-bulk, .chat-msg-image, .chat-react-chip, .chat-react-emoji, .chat-quote')) return;
     const row = e.target.closest('.chat-msg-row[data-msg-id]');
     if (!row) return;
     e.preventDefault();
@@ -3521,7 +3809,7 @@ import {
   });
   messagesEl?.addEventListener('pointerdown', (e) => {
     if (selectMode || e.button) return;
-    if (e.target.closest('a, button, input, summary, details')) return;
+    if (e.target.closest('a, button, input, summary, details, .chat-att-pick, .chat-att-menu, .chat-att-bulk')) return;
     const row = e.target.closest('.chat-msg-row[data-msg-id]');
     if (!row) return;
     pressId = row.dataset.msgId || '';
@@ -3791,14 +4079,11 @@ import {
       await identityReady;
       await fillEncryptedPreviews();
       const initialConv = new URLSearchParams(location.search).get('c');
-      if (pendingBrowseAttachQueue.length && !initialConv) {
-        const first = pendingBrowseAttachQueue[0];
-        const label = first.path.split('/').pop() || first.path;
-        const extra = pendingBrowseAttachQueue.length > 1
-          ? ` (+${pendingBrowseAttachQueue.length - 1} more)` : '';
-        setE2eStatus('Pick a conversation to attach ' + label + extra);
+      if (pendingBrowseAttachQueue.length) {
+        openShareTargets(initialConv || '');
+      } else if (initialConv) {
+        await openConversation(initialConv);
       }
-      if (initialConv) await openConversation(initialConv);
     };
     start().catch((err) => {
       if (messagesEl) messagesEl.innerHTML = `<p class="text-error">${esc(err.message)}</p>`;
