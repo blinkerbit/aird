@@ -11,18 +11,17 @@
 <body>
   <div class="aird-shell aird-shell--wide">
 {% include '../_app_nav_header.html' %}
-    <main class="lists-hub collab-hub" data-hub="lists" data-me="{{ escape(current_user.get('username') if current_user else '') }}" data-reminders="{{ '1' if is_feature_enabled('reminders') else '0' }}">
-      <header class="collab-hub-head">
-        <h1 class="text-2xl font-bold">Lists</h1>
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-          <button type="button" class="btn btn-ghost btn-sm" id="listsGroupBtn">New group</button>
-          <button type="button" class="btn btn-primary btn-sm" id="listsNewBtn">New list</button>
-        </div>
-      </header>
-      <div class="lists-hub-body" id="listsHubBody" data-mobile-view="lists">
-        <aside class="lists-rail" id="listsRail" aria-label="Groups and tags"></aside>
-        <section class="lists-board" id="listsBoard" aria-label="Lists in group"></section>
-        <section class="lists-editor" id="listsEditor" aria-live="polite" aria-label="List editor">
+    <main class="ln" data-hub="lists" data-me="{{ escape(current_user.get('username') if current_user else '') }}" data-reminders="{{ '1' if is_feature_enabled('reminders') else '0' }}" data-screen="index">
+      <aside class="ln-side" id="listsRail" aria-label="Views">
+        <label class="ln-search">
+          <span class="lists-sr">Search</span>
+          <input id="listsSearch" type="search" placeholder="Search" autocomplete="off" enterkeyhint="search">
+        </label>
+        <div id="listsSideNav"></div>
+      </aside>
+      <div class="ln-main" id="listsHubBody" data-view="today">
+        <section class="ln-index" id="listsBoard" aria-label="Lists"></section>
+        <section class="ln-doc" id="listsEditor" aria-live="polite" aria-label="Editor">
           <div class="collab-empty">Create or select a list.</div>
         </section>
       </div>

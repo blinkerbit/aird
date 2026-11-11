@@ -67,6 +67,21 @@ export function renderMarkdown(source, notes) {
       code = [];
       return;
     }
+    if (/^(-{3,}|\*{3,})$/.test(line.trim())) {
+      flushList();
+      flushQuote();
+      out.push('<hr>');
+      return;
+    }
+    const task = line.match(/^(\s*)[-*]\s+\[([ xX])\]\s+(.*)$/);
+    if (task) {
+      flushQuote();
+      if (list && list !== 'ul') flushList();
+      list = 'ul';
+      const done = task[2].toLowerCase() === 'x';
+      buf.push(`<li class="list-md-task"><input type="checkbox" disabled ${done ? 'checked' : ''}> ${inline(task[3], notes)}</li>`);
+      return;
+    }
     const item = line.match(/^(\s*)([-*]|\d+\.)\s+(.*)$/);
     if (item) {
       flushQuote();

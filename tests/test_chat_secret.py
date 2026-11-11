@@ -92,6 +92,36 @@ def test_enhanced_secure_invite_reaches_another_process(tmp_path):
     assert "ct" not in left.pending_for("bob")[0]
 
 
+def test_enhanced_outbox_is_claimed_once(tmp_path):
+    import threading
+
+    left = EnhancedSecureHub()
+    right = EnhancedSecureHub()
+    path = str(tmp_path / "enhanced-secure.sqlite3")
+    left.use_shared(path)
+    right.use_shared(path)
+    left.enqueue("bob", {"type": "enhanced_request", "room_id": "once"})
+    barrier = threading.Barrier(2)
+    got = []
+    lock = threading.Lock()
+
+    def take(hub):
+        barrier.wait()
+        notes = hub.take_outbox({"bob"})
+        with lock:
+            got.extend(notes)
+
+    threads = [threading.Thread(target=take, args=(hub,)) for hub in (left, right)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(got) == 1
+    assert got[0][1]["room_id"] == "once"
+    assert left.take_outbox({"bob"}) == []
+    assert right.take_outbox({"bob"}) == []
+
+
 def test_enhanced_secure_invite_reuses_the_same_pair():
     hub = EnhancedSecureHub()
     first = hub.invite("alice", "bob")

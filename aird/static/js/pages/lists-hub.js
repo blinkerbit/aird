@@ -4,179 +4,311 @@ import { tagChipHtml, tagChipsRow } from '../collab/tag-chips.js';
 import { fetchMyUserTags } from '../user-tag-api.js';
 import { renderOutline } from '../collab/list-outline.js';
 
+const VIEWS = [
+  ['today', 'Today'],
+  ['upcoming', 'Upcoming'],
+  ['anytime', 'Anytime'],
+  ['logbook', 'Logbook'],
+];
+
 function esc(s) {
   const d = document.createElement('div');
   d.textContent = s ?? '';
   return d.innerHTML;
 }
 
-function remindersEnabled(root) {
-  return root?.dataset?.reminders === '1';
-}
-
 function isMobile() {
   return window.matchMedia('(max-width: 900px)').matches;
 }
 
-function listMatchesTag(list, tagName) {
-  if (!tagName) return true;
-  return (list.tags || []).some((t) => t.name === tagName);
+function dayDiff(iso) {
+  if (!iso) return null;
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const day = new Date(when);
+  day.setHours(0, 0, 0, 0);
+  return Math.round((day - today) / 86400000);
 }
 
-function progressLabel(list) {
-  const p = list.progress || {};
-  if (!p.total) return '';
-  return `${p.done || 0}/${p.total}`;
+function whenLabel(iso) {
+  const diff = dayDiff(iso);
+  if (diff === null) return '';
+  if (diff < 0) return 'Overdue';
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  return new Date(iso).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-function dueHint(iso) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleString();
+function updatedLabel(iso) {
+  const diff = dayDiff(iso);
+  if (diff === null) return '';
+  if (diff === 0) return 'Today';
+  if (diff === -1) return 'Yesterday';
+  if (diff === 1) return 'Tomorrow';
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function noteCards(list) {
+  if (Array.isArray(list?.items)) {
+    return list.items.filter((item) => item.kind === 'note').map((item) => ({
+      id: item.id,
+      title: String(item.text || '').split(/\r?\n/).map((row) => row.trim()).find(Boolean)?.replace(/^#{1,3}\s+/, '') || 'Untitled',
+    }));
+  }
+  if (Array.isArray(list?.notes)) return list.notes;
+  return [];
+}
+
+function previewFrom(list) {
+  if (!Array.isArray(list?.items)) return list?.preview || [];
+  const rows = [];
+  list.items.forEach((item) => {
+    if (rows.length >= 3) return;
+    const title = String(item.text || '').split(/\r?\n/).map((row) => row.trim()).find(Boolean)?.replace(/^#{1,3}\s+/, '') || '';
+    if (!title) return;
+    rows.push({ id: item.id, kind: item.kind || 'check', title: title.slice(0, 80) });
+  });
+  return rows;
+}
+
+function mergeList(row, next) {
+  const source = next.items ? next : row;
+  return {
+    ...row,
+    ...next,
+    tags: next.tags || row.tags,
+    notes: noteCards(source),
+    preview: previewFrom(source),
+    group_id: next.group_id ?? row.group_id,
+  };
+}
+
+function taskBucket(task) {
+  const diff = dayDiff(task.due_at);
+  if (diff === null) return 'anytime';
+  if (diff <= 0) return 'today';
+  return 'upcoming';
 }
 
 export function initListsHub(root) {
   const me = root?.dataset.me || '';
-  const railEl = document.getElementById('listsRail');
+  const sideEl = document.getElementById('listsSideNav');
   const boardEl = document.getElementById('listsBoard');
   const editorEl = document.getElementById('listsEditor');
   const bodyEl = document.getElementById('listsHubBody');
+  const searchEl = document.getElementById('listsSearch');
 
   let groups = [];
   let lists = [];
+  let tasks = [];
+  let logbook = [];
   let tagCatalog = [];
-  let selectedGroupId = '';
   const params = new URLSearchParams(location.search);
+  let view = params.get('id') ? 'library' : (params.get('view') || 'today');
+  if (!['today', 'upcoming', 'anytime', 'logbook', 'library'].includes(view)) view = 'today';
+  let folder = '__all__';
+  let kindFilter = '';
+  let tagFilter = '';
+  let query = '';
   let activeListId = params.get('id') || '';
   let noteId = params.get('note') || '';
   let noteMode = 'write';
-  let focusMode = false;
   let selected = [];
   let armDraft = false;
-  let tagFilter = '';
-  let mobileView = noteId ? 'note' : activeListId ? 'detail' : 'lists';
-  let selectedGroupIdInit = false;
   let detail = null;
+  let screen = activeListId ? 'doc' : (view === 'library' ? 'index' : 'doc');
 
   const mq = window.matchMedia('(max-width: 900px)');
   mq.addEventListener('change', () => paint());
 
-  function filteredLists() {
-    return lists.filter((list) => {
-      if (!listMatchesTag(list, tagFilter)) return false;
-      if (selectedGroupId === '__all__') return true;
-      const gid = list.group_id || '';
-      return gid === selectedGroupId;
-    });
-  }
-
-  function setMobileView(view) {
-    mobileView = view;
-    if (bodyEl) bodyEl.dataset.mobileView = view;
+  function setScreen(next) {
+    screen = next;
+    root.dataset.screen = next;
   }
 
   function syncUrl() {
-    const params = new URLSearchParams();
-    if (activeListId) params.set('id', activeListId);
-    if (noteId) params.set('note', noteId);
-    const q = params.toString();
+    const next = new URLSearchParams();
+    if (view !== 'today') next.set('view', view);
+    if (view === 'library' && activeListId) next.set('id', activeListId);
+    if (view === 'library' && noteId) next.set('note', noteId);
+    const q = next.toString();
     history.replaceState(null, '', q ? `/lists?${q}` : '/lists');
   }
 
-  function groupCount(groupId) {
-    if (groupId === '__all__') return lists.length;
-    return lists.filter((list) => (list.group_id || '') === groupId).length;
+  function haystack(list) {
+    return [
+      list.title,
+      ...noteCards(list).map((note) => note.title),
+      ...(list.preview || []).map((row) => row.title),
+    ].join('\n').toLowerCase();
   }
 
-  function renderRail() {
-    if (!railEl) return;
-    const groupBtns = groups
-      .map(
-        (g) => `<div class="lists-rail-group ${selectedGroupId === g.id ? 'is-active' : ''}" data-group-id="${esc(g.id)}" data-drop-group>
-          <button type="button" class="lists-rail-select"><span class="lists-rail-label">${esc(g.name)}</span><span class="lists-rail-count">${groupCount(g.id)}</span></button>
-          <button type="button" class="lists-rail-rename btn btn-ghost btn-xs" data-rename-group="${esc(g.id)}" aria-label="Rename">✎</button>
-          <button type="button" class="lists-rail-remove btn btn-ghost btn-xs" data-remove-group="${esc(g.id)}" aria-label="Remove">×</button>
-        </div>`,
-      )
-      .join('');
-    const tags = tagCatalog
-      .map(
-        (tag) => `<button type="button" class="lists-tag-filter ${tagFilter === tag.name ? 'is-active' : ''}" data-tag-filter="${esc(tag.name)}">
-          ${tagChipHtml(tag, { className: 'lists-tag-chip lists-tag-chip--btn', link: false })}
-        </button>`,
-      )
-      .join('');
-    railEl.innerHTML = `
-      <div class="lists-rail-head">Groups</div>
-      <div class="lists-rail-groups" role="list">
-        <button type="button" class="lists-rail-group ${selectedGroupId === '__all__' ? 'is-active' : ''}" data-group-id="__all__"><span class="lists-rail-label">All lists</span><span class="lists-rail-count">${groupCount('__all__')}</span></button>
-        ${groupBtns}
-        <button type="button" class="lists-rail-group ${selectedGroupId === '' ? 'is-active' : ''}" data-group-id=""><span class="lists-rail-label">Ungrouped</span><span class="lists-rail-count">${groupCount('')}</span></button>
-      </div>
-      ${tagCatalog.length ? `<div class="lists-rail-tags"><div class="lists-rail-tags-label">Filter by tag</div>${tags}</div>` : ''}`;
+  function matchesQuery(text) {
+    const needle = query.trim().toLowerCase();
+    return !needle || text.toLowerCase().includes(needle);
+  }
 
-    railEl.querySelectorAll('[data-group-id]').forEach((btn) => {
-      btn.querySelector('.lists-rail-select')?.addEventListener('click', (event) => {
-        event.stopPropagation();
-        if (event.target.closest('[data-rename-group],[data-remove-group]')) return;
-        selectedGroupId = btn.dataset.groupId;
-        if (isMobile()) setMobileView('lists');
-        paintBoard();
-        paintRail();
-      });
+  function visibleLists() {
+    return lists.filter((list) => {
+      if (tagFilter && !(list.tags || []).some((tag) => tag.name === tagFilter)) return false;
+      if (kindFilter && list.kind !== kindFilter) return false;
+      if (folder !== '__all__' && (list.group_id || '') !== folder) return false;
+      return matchesQuery(haystack(list));
     });
-    railEl.querySelectorAll('button[data-group-id]').forEach((btn) => {
+  }
+
+  function visibleTasks() {
+    const source = view === 'logbook' ? logbook : tasks;
+    return source.filter((task) => {
+      if (view !== 'logbook' && taskBucket(task) !== view) return false;
+      return matchesQuery(`${task.text} ${task.list_title}`);
+    });
+  }
+
+  function countBucket(name) {
+    if (name === 'logbook') return logbook.filter((task) => matchesQuery(`${task.text} ${task.list_title}`)).length;
+    return tasks.filter((task) => taskBucket(task) === name && matchesQuery(`${task.text} ${task.list_title}`)).length;
+  }
+
+  function viewTitle() {
+    if (view !== 'library') return VIEWS.find((row) => row[0] === view)?.[1] || 'Today';
+    if (kindFilter === 'todo') return 'To-dos';
+    if (kindFilter === 'bullet') return 'Notes';
+    if (kindFilter === 'journal') return 'Journals';
+    if (folder && folder !== '__all__') return groups.find((group) => group.id === folder)?.name || 'Group';
+    if (folder === '') return 'Ungrouped';
+    return 'All lists';
+  }
+
+  function navButton(id, label, count, active) {
+    return `<button type="button" class="ln-nav ${active ? 'is-active' : ''}" data-view="${esc(id)}"><span>${esc(label)}</span><span class="ln-nav-count">${count}</span></button>`;
+  }
+
+  function paintSide() {
+    if (!sideEl) return;
+    const library = [
+      ['library', 'All lists', lists.filter((list) => matchesQuery(haystack(list))).length, view === 'library' && folder === '__all__' && !kindFilter],
+      ['todo', 'To-dos', lists.filter((list) => list.kind === 'todo' && matchesQuery(haystack(list))).length, view === 'library' && kindFilter === 'todo'],
+      ['bullet', 'Notes', lists.filter((list) => list.kind === 'bullet' && matchesQuery(haystack(list))).length, view === 'library' && kindFilter === 'bullet'],
+      ['journal', 'Journals', lists.filter((list) => list.kind === 'journal' && matchesQuery(haystack(list))).length, view === 'library' && kindFilter === 'journal'],
+    ];
+    const groupRows = groups.map((group) => `<div class="ln-group ${view === 'library' && folder === group.id ? 'is-active' : ''}" data-drop-group data-group-id="${esc(group.id)}">
+      <button type="button" class="ln-nav" data-folder="${esc(group.id)}"><span>${esc(group.name)}</span></button>
+        <button type="button" class="ln-icon" data-rename-group="${esc(group.id)}" aria-label="Rename ${esc(group.name)}">Rename</button>
+      <button type="button" class="ln-icon" data-remove-group="${esc(group.id)}" aria-label="Remove ${esc(group.name)}">Remove</button>
+    </div>`).join('');
+    const tags = tagCatalog.map((tag) => `<button type="button" class="ln-tag ${tagFilter === tag.name ? 'is-active' : ''}" data-tag-filter="${esc(tag.name)}">${tagChipHtml(tag, { className: 'lists-tag-chip', link: false })}</button>`).join('');
+    sideEl.innerHTML = `
+      <div class="ln-new">
+        <button type="button" class="ln-new-btn" id="listsNewBtn" aria-expanded="false" aria-controls="listsNewMenu">New</button>
+        <div class="ln-new-menu" id="listsNewMenu" role="menu" hidden>
+          <button type="button" role="menuitem" data-new-kind="todo"><strong>To-do</strong><span>A checklist with due dates</span></button>
+          <button type="button" role="menuitem" data-new-kind="bullet"><strong>Notes</strong><span>Short lines in one place</span></button>
+          <button type="button" role="menuitem" data-new-kind="journal"><strong>Journal</strong><span>Markdown pages</span></button>
+        </div>
+      </div>
+      <div class="ln-nav-block">${VIEWS.map(([id, label]) => navButton(id, label, countBucket(id), view === id)).join('')}</div>
+      <div class="ln-side-label">Library</div>
+      <div class="ln-nav-block">${library.map(([id, label, count, active]) => navButton(id, label, count, active)).join('')}</div>
+      <div class="ln-side-label">Groups</div>
+      <div class="ln-nav-block">
+        <button type="button" class="ln-nav ${view === 'library' && folder === '' && !kindFilter ? 'is-active' : ''}" data-folder=""><span>Ungrouped</span></button>
+        ${groupRows}
+        <button type="button" class="ln-nav ln-add" data-add-group><span>New group</span></button>
+      </div>
+      ${tags ? `<div class="ln-side-label">Tags</div><div class="ln-tags">${tags}</div>` : ''}`;
+    wireSide();
+  }
+
+  function wireSide() {
+    const newBtn = document.getElementById('listsNewBtn');
+    const newMenu = document.getElementById('listsNewMenu');
+    const closeNew = () => {
+      if (!newMenu) return;
+      newMenu.hidden = true;
+      newBtn?.setAttribute('aria-expanded', 'false');
+    };
+    newBtn?.addEventListener('click', () => {
+      const willOpen = Boolean(newMenu?.hidden);
+      if (newMenu) newMenu.hidden = !willOpen;
+      newBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    });
+    newMenu?.querySelectorAll('[data-new-kind]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        selectedGroupId = btn.dataset.groupId;
-        if (isMobile()) setMobileView('lists');
-        paintBoard();
-        paintRail();
+        closeNew();
+        startList(btn.dataset.newKind);
       });
     });
-    railEl.querySelectorAll('[data-drop-group]').forEach((zone) => {
-      zone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        zone.classList.add('is-drop-target');
+    sideEl.querySelectorAll('[data-view]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.view;
+        if (id === 'library' || id === 'todo' || id === 'bullet' || id === 'journal') {
+          view = 'library';
+          kindFilter = id === 'library' ? '' : id;
+          folder = '__all__';
+          if (isMobile()) setScreen('index');
+        } else {
+          view = id;
+          kindFilter = '';
+          if (isMobile()) setScreen('doc');
+        }
+        syncUrl();
+        paint();
       });
-      zone.addEventListener('dragleave', () => zone.classList.remove('is-drop-target'));
-      zone.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        zone.classList.remove('is-drop-target');
-        const id = e.dataTransfer.getData('text/list-id');
+    });
+    sideEl.querySelectorAll('[data-folder]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        view = 'library';
+        kindFilter = '';
+        folder = btn.dataset.folder;
+        if (isMobile()) setScreen('index');
+        syncUrl();
+        paint();
+      });
+    });
+    sideEl.querySelectorAll('[data-drop-group]').forEach((zone) => {
+      zone.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        zone.classList.add('is-drop');
+      });
+      zone.addEventListener('dragleave', () => zone.classList.remove('is-drop'));
+      zone.addEventListener('drop', async (event) => {
+        event.preventDefault();
+        zone.classList.remove('is-drop');
+        const id = event.dataTransfer.getData('text/list-id');
         if (!id) return;
-        const gid = zone.dataset.groupId;
-        if (gid === '__all__') return;
-        await apiJson(`/api/lists/${id}/group`, {
-          method: 'POST',
-          body: { group_id: gid },
-        });
+        await apiJson(`/api/lists/${id}/group`, { method: 'POST', body: { group_id: zone.dataset.groupId } });
         await refresh(false);
       });
     });
-    railEl.querySelectorAll('[data-tag-filter]').forEach((btn) => {
+    sideEl.querySelectorAll('[data-tag-filter]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const name = btn.dataset.tagFilter;
-        tagFilter = tagFilter === name ? '' : name;
-        paintBoard();
-        paintRail();
+        tagFilter = tagFilter === btn.dataset.tagFilter ? '' : btn.dataset.tagFilter;
+        view = 'library';
+        paint();
       });
     });
-    railEl.querySelectorAll('[data-remove-group]').forEach((btn) => {
+    sideEl.querySelector('[data-add-group]')?.addEventListener('click', (event) => beginGroup(event.currentTarget));
+    sideEl.querySelectorAll('[data-remove-group]').forEach((btn) => {
       btn.addEventListener('click', async (event) => {
         event.stopPropagation();
-        if (!window.confirm('Remove this group? Lists will become ungrouped for you.')) return;
+        if (!window.confirm('Remove this group? Lists stay, ungrouped.')) return;
         await apiJson(`/api/list-groups/${btn.dataset.removeGroup}`, { method: 'DELETE', body: {} });
-        if (selectedGroupId === btn.dataset.removeGroup) selectedGroupId = '';
+        if (folder === btn.dataset.removeGroup) folder = '__all__';
         await refresh(false);
       });
     });
-    railEl.querySelectorAll('[data-rename-group]').forEach((btn) => {
-      btn.addEventListener('click', async (event) => {
+    sideEl.querySelectorAll('[data-rename-group]').forEach((btn) => {
+      btn.addEventListener('click', (event) => {
         event.stopPropagation();
-        const group = groups.find((g) => g.id === btn.dataset.renameGroup);
+        const group = groups.find((row) => row.id === btn.dataset.renameGroup);
         if (!group) return;
         const input = document.createElement('input');
-        input.className = 'list-rename';
+        input.className = 'ln-rename';
         input.value = group.name;
+        input.setAttribute('aria-label', 'Group name');
         btn.replaceWith(input);
         input.focus();
         input.select();
@@ -186,7 +318,7 @@ export function initListsHub(root) {
           closed = true;
           const name = input.value.trim();
           if (!save || !name || name === group.name) {
-            paintRail();
+            paintSide();
             return;
           }
           await apiJson(`/api/list-groups/${group.id}`, { method: 'PATCH', body: { name } });
@@ -201,191 +333,242 @@ export function initListsHub(root) {
     });
   }
 
-  function renderMobileGroups() {
-    if (!railEl) return;
-    const chips = [
-      `<button type="button" class="lists-chip ${selectedGroupId === '__all__' ? 'is-active' : ''}" data-group-id="__all__">All <span class="lists-rail-count">${groupCount('__all__')}</span></button>`,
-      ...groups.map(
-        (g) => `<button type="button" class="lists-chip ${selectedGroupId === g.id ? 'is-active' : ''}" data-group-id="${esc(g.id)}">${esc(g.name)} <span class="lists-rail-count">${groupCount(g.id)}</span></button>`,
-      ),
-      `<button type="button" class="lists-chip ${selectedGroupId === '' ? 'is-active' : ''}" data-group-id="">Ungrouped <span class="lists-rail-count">${groupCount('')}</span></button>`,
-    ].join('');
-    const tags = tagCatalog.length
-      ? `<div class="lists-mobile-tags">${tagCatalog
-          .map(
-            (tag) => `<button type="button" class="lists-tag-filter ${tagFilter === tag.name ? 'is-active' : ''}" data-tag-filter="${esc(tag.name)}">${tagChipHtml(tag, { className: 'lists-tag-chip', link: false })}</button>`,
-          )
-          .join('')}</div>`
-      : '';
-    railEl.innerHTML = `<div class="lists-mobile-groups">${chips}</div>${tags}`;
-    railEl.querySelectorAll('[data-group-id]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        selectedGroupId = btn.dataset.groupId;
-        setMobileView('lists');
-        paintBoard();
-        paint();
-      });
-    });
-    railEl.querySelectorAll('[data-tag-filter]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const name = btn.dataset.tagFilter;
-        tagFilter = tagFilter === name ? '' : name;
-        paintBoard();
-        paint();
-      });
-    });
-  }
-
-  function paintRail() {
-    if (isMobile()) renderMobileGroups();
-    else renderRail();
-  }
-
-  let tagMenu = null;
-  let tagMenuCloser = null;
-
-  function closeTagMenu() {
-    tagMenu?.remove();
-    tagMenu = null;
-    if (tagMenuCloser) {
-      document.removeEventListener('pointerdown', tagMenuCloser, true);
-      tagMenuCloser = null;
-    }
-  }
-
-  async function openTagMenu(listId, anchor) {
-    closeTagMenu();
-    const list = lists.find((row) => row.id === listId);
-    if (!list || list.organizer !== me) return;
-    const { tags } = await fetchMyUserTags();
-    const have = new Set((list.tags || []).map((tag) => Number(tag.id)));
-    const choices = (tags || []).filter((tag) => !have.has(Number(tag.id)));
-    const menu = document.createElement('div');
-    menu.className = 'lists-tag-menu';
-    menu.innerHTML = choices.length
-      ? choices.map((tag) => `<button type="button" data-pick-tag="${esc(String(tag.id))}">${esc(tag.name)}</button>`).join('')
-      : '<p class="collab-hint">No more tags. <a href="/tags">Create one</a>.</p>';
-    document.body.appendChild(menu);
-    const rect = anchor.getBoundingClientRect();
-    menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8))}px`;
-    menu.style.top = `${rect.bottom + 4}px`;
-    tagMenu = menu;
-    menu.querySelectorAll('[data-pick-tag]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const ids = [...have, Number(btn.dataset.pickTag)];
-        closeTagMenu();
-        await apiJson(`/api/lists/${listId}`, { method: 'PATCH', body: { tag_ids: ids } });
-        await refresh(false);
-        if (activeListId === listId) {
-          const next = await apiJson(`/api/lists/${listId}`);
-          applyDetail(next);
-        }
-      });
-    });
-    tagMenuCloser = (event) => {
-      if (menu.contains(event.target) || anchor.contains(event.target)) return;
-      closeTagMenu();
+  function beginGroup(button) {
+    const input = document.createElement('input');
+    input.className = 'ln-rename';
+    input.placeholder = 'Group name';
+    input.setAttribute('aria-label', 'Group name');
+    button.replaceWith(input);
+    input.focus();
+    let closed = false;
+    const finish = async (save) => {
+      if (closed) return;
+      closed = true;
+      const name = input.value.trim();
+      if (!save || !name) {
+        paintSide();
+        return;
+      }
+      await apiJson('/api/list-groups', { method: 'POST', body: { name } });
+      await refresh(false);
     };
-    document.addEventListener('pointerdown', tagMenuCloser, true);
-  }
-
-  function wireAddTag(scope) {
-    scope.querySelectorAll('[data-add-tag]').forEach((btn) => {
-      btn.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        openTagMenu(btn.dataset.addTag, btn);
-      });
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') finish(true);
+      if (event.key === 'Escape') finish(false);
     });
+    input.addEventListener('blur', () => finish(true));
   }
 
-  function addTagButton(list) {
-    if (list.organizer !== me) return '';
-    return `<button type="button" class="lists-add-tag" data-add-tag="${esc(list.id)}" draggable="false" aria-label="Add tag" title="Add tag">+</button>`;
+  function snippet(list) {
+    const line = (list.preview || [])[0];
+    if (line?.title) return line.title;
+    if (list.kind === 'journal') return 'Empty journal';
+    if (list.kind === 'bullet') return 'No notes yet';
+    return 'No to-dos yet';
   }
 
   function listMeta(list) {
-    const due = list.next_due ? dueHint(list.next_due) : '';
-    const prog = progressLabel(list);
-    const bits = [list.organizer || '', prog, due ? `Due ${due}` : ''].filter(Boolean);
-    return bits.join(' · ');
+    if (list.kind === 'journal') {
+      const count = noteCards(list).length;
+      return `Journal · ${count} ${count === 1 ? 'page' : 'pages'}`;
+    }
+    if (list.kind === 'bullet') return 'Notes';
+    const prog = list.progress || {};
+    if (!prog.total) return 'To-do';
+    const left = (prog.total || 0) - (prog.done || 0);
+    return left ? `To-do · ${left} left` : 'To-do · Done';
   }
 
-  function listCard(list) {
-    const tags = list.tags || [];
-    const preview = (list.preview || []).map((row) => (
-      row.kind === 'note'
-        ? `<button type="button" class="lists-card-line" data-list-id="${esc(list.id)}" data-open-note="${esc(row.id)}">${esc(row.title)}</button>`
-        : `<span class="lists-card-line">${row.kind === 'bullet' ? '•' : '☐'} ${esc(row.title)}</span>`
-    )).join('');
-    return `<article class="lists-card ${list.id === activeListId ? 'is-active' : ''}" draggable="true" data-list-id="${esc(list.id)}">
-      <button type="button" class="lists-card-open" data-open-list="${esc(list.id)}">
-        <strong class="lists-card-title">${esc(list.title)}</strong>
-        <span class="lists-card-aside">${esc(listMeta(list))}</span>
-        ${tags.length ? tagChipsRow(tags) : ''}
-      </button>
-      ${preview ? `<div class="lists-card-preview">${preview}</div>` : ''}
-      ${addTagButton(list)}
-    </article>`;
-  }
-
-  function paintBoard() {
+  function paintIndex() {
     if (!boardEl) return;
-    const rows = filteredLists();
-    if (isMobile()) {
-      const groupName =
-        selectedGroupId === '__all__'
-          ? 'All lists'
-          : selectedGroupId
-            ? groups.find((g) => g.id === selectedGroupId)?.name || 'Group'
-            : 'Ungrouped';
-      boardEl.innerHTML = `
-        <header class="lists-mobile-bar">
-          <span class="lists-mobile-title">${esc(groupName)}</span>
-        </header>
-        <div class="lists-mobile-rows">
-          ${rows.length ? rows.map((l) => `<div class="lists-row ${l.id === activeListId ? 'is-active' : ''}">
-            <button type="button" class="lists-row-open" data-open-list="${esc(l.id)}">
-              <span class="lists-row-title">${esc(l.title)}</span>
-              <span class="lists-card-aside">${esc(listMeta(l))}</span>
-              ${(l.tags || []).length ? tagChipsRow(l.tags || []) : ''}
-            </button>
-            ${addTagButton(l)}
-          </div>`).join('') : '<div class="collab-empty">No lists here.</div>'}
-        </div>`;
+    if (view !== 'library') {
+      boardEl.innerHTML = '';
+      return;
+    }
+    const rows = visibleLists();
+    boardEl.innerHTML = `
+      <header class="ln-index-head">
+        <button type="button" class="ln-views-btn" data-show-side>Views</button>
+        <h1>${esc(viewTitle())}</h1>
+        <span>${rows.length}</span>
+      </header>
+      <div class="ln-rows">
+        ${rows.map((list) => `<article class="ln-row-wrap ${list.id === activeListId ? 'is-active' : ''}" draggable="true" data-list-id="${esc(list.id)}">
+          <button type="button" class="ln-row" data-open-list="${esc(list.id)}">
+            <span class="ln-row-title">${esc(list.title)}</span>
+            <time class="ln-row-date">${esc(updatedLabel(list.updated_at))}</time>
+            <span class="ln-row-snip">${esc(listMeta(list))} · ${esc(snippet(list))}</span>
+            ${(list.tags || []).length ? tagChipsRow(list.tags) : ''}
+          </button>
+          ${list.organizer === me ? `<button type="button" class="ln-add-tag" data-add-tag="${esc(list.id)}" aria-label="Add tag">+</button>` : ''}
+        </article>`).join('') || '<p class="ln-empty">Nothing in this folder.</p>'}
+      </div>`;
+    boardEl.querySelector('[data-show-side]')?.addEventListener('click', () => setScreen('side'));
     boardEl.querySelectorAll('[data-open-list]').forEach((btn) => {
       btn.addEventListener('click', () => openList(btn.dataset.openList));
     });
-    wireAddTag(boardEl);
-    return;
-  }
-    boardEl.innerHTML = `
-      <header class="lists-board-head"><span>Lists</span><span class="lists-rail-count">${rows.length}</span></header>
-      <div class="lists-card-grid">${rows.length ? rows.map(listCard).join('') : '<div class="collab-empty">No lists in this group.</div>'}</div>`;
-    boardEl.querySelectorAll('.lists-card').forEach((card) => {
-      card.addEventListener('dragstart', (e) => {
-        if (e.target.closest('[data-add-tag], a')) {
-          e.preventDefault();
+    boardEl.querySelectorAll('.ln-row-wrap').forEach((card) => {
+      card.addEventListener('dragstart', (event) => {
+        if (event.target.closest('[data-add-tag]')) {
+          event.preventDefault();
           return;
         }
-        e.dataTransfer.setData('text/list-id', card.dataset.listId);
-        card.classList.add('is-dragging');
-      });
-      card.addEventListener('dragend', () => {
-        card.classList.remove('is-dragging');
-        if (pendingBoard) reloadBoard().catch(() => {});
-      });
-    });
-    boardEl.querySelectorAll('[data-open-list]').forEach((btn) => {
-      btn.addEventListener('click', () => openList(btn.dataset.openList));
-    });
-    boardEl.querySelectorAll('[data-open-note]').forEach((btn) => {
-      btn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        openNote(btn.dataset.listId, btn.dataset.openNote);
+        event.dataTransfer.setData('text/list-id', card.dataset.listId);
       });
     });
     wireAddTag(boardEl);
+  }
+
+  function groupTasks(items) {
+    const groups = new Map();
+    items.forEach((task) => {
+      const key = view === 'upcoming' ? (whenLabel(task.due_at) || 'Upcoming') : (task.list_title || 'List');
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(task);
+    });
+    return groups;
+  }
+
+  function paintAgenda() {
+    if (!editorEl) return;
+    const items = visibleTasks();
+    const grouped = groupTasks(items);
+    const sections = [...grouped.entries()].map(([title, rows]) => `<section class="ln-agenda-group">
+      <h2>${esc(title)}</h2>
+      ${rows.map((task) => `<div class="ln-task ${view === 'logbook' ? 'is-done' : ''}">
+        <button type="button" class="ln-check ${view === 'logbook' ? 'is-done' : ''} ${whenLabel(task.due_at) === 'Overdue' ? 'is-overdue' : ''}" data-check="${esc(task.item_id)}" data-list="${esc(task.list_id)}" aria-pressed="${view === 'logbook' ? 'true' : 'false'}" aria-label="${view === 'logbook' ? 'Mark not done' : 'Mark done'}"></button>
+        <button type="button" class="ln-task-open" data-open-task="${esc(task.list_id)}">
+          <strong>${esc(task.text || 'Untitled')}</strong>
+          ${view === 'upcoming' ? '' : `<span>${esc(task.list_title || '')}</span>`}
+        </button>
+        ${task.due_at ? `<span class="ln-when ${whenLabel(task.due_at) === 'Overdue' ? 'is-overdue' : ''} ${whenLabel(task.due_at) === 'Today' ? 'is-today' : ''}">${esc(whenLabel(task.due_at))}</span>` : ''}
+      </div>`).join('')}
+    </section>`).join('');
+    editorEl.innerHTML = `
+      <div class="ln-agenda">
+        <header class="ln-agenda-head">
+          <button type="button" class="ln-views-btn" data-show-side>Views</button>
+          <div>
+            <h1>${esc(viewTitle())}</h1>
+            <p>${items.length} ${items.length === 1 ? 'to-do' : 'to-dos'}</p>
+          </div>
+        </header>
+        ${sections || `<p class="ln-empty">${view === 'today' ? 'Nothing due today.' : view === 'upcoming' ? 'Nothing scheduled.' : view === 'logbook' ? 'Completed to-dos show up here.' : 'To-dos without a date show up here.'}</p>`}
+      </div>`;
+    editorEl.querySelector('[data-show-side]')?.addEventListener('click', () => setScreen('side'));
+    editorEl.querySelectorAll('[data-check]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const task = [...tasks, ...logbook].find((row) => row.item_id === btn.dataset.check);
+        if (!task) return;
+        try {
+          await apiJson(`/api/lists/${task.list_id}/items/${task.item_id}`, {
+            method: 'PATCH',
+            body: { done: view !== 'logbook' },
+          });
+          await refresh(false);
+          paintDoc();
+        } catch (err) {
+          showError(err.message || 'Could not update that to-do');
+        }
+      });
+    });
+    editorEl.querySelectorAll('[data-open-task]').forEach((btn) => {
+      btn.addEventListener('click', () => openList(btn.dataset.openTask));
+    });
+  }
+
+  function paintWelcome() {
+    if (!editorEl) return;
+    editorEl.innerHTML = `<div class="ln-welcome">
+      <h1>${esc(viewTitle())}</h1>
+      <p>Pick a list, or start a to-do, a note list, or a journal.</p>
+      <div class="ln-welcome-actions">
+        <button type="button" data-empty-new="todo">New to-do</button>
+        <button type="button" data-empty-new="bullet">New notes</button>
+        <button type="button" data-empty-new="journal">New journal</button>
+      </div>
+    </div>`;
+    editorEl.querySelectorAll('[data-empty-new]').forEach((btn) => {
+      btn.addEventListener('click', () => startList(btn.dataset.emptyNew));
+    });
+  }
+
+  function paintDoc() {
+    if (bodyEl) bodyEl.dataset.view = view;
+    if (view !== 'library') {
+      paintAgenda();
+      return;
+    }
+    if (!detail || detail.id !== activeListId) {
+      paintWelcome();
+      return;
+    }
+    const showBack = isMobile() || (noteId && detail.kind !== 'journal');
+    renderOutline(editorEl, detail, {
+      captureKeys: true,
+      noteId,
+      noteMode,
+      selected,
+      focusDraft: armDraft,
+      onQuiet(next) {
+        detailStamp += 1;
+        detail = next;
+        lists = lists.map((row) => (row.id === next.id ? mergeList(row, next) : row));
+        paintIndex();
+      },
+      onBack: showBack ? () => {
+        if (noteId && detail?.kind !== 'journal') {
+          noteId = '';
+          noteMode = 'write';
+          syncUrl();
+          paint();
+          return;
+        }
+        setScreen('index');
+      } : null,
+      onChange: applyDetail,
+      onOpenNote(id) {
+        noteId = id || '';
+        noteMode = 'write';
+        selected = [];
+        syncUrl();
+        paint();
+      },
+      onCloseNote() {
+        noteId = '';
+        noteMode = 'write';
+        syncUrl();
+        paint();
+      },
+      onNoteMode(mode) {
+        noteMode = mode;
+        paintDoc();
+      },
+      onSelect(id, mode) {
+        if (!id) selected = [];
+        else if (mode === 'add') selected = [...new Set([...selected, id])];
+        else selected = selected.includes(id) ? selected.filter((row) => row !== id) : [...selected, id];
+        paintDoc();
+      },
+      onError: showError,
+      onEdit: async () => {
+        const draft = await listDialog(detail);
+        if (!draft) return;
+        applyDetail(await apiJson(`/api/lists/${detail.id}`, { method: 'PATCH', body: draft }));
+      },
+      onShare: () => sharePicker('list', detail.id).catch((err) => showError(err.message)),
+      onDeleteList: async () => {
+        if (!window.confirm('Delete this list?')) return;
+        await apiJson(`/api/lists/${detail.id}`, { method: 'DELETE' });
+        activeListId = '';
+        noteId = '';
+        detail = null;
+        syncUrl();
+        if (isMobile()) setScreen('index');
+        refresh(false);
+      },
+    });
+    armDraft = false;
   }
 
   function showError(message) {
@@ -401,164 +584,56 @@ export function initListsHub(root) {
     node.textContent = message || '';
   }
 
-  function paintEditor(list) {
-    if (!editorEl) return;
-    detail = list;
-    if (!list) {
-      editorEl.classList.remove('is-locked');
-      editorEl.innerHTML = '<div class="collab-empty">Select a list to edit items.</div>';
-      return;
-    }
-    renderOutline(editorEl, list, {
-      captureKeys: true,
-      noteId,
-      noteMode,
-      focus: focusMode,
-      selected,
-      reminders: remindersEnabled(root),
-      onBack: (isMobile() || noteId) ? () => {
-        if (noteId) {
-          noteId = '';
-          noteMode = 'write';
-          syncUrl();
-          paint();
-          return;
-        }
-        setMobileView('lists');
-        paint();
-      } : null,
-      onFocus() {
-        focusMode = !focusMode;
-        paint();
-      },
-      onChange: applyDetail,
-      onOpenNote(id) {
-        noteId = id;
-        noteMode = 'write';
-        selected = [];
-        syncUrl();
-        paint();
-      },
-      onCloseNote() {
-        noteId = '';
-        noteMode = 'write';
-        syncUrl();
-        paint();
-      },
-      onNoteMode(mode) {
-        noteMode = mode;
-        paintEditor(detail);
-      },
-      onSelect(id, mode) {
-        if (!id) selected = [];
-        else if (mode === 'add') selected = [...new Set([...selected, id])];
-        else selected = selected.includes(id) ? selected.filter((row) => row !== id) : [...selected, id];
-        paintEditor(detail);
-      },
-      onError: showError,
-      onEdit: async () => {
-        const draft = await listDialog(detail);
-        if (!draft) return;
-        const next = await apiJson(`/api/lists/${detail.id}`, { method: 'PATCH', body: draft });
-        applyDetail(next);
-      },
-      onShare: () => sharePicker('list', list.id).catch((err) => showError(err.message)),
-      onDeleteList: async () => {
-        if (!window.confirm('Delete this list?')) return;
-        await apiJson(`/api/lists/${list.id}`, { method: 'DELETE' });
-        activeListId = '';
-        noteId = '';
-        detail = null;
-        syncUrl();
-        if (isMobile()) setMobileView('lists');
-        editorEl.innerHTML = '<div class="collab-empty">Select a list to edit items.</div>';
-        refresh(false);
-      },
-      focusDraft: armDraft,
-    });
-    armDraft = false;
-  }
-
   function applyDetail(next) {
     detailStamp += 1;
     detail = next;
-    lists = lists.map((row) => (row.id === next.id ? { ...row, ...next, tags: next.tags || row.tags } : row));
-    paintBoard();
-    paintEditor(next);
+    lists = lists.map((row) => (row.id === next.id ? mergeList(row, next) : row));
+    paintIndex();
+    paintDoc();
   }
 
   async function openList(id, keepNote = false) {
     if (!keepNote && id !== activeListId) noteId = '';
     activeListId = id;
+    view = 'library';
     syncUrl();
     const list = await apiJson(`/api/lists/${id}`);
-    if (isMobile()) setMobileView(noteId ? 'note' : 'detail');
-    paintBoard();
-    paintEditor(list);
-  }
-
-  async function openNote(listId, itemId) {
-    noteId = itemId;
-    noteMode = 'read';
-    if (detail?.id !== listId) await openList(listId, true);
-    else {
+    if (list.kind === 'journal' && !noteId) {
+      const page = [...(list.items || [])].reverse().find((item) => item.kind === 'note');
+      if (page) noteId = page.id;
       syncUrl();
-      if (isMobile()) setMobileView('note');
-      paint();
     }
+    detail = list;
+    if (isMobile()) setScreen('doc');
+    paintSide();
+    paintIndex();
+    paintDoc();
   }
 
   function paint() {
-    if (!bodyEl) return;
-    bodyEl.classList.toggle('is-mobile', isMobile());
-    bodyEl.classList.toggle('is-focus', Boolean(focusMode || noteId));
-    if (noteId && isMobile()) mobileView = 'note';
-    if (isMobile()) bodyEl.dataset.mobileView = mobileView;
-    else delete bodyEl.dataset.mobileView;
-    paintRail();
-    paintBoard();
-    if (activeListId && detail?.id === activeListId) paintEditor(detail);
-    else if (!activeListId) paintEditor(null);
+    setScreen(isMobile() ? screen : 'index');
+    paintSide();
+    paintIndex();
+    paintDoc();
   }
 
   let pendingLiveId = '';
-  let pendingBoard = false;
   let liveGen = 0;
   let detailStamp = 0;
 
   function editorBusy() {
-    if (document.body.classList.contains('lists-is-reordering')) return true;
     const el = document.activeElement;
     if (!editorEl || !el || !editorEl.contains(el)) return false;
     const tag = el.tagName;
     return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
   }
 
-  async function reloadBoard() {
-    const data = await apiJson('/api/lists');
-    groups = data.groups || [];
-    lists = data.lists || [];
-    tagCatalog = data.tag_catalog || [];
-    if (boardEl?.querySelector('.is-dragging') || document.body.classList.contains('lists-is-reordering')) {
-      pendingBoard = true;
-      return;
-    }
-    pendingBoard = false;
-    paintRail();
-    paintBoard();
-  }
-
   async function pullOpen(id) {
     const stamp = detailStamp;
     const gen = ++liveGen;
     const list = await apiJson(`/api/lists/${id}`);
-    if (gen !== liveGen || activeListId !== id) return;
-    if (stamp !== detailStamp) {
-      if (editorBusy()) pendingLiveId = id;
-      else pullOpen(id).catch(() => {});
-      return;
-    }
-    if (editorBusy()) {
+    if (gen !== liveGen || activeListId !== id || view !== 'library') return;
+    if (stamp !== detailStamp || editorBusy()) {
       pendingLiveId = id;
       return;
     }
@@ -566,14 +641,24 @@ export function initListsHub(root) {
     applyDetail(list);
   }
 
-  async function applyLive(id) {
-    await reloadBoard();
-    if (!id || activeListId !== id) return;
-    if (editorBusy()) {
-      pendingLiveId = id;
+  async function refresh(openCurrent = true) {
+    const data = await apiJson('/api/lists');
+    groups = data.groups || [];
+    lists = data.lists || [];
+    tasks = data.tasks || [];
+    logbook = data.logbook || [];
+    tagCatalog = data.tag_catalog || [];
+    paintSide();
+    paintIndex();
+    if (openCurrent && view === 'library' && activeListId) {
+      await openList(activeListId, true).catch(() => {
+        activeListId = '';
+        detail = null;
+        paintDoc();
+      });
       return;
     }
-    await pullOpen(id);
+    paintDoc();
   }
 
   editorEl?.addEventListener('focusout', () => {
@@ -587,73 +672,117 @@ export function initListsHub(root) {
 
   globalThis.AirdChatWS?.subscribe((data) => {
     if (data?.type !== 'collab_update' || data.kind !== 'list') return;
-    applyLive(String(data.id || '')).catch(() => {});
+    refresh(false).then(() => {
+      const id = String(data.id || '');
+      if (!id || activeListId !== id || view !== 'library') return;
+      if (editorBusy()) pendingLiveId = id;
+      else pullOpen(id).catch(() => {});
+    }).catch(() => {});
   });
 
-  async function refresh(repaint = true) {
-    const data = await apiJson('/api/lists');
-    groups = data.groups || [];
-    lists = data.lists || [];
-    tagCatalog = data.tag_catalog || [];
-    if (!selectedGroupIdInit) {
-      selectedGroupId = groups.length ? groups[0].id : '__all__';
-      selectedGroupIdInit = true;
-    }
-    if (!groups.some((g) => g.id === selectedGroupId) && selectedGroupId && selectedGroupId !== '__all__') {
-      selectedGroupId = '__all__';
-    }
-    if (repaint) {
-      paint();
-      if (activeListId) await openList(activeListId).catch(() => {
-        activeListId = '';
-        detail = null;
-        paintEditor(null);
+  let tagMenu = null;
+  function closeTagMenu() {
+    tagMenu?.remove();
+    tagMenu = null;
+  }
+  async function openTagMenu(listId, anchor) {
+    closeTagMenu();
+    const list = lists.find((row) => row.id === listId);
+    if (!list || list.organizer !== me) return;
+    const { tags } = await fetchMyUserTags();
+    const have = new Set((list.tags || []).map((tag) => Number(tag.id)));
+    const choices = (tags || []).filter((tag) => !have.has(Number(tag.id)));
+    const menu = document.createElement('div');
+    menu.className = 'lists-tag-menu';
+    menu.innerHTML = choices.length
+      ? choices.map((tag) => `<button type="button" data-pick-tag="${esc(String(tag.id))}">${esc(tag.name)}</button>`).join('')
+      : '<p class="collab-hint">No more tags. <a href="/tags">Create one</a>.</p>';
+    document.body.appendChild(menu);
+    const rect = anchor.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 180))}px`;
+    menu.style.top = `${rect.bottom + 4}px`;
+    tagMenu = menu;
+    menu.querySelectorAll('[data-pick-tag]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        closeTagMenu();
+        await apiJson(`/api/lists/${listId}`, { method: 'PATCH', body: { tag_ids: [...have, Number(btn.dataset.pickTag)] } });
+        await refresh(false);
+        if (activeListId === listId) applyDetail(await apiJson(`/api/lists/${listId}`));
       });
-    } else {
-      paintRail();
-      paintBoard();
-    }
+    });
+    setTimeout(() => {
+      document.addEventListener('pointerdown', function close(event) {
+        if (menu.contains(event.target)) return;
+        document.removeEventListener('pointerdown', close, true);
+        closeTagMenu();
+      }, true);
+    }, 0);
+  }
+  function wireAddTag(scope) {
+    scope.querySelectorAll('[data-add-tag]').forEach((btn) => {
+      btn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openTagMenu(btn.dataset.addTag, btn);
+      });
+    });
   }
 
-  document.getElementById('listsGroupBtn')?.addEventListener('click', () => {
-    const button = document.getElementById('listsGroupBtn');
-    const input = document.createElement('input');
-    input.className = 'list-rename';
-    input.placeholder = 'Group name';
-    button.replaceWith(input);
-    input.focus();
-    let closed = false;
-    const finish = async (save) => {
-      if (closed) return;
-      closed = true;
-      const name = input.value.trim();
-      input.replaceWith(button);
-      if (!save || !name) return;
-      await apiJson('/api/list-groups', { method: 'POST', body: { name } });
-      await refresh();
-    };
-    input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') finish(true);
-      if (event.key === 'Escape') finish(false);
-    });
-    input.addEventListener('blur', () => finish(true));
-  });
-
-  document.getElementById('listsNewBtn')?.addEventListener('click', async () => {
-    const draft = await listDialog();
+  async function startList(kind) {
+    let draft;
+    try {
+      draft = await listDialog(null, { kind });
+    } catch (err) {
+      showError(err.message || 'Could not open the form');
+      return;
+    }
     if (!draft) return;
-    const list = await apiJson('/api/lists', { method: 'POST', body: draft });
-    armDraft = true;
+    if (folder && folder !== '__all__') draft.group_id = folder;
+    let list;
+    try {
+      list = await apiJson('/api/lists', { method: 'POST', body: draft });
+    } catch (err) {
+      showError(err.message || 'Could not create the list');
+      return;
+    }
+    armDraft = list.kind !== 'journal';
     activeListId = list.id;
     detail = list;
-    if (list.group_id) selectedGroupId = list.group_id;
+    noteId = list.kind === 'journal' ? ((list.items || []).find((item) => item.kind === 'note')?.id || '') : '';
+    view = 'library';
+    kindFilter = '';
+    if (list.group_id) folder = list.group_id;
     syncUrl();
     await refresh();
-    await openList(list.id);
+  }
+
+  searchEl?.addEventListener('input', () => {
+    query = searchEl.value;
+    paintSide();
+    paintIndex();
+    if (view !== 'library') paintDoc();
+  });
+
+  document.addEventListener('pointerdown', (event) => {
+    const menu = document.getElementById('listsNewMenu');
+    const button = document.getElementById('listsNewBtn');
+    if (!menu || menu.hidden) return;
+    if (menu.contains(event.target) || button?.contains(event.target)) return;
+    menu.hidden = true;
+    button?.setAttribute('aria-expanded', 'false');
   });
 
   document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      const menu = document.getElementById('listsNewMenu');
+      if (menu && !menu.hidden) {
+        menu.hidden = true;
+        document.getElementById('listsNewBtn')?.setAttribute('aria-expanded', 'false');
+      }
+    }
     if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'k') return;
+    const target = event.target;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
     event.preventDefault();
     openPalette();
   });
@@ -665,19 +794,17 @@ export function initListsHub(root) {
     const rows = [];
     lists.forEach((list) => {
       rows.push({ label: list.title, hint: 'List', run: () => openList(list.id) });
-      (list.notes || []).forEach((note) => {
-        rows.push({ label: note.title, hint: list.title, run: () => openNote(list.id, note.id) });
-      });
+      noteCards(list).forEach((note) => rows.push({ label: note.title, hint: list.title, run: () => openNote(list.id, note.id) }));
     });
-    node.innerHTML = `<input class="list-palette-input" placeholder="Search lists and notes" />
+    node.innerHTML = `<input class="list-palette-input" placeholder="Search lists and pages" />
       <div class="list-palette-rows"></div>`;
     document.body.appendChild(node);
     const input = node.querySelector('input');
     const box = node.querySelector('.list-palette-rows');
     let active = 0;
     const paintRows = () => {
-      const query = input.value.trim().toLowerCase();
-      const shown = rows.filter((row) => !query || row.label.toLowerCase().includes(query) || row.hint.toLowerCase().includes(query)).slice(0, 8);
+      const needle = input.value.trim().toLowerCase();
+      const shown = rows.filter((row) => !needle || row.label.toLowerCase().includes(needle) || row.hint.toLowerCase().includes(needle)).slice(0, 8);
       if (active >= shown.length) active = 0;
       box.innerHTML = shown.map((row, index) => `<button type="button" class="${index === active ? 'is-active' : ''}" data-index="${index}"><strong>${esc(row.label)}</strong><span>${esc(row.hint)}</span></button>`).join('')
         || '<p class="collab-empty">Nothing matches.</p>';
@@ -695,7 +822,6 @@ export function initListsHub(root) {
     input.addEventListener('keydown', (key) => {
       if (key.key === 'Escape') {
         key.preventDefault();
-        key.stopPropagation();
         node.remove();
       }
       if (key.key === 'ArrowDown' || key.key === 'ArrowUp') {
@@ -714,8 +840,19 @@ export function initListsHub(root) {
     input.focus();
   }
 
-  refresh().catch((e) => {
-    if (editorEl) editorEl.innerHTML = `<div class="collab-empty">${esc(e.message)}</div>`;
+  async function openNote(listId, itemId) {
+    noteId = itemId;
+    noteMode = 'write';
+    if (detail?.id !== listId || view !== 'library') await openList(listId, true);
+    else {
+      syncUrl();
+      paintDoc();
+    }
+  }
+
+  setScreen(screen);
+  refresh().catch((err) => {
+    if (editorEl) editorEl.innerHTML = `<div class="ln-empty">${esc(err.message)}</div>`;
   });
 
   return { refresh };

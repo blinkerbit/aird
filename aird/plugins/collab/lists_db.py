@@ -99,6 +99,24 @@ def item_kind(value, fallback: str = "check") -> str:
     return fallback
 
 
+def list_kind(value, fallback: str = "todo") -> str:
+    raw = str(value or "").strip().lower()
+    if raw in ("bullet", "notes", "note"):
+        return "bullet"
+    if raw in ("journal", "doc", "page"):
+        return "journal"
+    if raw == "todo":
+        return "todo"
+    if fallback in ("todo", "bullet", "journal"):
+        return fallback
+    return "todo"
+
+
+def _fresh_journal_page() -> str:
+    stamp = datetime.now(timezone.utc).strftime("%A, %B %d").replace(" 0", " ")
+    return f"# {stamp}"
+
+
 def clip_item_text(kind: str, value) -> str:
     body = str(value or "").strip()
     limit = 100_000 if kind == "note" else 300
@@ -262,21 +280,25 @@ def create_list(
 ) -> dict:
     list_id = _new_id()
     now = _now()
-    k = "bullet" if str(kind).strip().lower() == "bullet" else "todo"
+    k = list_kind(kind)
     vis = normalize_visibility(visibility)
     conn.execute(
         "INSERT INTO collab_lists (id, organizer, title, kind, visibility, created_at, updated_at, notes) "
         "VALUES (?,?,?,?,?,?,?,?)",
         (list_id, organizer, title.strip(), k, vis, now, now, _note(notes)),
     )
-    for i, raw in enumerate(items):
+    rows = list(items or [])
+    if k == "journal" and not any(str((raw or {}).get("text") or "").strip() for raw in rows):
+        rows = [{"text": _fresh_journal_page(), "kind": "note"}]
+    fallback = "note" if k == "journal" else "bullet" if k == "bullet" else "check"
+    for i, raw in enumerate(rows):
         text = str((raw or {}).get("text") or "").strip()
         if not text:
             continue
         labels = (raw or {}).get("labels") or []
         if not isinstance(labels, list):
             labels = []
-        row_kind = item_kind((raw or {}).get("kind"), "bullet" if k == "bullet" else "check")
+        row_kind = item_kind((raw or {}).get("kind"), fallback)
         body = clip_item_text(row_kind, text)
         if not body:
             continue
@@ -337,7 +359,7 @@ def update_list(
         return None
     k = row["kind"]
     if kind is not None:
-        k = "bullet" if str(kind).strip().lower() == "bullet" else "todo"
+        k = list_kind(kind, str(row["kind"] or "todo"))
     vis = row["visibility"] if visibility is None else normalize_visibility(visibility)
     now = _now()
     list_notes = row["notes"] if notes is None else _note(notes)
@@ -550,6 +572,8 @@ def list_index(conn: sqlite3.Connection, username: str, query: str = "") -> dict
     needle = query.strip().casefold()
     lists = []
     reminders = []
+    tasks: list[dict] = []
+    logbook: list[dict] = []
     tag_catalog: dict[str, dict] = {}
     now = _now()
     for row in conn.execute(
@@ -593,6 +617,21 @@ def list_index(conn: sqlite3.Connection, username: str, query: str = "") -> dict
             continue
         lists.append(data)
         for item in items:
+            if _row_kind(item) != "check":
+                continue
+            task = {
+                "list_id": row["id"],
+                "list_title": data["title"],
+                "item_id": item["id"],
+                "text": str(item["text"] or "").splitlines()[0][:180],
+                "due_at": item["due_at"] or "",
+                "updated_at": item["updated_at"],
+            }
+            if item["done"]:
+                logbook.append(task)
+            elif task["text"]:
+                tasks.append(task)
+        for item in items:
             if item["done"] or item["reminded_at"]:
                 continue
             when = item["remind_at"] or item["due_at"]
@@ -619,7 +658,15 @@ def list_index(conn: sqlite3.Connection, username: str, query: str = "") -> dict
         ).fetchall()
     ]
     catalog = sorted(tag_catalog.values(), key=lambda t: str(t.get("name") or "").casefold())
-    return {"lists": lists, "groups": groups, "reminders": reminders, "tag_catalog": catalog}
+    logbook.sort(key=lambda task: str(task.get("updated_at") or ""), reverse=True)
+    return {
+        "lists": lists,
+        "groups": groups,
+        "reminders": reminders,
+        "tag_catalog": catalog,
+        "tasks": tasks,
+        "logbook": logbook[:60],
+    }
 
 
 def _matches(data: dict, items, needle: str) -> bool:

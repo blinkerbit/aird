@@ -231,6 +231,42 @@ def announce_chat_request(
             logger.debug("chat request push failed", exc_info=True)
 
 
+def announce_enhanced_invite(
+    actor: str, peer: str, peer_id: int, room_id: str, epk
+) -> None:
+    """Socket plus web push. The invite has to show up off the chat page too."""
+    if not peer or peer == actor or not room_id or peer_id is None:
+        return
+    preview = f"{actor} wants to start an Enhanced Secure Chat."
+    try:
+        deliver(
+            username=peer,
+            user_id=int(peer_id),
+            kind="enhanced_request",
+            socket_payload={
+                "type": "enhanced_request",
+                "room_id": room_id,
+                "from": actor,
+                "epk": epk,
+                "preview": preview,
+            },
+            push_payload={
+                "title": actor or "Aird",
+                "body": preview,
+                "sender": actor,
+                "preview": preview,
+                "room_id": room_id,
+                "url": "/chat",
+                "tag": f"aird-enhanced-{room_id}",
+                "kind": "enhanced_request",
+            },
+            expire_s=15 * 60,
+            push_ttl=15 * 60,
+        )
+    except Exception:
+        logger.debug("enhanced invite notify failed", exc_info=True)
+
+
 def dispatch_e2e_key_ready(username: str, conversation_id: str) -> None:
     get_chat_hub().broadcast_user_ids(
         chat_db.member_user_ids(username, conversation_id),

@@ -49,6 +49,12 @@ import { setAppIconBadge } from './core/app-badge.js';
     toast.className = 'alert alert-info shadow-lg cursor-pointer max-w-sm';
     toast.innerHTML = `<span><strong>${escapeHtml(sender)}:</strong> ${escapeHtml(preview)}</span>`;
     toast.addEventListener('click', () => {
+      const onChat = location.pathname === '/chat' || location.pathname.startsWith('/chat/');
+      if (payload.room_id && onChat && typeof globalThis.AirdEnhancedSecure?.show === 'function') {
+        globalThis.AirdEnhancedSecure.show(payload.room_id);
+        toast.remove();
+        return;
+      }
       if (payload.url) location.href = payload.url;
       else if (convId) location.href = `/chat?c=${encodeURIComponent(convId)}`;
     });
@@ -244,10 +250,46 @@ import { setAppIconBadge } from './core/app-badge.js';
     initCalls(callsOpts);
   }
 
+  const ENHANCED_SEEN = 'aird-enhanced-notified';
+
+  function enhancedSeen() {
+    try { return JSON.parse(sessionStorage.getItem(ENHANCED_SEEN) || '[]'); }
+    catch { return []; }
+  }
+
+  function rememberEnhanced(roomId) {
+    const cur = enhancedSeen();
+    if (!cur.includes(roomId)) cur.push(roomId);
+    sessionStorage.setItem(ENHANCED_SEEN, JSON.stringify(cur.slice(-30)));
+  }
+
+  function onEnhancedRequest(data) {
+    const roomId = String(data?.room_id || '');
+    if (!roomId) return;
+    const me = globalThis.__AIRD_CHAT_USER__ || '';
+    if (data.from && me && String(data.from) === String(me)) return;
+    if (pageIsLive()) markShown(data);
+    if (enhancedSeen().includes(roomId)) return;
+    if (globalThis.AirdEnhancedSecure?.viewing?.() === roomId) {
+      rememberEnhanced(roomId);
+      return;
+    }
+    if (!pageIsLive()) return;
+    rememberEnhanced(roomId);
+    showToast({
+      sender: data.from || 'Someone',
+      preview: data.preview || 'Enhanced Secure Chat request',
+      room_id: roomId,
+      url: '/chat',
+    });
+  }
+
   function onChatEvent(data) {
     if (!data?.type) return;
     if (data.type === 'chat_notify') {
       onNotify(data);
+    } else if (data.type === 'enhanced_request') {
+      onEnhancedRequest(data);
     } else if (data.type === 'chat_request') {
       const me = globalThis.__AIRD_CHAT_USER__ || '';
       const fromMe = data.from && me && String(data.from) === String(me);

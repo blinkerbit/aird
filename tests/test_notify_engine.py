@@ -56,6 +56,29 @@ def test_offline_push_is_immediate_and_once(monkeypatch, tmp_path):
     assert clock["t"] == 1_000_000.0
 
 
+def test_enhanced_invite_notifies_peer(monkeypatch, tmp_path):
+    hub = _Hub()
+    clock, sent = _setup(monkeypatch, tmp_path, hub)
+    from aird.plugins.chat.notify import announce_enhanced_invite
+
+    announce_enhanced_invite("alice", "bob", 3, "room1", {"kty": "EC"})
+    assert hub.sent[0][0] == 3
+    body = hub.sent[0][1]
+    assert body["type"] == "enhanced_request"
+    assert body["from"] == "alice"
+    assert body["room_id"] == "room1"
+    assert body["preview"] == "alice wants to start an Enhanced Secure Chat."
+    assert body["epk"]["kty"] == "EC"
+    assert body["notify_id"]
+    assert flush_due() == 1
+    assert sent[0][0] == "bob"
+    assert sent[0][1]["kind"] == "enhanced_request"
+    assert sent[0][1]["url"] == "/chat"
+    assert sent[0][1]["notify_id"] == body["notify_id"]
+    assert "epk" not in sent[0][1]
+    assert clock["t"] == 1_000_000.0
+
+
 def test_online_pushes_immediately(monkeypatch, tmp_path):
     hub = _Hub()
     hub.online = True
