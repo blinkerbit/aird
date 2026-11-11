@@ -734,6 +734,31 @@ def test_name_header_round_trip_and_display_name_shape():
     assert "secret" not in view
 
 
+def test_password_change_url_only_when_enabled():
+    from aird.core.authentik_sso import DEFAULT_PASSWORD_URL, password_change_url
+
+    conn = sqlite3.connect(":memory:")
+    init_db(conn)
+    assert password_change_url(conn) == ""
+    save_authentik_sso(
+        conn,
+        {
+            "enabled": True,
+            "username_header": "X-authentik-username",
+            "password_url": "/if/flow/default-password-change/",
+            "secret": "",
+        },
+    )
+    assert password_change_url(conn) == "/if/flow/default-password-change/"
+    blank = save_authentik_sso(
+        conn,
+        {"enabled": True, "username_header": "X-authentik-username", "password_url": "  "},
+    )
+    assert blank["password_url"] == DEFAULT_PASSWORD_URL
+    with pytest.raises(ValueError, match="Password URL"):
+        merge_authentik_sso(blank, {"password_url": "javascript:alert(1)"})
+
+
 def test_tornado_login_get_disabled_renders_form(conn):
     from aird.handlers.auth_handlers import LoginHandler
 

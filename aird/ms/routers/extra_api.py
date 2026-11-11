@@ -954,6 +954,11 @@ async def admin_user_reset_password(request: Request) -> Response:
     if user_service is None:
         return PlainTextResponse("User service unavailable", status_code=503)
 
+    from aird.core.authentik_sso import password_change_url
+
+    if password_change_url(conn):
+        return RedirectResponse("/admin/users", status_code=302)
+
     temp_password = secrets.token_urlsafe(32)
     if not user_service.update_user(
         conn,

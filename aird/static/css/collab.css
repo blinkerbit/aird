@@ -289,18 +289,18 @@
   margin: .15rem 0;
 }
 .lists-item-row.is-dragging,
+.lists-glance-item.is-dragging,
 .lists-mobile-item.is-dragging {
   position: fixed;
-  z-index: 40;
+  z-index: 80;
   margin: 0;
-  pointer-events: none;
   opacity: 1;
   box-shadow: 0 12px 32px rgba(0,0,0,.22);
   border-radius: .45rem;
   border: 1px solid var(--color-base-300);
   background: var(--color-base-100);
 }
-body.lists-is-reordering { cursor: grabbing; user-select: none; }
+body.lists-is-reordering { cursor: grabbing; user-select: none; touch-action: none; }
 .lists-card-meta { display: flex; align-items: center; gap: .35rem; }
 .lists-add-tag {
   flex: 0 0 auto; width: 1.45rem; height: 1.45rem; border-radius: 999px;

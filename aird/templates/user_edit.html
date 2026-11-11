@@ -54,7 +54,15 @@
             <p class="label-text-alt text-base-content/50 px-1 pt-1">Only admins can change this. Leave blank to show the username.</p>
           </div>
 
-          {% if not settings.get('ldap_server') %}
+          {% if authentik_password_url %}
+          <div class="alert alert-info">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="h-5 w-5 shrink-0 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <div>
+              <p class="font-semibold">Authentik password</p>
+              <p class="text-sm">This account’s password is changed in Authentik, from the user’s own settings.</p>
+            </div>
+          </div>
+          {% elif not settings.get('ldap_server') %}
           <div class="form-control">
             <label class="label" for="password"><span class="label-text font-semibold">New password</span></label>
             <input type="password" id="password" name="password" class="input input-bordered w-full"

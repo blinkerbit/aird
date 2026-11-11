@@ -250,27 +250,30 @@ function wireReorder(scope, list, hooks) {
       event.stopPropagation();
     });
     handle.addEventListener('pointerdown', (event) => {
-      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      if (event.button != null && event.button !== 0) return;
       event.preventDefault();
       event.stopPropagation();
       const row = handle.closest('[data-item-id]');
       const parent = row?.parentElement;
-      if (!row || !parent) return;
+      if (!row || !parent || parent.dataset.reordering) return;
+      parent.dataset.reordering = '1';
       const itemIds = () => [...parent.querySelectorAll(':scope > [data-item-id]')].map((el) => el.dataset.itemId);
       const before = itemIds().join();
       const start = row.getBoundingClientRect();
       const grabY = event.clientY - start.top;
       const placeholder = document.createElement('div');
       placeholder.className = 'lists-item-placeholder';
-      placeholder.style.height = `${start.height}px`;
+      placeholder.style.height = `${Math.round(start.height)}px`;
       parent.insertBefore(placeholder, row);
+      document.body.appendChild(row);
       row.classList.add('is-dragging');
-      row.style.width = `${start.width}px`;
-      row.style.left = `${start.left}px`;
-      row.style.top = `${start.top}px`;
+      row.style.width = `${Math.round(start.width)}px`;
+      row.style.left = `${Math.round(start.left)}px`;
+      row.style.top = `${Math.round(start.top)}px`;
       document.body.classList.add('lists-is-reordering');
-      const slideInto = (pointerY) => {
-        const others = [...parent.querySelectorAll(':scope > [data-item-id]')].filter((el) => el !== row);
+      try { handle.setPointerCapture(event.pointerId); } catch { /* already captured */ }
+      const placeHolderAt = (pointerY) => {
+        const others = [...parent.querySelectorAll(':scope > [data-item-id]')];
         let anchor = null;
         for (const el of others) {
           const box = el.getBoundingClientRect();
@@ -279,7 +282,8 @@ function wireReorder(scope, list, hooks) {
             break;
           }
         }
-        if (placeholder.nextSibling === anchor) return;
+        const next = placeholder.nextElementSibling;
+        if (next === anchor || (anchor == null && next == null)) return;
         const tops = new Map(others.map((el) => [el, el.getBoundingClientRect().top]));
         parent.insertBefore(placeholder, anchor);
         others.forEach((el) => {
@@ -292,21 +296,24 @@ function wireReorder(scope, list, hooks) {
         });
       };
       const move = (ev) => {
+        if (ev.pointerId !== event.pointerId) return;
         ev.preventDefault();
-        row.style.top = `${ev.clientY - grabY}px`;
-        slideInto(ev.clientY);
-        const scroller = parent.closest('.lists-editor, .collab-dialog');
+        row.style.top = `${Math.round(ev.clientY - grabY)}px`;
+        placeHolderAt(ev.clientY);
+        const scroller = parent.closest('.lists-table-wrap, .lists-editor, .collab-dialog');
         if (!scroller) return;
         const edge = scroller.getBoundingClientRect();
-        if (ev.clientY < edge.top + 36) scroller.scrollTop -= 14;
-        else if (ev.clientY > edge.bottom - 36) scroller.scrollTop += 14;
+        if (ev.clientY < edge.top + 36) scroller.scrollTop -= 16;
+        else if (ev.clientY > edge.bottom - 36) scroller.scrollTop += 16;
       };
-      const up = async () => {
+      const finish = async (ev) => {
+        if (ev.pointerId !== event.pointerId) return;
         window.removeEventListener('pointermove', move);
-        window.removeEventListener('pointerup', up);
-        window.removeEventListener('pointercancel', up);
+        window.removeEventListener('pointerup', finish);
+        window.removeEventListener('pointercancel', finish);
         parent.insertBefore(row, placeholder);
         placeholder.remove();
+        delete parent.dataset.reordering;
         row.classList.remove('is-dragging');
         row.style.width = '';
         row.style.left = '';
@@ -325,8 +332,8 @@ function wireReorder(scope, list, hooks) {
         hooks.onSettled?.();
       };
       window.addEventListener('pointermove', move, { passive: false });
-      window.addEventListener('pointerup', up);
-      window.addEventListener('pointercancel', up);
+      window.addEventListener('pointerup', finish);
+      window.addEventListener('pointercancel', finish);
     });
   });
 }

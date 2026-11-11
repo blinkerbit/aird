@@ -1052,6 +1052,10 @@ class BaseHandler(tornado.web.RequestHandler):
         user = getattr(self, "current_user", None)
         if not isinstance(user, dict) or not user.get("must_change_password"):
             return
+        from aird.core.authentik_sso import password_change_url
+
+        if password_change_url(getattr(self, "db_conn", None)):
+            return
         if user.get("username") in BaseHandler._TOKEN_ONLY_USERNAMES:
             return
 
@@ -1171,6 +1175,14 @@ class BaseHandler(tornado.web.RequestHandler):
         namespace.setdefault("nav_title", "")
         namespace.setdefault("ldap_enabled", self.settings.get("ldap_server") is not None)
         namespace["is_admin_user"] = self.is_admin_user()
+        from aird.core.authentik_sso import password_change_url
+
+        try:
+            namespace["authentik_password_url"] = password_change_url(
+                getattr(self, "db_conn", None)
+            )
+        except Exception:
+            namespace["authentik_password_url"] = ""
         try:
             req_path = getattr(self.request, "path", "") or ""
         except Exception:

@@ -25,6 +25,7 @@ from aird.domain.contracts import AuthRequest
 from aird.handlers.auth_handlers import (
     _TOKEN_ONLY_PROFILE_USERNAMES,
     _apply_session_cookies,
+    _profile_authentik_password_url,
     _session_public_view,
     check_login_rate_limit,
     terminate_server_session,
@@ -288,7 +289,14 @@ async def login_get(request: Request):
     next_url = _safe_next_url(request)
 
     if user and not logged_out:
-        if isinstance(user, dict) and user.get("must_change_password"):
+        from aird.core.authentik_sso import password_change_url
+        from aird.ms.deps import db_conn as request_db
+
+        if (
+            isinstance(user, dict)
+            and user.get("must_change_password")
+            and not password_change_url(request_db(request))
+        ):
             mq = quote(next_url)
             return RedirectResponse(f"/auth/mandatory-password?next={mq}", status_code=302)
         return RedirectResponse(next_url, status_code=302)
@@ -330,10 +338,7 @@ def _finish_authentik_login(
     bridge = _HandlerBridge(request, settings)
     _record_authentik_last_login(bridge, user)
     _apply_session_cookies(bridge, str(user["username"]), str(user.get("role") or "user"))
-    if user.get("must_change_password"):
-        bridge.redirect(f"/auth/mandatory-password?next={quote(next_url)}")
-    else:
-        bridge.redirect(next_url)
+    bridge.redirect(next_url)
     return _bridge_response(request, bridge)
 
 
@@ -516,8 +521,15 @@ async def admin_login_get(request: Request):
     settings = _settings(request)
     bridge = _HandlerBridge(request, settings)
     user = bridge.current_user
+    from aird.core.authentik_sso import password_change_url
+    from aird.ms.deps import db_conn as request_db
 
-    if user and isinstance(user, dict) and user.get("must_change_password"):
+    if (
+        user
+        and isinstance(user, dict)
+        and user.get("must_change_password")
+        and not password_change_url(request_db(request))
+    ):
         n = quote(ADMIN_URL)
         return RedirectResponse(f"/auth/mandatory-password?next={n}", status_code=302)
     if bridge.is_admin_user():
@@ -634,6 +646,7 @@ async def profile_get(request: Request):
         shared_with_me=shared_with_me,
         passkeys=passkeys,
         user_plugins=user_plugins,
+        authentik_password_url=_profile_authentik_password_url(bridge),
     )
 
 

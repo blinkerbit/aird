@@ -20,6 +20,7 @@ DEFAULT_USERNAME_HEADER = "X-authentik-username"
 DEFAULT_NAME_HEADER = "X-authentik-name"
 # Same-host Authentik invalidation (clears the IdP session after Aird logout).
 DEFAULT_LOGOUT_URL = "/flows/-/default/invalidation/?next=/"
+DEFAULT_PASSWORD_URL = "/if/flow/default-password-change/"
 SECRET_HEADER = "X-Aird-Authentik-Secret"
 ACTION_FORM = "form"
 ACTION_FORBIDDEN = "forbidden"
@@ -54,16 +55,37 @@ def validate_username_header(name: str) -> str:
     return cleaned
 
 
+def _accept_redirect_url(value, fallback: str, label: str) -> str:
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return fallback
+    if not isinstance(value, str):
+        raise ValueError(f"{label} must be a string")
+    cleaned = value.strip()
+    if len(cleaned) > _LOGOUT_URL_MAX_LEN:
+        raise ValueError(f"{label} is too long")
+    if not (
+        (cleaned.startswith("/") and not cleaned.startswith("//"))
+        or cleaned.startswith("https://")
+        or cleaned.startswith("http://")
+    ):
+        raise ValueError(f"{label} must be a path or http(s) URL")
+    return cleaned
+
+
+def _stored_password_url(cfg: dict | None) -> str:
+    raw = (cfg or {}).get("password_url")
+    try:
+        return _accept_redirect_url(raw, DEFAULT_PASSWORD_URL, "Password URL")
+    except ValueError:
+        return DEFAULT_PASSWORD_URL
+
+
 def _stored_logout_url(cfg: dict | None) -> str:
-    raw = str((cfg or {}).get("logout_url") or "").strip()
-    if not raw or len(raw) > _LOGOUT_URL_MAX_LEN:
+    raw = (cfg or {}).get("logout_url")
+    try:
+        return _accept_redirect_url(raw, DEFAULT_LOGOUT_URL, "Logout URL")
+    except ValueError:
         return DEFAULT_LOGOUT_URL
-    # Same-origin path or absolute http(s) URL only.
-    if raw.startswith("/") and not raw.startswith("//"):
-        return raw
-    if raw.startswith("https://") or raw.startswith("http://"):
-        return raw
-    return DEFAULT_LOGOUT_URL
 
 
 def default_authentik_sso() -> dict:
@@ -72,6 +94,7 @@ def default_authentik_sso() -> dict:
         "username_header": DEFAULT_USERNAME_HEADER,
         "name_header": DEFAULT_NAME_HEADER,
         "logout_url": DEFAULT_LOGOUT_URL,
+        "password_url": DEFAULT_PASSWORD_URL,
         "secret": "",
     }
 
@@ -89,6 +112,7 @@ def public_authentik_sso(config: dict | None) -> dict:
         "username_header": header,
         "name_header": _stored_name_header(cfg),
         "logout_url": _stored_logout_url(cfg),
+        "password_url": _stored_password_url(cfg),
         "secret_set": bool(cfg.get("secret")),
     }
 
@@ -108,6 +132,7 @@ def load_authentik_sso(conn) -> dict:
         "username_header": header,
         "name_header": _stored_name_header(raw),
         "logout_url": _stored_logout_url(raw),
+        "password_url": _stored_password_url(raw),
         "secret": secret,
     }
 
@@ -122,6 +147,14 @@ def post_logout_redirect_url(conn) -> str:
     if cfg.get("enabled"):
         return _stored_logout_url(cfg)
     return "/login?logged_out=1"
+
+
+def password_change_url(conn) -> str:
+    """Authentik password-change flow, or empty when auto-login is off."""
+    cfg = load_authentik_sso(conn)
+    if not cfg.get("enabled"):
+        return ""
+    return _stored_password_url(cfg)
 
 
 def merge_authentik_sso(current: dict, payload: dict) -> dict:
@@ -159,32 +192,25 @@ def merge_authentik_sso(current: dict, payload: dict) -> dict:
             secret = stripped
 
     if "logout_url" in payload:
-        submitted_logout = payload.get("logout_url")
-        if submitted_logout is None or (
-            isinstance(submitted_logout, str) and not submitted_logout.strip()
-        ):
-            logout_url = DEFAULT_LOGOUT_URL
-        elif not isinstance(submitted_logout, str):
-            raise ValueError("Logout URL must be a string")
-        else:
-            cleaned = submitted_logout.strip()
-            if len(cleaned) > _LOGOUT_URL_MAX_LEN:
-                raise ValueError("Logout URL is too long")
-            if not (
-                (cleaned.startswith("/") and not cleaned.startswith("//"))
-                or cleaned.startswith("https://")
-                or cleaned.startswith("http://")
-            ):
-                raise ValueError("Logout URL must be a path or http(s) URL")
-            logout_url = cleaned
+        logout_url = _accept_redirect_url(
+            payload.get("logout_url"), DEFAULT_LOGOUT_URL, "Logout URL"
+        )
     else:
         logout_url = _stored_logout_url(current)
+
+    if "password_url" in payload:
+        password_url = _accept_redirect_url(
+            payload.get("password_url"), DEFAULT_PASSWORD_URL, "Password URL"
+        )
+    else:
+        password_url = _stored_password_url(current)
 
     return {
         "enabled": enabled,
         "username_header": header,
         "name_header": name_header,
         "logout_url": logout_url,
+        "password_url": password_url,
         "secret": secret,
     }
 
@@ -200,6 +226,7 @@ def save_authentik_sso(conn, payload: dict) -> dict:
             "username_header": updated["username_header"],
             "name_header": updated["name_header"],
             "logout_url": updated["logout_url"],
+            "password_url": updated["password_url"],
             "secret": updated["secret"],
         },
     )
