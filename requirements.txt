@@ -5,7 +5,7 @@ aiosignal==1.4.0
 argon2-cffi==25.1.0
 argon2-cffi-bindings==26.1.0
 attrs==26.1.0
-cbor2==6.2.0.post2
+cbor2==6.2.1
 certifi==2026.10.23
 cffi==2.1.1
 chardet==7.7.0
@@ -17,7 +17,7 @@ idna==3.20
 ldap3==2.9.1
 multidict==7.1.0
 packaging==26.3
-pip==26.2.2
+pip==26.3
 propcache==0.5.4
 py-vapid==1.9.6
 pyasn1==0.6.5
