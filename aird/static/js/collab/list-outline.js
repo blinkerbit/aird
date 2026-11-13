@@ -842,7 +842,7 @@ export function renderChatList(root, list, hooks = {}) {
       const mark = kind === 'bullet' ? '•' : (item.done ? '☑' : '☐');
       return `<div class="list-line ${item.done ? 'is-done' : ''}"><button type="button" class="list-mark" data-chat-check="${esc(item.id)}" ${kind === 'check' ? '' : 'disabled'}>${mark}</button><span>${esc(item.text || '')}</span></div>`;
     }).join('') || '<p class="collab-empty">No items yet.</p>'}
-    <a class="list-chat-more" href="/lists?id=${esc(list.id)}">Open list</a>
+    <a class="btn btn-ghost btn-sm list-chat-more" href="/lists?id=${esc(list.id)}">View in lists</a>
   </div>`;
   root.querySelectorAll('[data-chat-check]').forEach((button) => {
     button.addEventListener('click', async () => {

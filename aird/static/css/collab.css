@@ -94,7 +94,8 @@
   box-shadow: 0 24px 64px rgba(0,0,0,.45);
 }
 .collab-dialog-head, .collab-dialog-foot { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex: 0 0 auto; }
-.collab-dialog-head h2 { margin: 0; font-size: 1.05rem; font-weight: 700; }
+.collab-dialog-head h2 { margin: 0; font-size: 1.05rem; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-chat-more { justify-self: start; margin-top: .35rem; }
 .collab-dialog-body { display: grid; gap: .55rem; margin: .6rem 0 .45rem; min-height: 0; overflow: auto; }
 .collab-field { display: grid; gap: .3rem; font-size: .8rem; font-weight: 650; }
 .collab-field[hidden] { display: none !important; }
@@ -184,6 +185,7 @@ span.collab-tag-chip { cursor: default; }
   cursor: pointer;
   white-space: nowrap;
 }
+.chat-focus-bubble.is-selected { outline: 2px solid var(--color-primary); outline-offset: 1px; }
 .chat-focus-bubble[data-kind="list"] { background: color-mix(in srgb, var(--color-secondary, var(--color-primary)) 14%, var(--color-base-100)); }
 .chat-focus-bubble[data-kind="poll"] { background: color-mix(in srgb, var(--color-primary) 14%, var(--color-base-100)); }
 .chat-focus-bubble[data-kind="meet"] { background: color-mix(in srgb, var(--color-accent, var(--color-primary)) 16%, var(--color-base-100)); }

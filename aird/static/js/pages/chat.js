@@ -1377,10 +1377,11 @@ import {
     if (kind === 'poll') meta = `${snap.total_votes || 0} votes`;
     if (kind === 'list') meta = `${snap.done || 0}/${snap.total || 0} done`;
     if (kind === 'meet') meta = snap.live ? 'Live' : 'Ended';
-    const href = kind === 'poll' ? `/polls#${card.id}` : kind === 'list' ? `/lists#${card.id}` : (snap.slug ? `/meet/${snap.slug}` : '/meet');
+    const href = kind === 'poll' ? `/polls#${card.id}` : kind === 'list' ? `/lists?id=${encodeURIComponent(card.id)}` : (snap.slug ? `/meet/${snap.slug}` : '/meet');
+    const openLabel = kind === 'list' ? 'View in lists' : 'Open full page';
     return `<div class="chat-collab-card" data-kind="${esc(kind)}" data-id="${esc(card.id)}">
       <div class="chat-collab-live"><h4>${title}</h4><div class="chat-collab-meta">${esc(meta)}</div></div>
-      <a class="btn btn-ghost btn-xs" href="${esc(href)}">Open full page</a>
+      <a class="btn btn-ghost btn-xs" href="${esc(href)}">${openLabel}</a>
     </div>`;
   }
 

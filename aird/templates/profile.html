@@ -209,6 +209,8 @@
         </div>
         {% end %}
 
+        <h2 class="text-lg font-semibold pt-2">Account security</h2>
+
         {% if authentik_password_url %}
         <div class="card bg-base-100 shadow-sm border border-base-300">
           <div class="card-body">
@@ -263,6 +265,17 @@
         </div>
         {% end %}
 
+        <div id="sessions-card" class="card bg-base-100 shadow-sm border border-base-300">
+          <div class="card-body">
+            <h3 class="font-semibold">Active sessions</h3>
+            <p class="text-sm text-base-content/60 mt-1">
+              Signed-in browsers and devices. End any session you do not recognize. This device is marked Current session.
+            </p>
+            <div id="session-list" class="space-y-2 mt-3"></div>
+            <p id="session-msg" class="text-sm mt-2 hidden"></p>
+          </div>
+        </div>
+
         {% if is_feature_enabled('webauthn', False) %}
         <div id="passkey-card" class="card bg-base-100 shadow-sm border border-base-300 hidden">
           <div class="card-body">
@@ -302,17 +315,6 @@
           </div>
         </div>
         {% end %}
-
-        <div id="sessions-card" class="card bg-base-100 shadow-sm border border-base-300">
-          <div class="card-body">
-            <h3 class="font-semibold">Active sessions</h3>
-            <p class="text-sm text-base-content/60 mt-1">
-              Signed-in browsers and devices. Sessions expire after 3 hours of inactivity or 1 day.
-            </p>
-            <div id="session-list" class="space-y-2 mt-3"></div>
-            <p id="session-msg" class="text-sm mt-2 hidden"></p>
-          </div>
-        </div>
 
         <!-- Account info -->
         <div class="card bg-base-100 shadow-sm border border-base-300">
@@ -572,6 +574,29 @@
     });
   });
 
+  function deviceLabel(ua) {
+    const text = ua || '';
+    if (!text) return 'Unknown device';
+    let browser = 'Browser';
+    if (/Edg\//.test(text)) browser = 'Edge';
+    else if (/Chrome\//.test(text)) browser = 'Chrome';
+    else if (/Firefox\//.test(text)) browser = 'Firefox';
+    else if (/Safari\//.test(text)) browser = 'Safari';
+    let os = '';
+    if (/Windows/.test(text)) os = 'Windows';
+    else if (/Mac OS X/.test(text)) os = 'macOS';
+    else if (/Android/.test(text)) os = 'Android';
+    else if (/iPhone|iPad/.test(text)) os = 'iPhone';
+    else if (/Linux/.test(text)) os = 'Linux';
+    return os ? browser + ' on ' + os : browser;
+  }
+
+  function escText(value) {
+    return String(value ?? '').replace(/[&<>"']/g, function (ch) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+    });
+  }
+
   async function loadSessions() {
     const list = document.getElementById('session-list');
     const msg = document.getElementById('session-msg');
@@ -585,23 +610,21 @@
         const row = document.createElement('div');
         row.className = 'flex items-start justify-between gap-3 rounded-lg border border-base-300 px-3 py-2 text-sm';
         const when = (session.last_active_at || '').replace('T', ' ').slice(0, 19);
-        const device = session.user_agent || 'Unknown device';
+        const device = deviceLabel(session.user_agent);
         const ip = session.ip_address || 'Unknown IP';
         row.innerHTML = `
           <div class="min-w-0">
-            <div class="font-medium truncate">${device}</div>
-            <div class="text-xs text-base-content/50">${ip} · last active ${when} UTC</div>
-            ${session.current ? '<span class="badge badge-success badge-xs mt-1">This device</span>' : ''}
+            <div class="font-medium truncate" title="${escText(session.user_agent)}">${escText(device)}</div>
+            <div class="text-xs text-base-content/50">${escText(ip)} · last active ${escText(when)} UTC</div>
+            ${session.current ? '<span class="badge badge-success badge-sm mt-1">Current session</span>' : ''}
           </div>
         `;
-        if (!session.current) {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'btn btn-ghost btn-xs text-error shrink-0';
-          btn.textContent = 'Revoke';
-          btn.addEventListener('click', function () { revokeSession(session.id, btn); });
-          row.appendChild(btn);
-        }
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-ghost btn-xs text-error shrink-0';
+        btn.textContent = 'End session';
+        btn.addEventListener('click', function () { revokeSession(session.id, btn, session.current); });
+        row.appendChild(btn);
         list.appendChild(row);
       });
       if (!(data.sessions || []).length) {
@@ -616,7 +639,8 @@
     }
   }
 
-  async function revokeSession(sessionId, button) {
+  async function revokeSession(sessionId, button, isCurrent) {
+    if (isCurrent && !globalThis.confirm('End the current session? You will be signed out on this device.')) return;
     const msg = document.getElementById('session-msg');
     button.disabled = true;
     try {

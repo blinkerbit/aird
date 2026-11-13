@@ -33,7 +33,7 @@ from aird.plugins.collab.meet_db import (
     meet_join_allowed,
 )
 from aird.plugins.collab.polls_db import cast_vote, create_poll, delete_poll, get_poll, poll_detail, update_poll
-from aird.plugins.collab.refs import link_ref, list_refs, suggest
+from aird.plugins.collab.refs import link_ref, list_refs, suggest, unlink_refs
 from aird.plugins.collab.slugs import slugify
 from aird.plugins.collab.schema import ensure_collab_schema
 
@@ -137,6 +137,13 @@ def test_slug_and_conversation_shelf(collab_db):
     )
     assert pinned["token"] == "$$grocery-nov1"
     assert list_refs(collab_db, "conv1", "bob")
+    removed = unlink_refs(
+        collab_db,
+        "conv1",
+        [{"kind": "poll", "id": poll["id"]}],
+    )
+    assert removed == 1
+    assert not list_refs(collab_db, "conv1", "bob")
     again = create_poll(
         collab_db,
         organizer="alice",

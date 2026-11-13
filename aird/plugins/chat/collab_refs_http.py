@@ -8,7 +8,7 @@ from aird.handlers.base_handler import BaseHandler, XSRFTokenMixin, require_db
 from aird.plugins.chat import db as chat_db
 from aird.plugins.chat.handlers import _require_chat, _username
 from aird.plugins.collab.live import notify_changed
-from aird.plugins.collab.refs import link_ref, list_refs, suggest
+from aird.plugins.collab.refs import link_ref, list_refs, suggest, unlink_refs
 from aird.plugins.collab.schema import collab_conn
 
 _KINDS = {"poll": "polls", "list": "lists", "meet": "meet"}
@@ -85,8 +85,67 @@ class ChatConversationRefsHandler(BaseHandler, XSRFTokenMixin):
                 self.set_status(403)
                 self.write({"error": "Forbidden"})
                 return
+            fresh = bool(ref.pop("_new", False))
+            if fresh and kind == "list":
+                from aird.plugins.collab import lists_db
+                from aird.plugins.collab.chat_cards import share_card_to_conversation
+                from aird.plugins.chat.handlers import _uid
+
+                share_card_to_conversation(
+                    self.db_conn,
+                    username=name,
+                    user_id=_uid(self),
+                    conversation_id=conversation_id,
+                    kind="list",
+                    artifact_id=str(ref.get("id") or ""),
+                    title=str(ref.get("title") or "List"),
+                    snapshot=lists_db.list_snapshot(conn, str(ref.get("id") or ""), name),
+                    collab=conn,
+                )
             notify_changed(conn, kind, str(ref.get("id") or ""))
             self.write({"ref": ref})
+        finally:
+            conn.close()
+
+    @tornado.web.authenticated
+    @require_db
+    def delete(self, conversation_id: str):
+        if not _require_chat(self):
+            return
+        self.check_xsrf_cookie()
+        name = _username(self)
+        if not chat_db.user_in_conversation(name, conversation_id):
+            self.set_status(403)
+            self.write({"error": "Forbidden"})
+            return
+        body = self.parse_json_body()
+        raw = body.get("refs")
+        if not isinstance(raw, list) or not raw:
+            self.set_status(400)
+            self.write({"error": "refs required"})
+            return
+        conn = collab_conn()
+        if conn is None:
+            self.set_status(503)
+            self.write({"error": "Database unavailable"})
+            return
+        try:
+            refs = []
+            for row in raw:
+                if not isinstance(row, dict):
+                    continue
+                kind = str(row.get("kind") or "").strip().lower()
+                artifact_id = str(row.get("id") or "").strip()
+                if kind in _KINDS and artifact_id and _kind_enabled(kind):
+                    refs.append({"kind": kind, "id": artifact_id})
+            if not refs:
+                self.set_status(400)
+                self.write({"error": "Unknown kind"})
+                return
+            removed = unlink_refs(conn, conversation_id, refs)
+            for row in refs:
+                notify_changed(conn, row["kind"], row["id"])
+            self.write({"removed": removed})
         finally:
             conn.close()
 

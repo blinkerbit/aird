@@ -74,6 +74,10 @@ def link_ref(
     if kind == "list" and not lists_db.user_may_share(conn, row["id"], username):
         return None
     _grant(conn, kind, row, member_names or [])
+    existing = conn.execute(
+        "SELECT 1 FROM collab_conv_refs WHERE conversation_id = ? AND kind = ? AND artifact_id = ?",
+        (conversation_id, kind, row["id"]),
+    ).fetchone()
     conn.execute(
         """INSERT INTO collab_conv_refs (conversation_id, kind, artifact_id, created_by, created_at)
            VALUES (?, ?, ?, ?, ?)
@@ -82,7 +86,31 @@ def link_ref(
     )
     conn.commit()
     fresh = _detail(conn, kind, row["id"], username) or detail
-    return _public(kind, fresh)
+    public = _public(kind, fresh)
+    public["_new"] = existing is None
+    return public
+
+
+def unlink_refs(
+    conn: sqlite3.Connection,
+    conversation_id: str,
+    refs: list[dict],
+) -> int:
+    removed = 0
+    for ref in refs:
+        kind = str(ref.get("kind") or "").strip().lower()
+        artifact_id = str(ref.get("id") or ref.get("artifact_id") or "").strip()
+        if kind not in _KIND or not artifact_id:
+            continue
+        cur = conn.execute(
+            """DELETE FROM collab_conv_refs
+               WHERE conversation_id = ? AND kind = ? AND artifact_id = ?""",
+            (conversation_id, kind, artifact_id),
+        )
+        removed += int(cur.rowcount or 0)
+    if removed:
+        conn.commit()
+    return removed
 
 
 def list_refs(conn: sqlite3.Connection, conversation_id: str, username: str) -> list[dict]:

@@ -26,7 +26,7 @@ from aird.handlers.auth_handlers import (
     _TOKEN_ONLY_PROFILE_USERNAMES,
     _apply_session_cookies,
     _profile_authentik_password_url,
-    _session_public_view,
+    _session_list_views,
     check_login_rate_limit,
     terminate_server_session,
 )
@@ -675,11 +675,7 @@ async def sessions_list(request: Request):
     sessions = list_sessions_for_user(bridge.db_conn, username)
     current_id = bridge.get_session_id()
     return JSONResponse(
-        {
-            "sessions": [
-                _session_public_view(session, current_id) for session in sessions
-            ]
-        }
+        {"sessions": _session_list_views(sessions, current_id)}
     )
 
 

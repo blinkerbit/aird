@@ -197,6 +197,32 @@ export async function linkMentionTokens(convId, text) {
 
 const FOCUS_KIND = { poll: 'Poll', list: 'List', meet: 'Meet' };
 
+const shelfSelected = new Map();
+
+function refKey(ref) {
+  return `${ref.kind}:${ref.id}`;
+}
+
+export function toggleShelfSelect(ref) {
+  const key = refKey(ref);
+  if (shelfSelected.has(key)) shelfSelected.delete(key);
+  else shelfSelected.set(key, { kind: ref.kind, id: ref.id });
+}
+
+export function clearShelfSelection() {
+  shelfSelected.clear();
+}
+
+export function getShelfUnlinkTargets(fallback) {
+  if (shelfSelected.size) return [...shelfSelected.values()];
+  if (!fallback?.kind || !fallback?.id) return [];
+  return [{ kind: fallback.kind, id: fallback.id }];
+}
+
+function shelfSelectedClass(ref) {
+  return shelfSelected.has(refKey(ref)) ? ' is-selected' : '';
+}
+
 function composerShowsFocus() {
   const composer = document.getElementById('chatComposer');
   if (!composer || composer.classList.contains('hidden')) return false;
@@ -233,13 +259,26 @@ export async function renderShelf(convId, me) {
   }
   shelf.hidden = false;
   shelf.innerHTML = refs.map((ref, i) => (
-    `<button type="button" class="chat-focus-bubble" data-kind="${esc(ref.kind)}" data-i="${i}" title="${esc(ref.title)}"><span class="chat-focus-kind">${esc(FOCUS_KIND[ref.kind] || ref.kind)}</span><span class="chat-focus-title">${esc(ref.title)}</span></button>`
+    `<button type="button" class="chat-focus-bubble${shelfSelectedClass(ref)}" data-kind="${esc(ref.kind)}" data-i="${i}" title="${esc(ref.title)}"><span class="chat-focus-kind">${esc(FOCUS_KIND[ref.kind] || ref.kind)}</span><span class="chat-focus-title">${esc(ref.title)}</span></button>`
   )).join('');
   shelf.querySelectorAll('button').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (event) => {
       const ref = refs[Number(btn.dataset.i)];
       if (!ref) return;
-      openArtifact(ref, me).catch((err) => alert(err.message));
+      if (event.metaKey || event.ctrlKey) {
+        event.preventDefault();
+        toggleShelfSelect(ref);
+        renderShelf(convId, me).catch(() => {});
+        return;
+      }
+      openArtifact(ref, me, {
+        convId,
+        getUnlinkTargets: () => getShelfUnlinkTargets(ref),
+        onUnlinked: () => {
+          clearShelfSelection();
+          renderShelf(convId, me).catch(() => {});
+        },
+      }).catch((err) => alert(err.message));
     });
   });
   settle(stuck);

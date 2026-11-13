@@ -1086,6 +1086,12 @@ def _session_public_view(session: dict, current_session_id: str | None) -> dict:
     }
 
 
+def _session_list_views(sessions: list, current_session_id: str | None) -> list:
+    views = [_session_public_view(session, current_session_id) for session in sessions]
+    views.sort(key=lambda row: not row["current"])
+    return views
+
+
 class SessionListAPIHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
@@ -1102,11 +1108,7 @@ class SessionListAPIHandler(BaseHandler):
         current_id = self.get_session_id()
         self.set_header("Content-Type", "application/json")
         self.write(
-            {
-                "sessions": [
-                    _session_public_view(session, current_id) for session in sessions
-                ]
-            }
+            {"sessions": _session_list_views(sessions, current_id)}
         )
 
 

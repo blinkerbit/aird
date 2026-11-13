@@ -36,6 +36,8 @@ function ensureDialog() {
     <form class="collab-dialog-card" id="collabDialogForm">
       <header class="collab-dialog-head">
         <h2 id="collabDialogTitle"></h2>
+        <a id="collabDialogView" class="btn btn-ghost btn-sm" hidden>View in lists</a>
+        <button type="button" class="btn btn-ghost btn-sm btn-error" id="collabDialogUnlink" hidden>Remove</button>
         <button type="button" class="btn btn-ghost btn-sm btn-square" data-close aria-label="Close">✕</button>
       </header>
       <div class="collab-dialog-body" id="collabDialogBody"></div>
@@ -55,6 +57,10 @@ function ensureDialog() {
 async function openForm({ title, submitLabel, html, onSubmit, afterRender }) {
   const dlg = ensureDialog();
   dlg.querySelector('#collabDialogTitle').textContent = title;
+  const view = dlg.querySelector('#collabDialogView');
+  if (view) view.hidden = true;
+  const unlink = dlg.querySelector('#collabDialogUnlink');
+  if (unlink) unlink.hidden = true;
   dlg.querySelector('#collabDialogSubmit').textContent = submitLabel || 'Save';
   const body = dlg.querySelector('#collabDialogBody');
   const err = dlg.querySelector('#collabDialogError');
@@ -429,7 +435,7 @@ export function mountPoll(root, poll, { me, onChange, onDelete, readOnly = false
   root.querySelector('[data-act="share"]')?.addEventListener('click', () => sharePicker('poll', poll.id).catch((e) => alert(e.message)));
 }
 
-export function mountList(root, list, { me, onChange, onDelete } = {}) {
+export function mountList(root, list, { me, onChange, onDelete, inline = false } = {}) {
   const items = list.items || [];
   root.innerHTML = `<div class="list-chat">
     ${items.map((item) => {
@@ -441,7 +447,7 @@ export function mountList(root, list, { me, onChange, onDelete } = {}) {
         <span>${text}</span>
       </div>`;
     }).join('') || '<p class="collab-empty">No items yet.</p>'}
-    <a class="list-chat-more" href="/lists?id=${esc(list.id)}">Open list</a>
+    ${inline ? '' : `<a class="btn btn-ghost btn-sm list-chat-more" href="/lists?id=${esc(list.id)}">View in lists</a>`}
   </div>`;
   root.querySelectorAll('[data-chat-check]').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -499,7 +505,7 @@ export function mountMeet(root, meet, { me, onChange, onDelete, readOnly = false
   root.querySelector('[data-act="share"]')?.addEventListener('click', () => sharePicker('meet', meet.id).catch((e) => alert(e.message)));
 }
 
-export async function openArtifact(item, me) {
+export async function openArtifact(item, me, options = {}) {
   const kind = item.kind;
   const id = item.id;
   const dlg = ensureDialog();
@@ -508,6 +514,40 @@ export async function openArtifact(item, me) {
   dlg.dataset.kind = kind;
   dlg.dataset.id = id;
   dlg.querySelector('#collabDialogTitle').textContent = data.title || data.question || 'Shared';
+  const view = dlg.querySelector('#collabDialogView');
+  if (view) {
+    if (kind === 'list') {
+      view.hidden = false;
+      view.href = `/lists?id=${encodeURIComponent(id)}`;
+      view.textContent = 'View in lists';
+    } else view.hidden = true;
+  }
+  const unlinkBtn = dlg.querySelector('#collabDialogUnlink');
+  const convId = options.convId || '';
+  const unlinkHandler = async () => {
+    if (!convId) return;
+    const targets = options.getUnlinkTargets?.() || [{ kind, id }];
+    if (!targets.length) return;
+    const ask = targets.length === 1
+      ? 'Remove this pinned item from the chat?'
+      : `Remove ${targets.length} pinned items from the chat?`;
+    if (!window.confirm(ask)) return;
+    await apiJson(`/api/chat/conversations/${encodeURIComponent(convId)}/refs`, {
+      method: 'DELETE',
+      body: { refs: targets },
+    });
+    options.onUnlinked?.(targets);
+    dlg.close();
+  };
+  if (unlinkBtn) {
+    unlinkBtn.hidden = !convId;
+    unlinkBtn.replaceWith(unlinkBtn.cloneNode(true));
+    const fresh = dlg.querySelector('#collabDialogUnlink');
+    fresh?.addEventListener('click', (event) => {
+      event.preventDefault();
+      unlinkHandler().catch((err) => window.alert(err.message || 'Could not remove'));
+    });
+  }
   dlg.querySelector('#collabDialogSubmit').textContent = 'Close';
   const body = dlg.querySelector('#collabDialogBody');
   const err = dlg.querySelector('#collabDialogError');

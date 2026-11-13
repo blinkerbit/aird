@@ -26,7 +26,7 @@ def dispatch_message(msg: dict, *, sender_id: int, sender_username: str) -> None
     sealed = meta.get("e2e") if is_e2e_meta(meta) else None
     attachment_count = len(attachment_entries(meta))
     for m in members:
-        if m["user_id"] == sender_id:
+        if sender_id is not None and m["user_id"] == sender_id:
             continue
         if chat_db.is_muted(m["username"], conv_id) and m["username"] not in mentions:
             continue
