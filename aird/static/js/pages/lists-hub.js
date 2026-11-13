@@ -121,7 +121,8 @@ export function initListsHub(root) {
         <button type="button" data-pin-filter="${esc(tag)}">#${esc(tag)}</button>
         <button type="button" data-unpin-tag="${esc(tag)}" aria-label="Unpin">✕</button>
       </div>`).join('');
-    railEl.innerHTML = `
+    const nav = document.getElementById('listsRailNav') || railEl;
+    nav.innerHTML = `
       <div class="ub-side-scroll">
         <button type="button" class="ub-nav ${selectedGroupId === '__all__' && !activeListId ? 'is-active' : ''}" data-group-id="__all__">All lists <span>${lists.length}</span></button>
         <div class="ub-label">Pinned lists</div>
@@ -419,6 +420,8 @@ export function initListsHub(root) {
     if (!list) {
       editorEl.classList.remove('is-locked');
       editorEl.innerHTML = '<div class="collab-empty">Select a list to edit items.</div>';
+      const filter = document.getElementById('listsTagFilter');
+      if (filter) filter.innerHTML = '';
       return;
     }
     editorEl.classList.toggle('is-locked', list.can_edit === false);
@@ -439,6 +442,7 @@ export function initListsHub(root) {
     mountBlockCanvas(mount, list, {
       me,
       pinnedTags: pins.tags,
+      filterRoot: document.getElementById('listsTagFilter'),
       onChange: applyDetail,
       onError: showError,
       onPinTag: (name, on) => {

@@ -94,6 +94,9 @@ export function mountBlockCanvas(root, list, hooks = {}) {
   let suggestOpen = false;
   let contentTimer = 0;
   const pinned = () => new Set((hooks.pinnedTags || []).map(tagName));
+  const filterRoot = hooks.filterRoot || null;
+  const filterQuery = (sel) => (filterRoot || root).querySelector(sel);
+  const filterQueryAll = (sel) => (filterRoot || root).querySelectorAll(sel);
 
   const syncOps = (before) => {
     const ops = opsFromTransition(before, state.items, actorId, clock, list.id);
@@ -158,8 +161,7 @@ export function mountBlockCanvas(root, list, hooks = {}) {
     const visible = visibleItems();
     const stats = tagStats();
     const pins = pinned();
-    root.innerHTML = `
-      <div class="block-canvas" data-list="${esc(list.id)}">
+    const filterHtml = `
         <div class="block-filter">
           <label class="block-search">
             <span aria-hidden="true">⌕</span>
@@ -171,7 +173,13 @@ export function mountBlockCanvas(root, list, hooks = {}) {
             ${stats.map(([tag]) => chipHtml(tag, filterTags.has(tag))).join('')}
           </div>
         </div>
-        <div class="block-suggest" data-suggest hidden></div>
+        <div class="block-suggest" data-suggest hidden></div>`;
+    const searchWasFocused = document.activeElement?.matches?.('[data-tag-search]');
+    const searchCaret = searchWasFocused ? document.activeElement.selectionStart : null;
+    if (filterRoot) filterRoot.innerHTML = filterHtml;
+    root.innerHTML = `
+      <div class="block-canvas" data-list="${esc(list.id)}">
+        ${filterRoot ? '' : filterHtml}
         <div class="block-rows" data-rows>
           ${visible.map((item, index) => rowHtml(item, visible[index - 1])).join('') || '<p class="collab-empty">Type or press Enter to add an item</p>'}
         </div>
@@ -187,6 +195,13 @@ export function mountBlockCanvas(root, list, hooks = {}) {
         <div class="block-undo" data-undo ${undo ? '' : 'hidden'}>Block deleted. <button type="button" data-undo-btn>Undo</button></div>
       </div>`;
     wire();
+    if (searchWasFocused) {
+      const search = filterQuery('[data-tag-search]');
+      search?.focus();
+      if (search && searchCaret != null) search.setSelectionRange(searchCaret, searchCaret);
+      if (suggestOpen) paintSuggest();
+      return;
+    }
     const active = root.querySelector(`[data-id="${CSS.escape(state.activeItemId || '')}"] .block-input`);
     if (active) {
       active.focus();
@@ -305,7 +320,7 @@ export function mountBlockCanvas(root, list, hooks = {}) {
     root.querySelectorAll('[data-pick]').forEach((button) => {
       button.addEventListener('click', () => toggleSelect(button.closest('.block-row').dataset.id));
     });
-    root.querySelectorAll('[data-chip]').forEach((button) => {
+    filterQueryAll('[data-chip]').forEach((button) => {
       button.addEventListener('click', (event) => {
         const tag = button.dataset.chip;
         if (event.target.closest('[data-chip-x]')) filterTags.delete(tag);
@@ -314,7 +329,7 @@ export function mountBlockCanvas(root, list, hooks = {}) {
         paint();
       });
     });
-    root.querySelector('[data-logic]')?.addEventListener('click', () => {
+    filterQuery('[data-logic]')?.addEventListener('click', () => {
       filterMode = filterMode === 'and' ? 'or' : 'and';
       paint();
     });
@@ -332,7 +347,7 @@ export function mountBlockCanvas(root, list, hooks = {}) {
       button.addEventListener('click', () => runBatch(button.dataset.batch));
     });
 
-    const search = root.querySelector('[data-tag-search]');
+    const search = filterQuery('[data-tag-search]');
     search?.addEventListener('input', () => {
       tagQuery = search.value;
       suggestOpen = true;
@@ -353,7 +368,7 @@ export function mountBlockCanvas(root, list, hooks = {}) {
         root.querySelector('.block-input')?.focus();
       }
     });
-    root.querySelector('[data-clear-query]')?.addEventListener('click', () => {
+    filterQuery('[data-clear-query]')?.addEventListener('click', () => {
       tagQuery = '';
       suggestOpen = false;
       paint();
@@ -368,7 +383,7 @@ export function mountBlockCanvas(root, list, hooks = {}) {
     document.querySelector('.block-float')?.remove();
     if (suggestOpen) {
       suggestOpen = false;
-      root.querySelector('[data-suggest]')?.setAttribute('hidden', '');
+      filterQuery('[data-suggest]')?.setAttribute('hidden', '');
     }
   };
 
@@ -378,7 +393,7 @@ export function mountBlockCanvas(root, list, hooks = {}) {
   }
 
   const paintSuggest = () => {
-    const box = root.querySelector('[data-suggest]');
+    const box = filterQuery('[data-suggest]');
     if (!box) return;
     const query = tagName(tagQuery);
     const stats = tagStats().filter(([tag]) => !query || tag.includes(query));
@@ -409,7 +424,7 @@ export function mountBlockCanvas(root, list, hooks = {}) {
       });
     });
     box.querySelector('[data-create-tag]')?.addEventListener('click', () => {
-      const tag = root.querySelector('[data-create-tag]').dataset.createTag;
+      const tag = filterQuery('[data-create-tag]').dataset.createTag;
       const id = state.activeItemId || state.items[0]?.id;
       filterTags.add(tag);
       tagQuery = '';
@@ -600,7 +615,7 @@ export function mountBlockCanvas(root, list, hooks = {}) {
     const end = field.selectionEnd || 0;
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault();
-      root.querySelector('[data-tag-search]')?.focus();
+      filterQuery('[data-tag-search]')?.focus();
       return;
     }
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -741,7 +756,7 @@ export function mountBlockCanvas(root, list, hooks = {}) {
   root._blocks = {
     focusTagSearch() {
       suggestOpen = true;
-      root.querySelector('[data-tag-search]')?.focus();
+      filterQuery('[data-tag-search]')?.focus();
       paintSuggest();
     },
     toggleTag(name) {
