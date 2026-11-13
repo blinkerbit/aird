@@ -62,9 +62,27 @@ def ensure_collab_schema(conn: sqlite3.Connection) -> None:
         if name not in item_cols:
             conn.execute(f"ALTER TABLE list_items ADD COLUMN {name} {decl}")
     if "kind" not in item_cols:
-        conn.execute("ALTER TABLE list_items ADD COLUMN kind TEXT NOT NULL DEFAULT 'check'")
+        conn.execute("ALTER TABLE list_items ADD COLUMN kind TEXT NOT NULL DEFAULT 'checkbox'")
         conn.execute(
             "UPDATE list_items SET kind = 'bullet' "
             "WHERE list_id IN (SELECT id FROM collab_lists WHERE kind = 'bullet')"
         )
+    item_cols = {row[1] for row in conn.execute("PRAGMA table_info(list_items)")}
+    for name, decl in (
+        ("depth", "INTEGER NOT NULL DEFAULT 0"),
+        ("order_key", "TEXT"),
+        ("collapsed", "INTEGER NOT NULL DEFAULT 0"),
+        ("version", "INTEGER NOT NULL DEFAULT 1"),
+    ):
+        if name not in item_cols:
+            conn.execute(f"ALTER TABLE list_items ADD COLUMN {name} {decl}")
+    # Normalize legacy kinds once columns exist.
+    conn.execute("UPDATE list_items SET kind = 'checkbox' WHERE lower(kind) IN ('check', 'todo')")
+    conn.execute("UPDATE list_items SET kind = 'paragraph' WHERE lower(kind) IN ('note', 'text')")
+    missing_keys = conn.execute(
+        "SELECT id, list_id, sort_order FROM list_items WHERE order_key IS NULL OR order_key = ''"
+    ).fetchall()
+    for row in missing_keys:
+        key = f"{int(row['sort_order']):020d}"
+        conn.execute("UPDATE list_items SET order_key = ? WHERE id = ?", (key, row["id"]))
     conn.commit()

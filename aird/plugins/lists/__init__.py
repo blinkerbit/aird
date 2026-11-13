@@ -21,6 +21,7 @@ def register_lists(routes: list) -> None:
         ListPageHandler,
         ListPlaceHandler,
         ListShareHandler,
+        ListSyncHandler,
     )
 
     lid = r"([^/]+)"
@@ -33,6 +34,7 @@ def register_lists(routes: list) -> None:
             (r"/api/lists", ListListHandler),
             (rf"/api/lists/{lid}/group", ListPlaceHandler),
             (rf"/api/lists/{lid}/order", ListOrderHandler),
+            (rf"/api/lists/{lid}/sync", ListSyncHandler),
             (rf"/api/lists/{lid}/items/{iid}", ListItemHandler),
             (rf"/api/lists/{lid}/items", ListItemsHandler),
             (rf"/api/lists/{lid}", ListDetailHandler),

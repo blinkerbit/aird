@@ -2,7 +2,7 @@ import { apiJson } from '../collab-api.js';
 import { listDialog, sharePicker } from '../collab-ui.js';
 import { tagChipHtml, tagChipsRow } from '../collab/tag-chips.js';
 import { fetchMyUserTags } from '../user-tag-api.js';
-import { renderOutline } from '../collab/list-outline.js';
+import { mountBlockCanvas } from '../collab/blocks/block-canvas.js';
 
 function esc(s) {
   const d = document.createElement('div');
@@ -409,74 +409,50 @@ export function initListsHub(root) {
       editorEl.innerHTML = '<div class="collab-empty">Select a list to edit items.</div>';
       return;
     }
-    renderOutline(editorEl, list, {
-      captureKeys: true,
-      noteId,
-      noteMode,
-      focus: focusMode,
-      selected,
-      reminders: remindersEnabled(root),
-      onBack: (isMobile() || noteId) ? () => {
-        if (noteId) {
-          noteId = '';
-          noteMode = 'write';
-          syncUrl();
-          paint();
-          return;
-        }
-        setMobileView('lists');
-        paint();
-      } : null,
-      onFocus() {
-        focusMode = !focusMode;
-        paint();
-      },
-      onChange: applyDetail,
-      onOpenNote(id) {
-        noteId = id;
-        noteMode = 'write';
-        selected = [];
-        syncUrl();
-        paint();
-      },
-      onCloseNote() {
-        noteId = '';
-        noteMode = 'write';
-        syncUrl();
-        paint();
-      },
-      onNoteMode(mode) {
-        noteMode = mode;
-        paintEditor(detail);
-      },
-      onSelect(id, mode) {
-        if (!id) selected = [];
-        else if (mode === 'add') selected = [...new Set([...selected, id])];
-        else selected = selected.includes(id) ? selected.filter((row) => row !== id) : [...selected, id];
-        paintEditor(detail);
-      },
-      onError: showError,
-      onEdit: async () => {
-        const draft = await listDialog(detail);
-        if (!draft) return;
-        const next = await apiJson(`/api/lists/${detail.id}`, { method: 'PATCH', body: draft });
-        applyDetail(next);
-      },
-      onShare: () => sharePicker('list', list.id).catch((err) => showError(err.message)),
-      onDeleteList: async () => {
-        if (!window.confirm('Delete this list?')) return;
-        await apiJson(`/api/lists/${list.id}`, { method: 'DELETE' });
-        activeListId = '';
-        noteId = '';
-        detail = null;
-        syncUrl();
-        if (isMobile()) setMobileView('lists');
-        editorEl.innerHTML = '<div class="collab-empty">Select a list to edit items.</div>';
-        refresh(false);
-      },
-      focusDraft: armDraft,
+    editorEl.classList.toggle('is-locked', list.can_edit === false);
+    editorEl.innerHTML = `
+      <header class="block-canvas-head">
+        ${isMobile() ? '<button type="button" data-back>Back</button>' : ''}
+        <strong>${esc(list.title || 'List')}</strong>
+        <button type="button" data-focus>${focusMode ? 'Show board' : 'Focus'}</button>
+        <button type="button" data-edit>Edit</button>
+        <button type="button" data-share>Share</button>
+        <button type="button" data-delete-list>Delete</button>
+      </header>
+      <div data-block-root></div>`;
+    editorEl.querySelector('[data-back]')?.addEventListener('click', () => {
+      setMobileView('lists');
+      paint();
     });
-    armDraft = false;
+    editorEl.querySelector('[data-focus]')?.addEventListener('click', () => {
+      focusMode = !focusMode;
+      paint();
+    });
+    editorEl.querySelector('[data-edit]')?.addEventListener('click', async () => {
+      const draft = await listDialog(detail);
+      if (!draft) return;
+      const next = await apiJson(`/api/lists/${detail.id}`, { method: 'PATCH', body: draft });
+      applyDetail(next);
+    });
+    editorEl.querySelector('[data-share]')?.addEventListener('click', () => {
+      sharePicker('list', list.id).catch((err) => showError(err.message));
+    });
+    editorEl.querySelector('[data-delete-list]')?.addEventListener('click', async () => {
+      if (!window.confirm('Delete this list?')) return;
+      await apiJson(`/api/lists/${list.id}`, { method: 'DELETE' });
+      activeListId = '';
+      detail = null;
+      syncUrl();
+      if (isMobile()) setMobileView('lists');
+      editorEl.innerHTML = '<div class="collab-empty">Select a list to edit items.</div>';
+      refresh(false);
+    });
+    const mount = editorEl.querySelector('[data-block-root]');
+    mountBlockCanvas(mount, list, {
+      me,
+      onChange: applyDetail,
+      onError: showError,
+    });
   }
 
   function applyDetail(next) {
@@ -484,6 +460,11 @@ export function initListsHub(root) {
     detail = next;
     lists = lists.map((row) => (row.id === next.id ? { ...row, ...next, tags: next.tags || row.tags } : row));
     paintBoard();
+    const mount = editorEl?.querySelector('[data-block-root]');
+    if (mount?._blocks && detail?.id === next.id) {
+      mount._blocks.setList(next);
+      return;
+    }
     paintEditor(next);
   }
 
@@ -653,9 +634,17 @@ export function initListsHub(root) {
   });
 
   document.addEventListener('keydown', (event) => {
-    if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'k') return;
+    if (!(event.metaKey || event.ctrlKey)) return;
+    if (event.key === '\\') {
+      event.preventDefault();
+      bodyEl?.classList.toggle('is-rail-collapsed');
+      return;
+    }
+    if (event.key.toLowerCase() !== 'k') return;
     event.preventDefault();
-    openPalette();
+    const mount = editorEl?.querySelector('[data-block-root]');
+    if (mount?._blocks && activeListId) mount._blocks.focusTagSearch();
+    else openPalette();
   });
 
   function openPalette() {

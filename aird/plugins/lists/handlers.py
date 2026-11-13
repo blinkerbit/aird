@@ -243,12 +243,12 @@ class ListItemsHandler(BaseHandler, XSRFTokenMixin):
                 conn,
                 list_id,
                 name,
-                str(body.get("text") or ""),
+                str(body.get("text") or body.get("content") or ""),
                 labels,
                 notes=str(body.get("notes") or ""),
                 due_at=body.get("due_at"),
                 remind_at=body.get("remind_at") if is_reminders_enabled() else None,
-                kind=body.get("kind") if "kind" in body else None,
+                kind=body.get("type") if "type" in body else (body.get("kind") if "kind" in body else None),
             )
             if not detail:
                 self.set_status(400)
@@ -273,9 +273,9 @@ class ListItemHandler(BaseHandler, XSRFTokenMixin):
         self.check_xsrf_cookie()
         name = require_username(self)
         body = parse_json(self)
-        done = body.get("done") if "done" in body else None
-        text = body.get("text") if "text" in body else None
-        labels = body.get("labels") if "labels" in body else None
+        done = body.get("done") if "done" in body else (body.get("isChecked") if "isChecked" in body else None)
+        text = body.get("text") if "text" in body else (body.get("content") if "content" in body else None)
+        labels = body.get("labels") if "labels" in body else (body.get("tags") if "tags" in body else None)
         if isinstance(labels, str):
             labels = [p.strip() for p in labels.split(",") if p.strip()]
         conn = collab_conn()
@@ -302,7 +302,7 @@ class ListItemHandler(BaseHandler, XSRFTokenMixin):
                 due_set="due_at" in body,
                 remind_set=is_reminders_enabled() and "remind_at" in body,
                 sort_order=body.get("sort_order") if "sort_order" in body else None,
-                kind=body.get("kind") if "kind" in body else None,
+                kind=body.get("type") if "type" in body else (body.get("kind") if "kind" in body else None),
             )
             if not detail:
                 self.set_status(403)
@@ -342,6 +342,47 @@ class ListItemHandler(BaseHandler, XSRFTokenMixin):
             notify_changed(conn, "list", list_id)
             notify_event(conn, kind="list", artifact_id=list_id, actor=name, preview="Removed an item")
             self.write(detail)
+        finally:
+            conn.close()
+
+
+class ListSyncHandler(BaseHandler, XSRFTokenMixin):
+    @tornado.web.authenticated
+    @require_db
+    def post(self, list_id: str):
+        if not _require(self):
+            return
+        self.check_xsrf_cookie()
+        name = require_username(self)
+        body = parse_json(self)
+        conn = collab_conn()
+        if conn is None:
+            self.set_status(503)
+            self.write({"error": "Database unavailable"})
+            return
+        try:
+            from aird.plugins.collab import list_sync
+
+            row = conn.execute("SELECT * FROM collab_lists WHERE id = ?", (list_id,)).fetchone()
+            if not row or not lists_db._user_may_view(conn, row, name):
+                self.set_status(403)
+                self.write({"error": "Forbidden"})
+                return
+            can_edit = lists_db._user_may_edit_items(conn, row, name)
+            ops = body.get("ops") or [] if can_edit else []
+            if not isinstance(ops, list):
+                ops = []
+            result = list_sync.sync_list(
+                conn,
+                list_id,
+                actor_id=str(body.get("actor_id") or body.get("actorId") or name),
+                since_hlc=str(body.get("since_hlc") or body.get("sinceHlc") or ""),
+                ops=ops,
+            )
+            detail = lists_db.list_detail(conn, list_id, name)
+            if ops:
+                notify_changed(conn, "list", list_id)
+            self.write({**result, "list": detail})
         finally:
             conn.close()
 

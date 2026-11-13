@@ -1,6 +1,6 @@
 import { apiJson, expiresLabel, visibilityChip } from './collab-api.js';
 import { hydrateTagPicker, readTagIds, tagIdsFieldHtml } from './collab-tags.js';
-import { renderChatList } from './collab/list-outline.js';
+import { blockType } from './collab/blocks/types.js';
 
 function esc(s) {
   const d = document.createElement('div');
@@ -406,9 +406,33 @@ export function mountPoll(root, poll, { me, onChange, onDelete, readOnly = false
 }
 
 export function mountList(root, list, { me, onChange, onDelete } = {}) {
-  renderChatList(root, list, {
-    onChange,
-    onError(message) { window.alert(message); },
+  const items = list.items || [];
+  root.innerHTML = `<div class="list-chat">
+    ${items.map((item) => {
+      const kind = blockType(item.type || item.kind);
+      const mark = kind === 'bullet' ? '•' : kind === 'paragraph' ? '' : (item.done ? '☑' : '☐');
+      const text = esc(item.text || item.content || '');
+      return `<div class="list-line ${item.done ? 'is-done' : ''}" style="padding-left:${(item.depth || 0) * 0.9}rem">
+        ${kind === 'checkbox' ? `<button type="button" class="list-mark" data-chat-check="${esc(item.id)}">${mark}</button>` : `<span class="list-mark">${mark || '¶'}</span>`}
+        <span>${text}</span>
+      </div>`;
+    }).join('') || '<p class="collab-empty">No items yet.</p>'}
+    <a class="list-chat-more" href="/lists?id=${esc(list.id)}">Open list</a>
+  </div>`;
+  root.querySelectorAll('[data-chat-check]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const item = items.find((row) => row.id === button.dataset.chatCheck);
+      if (!item) return;
+      try {
+        const next = await apiJson(`/api/lists/${encodeURIComponent(list.id)}/items/${encodeURIComponent(item.id)}`, {
+          method: 'PATCH',
+          body: { done: !item.done },
+        });
+        onChange?.(next);
+      } catch (err) {
+        window.alert(err.message || 'Could not save');
+      }
+    });
   });
   void me;
   void onDelete;

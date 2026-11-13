@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from aird.plugins.collab.acl import can_access, normalize_visibility
 from aird.services.user_tag_access import ACCESS_READ, ACCESS_WRITE, list_tag_access
 from aird.plugins.collab.slugs import assign_slug
+from aird.plugins.collab.list_sync import OPS_SCHEMA, block_type, mid_order
 from aird.plugins.collab.status import is_active
 
 LISTS_SCHEMA = """
@@ -36,7 +37,11 @@ CREATE TABLE IF NOT EXISTS list_items (
     due_at TEXT,
     remind_at TEXT,
     reminded_at TEXT,
-    kind TEXT NOT NULL DEFAULT 'check',
+    kind TEXT NOT NULL DEFAULT 'checkbox',
+    depth INTEGER NOT NULL DEFAULT 0,
+    order_key TEXT,
+    collapsed INTEGER NOT NULL DEFAULT 0,
+    version INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY(list_id) REFERENCES collab_lists(id) ON DELETE CASCADE
@@ -61,7 +66,7 @@ CREATE TABLE IF NOT EXISTS list_group_items (
     group_id TEXT NOT NULL,
     UNIQUE(owner_username, list_id)
 );
-"""
+""" + OPS_SCHEMA
 
 
 def _now() -> str:
@@ -88,38 +93,19 @@ def _note(value) -> str:
     return str(value or "").strip()[:4000]
 
 
-def item_kind(value, fallback: str = "check") -> str:
-    raw = str(value or "").strip().lower()
-    if raw in ("check", "todo"):
-        return "check"
-    if raw == "bullet":
-        return "bullet"
-    if raw == "note":
-        return "note"
-    return fallback
+def item_kind(value, fallback: str = "checkbox") -> str:
+    return block_type(value, fallback)
 
 
 def clip_item_text(kind: str, value) -> str:
     body = str(value or "").strip()
-    limit = 100_000 if kind == "note" else 300
-    return body[:limit]
+    return body[:8000]
 
 
 def _row_kind(item) -> str:
     if isinstance(item, sqlite3.Row):
-        return item_kind(item["kind"]) if "kind" in item.keys() else "check"
-    return item_kind(item.get("kind"))
-
-
-def _note_titles(items) -> list[dict]:
-    out = []
-    for item in items:
-        if _row_kind(item) != "note":
-            continue
-        raw = str(item["text"] or "").strip()
-        title = raw.splitlines()[0][:80] if raw else "Untitled"
-        out.append({"id": item["id"], "title": title})
-    return out
+        return item_kind(item["kind"]) if "kind" in item.keys() else "checkbox"
+    return item_kind(item.get("kind") or item.get("type"))
 
 
 def _preview_rows(items) -> list[dict]:
@@ -127,25 +113,21 @@ def _preview_rows(items) -> list[dict]:
     for item in items:
         if len(out) >= 3:
             break
-        kind = item_kind(item["kind"]) if "kind" in item.keys() else "check"
+        kind = _row_kind(item)
         raw = str(item["text"] or "").strip()
         title = raw.splitlines()[0][:80] if raw else ""
         if not title:
             continue
-        out.append({"id": item["id"], "kind": kind, "title": title})
+        out.append({"id": item["id"], "kind": kind, "type": kind, "title": title})
     return out
 
 
 def _progress_from_items(items) -> dict:
     checks = []
     for item in items:
-        if isinstance(item, sqlite3.Row):
-            kind = item_kind(item["kind"]) if "kind" in item.keys() else "check"
-            done = bool(item["done"])
-        else:
-            kind = item_kind(item.get("kind"))
-            done = bool(item.get("done"))
-        if kind == "check":
+        kind = _row_kind(item)
+        done = bool(item["done"] if isinstance(item, sqlite3.Row) else item.get("done"))
+        if kind == "checkbox":
             checks.append(done)
     return {"done": sum(1 for done in checks if done), "total": len(checks)}
 
@@ -231,7 +213,8 @@ def list_detail(conn: sqlite3.Connection, list_id: str, username: str) -> dict |
         return None
     data = _list_row(row)
     items = conn.execute(
-        "SELECT * FROM list_items WHERE list_id = ? ORDER BY sort_order, created_at",
+        "SELECT * FROM list_items WHERE list_id = ? "
+        "ORDER BY COALESCE(order_key, printf('%020d', sort_order)), created_at",
         (list_id,),
     ).fetchall()
     data["items"] = [_item_row(i) for i in items]
@@ -276,20 +259,24 @@ def create_list(
         labels = (raw or {}).get("labels") or []
         if not isinstance(labels, list):
             labels = []
-        row_kind = item_kind((raw or {}).get("kind"), "bullet" if k == "bullet" else "check")
+        row_kind = item_kind(
+            (raw or {}).get("type") or (raw or {}).get("kind"),
+            "bullet" if k == "bullet" else "checkbox",
+        )
         body = clip_item_text(row_kind, text)
         if not body:
             continue
-        due = parse_stamp((raw or {}).get("due_at")) if row_kind == "check" and (raw or {}).get("due_at") else None
-        remind = parse_stamp((raw or {}).get("remind_at")) if row_kind == "check" and (raw or {}).get("remind_at") else None
+        due = parse_stamp((raw or {}).get("due_at")) if row_kind == "checkbox" and (raw or {}).get("due_at") else None
+        remind = parse_stamp((raw or {}).get("remind_at")) if row_kind == "checkbox" and (raw or {}).get("remind_at") else None
+        order_key = mid_order(None if i == 0 else f"{i - 1:.8f}", None, organizer)
         conn.execute(
-            "INSERT INTO list_items (id, list_id, text, done, sort_order, labels_json, notes, due_at, remind_at, created_at, updated_at, kind) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO list_items (id, list_id, text, done, sort_order, labels_json, notes, due_at, remind_at, created_at, updated_at, kind, depth, order_key, collapsed, version) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 _new_id(),
                 list_id,
                 body,
-                1 if row_kind == "check" and (raw or {}).get("done") else 0,
+                1 if row_kind == "checkbox" and (raw or {}).get("done") else 0,
                 i,
                 json.dumps(labels),
                 _note((raw or {}).get("notes")),
@@ -298,6 +285,10 @@ def create_list(
                 now,
                 now,
                 row_kind,
+                max(0, min(5, int((raw or {}).get("depth") or 0))),
+                (raw or {}).get("order_key") or order_key,
+                1 if (raw or {}).get("collapsed") else 0,
+                1,
             ),
         )
     if vis == "private":
@@ -396,12 +387,17 @@ def add_item(
         "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM list_items WHERE list_id = ?",
         (list_id,),
     ).fetchone()[0]
-    due = parse_stamp(due_at) if row_kind == "check" and due_at else None
-    remind = parse_stamp(remind_at) if row_kind == "check" and remind_at else due
+    last = conn.execute(
+        "SELECT order_key FROM list_items WHERE list_id = ? ORDER BY COALESCE(order_key, printf('%020d', sort_order)) DESC LIMIT 1",
+        (list_id,),
+    ).fetchone()
+    order_key = mid_order(last["order_key"] if last else None, None, username)
+    due = parse_stamp(due_at) if row_kind == "checkbox" and due_at else None
+    remind = parse_stamp(remind_at) if row_kind == "checkbox" and remind_at else due
     conn.execute(
-        "INSERT INTO list_items (id, list_id, text, done, sort_order, labels_json, notes, due_at, remind_at, created_at, updated_at, kind) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-        (_new_id(), list_id, body, 0, order, json.dumps(labels or []), _note(notes), due, remind, now, now, row_kind),
+        "INSERT INTO list_items (id, list_id, text, done, sort_order, labels_json, notes, due_at, remind_at, created_at, updated_at, kind, depth, order_key, collapsed, version) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (_new_id(), list_id, body, 0, order, json.dumps(labels or []), _note(notes), due, remind, now, now, row_kind, 0, order_key, 0, 1),
     )
     conn.execute("UPDATE collab_lists SET updated_at = ? WHERE id = ?", (now, list_id))
     conn.commit()
@@ -449,19 +445,19 @@ def patch_item(
     if not item:
         return None
     now = _now()
-    current_kind = item_kind(item["kind"]) if "kind" in item.keys() else "check"
+    current_kind = item_kind(item["kind"]) if "kind" in item.keys() else "checkbox"
     if kind is not None:
         current_kind = item_kind(kind)
         conn.execute(
             "UPDATE list_items SET kind = ?, updated_at = ? WHERE id = ?",
             (current_kind, now, item_id),
         )
-        if current_kind != "check":
+        if current_kind != "checkbox":
             conn.execute(
                 "UPDATE list_items SET done = 0, due_at = NULL, remind_at = NULL WHERE id = ?",
                 (item_id,),
             )
-    if done is not None and current_kind == "check":
+    if done is not None and current_kind == "checkbox":
         conn.execute(
             "UPDATE list_items SET done = ?, updated_at = ? WHERE id = ?",
             (1 if done else 0, now, item_id),
@@ -487,7 +483,7 @@ def patch_item(
             "UPDATE list_items SET sort_order = ?, updated_at = ? WHERE id = ?",
             (int(sort_order), now, item_id),
         )
-    if current_kind != "check":
+    if current_kind != "checkbox":
         due_set = False
         remind_set = False
     due = parse_stamp(due_at) if due_set else item["due_at"]
@@ -530,16 +526,27 @@ def _item_row(row: sqlite3.Row) -> dict:
         labels = json.loads(row["labels_json"] or "[]")
     except json.JSONDecodeError:
         labels = []
+    kind = item_kind(row["kind"]) if "kind" in row.keys() else "checkbox"
     return {
         "id": row["id"],
         "text": row["text"],
+        "content": row["text"],
         "done": bool(row["done"]),
+        "isChecked": bool(row["done"]),
         "sort_order": row["sort_order"],
         "labels": labels,
+        "tags": labels,
         "notes": row["notes"] if "notes" in row.keys() else "",
         "due_at": row["due_at"] if "due_at" in row.keys() else None,
         "remind_at": row["remind_at"] if "remind_at" in row.keys() else None,
-        "kind": item_kind(row["kind"]) if "kind" in row.keys() else "check",
+        "kind": kind,
+        "type": kind,
+        "depth": int(row["depth"] or 0) if "depth" in row.keys() else 0,
+        "order_key": row["order_key"] if "order_key" in row.keys() else None,
+        "order": row["order_key"] if "order_key" in row.keys() else None,
+        "collapsed": bool(row["collapsed"]) if "collapsed" in row.keys() else False,
+        "isCollapsed": bool(row["collapsed"]) if "collapsed" in row.keys() else False,
+        "version": int(row["version"] or 1) if "version" in row.keys() else 1,
     }
 
 
@@ -563,12 +570,11 @@ def list_index(conn: sqlite3.Connection, username: str, query: str = "") -> dict
         ).fetchall()
         data["progress"] = _progress_from_items(items)
         data["preview"] = _preview_rows(items)
-        data["notes"] = _note_titles(items)
         data["active"] = is_active("list", {**data, "kind": data["kind"], "progress": data["progress"]})
         open_due = [
             str(item["due_at"])
             for item in items
-            if _row_kind(item) == "check" and not item["done"] and item["due_at"]
+            if _row_kind(item) == "checkbox" and not item["done"] and item["due_at"]
         ]
         data["next_due"] = min(open_due) if open_due else ""
         filed = conn.execute(
