@@ -227,7 +227,36 @@ span.collab-tag-chip { cursor: default; }
   border: 0; background: transparent; color: inherit; border-radius: .4rem; padding: .3rem .5rem; cursor: pointer;
 }
 .ub-top button:hover, .ub-menu button:hover { background: var(--color-base-200); }
-.ub-crumbs { display: flex; gap: .4rem; min-width: 0; flex: 1; font-size: .92rem; }
+.ub-crumb-wrap { display: flex; align-items: center; gap: .35rem; min-width: 0; flex: 1; }
+.ub-crumbs { display: flex; gap: .4rem; min-width: 0; flex: 0 1 auto; font-size: .92rem; }
+.ub-crumbs .is-editable { cursor: text; }
+.lists-help {
+  width: 1.15rem; height: 1.15rem; border-radius: 999px; border: 1px solid var(--color-base-300);
+  background: transparent; color: inherit; font-size: .72rem; font-weight: 700; font-style: italic;
+  line-height: 1; cursor: pointer; padding: 0; display: grid; place-items: center; flex: 0 0 auto;
+}
+.lists-help:hover, .lists-help[aria-expanded="true"] { border-color: var(--color-primary); color: var(--color-primary); }
+.lists-help-pop {
+  position: fixed; z-index: 60; width: min(22rem, calc(100vw - 1.5rem));
+  padding: .7rem .85rem; border: 1px solid var(--color-base-300); border-radius: .7rem;
+  background: var(--color-base-100); color: var(--color-base-content);
+  box-shadow: 0 12px 32px rgb(0 0 0 / .16); font-size: .8rem;
+}
+.lists-help-pop h3 { margin: 0 0 .4rem; font-size: .88rem; }
+.lists-help-pop ul { margin: 0; padding-left: 1.05rem; display: grid; gap: .28rem; }
+.lists-help-pop kbd {
+  font: inherit; font-size: .74rem; padding: 0 .25rem; border-radius: .25rem;
+  border: 1px solid var(--color-base-300); background: var(--color-base-200);
+}
+.block-find {
+  display: flex; align-items: center; gap: .4rem; width: min(22rem, 100%);
+  margin: 0 0 .85rem; border: 1px solid var(--color-base-300); border-radius: 999px; padding: .05rem .65rem;
+  background: var(--color-base-100);
+}
+.block-find span { font-size: .72rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; opacity: .55; }
+.block-find input { flex: 1; min-width: 0; border: 0; background: transparent; color: inherit; padding: .32rem 0; font: inherit; }
+.block-find input:focus { outline: none; }
+.block-find button { border: 0; background: transparent; color: inherit; cursor: pointer; }
 .ub-crumbs span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ub-top-actions { display: flex; gap: .15rem; margin-left: auto; }
 .ub-menu {
@@ -285,6 +314,7 @@ span.collab-tag-chip { cursor: default; }
 .ub-doc { width: 100%; max-width: none; margin: 0; }
 .ub-title { margin: .2rem 0 1rem; font-size: 1.7rem; font-weight: 700; line-height: 1.25; }
 .ub-title.is-editable { cursor: text; }
+.ub-title.is-editable:hover { box-shadow: inset 0 -1px 0 color-mix(in srgb, currentColor 40%, transparent); }
 .ub-title-input, .ub-rename {
   border: 0; border-bottom: 2px solid var(--color-primary); border-radius: 0;
   background: transparent; color: inherit; font: inherit; padding: 0;

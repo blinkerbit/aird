@@ -15,9 +15,11 @@
       <div class="lists-hub-body" id="listsHubBody" data-mobile-view="lists">
         <header class="ub-top">
           <button type="button" id="listsCollapse" aria-label="Collapse sidebar">≡</button>
-          <nav id="listsCrumbs" class="ub-crumbs" aria-label="Breadcrumb"></nav>
+          <div class="ub-crumb-wrap">
+            <nav id="listsCrumbs" class="ub-crumbs" aria-label="Breadcrumb"></nav>
+            <button type="button" id="listsHelp" class="lists-help" aria-label="How to use lists" aria-expanded="false">i</button>
+          </div>
           <div class="ub-top-actions">
-            <button type="button" id="listsSearchBtn">Search</button>
             <button type="button" id="listsViewBtn">View</button>
             <button type="button" id="listsMetaToggle" class="is-on" aria-expanded="true" aria-controls="listsInspector">Details</button>
             <button type="button" id="listsMoreBtn" aria-label="More">⋮</button>

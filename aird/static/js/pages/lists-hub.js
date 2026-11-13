@@ -736,9 +736,11 @@ export function initListsHub(root) {
     const groupName = detail?.group_id
       ? (groups.find((group) => group.id === detail.group_id)?.name || 'Group')
       : 'Lists';
+    const canRename = detail?.organizer === me;
     nav.innerHTML = detail
-      ? `<span>${esc(groupName)}</span><span aria-hidden="true">/</span><span>${esc(detail.title || 'List')}</span>`
+      ? `<span>${esc(groupName)}</span><span aria-hidden="true">/</span><span${canRename ? ' class="is-editable" title="Double-click to rename" data-crumb-title' : ''}>${esc(detail.title || 'List')}</span>`
       : '<span>Lists</span>';
+    nav.querySelector('[data-crumb-title]')?.addEventListener('dblclick', () => beginRename(detail, nav.querySelector('[data-crumb-title]')));
   }
 
   function paint() {
@@ -926,10 +928,43 @@ export function initListsHub(root) {
     });
   }
 
-  document.getElementById('listsSearchBtn')?.addEventListener('click', () => {
-    const blocks = editorEl?.querySelector('[data-block-root]')?._blocks;
-    if (blocks && activeListId) blocks.focusTagSearch();
-    else openPalette();
+  document.getElementById('listsHelp')?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const existing = document.querySelector('.lists-help-pop');
+    if (existing) {
+      existing.remove();
+      event.currentTarget.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    const pop = document.createElement('div');
+    pop.className = 'lists-help-pop';
+    pop.innerHTML = `
+      <h3>Using a list</h3>
+      <ul>
+        <li>Double-click the list name, edit it, then press <kbd>Enter</kbd> to save. <kbd>Escape</kbd> cancels.</li>
+        <li><kbd>Enter</kbd> adds the next item. <kbd>Shift</kbd>+<kbd>Enter</kbd> stays on the same line.</li>
+        <li>Click the mark on a line to switch Checkbox, Bullet, or Text.</li>
+        <li><kbd>Tab</kbd> indents. <kbd>Shift</kbd>+<kbd>Tab</kbd> outdents.</li>
+        <li><kbd>Alt</kbd>+<kbd>↑</kbd> or <kbd>Alt</kbd>+<kbd>↓</kbd> moves a line.</li>
+        <li><kbd>Ctrl</kbd>+<kbd>Enter</kbd> checks a task. On Mac, use <kbd>Cmd</kbd> instead of <kbd>Ctrl</kbd>.</li>
+        <li><strong>Find</strong> under the title searches the words in items. Tags are filtered on the left.</li>
+        <li><kbd>Ctrl</kbd>+<kbd>K</kbd> jumps to Find. <kbd>Ctrl</kbd>+<kbd>\\</kbd> hides the sidebar.</li>
+        <li>The <strong>+</strong> under the items adds a line. Details on the right sets who can open the list and its tags.</li>
+      </ul>`;
+    document.body.appendChild(pop);
+    const rect = event.currentTarget.getBoundingClientRect();
+    pop.style.top = `${rect.bottom + 6}px`;
+    pop.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - pop.offsetWidth - 8))}px`;
+    event.currentTarget.setAttribute('aria-expanded', 'true');
+    setTimeout(() => {
+      const close = (pointer) => {
+        if (pop.contains(pointer.target) || pointer.target === event.currentTarget) return;
+        pop.remove();
+        event.currentTarget.setAttribute('aria-expanded', 'false');
+        document.removeEventListener('pointerdown', close, true);
+      };
+      document.addEventListener('pointerdown', close, true);
+    }, 0);
   });
 
   document.getElementById('listsViewBtn')?.addEventListener('click', (event) => {
@@ -973,7 +1008,7 @@ export function initListsHub(root) {
     if (event.key.toLowerCase() !== 'k') return;
     event.preventDefault();
     const mount = editorEl?.querySelector('[data-block-root]');
-    if (mount?._blocks && activeListId) mount._blocks.focusTagSearch();
+    if (mount?._blocks && activeListId) mount._blocks.focusFind();
     else openPalette();
   });
 

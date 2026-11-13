@@ -91,6 +91,8 @@ export function mountBlockCanvas(root, list, hooks = {}) {
   let selected = new Set();
   let preferredX = null;
   let tagQuery = '';
+  let findText = '';
+  let findQuery = '';
   let suggestOpen = false;
   let contentTimer = 0;
   const pinned = () => new Set((hooks.pinnedTags || []).map(tagName));
@@ -156,6 +158,7 @@ export function mountBlockCanvas(root, list, hooks = {}) {
     return state.items.filter((item) => {
       if (folded.has(item.id)) return false;
       if (hideDone && item.type === 'checkbox' && item.isChecked) return false;
+      if (findQuery && !String(item.content || '').toLowerCase().includes(findQuery)) return false;
       if (!filterTags.size) return true;
       const tags = new Set((item.tags || []).map(tagName));
       const wanted = [...filterTags];
@@ -182,12 +185,20 @@ export function mountBlockCanvas(root, list, hooks = {}) {
         <div class="block-suggest" data-suggest hidden></div>`;
     const searchWasFocused = document.activeElement?.matches?.('[data-tag-search]');
     const searchCaret = searchWasFocused ? document.activeElement.selectionStart : null;
+    const findWasFocused = document.activeElement?.matches?.('[data-find]');
+    const findCaret = findWasFocused ? document.activeElement.selectionStart : null;
     if (filterRoot) filterRoot.innerHTML = filterHtml;
+    const empty = findQuery ? 'No matching items.' : 'No items yet.';
     root.innerHTML = `
       <div class="block-canvas" data-list="${esc(list.id)}">
         ${filterRoot ? '' : filterHtml}
+        <label class="block-find">
+          <span>Find</span>
+          <input data-find placeholder="Find in items" value="${esc(findText)}" autocomplete="off" />
+          ${findQuery ? '<button type="button" data-clear-find aria-label="Clear find">✕</button>' : ''}
+        </label>
         <div class="block-rows" data-rows>
-          ${visible.map((item, index) => rowHtml(item, visible[index - 1])).join('') || '<p class="collab-empty">No items yet.</p>'}
+          ${visible.map((item, index) => rowHtml(item, visible[index - 1])).join('') || `<p class="collab-empty">${empty}</p>`}
         </div>
         <button type="button" class="block-add" data-add><span aria-hidden="true">+</span> Add item</button>
         <div class="block-keys" data-keys>
@@ -206,6 +217,12 @@ export function mountBlockCanvas(root, list, hooks = {}) {
       search?.focus();
       if (search && searchCaret != null) search.setSelectionRange(searchCaret, searchCaret);
       if (suggestOpen) paintSuggest();
+      return;
+    }
+    if (findWasFocused) {
+      const find = root.querySelector('[data-find]');
+      find?.focus();
+      if (find && findCaret != null) find.setSelectionRange(findCaret, findCaret);
       return;
     }
     const active = root.querySelector(`[data-id="${CSS.escape(state.activeItemId || '')}"] .block-input`);
@@ -377,6 +394,25 @@ export function mountBlockCanvas(root, list, hooks = {}) {
     filterQuery('[data-clear-query]')?.addEventListener('click', () => {
       tagQuery = '';
       suggestOpen = false;
+      paint();
+    });
+    const find = root.querySelector('[data-find]');
+    find?.addEventListener('input', () => {
+      findText = find.value;
+      findQuery = findText.trim().toLowerCase();
+      paint();
+    });
+    find?.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      findText = '';
+      findQuery = '';
+      paint();
+      root.querySelector('.block-input')?.focus();
+    });
+    root.querySelector('[data-clear-find]')?.addEventListener('click', () => {
+      findText = '';
+      findQuery = '';
       paint();
     });
 
@@ -621,7 +657,7 @@ export function mountBlockCanvas(root, list, hooks = {}) {
     const end = field.selectionEnd || 0;
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault();
-      filterQuery('[data-tag-search]')?.focus();
+      root.querySelector('[data-find]')?.focus();
       return;
     }
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -698,24 +734,16 @@ export function mountBlockCanvas(root, list, hooks = {}) {
       ['checkbox', 'Checkbox'],
       ['bullet', 'Bullet'],
       ['paragraph', 'Text'],
-    ].map(([type, label]) => `<button type="button" data-type="${type}">${label}</button>`).join('')
-      + '<button type="button" data-details>Details</button>';
+    ].map(([type, label]) => `<button type="button" data-type="${type}">${label}</button>`).join('');
     document.body.appendChild(node);
     const rect = anchor.getBoundingClientRect();
     node.style.left = `${rect.left}px`;
     node.style.top = `${rect.bottom + 4}px`;
     node.addEventListener('click', (event) => {
       const type = event.target.closest('[data-type]')?.dataset.type;
-      if (type) {
-        node.remove();
-        dispatch({ type: 'CONVERT_TYPE', payload: { itemId: id, newType: type } });
-        return;
-      }
-      if (event.target.closest('[data-details]')) {
-        node.remove();
-        const item = state.items.find((row) => row.id === id);
-        if (item) hooks.onInspect?.(item);
-      }
+      if (!type) return;
+      node.remove();
+      dispatch({ type: 'CONVERT_TYPE', payload: { itemId: id, newType: type } });
     });
   };
 
@@ -728,8 +756,7 @@ export function mountBlockCanvas(root, list, hooks = {}) {
     const tags = (item.tags || []).map(tagName).filter(Boolean);
     node.innerHTML = `
       ${tags.map((tag) => `<button type="button" data-drop-tag="${esc(tag)}">#${esc(tag)} ✕</button>`).join('')}
-      <input data-new-tag placeholder="Add tag" />
-      <button type="button" data-details>Details</button>`;
+      <input data-new-tag placeholder="Add tag" />`;
     document.body.appendChild(node);
     const rect = anchor.getBoundingClientRect();
     node.style.left = `${Math.max(8, rect.right - 180)}px`;
@@ -748,10 +775,6 @@ export function mountBlockCanvas(root, list, hooks = {}) {
       if (!name) return;
       commit([...new Set([...tags, name])]);
     });
-    node.querySelector('[data-details]')?.addEventListener('click', () => {
-      node.remove();
-      hooks.onInspect?.(item);
-    });
     node.querySelector('[data-new-tag]')?.focus();
   };
 
@@ -760,10 +783,10 @@ export function mountBlockCanvas(root, list, hooks = {}) {
   } else paint();
 
   root._blocks = {
-    focusTagSearch() {
-      suggestOpen = true;
-      filterQuery('[data-tag-search]')?.focus();
-      paintSuggest();
+    focusFind() {
+      const find = root.querySelector('[data-find]');
+      find?.focus();
+      find?.select();
     },
     toggleTag(name) {
       const tag = tagName(name);
