@@ -119,19 +119,22 @@ class EnhancedSecureHub:
         names = tuple(usernames)
         with self._lock:
             db = self._db()
-            self._sweep_shared(db, time.time())
-            marks = ",".join("?" * len(names))
-            rows = db.execute(
-                f"SELECT id, username, payload FROM outbox WHERE username IN ({marks}) ORDER BY id",
-                names,
-            ).fetchall()
-            if not rows:
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                self._sweep_shared(db, time.time())
+                marks = ",".join("?" * len(names))
+                rows = db.execute(
+                    f"SELECT id, username, payload FROM outbox WHERE username IN ({marks}) ORDER BY id",
+                    names,
+                ).fetchall()
+                if rows:
+                    ids = [int(row["id"]) for row in rows]
+                    id_marks = ",".join("?" * len(ids))
+                    db.execute(f"DELETE FROM outbox WHERE id IN ({id_marks})", ids)
                 db.commit()
-                return []
-            ids = [int(row["id"]) for row in rows]
-            id_marks = ",".join("?" * len(ids))
-            db.execute(f"DELETE FROM outbox WHERE id IN ({id_marks})", ids)
-            db.commit()
+            except Exception:
+                db.rollback()
+                raise
         notes: list[tuple[str, dict]] = []
         for row in rows:
             try:

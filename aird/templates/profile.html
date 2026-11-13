@@ -209,7 +209,17 @@
         </div>
         {% end %}
 
-        {% if not ldap_enabled %}
+        {% if authentik_password_url %}
+        <div class="card bg-base-100 shadow-sm border border-base-300">
+          <div class="card-body">
+            <h3 class="font-semibold">Change password</h3>
+            <p class="text-sm text-base-content/60 mt-1">Your sign-in is managed by Authentik. Change your password there.</p>
+            <div class="flex justify-end mt-3">
+              <a href="{{ escape(authentik_password_url) }}" class="btn btn-primary">Change password</a>
+            </div>
+          </div>
+        </div>
+        {% elif not ldap_enabled %}
         <div class="card bg-base-100 shadow-sm border border-base-300">
           <div class="card-body">
             <h3 class="font-semibold">Change password</h3>

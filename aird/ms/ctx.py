@@ -189,6 +189,15 @@ class _TemplateHandler:
         return static_url(path)
 
 
+def _authentik_password_url(conn) -> str:
+    try:
+        from aird.core.authentik_sso import password_change_url
+
+        return password_change_url(conn)
+    except Exception:
+        return ""
+
+
 def template_globals(request: Request, nonce: str, **extra: Any) -> dict[str, Any]:
     from aird.assets import template_assets
     from aird.plugins.access import bind_template_plugin_checks
@@ -221,6 +230,7 @@ def template_globals(request: Request, nonce: str, **extra: Any) -> dict[str, An
         "nav_active": nav_active_for_path(req_path),
         "is_admin_user": show_admin,
         "ldap_enabled": bool(state.settings.get("ldap_server")),
+        "authentik_password_url": _authentik_password_url(state.db_conn),
         "current_user": user,
         "handler": _TemplateHandler(request, user),
         "request": request,

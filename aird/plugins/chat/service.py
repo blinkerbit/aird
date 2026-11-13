@@ -121,13 +121,18 @@ class ChatHub:
                     return found
             return None
 
-    def online_usernames(self) -> set[str]:
+    def local_usernames(self) -> set[str]:
+        """Usernames whose sockets are on this worker."""
         with self._lock:
-            names = {
+            return {
                 self._username[user_id]
                 for user_id, sockets in self._by_user.items()
                 if sockets and user_id in self._username
             }
+
+    def online_usernames(self) -> set[str]:
+        with self._lock:
+            names = self.local_usernames()
             for bucket in self._remote.values():
                 names.update(name for name in bucket.values() if name)
             return names

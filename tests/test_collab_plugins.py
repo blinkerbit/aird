@@ -377,6 +377,46 @@ def test_only_author_can_delete_list_poll_and_meet(collab_db):
     assert collab_db.execute("SELECT COUNT(*) FROM list_items WHERE list_id = ?", (lst["id"],)).fetchone()[0] == 0
 
 
+def test_index_splits_tasks_for_agenda_views(collab_db):
+    today = datetime.now(timezone.utc).replace(hour=9, minute=0, second=0, microsecond=0)
+    create_list(
+        collab_db,
+        organizer="alice",
+        title="Groceries",
+        kind="todo",
+        visibility="public",
+        items=[
+            {"text": "Milk", "due_at": today.isoformat()},
+            {"text": "Later", "due_at": (today + timedelta(days=3)).isoformat()},
+            {"text": "Someday"},
+            {"text": "Bought", "done": True},
+        ],
+    )
+    index = list_index(collab_db, "alice")
+    assert {task["text"] for task in index["tasks"]} == {"Milk", "Later", "Someday"}
+    assert index["logbook"][0]["text"] == "Bought"
+    assert index["logbook"][0]["list_title"] == "Groceries"
+
+
+def test_journal_starts_with_a_markdown_page(collab_db):
+    journal = create_list(
+        collab_db,
+        organizer="alice",
+        title="Days",
+        kind="journal",
+        visibility="public",
+        items=[],
+    )
+    detail = list_detail(collab_db, journal["id"], "alice")
+    assert detail["kind"] == "journal"
+    assert detail["active"] is True
+    assert len(detail["items"]) == 1
+    assert detail["items"][0]["kind"] == "note"
+    assert detail["items"][0]["text"].startswith("# ")
+    renamed = update_list(collab_db, journal["id"], "alice", kind="notes")
+    assert renamed["kind"] == "bullet"
+
+
 def test_shared_todo_is_writable_until_author_locks(collab_db):
     lst = create_list(
         collab_db,

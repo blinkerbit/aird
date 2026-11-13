@@ -1,5 +1,13 @@
 import { apiJson } from '../collab-api.js';
+import { tagChipHtml } from './tag-chips.js';
 import { notePreview, noteTitle, renderMarkdown, wrapSelection } from './list-md.js';
+
+const CHECK = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.2 6.4 11 12.5 4.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const LINE_TYPES = [
+  ['check', 'Todo', 'A checkbox you can finish'],
+  ['bullet', 'Line', 'A short note'],
+  ['note', 'Page', 'A markdown page'],
+];
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => (
@@ -37,7 +45,43 @@ function stampFor(choice, custom) {
   return date.toISOString();
 }
 
+function kindLabel(kind) {
+  if (kind === 'journal') return 'Journal';
+  if (kind === 'bullet') return 'Notes';
+  return 'Todo';
+}
+
+function docHead(list, hooks) {
+  const prog = list.progress || {};
+  const remain = Math.max(0, (prog.total || 0) - (prog.done || 0));
+  const count = list.kind === 'todo'
+    ? `<p class="ln-remain">${prog.total ? (remain ? `${remain} to-do${remain === 1 ? '' : 's'}` : 'All done') : 'No to-dos yet'}</p>`
+    : `<p class="ln-remain">${esc(kindLabel(list.kind))}${list.read_only ? ' · Read only' : ''}</p>`;
+  const blurb = typeof list.notes === 'string' && list.notes.trim()
+    ? `<p class="ln-blurb">${esc(list.notes)}</p>` : '';
+  const tags = (list.tags || []).map((tag) => tagChipHtml(tag)).join('');
+  const menu = [
+    hooks.onShare ? '<button type="button" data-share>Share to chat</button>' : '',
+    hooks.onEdit ? '<button type="button" data-edit>Settings</button>' : '',
+    hooks.onDeleteList ? '<button type="button" data-delete-list>Delete</button>' : '',
+  ].filter(Boolean).join('');
+  return `<header class="ln-doc-head">
+    ${hooks.onBack ? '<button type="button" class="ln-back" data-back>Back</button>' : ''}
+    <div class="ln-doc-titles">
+      <h1>${esc(list.title || 'Untitled')}</h1>
+      ${count}
+      ${blurb}
+      ${tags ? `<div class="lists-tag-row">${tags}</div>` : ''}
+    </div>
+    ${menu ? `<details class="ln-more"><summary aria-label="List actions">···</summary><div>${menu}</div></details>` : ''}
+  </header>`;
+}
+
 export async function renderOutline(root, list, hooks = {}) {
+  if (list.kind === 'journal') {
+    paintJournal(root, list, hooks);
+    return;
+  }
   const items = list.items || [];
   const notes = items.filter((item) => kindOf(item) === 'note').map((item) => ({
     id: item.id,
@@ -49,41 +93,44 @@ export async function renderOutline(root, list, hooks = {}) {
     return;
   }
   const selected = new Set(hooks.selected || []);
+  const draftKind = list.kind === 'bullet' ? 'bullet' : 'check';
+  const openItems = items.filter((item) => kindOf(item) !== 'check' || !item.done);
+  const doneItems = items.filter((item) => kindOf(item) === 'check' && item.done);
+  const placeholder = list.kind === 'bullet' ? 'New note' : 'New to-do';
   root.innerHTML = `
-    <header class="list-outline-head">
-      ${hooks.onBack ? '<button type="button" data-back>Back</button>' : ''}
-      <strong>${esc(list.title || 'List')}</strong>
-      ${hooks.onFocus ? `<button type="button" data-focus>${hooks.focus ? 'Show board' : 'Focus'}</button>` : ''}
-      ${hooks.onShare ? '<button type="button" data-share>Share</button>' : ''}
-      ${hooks.onEdit ? '<button type="button" data-edit>Edit</button>' : ''}
-      ${hooks.onDeleteList ? '<button type="button" data-delete-list>Delete</button>' : ''}
-    </header>
+    <div class="ln-project">
+    ${docHead(list, hooks)}
     <div class="list-outline" data-list="${esc(list.id)}">
-      ${items.map((item) => rowHtml(item, selected.has(item.id), notes)).join('')}
-      ${list.can_edit ? `<div class="list-line is-draft" data-kind="check">
-        <button type="button" class="list-mark" data-draft-kind aria-label="Line type">☐</button>
-        <input class="list-line-input" data-draft placeholder="Write, or type /" maxlength="300" />
+      ${openItems.map((item) => rowHtml(item, selected.has(item.id))).join('')}
+      ${list.can_edit ? `<div class="list-line is-draft" data-kind="${draftKind}">
+        <button type="button" class="list-mark ${draftKind === 'bullet' ? 'is-bullet' : ''}" data-draft-kind aria-label="${draftKind === 'bullet' ? 'Line' : 'To-do'}"></button>
+        <input class="list-line-input" data-draft placeholder="${placeholder}" maxlength="300" />
       </div>` : ''}
+      ${doneItems.length ? `<details class="ln-logged"><summary>Completed ${doneItems.length}</summary>${doneItems.map((item) => rowHtml(item, selected.has(item.id))).join('')}</details>` : ''}
     </div>
-    ${selected.size ? `<div class="list-select-bar"><span>${selected.size} selected</span><button type="button" data-turn>Turn into</button><button type="button" data-delete-selected>Delete</button></div>` : ''}`;
+    ${selected.size ? `<div class="list-select-bar"><span>${selected.size} selected</span><button type="button" data-turn>Turn into</button><button type="button" data-delete-selected>Delete</button></div>` : ''}
+    </div>`;
   wireOutline(root, list, notes, hooks);
 }
 
-function rowHtml(item, on, notes) {
+function rowHtml(item, on) {
   const kind = kindOf(item);
   if (kind === 'note') {
     const preview = notePreview(item.text);
     return `<button type="button" class="list-note-card" data-id="${esc(item.id)}" data-open-note="${esc(item.id)}">
+      <span class="list-note-kicker">Page</span>
       <strong>${esc(noteTitle(item.text))}</strong>
-      ${preview ? `<span>${esc(preview)}</span>` : ''}
+      ${preview ? `<span>${esc(preview)}</span>` : '<span>Empty page</span>'}
     </button>`;
   }
-  const mark = kind === 'bullet' ? '•' : (item.done ? '☑' : '☐');
+  const mark = kind === 'bullet'
+    ? `<button type="button" class="list-mark is-bullet" data-mark aria-label="Change line type"></button>`
+    : `<button type="button" class="list-mark" data-mark aria-pressed="${item.done ? 'true' : 'false'}" aria-label="${item.done ? 'Mark not done' : 'Mark done'}">${item.done ? CHECK : ''}</button>`;
   return `<div class="list-line ${on ? 'is-selected' : ''} ${item.done ? 'is-done' : ''}" data-id="${esc(item.id)}" data-kind="${esc(kind)}">
-    ${on ? '' : '<span class="list-grip" draggable="true" data-grip aria-hidden="true">⋮</span>'}
-    <button type="button" class="list-mark" data-mark>${mark}</button>
+    ${on ? '' : '<span class="list-grip" draggable="true" data-grip aria-label="Drag to reorder"></span>'}
+    ${mark}
     <input class="list-line-input" data-text value="${esc(item.text || '')}" maxlength="300" />
-    ${kind === 'check' ? `<button type="button" class="list-due ${item.due_at ? 'is-set' : ''}" data-due>${esc(dueLabel(item.due_at))}</button>` : ''}
+    ${kind === 'check' ? `<button type="button" class="list-due ${item.due_at ? 'is-set' : ''}" data-due>${esc(item.due_at ? dueLabel(item.due_at) : 'Due')}</button>` : ''}
   </div>`;
 }
 
@@ -103,10 +150,14 @@ function wireOutline(root, list, notes, hooks) {
   const outline = root.querySelector('.list-outline');
   const draft = root.querySelector('[data-draft]');
   const draftKindBtn = root.querySelector('[data-draft-kind]');
-  let draftKind = 'check';
+  const picked = new Set(hooks.selected || []);
+  let draftKind = list.kind === 'bullet' ? 'bullet' : 'check';
   const setDraftKind = (kind) => {
     draftKind = kind === 'bullet' ? 'bullet' : 'check';
-    if (draftKindBtn) draftKindBtn.textContent = draftKind === 'bullet' ? '•' : '☐';
+    const row = draft?.closest('.list-line');
+    if (row) row.dataset.kind = draftKind;
+    draftKindBtn?.classList.toggle('is-bullet', draftKind === 'bullet');
+    draftKindBtn?.setAttribute('aria-label', draftKind === 'bullet' ? 'Line' : 'Todo');
   };
   outline?.addEventListener('scroll', () => closeFloats(), { passive: true });
   root.querySelector('[data-back]')?.addEventListener('click', () => hooks.onBack?.());
@@ -117,12 +168,12 @@ function wireOutline(root, list, notes, hooks) {
   outline?.addEventListener('dragstart', (event) => {
     const grip = event.target.closest?.('[data-grip]');
     const row = grip?.closest('.list-line');
-    if (!row || selected.size) return;
+    if (!row || picked.size) return;
     event.dataTransfer?.setData('text/item-id', row.dataset.id || '');
     event.dataTransfer?.setData('text/plain', row.dataset.id || '');
   });
   outline?.addEventListener('dragover', (event) => {
-    if (selected.size) return;
+    if (picked.size) return;
     const row = event.target.closest?.('[data-id]');
     if (!row) return;
     event.preventDefault();
@@ -130,7 +181,7 @@ function wireOutline(root, list, notes, hooks) {
   outline?.addEventListener('drop', async (event) => {
     const id = event.dataTransfer?.getData('text/item-id');
     const target = event.target.closest?.('[data-id]');
-    if (!id || !target || selected.size) return;
+    if (!id || !target || picked.size) return;
     event.preventDefault();
     const ids = [...outline.querySelectorAll('[data-id]')].map((node) => node.dataset.id);
     const from = ids.indexOf(id);
@@ -321,11 +372,7 @@ function wireOutline(root, list, notes, hooks) {
     if (latest) hooks.onChange?.(latest);
   });
   root.querySelector('[data-turn]')?.addEventListener('click', (event) => {
-    openMenu(event.currentTarget, [
-      ['check', 'Check'],
-      ['bullet', 'Bullet'],
-      ['note', 'Note'],
-    ], async (kind) => {
+    openMenu(event.currentTarget, LINE_TYPES, async (kind) => {
       let latest = null;
       for (const id of hooks.selected || []) {
         const item = (list.items || []).find((row) => row.id === id);
@@ -342,13 +389,15 @@ function wireOutline(root, list, notes, hooks) {
   });
 
   if (hooks.focusDraft && draft) draft.focus();
+  root.querySelectorAll('.ln-more button').forEach((button) => {
+    button.addEventListener('click', () => {
+      const menu = button.closest('details');
+      if (menu) menu.open = false;
+    });
+  });
 
   function openType(anchor, item) {
-    openMenu(anchor, [
-      ['check', 'Check'],
-      ['bullet', 'Bullet'],
-      ['note', 'Note'],
-    ], (kind) => turnOne(item, kind, item.text));
+    openMenu(anchor, LINE_TYPES, (kind) => turnOne(item, kind, item.text));
   }
 
   async function turnOne(item, kind, text) {
@@ -421,19 +470,15 @@ function wireOutline(root, list, notes, hooks) {
   }
 
   function openSlash(anchor, onPick) {
-    openMenu(anchor, [
-      ['check', 'Check'],
-      ['bullet', 'Bullet'],
-      ['note', 'Note'],
-    ], onPick);
+    openMenu(anchor, LINE_TYPES, onPick);
   }
 
   function openMenu(anchor, rows, onPick) {
     closeFloats();
     const node = document.createElement('div');
     node.className = 'list-float';
-    node.innerHTML = rows.map(([id, label], index) => (
-      `<button type="button" data-pick="${esc(id)}" class="${index === 0 ? 'is-active' : ''}">${esc(label)}</button>`
+    node.innerHTML = rows.map(([id, label, hint], index) => (
+      `<button type="button" data-pick="${esc(id)}" class="${index === 0 ? 'is-active' : ''}"><strong>${esc(label)}</strong>${hint ? `<span>${esc(hint)}</span>` : ''}</button>`
     )).join('');
     document.body.appendChild(node);
     placeFloat(anchor, node);
@@ -481,88 +526,144 @@ function applyShortcut(input, onKind, onSlash) {
   else if (value === '/') onSlash();
 }
 
+function formatBar() {
+  return `<div class="list-format" data-format>
+    <button type="button" data-wrap="# " aria-label="Heading">H1</button>
+    <button type="button" data-wrap="## " aria-label="Subheading">H2</button>
+    <button type="button" data-wrap="**" aria-label="Bold"><b>B</b></button>
+    <button type="button" data-wrap="*" aria-label="Italic"><i>I</i></button>
+    <button type="button" data-wrap="- " aria-label="List">List</button>
+    <button type="button" data-wrap="> " aria-label="Quote">Quote</button>
+    <button type="button" data-wrap="\`" aria-label="Code">Code</button>
+    <button type="button" data-link aria-label="Link">Link</button>
+  </div>`;
+}
+
+function bindSaver(field, list, item, hooks, status) {
+  let saved = item.text || '';
+  let timer = 0;
+  const write = async (quiet) => {
+    const text = field.value.trim();
+    if (!text) {
+      if (!quiet) {
+        if (status) status.textContent = 'Add a title';
+        hooks.onError?.('Add a title before leaving this page.');
+      }
+      return false;
+    }
+    if (text === saved) {
+      if (status) status.textContent = 'Saved';
+      return true;
+    }
+    if (status) status.textContent = 'Saving…';
+    try {
+      const next = await apiJson(`/api/lists/${encodeURIComponent(list.id)}/items/${encodeURIComponent(item.id)}`, {
+        method: 'PATCH',
+        body: { text },
+      });
+      saved = text;
+      if (status) status.textContent = 'Saved';
+      if (quiet && hooks.onQuiet) hooks.onQuiet(next);
+      else hooks.onChange?.(next);
+      return true;
+    } catch (err) {
+      if (status) status.textContent = 'Not saved';
+      hooks.onError?.(err.message || 'Could not save');
+      return false;
+    }
+  };
+  const poke = () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => { write(true); }, 700);
+  };
+  field.addEventListener('input', poke);
+  return { flush: () => write(true), poke };
+}
+
+function bindFormat(root, field, paint, poke) {
+  root.querySelectorAll('[data-wrap]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const token = button.dataset.wrap || '';
+      if (token.endsWith(' ')) {
+        const start = field.selectionStart || 0;
+        field.value = `${field.value.slice(0, start)}${token}${field.value.slice(start)}`;
+        field.setSelectionRange(start + token.length, start + token.length);
+        field.focus();
+      } else wrapSelection(field, token, token === '`' ? '`' : token);
+      paint();
+      poke?.();
+    });
+  });
+  root.querySelector('[data-link]')?.addEventListener('click', () => {
+    wrapSelection(field, '[', '](https://)');
+    paint();
+    poke?.();
+  });
+}
+
 function paintNote(root, list, item, notes, hooks) {
-  const wide = window.matchMedia('(min-width: 901px)').matches;
-  const write = wide || hooks.noteMode !== 'read';
+  const write = hooks.noteMode !== 'read';
+  const words = String(item.text || '').trim() ? String(item.text || '').trim().split(/\s+/).length : 0;
   root.innerHTML = `
-    <section class="list-note-page ${wide ? 'is-wide' : ''} ${write ? 'is-writing' : 'is-reading'}">
-      <header>
-        <button type="button" data-note-back>Back</button>
-        ${wide ? '' : `<button type="button" data-note-mode>${write ? 'Preview' : 'Write'}</button>`}
+    <section class="ln-paper list-note-page ${write ? 'is-writing' : 'is-reading'}">
+      <header class="ln-doc-head">
+        <button type="button" class="ln-back" data-note-back>Back</button>
+        <div class="ln-doc-titles">
+          <h1>${esc(noteTitle(item.text))}</h1>
+          <p class="ln-remain">Page</p>
+        </div>
+        <div class="ln-page-tools">
+          <span class="list-save-state" data-save-state aria-live="polite">Saved</span>
+          <span class="list-word-count">${words} ${words === 1 ? 'word' : 'words'}</span>
+          <button type="button" data-note-mode>${write ? 'Preview' : 'Write'}</button>
+        </div>
       </header>
-      <div class="list-note-stage">
-        <textarea class="list-note-write" maxlength="100000" ${write ? '' : 'hidden'}>${esc(item.text || '')}</textarea>
+      ${write && list.can_edit !== false ? formatBar() : ''}
+      <div class="ln-sheet list-note-stage">
+        <textarea class="list-note-write" maxlength="100000" placeholder="Write in Markdown. Link another page with [[." ${write ? '' : 'hidden'} ${list.can_edit === false ? 'readonly' : ''}>${esc(item.text || '')}</textarea>
         <article class="markdown-preview list-note-read" ${write ? 'hidden' : ''}>${renderMarkdown(item.text, notes)}</article>
       </div>
-      ${write ? `<div class="list-format" data-format>
-        <button type="button" data-wrap="# ">H</button>
-        <button type="button" data-wrap="**">B</button>
-        <button type="button" data-wrap="- ">List</button>
-        <button type="button" data-wrap="\`">Code</button>
-        <button type="button" data-link>Link</button>
-      </div>` : ''}
     </section>`;
   const field = root.querySelector('.list-note-write');
   const preview = root.querySelector('.list-note-read');
-  if (wide && preview) preview.hidden = false;
-  const paint = () => { preview.innerHTML = renderMarkdown(field.value, notes); };
+  const wordsEl = root.querySelector('.list-word-count');
+  const paint = () => {
+    if (preview) preview.innerHTML = renderMarkdown(field.value, notes);
+    if (wordsEl) {
+      const count = field.value.trim() ? field.value.trim().split(/\s+/).length : 0;
+      wordsEl.textContent = `${count} ${count === 1 ? 'word' : 'words'}`;
+    }
+  };
+  const saver = field ? bindSaver(field, list, item, hooks, root.querySelector('[data-save-state]')) : null;
   field?.addEventListener('input', () => {
     paint();
     const query = mentionQuery(field);
     if (query == null) closeFloats();
     else openMentions(root, field, notes, query);
   });
-  root.querySelector('[data-note-back]')?.addEventListener('click', () => saveThen(field, () => hooks.onCloseNote?.()));
-  root.querySelector('[data-note-mode]')?.addEventListener('click', () => {
-    hooks.onNoteMode?.(write ? 'read' : 'write');
+  field?.addEventListener('keydown', (event) => {
+    if (!(event.metaKey || event.ctrlKey)) return;
+    const key = event.key.toLowerCase();
+    if (key === 'b') { event.preventDefault(); wrapSelection(field, '**'); paint(); saver?.poke(); }
+    if (key === 'i') { event.preventDefault(); wrapSelection(field, '*'); paint(); saver?.poke(); }
+    if (key === 's') { event.preventDefault(); saver?.flush(); }
   });
-  root.querySelectorAll('[data-wrap]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const token = button.dataset.wrap;
-      if (token === '- ' || token === '# ') {
-        const start = field.selectionStart || 0;
-        field.value = `${field.value.slice(0, start)}${token}${field.value.slice(start)}`;
-        field.focus();
-      } else wrapSelection(field, token, token === '`' ? '`' : token);
-      paint();
-    });
+  root.querySelector('[data-note-back]')?.addEventListener('click', async () => {
+    const ok = await (saver ? saver.flush() : true);
+    if (ok) hooks.onCloseNote?.();
   });
-  root.querySelector('[data-link]')?.addEventListener('click', () => {
-    wrapSelection(field, '[', '](https://)');
-    paint();
+  root.querySelector('[data-note-mode]')?.addEventListener('click', async () => {
+    const ok = await (saver ? saver.flush() : true);
+    if (ok) hooks.onNoteMode?.(write ? 'read' : 'write');
   });
-  preview?.addEventListener('click', (event) => {
+  if (field) bindFormat(root, field, paint, () => saver?.poke());
+  preview?.addEventListener('click', async (event) => {
     const mention = event.target.closest('[data-note]');
     if (!mention) return;
-    saveThen(field, () => hooks.onOpenNote?.(mention.dataset.note));
+    const ok = await (saver ? saver.flush() : true);
+    if (ok) hooks.onOpenNote?.(mention.dataset.note);
   });
-  if (write) field?.focus();
-
-  async function saveThen(source, done) {
-    if (!source) {
-      done();
-      return;
-    }
-    const text = source.value.trim();
-    if (!text) {
-      hooks.onError?.('Add a title before leaving this note.');
-      return;
-    }
-    if (text === item.text) {
-      done();
-      return;
-    }
-    try {
-      const next = await apiJson(`/api/lists/${encodeURIComponent(list.id)}/items/${encodeURIComponent(item.id)}`, {
-        method: 'PATCH',
-        body: { text },
-      });
-      hooks.onChange?.(next);
-      done();
-    } catch (err) {
-      hooks.onError?.(err.message || 'Could not save');
-    }
-  }
+  if (write && list.can_edit !== false) field?.focus();
 }
 
 function mentionQuery(field) {
@@ -590,6 +691,143 @@ function openMentions(root, field, notes, query) {
     field.value = `${field.value.slice(0, start)}[[${id}]] ${field.value.slice(end)}`;
     node.remove();
     field.focus();
+  });
+}
+
+function paintJournal(root, list, hooks) {
+  const items = list.items || [];
+  const pages = items.filter((item) => kindOf(item) === 'note');
+  const lines = items.filter((item) => kindOf(item) !== 'note');
+  const notes = pages.map((item) => ({ id: item.id, title: noteTitle(item.text) }));
+  const active = pages.find((item) => item.id === hooks.noteId) || pages[pages.length - 1] || null;
+  const canEdit = list.can_edit !== false;
+  const write = hooks.noteMode !== 'read';
+  root.innerHTML = `
+    <section class="ln-paper list-journal ${write ? 'is-writing' : 'is-reading'}">
+      ${docHead(list, hooks)}
+      <div class="ln-pagebar">
+        ${canEdit ? '<button type="button" class="list-entry-new" data-new-entry>New page</button>' : ''}
+        <div class="ln-pages" role="tablist" aria-label="Pages">
+          ${pages.map((item) => `<button type="button" class="list-entry ${item.id === active?.id ? 'is-active' : ''}" data-open-note="${esc(item.id)}" role="tab" aria-selected="${item.id === active?.id ? 'true' : 'false'}">
+            <strong>${esc(noteTitle(item.text))}</strong>
+          </button>`).join('') || '<p class="list-outline-hint">No pages yet.</p>'}
+        </div>
+        <div class="ln-page-tools">
+          <span class="list-save-state" data-save-state aria-live="polite">Saved</span>
+          <span class="list-word-count"></span>
+          <button type="button" data-note-mode>${write ? 'Preview' : 'Write'}</button>
+          ${canEdit && pages.length > 1 ? '<button type="button" data-delete-entry>Delete page</button>' : ''}
+        </div>
+      </div>
+      ${lines.length ? `<div class="list-journal-lines">${lines.map((item) => (
+        kindOf(item) === 'check'
+          ? `<label class="list-journal-line"><input type="checkbox" data-line="${esc(item.id)}" ${item.done ? 'checked' : ''} ${canEdit ? '' : 'disabled'}> <span>${esc(item.text || '')}</span></label>`
+          : `<p class="list-journal-line"><span>• ${esc(item.text || '')}</span></p>`
+      )).join('')}</div>` : ''}
+      ${active ? `${canEdit && write ? formatBar() : ''}
+        <div class="ln-sheet list-note-stage">
+          <textarea class="list-note-write" maxlength="100000" placeholder="Start writing. The first line is the page title." ${write ? '' : 'hidden'} ${canEdit ? '' : 'readonly'}>${esc(active.text || '')}</textarea>
+          <article class="markdown-preview list-note-read" ${write ? 'hidden' : ''}>${renderMarkdown(active.text, notes)}</article>
+        </div>` : '<div class="ln-empty"><h2>Start a page</h2><p>A page is free-form Markdown.</p></div>'}
+    </section>`;
+  wireJournal(root, list, notes, active, canEdit, write, hooks);
+}
+
+function wireJournal(root, list, notes, active, canEdit, write, hooks) {
+  const field = root.querySelector('.list-note-write');
+  const preview = root.querySelector('.list-note-read');
+  const wordsEl = root.querySelector('.list-word-count');
+  const paint = () => {
+    if (!field) return;
+    if (preview) preview.innerHTML = renderMarkdown(field.value, notes);
+    if (wordsEl) {
+      const count = field.value.trim() ? field.value.trim().split(/\s+/).length : 0;
+      wordsEl.textContent = `${count} ${count === 1 ? 'word' : 'words'}`;
+    }
+  };
+  paint();
+  const saver = field && active ? bindSaver(field, list, active, hooks, root.querySelector('[data-save-state]')) : null;
+  field?.addEventListener('input', () => {
+    paint();
+    const current = root.querySelector('.list-entry.is-active strong');
+    if (current) current.textContent = noteTitle(field.value);
+    const query = mentionQuery(field);
+    if (query == null) closeFloats();
+    else openMentions(root, field, notes, query);
+  });
+  field?.addEventListener('keydown', (event) => {
+    if (!(event.metaKey || event.ctrlKey)) return;
+    const key = event.key.toLowerCase();
+    if (key === 'b') { event.preventDefault(); wrapSelection(field, '**'); paint(); saver?.poke(); }
+    if (key === 'i') { event.preventDefault(); wrapSelection(field, '*'); paint(); saver?.poke(); }
+    if (key === 's') { event.preventDefault(); saver?.flush(); }
+  });
+  if (field && canEdit) bindFormat(root, field, paint, () => saver?.poke());
+  const leave = async (done) => {
+    const ok = saver ? await saver.flush() : true;
+    if (ok) done();
+  };
+  root.querySelector('[data-back]')?.addEventListener('click', () => leave(() => hooks.onBack?.()));
+  root.querySelector('[data-focus]')?.addEventListener('click', () => leave(() => hooks.onFocus?.()));
+  root.querySelector('[data-share]')?.addEventListener('click', () => leave(() => hooks.onShare?.()));
+  root.querySelector('[data-edit]')?.addEventListener('click', () => leave(() => hooks.onEdit?.()));
+  root.querySelector('[data-delete-list]')?.addEventListener('click', () => leave(() => hooks.onDeleteList?.()));
+  root.querySelector('[data-note-mode]')?.addEventListener('click', () => leave(() => hooks.onNoteMode?.(write ? 'read' : 'write')));
+  root.querySelectorAll('[data-open-note]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      if (button.dataset.openNote === active?.id) return;
+      const ok = saver ? await saver.flush() : true;
+      if (ok) hooks.onOpenNote?.(button.dataset.openNote);
+    });
+  });
+  root.querySelector('[data-new-entry]')?.addEventListener('click', async () => {
+    const ok = saver ? await saver.flush() : true;
+    if (!ok) return;
+    const stamp = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+    try {
+      const next = await apiJson(`/api/lists/${encodeURIComponent(list.id)}/items`, {
+        method: 'POST',
+        body: { text: `# ${stamp}`, kind: 'note' },
+      });
+      const added = [...(next?.items || [])].reverse().find((row) => kindOf(row) === 'note');
+      hooks.onChange?.(next);
+      if (added) hooks.onOpenNote?.(added.id);
+    } catch (err) {
+      hooks.onError?.(err.message || 'Could not add a page');
+    }
+  });
+  root.querySelector('[data-delete-entry]')?.addEventListener('click', async () => {
+    if (!active || !window.confirm('Delete this page?')) return;
+    try {
+      const next = await apiJson(`/api/lists/${encodeURIComponent(list.id)}/items/${encodeURIComponent(active.id)}`, { method: 'DELETE' });
+      const rest = (next?.items || []).filter((row) => kindOf(row) === 'note');
+      hooks.onChange?.(next);
+      hooks.onOpenNote?.(rest[rest.length - 1]?.id || '');
+    } catch (err) {
+      hooks.onError?.(err.message || 'Could not delete the page');
+    }
+  });
+  root.querySelectorAll('[data-line]').forEach((box) => {
+    box.addEventListener('change', async () => {
+      const item = (list.items || []).find((row) => row.id === box.dataset.line);
+      if (!item || kindOf(item) !== 'check') return;
+      try {
+        const next = await apiJson(`/api/lists/${encodeURIComponent(list.id)}/items/${encodeURIComponent(item.id)}`, {
+          method: 'PATCH',
+          body: { done: box.checked },
+        });
+        hooks.onChange?.(next);
+      } catch (err) {
+        hooks.onError?.(err.message || 'Could not save');
+      }
+    });
+  });
+  if (write && canEdit) field?.focus();
+  root.querySelectorAll('.ln-more button').forEach((button) => {
+    button.addEventListener('click', () => {
+      const menu = button.closest('details');
+      if (menu) menu.open = false;
+    });
   });
 }
 

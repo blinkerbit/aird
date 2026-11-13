@@ -436,7 +436,6 @@ import { escapeHtml as esc } from './core/dom-safe.js';
       saveStore();
     }
     global.AirdChatPage?.refreshList?.();
-    status(`${msg.from} requested an Enhanced Secure Chat`);
   }
 
   async function onRoom(msg) {
@@ -521,7 +520,10 @@ import { escapeHtml as esc } from './core/dom-safe.js';
     });
   }
 
-  async function onEvent(msg) {
+  let ready = false;
+  const queued = [];
+
+  async function handle(msg) {
     if (!msg || !msg.type) return;
     try {
       if (msg.type === 'enhanced_request') await onRequest(msg);
@@ -537,7 +539,16 @@ import { escapeHtml as esc } from './core/dom-safe.js';
     }
   }
 
+  function onEvent(msg) {
+    if (!ready) {
+      queued.push(msg);
+      return;
+    }
+    handle(msg).catch((err) => status(err.message || 'Enhanced Secure Chat failed'));
+  }
+
   async function boot() {
+    global.AirdChatWS?.subscribe(onEvent);
     for (const row of loadStore()) {
       if (!row?.roomId) continue;
       if (row.requested) {
@@ -565,7 +576,8 @@ import { escapeHtml as esc } from './core/dom-safe.js';
         });
       } catch (_) { /* drop a corrupt tab entry */ }
     }
-    global.AirdChatWS?.subscribe(onEvent);
+    ready = true;
+    for (const msg of queued.splice(0)) await handle(msg);
     global.AirdChatWS?.connect();
     if (global.AirdChatWS?.isOpen()) rejoin();
     document.addEventListener('visibilitychange', () => {

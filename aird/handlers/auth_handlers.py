@@ -252,7 +252,9 @@ def _try_username_password_login(handler, username, password, next_url):
             )
             return True
         _apply_session_cookies(handler, username, user["role"])
-        if user.get("must_change_password"):
+        from aird.core.authentik_sso import password_change_url
+
+        if user.get("must_change_password") and not password_change_url(db_conn):
             mq = tornado.escape.url_escape(next_url)
             handler.redirect(f"/auth/mandatory-password?next={mq}")
             return True
@@ -339,7 +341,9 @@ def _try_admin_username_password_login(handler, username, password):
             )
             establish_server_session(handler, username, user["role"], is_admin=True)
             _publish_user_authenticated(handler, username=username, role=user["role"])
-            if user.get("must_change_password"):
+            from aird.core.authentik_sso import password_change_url
+
+            if user.get("must_change_password") and not password_change_url(db_conn):
                 n = tornado.escape.url_escape(ADMIN_URL)
                 handler.redirect(f"/auth/mandatory-password?next={n}")
                 return True
@@ -447,6 +451,18 @@ def _profile_display_user(user):
     return user
 
 
+def _profile_authentik_password_url(handler) -> str:
+    from aird.core.authentik_sso import password_change_url
+
+    conn = getattr(handler, "db_conn", None)
+    if conn is None:
+        return ""
+    try:
+        return password_change_url(conn)
+    except Exception:
+        return ""
+
+
 def _profile_render(handler, user, error=None, success=None, ldap_enabled=None, passkeys=None):
     """Render profile template with common kwargs."""
     if ldap_enabled is None:
@@ -464,6 +480,7 @@ def _profile_render(handler, user, error=None, success=None, ldap_enabled=None, 
         passkeys=_profile_passkeys(handler, user, passkeys),
         shared_with_me=_profile_shared_with_me(handler, user),
         user_plugins=user_facing_plugins(uname, handler.db_conn) if user else [],
+        authentik_password_url=_profile_authentik_password_url(handler),
     )
 
 
@@ -587,9 +604,12 @@ class LDAPLoginHandler(BaseHandler):
                 else None
             )
             if u_after and u_after.get("must_change_password"):
-                mq = tornado.escape.url_escape(FILES_BASE_URL)
-                self.redirect(f"/auth/mandatory-password?next={mq}")
-                return
+                from aird.core.authentik_sso import password_change_url
+
+                if not password_change_url(db_conn):
+                    mq = tornado.escape.url_escape(FILES_BASE_URL)
+                    self.redirect(f"/auth/mandatory-password?next={mq}")
+                    return
             self.redirect(FILES_BASE_URL)
         except Exception:
             self.render(
@@ -740,11 +760,7 @@ def _try_authentik_auto_login(handler: BaseHandler) -> bool:
     role = str(user.get("role") or "user")
     _apply_session_cookies(handler, username, role)
     next_url = handler._get_safe_next_url()
-    if user.get("must_change_password"):
-        mq = tornado.escape.url_escape(next_url)
-        handler.redirect(f"/auth/mandatory-password?next={mq}")
-    else:
-        handler.redirect(next_url)
+    handler.redirect(next_url)
     return True
 
 
@@ -774,7 +790,13 @@ class LoginHandler(BaseHandler):
         logged_out = self.get_argument("logged_out", "") == "1"
         user = self.current_user
         if user and not logged_out:
-            if isinstance(user, dict) and user.get("must_change_password"):
+            from aird.core.authentik_sso import password_change_url
+
+            if (
+                isinstance(user, dict)
+                and user.get("must_change_password")
+                and not password_change_url(self.db_conn)
+            ):
                 next_url = self._get_safe_next_url()
                 mq = tornado.escape.url_escape(next_url)
                 self.redirect(f"/auth/mandatory-password?next={mq}")
@@ -856,7 +878,14 @@ class LoginHandler(BaseHandler):
 class AdminLoginHandler(BaseHandler):
     def get(self):
         cu = self.current_user
-        if cu and isinstance(cu, dict) and cu.get("must_change_password"):
+        from aird.core.authentik_sso import password_change_url
+
+        if (
+            cu
+            and isinstance(cu, dict)
+            and cu.get("must_change_password")
+            and not password_change_url(self.db_conn)
+        ):
             n = tornado.escape.url_escape(ADMIN_URL)
             self.redirect(f"/auth/mandatory-password?next={n}")
             return
@@ -928,6 +957,12 @@ class MandatoryPasswordHandler(BaseHandler):
                 _mandatory_password_safe_next(self.get_argument("next", ""))
             )
             return
+        from aird.core.authentik_sso import password_change_url
+
+        authentik_url = password_change_url(self.db_conn)
+        if authentik_url:
+            self.redirect(authentik_url)
+            return
         if cu.get("username") in self._TOKEN_ONLY_USERNAMES:
             self.redirect(FILES_BASE_URL)
             return
@@ -949,6 +984,12 @@ class MandatoryPasswordHandler(BaseHandler):
         row = self.get_service("user_service").get_user(db_conn, cu["username"])
         if not row or not row.get("must_change_password"):
             self.redirect(FILES_BASE_URL)
+            return
+        from aird.core.authentik_sso import password_change_url
+
+        authentik_url = password_change_url(db_conn)
+        if authentik_url:
+            self.redirect(authentik_url)
             return
         if cu.get("username") in self._TOKEN_ONLY_USERNAMES:
             self.redirect(FILES_BASE_URL)
@@ -1124,6 +1165,15 @@ class ProfileHandler(BaseHandler):
                 self,
                 current_user,
                 error=DB_NOT_AVAILABLE_MSG,
+                ldap_enabled=ldap_enabled,
+            )
+            return
+
+        if _profile_authentik_password_url(self):
+            _profile_render(
+                self,
+                current_user,
+                error="Change your password in Authentik.",
                 ldap_enabled=ldap_enabled,
             )
             return

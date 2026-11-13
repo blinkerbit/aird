@@ -188,7 +188,11 @@
         <div class="card-body">
           <h2 class="card-title text-base">User management</h2>
           <p class="text-sm text-base-content/70 mt-1">
+            {% if authentik_sso.get('enabled') %}
+            Create and edit accounts under <strong>Users</strong>. Passwords are changed in Authentik. Each user opens <strong>Change password</strong> in their settings.
+            {% else %}
             Create and edit accounts under <strong>Users</strong>. Use <strong>Reset password</strong> to issue a one-time random password shown only on this screen. The user must sign in with it, then this app requires them to set a new password before using other pages.
+            {% end %}
           </p>
           <a href="/admin/users" class="btn btn-outline btn-sm mt-3">Open user management</a>
         </div>
@@ -382,6 +386,11 @@
           <input type="text" id="authentikSsoLogoutUrl" class="input input-bordered input-sm w-full" maxlength="512" autocomplete="off" spellcheck="false" value="{{ authentik_sso_view.get('logout_url', '/flows/-/default/invalidation/?next=/') }}">
           <span class="label-text-alt text-base-content/50">When Authentik auto-login is on, AIRD logout clears the AIRD session then redirects here to end the Authentik session too. Default is the built-in invalidation flow on this host.</span>
         </label>
+        <label class="form-control max-w-md" for="authentikSsoPasswordUrl">
+          <span class="label-text text-sm font-semibold">Password change URL</span>
+          <input type="text" id="authentikSsoPasswordUrl" class="input input-bordered input-sm w-full" maxlength="512" autocomplete="off" spellcheck="false" value="{{ authentik_sso_view.get('password_url', '/if/flow/default-password-change/') }}">
+          <span class="label-text-alt text-base-content/50">Shown on user settings while auto-login is on. Default is Authentik's password-change flow on this host.</span>
+        </label>
         <div class="card-actions justify-end">
           <button type="button" id="authentikSsoSave" class="btn btn-primary btn-sm">Save Authentik settings</button>
         </div>
@@ -476,6 +485,7 @@
           var nameEl = document.getElementById('authentikSsoNameHeader');
           var secretEl = document.getElementById('authentikSsoSecret');
           var logoutEl = document.getElementById('authentikSsoLogoutUrl');
+          var passwordEl = document.getElementById('authentikSsoPasswordUrl');
           var hintEl = document.getElementById('authentikSsoSecretHint');
           function setAuthentikStatus(text, ok) {
             if (!statusEl) return;
@@ -496,6 +506,7 @@
               username_header: headerEl ? headerEl.value : '',
               name_header: nameEl ? nameEl.value : '',
               logout_url: logoutEl ? logoutEl.value : '',
+              password_url: passwordEl ? passwordEl.value : '',
               secret: secretEl ? secretEl.value : ''
             })
           }).then(function (res) {
@@ -514,6 +525,7 @@
             if (headerEl && data.username_header) headerEl.value = data.username_header;
             if (nameEl && data.name_header) nameEl.value = data.name_header;
             if (logoutEl && data.logout_url) logoutEl.value = data.logout_url;
+            if (passwordEl && data.password_url) passwordEl.value = data.password_url;
             if (secretEl) secretEl.value = '';
             if (hintEl) {
               hintEl.textContent = data.secret_set ? 'A secret is stored. It is required on each login.' : 'No secret stored. The username header is enough behind the proxy.';

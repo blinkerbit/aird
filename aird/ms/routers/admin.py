@@ -235,6 +235,16 @@ async def admin_user_edit(request: Request) -> Response:
         return PlainTextResponse("XSRF validation failed", status_code=403)
     username = str(form.get("username") or "").strip()
     password = str(form.get("password") or "")
+    from aird.core.authentik_sso import password_change_url
+
+    if password.strip() and password_change_url(conn):
+        return render_html(
+            request,
+            "user_edit.html",
+            user=user,
+            error="Passwords are changed in Authentik.",
+            settings=get_state_settings(request),
+        )
     role = str(form.get("role") or "user")
     active = str(form.get("active") or "") == "on"
     authentik_username = str(form.get("authentik_username") or "").strip()

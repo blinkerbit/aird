@@ -222,16 +222,33 @@ export function pollDialog(existing) {
   });
 }
 
-export function listDialog(existing) {
+const LIST_KINDS = [
+  ['todo', 'Todo', 'Check items off and set due dates'],
+  ['bullet', 'Notes', 'Short lines you can reorder'],
+  ['journal', 'Journal', 'Markdown pages, one entry at a time'],
+];
+
+export function listDialog(existing, options = {}) {
+  const picked = existing?.kind || options.kind || 'todo';
   return openForm({
-    title: existing ? 'Edit list' : 'New list',
+    title: existing ? 'List settings' : 'New list',
     submitLabel: existing ? 'Save list' : 'Create list',
     html: `
+      <fieldset class="lists-kind-field">
+        <legend>Type</legend>
+        <div class="lists-kind-choices">
+          ${LIST_KINDS.map(([id, label, hint]) => `<label class="lists-kind-choice ${id === picked ? 'is-on' : ''}">
+            <input type="radio" name="list-kind" value="${esc(id)}" ${id === picked ? 'checked' : ''}>
+            <strong>${esc(label)}</strong>
+            <span>${esc(hint)}</span>
+          </label>`).join('')}
+        </div>
+      </fieldset>
       <label class="collab-field"><span>Title</span>
-        <input class="input input-bordered input-sm" data-title value="${esc(existing?.title || '')}" required>
+        <input class="input input-bordered input-sm" data-title value="${esc(existing?.title || '')}" required placeholder="${picked === 'journal' ? 'Morning pages' : picked === 'bullet' ? 'Scratch notes' : 'Grocery list'}">
       </label>
       <label class="collab-field"><span>Description</span>
-        <textarea class="textarea textarea-bordered textarea-sm" data-notes rows="3">${esc(existing?.notes || '')}</textarea>
+        <textarea class="textarea textarea-bordered textarea-sm" data-notes rows="3" placeholder="Optional. Shown under the title.">${esc(typeof existing?.notes === 'string' ? existing.notes : '')}</textarea>
       </label>
       ${slugField(existing, 'In chat, type #name. Example: #grocery-nov1')}
       ${visibilityField(existing?.visibility)}
@@ -239,7 +256,16 @@ export function listDialog(existing) {
       ${existing ? `<label class="collab-check"><input type="checkbox" data-forward ${existing.allow_forward ? 'checked' : ''}> Let people this list is shared with share it onward</label>` : ''}
       ${tagIdsFieldHtml()}
     `,
-    afterRender: (body) => hydrateTagPicker(body, existing?.tag_ids),
+    afterRender: (body) => {
+      hydrateTagPicker(body, existing?.tag_ids);
+      body.querySelectorAll('.lists-kind-choice input').forEach((input) => {
+        input.addEventListener('change', () => {
+          body.querySelectorAll('.lists-kind-choice').forEach((choice) => {
+            choice.classList.toggle('is-on', choice.querySelector('input')?.checked);
+          });
+        });
+      });
+    },
     onSubmit(root) {
       const title = root.querySelector('[data-title]').value.trim();
       if (!title) throw new Error('Add a title.');
@@ -247,7 +273,7 @@ export function listDialog(existing) {
         title,
         notes: root.querySelector('[data-notes]')?.value.trim() || '',
         slug: root.querySelector('[data-slug]')?.value.trim(),
-        kind: 'todo',
+        kind: root.querySelector('input[name="list-kind"]:checked')?.value || 'todo',
         visibility: root.querySelector('[data-visibility]').value,
         participants: readPeople(root),
         tag_ids: readTagIds(root),

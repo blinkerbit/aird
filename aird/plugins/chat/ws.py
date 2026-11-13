@@ -16,6 +16,7 @@ from aird.plugins.chat import db as chat_db
 from aird.plugins.chat import is_chat_enabled
 from aird.plugins.chat.e2e import metadata_from_e2e_request
 from aird.plugins.chat.notify import (
+    announce_enhanced_invite,
     dispatch_message,
     dispatch_presence,
     dispatch_receipt,
@@ -53,9 +54,11 @@ def _deliver_enhanced(conn, username: str, payload: dict) -> None:
 
 def flush_enhanced(conn) -> None:
     hub = get_enhanced_secure_hub()
-    if not hub.shares_state():
+    if conn is None or not hub.shares_state():
         return
-    names = get_chat_hub().online_usernames()
+    names = get_chat_hub().local_usernames()
+    if not names:
+        return
     hub.touch_presence(names)
     for username, payload in hub.take_outbox(names):
         _deliver_enhanced(conn, username, payload)
@@ -417,12 +420,16 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
         if view["ready"]:
             self._publish_enhanced_secure(conn, view)
             return
-        self._emit_enhanced(conn, peer, {
-            "type": "enhanced_request",
-            "room_id": view["room_id"],
-            "from": self._username,
-            "epk": view["pubs"].get(self._username),
-        })
+        uid = chat_db.resolve_user_id(conn, peer)
+        if uid is None:
+            return
+        announce_enhanced_invite(
+            self._username,
+            peer,
+            uid,
+            view["room_id"],
+            view["pubs"].get(self._username),
+        )
 
     def _handle_enhanced_join(self, conn, data: dict) -> None:
         room_id = str(data.get("room_id") or "")

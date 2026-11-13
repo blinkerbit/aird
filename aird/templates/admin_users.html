@@ -90,6 +90,9 @@
       <div class="card-body p-0">
         <div class="px-5 py-3 border-b border-base-300 bg-base-200/50">
           <h2 class="font-semibold">Users <span class="text-base-content/50 text-sm">({{ len(users) }})</span></h2>
+          {% if authentik_password_url %}
+          <p class="text-sm text-base-content/60 mt-1">Passwords are changed in Authentik. Users open Change password in their settings.</p>
+          {% end %}
         </div>
 
         {% if users %}
@@ -137,9 +140,11 @@
                 <td class="text-right">
                   <div class="flex gap-1 justify-end">
                     <a href="/admin/users/edit/{{ user['id'] }}" class="btn btn-ghost btn-xs">Edit</a>
+                    {% if not authentik_password_url %}
                     <button type="button" class="btn btn-warning btn-xs btn-outline"
                             data-reset-userid="{{ user['id'] }}"
                             data-reset-username="{{ escape(user['username']) }}">Reset password</button>
+                    {% end %}
                     <a href="javascript:void(0)" data-delete-username="{{ escape(user['username']) }}"
                        data-delete-userid="{{ user['id'] }}" class="btn btn-error btn-xs btn-outline">Delete</a>
                   </div>

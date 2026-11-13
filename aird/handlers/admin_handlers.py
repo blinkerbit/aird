@@ -931,6 +931,16 @@ class UserEditHandler(BaseHandler):
 
             username = self.get_argument("username", "").strip()
             password = self.get_argument("password", "").strip()
+            from aird.core.authentik_sso import password_change_url
+
+            if password and password_change_url(self.db_conn):
+                self.render(
+                    TEMPLATE_USER_EDIT,
+                    user=user,
+                    error="Passwords are changed in Authentik.",
+                    settings=self.settings,
+                )
+                return
             role = self.get_argument("role", "user").strip()
             active = self.get_argument("active", "off") == "on"
             authentik_username = self.get_argument("authentik_username", "").strip()
@@ -1062,6 +1072,11 @@ class UserPasswordResetHandler(BaseHandler):
             return
 
         user_service = _get_user_service(self)
+        from aird.core.authentik_sso import password_change_url
+
+        if password_change_url(self.db_conn):
+            self.redirect(URL_ADMIN_USERS)
+            return
         temp_password = _secrets.token_urlsafe(32)
         if not user_service.update_user(
             self.db_conn,
