@@ -414,7 +414,7 @@ export function initListsHub(root) {
       <header class="block-canvas-head">
         ${isMobile() ? '<button type="button" data-back>Back</button>' : ''}
         <strong>${esc(list.title || 'List')}</strong>
-        <button type="button" data-focus>${focusMode ? 'Show board' : 'Focus'}</button>
+        <button type="button" data-focus>${focusMode ? 'Show groups' : 'Focus'}</button>
         <button type="button" data-edit>Edit</button>
         <button type="button" data-share>Share</button>
         <button type="button" data-delete-list>Delete</button>

@@ -394,9 +394,11 @@ body.lists-is-reordering { cursor: grabbing; user-select: none; }
 }
 
 @media (min-width: 901px) {
-  .lists-hub-body.is-focus { grid-template-columns: minmax(10rem, 12rem) minmax(0, 1fr); }
+  .lists-hub-body.is-focus { grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr); }
+  .lists-hub-body.is-focus .lists-rail { display: none; }
 }
-.lists-hub-body.is-focus .lists-board { display: none; }
+.lists-hub-body.is-rail-collapsed { grid-template-columns: 0 minmax(16rem, 22rem) minmax(0, 1fr); }
+.lists-hub-body.is-rail-collapsed .lists-rail { overflow: hidden; border: 0; padding: 0; }
 .list-outline-head, .list-note-page > header { display: flex; align-items: center; gap: .4rem; margin-bottom: .45rem; }
 .list-outline-head strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list-outline-head button, .list-note-page > header button, .list-format button, .list-select-bar button {
@@ -446,8 +448,6 @@ button.lists-card-line { cursor: pointer; text-decoration: underline; }
   .list-line, .list-note-card, .list-float, .list-palette { transition: none; }
 }
 
-.lists-hub-body.is-rail-collapsed { grid-template-columns: 0 minmax(16rem, 22rem) minmax(0, 1fr); }
-.lists-hub-body.is-rail-collapsed .lists-rail { overflow: hidden; border: 0; padding: 0; }
 .lists-editor { display: flex; flex-direction: column; }
 .block-canvas-head { display: flex; align-items: center; gap: .4rem; margin-bottom: .5rem; flex-wrap: wrap; }
 .block-canvas-head strong { flex: 1; min-width: 8rem; }
