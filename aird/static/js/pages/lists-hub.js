@@ -1,5 +1,6 @@
 import { apiJson } from '../collab-api.js';
 import { listDialog, sharePicker } from '../collab-ui.js';
+import { hydrateTagPicker } from '../collab-tags.js';
 import { tagChipsRow } from '../collab/tag-chips.js';
 import { fetchMyUserTags } from '../user-tag-api.js';
 import { mountBlockCanvas } from '../collab/blocks/block-canvas.js';
@@ -148,6 +149,12 @@ export function initListsHub(root) {
     });
     railEl.querySelectorAll('[data-open-list]').forEach((btn) => {
       btn.addEventListener('click', () => openList(btn.dataset.openList));
+      btn.addEventListener('dblclick', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const list = listById(btn.dataset.openList);
+        if (list) beginRename(list, btn);
+      });
     });
     railEl.querySelectorAll('[data-pin-list]').forEach((btn) => {
       btn.addEventListener('click', (event) => {
@@ -250,7 +257,10 @@ export function initListsHub(root) {
     });
   }
 
+  let renameLock = false;
+
   function paintRail() {
+    if (renameLock) return;
     renderRail();
   }
 
@@ -276,25 +286,40 @@ export function initListsHub(root) {
     const menu = document.createElement('div');
     menu.className = 'lists-tag-menu';
     menu.innerHTML = choices.length
-      ? choices.map((tag) => `<button type="button" data-pick-tag="${esc(String(tag.id))}">${esc(tag.name)}</button>`).join('')
+      ? `<input class="input input-bordered input-sm" data-tag-filter placeholder="Type to add a tag" autocomplete="off"><div data-tag-choices></div>`
       : '<p class="collab-hint">No more tags. <a href="/tags">Create one</a>.</p>';
     document.body.appendChild(menu);
     const rect = anchor.getBoundingClientRect();
     menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8))}px`;
     menu.style.top = `${rect.bottom + 4}px`;
     tagMenu = menu;
-    menu.querySelectorAll('[data-pick-tag]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const ids = [...have, Number(btn.dataset.pickTag)];
-        closeTagMenu();
-        await apiJson(`/api/lists/${listId}`, { method: 'PATCH', body: { tag_ids: ids } });
-        await refresh(false);
-        if (activeListId === listId) {
-          const next = await apiJson(`/api/lists/${listId}`);
-          applyDetail(next);
-        }
+    const paintChoices = () => {
+      const box = menu.querySelector('[data-tag-choices]');
+      const field = menu.querySelector('[data-tag-filter]');
+      if (!box || !field) return;
+      const q = field.value.trim().toLowerCase();
+      const shown = choices.filter((tag) => !q || String(tag.name || '').toLowerCase().includes(q)).slice(0, 8);
+      box.innerHTML = !q
+        ? '<p class="collab-hint">Type to find a tag</p>'
+        : shown.length
+          ? shown.map((tag) => `<button type="button" data-pick-tag="${esc(String(tag.id))}">${esc(tag.name)}</button>`).join('')
+          : '<p class="collab-hint">No matching tags</p>';
+      box.querySelectorAll('[data-pick-tag]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const ids = [...have, Number(btn.dataset.pickTag)];
+          closeTagMenu();
+          await apiJson(`/api/lists/${listId}`, { method: 'PATCH', body: { tag_ids: ids } });
+          await refresh(false);
+          if (activeListId === listId) {
+            const next = await apiJson(`/api/lists/${listId}`);
+            applyDetail(next);
+          }
+        });
       });
-    });
+    };
+    paintChoices();
+    menu.querySelector('[data-tag-filter]')?.addEventListener('input', paintChoices);
+    menu.querySelector('[data-tag-filter]')?.focus();
     tagMenuCloser = (event) => {
       if (menu.contains(event.target) || anchor.contains(event.target)) return;
       closeTagMenu();
@@ -422,13 +447,16 @@ export function initListsHub(root) {
       editorEl.innerHTML = '<div class="collab-empty">Select a list to edit items.</div>';
       const filter = document.getElementById('listsTagFilter');
       if (filter) filter.innerHTML = '';
+      closeInspector();
+      paintMeta(null);
       return;
     }
     editorEl.classList.toggle('is-locked', list.can_edit === false);
+    closeInspector();
     editorEl.innerHTML = `
       ${isMobile() ? '<button type="button" class="ub-back" data-back>Back</button>' : ''}
       <div class="ub-doc">
-        <h1 class="ub-title">${esc(list.title || 'List')}</h1>
+        <h1 class="ub-title${list.organizer === me ? ' is-editable' : ''}" title="${list.organizer === me ? 'Double-click to rename' : ''}">${esc(list.title || 'List')}</h1>
         <div data-block-root></div>
       </div>`;
     editorEl.querySelector('[data-back]')?.addEventListener('click', () => {
@@ -438,6 +466,11 @@ export function initListsHub(root) {
       setMobileView('lists');
       paint();
     });
+    const title = editorEl.querySelector('.ub-title');
+    if (title && list.organizer === me) {
+      title.addEventListener('dblclick', () => beginRename(list, title));
+    }
+    paintMeta(list);
     const mount = editorEl.querySelector('[data-block-root]');
     mountBlockCanvas(mount, list, {
       me,
@@ -458,23 +491,166 @@ export function initListsHub(root) {
     });
   }
 
-  function openInspector(item) {
-    const drawer = document.getElementById('listsInspector');
-    if (!drawer || !item) return;
-    const when = (stamp) => (stamp ? new Date(stamp).toLocaleString() : '—');
-    drawer.hidden = false;
-    drawer.innerHTML = `
-      <header><strong>Details</strong><button type="button" data-close-inspector aria-label="Close">✕</button></header>
-      <dl>
-        <dt>Type</dt><dd>${esc(item.type)}</dd>
-        <dt>Depth</dt><dd>${item.depth}</dd>
-        <dt>Created</dt><dd>${esc(when(item.createdAt))}</dd>
-        <dt>Updated</dt><dd>${esc(when(item.updatedAt))}</dd>
-        <dt>Tags</dt><dd>${esc((item.tags || []).map((tag) => `#${tag}`).join(' ') || 'None')}</dd>
-      </dl>`;
-    drawer.querySelector('[data-close-inspector]')?.addEventListener('click', () => {
-      drawer.hidden = true;
+  let metaGen = 0;
+
+  function readMetaPeople(root) {
+    return (root.querySelector('[data-meta-participants]')?.value || '')
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
+  }
+
+  async function patchOpen(body) {
+    if (!detail) return;
+    try {
+      applyDetail(await apiJson(`/api/lists/${detail.id}`, { method: 'PATCH', body }));
+    } catch (err) {
+      showError(err.message || 'Could not save');
+      paintMeta(detail, true);
+    }
+  }
+
+  function paintMeta(list, force = false) {
+    const pane = document.getElementById('listsInspector');
+    const body = document.getElementById('listsMetaBody');
+    if (!pane || !body) return;
+    if (!list) {
+      body.dataset.listId = '';
+      body.innerHTML = '<p class="lists-meta-empty">Select a list to set who can open it and which tags it uses.</p>';
+      return;
+    }
+    if (!force && pane.contains(document.activeElement) && body.dataset.listId === list.id) return;
+    const gen = ++metaGen;
+    body.dataset.listId = list.id;
+    const mine = list.organizer === me;
+    const vis = list.visibility === 'private' ? 'private' : 'public';
+    const people = (list.participants || []).filter((name) => name && name !== list.organizer).join(', ');
+    const tags = list.tags || [];
+    if (!mine) {
+      body.innerHTML = `
+        <section class="lists-meta-block">
+          <h3>Who can open this</h3>
+          <p>${esc(vis === 'private' ? 'Only invited people' : 'Anyone signed in')}</p>
+          ${vis === 'private' ? `<p class="collab-hint">${esc(people || 'No one else is invited')}</p>` : ''}
+        </section>
+        <section class="lists-meta-block">
+          <h3>Tags</h3>
+          <div class="collab-tag-chips">${tags.length ? tags.map((tag) => `<span class="collab-tag-chip">${esc(tag.display_name || tag.name)}</span>`).join('') : '<p class="collab-hint">No tags</p>'}</div>
+        </section>`;
+      return;
+    }
+    body.innerHTML = `
+      <section class="lists-meta-block">
+        <h3>Who can open this</h3>
+        <select class="select select-bordered select-sm" data-meta-vis>
+          <option value="public" ${vis === 'public' ? 'selected' : ''}>Anyone signed in</option>
+          <option value="private" ${vis === 'private' ? 'selected' : ''}>Only people you invite</option>
+        </select>
+        <label class="collab-field" data-meta-people ${vis === 'private' ? '' : 'hidden'}>
+          <span>People</span>
+          <input class="input input-bordered input-sm" data-meta-participants value="${esc(people)}" placeholder="usernames, comma separated" autocomplete="off">
+        </label>
+        <label class="collab-check"><input type="checkbox" data-meta-forward ${list.allow_forward ? 'checked' : ''}> Let people this list is shared with share it onward</label>
+      </section>
+      <section class="lists-meta-block" data-tag-picker>
+        <span>Tags</span>
+        <div class="collab-tag-chips" data-tag-chips></div>
+        <input class="input input-bordered input-sm" data-tag-query placeholder="Type to add a tag" autocomplete="off">
+        <div class="collab-tag-suggest" data-tag-suggest hidden></div>
+      </section>`;
+    const visEl = body.querySelector('[data-meta-vis]');
+    const peopleWrap = body.querySelector('[data-meta-people]');
+    visEl?.addEventListener('change', () => {
+      const visibility = visEl.value;
+      if (peopleWrap) peopleWrap.hidden = visibility !== 'private';
+      const payload = { visibility };
+      if (visibility === 'private') payload.participants = readMetaPeople(body);
+      patchOpen(payload);
     });
+    const peopleInput = body.querySelector('[data-meta-participants]');
+    peopleInput?.addEventListener('change', () => {
+      patchOpen({ visibility: 'private', participants: readMetaPeople(body) });
+    });
+    peopleInput?.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      peopleInput.blur();
+    });
+    body.querySelector('[data-meta-forward]')?.addEventListener('change', (event) => {
+      patchOpen({ allow_forward: event.target.checked });
+    });
+    hydrateTagPicker(body, list.tag_ids || tags.map((tag) => tag.id), {
+      onChange: (ids) => {
+        if (gen !== metaGen) return;
+        patchOpen({ tag_ids: ids });
+      },
+    }).catch(() => {});
+  }
+
+  function beginRename(list, el) {
+    if (!list || list.organizer !== me || !el || renameLock) return;
+    renameLock = true;
+    const input = document.createElement('input');
+    input.className = el.classList.contains('ub-title') ? 'ub-title-input' : 'ub-rename';
+    input.value = list.title || '';
+    input.setAttribute('aria-label', 'List name');
+    input.dataset.renaming = '1';
+    el.replaceWith(input);
+    input.focus();
+    input.select();
+    let closed = false;
+    const finish = async (save) => {
+      if (closed) return;
+      closed = true;
+      const name = input.value.trim();
+      if (!save || !name || name === (list.title || '')) {
+        if (input.isConnected) input.replaceWith(el);
+        renameLock = false;
+        return;
+      }
+      try {
+        const next = await apiJson(`/api/lists/${list.id}`, { method: 'PATCH', body: { title: name } });
+        if (input.isConnected) input.replaceWith(el);
+        if (el.classList.contains('ub-title')) el.textContent = next.title || name;
+        renameLock = false;
+        applyDetail(next);
+      } catch (err) {
+        if (input.isConnected) input.replaceWith(el);
+        renameLock = false;
+        showError(err.message || 'Could not rename');
+      }
+    };
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        finish(true);
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        finish(false);
+      }
+    });
+    input.addEventListener('blur', () => finish(true));
+  }
+
+  function openInspector(item) {
+    const slot = document.getElementById('listsItemDetails');
+    if (!slot || !item) return;
+    setMetaCollapsed(false);
+    const when = (stamp) => (stamp ? new Date(stamp).toLocaleString() : '—');
+    slot.hidden = false;
+    slot.innerHTML = `
+      <section class="lists-meta-block">
+        <header><strong>Item</strong><button type="button" data-close-inspector aria-label="Close">✕</button></header>
+        <dl>
+          <dt>Type</dt><dd>${esc(item.type)}</dd>
+          <dt>Depth</dt><dd>${item.depth}</dd>
+          <dt>Created</dt><dd>${esc(when(item.createdAt))}</dd>
+          <dt>Updated</dt><dd>${esc(when(item.updatedAt))}</dd>
+          <dt>Tags</dt><dd>${esc((item.tags || []).map((tag) => `#${tag}`).join(' ') || 'None')}</dd>
+        </dl>
+      </section>`;
+    slot.querySelector('[data-close-inspector]')?.addEventListener('click', closeInspector);
   }
 
   async function editOpenList() {
@@ -501,12 +677,15 @@ export function initListsHub(root) {
     detail = next;
     lists = lists.map((row) => (row.id === next.id ? { ...row, ...next, tags: next.tags || row.tags } : row));
     paintCrumbs();
-    paintRail();
+    const renaming = document.activeElement?.classList?.contains('ub-rename')
+      || document.activeElement?.classList?.contains('ub-title-input');
+    if (!renaming) paintRail();
     const mount = editorEl?.querySelector('[data-block-root]');
     if (mount?._blocks && detail?.id === next.id) {
       const title = editorEl.querySelector('.ub-title');
       if (title) title.textContent = next.title || 'List';
       mount._blocks.setList(next);
+      paintMeta(next);
       return;
     }
     paintEditor(next);
@@ -535,8 +714,20 @@ export function initListsHub(root) {
   }
 
   function closeInspector() {
-    const drawer = document.getElementById('listsInspector');
-    if (drawer) drawer.hidden = true;
+    const slot = document.getElementById('listsItemDetails');
+    if (!slot) return;
+    slot.hidden = true;
+    slot.innerHTML = '';
+  }
+
+  function setMetaCollapsed(collapsed) {
+    bodyEl?.classList.toggle('is-meta-collapsed', collapsed);
+    try { localStorage.setItem('aird-lists-meta', collapsed ? '0' : '1'); } catch { /* ignore */ }
+    const toggle = document.getElementById('listsMetaToggle');
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      toggle.classList.toggle('is-on', !collapsed);
+    }
   }
 
   function paintCrumbs() {
@@ -696,6 +887,17 @@ export function initListsHub(root) {
 
   document.getElementById('listsCollapse')?.addEventListener('click', () => {
     bodyEl?.classList.toggle('is-rail-collapsed');
+  });
+
+  try {
+    if (localStorage.getItem('aird-lists-meta') === '0') setMetaCollapsed(true);
+  } catch { /* ignore */ }
+
+  document.getElementById('listsMetaToggle')?.addEventListener('click', () => {
+    setMetaCollapsed(!bodyEl?.classList.contains('is-meta-collapsed'));
+  });
+  document.getElementById('listsMetaCollapse')?.addEventListener('click', () => {
+    setMetaCollapsed(true);
   });
 
   function popMenu(anchor, rows) {

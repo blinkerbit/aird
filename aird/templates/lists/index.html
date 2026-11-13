@@ -19,6 +19,7 @@
           <div class="ub-top-actions">
             <button type="button" id="listsSearchBtn">Search</button>
             <button type="button" id="listsViewBtn">View</button>
+            <button type="button" id="listsMetaToggle" class="is-on" aria-expanded="true" aria-controls="listsInspector">Details</button>
             <button type="button" id="listsMoreBtn" aria-label="More">⋮</button>
           </div>
         </header>
@@ -30,7 +31,16 @@
           <div class="collab-empty">Create or select a list.</div>
         </section>
         <section class="lists-board" id="listsBoard" hidden></section>
-        <aside class="ub-inspector" id="listsInspector" hidden aria-label="Item details"></aside>
+        <aside class="lists-meta" id="listsInspector" aria-label="List details">
+          <header class="lists-meta-head">
+            <strong>Details</strong>
+            <button type="button" id="listsMetaCollapse" aria-label="Collapse details">⟩</button>
+          </header>
+          <div class="lists-meta-scroll">
+            <div id="listsItemDetails" hidden></div>
+            <div id="listsMetaBody"></div>
+          </div>
+        </aside>
       </div>
       <button type="button" id="listsGroupBtn" hidden>New group</button>
       <button type="button" id="listsNewBtn" hidden>New list</button>

@@ -94,6 +94,12 @@ export function mountBlockCanvas(root, list, hooks = {}) {
   let suggestOpen = false;
   let contentTimer = 0;
   const pinned = () => new Set((hooks.pinnedTags || []).map(tagName));
+  const freshType = () => {
+    const kind = String(list.kind || '').toLowerCase();
+    if (kind === 'bullet' || kind === 'notes') return 'bullet';
+    if (kind === 'journal') return 'paragraph';
+    return 'checkbox';
+  };
   const filterRoot = hooks.filterRoot || null;
   const filterQuery = (sel) => (filterRoot || root).querySelector(sel);
   const filterQueryAll = (sel) => (filterRoot || root).querySelectorAll(sel);
@@ -181,9 +187,9 @@ export function mountBlockCanvas(root, list, hooks = {}) {
       <div class="block-canvas" data-list="${esc(list.id)}">
         ${filterRoot ? '' : filterHtml}
         <div class="block-rows" data-rows>
-          ${visible.map((item, index) => rowHtml(item, visible[index - 1])).join('') || '<p class="collab-empty">Type or press Enter to add an item</p>'}
+          ${visible.map((item, index) => rowHtml(item, visible[index - 1])).join('') || '<p class="collab-empty">No items yet.</p>'}
         </div>
-        <button type="button" class="block-fab" data-add aria-label="Add block">+</button>
+        <button type="button" class="block-add" data-add><span aria-hidden="true">+</span> Add item</button>
         <div class="block-keys" data-keys>
           <button type="button" data-morph="checkbox">Check</button>
           <button type="button" data-morph="bullet">Bullet</button>
@@ -334,8 +340,8 @@ export function mountBlockCanvas(root, list, hooks = {}) {
       paint();
     });
     root.querySelector('[data-add]')?.addEventListener('click', () => {
-      const afterId = state.activeItemId || state.items[state.items.length - 1]?.id || null;
-      dispatch({ type: 'INSERT_EMPTY', payload: { afterId, type: 'paragraph', depth: 0 } });
+      const afterId = state.items[state.items.length - 1]?.id || null;
+      dispatch({ type: 'INSERT_EMPTY', payload: { afterId, type: freshType(), depth: 0 } });
     });
     root.querySelector('[data-morph]')?.parentElement?.querySelectorAll('[data-morph]').forEach((button) => {
       button.addEventListener('click', () => morph(button.dataset.morph));
@@ -750,7 +756,7 @@ export function mountBlockCanvas(root, list, hooks = {}) {
   };
 
   if (!state.items.length) {
-    dispatch({ type: 'INSERT_EMPTY', payload: { afterId: null, type: 'paragraph', depth: 0 } });
+    dispatch({ type: 'INSERT_EMPTY', payload: { afterId: null, type: freshType(), depth: 0 } });
   } else paint();
 
   root._blocks = {

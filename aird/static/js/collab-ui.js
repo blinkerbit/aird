@@ -123,7 +123,7 @@ async function openForm({ title, submitLabel, html, onSubmit, afterRender }) {
     form.addEventListener('submit', submit);
     dlg.addEventListener('close', onClose);
     dlg.showModal();
-    body.querySelector('input, textarea')?.focus();
+    body.querySelector('[data-title], [data-question], textarea, input:not([type="radio"]):not([type="checkbox"])')?.focus();
   });
 }
 
@@ -248,16 +248,13 @@ export function listDialog(existing, options = {}) {
         <input class="input input-bordered input-sm" data-title value="${esc(existing?.title || '')}" required placeholder="${picked === 'journal' ? 'Morning pages' : picked === 'bullet' ? 'Scratch notes' : 'Grocery list'}">
       </label>
       <label class="collab-field"><span>Description</span>
-        <textarea class="textarea textarea-bordered textarea-sm" data-notes rows="3" placeholder="Optional. Shown under the title.">${esc(typeof existing?.notes === 'string' ? existing.notes : '')}</textarea>
+        <textarea class="textarea textarea-bordered textarea-sm" data-notes rows="2" placeholder="Optional. Shown under the title.">${esc(typeof existing?.notes === 'string' ? existing.notes : '')}</textarea>
       </label>
       ${slugField(existing, 'In chat, type #name. Example: #grocery-nov1')}
-      ${visibilityField(existing?.visibility)}
-      ${peopleField((existing?.participants || []).filter((n) => n !== existing?.organizer))}
-      ${existing ? `<label class="collab-check"><input type="checkbox" data-forward ${existing.allow_forward ? 'checked' : ''}> Let people this list is shared with share it onward</label>` : ''}
-      ${tagIdsFieldHtml()}
+      ${existing ? '' : `${visibilityField()}${peopleField([])}${tagIdsFieldHtml()}`}
     `,
-    afterRender: (body) => {
-      hydrateTagPicker(body, existing?.tag_ids);
+    afterRender: async (body) => {
+      if (!existing) await hydrateTagPicker(body, []);
       body.querySelectorAll('.lists-kind-choice input').forEach((input) => {
         input.addEventListener('change', () => {
           body.querySelectorAll('.lists-kind-choice').forEach((choice) => {
@@ -274,11 +271,12 @@ export function listDialog(existing, options = {}) {
         notes: root.querySelector('[data-notes]')?.value.trim() || '',
         slug: root.querySelector('[data-slug]')?.value.trim(),
         kind: root.querySelector('input[name="list-kind"]:checked')?.value || 'todo',
-        visibility: root.querySelector('[data-visibility]').value,
-        participants: readPeople(root),
-        tag_ids: readTagIds(root),
       };
-      if (existing) payload.allow_forward = Boolean(root.querySelector('[data-forward]')?.checked);
+      if (!existing) {
+        payload.visibility = root.querySelector('[data-visibility]').value;
+        payload.participants = readPeople(root);
+        payload.tag_ids = readTagIds(root);
+      }
       return payload;
     },
   });
