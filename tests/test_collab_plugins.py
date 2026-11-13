@@ -254,6 +254,36 @@ def test_public_list_change_reaches_open_clients(collab_db, monkeypatch):
     assert sent["payload"]["id"] == lst["id"]
 
 
+def test_private_list_updates_without_a_chat_share(collab_db, monkeypatch):
+    sent = {}
+
+    class Hub:
+        def connected_user_ids(self):
+            return {4, 9, 12}
+
+        def username_for(self, user_id):
+            return {4: "alice", 9: "bob", 12: "carol"}.get(user_id)
+
+        def broadcast_user_ids(self, ids, payload):
+            sent["ids"] = set(ids)
+            sent["payload"] = payload
+
+    monkeypatch.setattr("aird.plugins.chat.service.get_chat_hub", lambda: Hub())
+    lst = create_list(
+        collab_db,
+        organizer="alice",
+        title="Groceries",
+        kind="todo",
+        visibility="private",
+        items=[{"text": "Milk"}],
+        participants=["bob"],
+    )
+    notify_changed(collab_db, "list", lst["id"])
+    assert sent["ids"] == {4, 9}
+    assert sent["payload"]["conversation_ids"] == []
+    assert sent["payload"]["kind"] == "list"
+
+
 def test_list_audience_is_shared_people(collab_db):
     lst = create_list(
         collab_db,

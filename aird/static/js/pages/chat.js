@@ -2395,13 +2395,13 @@ import {
     },
     chat_typing: onWsTyping,
     collab_update: (data) => {
+      import('../collab-ui.js')
+        .then((mod) => mod.refreshLive(data.kind, data.id, me))
+        .catch(() => {});
       const ids = data.conversation_ids || [];
       if (!enhancedSecureView && activeConvId && ids.includes(activeConvId)) {
         renderShelf(activeConvId, me).catch(() => {});
       }
-      import('../collab-ui.js')
-        .then((mod) => mod.refreshLive(data.kind, data.id, me))
-        .catch(() => {});
     },
     chat_e2e_key_ready: (data) => {
       const convId = data.conversation_id;

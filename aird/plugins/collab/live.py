@@ -227,6 +227,23 @@ def pin_for_chat(
     notify_changed(conn, kind, artifact_id)
 
 
+def _can_view(conn: sqlite3.Connection, kind: str, artifact_id: str, username: str) -> bool:
+    if kind != "list":
+        return False
+    try:
+        from aird.plugins.collab import lists_db
+
+        row = conn.execute("SELECT * FROM collab_lists WHERE id = ?", (artifact_id,)).fetchone()
+    except sqlite3.Error:
+        return False
+    if row is None:
+        return False
+    try:
+        return bool(lists_db._user_may_view(conn, row, username))
+    except Exception:
+        return False
+
+
 def _fanout(conn: sqlite3.Connection, kind: str, artifact_id: str) -> None:
     """Push a live refresh to everyone who can be looking at this list, poll, or meeting."""
     kind = str(kind or "").strip().lower()
@@ -242,27 +259,23 @@ def _fanout(conn: sqlite3.Connection, kind: str, artifact_id: str) -> None:
     if not row:
         return
     from aird.plugins.collab.acl import VISIBILITY_PUBLIC, normalize_visibility
-    from aird.plugins.chat import db as chat_db
     from aird.plugins.chat.service import get_chat_hub
 
     hub = get_chat_hub()
+    # Anyone with the list open should see edits immediately.
+    # A chat share is not required, and a private list still only reaches people who can view it.
     public = normalize_visibility(row["visibility"]) == VISIBILITY_PUBLIC
-    if public:
-        user_ids = set(hub.connected_user_ids())
-    else:
-        names = {name.casefold() for name in audience_names(conn, kind, artifact_id)}
-        user_ids = set()
-        for uid in hub.connected_user_ids():
-            shown = (hub.username_for(uid) or "").strip().casefold()
-            if shown and shown in names:
-                user_ids.add(int(uid))
-        for name in names:
-            try:
-                uid = chat_db.resolve_user_id(conn, name)
-            except Exception:
-                uid = None
-            if uid:
-                user_ids.add(int(uid))
+    names = {name.casefold() for name in audience_names(conn, kind, artifact_id)}
+    user_ids: set[int] = set()
+    for uid in hub.connected_user_ids():
+        if public:
+            user_ids.add(int(uid))
+            continue
+        shown = (hub.username_for(uid) or "").strip()
+        if not shown:
+            continue
+        if shown.casefold() in names or _can_view(conn, kind, artifact_id, shown):
+            user_ids.add(int(uid))
     conversations: list[str] = []
     try:
         refs = conn.execute(
