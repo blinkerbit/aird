@@ -31,6 +31,10 @@ export function listReducer(state, action) {
       return reorder(state, action.payload);
     case 'INSERT_EMPTY':
       return insertEmpty(state, action.payload);
+    case 'TOGGLE_COLLAPSE':
+      return mapItem(state, action.payload.itemId, (item) => ({ ...item, isCollapsed: !item.isCollapsed }));
+    case 'SET_TAGS':
+      return mapItem(state, action.payload.itemId, (item) => ({ ...item, tags: action.payload.tags || [] }));
     default:
       return state;
   }
@@ -66,21 +70,23 @@ function splitItem(state, { itemId, splitIndex }) {
   return { ...state, items, activeItemId: next.id, cursorPosition: 0 };
 }
 
-function convertType(state, { itemId, newType }) {
-  const type = blockType(newType);
+function mapItem(state, itemId, change) {
   return {
     ...state,
     items: state.items.map((item) => (
-      item.id === itemId
-        ? {
-          ...item,
-          type,
-          isChecked: type === 'checkbox' ? item.isChecked : false,
-          updatedAt: Date.now(),
-        }
-        : item
+      item.id === itemId ? { ...change(item), updatedAt: Date.now() } : item
     )),
   };
+}
+
+function convertType(state, { itemId, newType, depth }) {
+  const type = blockType(newType);
+  return mapItem(state, itemId, (item) => ({
+    ...item,
+    type,
+    depth: depth == null ? item.depth : Math.max(0, Math.min(5, depth)),
+    isChecked: type === 'checkbox' ? item.isChecked : false,
+  }));
 }
 
 function indentItem(state, { itemId }) {
@@ -258,7 +264,7 @@ export function opsFromTransition(prevItems, nextItems, actorId, clock, listId) 
         payload: { isChecked: item.isChecked },
       });
     }
-    if (before.depth !== item.depth || before.order !== item.order) {
+    if (before.depth !== item.depth || before.order !== item.order || before.isCollapsed !== item.isCollapsed) {
       ops.push({
         opId: newId(),
         blockId: item.id,
@@ -267,6 +273,17 @@ export function opsFromTransition(prevItems, nextItems, actorId, clock, listId) 
         hlcTimestamp: clock.tick(),
         action: 'MOVE',
         payload: { depth: item.depth, order: item.order, isCollapsed: item.isCollapsed },
+      });
+    }
+    if ((before.tags || []).join('\0') !== (item.tags || []).join('\0')) {
+      ops.push({
+        opId: newId(),
+        blockId: item.id,
+        listId,
+        actorId,
+        hlcTimestamp: clock.tick(),
+        action: 'SET_TAGS',
+        payload: { tags: item.tags || [] },
       });
     }
   }

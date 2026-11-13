@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS list_ops (
 CREATE INDEX IF NOT EXISTS idx_list_ops_list_hlc ON list_ops(list_id, hlc);
 """
 
-ACTIONS = frozenset({"INSERT", "UPDATE_CONTENT", "MOVE", "CHANGE_TYPE", "DELETE", "TOGGLE"})
+ACTIONS = frozenset({"INSERT", "UPDATE_CONTENT", "MOVE", "CHANGE_TYPE", "DELETE", "TOGGLE", "SET_TAGS"})
 
 
 class HybridClock:
@@ -181,6 +181,8 @@ def apply_op(
             ok, reason = _apply_move(conn, list_id, block_id, payload, actor, now)
             if not ok:
                 return {"ok": False, "reason": reason}
+        elif action == "SET_TAGS":
+            _apply_tags(conn, list_id, block_id, payload, now)
         elif action == "DELETE":
             conn.execute("DELETE FROM list_items WHERE id = ? AND list_id = ?", (block_id, list_id))
     except ValueError as err:
@@ -301,6 +303,21 @@ def _apply_type(conn, list_id, block_id, payload, now) -> None:
             "WHERE id = ? AND list_id = ?",
             (typ, now, block_id, list_id),
         )
+
+
+def _apply_tags(conn, list_id, block_id, payload, now) -> None:
+    raw = payload.get("tags") if "tags" in payload else payload.get("labels") or []
+    if not isinstance(raw, list):
+        raw = []
+    clean = []
+    for tag in raw:
+        name = str(tag).strip().lstrip("#")
+        if name and name not in clean:
+            clean.append(name)
+    conn.execute(
+        "UPDATE list_items SET labels_json = ?, updated_at = ? WHERE id = ? AND list_id = ?",
+        (json.dumps(clean), now, block_id, list_id),
+    )
 
 
 def _apply_toggle(conn, list_id, block_id, payload, now) -> None:

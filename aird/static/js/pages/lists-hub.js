@@ -1,6 +1,6 @@
 import { apiJson } from '../collab-api.js';
 import { listDialog, sharePicker } from '../collab-ui.js';
-import { tagChipHtml, tagChipsRow } from '../collab/tag-chips.js';
+import { tagChipsRow } from '../collab/tag-chips.js';
 import { fetchMyUserTags } from '../user-tag-api.js';
 import { mountBlockCanvas } from '../collab/blocks/block-canvas.js';
 
@@ -49,7 +49,6 @@ export function initListsHub(root) {
   let activeListId = params.get('id') || '';
   let noteId = params.get('note') || '';
   let noteMode = 'write';
-  let focusMode = false;
   let selected = [];
   let armDraft = false;
   let tagFilter = '';
@@ -82,54 +81,103 @@ export function initListsHub(root) {
     history.replaceState(null, '', q ? `/lists?${q}` : '/lists');
   }
 
-  function groupCount(groupId) {
-    if (groupId === '__all__') return lists.length;
-    return lists.filter((list) => (list.group_id || '') === groupId).length;
+  const pinKey = 'aird-list-pins';
+  let pins = { lists: [], tags: [] };
+  try { pins = { lists: [], tags: [], ...JSON.parse(localStorage.getItem(pinKey) || '{}') }; } catch { pins = { lists: [], tags: [] }; }
+
+  function savePins() {
+    localStorage.setItem(pinKey, JSON.stringify(pins));
+  }
+
+  function listById(id) {
+    return lists.find((row) => row.id === id);
+  }
+
+  function listButton(list) {
+    const on = list.id === activeListId;
+    const starred = pins.lists.includes(list.id);
+    return `<div class="ub-list ${on ? 'is-active' : ''}" data-drop-list="${esc(list.id)}">
+      <button type="button" class="ub-list-open" data-open-list="${esc(list.id)}"><span>${esc(list.title || 'List')}</span></button>
+      <button type="button" class="ub-pin ${starred ? 'is-on' : ''}" data-pin-list="${esc(list.id)}" aria-label="${starred ? 'Unpin list' : 'Pin list'}">★</button>
+    </div>`;
   }
 
   function renderRail() {
     if (!railEl) return;
-    const groupBtns = groups
-      .map(
-        (g) => `<div class="lists-rail-group ${selectedGroupId === g.id ? 'is-active' : ''}" data-group-id="${esc(g.id)}" data-drop-group>
-          <button type="button" class="lists-rail-select"><span class="lists-rail-label">${esc(g.name)}</span><span class="lists-rail-count">${groupCount(g.id)}</span></button>
-          <button type="button" class="lists-rail-rename btn btn-ghost btn-xs" data-rename-group="${esc(g.id)}" aria-label="Rename">✎</button>
-          <button type="button" class="lists-rail-remove btn btn-ghost btn-xs" data-remove-group="${esc(g.id)}" aria-label="Remove">×</button>
-        </div>`,
-      )
-      .join('');
-    const tags = tagCatalog
-      .map(
-        (tag) => `<button type="button" class="lists-tag-filter ${tagFilter === tag.name ? 'is-active' : ''}" data-tag-filter="${esc(tag.name)}">
-          ${tagChipHtml(tag, { className: 'lists-tag-chip lists-tag-chip--btn', link: false })}
-        </button>`,
-      )
-      .join('');
+    const pinnedLists = pins.lists.map(listById).filter(Boolean);
+    const groupBlocks = groups.map((group) => {
+      const rows = lists.filter((list) => (list.group_id || '') === group.id);
+      return `<section class="ub-fold" data-drop-group="${esc(group.id)}">
+        <header><span>${esc(group.name)}</span><span>${rows.length}</span>
+          <button type="button" data-rename-group="${esc(group.id)}" aria-label="Rename">✎</button>
+          <button type="button" data-remove-group="${esc(group.id)}" aria-label="Remove">✕</button>
+        </header>
+        ${rows.map(listButton).join('') || ''}
+      </section>`;
+    }).join('');
+    const loose = lists.filter((list) => !list.group_id);
+    const tagRows = pins.tags.map((tag) => `
+      <div class="ub-tag">
+        <button type="button" data-pin-filter="${esc(tag)}">#${esc(tag)}</button>
+        <button type="button" data-unpin-tag="${esc(tag)}" aria-label="Unpin">✕</button>
+      </div>`).join('');
     railEl.innerHTML = `
-      <div class="lists-rail-head">Groups</div>
-      <div class="lists-rail-groups" role="list">
-        <button type="button" class="lists-rail-group ${selectedGroupId === '__all__' ? 'is-active' : ''}" data-group-id="__all__"><span class="lists-rail-label">All lists</span><span class="lists-rail-count">${groupCount('__all__')}</span></button>
-        ${groupBtns}
-        <button type="button" class="lists-rail-group ${selectedGroupId === '' ? 'is-active' : ''}" data-group-id=""><span class="lists-rail-label">Ungrouped</span><span class="lists-rail-count">${groupCount('')}</span></button>
+      <div class="ub-side-scroll">
+        <button type="button" class="ub-nav ${selectedGroupId === '__all__' && !activeListId ? 'is-active' : ''}" data-group-id="__all__">All lists <span>${lists.length}</span></button>
+        <div class="ub-label">Pinned lists</div>
+        ${pinnedLists.length ? pinnedLists.map(listButton).join('') : '<p class="ub-empty">None pinned</p>'}
+        <div class="ub-label">Groups</div>
+        ${groupBlocks || '<p class="ub-empty">No groups</p>'}
+        <section class="ub-fold" data-drop-group="">
+          <header><span>Ungrouped</span><span>${loose.length}</span></header>
+          ${loose.map(listButton).join('')}
+        </section>
+        <div class="ub-label">Pinned tags</div>
+        ${tagRows || '<p class="ub-empty">Pin tags from the filter</p>'}
       </div>
-      ${tagCatalog.length ? `<div class="lists-rail-tags"><div class="lists-rail-tags-label">Filter by tag</div>${tags}</div>` : ''}`;
+      <button type="button" class="ub-new" data-side-new>+ New list</button>`;
 
-    railEl.querySelectorAll('[data-group-id]').forEach((btn) => {
-      btn.querySelector('.lists-rail-select')?.addEventListener('click', (event) => {
+    railEl.querySelector('[data-group-id="__all__"]')?.addEventListener('click', () => {
+      selectedGroupId = '__all__';
+      activeListId = '';
+      detail = null;
+      syncUrl();
+      if (isMobile()) setMobileView('lists');
+      paint();
+    });
+    railEl.querySelectorAll('[data-open-list]').forEach((btn) => {
+      btn.addEventListener('click', () => openList(btn.dataset.openList));
+    });
+    railEl.querySelectorAll('[data-pin-list]').forEach((btn) => {
+      btn.addEventListener('click', (event) => {
         event.stopPropagation();
-        if (event.target.closest('[data-rename-group],[data-remove-group]')) return;
-        selectedGroupId = btn.dataset.groupId;
-        if (isMobile()) setMobileView('lists');
-        paintBoard();
+        const id = btn.dataset.pinList;
+        pins.lists = pins.lists.includes(id) ? pins.lists.filter((row) => row !== id) : [...pins.lists, id];
+        savePins();
         paintRail();
       });
     });
-    railEl.querySelectorAll('button[data-group-id]').forEach((btn) => {
+    railEl.querySelectorAll('[data-pin-filter]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        selectedGroupId = btn.dataset.groupId;
-        if (isMobile()) setMobileView('lists');
-        paintBoard();
+        editorEl?.querySelector('[data-block-root]')?._blocks?.toggleTag(btn.dataset.pinFilter);
+      });
+    });
+    railEl.querySelectorAll('[data-unpin-tag]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const index = pins.tags.indexOf(btn.dataset.unpinTag);
+        if (index >= 0) pins.tags.splice(index, 1);
+        savePins();
         paintRail();
+        editorEl?.querySelector('[data-block-root]')?._blocks?.refreshPins();
+      });
+    });
+    railEl.querySelector('[data-side-new]')?.addEventListener('click', () => {
+      document.getElementById('listsNewBtn')?.click();
+    });
+    railEl.querySelectorAll('.ub-list').forEach((row) => {
+      row.draggable = true;
+      row.addEventListener('dragstart', (event) => {
+        event.dataTransfer.setData('text/list-id', row.dataset.dropList);
       });
     });
     railEl.querySelectorAll('[data-drop-group]').forEach((zone) => {
@@ -201,44 +249,8 @@ export function initListsHub(root) {
     });
   }
 
-  function renderMobileGroups() {
-    if (!railEl) return;
-    const chips = [
-      `<button type="button" class="lists-chip ${selectedGroupId === '__all__' ? 'is-active' : ''}" data-group-id="__all__">All <span class="lists-rail-count">${groupCount('__all__')}</span></button>`,
-      ...groups.map(
-        (g) => `<button type="button" class="lists-chip ${selectedGroupId === g.id ? 'is-active' : ''}" data-group-id="${esc(g.id)}">${esc(g.name)} <span class="lists-rail-count">${groupCount(g.id)}</span></button>`,
-      ),
-      `<button type="button" class="lists-chip ${selectedGroupId === '' ? 'is-active' : ''}" data-group-id="">Ungrouped <span class="lists-rail-count">${groupCount('')}</span></button>`,
-    ].join('');
-    const tags = tagCatalog.length
-      ? `<div class="lists-mobile-tags">${tagCatalog
-          .map(
-            (tag) => `<button type="button" class="lists-tag-filter ${tagFilter === tag.name ? 'is-active' : ''}" data-tag-filter="${esc(tag.name)}">${tagChipHtml(tag, { className: 'lists-tag-chip', link: false })}</button>`,
-          )
-          .join('')}</div>`
-      : '';
-    railEl.innerHTML = `<div class="lists-mobile-groups">${chips}</div>${tags}`;
-    railEl.querySelectorAll('[data-group-id]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        selectedGroupId = btn.dataset.groupId;
-        setMobileView('lists');
-        paintBoard();
-        paint();
-      });
-    });
-    railEl.querySelectorAll('[data-tag-filter]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const name = btn.dataset.tagFilter;
-        tagFilter = tagFilter === name ? '' : name;
-        paintBoard();
-        paint();
-      });
-    });
-  }
-
   function paintRail() {
-    if (isMobile()) renderMobileGroups();
-    else renderRail();
+    renderRail();
   }
 
   let tagMenu = null;
@@ -411,57 +423,85 @@ export function initListsHub(root) {
     }
     editorEl.classList.toggle('is-locked', list.can_edit === false);
     editorEl.innerHTML = `
-      <header class="block-canvas-head">
-        ${isMobile() ? '<button type="button" data-back>Back</button>' : ''}
-        <strong>${esc(list.title || 'List')}</strong>
-        <button type="button" data-focus>${focusMode ? 'Show groups' : 'Focus'}</button>
-        <button type="button" data-edit>Edit</button>
-        <button type="button" data-share>Share</button>
-        <button type="button" data-delete-list>Delete</button>
-      </header>
-      <div data-block-root></div>`;
+      ${isMobile() ? '<button type="button" class="ub-back" data-back>Back</button>' : ''}
+      <div class="ub-doc">
+        <h1 class="ub-title">${esc(list.title || 'List')}</h1>
+        <div data-block-root></div>
+      </div>`;
     editorEl.querySelector('[data-back]')?.addEventListener('click', () => {
-      setMobileView('lists');
-      paint();
-    });
-    editorEl.querySelector('[data-focus]')?.addEventListener('click', () => {
-      focusMode = !focusMode;
-      paint();
-    });
-    editorEl.querySelector('[data-edit]')?.addEventListener('click', async () => {
-      const draft = await listDialog(detail);
-      if (!draft) return;
-      const next = await apiJson(`/api/lists/${detail.id}`, { method: 'PATCH', body: draft });
-      applyDetail(next);
-    });
-    editorEl.querySelector('[data-share]')?.addEventListener('click', () => {
-      sharePicker('list', list.id).catch((err) => showError(err.message));
-    });
-    editorEl.querySelector('[data-delete-list]')?.addEventListener('click', async () => {
-      if (!window.confirm('Delete this list?')) return;
-      await apiJson(`/api/lists/${list.id}`, { method: 'DELETE' });
       activeListId = '';
       detail = null;
       syncUrl();
-      if (isMobile()) setMobileView('lists');
-      editorEl.innerHTML = '<div class="collab-empty">Select a list to edit items.</div>';
-      refresh(false);
+      setMobileView('lists');
+      paint();
     });
     const mount = editorEl.querySelector('[data-block-root]');
     mountBlockCanvas(mount, list, {
       me,
+      pinnedTags: pins.tags,
       onChange: applyDetail,
       onError: showError,
+      onPinTag: (name, on) => {
+        const tag = String(name || '').replace(/^#/, '').toLowerCase();
+        const index = pins.tags.indexOf(tag);
+        if (on && index < 0) pins.tags.push(tag);
+        if (!on && index >= 0) pins.tags.splice(index, 1);
+        savePins();
+        paintRail();
+        mount._blocks?.refreshPins();
+      },
+      onInspect: openInspector,
     });
+  }
+
+  function openInspector(item) {
+    const drawer = document.getElementById('listsInspector');
+    if (!drawer || !item) return;
+    const when = (stamp) => (stamp ? new Date(stamp).toLocaleString() : '—');
+    drawer.hidden = false;
+    drawer.innerHTML = `
+      <header><strong>Details</strong><button type="button" data-close-inspector aria-label="Close">✕</button></header>
+      <dl>
+        <dt>Type</dt><dd>${esc(item.type)}</dd>
+        <dt>Depth</dt><dd>${item.depth}</dd>
+        <dt>Created</dt><dd>${esc(when(item.createdAt))}</dd>
+        <dt>Updated</dt><dd>${esc(when(item.updatedAt))}</dd>
+        <dt>Tags</dt><dd>${esc((item.tags || []).map((tag) => `#${tag}`).join(' ') || 'None')}</dd>
+      </dl>`;
+    drawer.querySelector('[data-close-inspector]')?.addEventListener('click', () => {
+      drawer.hidden = true;
+    });
+  }
+
+  async function editOpenList() {
+    if (!detail) return;
+    const draft = await listDialog(detail);
+    if (!draft) return;
+    applyDetail(await apiJson(`/api/lists/${detail.id}`, { method: 'PATCH', body: draft }));
+  }
+
+  async function deleteOpenList() {
+    if (!detail || !window.confirm('Delete this list?')) return;
+    await apiJson(`/api/lists/${detail.id}`, { method: 'DELETE' });
+    activeListId = '';
+    detail = null;
+    syncUrl();
+    if (isMobile()) setMobileView('lists');
+    closeInspector();
+    refresh(false);
+    paintEditor(null);
   }
 
   function applyDetail(next) {
     detailStamp += 1;
     detail = next;
     lists = lists.map((row) => (row.id === next.id ? { ...row, ...next, tags: next.tags || row.tags } : row));
-    paintBoard();
+    paintCrumbs();
+    paintRail();
     const mount = editorEl?.querySelector('[data-block-root]');
     if (mount?._blocks && detail?.id === next.id) {
+      const title = editorEl.querySelector('.ub-title');
+      if (title) title.textContent = next.title || 'List';
       mount._blocks.setList(next);
       return;
     }
@@ -474,7 +514,8 @@ export function initListsHub(root) {
     syncUrl();
     const list = await apiJson(`/api/lists/${id}`);
     if (isMobile()) setMobileView(noteId ? 'note' : 'detail');
-    paintBoard();
+    paintCrumbs();
+    paintRail();
     paintEditor(list);
   }
 
@@ -489,17 +530,33 @@ export function initListsHub(root) {
     }
   }
 
+  function closeInspector() {
+    const drawer = document.getElementById('listsInspector');
+    if (drawer) drawer.hidden = true;
+  }
+
+  function paintCrumbs() {
+    const nav = document.getElementById('listsCrumbs');
+    if (!nav) return;
+    const groupName = detail?.group_id
+      ? (groups.find((group) => group.id === detail.group_id)?.name || 'Group')
+      : 'Lists';
+    nav.innerHTML = detail
+      ? `<span>${esc(groupName)}</span><span aria-hidden="true">/</span><span>${esc(detail.title || 'List')}</span>`
+      : '<span>Lists</span>';
+  }
+
   function paint() {
     if (!bodyEl) return;
     bodyEl.classList.toggle('is-mobile', isMobile());
-    bodyEl.classList.toggle('is-focus', Boolean(focusMode || noteId));
-    if (noteId && isMobile()) mobileView = 'note';
-    if (isMobile()) bodyEl.dataset.mobileView = mobileView;
+    if (isMobile()) bodyEl.dataset.mobileView = activeListId ? 'detail' : 'lists';
     else delete bodyEl.dataset.mobileView;
+    paintCrumbs();
     paintRail();
-    paintBoard();
-    if (activeListId && detail?.id === activeListId) paintEditor(detail);
-    else if (!activeListId) paintEditor(null);
+    const mount = editorEl?.querySelector('[data-block-root]');
+    if (activeListId && detail?.id === activeListId) {
+      if (!mount?._blocks) paintEditor(detail);
+    } else if (!activeListId) paintEditor(null);
   }
 
   let pendingLiveId = '';
@@ -631,6 +688,73 @@ export function initListsHub(root) {
     syncUrl();
     await refresh();
     await openList(list.id);
+  });
+
+  document.getElementById('listsCollapse')?.addEventListener('click', () => {
+    bodyEl?.classList.toggle('is-rail-collapsed');
+  });
+
+  function popMenu(anchor, rows) {
+    document.querySelector('.ub-menu')?.remove();
+    const node = document.createElement('div');
+    node.className = 'ub-menu';
+    node.innerHTML = rows.map((row, index) => `<button type="button" data-i="${index}">${esc(row.label)}</button>`).join('');
+    document.body.appendChild(node);
+    setTimeout(() => {
+      const close = (event) => {
+        if (node.contains(event.target)) return;
+        node.remove();
+        document.removeEventListener('pointerdown', close, true);
+      };
+      document.addEventListener('pointerdown', close, true);
+    }, 0);
+    const rect = anchor.getBoundingClientRect();
+    node.style.top = `${rect.bottom + 4}px`;
+    node.style.left = `${Math.max(8, rect.right - node.offsetWidth)}px`;
+    node.querySelectorAll('button').forEach((button) => {
+      button.addEventListener('click', () => {
+        const row = rows[Number(button.dataset.i)];
+        node.remove();
+        row?.run();
+      });
+    });
+  }
+
+  document.getElementById('listsSearchBtn')?.addEventListener('click', () => {
+    const blocks = editorEl?.querySelector('[data-block-root]')?._blocks;
+    if (blocks && activeListId) blocks.focusTagSearch();
+    else openPalette();
+  });
+
+  document.getElementById('listsViewBtn')?.addEventListener('click', (event) => {
+    const blocks = editorEl?.querySelector('[data-block-root]')?._blocks;
+    popMenu(event.currentTarget, [
+      {
+        label: blocks?.hideDone?.() ? 'Show completed' : 'Hide completed',
+        run: () => blocks?.setHideDone(!blocks.hideDone()),
+      },
+    ]);
+  });
+
+  document.getElementById('listsMoreBtn')?.addEventListener('click', (event) => {
+    const blocks = editorEl?.querySelector('[data-block-root]')?._blocks;
+    popMenu(event.currentTarget, [
+      { label: 'New group', run: () => document.getElementById('listsGroupBtn')?.click() },
+      { label: 'Edit list', run: () => editOpenList() },
+      { label: 'Share', run: () => detail && sharePicker('list', detail.id).catch((err) => showError(err.message)) },
+      { label: 'Export markdown', run: () => {
+        const text = blocks?.exportMarkdown?.();
+        if (!text) return;
+        const blob = new Blob([text], { type: 'text/markdown' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${detail?.title || 'list'}.md`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      } },
+      { label: 'Item details', run: () => openInspector(blocks?.activeItem()) },
+      { label: 'Delete list', run: () => deleteOpenList() },
+    ]);
   });
 
   document.addEventListener('keydown', (event) => {
