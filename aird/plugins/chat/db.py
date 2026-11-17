@@ -318,7 +318,13 @@ def create_dm_conversation(central: sqlite3.Connection, user_a_id: int, user_b_i
             (lo, hi),
         ).fetchone()
         if row:
-            return str(row[0])
+            existing_id = str(row[0])
+            if find_dm_conversation(name_a, name_b) or find_dm_conversation(name_b, name_a):
+                return existing_id
+            central.execute(
+                "DELETE FROM chat_dm_pairs WHERE user_lo = ? AND user_hi = ?",
+                (lo, hi),
+            )
         existing = find_dm_conversation(name_a, name_b) or find_dm_conversation(name_b, name_a)
         now = _now_iso()
         conv_id = existing or _new_id()
@@ -456,21 +462,37 @@ def remove_member(*, actor: str, conversation_id: str, username: str) -> None:
     _fanout_members(conv["members"], write)
 
 
-def delete_conversation(actor: str, conversation_id: str) -> None:
+def delete_conversation(
+    actor: str, conversation_id: str, central: sqlite3.Connection | None = None
+) -> None:
+    """Remove a conversation for every member. A DM can be started again only as a new chat request."""
     conv = get_conversation(actor, conversation_id)
     if conv is None:
         raise ValueError(_ERR_CONVERSATION_NOT_FOUND)
 
     def write(box, _m):
-        box.conn.execute("DELETE FROM members WHERE conversation_id = ?", (conversation_id,))
+        box.conn.execute(
+            "DELETE FROM reactions WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ?)",
+            (conversation_id,),
+        )
+        box.conn.execute("DELETE FROM pins WHERE conversation_id = ?", (conversation_id,))
+        box.conn.execute("DELETE FROM receipts WHERE conversation_id = ?", (conversation_id,))
+        box.conn.execute("DELETE FROM read_state WHERE conversation_id = ?", (conversation_id,))
         box.conn.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation_id,))
         box.conn.execute("DELETE FROM e2e_wraps WHERE conversation_id = ?", (conversation_id,))
+        box.conn.execute("DELETE FROM members WHERE conversation_id = ?", (conversation_id,))
         box.conn.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
 
     _fanout_members(conv["members"], write)
+    if conv.get("kind") == "dm" and central is not None:
+        central.execute(_DM_PAIR_SCHEMA)
+        central.execute("DELETE FROM chat_dm_pairs WHERE conversation_id = ?", (conversation_id,))
+        central.commit()
 
 
-def respond_to_request(*, actor: str, conversation_id: str, action: str) -> dict:
+def respond_to_request(
+    *, actor: str, conversation_id: str, action: str, central: sqlite3.Connection | None = None
+) -> dict:
     conv = get_conversation(actor, conversation_id)
     if conv is None:
         raise ValueError(_ERR_CONVERSATION_NOT_FOUND)
@@ -493,7 +515,7 @@ def respond_to_request(*, actor: str, conversation_id: str, action: str) -> dict
         if int(me.get("accepted", 1)):
             raise ValueError("Already accepted")
         if conv["kind"] == "dm":
-            delete_conversation(actor, conversation_id)
+            delete_conversation(actor, conversation_id, central)
         else:
             remove_member(actor=actor, conversation_id=conversation_id, username=actor)
         return {"id": conversation_id, "declined": True}

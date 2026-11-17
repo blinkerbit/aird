@@ -80,22 +80,6 @@ import { apiFetch } from './core/http.js';
     convFallback.clear();
   }
 
-  async function adoptServerIdentity(user, api) {
-    let backup = null;
-    try {
-      backup = (await api('/api/chat/e2e/identity'))?.backup;
-    } catch (err) {
-      console.debug('aird identity refresh failed', err);
-      return;
-    }
-    if (!backup?.privateJwk || !backup?.publicJwk) return;
-    if (identity?.kid && backup.kid === identity.kid) return;
-    await importBackup(backup, user);
-    clearKeyCaches();
-    try { await publishIdentity(api); } catch (err) { console.debug('e2e publish after adopt', err); }
-    global.dispatchEvent(new CustomEvent('aird-chat-identity', { detail: { replaced: true } }));
-  }
-
   async function loadOrCreateIdentity(user, api) {
     username = user;
     const stored = await idbGet('identity', user);
@@ -106,19 +90,7 @@ import { apiFetch } from './core/http.js';
         privateJwk: stored.privateJwk,
         kid: stored.kid || await fingerprint(stored.publicJwk),
       };
-      if (api) await adoptServerIdentity(user, api);
       return identity;
-    }
-    if (api) {
-      try {
-        const backup = (await api('/api/chat/e2e/identity'))?.backup;
-        if (backup?.privateJwk && backup?.publicJwk) {
-          await importBackup(backup, user);
-          return identity;
-        }
-      } catch (err) {
-        console.debug('aird identity restore failed', err);
-      }
     }
     if (global.AirdChatKeyBackup?.tryRestoreFromConfiguredPath) {
       try {
@@ -140,25 +112,18 @@ import { apiFetch } from './core/http.js';
 
   async function persistIdentity(api) {
     if (!api || !identity) return;
-    const bundle = await exportBackup();
-    let seenRemote = false;
-    let remoteKid = '';
+    let remote = null;
     try {
-      remoteKid = (await api('/api/chat/e2e/identity'))?.backup?.kid || '';
-      seenRemote = true;
-    } catch (_) { /* keep any existing server copy */ }
-    if (seenRemote && remoteKid && remoteKid !== identity.kid) {
-      await adoptServerIdentity(username, api);
-      return;
-    }
-    if (seenRemote && !remoteKid) {
-      const published = { ...bundle };
-      delete published.privateJwk;
+      remote = (await api('/api/chat/e2e/identity'))?.backup || null;
+    } catch (_) { /* keep the key this browser already has */ }
+    if (remote?.kid && remote.kid !== identity.kid) return;
+    if (!remote?.kid) {
+      const bundle = await exportBackup();
+      delete bundle.privateJwk;
       await api('/api/chat/e2e/identity', {
         method: 'PUT',
-        body: JSON.stringify({ backup: published }),
+        body: JSON.stringify({ backup: bundle }),
       });
-      return;
     }
     await publishIdentity(api);
   }
@@ -289,12 +254,15 @@ import { apiFetch } from './core/http.js';
   }
 
   async function ensureConversation(api, convId, memberNames) {
-    const local = asBytes(await loadConvRaw(convId));
-    if (local) {
-      scheduleSync(api, convId, memberNames);
-      return importAesCached(convId, local);
+    try {
+      const key = await syncConversation(api, convId, memberNames);
+      if (key) return key;
+    } catch (err) {
+      console.debug('e2e sync failed', err);
     }
-    return syncConversation(api, convId, memberNames);
+    const local = asBytes(await loadConvRaw(convId));
+    if (local) return importAesCached(convId, local);
+    return null;
   }
 
   async function ensureConversationInner(api, convId, memberNames) {
@@ -305,25 +273,15 @@ import { apiFetch } from './core/http.js';
     const keys = state.keys || {};
     const local = asBytes(await loadConvRaw(convId));
     let raw = null;
+    if (state.conv_key) {
+      try { raw = unb64(state.conv_key); } catch (_) { raw = null; }
+    }
     const mine = wraps[username];
-    if (mine) {
-      try {
-        raw = await unwrapForMe(mine, convId);
-      } catch (_) { /* try the identity backup next */ }
-      if (!raw) {
-        try {
-          const backup = (await api('/api/chat/e2e/identity'))?.backup;
-          if (backup?.privateJwk) {
-            await importBackup(backup, username);
-            raw = await unwrapForMe(mine, convId);
-          }
-        } catch (_) {
-          raw = null;
-        }
-      }
+    if (!raw && mine) {
+      try { raw = await unwrapForMe(mine, convId); } catch (_) { raw = null; }
     }
     if (!raw) raw = local;
-    const hasExisting = Object.keys(wraps).length > 0;
+    const hasExisting = Object.keys(wraps).length > 0 || !!state.conv_key;
     if (!raw) {
       if (hasExisting) return null;
       raw = crypto.getRandomValues(new Uint8Array(32));
@@ -352,10 +310,13 @@ import { apiFetch } from './core/http.js';
       next[name] = await wrapFor(raw, pub, convId);
       changed = true;
     }
-    if (!changed) return importAes(raw);
+    const convKey = b64(raw);
+    if (!changed && state.conv_key === convKey) return importAes(raw);
+    const body = { conv_key: convKey };
+    if (Object.keys(next).length) body.wraps = next;
     await api(`/api/chat/conversations/${encodeURIComponent(convId)}/e2e`, {
       method: 'PUT',
-      body: JSON.stringify({ wraps: next }),
+      body: JSON.stringify(body),
     });
     return importAes(raw);
   }

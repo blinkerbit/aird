@@ -304,7 +304,14 @@
 
   function trackDownload(fname, options) {
     const TT = global.AirdTransferTracker;
-    const ttId = TT ? TT.addTransfer(fname, 0, 'download', { onCancel: options.onCancel }) : null;
+    options = options || {};
+    if (TT && options.ttId != null) {
+      if (options.onCancel) TT.setCancelHandler(options.ttId, options.onCancel);
+      return { TT, ttId: options.ttId };
+    }
+    const ttId = TT
+      ? TT.addTransfer(fname, 0, 'download', { onCancel: options.onCancel })
+      : null;
     return { TT, ttId };
   }
 

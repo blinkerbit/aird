@@ -240,7 +240,7 @@ def parse_identity_backup(raw, username: str) -> dict:
     if not isinstance(kid, str) or not (8 <= len(kid) <= 128) or not _B64_RE.match(kid):
         raise ValueError("Invalid key id")
     exported = str(raw.get("exported_at") or _now_iso())[:48]
-    return {
+    out = {
         "v": 1,
         "kind": "aird-chat-e2e-identity",
         "username": username,
@@ -248,6 +248,22 @@ def parse_identity_backup(raw, username: str) -> dict:
         "publicJwk": pub,
         "kid": kid,
     }
+    if raw.get("privateJwk") is not None:
+        out["privateJwk"] = _validate_private_jwk(raw.get("privateJwk"), pub)
+    return out
+
+
+def _validate_private_jwk(raw, public: dict) -> dict:
+    if not isinstance(raw, dict):
+        raise ValueError("Invalid private key")
+    if raw.get("kty") != "EC" or raw.get("crv") != "P-256":
+        raise ValueError("Private key must be EC P-256")
+    if raw.get("x") != public["x"] or raw.get("y") != public["y"]:
+        raise ValueError("Private key does not match public key")
+    d = raw.get("d")
+    if not _b64_ok(d, min_len=20, max_len=88):
+        raise ValueError("Invalid private key")
+    return {"kty": "EC", "crv": "P-256", "x": public["x"], "y": public["y"], "d": str(d)}
 
 
 def identity_backup_path(username: str) -> str:
@@ -260,15 +276,28 @@ def load_identity_backup(username: str) -> dict | None:
     if not data:
         return None
     try:
-        clean = parse_identity_backup(data, username)
+        return parse_identity_backup(data, username)
     except ValueError:
         return None
-    if isinstance(data.get("privateJwk"), dict):
-        try:
-            _atomic_write_json(path, clean)
-        except OSError:
-            logger.debug("could not strip stored identity private key", exc_info=True)
-    return clean
+
+
+def public_identity_backup(bundle: dict | None) -> dict | None:
+    """Identity backup safe to send to a browser. The private key stays on disk."""
+    if not isinstance(bundle, dict):
+        return None
+    return {key: value for key, value in bundle.items() if key != "privateJwk"}
+
+
+def apply_identity_backup(username: str, bundle: dict) -> dict:
+    """Keep the account key already on disk. A new device must not replace it."""
+    incoming = dict(bundle or {})
+    incoming.pop("privateJwk", None)
+    existing = load_identity_backup(username)
+    if existing and existing.get("kid") and incoming.get("kid") and incoming["kid"] != existing["kid"]:
+        return existing
+    if existing and existing.get("privateJwk"):
+        incoming["privateJwk"] = existing["privateJwk"]
+    return save_identity_backup(username, incoming)
 
 
 def save_identity_backup(username: str, bundle: dict) -> dict:
@@ -432,5 +461,30 @@ def unwrap_conv_key_bytes(private_jwk: dict, wrap: dict, conversation_id: str) -
 
 
 def recover_conv_key(conversation_id: str, members: list[str], wraps: dict) -> dict | None:
-    """The server does not keep identity private keys, so it cannot unwrap wraps."""
+    """Unwrap a stored wrap with a member's home-folder identity and share that key."""
+    if not isinstance(wraps, dict) or not wraps:
+        return None
+    names = [str(n).strip() for n in members if str(n or "").strip()]
+    wrap_items = [(str(n), w) for n, w in wraps.items() if n and isinstance(w, dict)]
+    backups = []
+    for name in names:
+        backup = load_identity_backup(name)
+        if backup and backup.get("privateJwk"):
+            backups.append((name, backup))
+    for owner, backup in backups:
+        for wrap_name, wrap in wrap_items:
+            try:
+                raw = unwrap_conv_key_bytes(backup["privateJwk"], wrap, conversation_id)
+            except Exception:
+                logger.debug(
+                    "e2e recover unwrap failed for %s wrap=%s", owner, wrap_name, exc_info=True
+                )
+                continue
+            bundle = {
+                "v": 1,
+                "kind": "aird-chat-e2e-conv",
+                "conversation_id": conversation_id,
+                "key": _b64_std(raw),
+            }
+            return share_conv_key(names or [owner], conversation_id, bundle)
     return None

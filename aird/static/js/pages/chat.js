@@ -430,6 +430,51 @@ import {
     return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
   }
 
+  function minuteKey(iso) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}-${d.getMinutes()}`;
+  }
+
+  function reclusterMessages(animateId) {
+    if (!messagesEl) return;
+    const rows = [...messagesEl.querySelectorAll('.chat-msg-row')];
+    rows.forEach((row) => {
+      row.classList.remove('is-lead', 'is-mid', 'is-tail', 'is-cont', 'is-coalescing', 'is-absorb');
+    });
+    let run = [];
+    let prevEl = null;
+    const flush = () => {
+      if (run.length > 1) {
+        run.forEach((row, idx) => {
+          const first = idx === 0;
+          const last = idx === run.length - 1;
+          if (first) row.classList.add('is-lead');
+          else row.classList.add('is-cont');
+          if (!first && !last) row.classList.add('is-mid');
+          if (last) row.classList.add('is-tail');
+          if (!first && animateId && row.dataset.msgId === animateId) {
+            row.classList.add('is-coalescing');
+            run[idx - 1].classList.add('is-absorb');
+          }
+        });
+      }
+      run = [];
+    };
+    for (const el of messagesEl.children) {
+      const row = el.classList?.contains('chat-msg-row') && el.dataset.minute && el.dataset.sender ? el : null;
+      const prev = run[run.length - 1];
+      const joins = row && prev
+        && prevEl === prev
+        && prev.dataset.minute === row.dataset.minute
+        && prev.dataset.sender === row.dataset.sender;
+      if (!joins) flush();
+      if (row) run.push(row);
+      prevEl = el;
+    }
+    flush();
+  }
+
   function dayKey(iso) {
     const d = new Date(iso);
     return Number.isNaN(d.getTime()) ? '' : d.toDateString();
@@ -531,7 +576,9 @@ import {
           <div class="chat-head-menu">
             <button type="button" id="chatMuteBtn">${conv.muted ? 'Unmute' : 'Mute'}</button>
             ${conv.kind === 'dm' && conv.peer_username ? '<button type="button" id="chatEnhancedSecureBtn">Enhanced Secure Chat</button>' : ''}
+            ${conv.kind === 'dm' ? '<button type="button" id="chatRemoveContactBtn" class="is-danger">Remove contact</button>' : ''}
             ${groupActs}
+            <button type="button" id="chatDeleteConvBtn" class="is-danger">Delete conversation</button>
           </div>
         </details>
       </div>`;
@@ -547,6 +594,14 @@ import {
     });
     qs('#chatAddMemberBtn')?.addEventListener('click', () => openAddMember());
     qs('#chatLeaveBtn')?.addEventListener('click', () => leaveGroup(conv).catch((e) => alert(e.message)));
+    qs('#chatRemoveContactBtn')?.addEventListener('click', () => {
+      qs('.chat-head-more')?.removeAttribute('open');
+      removeContact(conv).catch((e) => alert(e.message));
+    });
+    qs('#chatDeleteConvBtn')?.addEventListener('click', () => {
+      qs('.chat-head-more')?.removeAttribute('open');
+      deleteConversation(conv).catch((e) => alert(e.message));
+    });
   }
 
   async function toggleMute(conv) {
@@ -584,6 +639,33 @@ import {
     const updated = conversations.find((c) => c.id === conv.id);
     setThreadHeader(updated || conv);
     try { await e2eReady(conv.id); } catch (err) { console.debug('e2e ready after addMember failed', err); }
+  }
+
+  async function removeContact(conv) {
+    if (!conv?.id || conv.kind !== 'dm') return;
+    if (!confirm('Remove this contact? The conversation is removed for both of you. Either of you can send a new chat request, and the other person has to approve before you can chat again.')) return;
+    await deleteConversation(conv, { confirmed: true });
+  }
+
+  async function deleteConversation(conv, opts) {
+    if (!conv?.id) return;
+    if (!opts?.confirmed) {
+      const prompt = conv.kind === 'dm'
+        ? 'Delete this conversation? It is removed for both of you. A new chat request is required to message again.'
+        : 'Delete this conversation for everyone?';
+      if (!confirm(prompt)) return;
+    }
+    await api(`/api/chat/conversations/${encodeURIComponent(conv.id)}`, { method: 'DELETE' });
+    if (activeConvId === conv.id) {
+      activeConvId = null;
+      composer?.classList.add('hidden');
+      setThreadHeader(null);
+      clearMessagesView();
+      showEmptyThread();
+      setMobileView('list');
+      history.replaceState(null, '', location.pathname);
+    }
+    await loadConversations();
   }
 
   async function leaveGroup(conv) {
@@ -661,9 +743,16 @@ import {
       const dot = on ? '<span class="chat-online-dot chat-online-dot--list"></span>' : '';
       const mute = c.muted ? ' <span class="opacity-40">🔇</span>' : '';
       const when = formatConvTime(c.updated_at);
-      const more = c.kind === 'dm' && c.peer_username
-        ? `<details class="chat-conv-more"><summary aria-label="More">⋯</summary><div class="chat-head-menu"><button type="button" data-enhanced-peer="${esc(c.peer_username)}">Enhanced Secure Chat</button></div></details>`
-        : '';
+      const moreItems = [
+        c.kind === 'dm' && c.peer_username
+          ? `<button type="button" data-enhanced-peer="${esc(c.peer_username)}">Enhanced Secure Chat</button>`
+          : '',
+        c.kind === 'dm'
+          ? `<button type="button" class="is-danger" data-remove-contact="${esc(c.id)}">Remove contact</button>`
+          : '',
+        `<button type="button" class="is-danger" data-delete-conv="${esc(c.id)}">Delete conversation</button>`,
+      ].filter(Boolean).join('');
+      const more = `<details class="chat-conv-more"><summary aria-label="More">⋯</summary><div class="chat-head-menu">${moreItems}</div></details>`;
       return `<li class="chat-conv-row"><a href="#" class="chat-conv-item${active}${c.request ? ' is-request' : ''}" data-id="${esc(c.id)}">${avatarHtml(title)}${dot}<span class="chat-conv-main"><span class="chat-conv-top"><span class="chat-conv-name">${esc(title)}${mute}</span><span class="chat-conv-meta">${when}${badge}</span></span><span class="chat-conv-preview">${requestPill(c)}${preview}</span></span></a>${more}</li>`;
     }).join('');
     convList.querySelectorAll('.chat-conv-item[data-id]').forEach((el) => {
@@ -1418,7 +1507,7 @@ import {
       : `<div class="chat-msg-name">${esc(msg.sender_display_name || userLabel(msg.sender_username, activeConv()) || msg.sender_username)}</div>`;
     const selected = selectedIds.has(msg.id) ? ' is-selected' : '';
     const checked = selectedIds.has(msg.id) ? ' checked' : '';
-    return `<div class="chat-msg-row ${rowClass}${selected}" data-msg-id="${esc(msg.id)}" data-mine="${msg._mine ? '1' : '0'}" data-e2e="${msg._e2e ? '1' : '0'}" data-decrypt-ok="${msg._decryptOk ? '1' : '0'}" data-created-at="${esc(msg.created_at || '')}"><label class="chat-msg-select"><input type="checkbox" data-select-id="${esc(msg.id)}"${checked} aria-label="Select message"></label>${avatarHtml(msg.sender_username)}<div class="chat-msg-stack">${nameLine}<div class="chat-msg-main">${hoverBarHtml(msg)}<div class="aird-chat-bubble ${bubbleClass}"><div class="aird-chat-bubble-body">${body}</div>${reactionsHtml(msg)}</div></div><div class="chat-msg-time">${esc(formatTime(msg.created_at))}</div>${seenHtml(msg)}</div></div>`;
+    return `<div class="chat-msg-row ${rowClass}${selected}" data-msg-id="${esc(msg.id)}" data-sender="${esc(msg.sender_username || '')}" data-minute="${esc(minuteKey(msg.created_at))}" data-mine="${msg._mine ? '1' : '0'}" data-e2e="${msg._e2e ? '1' : '0'}" data-decrypt-ok="${msg._decryptOk ? '1' : '0'}" data-created-at="${esc(msg.created_at || '')}"><label class="chat-msg-select"><input type="checkbox" data-select-id="${esc(msg.id)}"${checked} aria-label="Select message"></label>${avatarHtml(msg.sender_username)}<div class="chat-msg-stack">${nameLine}<div class="chat-msg-main">${hoverBarHtml(msg)}<div class="aird-chat-bubble ${bubbleClass}"><div class="aird-chat-bubble-body">${body}</div>${reactionsHtml(msg)}</div></div><div class="chat-msg-time">${esc(formatTime(msg.created_at))}</div>${seenHtml(msg)}</div></div>`;
   }
 
   function refreshSeenIndicator(messageId) {
@@ -1938,10 +2027,58 @@ import {
     await loadConversations();
   }
 
+  function settlePending(msg) {
+    if (!messagesEl || !msg?._mine) return false;
+    const incoming = chatPlain(msg.body).replace(/\s+/g, ' ').trim();
+    const el = [...messagesEl.querySelectorAll('.chat-msg-row.is-pending')].find((row) => (
+      (row.querySelector('.chat-msg-text')?.innerText || '').replace(/\s+/g, ' ').trim() === incoming
+    ));
+    if (!el) return false;
+    el.dataset.msgId = msg.id;
+    el.classList.remove('is-pending');
+    el.dataset.e2e = msg._e2e ? '1' : '0';
+    el.dataset.decryptOk = msg._decryptOk ? '1' : '0';
+    el.dataset.createdAt = msg.created_at || el.dataset.createdAt || '';
+    const time = el.querySelector('.chat-msg-time');
+    if (time && msg.created_at) time.textContent = formatTime(msg.created_at);
+    return true;
+  }
+
+  function showOutgoing(body, reply) {
+    const msg = tagMine({
+      id: `pending-${Date.now()}`,
+      conversation_id: activeConvId,
+      sender_username: me,
+      msg_type: 'text',
+      body,
+      created_at: new Date().toISOString(),
+      reply_to_id: reply || '',
+    });
+    messagesEl?.querySelector('.chat-empty')?.remove();
+    const day = dayKey(msg.created_at);
+    if (day && day !== lastDayKey()) {
+      messagesEl.insertAdjacentHTML('beforeend', dateChipHtml(msg.created_at));
+    }
+    messagesEl.insertAdjacentHTML('beforeend', messageHtml(msg));
+    const row = messagesEl.lastElementChild;
+    row?.classList.add('is-pending');
+    bindMessageUi(row);
+    reclusterMessages(msg.id);
+    scrollToEnd();
+    return msg.id;
+  }
+
+  function dropOutgoing(id) {
+    if (!id || !messagesEl) return;
+    messagesEl.querySelector(`[data-msg-id="${cssEscape(id)}"]`)?.remove();
+    reclusterMessages();
+  }
+
   async function appendMessage(msg) {
     if (!messagesEl) return;
     await prepareMessage(msg);
     tagMine(msg);
+    if (settlePending(msg)) return;
     messagesEl.querySelector('.chat-empty')?.remove();
     const day = dayKey(msg.created_at);
     if (day && day !== lastDayKey()) {
@@ -1949,6 +2086,7 @@ import {
     }
     messagesEl.insertAdjacentHTML('beforeend', messageHtml(msg));
     bindMessageUi(messagesEl.lastElementChild);
+    reclusterMessages(msg.id);
     scrollToEnd();
   }
 
@@ -1963,6 +2101,7 @@ import {
     el.outerHTML = messageHtml(msg);
     const next = messagesEl.querySelector(`[data-msg-id="${cssEscape(msg.id)}"]`);
     bindMessageUi(next);
+    reclusterMessages();
   }
 
   function removeMessageEl(messageId) {
@@ -1970,6 +2109,7 @@ import {
     if (!id) return;
     const el = messagesEl?.querySelector(`[data-msg-id="${cssEscape(id)}"]`);
     el?.remove();
+    reclusterMessages();
     if (pins.some((p) => String(p.message_id) === id)) {
       pins = pins.filter((p) => String(p.message_id) !== id);
       renderPins();
@@ -1985,6 +2125,7 @@ import {
     }
     messagesEl.insertAdjacentHTML('beforeend', messageHtml(msg));
     bindMessageUi(messagesEl.lastElementChild);
+    reclusterMessages();
   }
 
   function threadFits() {
@@ -2027,6 +2168,7 @@ import {
         nodes.forEach((n) => {
           if (n.nodeType === 1 && n.matches?.('[data-msg-id]')) bindMessageUi(n);
         });
+        reclusterMessages();
         messagesEl.scrollTop = messagesEl.scrollHeight - prevH + prevTop;
       }
     } catch (err) {
@@ -2778,9 +2920,16 @@ import {
       setE2eStatus('Waiting for the chat key…');
       return null;
     }
-    const ok = await e2eReady(activeConvId);
-    if (!ok) return null;
-    const e2e = await E2E.encrypt(activeConvId, body);
+    const convId = activeConvId;
+    let e2e = null;
+    try {
+      e2e = await E2E.encrypt(convId, body);
+    } catch {
+      const ok = await e2eReady(convId);
+      if (!ok) return null;
+      e2e = await E2E.encrypt(convId, body);
+    }
+    e2eReady(convId).catch((err) => console.debug('e2e sync after send', err));
     const mentions = extractMentions(body, activeConv());
     return { e2e, mentions };
   }
@@ -2981,6 +3130,35 @@ import {
     if (!hasText && !pending.length) return;
     if (uploading) return;
     const reply = replyToId;
+    const stagedPreview = pending.slice();
+    if (hasText && !stagedPreview.length) {
+      const pendingId = showOutgoing(body, reply);
+      editor.innerHTML = '';
+      clearReply();
+      hidePathSuggest();
+      try {
+        const encrypted = await encryptOutgoingBody(body);
+        if (!encrypted) throw new Error('Waiting for the chat key…');
+        linkMentionTokens(activeConvId, body).then(() => renderShelf(activeConvId, me)).catch(() => {});
+        const sentHttp = await sendTextOverWire({
+          e2e: encrypted.e2e,
+          mentions: encrypted.mentions,
+          body,
+          reply,
+        });
+        if (sentHttp) {
+          dropOutgoing(pendingId);
+          await openConversation(activeConvId);
+          await loadConversations();
+        }
+      } catch (err) {
+        dropOutgoing(pendingId);
+        if (editor) editor.textContent = body;
+        if (reply) setReply(reply);
+        setE2eStatus(err.message || 'Could not send.');
+      }
+      return;
+    }
     let e2e = null;
     let mentions = [];
     if (hasText) {
@@ -3020,13 +3198,6 @@ import {
         staged.forEach(revokePendingPreview);
       }
       return;
-    }
-    if (!hasText) return;
-    linkMentionTokens(activeConvId, body).then(() => renderShelf(activeConvId, me)).catch(() => {});
-    const sentHttp = await sendTextOverWire({ e2e, mentions, body, reply });
-    if (sentHttp) {
-      await openConversation(activeConvId);
-      await loadConversations();
     }
   }
 
@@ -4284,6 +4455,24 @@ import {
   };
 
   convList?.addEventListener('click', (e) => {
+    const removeBtn = e.target.closest('[data-remove-contact]');
+    if (removeBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      removeBtn.closest('details')?.removeAttribute('open');
+      const conv = conversations.find((c) => c.id === removeBtn.dataset.removeContact);
+      if (conv) removeContact(conv).catch((err) => alert(err.message || 'Could not remove contact'));
+      return;
+    }
+    const deleteBtn = e.target.closest('[data-delete-conv]');
+    if (deleteBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      deleteBtn.closest('details')?.removeAttribute('open');
+      const conv = conversations.find((c) => c.id === deleteBtn.dataset.deleteConv);
+      if (conv) deleteConversation(conv).catch((err) => alert(err.message || 'Could not delete'));
+      return;
+    }
     const peerBtn = e.target.closest('[data-enhanced-peer]');
     if (peerBtn) {
       e.preventDefault();

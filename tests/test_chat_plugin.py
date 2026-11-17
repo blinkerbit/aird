@@ -787,11 +787,37 @@ def test_identity_backup_in_user_space(chat_env):
     saved = save_identity_backup("alice", bundle)
     loaded = load_identity_backup("alice")
     assert loaded["kid"] == saved["kid"]
-    assert "privateJwk" not in loaded
+    assert loaded["privateJwk"]["d"] == bundle["privateJwk"]["d"]
+    assert "d" not in loaded["publicJwk"]
     assert loaded["publicJwk"]["x"] == pub["x"]
     assert load_identity_backup("bob") is None
     with pytest.raises(ValueError, match="another user"):
         save_identity_backup("alice", {**bundle, "username": "bob"})
+
+
+def test_identity_backup_is_not_replaced_by_another_device(chat_env):
+    from aird.plugins.chat.e2e import (
+        apply_identity_backup,
+        load_identity_backup,
+        public_identity_backup,
+        save_identity_backup,
+    )
+
+    pub = {"kty": "EC", "crv": "P-256", "x": _b64(b"\x11"), "y": _b64(b"\x22")}
+    other = {"kty": "EC", "crv": "P-256", "x": _b64(b"\x44"), "y": _b64(b"\x55")}
+    bundle = {
+        "v": 1,
+        "kind": "aird-chat-e2e-identity",
+        "username": "alice",
+        "publicJwk": pub,
+        "privateJwk": {**pub, "d": _b64(b"\x33")},
+        "kid": _b64(b"k", 16),
+    }
+    save_identity_backup("alice", bundle)
+    kept = apply_identity_backup("alice", {**bundle, "publicJwk": other, "kid": _b64(b"z", 16)})
+    assert kept["kid"] == bundle["kid"]
+    assert load_identity_backup("alice")["privateJwk"]["d"] == bundle["privateJwk"]["d"]
+    assert "privateJwk" not in public_identity_backup(kept)
 
 
 def test_conv_key_shared_with_peer(chat_env):
@@ -900,8 +926,9 @@ def test_recover_conv_key_from_identity_wrap(chat_env):
     raw = b"\x42" * 32
     wrap = _wrap_conv_key(pub, raw, conv)
     recovered = recover_conv_key(conv, ["alice", "bob"], {"alice": wrap})
-    assert recovered is None
-    assert load_conv_key("bob", conv) is None
+    assert recovered is not None
+    assert load_conv_key("alice", conv)["key"] == recovered["key"]
+    assert load_conv_key("bob", conv)["key"] == recovered["key"]
 
 
 def test_concurrent_share_conv_key_same_file(chat_env):
@@ -1010,6 +1037,24 @@ def test_group_creator_can_talk_before_invitees_accept(chat_env):
     chat_db.respond_to_request(actor="bob", conversation_id=conv, action="decline")
     assert chat_db.user_in_conversation("bob", conv) is False
     assert chat_db.exchange_open("alice", conv) is True
+
+
+def test_delete_dm_requires_a_new_chat_request(chat_env):
+    from aird.plugins.chat import db as chat_db
+
+    alice = chat_db.resolve_user_id(chat_env, "alice")
+    bob = chat_db.resolve_user_id(chat_env, "bob")
+    conv = chat_db.create_dm_conversation(chat_env, alice, bob)
+    chat_db.respond_to_request(actor="bob", conversation_id=conv, action="accept", central=chat_env)
+    chat_db.delete_conversation("alice", conv, chat_env)
+    assert chat_db.get_conversation("alice", conv) is None
+    assert chat_db.get_conversation("bob", conv) is None
+    again = chat_db.create_dm_conversation(chat_env, alice, bob)
+    assert again != conv
+    revived = chat_db.get_conversation("bob", again)
+    assert revived is not None
+    assert revived["request"] == "incoming"
+    assert chat_db.get_conversation("alice", again)["request"] == "outgoing"
 
 
 def test_decline_dm_removes_it(chat_env):

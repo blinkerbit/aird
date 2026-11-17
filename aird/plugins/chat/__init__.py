@@ -34,6 +34,7 @@ def register_chat(routes: list) -> None:
     from aird.plugins.chat.handlers import (
         ChatAttachHandler,
         ChatConversationE2EHandler,
+        ChatConversationHandler,
         ChatConversationCardsHandler,
         ChatConversationMessagesHandler,
         ChatConversationsHandler,
@@ -67,6 +68,7 @@ def register_chat(routes: list) -> None:
         [
             (r"/chat", ChatPageHandler),
             (r"/api/chat/conversations", ChatConversationsHandler),
+            (rf"/api/chat/conversations/{cid}", ChatConversationHandler),
             (r"/api/chat/e2e/identity", ChatE2EIdentityHandler),
             (r"/api/chat/e2e/keys", ChatE2EKeysHandler),
             (rf"/api/chat/conversations/{cid}/e2e", ChatConversationE2EHandler),
