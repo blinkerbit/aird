@@ -146,6 +146,49 @@ def validate_password(password: str) -> tuple[bool, str]:
     return True, ""
 
 
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def client_ip(peer: str | None, forwarded: str | None) -> str:
+    """Use the proxy-appended address when the immediate peer is loopback.
+
+    A client-supplied X-Forwarded-For is ignored unless the connection itself
+    came from localhost, which is the reverse proxy. The last hop is the one
+    the proxy added.
+    """
+    host = (peer or "").strip()
+    if host.startswith("::ffff:"):
+        host = host[7:]
+    header = (forwarded or "").strip()
+    if header and host in _LOOPBACK_HOSTS:
+        parts = [part.strip() for part in header.split(",") if part.strip()]
+        if parts:
+            return parts[-1]
+    return host
+
+
+def collapse_rel(rel: str) -> str | None:
+    """Collapse ``.`` and ``..`` lexically.
+
+    Returns ``""`` for the root itself. Returns ``None`` when the path escapes
+    above the root or contains a NUL.
+    """
+    raw = (rel or "").replace("\\", "/").strip()
+    if "\x00" in raw:
+        return None
+    parts: list[str] = []
+    for part in raw.split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if not parts:
+                return None
+            parts.pop()
+            continue
+        parts.append(part)
+    return "/".join(parts)
+
+
 def is_within_root(path: str, root: str) -> bool:
     """Return True if path is within root after resolving symlinks and normalization."""
     try:

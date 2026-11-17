@@ -22,6 +22,30 @@ def get_user_quota(conn: sqlite3.Connection, username: str) -> dict:
     return {"quota_bytes": None, "used_bytes": 0}
 
 
+def reserve_user_bytes(conn: sqlite3.Connection, username: str, delta: int) -> bool:
+    """Add delta only when it still fits the quota. Serialized by the write lock."""
+    if conn is None or delta <= 0:
+        return True
+    try:
+        with conn:
+            cursor = conn.execute(
+                """
+                UPDATE users
+                   SET used_bytes = COALESCE(used_bytes, 0) + ?
+                 WHERE username = ?
+                   AND (
+                        quota_bytes IS NULL
+                        OR COALESCE(used_bytes, 0) + ? <= quota_bytes
+                   )
+                """,
+                (delta, username, delta),
+            )
+            return cursor.rowcount == 1
+    except Exception:
+        logger.debug("reserve_user_bytes failed for %s", username, exc_info=True)
+        return False
+
+
 def update_user_used_bytes(conn: sqlite3.Connection, username: str, delta: int) -> None:
     """Add delta bytes to a user's used_bytes (can be negative for deletes)."""
     if conn is None:

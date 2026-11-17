@@ -161,6 +161,12 @@ def revoke_session_for_user(
     return cursor.rowcount > 0
 
 
+def revoke_all_sessions(conn: sqlite3.Connection, username: str) -> int:
+    cursor = conn.execute("DELETE FROM user_sessions WHERE username = ?", (username,))
+    conn.commit()
+    return cursor.rowcount
+
+
 def revoke_other_sessions(
     conn: sqlite3.Connection, username: str, keep_session_id: str
 ) -> int:

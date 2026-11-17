@@ -125,7 +125,7 @@ def test_slug_and_conversation_shelf(collab_db):
         participants=[],
         slug="grocery-nov1",
     )
-    assert poll["slug"] == "grocery-nov1"
+    assert poll["slug"].startswith("grocery-nov1-")
     assert slugify("Grocery").startswith("grocery-")
     pinned = link_ref(
         collab_db,
@@ -135,7 +135,7 @@ def test_slug_and_conversation_shelf(collab_db):
         artifact_id=poll["id"],
         member_names=["bob"],
     )
-    assert pinned["token"] == "$$grocery-nov1"
+    assert pinned["token"] == "$$" + poll["slug"]
     assert list_refs(collab_db, "conv1", "bob")
     removed = unlink_refs(
         collab_db,
@@ -242,8 +242,7 @@ def test_public_list_change_reaches_open_clients(collab_db, monkeypatch):
             return {4: "alice", 9: "bob"}.get(user_id)
 
         def broadcast_user_ids(self, ids, payload):
-            sent["ids"] = set(ids)
-            sent["payload"] = payload
+            sent.setdefault("calls", []).append((set(ids), payload))
 
     monkeypatch.setattr("aird.plugins.chat.service.get_chat_hub", lambda: Hub())
     lst = create_list(
@@ -255,10 +254,14 @@ def test_public_list_change_reaches_open_clients(collab_db, monkeypatch):
         items=[{"text": "Milk"}],
     )
     notify_changed(collab_db, "list", lst["id"])
+    sent["ids"] = set().union(*(ids for ids, _payload in sent["calls"]))
     assert sent["ids"] == {4, 9}
-    assert sent["payload"]["type"] == "collab_update"
-    assert sent["payload"]["kind"] == "list"
-    assert sent["payload"]["id"] == lst["id"]
+    assert all("conversation_ids" not in payload or payload["id"] == lst["id"] for _ids, payload in sent["calls"])
+    public_only = [payload for ids, payload in sent["calls"] if 9 in ids and 4 not in ids]
+    assert public_only and "conversation_ids" not in public_only[0]
+    assert sent["calls"][0][1]["type"] == "collab_update"
+    assert sent["calls"][0][1]["kind"] == "list"
+    assert sent["calls"][0][1]["id"] == lst["id"]
 
 
 def test_private_list_updates_without_a_chat_share(collab_db, monkeypatch):

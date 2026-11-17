@@ -71,7 +71,7 @@ def link_ref(
     detail = _detail(conn, kind, row["id"], username)
     if not detail:
         return None
-    if kind == "list" and not lists_db.user_may_share(conn, row["id"], username):
+    if not _may_grant(conn, kind, row, username):
         return None
     _grant(conn, kind, row, member_names or [])
     existing = conn.execute(
@@ -155,6 +155,15 @@ def suggest(conn: sqlite3.Connection, username: str, kind: str, query: str) -> l
         if len(hits) >= 8:
             break
     return hits
+
+
+def _may_grant(conn: sqlite3.Connection, kind: str, row: sqlite3.Row, username: str) -> bool:
+    """Only the organizer, or a list the organizer marked as forwardable, can add members."""
+    if str(row["visibility"] or "") != "private":
+        return True
+    if kind == "list":
+        return lists_db.user_may_share(conn, row["id"], username)
+    return str(row["organizer"] or "") == username
 
 
 def _detail(conn, kind, artifact_id, username):

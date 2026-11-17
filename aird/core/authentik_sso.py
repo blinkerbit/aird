@@ -18,8 +18,11 @@ logger = logging.getLogger(__name__)
 CONFIG_KEY = "authentik_sso"
 DEFAULT_USERNAME_HEADER = "X-authentik-username"
 DEFAULT_NAME_HEADER = "X-authentik-name"
-# Same-host Authentik invalidation (clears the IdP session after Aird logout).
-DEFAULT_LOGOUT_URL = "/flows/-/default/invalidation/?next=/"
+# End the Authentik user session, then the proxy cookie, so Aird cannot sign
+# the browser straight back in.
+DEFAULT_LOGOUT_URL = (
+    "/flows/-/default/invalidation/?next=/outpost.goauthentik.io/sign_out"
+)
 DEFAULT_PASSWORD_URL = "/if/flow/default-password-change/"
 SECRET_HEADER = "X-Aird-Authentik-Secret"
 ACTION_FORM = "form"

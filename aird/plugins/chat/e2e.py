@@ -236,15 +236,6 @@ def parse_identity_backup(raw, username: str) -> dict:
     if owner != username:
         raise ValueError("Backup belongs to another user")
     pub = validate_public_jwk(raw.get("publicJwk"))
-    priv_raw = raw.get("privateJwk")
-    if not isinstance(priv_raw, dict) or "d" not in priv_raw:
-        raise ValueError("Backup missing private key")
-    priv_pub = validate_public_jwk(
-        {k: priv_raw[k] for k in ("kty", "crv", "x", "y") if k in priv_raw}
-    )
-    d = priv_raw.get("d")
-    if not _b64_ok(d, min_len=20, max_len=88):
-        raise ValueError("Invalid private key")
     kid = raw.get("kid")
     if not isinstance(kid, str) or not (8 <= len(kid) <= 128) or not _B64_RE.match(kid):
         raise ValueError("Invalid key id")
@@ -255,7 +246,6 @@ def parse_identity_backup(raw, username: str) -> dict:
         "username": username,
         "exported_at": exported,
         "publicJwk": pub,
-        "privateJwk": {**priv_pub, "d": str(d)},
         "kid": kid,
     }
 
@@ -265,13 +255,20 @@ def identity_backup_path(username: str) -> str:
 
 
 def load_identity_backup(username: str) -> dict | None:
-    data = _read_json(identity_backup_path(username))
+    path = identity_backup_path(username)
+    data = _read_json(path)
     if not data:
         return None
     try:
-        return parse_identity_backup(data, username)
+        clean = parse_identity_backup(data, username)
     except ValueError:
         return None
+    if isinstance(data.get("privateJwk"), dict):
+        try:
+            _atomic_write_json(path, clean)
+        except OSError:
+            logger.debug("could not strip stored identity private key", exc_info=True)
+    return clean
 
 
 def save_identity_backup(username: str, bundle: dict) -> dict:
@@ -435,30 +432,5 @@ def unwrap_conv_key_bytes(private_jwk: dict, wrap: dict, conversation_id: str) -
 
 
 def recover_conv_key(conversation_id: str, members: list[str], wraps: dict) -> dict | None:
-    """Unwrap a stored wrap using a member's Aird identity file and share the raw key."""
-    if not isinstance(wraps, dict) or not wraps:
-        return None
-    names = [str(n).strip() for n in members if str(n or "").strip()]
-    wrap_items = [(str(n), w) for n, w in wraps.items() if n and isinstance(w, dict)]
-    backups = []
-    for name in names:
-        backup = load_identity_backup(name)
-        if backup:
-            backups.append((name, backup))
-    for owner, backup in backups:
-        for wrap_name, wrap in wrap_items:
-            try:
-                raw = unwrap_conv_key_bytes(backup["privateJwk"], wrap, conversation_id)
-            except Exception:
-                logger.debug(
-                    "e2e recover unwrap failed for %s wrap=%s", owner, wrap_name, exc_info=True
-                )
-                continue
-            bundle = {
-                "v": 1,
-                "kind": "aird-chat-e2e-conv",
-                "conversation_id": conversation_id,
-                "key": _b64_std(raw),
-            }
-            return share_conv_key(names, conversation_id, bundle)
+    """The server does not keep identity private keys, so it cannot unwrap wraps."""
     return None

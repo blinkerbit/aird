@@ -108,9 +108,10 @@ _TOKEN_USERNAMES = frozenset(
 
 
 def _client_ip(request: Request) -> str:
-    if request.client:
-        return request.client.host
-    return ""
+    from aird.core.security import client_ip
+
+    peer = request.client.host if request.client else ""
+    return client_ip(peer, request.headers.get("x-forwarded-for"))
 
 
 def _json_error(status: int, error: str) -> JSONResponse:
@@ -967,6 +968,11 @@ async def admin_user_reset_password(request: Request) -> Response:
         must_change_password=True,
     ):
         return PlainTextResponse("Password reset failed", status_code=500)
+    reset_row = conn.execute("SELECT username FROM users WHERE id = ?", (user_id,)).fetchone()
+    if reset_row and reset_row[0]:
+        from aird.db.sessions import revoke_all_sessions
+
+        revoke_all_sessions(conn, reset_row[0])
 
     refreshed = user_service.list_users(conn)
     target = next((u for u in refreshed if u["id"] == user_id), None)

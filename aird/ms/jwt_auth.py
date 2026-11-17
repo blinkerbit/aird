@@ -163,6 +163,12 @@ def _token_pair(settings: dict[str, Any], user: dict[str, Any]) -> dict[str, Any
 
 
 async def issue_token(request: Request):
+    from aird.core.security import client_ip
+    from aird.handlers.auth_handlers import check_login_rate_limit
+
+    peer = request.client.host if request.client else ""
+    if not check_login_rate_limit(client_ip(peer, request.headers.get("x-forwarded-for"))):
+        return JSONResponse({"error": "too_many_attempts"}, status_code=429)
     state = get_state(request)
     username, password = await _credentials(request)
     if not username or not password:
@@ -188,12 +194,16 @@ async def refresh_token(request: Request):
     )
     if not payload:
         return JSONResponse({"error": "invalid_refresh_token"}, status_code=401)
+    service = state.services.get("user_service")
+    user = service.get_user(state.db_conn, payload.get("sub")) if service else None
+    if not user or not user.get("active") or user.get("must_change_password"):
+        return JSONResponse({"error": "invalid_refresh_token"}, status_code=401)
     return JSONResponse(
         _token_pair(
             state.settings,
             {
-                "username": payload["sub"],
-                "role": payload.get("role") or "user",
+                "username": user["username"],
+                "role": user.get("role") or "user",
                 "_session_id": payload.get("sid"),
             },
         )

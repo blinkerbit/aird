@@ -9,6 +9,9 @@ import pytest
 from aird.plugins.chat.secret import EnhancedSecureHub
 
 
+_SIG = "A" * 24
+
+
 def _jwk(seed: int) -> dict:
     raw = bytes([seed]) * 32
     coord = base64.urlsafe_b64encode(raw).decode().rstrip("=")
@@ -24,11 +27,11 @@ def _blob() -> dict:
 def test_enhanced_secure_room_relays_without_storing_plaintext():
     hub = EnhancedSecureHub()
     room = hub.invite("alice", "bob")
-    room = hub.join("alice", room["room_id"], _jwk(1))
+    room = hub.join("alice", room["room_id"], _jwk(1), _SIG)
     assert room["ready"] is False
     with pytest.raises(ValueError):
         hub.relay("alice", room["room_id"], _blob())
-    room = hub.join("bob", room["room_id"], _jwk(2))
+    room = hub.join("bob", room["room_id"], _jwk(2), _SIG)
     assert room["ready"] is True
     peer, blob = hub.relay("alice", room["room_id"], _blob())
     assert peer == "bob"
@@ -42,14 +45,14 @@ def test_enhanced_secure_room_relays_without_storing_plaintext():
 def test_enhanced_secure_close_and_drop_remove_the_room():
     hub = EnhancedSecureHub()
     room = hub.invite("alice", "bob")
-    hub.join("alice", room["room_id"], _jwk(3))
+    hub.join("alice", room["room_id"], _jwk(3), _SIG)
     closed = hub.close("alice", room["room_id"])
     assert closed["peer"] == "bob"
     with pytest.raises(ValueError):
-        hub.join("bob", room["room_id"], _jwk(4))
+        hub.join("bob", room["room_id"], _jwk(4), _SIG)
 
     again = hub.invite("alice", "bob")
-    hub.join("alice", again["room_id"], _jwk(5))
+    hub.join("alice", again["room_id"], _jwk(5), _SIG)
     ended = hub.drop_user("alice")
     assert ended == [(again["room_id"], "bob")]
     assert hub.pending_for("bob") == []
@@ -61,7 +64,7 @@ def test_enhanced_secure_rejects_private_key_material():
     epk = _jwk(6)
     epk["d"] = "secret"
     with pytest.raises(ValueError):
-        hub.join("alice", room["room_id"], epk)
+        hub.join("alice", room["room_id"], epk, _SIG)
 
 
 def test_enhanced_secure_invite_reaches_another_process(tmp_path):
@@ -71,7 +74,7 @@ def test_enhanced_secure_invite_reaches_another_process(tmp_path):
     left.use_shared(path)
     right.use_shared(path)
     room = left.invite("alice", "bob")
-    left.join("alice", room["room_id"], _jwk(7))
+    left.join("alice", room["room_id"], _jwk(7), _SIG)
     left.enqueue("bob", {
         "type": "enhanced_request",
         "room_id": room["room_id"],
@@ -84,7 +87,7 @@ def test_enhanced_secure_invite_reaches_another_process(tmp_path):
     notes = right.take_outbox({"bob"})
     assert notes[0][0] == "bob"
     assert notes[0][1]["type"] == "enhanced_request"
-    joined = right.join("bob", room["room_id"], _jwk(8))
+    joined = right.join("bob", room["room_id"], _jwk(8), _SIG)
     assert joined["ready"] is True
     peer, blob = left.relay("alice", room["room_id"], _blob())
     assert peer == "bob"

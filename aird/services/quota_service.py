@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from aird.db.quota import get_user_quota, update_user_used_bytes
+from aird.db.quota import get_user_quota, reserve_user_bytes, update_user_used_bytes
 
 
 class QuotaService:
@@ -13,3 +13,6 @@ class QuotaService:
 
     def update_used_bytes(self, conn: Any, username: str, delta_bytes: int) -> None:
         update_user_used_bytes(conn, username, delta_bytes)
+
+    def reserve_bytes(self, conn: Any, username: str, delta_bytes: int) -> bool:
+        return reserve_user_bytes(conn, username, delta_bytes)

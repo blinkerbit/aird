@@ -383,8 +383,8 @@
         </label>
         <label class="form-control max-w-md" for="authentikSsoLogoutUrl">
           <span class="label-text text-sm font-semibold">Logout URL</span>
-          <input type="text" id="authentikSsoLogoutUrl" class="input input-bordered input-sm w-full" maxlength="512" autocomplete="off" spellcheck="false" value="{{ authentik_sso_view.get('logout_url', '/flows/-/default/invalidation/?next=/') }}">
-          <span class="label-text-alt text-base-content/50">When Authentik auto-login is on, AIRD logout clears the AIRD session then redirects here to end the Authentik session too. Default is the built-in invalidation flow on this host.</span>
+          <input type="text" id="authentikSsoLogoutUrl" class="input input-bordered input-sm w-full" maxlength="512" autocomplete="off" spellcheck="false" value="{{ authentik_sso_view.get('logout_url', '/flows/-/default/invalidation/?next=/outpost.goauthentik.io/sign_out') }}">
+          <span class="label-text-alt text-base-content/50">When Authentik auto-login is on, AIRD logout clears the AIRD session then redirects here. The default ends the Authentik session and the proxy cookie on this host.</span>
         </label>
         <label class="form-control max-w-md" for="authentikSsoPasswordUrl">
           <span class="label-text text-sm font-semibold">Password change URL</span>

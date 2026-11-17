@@ -446,12 +446,23 @@ def delete_user(conn: sqlite3.Connection, user_id: int) -> bool:
         return False
 
 
+_DUMMY_PASSWORD_HASH: str | None = None
+
+
+def _timing_hash() -> str:
+    global _DUMMY_PASSWORD_HASH
+    if _DUMMY_PASSWORD_HASH is None:
+        _DUMMY_PASSWORD_HASH = hash_password("aird-timing-equalizer")
+    return _DUMMY_PASSWORD_HASH
+
+
 def authenticate_user(
     conn: sqlite3.Connection, username: str, password: str
 ) -> dict | None:
     """Authenticate a user and update last_login"""
     user = get_user_by_username(conn, username)
-    if user and user["active"] and verify_password(password, user["password_hash"]):
+    stored = user["password_hash"] if user and user["active"] else _timing_hash()
+    if user and user["active"] and verify_password(password, stored):
         update_user(conn, user["id"], last_login=datetime.now().isoformat())
         must_change = bool(user.get("must_change_password"))
         del user["password_hash"]

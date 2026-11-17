@@ -59,7 +59,10 @@ def normalize_members(
 
 
 def normalize_rel_path(rel: str) -> str:
-    return (rel or "").replace("\\", "/").strip().strip("/")
+    from aird.core.security import collapse_rel
+
+    collapsed = collapse_rel(rel)
+    return "" if collapsed is None else collapsed
 
 
 def format_tag_display(name: str, owner_username: str, viewer: str | None) -> str:

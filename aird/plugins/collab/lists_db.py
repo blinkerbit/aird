@@ -174,17 +174,17 @@ def _is_read_only(row: sqlite3.Row) -> bool:
 
 
 def _user_may_edit_items(conn: sqlite3.Connection, row: sqlite3.Row, username: str) -> bool:
-    """Anyone who can open the list can check, add, and edit items. A read-only tag cannot."""
+    """Organizer can always edit. Read-only blocks everyone else. A read tag cannot edit."""
+    if row["organizer"] == username:
+        return True
+    if _is_read_only(row) or not _user_may_view(conn, row, username):
+        return False
     if can_access(
         visibility=row["visibility"],
         organizer=row["organizer"],
         username=username,
         participants=_participants(conn, row["id"]),
     ):
-        return True
-    if not _user_may_view(conn, row, username):
-        return False
-    if str(row["kind"] or "") == "todo" and not _is_read_only(row):
         return True
     return list_tag_access(conn, username, row["organizer"], row["id"]) == ACCESS_WRITE
 
@@ -743,8 +743,8 @@ def reorder_items(conn: sqlite3.Connection, list_id: str, username: str, ids: li
         return None
     for index, item_id in enumerate(ids):
         conn.execute(
-            "UPDATE list_items SET sort_order = ? WHERE id = ? AND list_id = ?",
-            (index, str(item_id), list_id),
+            "UPDATE list_items SET sort_order = ?, order_key = ? WHERE id = ? AND list_id = ?",
+            (index, f"{index:08d}#0000", str(item_id), list_id),
         )
     conn.execute("UPDATE collab_lists SET updated_at = ? WHERE id = ?", (_now(), list_id))
     conn.commit()

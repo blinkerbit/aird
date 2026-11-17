@@ -77,6 +77,16 @@ def cleanup_stale_rate_limits():
             _LOGIN_ATTEMPTS.pop(ip, None)
 
 
+def _limit_ip(handler) -> str:
+    from aird.core.security import client_ip
+
+    request = handler.request
+    return client_ip(
+        getattr(request, "remote_ip", "") or "",
+        request.headers.get("X-Forwarded-For"),
+    )
+
+
 def check_login_rate_limit(remote_ip):
     now = time.time()
     with _LOGIN_ATTEMPTS_LOCK:
@@ -349,12 +359,6 @@ def _try_admin_username_password_login(handler, username, password):
                 return True
             handler.redirect(ADMIN_URL)
             return True
-        if user and user["role"] != "admin":
-            handler.render(
-                ADMIN_LOGIN_TEMPLATE,
-                error="Access denied. Admin privileges required.",
-            )
-            return True
         handler.render(ADMIN_LOGIN_TEMPLATE, error=INVALID_CREDENTIALS_MSG)
         return True
     except Exception:
@@ -523,7 +527,7 @@ class LDAPLoginHandler(BaseHandler):
         self.render(LOGIN_HTML, error=None, settings=self.settings)
 
     def post(self):
-        if not check_login_rate_limit(self.request.remote_ip):
+        if not check_login_rate_limit(_limit_ip(self)):
             self.set_status(429)
             self.render(
                 LOGIN_HTML,
@@ -561,14 +565,29 @@ class LDAPLoginHandler(BaseHandler):
         try:
             server = make_ldap_server(self.settings["ldap_server"])
             username_dn_escaped = escape_rdn(username)
+            db_conn = self.db_conn
+            if db_conn:
+                existing = self.get_service("user_service").get_user(db_conn, username)
+                if existing and existing.get("active") in (0, False):
+                    self.render(
+                        LOGIN_HTML,
+                        error="Authentication failed. Please check your credentials.",
+                        settings=self.settings,
+                    )
+                    return
             conn = Connection(
                 server,
                 user=self.settings["ldap_user_template"].format(
                     username=username_dn_escaped
                 ),
                 password=password,
-                auto_bind=True,
+                auto_bind=False,
             )
+            if str(self.settings["ldap_server"] or "").lower().startswith("ldap://"):
+                if not conn.start_tls():
+                    raise OSError("LDAP STARTTLS failed")
+            if not conn.bind():
+                raise OSError("LDAP bind failed")
             username_escaped = escape_filter_chars(username)
             conn.search(
                 search_base=self.settings["ldap_base_dn"],
@@ -626,7 +645,7 @@ class ApiLoginHandler(BaseHandler):
         return
 
     def post(self):
-        if not check_login_rate_limit(self.request.remote_ip):
+        if not check_login_rate_limit(_limit_ip(self)):
             self.write_json_error(429, TOO_MANY_LOGIN_ATTEMPTS_MSG)
             return
         try:
@@ -770,7 +789,9 @@ class LoginHandler(BaseHandler):
         if not url:
             return False
         # Must start with / and not with // (protocol-relative URL)
-        if not url.startswith("/") or url.startswith("//"):
+        if "\\" in url or "%5c" in url.lower():
+            return False
+        if not url.startswith("/") or url.startswith("//") or url.startswith("/\\"):
             return False
         # Block URLs with protocol schemes
         if ":" in url.split("/")[0]:
@@ -815,7 +836,7 @@ class LoginHandler(BaseHandler):
         self.render(LOGIN_HTML, error=None, settings=self.settings, next_url=next_url)
 
     def post(self):
-        if not check_login_rate_limit(self.request.remote_ip):
+        if not check_login_rate_limit(_limit_ip(self)):
             self.set_status(429)
             self.render(
                 LOGIN_HTML,
@@ -895,7 +916,7 @@ class AdminLoginHandler(BaseHandler):
         self.render(ADMIN_LOGIN_TEMPLATE, error=None)
 
     def post(self):
-        if not check_login_rate_limit(self.request.remote_ip):
+        if not check_login_rate_limit(_limit_ip(self)):
             self.set_status(429)
             self.render(
                 ADMIN_LOGIN_TEMPLATE,
@@ -995,6 +1016,9 @@ class MandatoryPasswordHandler(BaseHandler):
             self.redirect(FILES_BASE_URL)
             return
 
+        from aird.db.users import verify_password
+
+        current_password = self.get_argument("current_password", "")
         new_password = self.get_argument("new_password", "")
         confirm_password = self.get_argument("confirm_password", "")
         next_url = _mandatory_password_safe_next(self.get_argument("next", ""))
@@ -1014,6 +1038,14 @@ class MandatoryPasswordHandler(BaseHandler):
             self.render(
                 MANDATORY_PASSWORD_TEMPLATE,
                 error="Enter a new password.",
+                next_url=next_url,
+                username=cu.get("username", ""),
+            )
+            return
+        if not verify_password(current_password, row.get("password_hash") or ""):
+            self.render(
+                MANDATORY_PASSWORD_TEMPLATE,
+                error="Current password is incorrect.",
                 next_url=next_url,
                 username=cu.get("username", ""),
             )
@@ -1051,6 +1083,10 @@ class MandatoryPasswordHandler(BaseHandler):
                 username=cu.get("username", ""),
             )
             return
+        from aird.db.sessions import revoke_other_sessions
+
+        keep = str(cu.get("_session_id") or "")
+        revoke_other_sessions(db_conn, cu["username"], keep)
         self.redirect(next_url)
 
 

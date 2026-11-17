@@ -478,12 +478,15 @@ def _validate_update_local_path_entry(
     return None
 
 
-def _validate_update_local_paths(handler, share_id, path_strings, share_type: str):
-    """Ensure local path strings exist under the user's root. Return (status, body) or None."""
-    root_dir = get_user_root(handler)
-    mounts = mounts_for_username(
-        handler.db_conn, get_username_string_for_db(handler) or ""
-    )
+def _validate_update_local_paths(handler, share_id, path_strings, share_type: str, share: dict):
+    """Ensure local path strings exist under the share creator's root."""
+    from aird.core.browse_paths import mounts_for_share_creator
+    from aird.core.share_root import filesystem_root_for_share
+
+    if not share:
+        return (404, {"error": "Share not found"})
+    root_dir = filesystem_root_for_share(share)
+    mounts = mounts_for_share_creator(handler.db_conn, share)
     for path_str in path_strings:
         err = _validate_update_local_path_entry(
             share_id, path_str, share_type, root_dir, mounts
@@ -568,6 +571,7 @@ def _apply_paths_update(
     update_fields,
     cloud_paths_to_remove,
     new_cloud_paths,
+    share,
 ):
     """Apply paths update. Return None on success, (status, body) on error."""
     if paths is None:
@@ -579,7 +583,7 @@ def _apply_paths_update(
         return err
     if handler is not None:
         verr = _validate_update_local_paths(
-            handler, share_id, deduped_paths, requested_share_type
+            handler, share_id, deduped_paths, requested_share_type, share
         )
         if verr is not None:
             return verr
@@ -703,6 +707,7 @@ def _compute_share_update_fields(
         update_fields,
         cloud_paths_to_remove,
         new_cloud_paths,
+        share_data,
     )
     if path_err is not None:
         return (None, [], [], path_err)

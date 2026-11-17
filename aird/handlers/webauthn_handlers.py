@@ -28,7 +28,7 @@ from webauthn.helpers.structs import (
 
 from aird.core.webauthn_config import resolve_webauthn_config
 from aird.db import webauthn as webauthn_db
-from aird.handlers.auth_handlers import _apply_session_cookies, check_login_rate_limit
+from aird.handlers.auth_handlers import _apply_session_cookies, _limit_ip, check_login_rate_limit
 from aird.handlers.base_handler import BaseHandler
 from aird.handlers.constants import (
     CONTENT_TYPE_JSON,
@@ -303,7 +303,7 @@ class WebAuthnAuthVerifyHandler(BaseHandler):
     @_require_webauthn
     async def post(self):
 
-        if not check_login_rate_limit(self.request.remote_ip):
+        if not check_login_rate_limit(_limit_ip(self)):
             _write_json_error(self, 429, "Too many login attempts.")
             return
 

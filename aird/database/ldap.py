@@ -262,7 +262,17 @@ def _sync_one_ldap_config(conn: sqlite3.Connection, config: dict):
         from aird.core.ldap_server import make_ldap_server
 
         server = make_ldap_server(config["server"], get_info=ALL)
-        conn_ldap = Connection(server)
+        conn_ldap = Connection(server, auto_bind=False)
+        if str(config["server"] or "").lower().startswith("ldap://"):
+            if not conn_ldap.start_tls():
+                return (
+                    set(),
+                    {
+                        "config_name": config["name"],
+                        "status": "error",
+                        "message": f"LDAP STARTTLS failed: {config['server']}",
+                    },
+                )
         if not conn_ldap.bind():
             return (
                 set(),
@@ -302,7 +312,7 @@ def _sync_one_ldap_config(conn: sqlite3.Connection, config: dict):
 
 
 def _apply_ldap_user_changes(
-    conn: sqlite3.Connection, all_ldap_users: set
+    conn: sqlite3.Connection, all_ldap_users: set, *, allow_delete: bool
 ) -> tuple[int, int]:
     """Create missing users and remove users no longer in LDAP. Return (created, removed)."""
     current_users = get_all_users(conn)
@@ -312,10 +322,14 @@ def _apply_ldap_user_changes(
     for username in all_ldap_users:
         if username not in current_usernames:
             try:
-                create_user(conn, username, "ldap_user", role="user")
+                import secrets as _secrets
+
+                create_user(conn, username, "ldap:unset:" + _secrets.token_hex(32), role="user")
                 users_created += 1
             except Exception as e:
                 print(f"Failed to create user {username}: {e}")
+    if not allow_delete or not all_ldap_users:
+        return (users_created, users_removed)
     for user in current_users:
         if user["username"] not in all_ldap_users and user["username"] != "admin":
             try:
@@ -342,7 +356,12 @@ def _run_ldap_sync(conn: sqlite3.Connection, active_configs: list) -> dict:
     all_ldap_users, sync_results = _collect_ldap_users_from_configs(
         conn, active_configs
     )
-    users_created, users_removed = _apply_ldap_user_changes(conn, all_ldap_users)
+    allow_delete = bool(all_ldap_users) and all(
+        result.get("status") == "success" for result in sync_results
+    )
+    users_created, users_removed = _apply_ldap_user_changes(
+        conn, all_ldap_users, allow_delete=allow_delete
+    )
     return {
         "status": "success",
         "total_ldap_users": len(all_ldap_users),

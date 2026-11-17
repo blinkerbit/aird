@@ -87,7 +87,11 @@ def audience_names(conn: sqlite3.Connection, kind: str, artifact_id: str) -> set
     except sqlite3.Error:
         pass
     names.discard("")
-    return names
+    visible = set()
+    for name in names:
+        if _viewer_may_see(conn, kind, row, name):
+            visible.add(name)
+    return visible
 
 
 def notify_event(
@@ -227,6 +231,25 @@ def pin_for_chat(
     notify_changed(conn, kind, artifact_id)
 
 
+def _viewer_may_see(conn, kind: str, row, username: str) -> bool:
+    try:
+        if kind == "list":
+            from aird.plugins.collab import lists_db
+
+            return bool(lists_db._user_may_view(conn, row, username))
+        if kind == "poll":
+            from aird.plugins.collab import polls_db
+
+            return bool(polls_db._user_may_view(conn, row, username))
+        if kind == "meet":
+            from aird.plugins.collab import meet_db
+
+            return bool(meet_db._user_may_view(conn, row, username))
+    except Exception:
+        return False
+    return False
+
+
 def _can_view(conn: sqlite3.Connection, kind: str, artifact_id: str, username: str) -> bool:
     if kind != "list":
         return False
@@ -266,16 +289,16 @@ def _fanout(conn: sqlite3.Connection, kind: str, artifact_id: str) -> None:
     # A chat share is not required, and a private list still only reaches people who can view it.
     public = normalize_visibility(row["visibility"]) == VISIBILITY_PUBLIC
     names = {name.casefold() for name in audience_names(conn, kind, artifact_id)}
-    user_ids: set[int] = set()
+    named_ids: set[int] = set()
+    viewer_ids: set[int] = set()
     for uid in hub.connected_user_ids():
-        if public:
-            user_ids.add(int(uid))
-            continue
         shown = (hub.username_for(uid) or "").strip()
         if not shown:
             continue
-        if shown.casefold() in names or _can_view(conn, kind, artifact_id, shown):
-            user_ids.add(int(uid))
+        if shown.casefold() in names:
+            named_ids.add(int(uid))
+        elif public or _viewer_may_see(conn, kind, row, shown):
+            viewer_ids.add(int(uid))
     conversations: list[str] = []
     try:
         refs = conn.execute(
@@ -285,14 +308,8 @@ def _fanout(conn: sqlite3.Connection, kind: str, artifact_id: str) -> None:
         conversations = [str(ref[0] or "") for ref in refs if ref[0]]
     except sqlite3.Error:
         conversations = []
-    if not user_ids:
-        return
-    hub.broadcast_user_ids(
-        list(user_ids),
-        {
-            "type": "collab_update",
-            "kind": kind,
-            "id": artifact_id,
-            "conversation_ids": conversations,
-        },
-    )
+    base = {"type": "collab_update", "kind": kind, "id": artifact_id}
+    if viewer_ids:
+        hub.broadcast_user_ids(list(viewer_ids), base)
+    if named_ids:
+        hub.broadcast_user_ids(list(named_ids), {**base, "conversation_ids": conversations})

@@ -70,6 +70,10 @@ def file_tag_access(
         return ACCESS_NONE
     viewer = viewer.strip()
     owner = owner_username.strip()
+    from aird.core.security import collapse_rel
+
+    if collapse_rel(rel_path) is None:
+        return ACCESS_NONE
     rel = normalize_rel_path(rel_path)
     if viewer == owner:
         return ACCESS_WRITE

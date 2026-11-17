@@ -156,7 +156,7 @@ class TestLDAPLoginHandlerExtended:
             self.mock_app.settings["db_conn"] = MagicMock()
             with patch(
                 "aird.services.user_service.get_user_by_username",
-                side_effect=[None, {"role": "user"}],
+                side_effect=[None, None, {"role": "user"}],
             ), patch(
                 "aird.services.user_service.create_user"
             ) as mock_create, patch.object(
@@ -394,7 +394,7 @@ class TestAdminLoginHandlerExtended:
 
             handler.post()
             mock_render.assert_called_with(
-                "admin_login.html", error="Access denied. Admin privileges required."
+                "admin_login.html", error="Invalid username or password."
             )
 
 
@@ -464,6 +464,7 @@ class TestProfileHandlerExtended:
                 passkeys=ANY,
                 shared_with_me=ANY,
                 user_plugins=ANY,
+                authentik_password_url=ANY,
             )
 
     def test_post_password_mismatch(self):
@@ -501,6 +502,7 @@ class TestProfileHandlerExtended:
                 passkeys=ANY,
                 shared_with_me=ANY,
                 user_plugins=ANY,
+                authentik_password_url=ANY,
             )
 
 

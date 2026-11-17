@@ -56,8 +56,8 @@ class MeetJoinPageHandler(BaseHandler):
         finally:
             conn.close()
         if not detail:
-            self.set_status(403)
-            self.finish("Forbidden")
+            self.set_status(404)
+            self.finish("Not found")
             return
         self.render("meet/join.html", meet=detail, slug=slug)
 

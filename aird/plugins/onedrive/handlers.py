@@ -21,7 +21,6 @@ from aird.plugins.access import PLUGIN_ONEDRIVE, user_may_use_plugin
 from aird.plugins.onedrive import db as od_db
 from aird.plugins.onedrive import is_onedrive_enabled
 from aird.plugins.onedrive.backup import (
-    BACKUP_FOLDER,
     backup_filename,
     build_zip_bytes,
     extract_zip_bytes,
@@ -284,10 +283,6 @@ class OneDriveBackupsHandler(BaseHandler):
         root = get_settings(self.db_conn)["root_path"]
         try:
             files = _list_zip_folder(provider, snapshots_remote_path(root, name))
-            seen = {item["id"] for item in files}
-            for item in _list_zip_folder(provider, BACKUP_FOLDER):
-                if item["id"] not in seen:
-                    files.append(item)
         except CloudProviderError as exc:
             self.set_status(502)
             self.write({"error": str(exc)})
@@ -365,11 +360,29 @@ class OneDriveRestoreHandler(BaseHandler, XSRFTokenMixin):
             self.set_status(400)
             self.write({"error": _ERR_TOKEN_NOT_CONFIGURED})
             return
+        root = get_settings(self.db_conn)["root_path"]
+        try:
+            allowed = {
+                item["id"]
+                for item in _list_zip_folder(provider, snapshots_remote_path(root, name))
+            }
+        except CloudProviderError as exc:
+            self.set_status(502)
+            self.write({"error": str(exc)})
+            return
+        if item_id not in allowed:
+            self.set_status(403)
+            self.write({"error": "That backup is not in your folder."})
+            return
         try:
             download = provider.download_file(item_id)
             chunks = b"".join(download.iter_chunks())
             download.close()
             restored = extract_zip_bytes(chunks, name)
+        except ValueError as exc:
+            self.set_status(400)
+            self.write({"error": str(exc)})
+            return
         except CloudProviderError as exc:
             self.set_status(502)
             self.write({"error": str(exc)})

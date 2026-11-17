@@ -24,7 +24,10 @@ _RESERVED_MOUNT_NAMES = frozenset(
 
 
 def normalize_rel(rel: str) -> str:
-    return (rel or "").replace("\\", "/").strip().strip("/")
+    from aird.core.security import collapse_rel
+
+    collapsed = collapse_rel(rel)
+    return "" if collapsed is None else collapsed
 
 
 def sanitize_mount_name(name: str) -> str | None:
@@ -64,7 +67,14 @@ def resolve_rel(
     under *data_root* (including ``.aird-shares`` / ``.aird-chats``).
     """
     mounts = mounts or []
+    from aird.constants import AIRD_META_FOLDER
+    from aird.core.security import collapse_rel
+
+    if collapse_rel(rel) is None:
+        return None, None
     norm = normalize_rel(rel)
+    if AIRD_META_FOLDER in [part for part in norm.split("/") if part]:
+        return None, None
     if not norm:
         root = os.path.abspath(data_root)
         return root, root

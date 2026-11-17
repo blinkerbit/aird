@@ -1189,6 +1189,15 @@ async def _serve_chat_folder_zip(handler: BaseHandler, owner: str, rel: str) -> 
             pass
 
 
+_SAFE_INLINE_MIME = frozenset({"image/jpeg", "image/png", "image/gif", "image/webp"})
+_FILE_CSP = "default-src 'none'; sandbox; frame-ancestors 'none'"
+
+
+def _lock_down_file_response(handler) -> None:
+    handler.set_header("Content-Security-Policy", _FILE_CSP)
+    handler.set_header("X-Content-Type-Options", "nosniff")
+
+
 def _content_disposition(filename: str, *, inline: bool) -> str:
     clean = (filename or "file").replace("\\", "/").split("/")[-1]
     clean = clean.replace('"', "").replace("\r", "").replace("\n", "") or "file"
@@ -1263,8 +1272,8 @@ async def _serve_zip_entries(handler: BaseHandler, entries: list[tuple[str, str]
 
 async def _serve_chat_file_download(handler: BaseHandler, abs_path: str, att: dict) -> None:
     filename = att.get("original_name") or os.path.basename(abs_path)
-    mime, _ = mimetypes.guess_type(str(filename))
-    handler.set_header("Content-Type", mime or "application/octet-stream")
+    _lock_down_file_response(handler)
+    handler.set_header("Content-Type", "application/octet-stream")
     handler.set_header("Cache-Control", _CACHE_PRIVATE_60)
     handler.set_header("Content-Length", str(os.path.getsize(abs_path)))
     handler.set_header("Content-Disposition", _content_disposition(str(filename), inline=False))
@@ -1275,20 +1284,24 @@ async def _serve_chat_file_attachment(
     handler: BaseHandler, abs_path: str, att: dict
 ) -> None:
     filename = att.get("original_name") or os.path.basename(abs_path)
+    _lock_down_file_response(handler)
     preview = inline_preview_payload(abs_path)
     if preview:
         data, mime = preview
-        handler.set_header("Content-Type", mime)
+        inline = mime in _SAFE_INLINE_MIME
+        handler.set_header("Content-Type", mime if inline else "application/octet-stream")
         handler.set_header("Cache-Control", _CACHE_PRIVATE_60)
         handler.set_header("Content-Length", str(len(data)))
-        handler.set_header("Content-Disposition", f'inline; filename="{filename}"')
+        handler.set_header(
+            "Content-Disposition",
+            _content_disposition(str(filename), inline=inline),
+        )
         handler.write(data)
         return
-    mime, _ = mimetypes.guess_type(filename)
-    handler.set_header("Content-Type", mime or "application/octet-stream")
+    handler.set_header("Content-Type", "application/octet-stream")
     handler.set_header("Cache-Control", _CACHE_PRIVATE_60)
     handler.set_header("Content-Length", str(os.path.getsize(abs_path)))
-    handler.set_header("Content-Disposition", f'inline; filename="{filename}"')
+    handler.set_header("Content-Disposition", _content_disposition(str(filename), inline=False))
     await _stream_file_chunks(handler, abs_path)
 
 
@@ -1299,7 +1312,7 @@ class ChatMessageFileHandler(BaseHandler):
         if not _require_chat(self):
             return
         name = _username(self)
-        if not chat_db.user_in_conversation(name, conversation_id):
+        if not chat_db.exchange_open(name, conversation_id):
             self.set_status(403)
             self.write({"error": _ERR_FORBIDDEN})
             return

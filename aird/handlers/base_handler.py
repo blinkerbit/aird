@@ -123,6 +123,10 @@ def resolve_handler_rel(handler, rel: str) -> tuple[str | None, str | None]:
     from aird.core.user_storage import user_data_dir_for_username
     from aird.services.user_tag_access import ACCESS_NONE, file_tag_access
 
+    from aird.core.security import collapse_rel
+
+    if collapse_rel(rel) is None:
+        return None, None
     username = get_username_string_for_db(handler) or ""
     conn = _handler_db_conn(handler)
     norm = normalize_rel(rel)
@@ -481,7 +485,7 @@ def _user_from_stored_session(handler: Any, stored: dict[str, Any], session_id: 
         return token_user
     try:
         user = get_user_by_username(_handler_db_conn(handler), username)
-        if user:
+        if user and user.get("active"):
             user.pop("password_hash", None)
             user["_session_id"] = session_id
             return user
@@ -1043,10 +1047,6 @@ class BaseHandler(tornado.web.RequestHandler):
         if path in ("/logout", "/login", "/admin/login", "/health"):
             return
         if path.startswith("/static/"):
-            return
-        if path.startswith("/p2p"):
-            return
-        if path.startswith("/shared/"):
             return
 
         user = getattr(self, "current_user", None)

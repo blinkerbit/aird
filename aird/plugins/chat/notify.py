@@ -15,7 +15,11 @@ logger = logging.getLogger(__name__)
 
 def dispatch_message(msg: dict, *, sender_id: int, sender_username: str) -> None:
     conv_id = msg["conversation_id"]
-    members = chat_db.members_of(sender_username, conv_id)
+    members = [
+        member
+        for member in chat_db.members_of(sender_username, conv_id)
+        if int(member.get("accepted", 1)) or member.get("username") == sender_username
+    ]
     user_ids = [m["user_id"] for m in members]
     get_chat_hub().broadcast_user_ids(
         user_ids,

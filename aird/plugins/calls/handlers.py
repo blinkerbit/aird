@@ -18,7 +18,7 @@ from aird.plugins.calls.config import (
     livekit_url,
 )
 from aird.plugins.calls.notify import (
-    call_status,
+    call_record,
     dispatch_call_invite,
     dispatch_call_invite_more,
     dispatch_call_signal,
@@ -60,7 +60,7 @@ class ChatCallHandler(BaseHandler, XSRFTokenMixin):
             self.set_status(403)
             self.write({"error": "Forbidden"})
             return
-        if not chat_db.user_in_conversation(username, conversation_id):
+        if not chat_db.exchange_open(username, conversation_id):
             self.set_status(403)
             self.write({"error": "Forbidden"})
             return
@@ -77,6 +77,17 @@ class ChatCallHandler(BaseHandler, XSRFTokenMixin):
             self.write({"error": "Forbidden"})
             return
         supplied_call_id = str(body.get("call_id") or "").strip()
+        joining = body.get("invite") is False and bool(supplied_call_id)
+        if supplied_call_id:
+            record = call_record(supplied_call_id)
+            if not record or record["conversation_id"] != conversation_id:
+                self.set_status(403)
+                self.write({"error": "Forbidden"})
+                return
+            if joining and record["state"] in ("ended", "missed"):
+                self.set_status(409)
+                self.write({"error": "Call ended"})
+                return
         call_id = supplied_call_id or uuid.uuid4().hex
         room = call_room_name(call_id)
         targets_raw = body.get("targets")
@@ -90,13 +101,6 @@ class ChatCallHandler(BaseHandler, XSRFTokenMixin):
             identity=f"{username}:{uuid.uuid4().hex[:8]}",
             name=username,
         )
-        joining = body.get("invite") is False and bool(supplied_call_id)
-        if joining:
-            status = call_status(supplied_call_id)
-            if status in ("ended", "missed"):
-                self.set_status(409)
-                self.write({"error": "Call ended"})
-                return
         if body.get("invite_more") and supplied_call_id:
             dispatch_call_invite_more(
                 conversation_id=conversation_id,
@@ -142,7 +146,7 @@ class CallSignalHandler(BaseHandler, XSRFTokenMixin):
         self.check_xsrf_cookie()
         username = get_username_string_for_db(self)
         uid = chat_db.resolve_user_id(self.db_conn, username) if username else None
-        if uid is None or not chat_db.user_in_conversation(username, conversation_id):
+        if uid is None or not chat_db.exchange_open(username, conversation_id):
             self.set_status(403)
             self.write({"error": "Forbidden"})
             return

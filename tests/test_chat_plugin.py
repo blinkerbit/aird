@@ -60,6 +60,7 @@ def test_list_conversations_unread(chat_env):
     a = chat_db.resolve_user_id(chat_env, "alice")
     b = chat_db.resolve_user_id(chat_env, "bob")
     conv = chat_db.create_dm_conversation(chat_env, a, b)
+    chat_db.respond_to_request(actor="bob", conversation_id=conv, action="accept")
     chat_db.insert_message(
         chat_env,
         username="alice",
@@ -81,6 +82,7 @@ def test_list_messages_after_id(chat_env):
     a = chat_db.resolve_user_id(chat_env, "alice")
     b = chat_db.resolve_user_id(chat_env, "bob")
     conv = chat_db.create_dm_conversation(chat_env, a, b)
+    chat_db.respond_to_request(actor="bob", conversation_id=conv, action="accept")
     m1 = chat_db.insert_message(
         chat_env, username="alice", conversation_id=conv, msg_type="text", body="one"
     )
@@ -101,6 +103,7 @@ def test_message_index_finds_a_hole(chat_env):
     a = chat_db.resolve_user_id(chat_env, "alice")
     b = chat_db.resolve_user_id(chat_env, "bob")
     conv = chat_db.create_dm_conversation(chat_env, a, b)
+    chat_db.respond_to_request(actor="bob", conversation_id=conv, action="accept")
     first = chat_db.insert_message(chat_env, username="alice", conversation_id=conv, msg_type="text", body="one")
     middle = chat_db.insert_message(chat_env, username="alice", conversation_id=conv, msg_type="text", body="two")
     last = chat_db.insert_message(chat_env, username="bob", conversation_id=conv, msg_type="text", body="three")
@@ -117,6 +120,7 @@ def test_message_fanout_same_uuid(chat_env):
     a = chat_db.resolve_user_id(chat_env, "alice")
     b = chat_db.resolve_user_id(chat_env, "bob")
     conv = chat_db.create_dm_conversation(chat_env, a, b)
+    chat_db.respond_to_request(actor="bob", conversation_id=conv, action="accept")
     msg = chat_db.insert_message(
         chat_env, username="alice", conversation_id=conv, msg_type="text", body="hi"
     )
@@ -129,6 +133,8 @@ def test_group_of_three(chat_env):
     conv = chat_db.create_group_conversation(
         chat_env, creator_username="alice", title="Team", member_usernames=["bob", "carol"]
     )
+    chat_db.respond_to_request(actor="bob", conversation_id=conv, action="accept")
+    chat_db.respond_to_request(actor="carol", conversation_id=conv, action="accept")
     msg = chat_db.insert_message(
         chat_env, username="alice", conversation_id=conv, msg_type="text", body="hey all"
     )
@@ -148,6 +154,7 @@ def test_attach_is_link_only(chat_env, tmp_path):
     a = chat_db.resolve_user_id(chat_env, "alice")
     b = chat_db.resolve_user_id(chat_env, "bob")
     conv = chat_db.create_dm_conversation(chat_env, a, b)
+    chat_db.respond_to_request(actor="bob", conversation_id=conv, action="accept")
     src = tmp_path / "alice" / "data" / "pic.png"
     src.parent.mkdir(parents=True, exist_ok=True)
     src.write_bytes(b"png-bytes")
@@ -188,6 +195,7 @@ def test_multi_attach_one_message(chat_env, tmp_path):
     a = chat_db.resolve_user_id(chat_env, "alice")
     b = chat_db.resolve_user_id(chat_env, "bob")
     conv = chat_db.create_dm_conversation(chat_env, a, b)
+    chat_db.respond_to_request(actor="bob", conversation_id=conv, action="accept")
     atts = [
         attachment_meta(
             original_name="a.log",
@@ -302,6 +310,7 @@ def test_list_shared_with_me_prefers_share_url(chat_env):
     a = chat_db.resolve_user_id(chat_env, "alice")
     b = chat_db.resolve_user_id(chat_env, "bob")
     conv = chat_db.create_dm_conversation(chat_env, a, b)
+    chat_db.respond_to_request(actor="bob", conversation_id=conv, action="accept")
     atts = [
         attachment_meta(
             original_name="folder",
@@ -365,6 +374,7 @@ def test_selected_attachment_download_names(chat_env, tmp_path):
     a = chat_db.resolve_user_id(chat_env, "alice")
     b = chat_db.resolve_user_id(chat_env, "bob")
     conv = chat_db.create_dm_conversation(chat_env, a, b)
+    chat_db.respond_to_request(actor="bob", conversation_id=conv, action="accept")
     one = tmp_path / "one.txt"
     two = tmp_path / "two.txt"
     one.write_text("a")
@@ -441,6 +451,7 @@ def test_edit_reply_react_pin_mute_search(chat_env):
     a = chat_db.resolve_user_id(chat_env, "alice")
     b = chat_db.resolve_user_id(chat_env, "bob")
     conv = chat_db.create_dm_conversation(chat_env, a, b)
+    chat_db.respond_to_request(actor="bob", conversation_id=conv, action="accept")
     msg = chat_db.insert_message(
         chat_env,
         username="alice",
@@ -751,6 +762,7 @@ def test_plaintext_messages_still_work(chat_env):
     a = chat_db.resolve_user_id(chat_env, "alice")
     b = chat_db.resolve_user_id(chat_env, "bob")
     conv = chat_db.create_dm_conversation(chat_env, a, b)
+    chat_db.respond_to_request(actor="bob", conversation_id=conv, action="accept")
     msg = chat_db.insert_message(
         chat_env, username="alice", conversation_id=conv, msg_type="text", body="<p>visible</p>"
     )
@@ -775,7 +787,8 @@ def test_identity_backup_in_user_space(chat_env):
     saved = save_identity_backup("alice", bundle)
     loaded = load_identity_backup("alice")
     assert loaded["kid"] == saved["kid"]
-    assert loaded["privateJwk"]["d"] == bundle["privateJwk"]["d"]
+    assert "privateJwk" not in loaded
+    assert loaded["publicJwk"]["x"] == pub["x"]
     assert load_identity_backup("bob") is None
     with pytest.raises(ValueError, match="another user"):
         save_identity_backup("alice", {**bundle, "username": "bob"})
@@ -866,8 +879,6 @@ def _wrap_conv_key(pub_jwk, raw: bytes, conv_id: str) -> dict:
 
 
 def test_recover_conv_key_from_identity_wrap(chat_env):
-    import base64
-
     from aird.plugins.chat import db as chat_db
     from aird.plugins.chat.e2e import load_conv_key, recover_conv_key, save_identity_backup
 
@@ -889,9 +900,8 @@ def test_recover_conv_key_from_identity_wrap(chat_env):
     raw = b"\x42" * 32
     wrap = _wrap_conv_key(pub, raw, conv)
     recovered = recover_conv_key(conv, ["alice", "bob"], {"alice": wrap})
-    assert recovered is not None
-    assert base64.b64decode(recovered["key"]) == raw
-    assert load_conv_key("bob", conv)["key"] == recovered["key"]
+    assert recovered is None
+    assert load_conv_key("bob", conv) is None
 
 
 def test_concurrent_share_conv_key_same_file(chat_env):
@@ -937,6 +947,7 @@ def test_encrypted_read_receipt_requires_decryption_confirmation(chat_env):
     alice = chat_db.resolve_user_id(chat_env, "alice")
     bob = chat_db.resolve_user_id(chat_env, "bob")
     conv = chat_db.create_dm_conversation(chat_env, alice, bob)
+    chat_db.respond_to_request(actor="bob", conversation_id=conv, action="accept")
     msg = chat_db.insert_message(
         chat_env,
         username="alice",

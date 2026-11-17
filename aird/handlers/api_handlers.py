@@ -845,13 +845,27 @@ class SuperSearchWebSocketHandler(
         matches = 0
         files_searched = 0
         files_visited = 0
-        for dirpath, _dirnames, filenames in os.walk(root_path, followlinks=False):
+        from aird.constants import AIRD_META_FOLDER
+
+        for dirpath, dirnames, filenames in os.walk(root_path, followlinks=False):
             if self.stop_event.is_set():
                 raise asyncio.CancelledError
+            dirnames[:] = [
+                name
+                for name in dirnames
+                if name != AIRD_META_FOLDER and not os.path.islink(os.path.join(dirpath, name))
+            ]
             for filename in filenames:
                 if self.stop_event.is_set():
                     raise asyncio.CancelledError
                 file_path = pathlib.Path(dirpath) / filename
+                if file_path.is_symlink():
+                    continue
+                try:
+                    if not is_within_root(os.path.realpath(file_path), os.path.realpath(root_path)):
+                        continue
+                except OSError:
+                    continue
                 files_visited += 1
                 match_delta, counted = await self._process_walk_file(
                     file_path, root_path, filename, normalized_pattern,

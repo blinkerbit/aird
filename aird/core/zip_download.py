@@ -59,13 +59,33 @@ class _ZipEntryCollector:
             raise ZipDownloadError("Too many files in selection", 400)
 
 
+def _skip_sensitive(dirpath: str, dirnames: list[str]) -> None:
+    from aird.constants import AIRD_META_FOLDER
+
+    kept = []
+    for name in dirnames:
+        full = os.path.join(dirpath, name)
+        if name == AIRD_META_FOLDER or os.path.islink(full):
+            continue
+        kept.append(name)
+    dirnames[:] = kept
+
+
+def _file_safe_to_read(full: str, root: str) -> bool:
+    if os.path.islink(full) or not os.path.isfile(full):
+        return False
+    real = os.path.realpath(full)
+    return is_within_root(real, os.path.realpath(root))
+
+
 def _collect_dir_zip_entries(
     collector: _ZipEntryCollector, abspath: str, arc_prefix: str
 ) -> None:
-    for dirpath, _dirnames, filenames in os.walk(abspath):
+    for dirpath, dirnames, filenames in os.walk(abspath, followlinks=False):
+        _skip_sensitive(dirpath, dirnames)
         for fname in filenames:
             full = os.path.join(dirpath, fname)
-            if not os.path.isfile(full):
+            if not _file_safe_to_read(full, abspath):
                 continue
             inner = os.path.relpath(full, abspath).replace("\\", "/")
             arc = f"{arc_prefix}/{inner}" if arc_prefix else inner

@@ -56,12 +56,10 @@ logger = logging.getLogger(__name__)
 
 
 def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    if request.client:
-        return request.client.host
-    return ""
+    from aird.core.security import client_ip
+
+    peer = request.client.host if request.client else ""
+    return client_ip(peer, request.headers.get("x-forwarded-for"))
 
 
 class _RequestView:
@@ -246,7 +244,9 @@ def _settings(request: Request) -> dict[str, Any]:
 def _is_safe_redirect_url(url: str) -> bool:
     if not url:
         return False
-    if not url.startswith("/") or url.startswith("//"):
+    if "\\" in url or "%5c" in url.lower():
+        return False
+    if not url.startswith("/") or url.startswith("//") or url.startswith("/\\"):
         return False
     if ":" in url.split("/")[0]:
         return False

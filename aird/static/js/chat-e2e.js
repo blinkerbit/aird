@@ -152,9 +152,11 @@ import { apiFetch } from './core/http.js';
       return;
     }
     if (seenRemote && !remoteKid) {
+      const published = { ...bundle };
+      delete published.privateJwk;
       await api('/api/chat/e2e/identity', {
         method: 'PUT',
-        body: JSON.stringify({ backup: bundle }),
+        body: JSON.stringify({ backup: published }),
       });
       return;
     }
@@ -624,6 +626,11 @@ import { apiFetch } from './core/http.js';
     sanitizeHtml,
     extractMentions,
     ready: () => !!identity,
+    async signText(text) {
+      if (!identity?.privateJwk) throw new Error('Encryption keys are not ready');
+      const { ecdsaSign } = await import('./core/chat-crypto.js');
+      return ecdsaSign(identity.privateJwk, new TextEncoder().encode(String(text)));
+    },
     exportBackup,
     importBackup,
     hasStoredIdentity,

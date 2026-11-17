@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import secrets
 import socket
 import struct
 import threading
@@ -28,6 +29,44 @@ _pub_sock: socket.socket | None = None
 _client_started = False
 _clients_lock = threading.Lock()
 _clients: list[socket.socket] = []
+_hub_token = ""
+
+
+def hub_token() -> str:
+    """Shared secret inherited across the hub fork and later worker forks."""
+    global _hub_token
+    if not _hub_token:
+        _hub_token = secrets.token_urlsafe(32)
+    return _hub_token
+
+
+def _peer_uid_ok(conn: socket.socket) -> bool:
+    """Abstract sockets have no file mode. Only the service uid may connect."""
+    try:
+        raw = conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("iii"))
+    except (AttributeError, OSError):
+        return True
+    _pid, uid, _gid = struct.unpack("iii", raw)
+    return uid == os.geteuid()
+
+
+def _auth_frame_ok(body: bytes) -> bool:
+    try:
+        frame = json.loads(body)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(frame, dict) or frame.get("op") != "auth":
+        return False
+    token = str(frame.get("token") or "")
+    expected = hub_token()
+    if len(token) != len(expected):
+        return False
+    return secrets.compare_digest(token, expected)
+
+
+def _send_auth(conn: socket.socket) -> None:
+    raw = json.dumps({"op": "auth", "token": hub_token()}, separators=(",", ":")).encode()
+    conn.sendall(_HDR.pack(len(raw)) + raw)
 
 
 def production_addr(port: int) -> bytes:
@@ -89,8 +128,22 @@ def _read_frames(conn: socket.socket):
 
 
 def _client_thread(conn: socket.socket) -> None:
+    if not _peer_uid_ok(conn):
+        try:
+            conn.close()
+        except OSError:
+            pass
+        return
+    authed = False
     try:
         for body in _read_frames(conn):
+            if not authed:
+                if not _auth_frame_ok(body):
+                    return
+                authed = True
+                with _clients_lock:
+                    _clients.append(conn)
+                continue
             _fanout(conn, _HDR.pack(len(body)) + body)
     except Exception:
         logger.debug("chat hub client closed", exc_info=True)
@@ -104,8 +157,6 @@ def _accept_loop(listen: socket.socket) -> None:
             conn, _addr_in = listen.accept()
         except OSError:
             return
-        with _clients_lock:
-            _clients.append(conn)
         threading.Thread(
             target=_client_thread, args=(conn,), name="aird-chat-hub-io", daemon=True
         ).start()
@@ -114,6 +165,7 @@ def _accept_loop(listen: socket.socket) -> None:
 def spawn_hub_process(addr: bytes | str, http_sockets: list) -> None:
     """Fork the hub, then return in the parent. Call this before worker forks."""
     global _addr, _listen_sock, _close_inherited
+    hub_token()
     _addr = addr
     _close_inherited = True
     listen = _bind(addr)
@@ -145,6 +197,7 @@ def spawn_hub_process(addr: bytes | str, http_sockets: list) -> None:
 def start_listener(path: str) -> None:
     """In-process hub for tests."""
     global _addr, _listen_sock, _client_started
+    hub_token()
     stop_listener()
     _addr = path
     _client_started = False
@@ -215,6 +268,7 @@ def _worker_loop(addr, on_frame, on_connect) -> None:
         conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
             conn.connect(addr)
+            _send_auth(conn)
         except OSError:
             conn.close()
             time.sleep(0.2)

@@ -79,11 +79,6 @@ def delete_user_token(
 def load_user_token(
     username: str, conn: sqlite3.Connection | None = None
 ) -> str | None:
-    from aird.plugins.onedrive.settings import resolve_access_token
-
-    server = resolve_access_token(conn)
-    if server:
-        return server
     value = get_plugin_secret(conn, username, SECRET_ONEDRIVE)
     if value:
         return value
@@ -93,8 +88,4 @@ def load_user_token(
 def token_configured(
     username: str, conn: sqlite3.Connection | None = None
 ) -> bool:
-    from aird.plugins.onedrive.settings import resolve_access_token
-
-    if resolve_access_token(conn):
-        return True
     return bool(load_user_token(username, conn=conn))

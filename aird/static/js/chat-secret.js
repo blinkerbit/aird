@@ -9,6 +9,7 @@ import {
   ecdhImportPrivate as importPrivate,
   ecdhGenerateKey as freshKey,
   ecdhDeriveAesKey,
+  ecdsaVerify,
 } from './core/chat-crypto.js';
 import { escapeHtml as esc } from './core/dom-safe.js';
 
@@ -126,6 +127,31 @@ import { escapeHtml as esc } from './core/dom-safe.js';
       paintEnded();
     }
     global.AirdChatPage?.refreshList?.();
+  }
+
+  function epkText(roomId, epk) {
+    return `${roomId}\n${epk?.x || ''}\n${epk?.y || ''}`;
+  }
+
+  async function signEpk(roomId, epk) {
+    const e2e = global.AirdChatE2E;
+    if (!e2e?.signText) throw new Error('Encryption keys are not ready');
+    return e2e.signText(epkText(roomId, epk));
+  }
+
+  async function verifyEpk(peer, roomId, epk, sig) {
+    if (!peer || !epk?.x || !sig) return false;
+    const pinned = sessionStorage.getItem(`aird-identity-pin:${peer}`);
+    const res = await fetch(`/api/chat/e2e/keys?users=${encodeURIComponent(peer)}`, { credentials: 'same-origin' });
+    if (!res.ok) return false;
+    const body = await res.json();
+    const jwk = body?.keys?.[peer];
+    if (!jwk?.x || !jwk?.y) return false;
+    const finger = `${jwk.x}.${jwk.y}`;
+    if (pinned && pinned !== finger) return false;
+    const ok = await ecdsaVerify(jwk, new TextEncoder().encode(epkText(roomId, epk)), sig);
+    if (ok) sessionStorage.setItem(`aird-identity-pin:${peer}`, finger);
+    return ok;
   }
 
   async function derive(room, theirPub) {
@@ -287,11 +313,7 @@ import { escapeHtml as esc } from './core/dom-safe.js';
         show(existing.roomId);
         return;
       }
-      if (!global.AirdChatWS?.send({
-        type: 'enhanced_join',
-        room_id: existing.roomId,
-        epk: existing.publicJwk,
-      })) {
+      if (!await sendJoin(existing)) {
         status('Chat connection is not open');
         return;
       }
@@ -300,7 +322,7 @@ import { escapeHtml as esc } from './core/dom-safe.js';
     }
     const keys = await freshKey();
     await remember(name, keys);
-    if (!global.AirdChatWS?.send({ type: 'enhanced_invite', peer: name, epk: keys.publicJwk })) {
+    if (!global.AirdChatWS?.send({ type: 'enhanced_invite', peer: name })) {
       draftPeer = null;
       status('Chat connection is not open');
     }
@@ -323,11 +345,7 @@ import { escapeHtml as esc } from './core/dom-safe.js';
     room.privateKey = keys.privateKey;
     room.requested = false;
     saveStore();
-    if (!global.AirdChatWS?.send({
-      type: 'enhanced_join',
-      room_id: room.roomId,
-      epk: room.publicJwk,
-    })) {
+    if (!await sendJoin(room)) {
       room.requested = true;
       saveStore();
       status('Chat connection is not open');
@@ -438,16 +456,34 @@ import { escapeHtml as esc } from './core/dom-safe.js';
     global.AirdChatPage?.refreshList?.();
   }
 
+  async function sendJoin(room) {
+    const sig = await signEpk(room.roomId, room.publicJwk);
+    return !!global.AirdChatWS?.send({
+      type: 'enhanced_join',
+      room_id: room.roomId,
+      epk: room.publicJwk,
+      sig,
+    });
+  }
+
   async function onRoom(msg) {
     const room = await ensureRoom(msg.room_id, msg.peer);
     room.open = false;
-    room.requested = false;
+    if (room.publicJwk) room.requested = false;
     saveStore();
+    if (room.publicJwk && !await sendJoin(room)) {
+      status('Chat connection is not open');
+      return;
+    }
     show(room.roomId);
   }
 
   async function onOpen(msg) {
     const room = await ensureRoom(msg.room_id, msg.peer);
+    if (!await verifyEpk(msg.peer, msg.room_id, msg.epk, msg.sig)) {
+      status('Enhanced Secure Chat key was not signed by that person');
+      return;
+    }
     await derive(room, msg.epk);
     if (viewing === room.roomId) paint(room);
     global.AirdChatPage?.refreshList?.();
@@ -512,11 +548,7 @@ import { escapeHtml as esc } from './core/dom-safe.js';
   function rejoin() {
     rooms.forEach((room) => {
       if (room.requested || !room.publicJwk) return;
-      global.AirdChatWS?.send({
-        type: 'enhanced_join',
-        room_id: room.roomId,
-        epk: room.publicJwk,
-      });
+      sendJoin(room).catch(() => {});
     });
   }
 

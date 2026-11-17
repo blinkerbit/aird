@@ -78,23 +78,28 @@ def hlc_cmp(a: str, b: str) -> int:
 
 
 def mid_order(prev: str | None, next_key: str | None, actor: str = "") -> str:
-    """Simple fractional key between neighbors; actor suffix disambiguates ties."""
-    def to_num(key: str | None, default: float) -> float:
+    """Fractional key between neighbors. The suffix is random so ties stay unique."""
+    from decimal import Decimal, InvalidOperation
+
+    def to_dec(key: str | None, default: str) -> Decimal:
         if not key:
-            return default
+            return Decimal(default)
         head = str(key).split("#", 1)[0]
         try:
-            return float(head)
-        except ValueError:
-            return default
+            return Decimal(head)
+        except (InvalidOperation, ValueError):
+            return Decimal(default)
 
-    left = to_num(prev, 0.0)
-    right = to_num(next_key, left + 2.0)
+    left = to_dec(prev, "0")
+    right = to_dec(next_key, str(left + 2))
     if right <= left:
-        right = left + 2.0
-    mid = (left + right) / 2.0
-    suffix = secrets.token_hex(2) if not actor else abs(hash(actor)) % 0xFFFF
-    return f"{mid:.8f}#{suffix:04x}"
+        right = left + 2
+    mid = (left + right) / 2
+    text = format(mid, "f").rstrip("0").rstrip(".") or "0"
+    left_text = format(left, "f").rstrip("0").rstrip(".") or "0"
+    if text == left_text:
+        text = f"{left_text}5"
+    return f"{text}#{secrets.token_hex(3)}"
 
 
 def block_type(value, fallback: str = "checkbox") -> str:
@@ -140,6 +145,7 @@ def apply_op(
     op: dict[str, Any],
     *,
     clock: HybridClock | None = None,
+    actor_id: str | None = None,
 ) -> dict[str, Any]:
     """Apply one op idempotently. Returns {ok, reason?, op}."""
     op_id = str(op.get("opId") or op.get("op_id") or "").strip()
@@ -155,7 +161,7 @@ def apply_op(
     block_id = str(op.get("blockId") or op.get("block_id") or "").strip()
     if not block_id:
         return {"ok": False, "reason": "block_id required"}
-    actor = str(op.get("actorId") or op.get("actor_id") or "unknown").strip() or "unknown"
+    actor = (actor_id or "").strip() or str(op.get("actorId") or op.get("actor_id") or "unknown").strip() or "unknown"
     payload = op.get("payload") or {}
     if isinstance(payload, str):
         try:
@@ -165,11 +171,18 @@ def apply_op(
 
     clock = clock or HybridClock()
     remote_hlc = str(op.get("hlcTimestamp") or op.get("hlc") or "")
+    stale = False
+    if action in ("UPDATE_CONTENT", "CHANGE_TYPE", "TOGGLE") and remote_hlc:
+        prev = _field_hlc(conn, list_id, block_id, "content")
+        if prev and hlc_cmp(remote_hlc, prev) < 0:
+            stale = True
     hlc = clock.receive(remote_hlc) if remote_hlc else clock.tick()
     now = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime())
 
     try:
-        if action == "INSERT":
+        if stale:
+            pass
+        elif action == "INSERT":
             _apply_insert(conn, list_id, block_id, payload, actor, now)
         elif action == "UPDATE_CONTENT":
             _apply_content(conn, list_id, block_id, payload, hlc, now)
@@ -184,7 +197,7 @@ def apply_op(
         elif action == "SET_TAGS":
             _apply_tags(conn, list_id, block_id, payload, now)
         elif action == "DELETE":
-            conn.execute("DELETE FROM list_items WHERE id = ? AND list_id = ?", (block_id, list_id))
+            _delete_block(conn, list_id, block_id)
     except ValueError as err:
         return {"ok": False, "reason": str(err)}
 
@@ -206,6 +219,25 @@ def apply_op(
             "payload": payload,
         },
     }
+
+
+def _delete_block(conn, list_id: str, block_id: str) -> None:
+    """Remove a block and outdent the children that were nested under it."""
+    items = _ordered_items(conn, list_id)
+    ids = [row["id"] for row in items]
+    if block_id not in ids:
+        return
+    index = ids.index(block_id)
+    base = int(items[index]["depth"] or 0)
+    for row in items[index + 1 :]:
+        depth = int(row["depth"] or 0)
+        if depth <= base:
+            break
+        conn.execute(
+            "UPDATE list_items SET depth = ? WHERE id = ? AND list_id = ?",
+            (depth - 1, row["id"], list_id),
+        )
+    conn.execute("DELETE FROM list_items WHERE id = ? AND list_id = ?", (block_id, list_id))
 
 
 def _apply_insert(conn, list_id, block_id, payload, actor, now) -> None:
@@ -353,11 +385,9 @@ def _apply_move(conn, list_id, block_id, payload, actor, now) -> tuple[bool, str
             parent_id = None
         else:
             parent_index = ids.index(parent_id)
-            if block_id in _descendants(items, parent_index) and parent_id != block_id:
-                # cycle: parent is under block
-                if parent_id in _descendants(items, index):
-                    depth = 0
-                    parent_id = None
+            if parent_id == block_id or parent_id in _descendants(items, index):
+                depth = 0
+                parent_id = None
             if parent_id is not None:
                 parent_depth = int(items[parent_index]["depth"] or 0)
                 depth = parent_depth + 1
@@ -434,7 +464,9 @@ def sync_list(
     applied = []
     rejected = []
     for raw in ops or []:
-        result = apply_op(conn, list_id, raw, clock=clock)
+        stamped = dict(raw)
+        stamped["actorId"] = actor_id
+        result = apply_op(conn, list_id, stamped, clock=clock, actor_id=actor_id)
         if result.get("ok"):
             if result.get("op"):
                 applied.append(result["op"])

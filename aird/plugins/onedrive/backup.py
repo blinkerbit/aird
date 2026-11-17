@@ -174,6 +174,9 @@ def extract_zip_bytes(data: bytes, username: str) -> list[str]:
     home = user_home_for_username(username)
     data_root = user_data_dir_for_username(username)
     restored: list[str] = []
+    max_member = 512 * 1024 * 1024
+    max_total = 2 * 1024 * 1024 * 1024
+    total = 0
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         for info in zf.infolist():
             name = info.filename.replace("\\", "/")
@@ -181,6 +184,15 @@ def extract_zip_bytes(data: bytes, username: str) -> list[str]:
                 continue
             if ".." in Path(name).parts:
                 continue
+            size = int(info.file_size or 0)
+            if size < 0 or size > max_member:
+                raise ValueError("Backup member is too large")
+            ratio = size / max(int(info.compress_size or 1), 1)
+            if size > 10 * 1024 * 1024 and ratio > 100:
+                raise ValueError("Backup archive is too compressed")
+            total += size
+            if total > max_total:
+                raise ValueError("Backup archive is too large")
             if name.startswith("files/"):
                 rel = name[len("files/") :]
                 dest_root = data_root

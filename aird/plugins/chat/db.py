@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import re
@@ -280,6 +281,27 @@ def _fanout_members(members: Iterable[dict], fn: Callable) -> None:
             logger.exception("chat fan-out failed for %s", name)
 
 
+_DM_PAIR_SCHEMA = """
+CREATE TABLE IF NOT EXISTS chat_dm_pairs (
+    user_lo TEXT NOT NULL,
+    user_hi TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    PRIMARY KEY (user_lo, user_hi)
+)
+"""
+
+
+def _dm_pair_lock(central: sqlite3.Connection):
+    """Exclusive lock so two workers cannot create the same DM. None for memory databases."""
+    info = central.execute("PRAGMA database_list").fetchone()
+    path = info[2] if info and len(info) > 2 else ""
+    if not path:
+        return None
+    handle = open(path + ".dm.lock", "a")
+    fcntl.flock(handle, fcntl.LOCK_EX)
+    return handle
+
+
 def create_dm_conversation(central: sqlite3.Connection, user_a_id: int, user_b_id: int) -> str:
     name_a = _username_for_id(central, user_a_id)
     name_b = _username_for_id(central, user_b_id)
@@ -287,24 +309,45 @@ def create_dm_conversation(central: sqlite3.Connection, user_a_id: int, user_b_i
         raise ValueError("Unknown user")
     maybe_migrate_user(central, name_a)
     maybe_migrate_user(central, name_b)
-    existing = find_dm_conversation(name_a, name_b)
-    if existing:
-        return existing
-    existing = find_dm_conversation(name_b, name_a)
-    if existing:
-        return existing
-    now = _now_iso()
-    conv_id = _new_id()
-    members = [
-        {"username": name_a, "user_id": user_a_id, "joined_at": now, "accepted": 1},
-        {"username": name_b, "user_id": user_b_id, "joined_at": now, "accepted": 0},
-    ]
+    lo, hi = sorted((name_a, name_b))
+    handle = _dm_pair_lock(central)
+    try:
+        central.execute(_DM_PAIR_SCHEMA)
+        row = central.execute(
+            "SELECT conversation_id FROM chat_dm_pairs WHERE user_lo = ? AND user_hi = ?",
+            (lo, hi),
+        ).fetchone()
+        if row:
+            return str(row[0])
+        existing = find_dm_conversation(name_a, name_b) or find_dm_conversation(name_b, name_a)
+        now = _now_iso()
+        conv_id = existing or _new_id()
+        central.execute(
+            "INSERT INTO chat_dm_pairs (user_lo, user_hi, conversation_id) VALUES (?, ?, ?)",
+            (lo, hi, conv_id),
+        )
+        if not existing:
+            members = [
+                {"username": name_a, "user_id": user_a_id, "joined_at": now, "accepted": 1},
+                {"username": name_b, "user_id": user_b_id, "joined_at": now, "accepted": 0},
+            ]
 
-    def write(box, _m):
-        _write_conversation(box, conv_id=conv_id, kind="dm", title="", now=now, members=members)
+            def write(box, _m, conv_id=conv_id, now=now, members=members):
+                _write_conversation(box, conv_id=conv_id, kind="dm", title="", now=now, members=members)
 
-    _fanout_members(members, write)
-    return conv_id
+            _fanout_members(members, write)
+        central.commit()
+        return conv_id
+    except Exception:
+        try:
+            central.rollback()
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        if handle is not None:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+            handle.close()
 
 
 def create_group_conversation(
@@ -943,7 +986,12 @@ def insert_message(
         )
         _fts_upsert(box, mid, fts_body, original)
 
-    _fanout_members(members, write)
+    deliver_to = [
+        member
+        for member in members
+        if member.get("username") == username or int(member.get("accepted", 1))
+    ]
+    _fanout_members(deliver_to, write)
     msg = get_message(username, mid)
     assert msg is not None
     msg["mentions"] = mentions
@@ -1336,6 +1384,8 @@ def search_messages(username: str, query: str, *, limit: int = 40) -> list[dict]
         for r in rows:
             msg = _row_to_message(r)
             if msg.get("e2e"):
+                continue
+            if not exchange_open(username, str(msg.get("conversation_id") or "")):
                 continue
             msg["snippet"] = plain_preview(msg["body"] or _meta_name(msg["metadata"]), 160)
             results.append(msg)

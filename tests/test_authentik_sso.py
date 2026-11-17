@@ -734,6 +734,22 @@ def test_name_header_round_trip_and_display_name_shape():
     assert "secret" not in view
 
 
+def test_logout_ends_authentik_session_and_proxy_cookie():
+    from aird.core.authentik_sso import DEFAULT_LOGOUT_URL, post_logout_redirect_url
+
+    conn = sqlite3.connect(":memory:")
+    init_db(conn)
+    assert post_logout_redirect_url(conn) == "/login?logged_out=1"
+    save_authentik_sso(
+        conn,
+        {"enabled": True, "username_header": "X-authentik-username", "secret": ""},
+    )
+    url = post_logout_redirect_url(conn)
+    assert url == DEFAULT_LOGOUT_URL
+    assert url.startswith("/flows/-/default/invalidation/")
+    assert "next=/outpost.goauthentik.io/sign_out" in url
+
+
 def test_password_change_url_only_when_enabled():
     from aird.core.authentik_sso import DEFAULT_PASSWORD_URL, password_change_url
 

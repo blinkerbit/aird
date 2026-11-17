@@ -27,6 +27,7 @@ class EnhancedSecureRoom:
     host: str
     peer: str
     pubs: dict[str, dict] = field(default_factory=dict)
+    sigs: dict[str, str] = field(default_factory=dict)
     created: float = field(default_factory=time.monotonic)
 
     def other(self, username: str) -> str:
@@ -39,12 +40,38 @@ class EnhancedSecureRoom:
         return self.host in self.pubs and self.peer in self.pubs
 
 
+def _require_sig(sig: str | None) -> str:
+    from aird.plugins.chat.e2e import _b64_ok
+
+    signature = str(sig or "").strip()
+    if not _b64_ok(signature, min_len=20, max_len=200):
+        raise ValueError("Missing key signature")
+    return signature
+
+
+def _pack_epk(pub: dict, sig: str) -> str:
+    return json.dumps({"jwk": pub, "sig": sig}, separators=(",", ":"))
+
+
+def _unpack_epk(raw: str) -> tuple[dict | None, str]:
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None, ""
+    if isinstance(data, dict) and isinstance(data.get("jwk"), dict):
+        return data["jwk"], str(data.get("sig") or "")
+    if isinstance(data, dict) and data.get("kty"):
+        return data, ""
+    return None, ""
+
+
 def _view(room: EnhancedSecureRoom) -> dict:
     return {
         "room_id": room.room_id,
         "host": room.host,
         "peer": room.peer,
         "pubs": dict(room.pubs),
+        "sigs": dict(room.sigs),
         "ready": room.ready(),
     }
 
@@ -181,15 +208,17 @@ class EnhancedSecureHub:
             self._pair[key] = room.room_id
             return _view(room)
 
-    def join(self, username: str, room_id: str, epk) -> dict:
+    def join(self, username: str, room_id: str, epk, sig: str | None = None) -> dict:
         pub = validate_public_jwk(epk)
+        signature = _require_sig(sig)
         if self._db_path:
-            return self._join_shared(username, room_id, pub)
+            return self._join_shared(username, room_id, pub, signature)
         with self._lock:
             room = self._rooms.get(room_id)
             if room is None or not room.has(username):
                 raise ValueError("Enhanced Secure Chat is not available")
             room.pubs[username] = pub
+            room.sigs[username] = signature
             return _view(room)
 
     def relay(self, username: str, room_id: str, payload) -> tuple[str, dict]:
@@ -248,6 +277,7 @@ class EnhancedSecureHub:
                         "room_id": room.room_id,
                         "from": room.host,
                         "epk": room.pubs.get(room.host),
+                        "sig": room.sigs.get(room.host),
                     })
                 elif room.ready():
                     notes.append({
@@ -255,6 +285,7 @@ class EnhancedSecureHub:
                         "room_id": room.room_id,
                         "peer": room.other(username),
                         "epk": room.pubs.get(room.other(username)),
+                        "sig": room.sigs.get(room.other(username)),
                     })
             return notes
 
@@ -298,7 +329,7 @@ class EnhancedSecureHub:
                 row = db.execute("SELECT * FROM rooms WHERE room_id=?", (room_id,)).fetchone()
             return self._row_view(row)
 
-    def _join_shared(self, username: str, room_id: str, pub: dict) -> dict:
+    def _join_shared(self, username: str, room_id: str, pub: dict, sig: str) -> dict:
         with self._lock:
             db = self._db()
             row = db.execute("SELECT * FROM rooms WHERE room_id=?", (room_id,)).fetchone()
@@ -307,7 +338,7 @@ class EnhancedSecureHub:
             column = "host_epk" if username == row["host"] else "peer_epk"
             db.execute(
                 f"UPDATE rooms SET {column}=? WHERE room_id=?",
-                (json.dumps(pub), room_id),
+                (_pack_epk(pub, sig), room_id),
             )
             db.commit()
             row = db.execute("SELECT * FROM rooms WHERE room_id=?", (room_id,)).fetchone()
@@ -369,6 +400,7 @@ class EnhancedSecureHub:
                     "room_id": view["room_id"],
                     "from": view["host"],
                     "epk": view["pubs"].get(view["host"]),
+                    "sig": (view.get("sigs") or {}).get(view["host"]),
                 })
             elif view["ready"]:
                 other = view["peer"] if username == view["host"] else view["host"]
@@ -377,6 +409,7 @@ class EnhancedSecureHub:
                     "room_id": view["room_id"],
                     "peer": other,
                     "epk": view["pubs"].get(other),
+                    "sig": (view.get("sigs") or {}).get(other),
                 })
         return notes
 
@@ -387,16 +420,23 @@ class EnhancedSecureHub:
 
     def _row_view(self, row: sqlite3.Row) -> dict:
         pubs: dict[str, dict] = {}
-        if row["host_epk"]:
-            pubs[str(row["host"])] = json.loads(row["host_epk"])
-        if row["peer_epk"]:
-            pubs[str(row["peer"])] = json.loads(row["peer_epk"])
+        sigs: dict[str, str] = {}
+        for user, raw in ((row["host"], row["host_epk"]), (row["peer"], row["peer_epk"])):
+            if not raw:
+                continue
+            pub, sig = _unpack_epk(raw)
+            if not pub:
+                continue
+            pubs[str(user)] = pub
+            if sig:
+                sigs[str(user)] = sig
         return {
             "room_id": str(row["room_id"]),
             "host": str(row["host"]),
             "peer": str(row["peer"]),
             "pubs": pubs,
-            "ready": len(pubs) == 2,
+            "sigs": sigs,
+            "ready": len(pubs) == 2 and len(sigs) == 2,
         }
 
 

@@ -20,6 +20,17 @@ from aird.plugins.chat.service import ChatHub
 _HDR = struct.Struct(">I")
 
 
+def _send(sock: socket.socket, frame: dict) -> None:
+    raw = json.dumps(frame, separators=(",", ":")).encode()
+    sock.sendall(_HDR.pack(len(raw)) + raw)
+
+
+def _auth(sock: socket.socket) -> None:
+    from aird.plugins.chat.hub_bus import hub_token
+
+    _send(sock, {"op": "auth", "token": hub_token()})
+
+
 def _read_frame(sock: socket.socket) -> dict:
     header = b""
     while len(header) < 4:
@@ -61,9 +72,10 @@ def test_fanout_skips_sender(hub_path):
     right = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     left.connect(hub_path)
     right.connect(hub_path)
+    _auth(left)
+    _auth(right)
     time.sleep(0.05)
-    raw = json.dumps({"op": "deliver", "user_ids": [7], "payload": {"type": "chat_message"}}).encode()
-    left.sendall(_HDR.pack(len(raw)) + raw)
+    _send(left, {"op": "deliver", "user_ids": [7], "payload": {"type": "chat_message"}})
     right.settimeout(2)
     frame = _read_frame(right)
     assert frame["payload"]["type"] == "chat_message"
@@ -78,6 +90,7 @@ def test_fanout_skips_sender(hub_path):
 def test_hub_reaches_peer_worker(hub_path):
     peer = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     peer.connect(hub_path)
+    _auth(peer)
     peer.settimeout(2)
 
     class Socket:

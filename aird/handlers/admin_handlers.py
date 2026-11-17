@@ -1087,6 +1087,13 @@ class UserPasswordResetHandler(BaseHandler):
             self.set_status(500)
             self.write("Password reset failed")
             return
+        reset_row = self.db_conn.execute(
+            "SELECT username FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if reset_row and reset_row[0]:
+            from aird.db.sessions import revoke_all_sessions
+
+            revoke_all_sessions(self.db_conn, reset_row[0])
 
         refreshed = user_service.list_users(self.db_conn)
         target = next((u for u in refreshed if u["id"] == user_id), None)

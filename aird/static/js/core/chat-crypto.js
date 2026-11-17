@@ -65,6 +65,38 @@ export async function ecdhGenerateKey() {
  * @param {string} saltText per-conversation salt (conv/room id).
  * @param {Uint8Array} info domain-separation bytes (caller-owned).
  */
+const ECDSA_P256 = { name: 'ECDSA', namedCurve: 'P-256' };
+
+/** Sign bytes with a P-256 private JWK. Returns standard base64. */
+export async function ecdsaSign(privateJwk, data) {
+  const key = await crypto.subtle.importKey(
+    'jwk',
+    { kty: 'EC', crv: 'P-256', x: privateJwk.x, y: privateJwk.y, d: privateJwk.d },
+    ECDSA_P256,
+    false,
+    ['sign'],
+  );
+  const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, data);
+  return b64encode(new Uint8Array(sig));
+}
+
+/** Verify a standard-base64 ECDSA signature against a P-256 public JWK. */
+export async function ecdsaVerify(publicJwk, data, sigB64) {
+  const key = await crypto.subtle.importKey(
+    'jwk',
+    { kty: 'EC', crv: 'P-256', x: publicJwk.x, y: publicJwk.y },
+    ECDSA_P256,
+    false,
+    ['verify'],
+  );
+  return crypto.subtle.verify(
+    { name: 'ECDSA', hash: 'SHA-256' },
+    key,
+    b64decode(sigB64),
+    data,
+  );
+}
+
 export async function ecdhDeriveAesKey(privateKey, publicKey, saltText, info) {
   const bits = await crypto.subtle.deriveBits(
     { name: 'ECDH', public: publicKey },

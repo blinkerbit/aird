@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import secrets
 import sqlite3
 from datetime import datetime, timezone
 
@@ -24,14 +25,15 @@ def unique_slug(conn: sqlite3.Connection, table: str, title: str, preferred: str
     if table not in _TABLES:
         raise ValueError("unknown table")
     seed = clean_slug(preferred, title)
-    slug = seed
-    n = 2
-    while True:
+    owned = conn.execute(f"SELECT id FROM {table} WHERE slug = ?", (seed,)).fetchone()
+    if owned and except_id and str(owned[0]) == except_id:
+        return seed
+    for _ in range(8):
+        slug = f"{seed}-{secrets.token_hex(2)}"
         row = conn.execute(f"SELECT id FROM {table} WHERE slug = ?", (slug,)).fetchone()
         if not row or (except_id and str(row[0]) == except_id):
             return slug
-        slug = f"{seed}-{n}"
-        n += 1
+    raise ValueError("Could not assign a slug")
 
 
 def assign_slug(conn: sqlite3.Connection, table: str, artifact_id: str, title: str, preferred: str | None = None) -> str:

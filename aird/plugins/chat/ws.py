@@ -239,8 +239,15 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
         if not is_calls_enabled() or self._user_id is None or not self._username:
             return
         conversation_id = str(data.get("conversation_id") or "")
-        if not conversation_id or not chat_db.user_in_conversation(self._username, conversation_id):
+        if not conversation_id or not chat_db.exchange_open(self._username, conversation_id):
             return
+        call_id = str(data.get("call_id") or "")
+        if call_id:
+            from aird.plugins.calls.notify import call_record
+
+            record = call_record(call_id)
+            if not record or record["conversation_id"] != conversation_id:
+                return
         extra = {}
         if data.get("mode"):
             extra["mode"] = data.get("mode")
@@ -260,7 +267,7 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
 
     def _handle_send(self, conn, data: dict) -> None:
         conversation_id = str(data.get("conversation_id") or "")
-        if not conversation_id or not chat_db.user_in_conversation(self._username, conversation_id):
+        if not conversation_id or not chat_db.exchange_open(self._username, conversation_id):
             self.write_message(json.dumps({"type": "error", "message": "Forbidden"}))
             return
         reply_to = str(data.get("reply_to_id") or "") or None
@@ -389,6 +396,7 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
                 "room_id": view["room_id"],
                 "peer": other,
                 "epk": view["pubs"].get(other),
+                "sig": (view.get("sigs") or {}).get(other),
             })
 
     def _handle_enhanced_invite(self, conn, data: dict) -> None:
@@ -399,14 +407,15 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
         if chat_db.resolve_user_id(conn, peer) is None:
             self._enhanced_error("No such user")
             return
-        if not chat_db.find_dm_conversation(self._username, peer):
+        dm_id = chat_db.find_dm_conversation(self._username, peer)
+        if not dm_id or not chat_db.exchange_open(self._username, dm_id):
             self._enhanced_error("Start a normal chat with them first")
             return
         try:
             view = get_enhanced_secure_hub().invite(self._username, peer)
             if data.get("epk"):
                 view = get_enhanced_secure_hub().join(
-                    self._username, view["room_id"], data.get("epk")
+                    self._username, view["room_id"], data.get("epk"), data.get("sig")
                 )
         except ValueError as exc:
             self._enhanced_error(str(exc))
@@ -435,7 +444,7 @@ class ChatWebSocketHandler(ManagedWebSocketMixin, tornado.websocket.WebSocketHan
         room_id = str(data.get("room_id") or "")
         try:
             view = get_enhanced_secure_hub().join(
-                self._username, room_id, data.get("epk")
+                self._username, room_id, data.get("epk"), data.get("sig")
             )
         except ValueError as exc:
             self._enhanced_error(str(exc))

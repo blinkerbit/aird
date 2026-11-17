@@ -66,8 +66,6 @@ async def sendfile_to_socket(
     except (AttributeError, OSError):
         return 0
     try:
-        if ".." in file_path:
-            raise Exception("Invalid file path")
         file_size = os.path.getsize(file_path)
         end = file_size if length is None else start + length
         count = min(end, file_size) - start
@@ -83,6 +81,6 @@ async def sendfile_to_socket(
                     return -1
 
         return await asyncio.to_thread(_run)
-    except OSError:
+    except Exception:
         logger.debug("sendfile failed for %s", file_path, exc_info=True)
         return 0

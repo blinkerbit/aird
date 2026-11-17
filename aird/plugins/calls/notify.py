@@ -95,8 +95,8 @@ def _settle_call(conversation_id: str, call_id: str, state: str) -> None:
     try:
         if call_id:
             conn.execute(
-                "UPDATE call_state SET state=? WHERE call_id=? AND state='ringing'",
-                (state, call_id),
+                "UPDATE call_state SET state=? WHERE call_id=? AND conversation_id=? AND state='ringing'",
+                (state, call_id, conversation_id),
             )
         else:
             conn.execute(
@@ -516,6 +516,27 @@ def peek_call_ring(username: str) -> dict | None:
         return None
     try:
         return read_call_ring(conn, username)
+    finally:
+        conn.close()
+
+
+def call_record(call_id: str) -> dict | None:
+    """Return conversation_id and state for a call, or None when it does not exist."""
+    if not call_id:
+        return None
+    conn = _ring_conn()
+    if conn is None:
+        return None
+    try:
+        row = conn.execute(
+            "SELECT conversation_id, state FROM call_state WHERE call_id=?",
+            (call_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return {"conversation_id": str(row[0]), "state": str(row[1])}
+    except Exception:
+        return None
     finally:
         conn.close()
 

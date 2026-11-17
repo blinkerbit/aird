@@ -163,7 +163,7 @@ def load_device_pending(conn: sqlite3.Connection | None) -> dict:
     if not raw:
         return {}
     try:
-        data = json.loads(raw)
+        data = json.loads(decrypt_secret(str(raw)))
     except (TypeError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
@@ -171,7 +171,9 @@ def load_device_pending(conn: sqlite3.Connection | None) -> dict:
 
 def save_device_pending(conn: sqlite3.Connection, payload: dict) -> None:
     save_server_config(
-        conn, {DEVICE_PENDING_KEY: json.dumps(payload)}, bump_revision=False
+        conn,
+        {DEVICE_PENDING_KEY: encrypt_secret(json.dumps(payload))},
+        bump_revision=False,
     )
 
 

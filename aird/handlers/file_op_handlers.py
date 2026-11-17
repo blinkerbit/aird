@@ -226,13 +226,11 @@ def finalize_upload_to_disk(
     upload_bytes: int,
 ) -> tuple[bool, int, str]:
     """Move a staged upload file into the user's tree. Returns (ok, status, message)."""
+    reserved = False
     if quota_service and is_feature_enabled("storage_quotas", False):
-        quota = quota_service.get_quota(db_conn, username)
-        if (
-            quota["quota_bytes"] is not None
-            and quota["used_bytes"] + upload_bytes > quota["quota_bytes"]
-        ):
+        if not quota_service.reserve_bytes(db_conn, username, upload_bytes):
             return (False, 413, "Storage quota exceeded")
+        reserved = True
 
     final_path_abs, upload_err = _validate_upload_destination(
         upload_dir,
@@ -241,15 +239,21 @@ def finalize_upload_to_disk(
         mounts_for_username(db_conn, username) if db_conn else None,
     )
     if upload_err is not None:
+        if reserved and quota_service:
+            quota_service.update_used_bytes(db_conn, username, -upload_bytes)
         return (False, upload_err[0], upload_err[1])
 
     try:
         actual_bytes = os.path.getsize(temp_path)
     except OSError:
         logging.exception("Upload temp file missing before finalize")
+        if reserved and quota_service:
+            quota_service.update_used_bytes(db_conn, username, -upload_bytes)
         return (False, 500, UPLOAD_SAVE_FAILED)
     if actual_bytes != upload_bytes:
         _remove_staged_upload_temp(temp_path)
+        if reserved and quota_service:
+            quota_service.update_used_bytes(db_conn, username, -upload_bytes)
         return (False, 499, "Upload incomplete")
 
     os.makedirs(os.path.dirname(final_path_abs), exist_ok=True)
@@ -257,10 +261,9 @@ def finalize_upload_to_disk(
         shutil.move(temp_path, final_path_abs)
     except Exception:
         logging.exception("Upload save failed")
+        if reserved and quota_service:
+            quota_service.update_used_bytes(db_conn, username, -upload_bytes)
         return (False, 500, UPLOAD_SAVE_FAILED)
-
-    if quota_service and is_feature_enabled("storage_quotas", False):
-        quota_service.update_used_bytes(db_conn, username, upload_bytes)
 
     if audit_service:
         audit_service.log(
@@ -353,6 +356,36 @@ def _bulk_add_to_share_one(
     share = get_service("share_service").get_share(db_conn, share_id)
     if not share:
         return SHARE_NOT_FOUND
+    from aird.core.browse_paths import mounts_for_share_creator, resolve_rel
+    from aird.core.share_root import (
+        filesystem_root_for_share,
+        login_matches_share_creator_field,
+    )
+
+    actor = (get_display_username() or "").strip()
+    modify_users = share.get("modify_users") or []
+    from aird.db.users import get_user_by_username
+
+    actor_row = get_user_by_username(db_conn, actor) if actor else None
+    is_admin = bool(actor_row and actor_row.get("role") == "admin")
+    if (
+        not is_admin
+        and not login_matches_share_creator_field(share.get("created_by"), actor)
+        and actor not in modify_users
+    ):
+        return "Not allowed to edit this share"
+    creator_root = filesystem_root_for_share(share)
+    creator_mounts = mounts_for_share_creator(db_conn, share)
+    owned_abs, owned_confine = resolve_rel(creator_root, path, creator_mounts)
+    if (
+        not owned_abs
+        or not owned_confine
+        or not is_within_root(owned_abs, owned_confine)
+        or not os.path.exists(owned_abs)
+    ):
+        return "Path is not in the share owner's files"
+    abspath = owned_abs
+    root_dir = creator_root
     stype = share.get("share_type", "static")
     if stype == "tag":
         return "Cannot add paths to a tag-based share"
@@ -1049,6 +1082,27 @@ def _resolve_copy_move_paths(handler, path: str, dest: str) -> tuple[str, str] |
     return src_abs, dest_abs
 
 
+def _copy_tree_nofollow(src: str, dst: str) -> None:
+    """Copy a directory without following or recreating symlinks."""
+    from aird.constants import AIRD_META_FOLDER
+
+    os.makedirs(dst)
+    for dirpath, dirnames, filenames in os.walk(src, followlinks=False):
+        dirnames[:] = [
+            name
+            for name in dirnames
+            if name != AIRD_META_FOLDER and not os.path.islink(os.path.join(dirpath, name))
+        ]
+        rel = os.path.relpath(dirpath, src)
+        target_dir = dst if rel == "." else os.path.join(dst, rel)
+        os.makedirs(target_dir, exist_ok=True)
+        for fname in filenames:
+            full = os.path.join(dirpath, fname)
+            if os.path.islink(full):
+                continue
+            shutil.copy2(full, os.path.join(target_dir, fname))
+
+
 class CopyHandler(BaseHandler):
     @tornado.web.authenticated
     @require_action("file.write")
@@ -1062,8 +1116,12 @@ class CopyHandler(BaseHandler):
             return
         src_abs, dest_abs = resolved
         try:
+            if os.path.islink(src_abs):
+                self.set_status(400)
+                self.write({"error": "Cannot copy a symlink"})
+                return
             if os.path.isdir(src_abs):
-                shutil.copytree(src_abs, dest_abs)
+                _copy_tree_nofollow(src_abs, dest_abs)
             else:
                 shutil.copy2(src_abs, dest_abs)
         except OSError:
@@ -1195,13 +1253,16 @@ def _run_bulk_path_action(
     display_path = path.strip().strip("/") if isinstance(path, str) else path
     if path_err:
         return {"path": display_path, "ok": False, "error": path_err}
+    def _actor() -> str:
+        return get_username_string_for_db(handler) or handler.get_display_username()
+
     err = _process_bulk_action(
         action,
         abspath,
         display_path,
         data,
         handler.db_conn,
-        handler.get_display_username,
+        _actor,
         remote_ip,
         handler.get_service,
         root,
