@@ -309,15 +309,11 @@ import { escapeHtml as esc } from './core/dom-safe.js';
     if (!name) return;
     const existing = [...rooms.values()].find((room) => room.peer === name);
     if (existing) {
-      if (existing.requested) {
-        show(existing.roomId);
-        return;
-      }
-      if (!await sendJoin(existing)) {
+      if (!existing.requested && !await sendJoin(existing)) {
         status('Chat connection is not open');
         return;
       }
-      show(existing.roomId);
+      global.AirdChatPage?.refreshList?.();
       return;
     }
     const keys = await freshKey();
@@ -475,7 +471,8 @@ import { escapeHtml as esc } from './core/dom-safe.js';
       status('Chat connection is not open');
       return;
     }
-    show(room.roomId);
+    global.AirdChatPage?.refreshList?.();
+    if (viewing === room.roomId) paint(room);
   }
 
   async function onOpen(msg) {

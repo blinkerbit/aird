@@ -430,15 +430,35 @@ import {
     return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
   }
 
-  function minuteKey(iso) {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return '';
-    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}-${d.getMinutes()}`;
+  const CLUSTER_GAP_MS = 5 * 60 * 1000;
+
+  function messageStamp(iso) {
+    const t = new Date(iso).getTime();
+    return Number.isNaN(t) ? 0 : t;
   }
+
+  function unwrapRuns() {
+    messagesEl.querySelectorAll(':scope > .chat-msg-run').forEach((group) => {
+      const kids = [...group.childNodes];
+      group.replaceWith(...kids);
+    });
+  }
+
+  let clusterObserver = null;
 
   function reclusterMessages(animateId) {
     if (!messagesEl) return;
-    const rows = [...messagesEl.querySelectorAll('.chat-msg-row')];
+    clusterObserver?.disconnect();
+    try {
+      reclusterMessagesNow(animateId);
+    } finally {
+      clusterObserver?.observe(messagesEl, { childList: true });
+    }
+  }
+
+  function reclusterMessagesNow(animateId) {
+    unwrapRuns();
+    const rows = [...messagesEl.querySelectorAll(':scope > .chat-msg-row')];
     rows.forEach((row) => {
       row.classList.remove('is-lead', 'is-mid', 'is-tail', 'is-cont', 'is-coalescing', 'is-absorb');
     });
@@ -458,21 +478,72 @@ import {
             run[idx - 1].classList.add('is-absorb');
           }
         });
+        const group = document.createElement('div');
+        const mine = run[0].classList.contains('chat-msg-row--mine');
+        group.className = `chat-msg-run ${mine ? 'chat-msg-run--mine' : 'chat-msg-run--theirs'}`;
+        run[0].before(group);
+        run.forEach((row) => group.appendChild(row));
       }
       run = [];
     };
     for (const el of messagesEl.children) {
-      const row = el.classList?.contains('chat-msg-row') && el.dataset.minute && el.dataset.sender ? el : null;
+      const row = el.classList?.contains('chat-msg-row') && el.dataset.sender && el.dataset.ts ? el : null;
       const prev = run[run.length - 1];
+      const gap = row && prev ? Number(row.dataset.ts) - Number(prev.dataset.ts) : Infinity;
       const joins = row && prev
         && prevEl === prev
-        && prev.dataset.minute === row.dataset.minute
-        && prev.dataset.sender === row.dataset.sender;
+        && prev.dataset.sender === row.dataset.sender
+        && gap >= 0
+        && gap < CLUSTER_GAP_MS;
       if (!joins) flush();
       if (row) run.push(row);
       prevEl = el;
     }
     flush();
+    placeRunShells();
+  }
+
+  function placeRunShells() {
+    if (!messagesEl) return;
+    messagesEl.querySelectorAll(':scope > .chat-msg-run').forEach((group) => {
+      const bubbles = [...group.querySelectorAll('.aird-chat-bubble')];
+      let shell = group.querySelector(':scope > .chat-run-shell');
+      if (bubbles.length < 2) {
+        shell?.remove();
+        return;
+      }
+      if (!shell) {
+        shell = document.createElement('div');
+        shell.className = 'chat-run-shell';
+        group.prepend(shell);
+      }
+      const host = group.getBoundingClientRect();
+      let top = Infinity;
+      let left = Infinity;
+      let right = -Infinity;
+      let bottom = -Infinity;
+      bubbles.forEach((bubble) => {
+        const rect = bubble.getBoundingClientRect();
+        top = Math.min(top, rect.top);
+        left = Math.min(left, rect.left);
+        right = Math.max(right, rect.right);
+        bottom = Math.max(bottom, rect.bottom);
+      });
+      shell.style.top = `${top - host.top}px`;
+      shell.style.left = `${left - host.left}px`;
+      shell.style.width = `${Math.max(0, right - left)}px`;
+      shell.style.height = `${Math.max(0, bottom - top)}px`;
+    });
+  }
+
+  if (messagesEl) {
+    clusterObserver = new MutationObserver(() => reclusterMessages());
+    clusterObserver.observe(messagesEl, { childList: true });
+    if (typeof ResizeObserver !== 'undefined') {
+      const shellObserver = new ResizeObserver(() => placeRunShells());
+      shellObserver.observe(messagesEl);
+    }
+    window.addEventListener('resize', () => placeRunShells());
   }
 
   function dayKey(iso) {
@@ -1507,7 +1578,7 @@ import {
       : `<div class="chat-msg-name">${esc(msg.sender_display_name || userLabel(msg.sender_username, activeConv()) || msg.sender_username)}</div>`;
     const selected = selectedIds.has(msg.id) ? ' is-selected' : '';
     const checked = selectedIds.has(msg.id) ? ' checked' : '';
-    return `<div class="chat-msg-row ${rowClass}${selected}" data-msg-id="${esc(msg.id)}" data-sender="${esc(msg.sender_username || '')}" data-minute="${esc(minuteKey(msg.created_at))}" data-mine="${msg._mine ? '1' : '0'}" data-e2e="${msg._e2e ? '1' : '0'}" data-decrypt-ok="${msg._decryptOk ? '1' : '0'}" data-created-at="${esc(msg.created_at || '')}"><label class="chat-msg-select"><input type="checkbox" data-select-id="${esc(msg.id)}"${checked} aria-label="Select message"></label>${avatarHtml(msg.sender_username)}<div class="chat-msg-stack">${nameLine}<div class="chat-msg-main">${hoverBarHtml(msg)}<div class="aird-chat-bubble ${bubbleClass}"><div class="aird-chat-bubble-body">${body}</div>${reactionsHtml(msg)}</div></div><div class="chat-msg-time">${esc(formatTime(msg.created_at))}</div>${seenHtml(msg)}</div></div>`;
+    return `<div class="chat-msg-row ${rowClass}${selected}" data-msg-id="${esc(msg.id)}" data-sender="${esc(msg.sender_username || '')}" data-ts="${messageStamp(msg.created_at)}" data-mine="${msg._mine ? '1' : '0'}" data-e2e="${msg._e2e ? '1' : '0'}" data-decrypt-ok="${msg._decryptOk ? '1' : '0'}" data-created-at="${esc(msg.created_at || '')}"><label class="chat-msg-select"><input type="checkbox" data-select-id="${esc(msg.id)}"${checked} aria-label="Select message"></label>${avatarHtml(msg.sender_username)}<div class="chat-msg-stack">${nameLine}<div class="chat-msg-main">${hoverBarHtml(msg)}<div class="aird-chat-bubble ${bubbleClass}"><div class="aird-chat-bubble-body">${body}</div>${reactionsHtml(msg)}</div></div><div class="chat-msg-time">${esc(formatTime(msg.created_at))}</div>${seenHtml(msg)}</div></div>`;
   }
 
   function refreshSeenIndicator(messageId) {
@@ -2039,6 +2110,7 @@ import {
     el.dataset.e2e = msg._e2e ? '1' : '0';
     el.dataset.decryptOk = msg._decryptOk ? '1' : '0';
     el.dataset.createdAt = msg.created_at || el.dataset.createdAt || '';
+    if (msg.created_at) el.dataset.ts = String(messageStamp(msg.created_at));
     const time = el.querySelector('.chat-msg-time');
     if (time && msg.created_at) time.textContent = formatTime(msg.created_at);
     return true;
@@ -2078,7 +2150,10 @@ import {
     if (!messagesEl) return;
     await prepareMessage(msg);
     tagMine(msg);
-    if (settlePending(msg)) return;
+    if (settlePending(msg)) {
+      reclusterMessages(msg.id);
+      return;
+    }
     messagesEl.querySelector('.chat-empty')?.remove();
     const day = dayKey(msg.created_at);
     if (day && day !== lastDayKey()) {

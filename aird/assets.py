@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -98,11 +99,32 @@ class _Index:
 
 
 _index: _Index | None = None
+_index_built_at = 0.0
+_index_checked = 0.0
 
 
 def clear_asset_cache() -> None:
-    global _index
+    global _index, _index_built_at, _index_checked
     _index = None
+    _index_built_at = 0.0
+    _index_checked = 0.0
+
+
+def _newest_mtime() -> float:
+    latest = 0.0
+    root = _STATIC_ROOT
+    if not root.is_dir():
+        return latest
+    for path in root.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in _HASHED_SUFFIXES:
+            continue
+        if path.relative_to(root).as_posix() in _SKIP:
+            continue
+        try:
+            latest = max(latest, path.stat().st_mtime)
+        except OSError:
+            continue
+    return latest
 
 
 def static_root() -> Path:
@@ -179,9 +201,15 @@ def _build() -> _Index:
 
 
 def get_index() -> _Index:
-    global _index
-    if _index is None:
+    global _index, _index_built_at, _index_checked
+    now = time.monotonic()
+    if _index is not None and now - _index_checked < 1.0:
+        return _index
+    _index_checked = now
+    latest = _newest_mtime()
+    if _index is None or latest > _index_built_at:
         _index = _build()
+        _index_built_at = latest
     return _index
 
 
