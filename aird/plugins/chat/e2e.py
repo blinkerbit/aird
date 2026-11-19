@@ -387,6 +387,22 @@ def bind_conv_key(usernames: list[str], conversation_id: str, bundle: dict) -> d
     return share_conv_key(names, conversation_id, bundle)
 
 
+def mint_conv_key(usernames: list[str], conversation_id: str) -> dict:
+    """Create the shared key when a new chat has none yet.
+
+    The Android app can encrypt only after GET returns conv_key. A phone
+    without a local private key never PUTs one, so the first message is dropped.
+    """
+    raw = os.urandom(32)
+    bundle = {
+        "v": 1,
+        "kind": "aird-chat-e2e-conv",
+        "conversation_id": conversation_id,
+        "key": _b64_std(raw),
+    }
+    return bind_conv_key(usernames, conversation_id, bundle)
+
+
 def adopt_conv_key(username: str, conversation_id: str, members: list[str]) -> dict | None:
     """Copy a conversation key from any member's Aird folder to every member."""
     names = [str(n).strip() for n in members if str(n or "").strip()]

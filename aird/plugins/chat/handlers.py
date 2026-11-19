@@ -53,6 +53,7 @@ from aird.plugins.chat.notify import (
 from aird.plugins.chat.e2e import (
     adopt_conv_key,
     bind_conv_key,
+    mint_conv_key,
     get_identity_keys,
     is_e2e_meta,
     delete_stored_conv_keys,
@@ -1862,6 +1863,8 @@ class ChatConversationE2EHandler(BaseHandler, XSRFTokenMixin):
         stored = adopt_conv_key(name, conversation_id, accepted)
         if not stored:
             stored = recover_conv_key(conversation_id, accepted, wraps)
+        if not stored and accepted:
+            stored = mint_conv_key(accepted, conversation_id)
         self.set_header("Cache-Control", _CACHE_NO_STORE)
         self.write(
             {

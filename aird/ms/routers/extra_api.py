@@ -359,6 +359,32 @@ async def webauthn_auth_verify(request: Request) -> Response:
     return response
 
 
+async def webauthn_credential_list(request: Request) -> Response:
+    if not _webauthn_enabled():
+        return Response(status_code=404)
+    user = current_user(request)
+    if not user or not isinstance(user, dict) or not user.get("username"):
+        return _json_error(403, "Forbidden")
+    username = user["username"]
+    conn, err = _db_or_503(request)
+    if err:
+        return err
+    adapter = _WebAuthnRequestAdapter(request)
+    rp_id, _, _ = resolve_webauthn_config(adapter)
+    user_id = base64.urlsafe_b64encode(username.encode("utf-8")).decode("ascii").rstrip("=")
+    credentials = [
+        {
+            "id": item["id"],
+            "credentialId": item["credential_id"],
+            "nickname": item.get("nickname") or "Passkey",
+            "createdAt": item.get("created_at") or "",
+            "lastUsedAt": item.get("last_used_at") or "",
+        }
+        for item in webauthn_db.list_credentials(conn, username)
+    ]
+    return JSONResponse({"rpId": rp_id, "userId": user_id, "credentials": credentials})
+
+
 async def webauthn_credential_delete(request: Request) -> Response:
     if not _webauthn_enabled():
         return Response(status_code=404)
@@ -1045,6 +1071,7 @@ routes = [
     Route("/api/webauthn/register/verify", webauthn_register_verify, methods=["POST"]),
     Route("/api/webauthn/auth/options", webauthn_auth_options, methods=["POST"]),
     Route("/api/webauthn/auth/verify", webauthn_auth_verify, methods=["POST"]),
+    Route("/api/webauthn/credentials", webauthn_credential_list, methods=["GET"]),
     Route("/api/webauthn/credentials/{cred_id}", webauthn_credential_delete, methods=["DELETE"]),
     Route("/api/cloud/providers", cloud_providers, methods=["GET"]),
     Route("/api/cloud/{provider_name}/files", cloud_files, methods=["GET"]),
