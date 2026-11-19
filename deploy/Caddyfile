@@ -44,13 +44,17 @@ http://localhost:8080, http://127.0.0.1:8080 {
 		rewrite * /health
 		reverse_proxy 127.0.0.1:8006
 	}
+	handle /health/chat {
+		rewrite * /health
+		reverse_proxy 127.0.0.1:8008
+	}
 	handle /health/admin {
 		rewrite * /health
 		reverse_proxy 127.0.0.1:8007
 	}
 	handle /health {
 		header Content-Type application/json
-		respond `{"status":"ok","gateway":"caddy","services":["auth","browse","transfer","search","shares","p2p","admin"]}` 200
+		respond `{"status":"ok","gateway":"caddy","services":["auth","browse","transfer","search","shares","p2p","admin","chat"]}` 200
 	}
 
 	# Public entry points. Services still require Caddy's mesh secret.
@@ -147,6 +151,12 @@ http://localhost:8080, http://127.0.0.1:8080 {
 
 			@admin_routes path /admin* /ws/policy-decisions
 			reverse_proxy @admin_routes 127.0.0.1:8007 {
+				header_up X-Aird-Mesh {$AIRD_MESH_SECRET}
+				flush_interval -1
+			}
+
+			@chat_routes path /ws/chat /chat* /api/chat*
+			reverse_proxy @chat_routes 127.0.0.1:8008 {
 				header_up X-Aird-Mesh {$AIRD_MESH_SECRET}
 				flush_interval -1
 			}

@@ -1,0 +1,18 @@
+# Snippet for /opt/edge/caddy/Caddyfile (Authentik + Aird on :18080).
+# Insert before the catch-all `handle { route { import authentik` Aird block.
+#
+# Authentik forward_auth returns 302 on WebSocket Upgrade; Android then never
+# gets chat_ready / enhanced_invite. Aird authenticates /ws/chat via session cookie.
+
+@aird_ws path /ws/chat /ws/bulk /ws/policy-decisions /p2p/signal /search/ws /features /runtime-config /stream/*
+handle @aird_ws {
+	reverse_proxy 127.0.0.1:18080 {
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Host {host}
+		flush_interval -1
+		transport http {
+			read_timeout 3600s
+			write_timeout 3600s
+		}
+	}
+}

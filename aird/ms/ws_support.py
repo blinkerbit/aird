@@ -37,6 +37,16 @@ class WebSocketRequestShim:
         self._inner = Request(scope, _empty_receive)
 
     @property
+    def remote_ip(self) -> str:
+        client = self._inner.client
+        if client is not None and client.host:
+            host = client.host
+            if host.startswith("::ffff:"):
+                return host[7:]
+            return host
+        return ""
+
+    @property
     def host(self) -> str:
         host = self._inner.headers.get("host")
         if host:

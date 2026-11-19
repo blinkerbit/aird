@@ -272,14 +272,36 @@ def effective_request_endpoint(handler) -> tuple[str, int, str]:
     return req_host, req_port, protocol
 
 
+def _default_port(scheme: str, explicit: int | None) -> int:
+    if explicit is not None:
+        return explicit
+    if scheme in ("https", "wss"):
+        return 443
+    if scheme in ("http", "ws"):
+        return 80
+    return explicit or 80
+
+
 def _origin_host_port_ok(
-    handler, origin_host: str, origin_port: int | None, req_host: str, req_port: int
+    handler,
+    origin_host: str,
+    origin_port: int | None,
+    origin_scheme: str,
+    req_host: str,
+    req_port: int,
+    req_protocol: str,
 ) -> bool:
     """Return True if origin host/port are acceptable."""
     allow_dev = bool(handler.settings.get("allow_dev_origins", False))
     dev_ok = allow_dev and origin_host in ("localhost", "127.0.0.1")
     if origin_host != req_host and not dev_ok:
         return False
+    if origin_host == req_host:
+        return True
+    effective_origin = _default_port(origin_scheme, origin_port)
+    effective_req = _default_port(req_protocol, req_port)
+    if effective_origin == effective_req:
+        return True
     if origin_port is not None and origin_port != req_port and not dev_ok:
         return False
     return True
@@ -299,7 +321,13 @@ def is_valid_websocket_origin(handler, origin: str) -> bool:
         if not _origin_scheme_ok(origin_scheme, expected_scheme):
             return False
         return _origin_host_port_ok(
-            handler, origin_host, origin_port, req_host, req_port
+            handler,
+            origin_host,
+            origin_port,
+            origin_scheme,
+            req_host,
+            req_port,
+            req_protocol,
         )
     except Exception:
         return False

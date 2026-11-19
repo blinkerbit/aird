@@ -19,6 +19,8 @@ set AIRD_P2P_HOST=127.0.0.1
 set AIRD_P2P_PORT=8006
 set AIRD_ADMIN_HOST=127.0.0.1
 set AIRD_ADMIN_PORT=8007
+set AIRD_CHAT_HOST=127.0.0.1
+set AIRD_CHAT_PORT=8008
 
 where uv >nul 2>nul
 if errorlevel 1 (
@@ -40,7 +42,7 @@ if not exist "%CADDY_EXE%" (
 REM A leftover Caddy keeps :2019/:8080 and makes the new gateway config silently fail to load.
 taskkill /f /im caddy.exe >nul 2>nul
 
-for %%P in (8000 8001 8002 8004 8005 8006 8007) do (
+for %%P in (8000 8001 8002 8004 8005 8006 8007 8008) do (
   netstat -ano | findstr /r /c:"LISTENING" | findstr /c:"127.0.0.1:%%P " >nul 2>nul
   if not errorlevel 1 (
     echo Port %%P is already in use. Run deploy\stop-ms.bat first.
@@ -55,9 +57,10 @@ start "aird-search :8004" cmd /k "cd /d %~dp0.. && uv run python -m aird.ms.sear
 start "aird-shares :8005" cmd /k "cd /d %~dp0.. && uv run python -m aird.ms.shares_service"
 start "aird-p2p :8006" cmd /k "cd /d %~dp0.. && uv run python -m aird.ms.p2p_service"
 start "aird-admin :8007" cmd /k "cd /d %~dp0.. && uv run python -m aird.ms.admin_service"
+start "aird-chat :8008" cmd /k "cd /d %~dp0.. && uv run python -m aird.ms.chat_service"
 start "aird-caddy :8080" cmd /k "cd /d %~dp0.. && ""%CADDY_EXE%"" run --config deploy\Caddyfile"
 
-echo Started auth:8000 browse:8001 transfer:8002 search:8004 shares:8005 p2p:8006 admin:8007 caddy:8080
+echo Started auth:8000 browse:8001 transfer:8002 search:8004 shares:8005 p2p:8006 admin:8007 chat:8008 caddy:8080
 echo App:    http://localhost:8080/
 echo Health: http://localhost:8080/health
 echo Also:   http://127.0.0.1:8080/
