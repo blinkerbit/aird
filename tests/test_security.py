@@ -176,3 +176,14 @@ class TestIsValidWebsocketOrigin:
             host="localhost:8000", protocol="http", allow_dev=True
         )
         assert is_valid_websocket_origin(handler, "http://localhost:3000") is True
+
+    def test_forwarded_host_behind_loopback_proxy(self):
+        """Android Origin may be the public host while the upstream TCP peer is loopback."""
+        handler = self.create_mock_handler(host="127.0.0.1:8001", protocol="http")
+        handler.request.remote_ip = "127.0.0.1"
+        handler.request.headers = {
+            "X-Forwarded-Host": "aird.example.com",
+            "X-Forwarded-Proto": "https",
+        }
+        assert is_valid_websocket_origin(handler, "https://aird.example.com") is True
+        assert is_valid_websocket_origin(handler, "http://evil.example.com") is False

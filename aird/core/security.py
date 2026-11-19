@@ -206,6 +206,72 @@ def _origin_scheme_ok(origin_scheme: str, expected_scheme: str) -> bool:
     return origin_scheme in ("ws", "wss") and expected_scheme in ("http", "https")
 
 
+def _request_headers(handler):
+    req = handler.request
+    return req.headers if hasattr(req, "headers") else {}
+
+
+def _header_first(headers, name: str) -> str:
+    raw = headers.get(name) or headers.get(name.lower()) or ""
+    return raw.split(",")[0].strip()
+
+
+def _peer_is_loopback(handler) -> bool:
+    req = handler.request
+    peer = ""
+    if getattr(req, "remote_ip", None):
+        peer = str(req.remote_ip)
+    else:
+        client = getattr(req, "client", None)
+        if client is not None:
+            peer = getattr(client, "host", "") or ""
+    if peer.startswith("::ffff:"):
+        peer = peer[7:]
+    return peer in _LOOPBACK_HOSTS
+
+
+def effective_request_endpoint(handler) -> tuple[str, int, str]:
+    """Public host, port, and scheme (http/https) for origin and WebAuthn RP."""
+    headers = _request_headers(handler)
+    if _peer_is_loopback(handler):
+        fwd_host = _header_first(headers, "X-Forwarded-Host")
+        if fwd_host:
+            req_host = fwd_host.split(":")[0]
+            try:
+                req_port = int(fwd_host.split(":")[1])
+            except (IndexError, ValueError):
+                fwd_proto = _header_first(headers, "X-Forwarded-Proto")
+                req_port = 443 if fwd_proto == "https" else 80
+            fwd_proto = _header_first(headers, "X-Forwarded-Proto")
+            protocol = fwd_proto or ("https" if req_port == 443 else "http")
+            return req_host, req_port, protocol
+
+    req = handler.request
+    host_str = ""
+    if getattr(req, "host", None):
+        host_str = str(req.host)
+    if not host_str:
+        host_str = _header_first(headers, "host") or getattr(
+            getattr(req, "url", None), "netloc", ""
+        )
+    if not host_str:
+        host_str = "localhost"
+    req_host = host_str.split(":")[0]
+    try:
+        req_port = int(host_str.split(":")[1])
+    except (IndexError, ValueError):
+        protocol = getattr(req, "protocol", None) or _header_first(
+            headers, "X-Forwarded-Proto"
+        )
+        req_port = 443 if protocol == "https" else 80
+    protocol = getattr(req, "protocol", None) or _header_first(
+        headers, "X-Forwarded-Proto"
+    )
+    if not protocol:
+        protocol = "https" if req_port == 443 else "http"
+    return req_host, req_port, protocol
+
+
 def _origin_host_port_ok(
     handler, origin_host: str, origin_port: int | None, req_host: str, req_port: int
 ) -> bool:
@@ -228,12 +294,8 @@ def is_valid_websocket_origin(handler, origin: str) -> bool:
         origin_host = parsed.hostname
         origin_port = parsed.port
         origin_scheme = parsed.scheme
-        req_host = handler.request.host.split(":")[0]
-        try:
-            req_port = int(handler.request.host.split(":")[1])
-        except (IndexError, ValueError):
-            req_port = 443 if handler.request.protocol == "https" else 80
-        expected_scheme = "https" if handler.request.protocol == "https" else "http"
+        req_host, req_port, req_protocol = effective_request_endpoint(handler)
+        expected_scheme = req_protocol if req_protocol in ("http", "https") else "http"
         if not _origin_scheme_ok(origin_scheme, expected_scheme):
             return False
         return _origin_host_port_ok(
