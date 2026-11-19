@@ -17,6 +17,7 @@ routes = [
     *auth_routes,
     *jwt_routes,
     *select_routes(extra_routes, prefixes=("/api/webauthn",)),
+    *select_routes(extra_routes, exact=("/.well-known/assetlinks.json",)),
 ]
 
 app = create_service_app(SERVICE, routes)

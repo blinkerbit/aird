@@ -130,5 +130,5 @@ class TestWebAuthnAuthOptionsHandler:
         body = _response_body(handler)
         payload = json.loads(body)
         assert "challenge" in payload
-        assert payload.get("extensions", {}).get("prf") == {}
+        assert "prf" not in (payload.get("extensions") or {})
         conn.close()

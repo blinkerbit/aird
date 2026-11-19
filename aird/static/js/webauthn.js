@@ -134,8 +134,10 @@ import { apiFetch } from './core/http.js';
     delete options.prfSalt;
 
     const pubKey = decodeCreationOptions(options);
+    const android = /Android/i.test(global.navigator?.userAgent || '');
+    if (android) delete pubKey.extensions;
     const createOpts = { publicKey: pubKey };
-    if (prfSalt && global.PublicKeyCredential?.getClientCapabilities) {
+    if (!android && prfSalt && global.PublicKeyCredential?.getClientCapabilities) {
       try {
         const caps = await global.PublicKeyCredential.getClientCapabilities();
         if (caps?.publicKeyCredential?.prf) {
@@ -146,7 +148,7 @@ import { apiFetch } from './core/http.js';
       } catch {
         /* PRF optional */
       }
-    } else if (prfSalt) {
+    } else if (!android && prfSalt) {
       createOpts.publicKey.extensions = {
         prf: { eval: { first: b64ToBuf(prfSalt) } },
       };

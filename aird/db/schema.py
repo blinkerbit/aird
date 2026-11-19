@@ -387,6 +387,12 @@ def init_db(conn: sqlite3.Connection) -> None:
         )
         """)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS webauthn_android_facets (
+            fingerprint TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL
+        )
+        """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS chat_conversations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             created_at TEXT NOT NULL,

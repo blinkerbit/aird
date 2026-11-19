@@ -123,6 +123,8 @@ from aird.handlers.auth_handlers import (
     SessionRevokeAPIHandler,
 )
 from aird.handlers.webauthn_handlers import (
+    AndroidAssetLinksHandler,
+    WebAuthnAndroidFacetHandler,
     WebAuthnAuthOptionsHandler,
     WebAuthnAuthVerifyHandler,
     WebAuthnCredentialDeleteHandler,
@@ -276,6 +278,8 @@ def make_app(
         (r"/profile", ProfileHandler),
         (r"/api/sessions", SessionListAPIHandler),
         (r"/api/sessions/([^/]+)/revoke", SessionRevokeAPIHandler),
+        (r"/.well-known/assetlinks.json", AndroidAssetLinksHandler),
+        (r"/api/webauthn/android-facet", WebAuthnAndroidFacetHandler),
         (r"/api/webauthn/status", WebAuthnStatusHandler),
         (r"/api/webauthn/register/options", WebAuthnRegisterOptionsHandler),
         (r"/api/webauthn/register/verify", WebAuthnRegisterVerifyHandler),

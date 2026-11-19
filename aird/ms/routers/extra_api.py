@@ -77,6 +77,7 @@ from aird.handlers.share_handlers import (
     cleanup_share_cloud_dir_if_empty,
     remove_cloud_file_if_exists,
 )
+from aird.core.android_facet import normalize_fingerprint
 from aird.handlers.webauthn_handlers import (
     PURPOSE_AUTH,
     PURPOSE_REGISTER,
@@ -84,6 +85,8 @@ from aird.handlers.webauthn_handlers import (
     _pad_b64,
     _parse_registration_credential,
     _verify_registration,
+    android_assetlinks_payload,
+    extend_webauthn_origins,
 )
 from aird.ms.ctx import check_xsrf_token, current_user, get_state, user_root_for
 from aird.ms.deps import db_conn, get_service, is_admin_user, username_from_user
@@ -206,7 +209,6 @@ async def webauthn_register_options(request: Request) -> Response:
 
     prf_salt = webauthn_db.ensure_prf_salt(conn, username)
     payload = json.loads(options_to_json(options))
-    payload["extensions"] = {"prf": {}}
     if prf_salt:
         payload["prfSalt"] = prf_salt
     return JSONResponse(payload)
@@ -322,6 +324,7 @@ async def webauthn_auth_verify(request: Request) -> Response:
 
     adapter = _WebAuthnRequestAdapter(request)
     rp_id, _, origins = resolve_webauthn_config(adapter)
+    origins = extend_webauthn_origins(conn, origins)
     try:
         verified = verify_authentication_response(
             credential=credential,
@@ -377,6 +380,40 @@ async def webauthn_credential_delete(request: Request) -> Response:
     if webauthn_db.delete_credential(conn, cred_db_id, username):
         return JSONResponse({"ok": True})
     return _json_error(404, "Passkey not found.")
+
+
+async def webauthn_android_facet(request: Request) -> Response:
+    if not _webauthn_enabled():
+        return Response(status_code=404)
+    user = current_user(request)
+    if not user or not isinstance(user, dict) or not user.get("username"):
+        return _json_error(403, "Passkeys require a full user account.")
+    username = user["username"]
+    if username in _TOKEN_USERNAMES:
+        return _json_error(403, "Passkeys are not available for token sessions.")
+    conn, err = _db_or_503(request)
+    if err:
+        return err
+    try:
+        check_xsrf_token(request)
+    except PermissionError:
+        return _json_error(403, "XSRF validation failed")
+    try:
+        body = json.loads((await request.body()) or b"{}")
+    except json.JSONDecodeError:
+        return _json_error(400, INVALID_JSON_MSG)
+    fingerprint = normalize_fingerprint(str(body.get("fingerprint") or ""))
+    if not fingerprint:
+        return _json_error(400, "Invalid app certificate.")
+    if not webauthn_db.add_android_facet(conn, fingerprint):
+        return _json_error(400, "Could not save this device.")
+    return JSONResponse({"ok": True})
+
+
+async def android_assetlinks(request: Request) -> Response:
+    conn = db_conn(request)
+    payload = android_assetlinks_payload(conn)
+    return JSONResponse(payload, headers={"Cache-Control": "no-store"})
 
 
 # ---------------------------------------------------------------------------
@@ -1001,6 +1038,8 @@ async def admin_user_reset_password(request: Request) -> Response:
 
 
 routes = [
+    Route("/.well-known/assetlinks.json", android_assetlinks, methods=["GET"]),
+    Route("/api/webauthn/android-facet", webauthn_android_facet, methods=["POST"]),
     Route("/api/webauthn/status", webauthn_status, methods=["GET"]),
     Route("/api/webauthn/register/options", webauthn_register_options, methods=["POST"]),
     Route("/api/webauthn/register/verify", webauthn_register_verify, methods=["POST"]),

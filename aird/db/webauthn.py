@@ -246,3 +246,45 @@ def get_prf_salt(conn: sqlite3.Connection, username: str) -> str | None:
     from aird.db.user_attributes import get_user_attributes
 
     return get_user_attributes(conn, username).get(PRF_SALT_ATTR)
+
+
+_MAX_ANDROID_FACETS = 32
+
+
+def list_android_facets(conn: sqlite3.Connection) -> list[str]:
+    if conn is None:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT fingerprint FROM webauthn_android_facets ORDER BY created_at"
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    return [row[0] for row in rows if row and row[0]]
+
+
+def add_android_facet(conn: sqlite3.Connection, fingerprint: str) -> bool:
+    from aird.core.android_facet import normalize_fingerprint
+
+    fingerprint = normalize_fingerprint(fingerprint or "") or ""
+    if conn is None or not fingerprint:
+        return False
+    try:
+        with conn:
+            existing = conn.execute(
+                "SELECT 1 FROM webauthn_android_facets WHERE fingerprint = ?",
+                (fingerprint,),
+            ).fetchone()
+            if existing:
+                return True
+            count = conn.execute("SELECT COUNT(*) FROM webauthn_android_facets").fetchone()
+            if count and int(count[0]) >= _MAX_ANDROID_FACETS:
+                return False
+            conn.execute(
+                "INSERT INTO webauthn_android_facets (fingerprint, created_at) VALUES (?, ?)",
+                (fingerprint, _utcnow_iso()),
+            )
+        return True
+    except sqlite3.Error:
+        logger.debug("add android facet failed", exc_info=True)
+        return False

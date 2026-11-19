@@ -26,6 +26,12 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
+from aird.core.android_facet import (
+    assetlinks_document,
+    env_fingerprints,
+    merge_android_origins,
+    normalize_fingerprint,
+)
 from aird.core.webauthn_config import resolve_webauthn_config
 from aird.db import webauthn as webauthn_db
 from aird.handlers.auth_handlers import _apply_session_cookies, _limit_ip, check_login_rate_limit
@@ -105,6 +111,24 @@ def _parse_json_body(handler: BaseHandler) -> dict[str, Any] | None:
         return None
 
 
+def extend_webauthn_origins(conn, origins: list[str]) -> list[str]:
+    fingerprints = env_fingerprints()
+    if conn is not None:
+        for item in webauthn_db.list_android_facets(conn):
+            if item not in fingerprints:
+                fingerprints.append(item)
+    return merge_android_origins(list(origins), fingerprints)
+
+
+def android_assetlinks_payload(conn) -> list[dict]:
+    fingerprints = env_fingerprints()
+    if conn is not None:
+        for item in webauthn_db.list_android_facets(conn):
+            if item not in fingerprints:
+                fingerprints.append(item)
+    return assetlinks_document(fingerprints)
+
+
 def _decode_challenge_from_credential(credential) -> bytes | None:
     try:
         client_data = json.loads(credential.response.client_data_json.decode("utf-8"))
@@ -168,7 +192,6 @@ class WebAuthnRegisterOptionsHandler(BaseHandler):
 
         prf_salt = webauthn_db.ensure_prf_salt(db_conn, username)
         payload = json.loads(options_to_json(options))
-        payload["extensions"] = {"prf": {}}
         if prf_salt:
             payload["prfSalt"] = prf_salt
         _write_json(self, payload)
@@ -182,6 +205,7 @@ def _parse_registration_credential(body: dict[str, Any]):
 
 
 def _verify_registration(db_conn, username: str, body: dict[str, Any], credential, challenge_bytes, rp_id, origins):
+    origins = extend_webauthn_origins(db_conn, origins)
     challenge_user = webauthn_db.consume_challenge(db_conn, challenge_bytes, PURPOSE_REGISTER)
     if challenge_user is None or challenge_user != username:
         return None, "Challenge expired or invalid."
@@ -338,6 +362,7 @@ class WebAuthnAuthVerifyHandler(BaseHandler):
             return
 
         rp_id, _, origins = resolve_webauthn_config(self)
+        origins = extend_webauthn_origins(db_conn, origins)
         try:
             verified = verify_authentication_response(
                 credential=credential,
@@ -396,6 +421,44 @@ class WebAuthnCredentialDeleteHandler(BaseHandler):
             _write_json(self, {"ok": True})
         else:
             _write_json_error(self, 404, "Passkey not found.")
+
+
+class WebAuthnAndroidFacetHandler(BaseHandler):
+    """Remember this install's signing cert so Credential Manager can link the app."""
+
+    @tornado.web.authenticated
+    @_require_webauthn
+    def post(self):
+        user = self.current_user
+        if not isinstance(user, dict) or not user.get("username"):
+            _write_json_error(self, 403, "Passkeys require a full user account.")
+            return
+        if user["username"] in ("token_user", "admin_token", "token_authenticated", "admin_token_authenticated"):
+            _write_json_error(self, 403, "Passkeys are not available for token sessions.")
+            return
+        db_conn = _require_db_conn(self)
+        if not db_conn:
+            return
+        body = _parse_json_body(self)
+        if body is None:
+            return
+        fingerprint = normalize_fingerprint(str(body.get("fingerprint") or ""))
+        if not fingerprint:
+            _write_json_error(self, 400, "Invalid app certificate.")
+            return
+        if not webauthn_db.add_android_facet(db_conn, fingerprint):
+            _write_json_error(self, 400, "Could not save this device.")
+            return
+        _write_json(self, {"ok": True})
+
+
+class AndroidAssetLinksHandler(BaseHandler):
+    """Public Digital Asset Links file for Android passkeys."""
+
+    def get(self):
+        self.set_header("Content-Type", CONTENT_TYPE_JSON)
+        self.set_header("Cache-Control", "no-store")
+        self.write(json.dumps(android_assetlinks_payload(self.db_conn)))
 
 
 def _pad_b64(value: str) -> str:

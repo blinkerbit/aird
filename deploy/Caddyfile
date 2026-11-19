@@ -54,6 +54,15 @@ http://localhost:8080, http://127.0.0.1:8080 {
 	}
 
 	# Public entry points. Services still require Caddy's mesh secret.
+	handle /.well-known/assetlinks.json {
+		request_header -X-Aird-User
+		request_header -X-Aird-Role
+		request_header -X-Aird-Mesh
+		reverse_proxy 127.0.0.1:8000 {
+			header_up X-Aird-Mesh {$AIRD_MESH_SECRET}
+		}
+	}
+
 	@auth_public path /login /admin/login /auth/token /auth/refresh /api/webauthn/auth/*
 	handle @auth_public {
 		request_header -X-Aird-User
