@@ -356,6 +356,7 @@
 <script nonce="{{ csp_nonce }}">window.__AIRD_CALLS_ENABLED__ = {% if is_calls_enabled() %}true{% else %}false{% end %};</script>
 <script nonce="{{ csp_nonce }}" src="{{ static_url('js/chat-ws.js') }}" type="module"></script>
 <script nonce="{{ csp_nonce }}" src="{{ static_url('js/chat-e2e.js') }}" type="module"></script>
+<script nonce="{{ csp_nonce }}" src="{{ static_url('js/chat-dock.js') }}" type="module"></script>
 <script nonce="{{ csp_nonce }}" src="{{ static_url('js/chat-notify.js') }}" type="module"></script>
 {% end %}
 {% end %}

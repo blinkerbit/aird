@@ -55,6 +55,13 @@ import { setAppIconBadge } from './core/app-badge.js';
         toast.remove();
         return;
       }
+      if (convId && globalThis.AirdChatDock?.canUseDock?.()) {
+        const opened = globalThis.AirdChatDock.open(convId, { title: sender });
+        if (opened) {
+          toast.remove();
+          return;
+        }
+      }
       if (payload.url) location.href = payload.url;
       else if (convId) location.href = `/chat?c=${encodeURIComponent(convId)}`;
     });
@@ -73,6 +80,7 @@ import { setAppIconBadge } from './core/app-badge.js';
 
   function viewingConversation(convId) {
     if (!convId || document.hidden || !document.hasFocus()) return false;
+    if (globalThis.AirdChatDock?.viewing?.(convId)) return true;
     if (!threadOnScreen()) return false;
     if (String(globalThis.__AIRD_OPEN_CHAT__ || '') === String(convId)) return true;
     const params = new URLSearchParams(location.search);
@@ -82,7 +90,10 @@ import { setAppIconBadge } from './core/app-badge.js';
   let viewTimer = 0;
 
   function reportViewing() {
-    const open = String(globalThis.__AIRD_OPEN_CHAT__ || '');
+    let open = String(globalThis.__AIRD_OPEN_CHAT__ || '');
+    if (!open && globalThis.AirdChatDock?.getOpenIds) {
+      open = String(globalThis.AirdChatDock.getOpenIds().find((id) => globalThis.AirdChatDock.viewing(id)) || '');
+    }
     const id = open && viewingConversation(open) ? open : '';
     navigator.serviceWorker?.controller?.postMessage({ type: 'aird-viewing-chat', conversation_id: id });
     if (!id) {
@@ -240,9 +251,16 @@ import { setAppIconBadge } from './core/app-badge.js';
       },
       sendWs: (payload) => WS.send(payload),
     };
+    callsOpts.getConvPeerName = (id) => (
+      globalThis.AirdChatDock?.getPeerTitle?.(id)
+      || ''
+    );
     // /chat sets SPA openConversation in chat.js — do not replace it with a full reload.
-    if (location.pathname !== '/chat') {
+    if (location.pathname !== '/chat' && !location.pathname.startsWith('/chat/')) {
       callsOpts.openConversation = (id) => {
+        if (globalThis.AirdChatDock?.canUseDock?.() && globalThis.AirdChatDock.open(id)) {
+          return Promise.resolve();
+        }
         globalThis.location.href = `/chat?c=${encodeURIComponent(id)}`;
         return Promise.resolve();
       };

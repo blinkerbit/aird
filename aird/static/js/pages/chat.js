@@ -115,6 +115,12 @@ import {
 
   const me = window.__AIRD_CHAT_USER__ || '';
   let activeConvId = null;
+
+  function setActiveConvId(next) {
+    activeConvId = next || null;
+    globalThis.__AIRD_OPEN_CHAT__ = activeConvId || '';
+    document.dispatchEvent(new CustomEvent('aird-chat-view'));
+  }
   let enhancedSecureView = false;
   let conversations = [];
   let convFilter = '';
@@ -430,7 +436,7 @@ import {
     return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
   }
 
-  const CLUSTER_GAP_MS = 5 * 60 * 1000;
+  const CLUSTER_GAP_MS = 15 * 60 * 1000;
 
   function messageStamp(iso) {
     const t = new Date(iso).getTime();
@@ -439,8 +445,17 @@ import {
 
   function unwrapRuns() {
     messagesEl.querySelectorAll(':scope > .chat-msg-run').forEach((group) => {
-      const kids = [...group.childNodes];
-      group.replaceWith(...kids);
+      const rows = [...group.querySelectorAll(':scope > .chat-msg-row')];
+      const tail = rows[rows.length - 1];
+      const foot = group.querySelector(':scope > .chat-run-foot');
+      if (tail && foot) {
+        const stack = tail.querySelector('.chat-msg-stack');
+        foot.querySelectorAll('.chat-msg-time, .chat-seen').forEach((node) => {
+          (stack || tail).appendChild(node);
+        });
+      }
+      if (rows.length) group.replaceWith(...rows);
+      else group.remove();
     });
   }
 
@@ -463,7 +478,6 @@ import {
       row.classList.remove('is-lead', 'is-mid', 'is-tail', 'is-cont', 'is-coalescing', 'is-absorb');
     });
     let run = [];
-    let prevEl = null;
     const flush = () => {
       if (run.length > 1) {
         run.forEach((row, idx) => {
@@ -481,69 +495,43 @@ import {
         const group = document.createElement('div');
         const mine = run[0].classList.contains('chat-msg-row--mine');
         group.className = `chat-msg-run ${mine ? 'chat-msg-run--mine' : 'chat-msg-run--theirs'}`;
+        const fill = document.createElement('div');
+        fill.className = 'chat-run-fill';
+        fill.style.gridRow = `1 / span ${run.length}`;
+        group.appendChild(fill);
         run[0].before(group);
         run.forEach((row) => group.appendChild(row));
+        const tail = run[run.length - 1];
+        const foot = document.createElement('div');
+        foot.className = 'chat-run-foot';
+        tail.querySelectorAll('.chat-msg-time, .chat-seen').forEach((node) => foot.appendChild(node));
+        if (foot.childNodes.length) group.appendChild(foot);
       }
       run = [];
     };
-    for (const el of messagesEl.children) {
+    const nodes = [...messagesEl.children];
+    for (let i = 0; i < nodes.length; i += 1) {
+      const el = nodes[i];
       const row = el.classList?.contains('chat-msg-row') && el.dataset.sender && el.dataset.ts ? el : null;
       const prev = run[run.length - 1];
       const gap = row && prev ? Number(row.dataset.ts) - Number(prev.dataset.ts) : Infinity;
+      const blocked = row && prev && nodes.slice(nodes.indexOf(prev) + 1, i).some((node) => (
+        node.classList?.contains('chat-day') || node.classList?.contains('chat-msg-row')
+      ));
       const joins = row && prev
-        && prevEl === prev
+        && !blocked
         && prev.dataset.sender === row.dataset.sender
         && gap >= 0
         && gap < CLUSTER_GAP_MS;
       if (!joins) flush();
       if (row) run.push(row);
-      prevEl = el;
     }
     flush();
-    placeRunShells();
-  }
-
-  function placeRunShells() {
-    if (!messagesEl) return;
-    messagesEl.querySelectorAll(':scope > .chat-msg-run').forEach((group) => {
-      const bubbles = [...group.querySelectorAll('.aird-chat-bubble')];
-      let shell = group.querySelector(':scope > .chat-run-shell');
-      if (bubbles.length < 2) {
-        shell?.remove();
-        return;
-      }
-      if (!shell) {
-        shell = document.createElement('div');
-        shell.className = 'chat-run-shell';
-        group.prepend(shell);
-      }
-      const host = group.getBoundingClientRect();
-      let top = Infinity;
-      let left = Infinity;
-      let right = -Infinity;
-      let bottom = -Infinity;
-      bubbles.forEach((bubble) => {
-        const rect = bubble.getBoundingClientRect();
-        top = Math.min(top, rect.top);
-        left = Math.min(left, rect.left);
-        right = Math.max(right, rect.right);
-        bottom = Math.max(bottom, rect.bottom);
-      });
-      shell.style.top = `${top - host.top}px`;
-      shell.style.left = `${left - host.left}px`;
-      shell.style.width = `${Math.max(0, right - left)}px`;
-      shell.style.height = `${Math.max(0, bottom - top)}px`;
-    });
   }
 
   if (messagesEl) {
     clusterObserver = new MutationObserver(() => reclusterMessages());
     clusterObserver.observe(messagesEl, { childList: true });
-    if (typeof ResizeObserver !== 'undefined') {
-      const shellObserver = new ResizeObserver(() => placeRunShells());
-      shellObserver.observe(messagesEl);
-    }
-    window.addEventListener('resize', () => placeRunShells());
   }
 
   function dayKey(iso) {
@@ -728,7 +716,7 @@ import {
     }
     await api(`/api/chat/conversations/${encodeURIComponent(conv.id)}`, { method: 'DELETE' });
     if (activeConvId === conv.id) {
-      activeConvId = null;
+      setActiveConvId(null);
       composer?.classList.add('hidden');
       setThreadHeader(null);
       clearMessagesView();
@@ -742,7 +730,7 @@ import {
   async function leaveGroup(conv) {
     if (!confirm('Leave this group?')) return;
     await api(`/api/chat/conversations/${conv.id}/members?username=${encodeURIComponent(me)}`, { method: 'DELETE' });
-    activeConvId = null;
+    setActiveConvId(null);
     composer?.classList.add('hidden');
     setThreadHeader(null);
     clearMessagesView();
@@ -2266,7 +2254,8 @@ import {
     }
     stopAllVoicePlayback();
     const gen = ++loadGen;
-    activeConvId = convId;
+    setActiveConvId(convId);
+    globalThis.AirdChatDock?.close?.(convId);
     clearTypingStatus();
     replyLabelCache.clear();
     loadingOlder = false;
@@ -2640,7 +2629,7 @@ import {
         if (!convId || convId !== activeConvId || enhancedSecureView) return;
         const conv = conversations.find((c) => c.id === convId);
         if (!conv) {
-          activeConvId = '';
+          setActiveConvId(null);
           hideRequest();
           composer?.classList.add('hidden');
           setThreadHeader(null);
@@ -4585,7 +4574,7 @@ import {
       body: JSON.stringify({ action }),
     });
     if (action === 'decline') {
-      activeConvId = '';
+      setActiveConvId(null);
       hideRequest();
       composer?.classList.add('hidden');
       setThreadHeader(null);
@@ -4621,12 +4610,19 @@ import {
           me,
           getActiveConvId: () => activeConvId,
           getActiveConv: () => activeConv(),
+          getConvPeerName: (id) => {
+            const conv = conversations.find((c) => c.id === id);
+            return conv ? convTitle(conv) : (globalThis.AirdChatDock?.getPeerTitle?.(id) || '');
+          },
           sendWs: (payload) => window.AirdChatWS?.send(payload),
           openConversation,
         });
         if (activeConvId) setThreadHeader(activeConv());
       }).catch((err) => console.debug('chat calls init', err));
     }
+    globalThis.__AIRD_CHAT_GOTO__ = (id) => {
+      void openConversation(id);
+    };
     const start = async () => {
       identityReady = (E2E && me)
         ? E2E.init(me, api).catch((err) => { console.warn('chat e2e', err); })

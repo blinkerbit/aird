@@ -177,7 +177,7 @@ import { apiFetch } from './core/http.js';
       body: payload.preview || 'New message',
       icon: '/static/img/pwa-icon-192.png',
       badge: '/static/img/pwa-icon-192.png',
-      tag: `aird-chat-${convId}`,
+      tag: payload.message_id ? `aird-msg-${payload.message_id}` : `aird-chat-${convId}-${Date.now()}`,
       renotify: true,
       data: {
         url: `/chat?c=${encodeURIComponent(convId || '')}`,

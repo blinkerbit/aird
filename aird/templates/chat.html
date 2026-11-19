@@ -157,6 +157,7 @@
               <button type="button" class="chat-toolbar-btn chat-attach-only" id="chatVoiceBtn" title="Voice message" aria-label="Voice message">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
               </button>
+              <div id="chatTypingStatus" class="chat-typing-status hidden" hidden aria-live="polite"></div>
             </div>
             <div id="chatVoiceBar" class="chat-voice-bar" hidden>
               <button type="button" id="chatVoiceCancel" class="chat-voice-bar-btn" title="Cancel" aria-label="Cancel recording">Cancel</button>
@@ -178,7 +179,6 @@
             <div class="chat-editor-wrap">
               <div id="chatEmojiPicker" class="chat-emoji-picker hidden" hidden></div>
               <div id="chatPathSuggest" class="chat-path-suggest" hidden></div>
-              <div id="chatTypingStatus" class="chat-typing-status hidden" hidden aria-live="polite"></div>
               <div class="chat-composer-row">
                 <div class="chat-composer-field">
                   <div id="chatPending" class="chat-pending" hidden></div>

@@ -1616,10 +1616,13 @@ body.chat-page {
 }
 
 .chat-typing-status {
-  padding: 0.15rem 0.55rem 0.25rem;
+  margin-left: auto;
+  padding: 0 0.35rem;
   font-size: 0.75rem;
+  font-style: italic;
   opacity: 0.72;
   line-height: 1.25;
+  white-space: nowrap;
 }
 
 .chat-typing-status:empty,
@@ -1975,75 +1978,93 @@ body.chat-page {
 /* Consecutive messages from one person share one bubble. */
 .chat-msg-run {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, max-content);
+  column-gap: 0.45rem;
   width: max-content;
   max-width: min(80%, 34rem);
+  align-self: flex-start;
 }
 
 .chat-msg-run--mine {
+  grid-template-columns: minmax(0, max-content) 1.75rem;
   align-self: flex-end;
 }
 
-.chat-msg-run--theirs {
-  align-self: flex-start;
-  align-items: flex-start;
-}
-
-.chat-msg-run > .chat-msg-row {
-  width: auto;
-  max-width: 100%;
-}
-
-.chat-msg-run .chat-msg-stack,
-.chat-msg-run .chat-msg-main {
-  width: auto;
-  max-width: 100%;
-}
-
-.chat-run-shell {
+.chat-run-fill {
   position: absolute;
   z-index: 0;
-  pointer-events: none;
   box-sizing: border-box;
   border-radius: 1.05rem;
   background: var(--color-base-100);
   border: 1px solid var(--color-base-300);
 }
 
-.chat-msg-run--mine .chat-run-shell {
+.chat-msg-run--mine .chat-run-fill {
+  grid-column: 1;
   border-color: color-mix(in oklch, var(--color-primary) 28%, transparent);
   background: color-mix(in oklch, var(--color-primary) 14%, transparent);
   border-bottom-right-radius: 0.32rem;
 }
 
-.chat-msg-run--theirs .chat-run-shell {
+.chat-msg-run--theirs .chat-run-fill {
+  grid-column: 2;
   border-bottom-left-radius: 0.32rem;
 }
 
-.chat-msg-run .aird-chat-bubble {
+.chat-msg-run > .chat-msg-row {
   position: relative;
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
   z-index: 1;
+  width: auto;
+  max-width: none;
+  background: transparent;
+}
+
+.chat-msg-run--mine .chat-msg-stack { grid-column: 1; }
+.chat-msg-run--mine .chat-avatar { grid-column: 2; }
+.chat-msg-run--theirs .chat-avatar { grid-column: 1; }
+.chat-msg-run--theirs .chat-msg-stack { grid-column: 2; }
+
+.chat-msg-run .chat-msg-stack {
+  align-items: stretch;
+  width: auto;
+  max-width: 100%;
+}
+
+.chat-msg-run--mine .chat-msg-stack { align-items: flex-end; }
+.chat-msg-run--theirs .chat-msg-stack { align-items: flex-start; }
+
+.chat-msg-run .aird-chat-bubble {
   width: auto;
   max-width: 100%;
   border: 0;
   background: transparent;
   box-shadow: none;
   border-radius: 0;
-  padding: 0.18rem 0.85rem;
+  padding: 0.16rem 0.85rem;
 }
 
-.chat-msg-run .is-lead .aird-chat-bubble {
-  padding-top: 0.55rem;
+.chat-msg-run .is-lead .aird-chat-bubble { padding-top: 0.55rem; }
+.chat-msg-run .is-tail .aird-chat-bubble { padding-bottom: 0.55rem; }
+
+.chat-run-foot {
+  z-index: 1;
+  margin-top: 0.2rem;
 }
 
-.chat-msg-run .is-tail .aird-chat-bubble {
-  padding-bottom: 0.55rem;
+.chat-msg-run--mine .chat-run-foot {
+  grid-column: 1;
+  text-align: right;
 }
 
-.chat-msg-run .is-cont {
-  margin-top: 0;
+.chat-msg-run--theirs .chat-run-foot { grid-column: 2; }
+
+.chat-selecting .chat-msg-run .chat-msg-select {
+  position: absolute;
+  z-index: 2;
 }
 
 .chat-msg-row.is-lead .chat-avatar,

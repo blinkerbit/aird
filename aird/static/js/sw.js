@@ -300,7 +300,7 @@ async function handlePush(event) {
   const isCall = data.kind === 'call' || String(data.tag || '').startsWith('aird-call');
   const tag = (isCall && convId && data.call_id)
     ? `aird-call.${convId}.${data.call_id}.${callMode}`
-    : (data.tag || (convId ? `aird-chat-${convId}` : 'aird-notify'));
+    : (data.tag || (data.message_id ? `aird-msg-${data.message_id}` : (convId ? `aird-chat-${convId}` : 'aird-notify')));
   const unread = Number(data.unread_total);
 
   const windows = await globalThis.clients.matchAll({ type: 'window', includeUncontrolled: true });
@@ -331,6 +331,7 @@ async function handlePush(event) {
       data: {
         url,
         conversation_id: convId,
+        message_id: data.message_id || '',
         kind: isCall ? 'call' : 'chat',
         call_id: data.call_id || '',
         from: data.sender || title,
@@ -565,6 +566,12 @@ globalThis.addEventListener('message', (event) => {
 });
 
 async function clearChatNotification(convId) {
-  const notes = await globalThis.registration.getNotifications({ tag: `aird-chat-${convId}` });
-  notes.forEach((note) => note.close());
+  const notes = await globalThis.registration.getNotifications();
+  notes.forEach((note) => {
+    const tag = String(note.tag || '');
+    if (tag.startsWith('aird-call')) return;
+    const sameChat = String(note.data?.conversation_id || '') === convId
+      || tag === `aird-chat-${convId}`;
+    if (sameChat) note.close();
+  });
 }

@@ -18,6 +18,8 @@ let headerBound = false;
 let callLock = false;
 let remoteDropTimer = null;
 let callMinimized = false;
+let rawCallStatus = 'Connecting…';
+let miniResizeBound = false;
 let videoFit = 'fit';
 let meterCtx = null;
 let meters = { local: null, remote: null };
@@ -34,11 +36,11 @@ function meName() {
 
 function ensureCallStyles() {
   const existing = document.getElementById('chatCallStyles');
-  if (existing?.dataset.version === '15') return;
+  if (existing?.dataset.version === '16') return;
   existing?.remove();
   const style = document.createElement('style');
   style.id = 'chatCallStyles';
-  style.dataset.version = '15';
+  style.dataset.version = '16';
   style.textContent = `
     .chat-call-btn.btn{min-height:2rem;height:2rem;width:2rem;padding:0}
     .chat-call-btn svg{width:16px;height:16px}
@@ -52,9 +54,12 @@ function ensureCallStyles() {
     .chat-call-inchat div{display:flex;gap:.45rem;flex-shrink:0;align-items:flex-end}
     .chat-call-modal-card{width:min(22rem,92vw);padding:1.15rem;border-radius:1.1rem;background:var(--color-base-100,#fff);text-align:center;box-shadow:0 18px 48px rgba(0,0,0,.32)}
     .chat-call-modal-actions{display:flex;flex-wrap:nowrap;justify-content:center;align-items:flex-end;gap:1rem;margin-top:.95rem}
-    .chat-call-overlay{position:fixed;inset:0;z-index:90;display:flex !important;flex-direction:column !important;align-items:stretch !important;justify-content:flex-start !important;width:100% !important;height:100% !important;background:#0c0c10 !important;color:#fff}
+    .chat-call-overlay{position:fixed;inset:0;z-index:95;display:flex !important;flex-direction:column !important;align-items:stretch !important;justify-content:flex-start !important;width:100% !important;height:100% !important;background:#0c0c10 !important;color:#fff}
     .chat-call-top{display:flex;align-items:center;justify-content:space-between;gap:.75rem;width:100%;padding:.7rem .8rem;padding-top:calc(.7rem + env(safe-area-inset-top,0));position:relative;z-index:4}
-    .chat-call-status{margin:0;font-size:.85rem;font-weight:600;opacity:.8}
+    .chat-call-mini-lead{display:none;align-items:center;gap:.4rem;flex-shrink:0}
+    .chat-call-mini-grip{display:inline-flex;align-items:center;opacity:.62;flex-shrink:0}
+    .chat-call-mini-grip svg{width:.9rem;height:.9rem}
+    .chat-call-status{margin:0;font-size:.85rem;font-weight:600;opacity:.8;min-width:0}
     .chat-call-top-actions{display:flex;gap:.4rem}
     .chat-call-iconbtn{width:2.2rem;height:2.2rem;border:0;border-radius:999px;background:rgba(255,255,255,.14);color:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:1.15rem;line-height:1}
     .chat-call-iconbtn svg{width:1.05rem;height:1.05rem}
@@ -112,12 +117,47 @@ function ensureCallStyles() {
     .chat-call-controls-scroll{display:flex;flex:0 1 auto;flex-wrap:nowrap;align-items:flex-end;gap:.35rem;min-width:0;max-width:100%;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
     .chat-call-controls-scroll::-webkit-scrollbar{display:none}
     .chat-call-controls > .chat-call-ctrl--danger{flex:0 0 auto}
-    .chat-call-minimized{position:fixed;z-index:91;left:50%;transform:translateX(-50%);bottom:calc(.75rem + env(safe-area-inset-bottom,0));display:flex;align-items:center;gap:.5rem;padding:.45rem calc(.65rem + env(safe-area-inset-right,0)) .45rem calc(.65rem + env(safe-area-inset-left,0));border-radius:999px;background:var(--color-primary,#2563eb);color:#fff;box-shadow:0 8px 28px rgba(0,0,0,.28);min-width:min(92vw,20rem);max-width:calc(100vw - env(safe-area-inset-left,0) - env(safe-area-inset-right,0) - 1rem);cursor:pointer}
     .chat-call-minimized-pulse{width:.55rem;height:.55rem;border-radius:50%;background:#4ade80;flex-shrink:0}
-    .chat-call-minimized.is-live .chat-call-minimized-pulse{animation:chat-call-pulse 1s ease infinite}
     @keyframes chat-call-pulse{50%{opacity:.35}}
-    .chat-call-minimized-label{flex:1;font-weight:700;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
-    .chat-call-minimized-actions{display:flex;gap:.35rem;flex-shrink:0;align-items:flex-end}
+    .chat-call-overlay:not(.is-minimized) #chatCallExpandBtn{display:none !important}
+    .chat-call-overlay.is-minimized{inset:auto !important;z-index:96;touch-action:none;user-select:none;cursor:grab;border:1px solid rgba(255,255,255,.16);box-shadow:0 14px 36px rgba(0,0,0,.42)}
+    .chat-call-overlay.is-minimized.is-dragging{cursor:grabbing}
+    .chat-call-overlay.is-minimized .chat-call-mini-lead{display:inline-flex}
+    .chat-call-overlay.is-minimized.is-live .chat-call-minimized-pulse{animation:chat-call-pulse 1s ease infinite}
+    .chat-call-overlay.is-minimized #chatCallDevicesBtn,
+    .chat-call-overlay.is-minimized #chatCallMinimizeBtn,
+    .chat-call-overlay.is-minimized #chatCallDeviceMenu,
+    .chat-call-overlay.is-minimized #chatCallRouteBtn,
+    .chat-call-overlay.is-minimized #chatCallFitBtn,
+    .chat-call-overlay.is-minimized #chatCallModeBtn,
+    .chat-call-overlay.is-minimized #chatCallHearBtn,
+    .chat-call-overlay.is-minimized .chat-call-ctrl-label,
+    .chat-call-overlay.is-minimized .chat-call-pipmin,
+    .chat-call-overlay.is-minimized .chat-call-caption{display:none !important}
+    .chat-call-overlay.is-minimized .chat-call-ctrl{width:2.15rem;min-width:2.15rem;gap:0}
+    .chat-call-overlay.is-minimized .chat-call-ctrl-icon{width:2.15rem;height:2.15rem}
+    .chat-call-overlay.is-minimized .chat-call-ctrl-icon svg{width:1rem;height:1rem}
+    .chat-call-overlay.is-minimized.is-audio-mini{flex-direction:row !important;align-items:center !important;justify-content:space-between !important;gap:.6rem;width:auto !important;min-width:min(17.5rem,calc(100vw - 1.25rem));max-width:min(24rem,calc(100vw - 1.25rem));height:auto !important;padding:.42rem .5rem .42rem .75rem;border-radius:999px;background:#151823 !important}
+    .chat-call-overlay.is-minimized.is-audio-mini .chat-call-stage,
+    .chat-call-overlay.is-minimized.is-audio-mini #chatCallCamBtn{display:none !important}
+    .chat-call-overlay.is-minimized.is-audio-mini .chat-call-top{flex:1;min-width:0;width:auto;padding:0;gap:.45rem;justify-content:flex-start}
+    .chat-call-overlay.is-minimized.is-audio-mini .chat-call-status{opacity:1;font-size:.84rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .chat-call-overlay.is-minimized.is-audio-mini .chat-call-top-actions{display:none}
+    .chat-call-overlay.is-minimized.is-audio-mini .chat-call-controls{width:auto;padding:0;gap:.3rem;flex:0 0 auto;align-items:center}
+    .chat-call-overlay.is-minimized.is-audio-mini .chat-call-controls-scroll{gap:.3rem;overflow:visible;align-items:center}
+    .chat-call-overlay.is-minimized.is-video-mini{width:min(17.5rem,calc(100vw - 1.25rem)) !important;height:min(11.5rem,calc(100vh - 6rem)) !important;min-width:13rem;min-height:8.75rem;border-radius:1rem;overflow:hidden;background:#0c0c10 !important}
+    @media (max-width: 767px){
+      .chat-call-overlay.is-minimized.is-video-mini{width:min(10.5rem,44vw) !important;height:min(13.5rem,36vh) !important;min-width:9.25rem;min-height:10.5rem}
+    }
+    .chat-call-overlay.is-minimized.is-video-mini .chat-call-top{position:absolute;top:0;left:0;right:0;padding:.4rem .55rem;gap:.4rem;justify-content:flex-start;background:linear-gradient(to bottom,rgba(0,0,0,.72),transparent);pointer-events:none}
+    .chat-call-overlay.is-minimized.is-video-mini .chat-call-status{opacity:1;font-size:.78rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .chat-call-overlay.is-minimized.is-video-mini .chat-call-top-actions{display:none}
+    .chat-call-overlay.is-minimized.is-video-mini .chat-call-stage{flex:1;width:100%;height:100%}
+    .chat-call-overlay.is-minimized.is-video-mini .chat-call-face-name{font-size:1rem}
+    .chat-call-overlay.is-minimized.is-video-mini .chat-call-tile--local{right:.45rem !important;bottom:2.85rem !important;left:auto !important;top:auto !important;width:3.5rem !important;border-radius:.5rem;pointer-events:none}
+    .chat-call-overlay.is-minimized.is-video-mini .chat-call-tile--local .chat-call-face-name{font-size:.65rem}
+    .chat-call-overlay.is-minimized.is-video-mini .chat-call-controls{position:absolute;left:0;right:0;bottom:0;padding:.4rem .5rem;gap:.3rem;justify-content:center;align-items:center;background:linear-gradient(to top,rgba(0,0,0,.78),transparent)}
+    .chat-call-overlay.is-minimized.is-video-mini .chat-call-controls-scroll{gap:.3rem;overflow:visible;align-items:center}
   `;
   document.head.appendChild(style);
 }
@@ -181,6 +221,158 @@ function tileMarkup(which, name) {
     ${pip}`;
 }
 
+const GRIP_ICON = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="5" cy="3.5" r="1.2"/><circle cx="11" cy="3.5" r="1.2"/><circle cx="5" cy="8" r="1.2"/><circle cx="11" cy="8" r="1.2"/><circle cx="5" cy="12.5" r="1.2"/><circle cx="11" cy="12.5" r="1.2"/></svg>';
+const MINI_POS_KEY = 'aird.call.miniPos';
+
+export function clampMiniCallPosition(pos, boxWidth, boxHeight, viewWidth, viewHeight, margin = 10) {
+  const w = Math.max(0, Number(boxWidth) || 0);
+  const h = Math.max(0, Number(boxHeight) || 0);
+  const vw = Math.max(w + margin * 2, Number(viewWidth) || 0);
+  const vh = Math.max(h + margin * 2, Number(viewHeight) || 0);
+  const maxLeft = Math.max(margin, vw - w - margin);
+  const maxTop = Math.max(margin, vh - h - margin);
+  return {
+    left: Math.min(maxLeft, Math.max(margin, Math.round(Number(pos?.left) || 0))),
+    top: Math.min(maxTop, Math.max(margin, Math.round(Number(pos?.top) || 0))),
+  };
+}
+
+export function defaultMiniCallPosition(boxWidth, boxHeight, viewWidth, viewHeight, dockRect = null) {
+  const w = Math.max(0, Number(boxWidth) || 280);
+  const h = Math.max(0, Number(boxHeight) || 56);
+  const vw = Number(viewWidth) || 1280;
+  const vh = Number(viewHeight) || 800;
+  let left = vw - w - 20;
+  const top = 76;
+  if (
+    dockRect
+    && dockRect.width > 0
+    && dockRect.height > 0
+    && left + w > dockRect.left - 8
+    && top + h > dockRect.top - 8
+  ) {
+    left = dockRect.left - w - 16;
+  }
+  return clampMiniCallPosition({ left, top }, w, h, vw, vh, 10);
+}
+
+function viewportBounds() {
+  const vv = globalThis.visualViewport;
+  return {
+    width: vv?.width || globalThis.innerWidth || 1280,
+    height: vv?.height || globalThis.innerHeight || 800,
+  };
+}
+
+function readSavedMiniPos() {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(MINI_POS_KEY) || 'null');
+    if (parsed && Number.isFinite(parsed.left) && Number.isFinite(parsed.top)) {
+      return { left: parsed.left, top: parsed.top };
+    }
+  } catch { /* private mode */ }
+  return null;
+}
+
+function writeSavedMiniPos(pos) {
+  try {
+    sessionStorage.setItem(MINI_POS_KEY, JSON.stringify({ left: pos.left, top: pos.top }));
+  } catch { /* private mode */ }
+}
+
+function placeMinimizedOverlay(overlay) {
+  if (!overlay || !callMinimized) return;
+  const { width: vw, height: vh } = viewportBounds();
+  const rect = overlay.getBoundingClientRect();
+  const w = rect.width || (activeMode === 'video' ? 272 : 288);
+  const h = rect.height || (activeMode === 'video' ? 184 : 52);
+  const saved = readSavedMiniPos();
+  const dockWin = document.querySelector('#airdChatDock .chat-dock-window:not(.hidden)');
+  const dockRect = dockWin ? dockWin.getBoundingClientRect() : null;
+  const pos = saved
+    ? clampMiniCallPosition(saved, w, h, vw, vh, 10)
+    : defaultMiniCallPosition(w, h, vw, vh, dockRect);
+  overlay.style.left = `${pos.left}px`;
+  overlay.style.top = `${pos.top}px`;
+}
+
+function bindMiniResizeWatch() {
+  if (miniResizeBound) return;
+  miniResizeBound = true;
+  const reflow = () => {
+    if (!callMinimized) return;
+    const overlay = document.getElementById('chatCallOverlay');
+    if (overlay) placeMinimizedOverlay(overlay);
+  };
+  globalThis.addEventListener('resize', reflow);
+  globalThis.visualViewport?.addEventListener('resize', reflow);
+}
+
+function wireMinimizedOverlayDrag(overlay) {
+  let drag = null;
+  let suppressClickUntil = 0;
+  overlay.addEventListener('pointerdown', (event) => {
+    if (!callMinimized) return;
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (event.target.closest('button, select, input, label, a')) return;
+    const rect = overlay.getBoundingClientRect();
+    drag = {
+      id: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      baseLeft: rect.left,
+      baseTop: rect.top,
+      moved: false,
+    };
+  });
+  overlay.addEventListener('pointermove', (event) => {
+    if (!drag || drag.id !== event.pointerId || !callMinimized) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(dx, dy) < 6) return;
+    if (!drag.moved) {
+      drag.moved = true;
+      overlay.classList.add('is-dragging');
+      try { overlay.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+    }
+    const { width: vw, height: vh } = viewportBounds();
+    const pos = clampMiniCallPosition(
+      { left: drag.baseLeft + dx, top: drag.baseTop + dy },
+      overlay.offsetWidth || 280,
+      overlay.offsetHeight || 56,
+      vw,
+      vh,
+      10,
+    );
+    overlay.style.left = `${pos.left}px`;
+    overlay.style.top = `${pos.top}px`;
+  });
+  const finishDrag = (event) => {
+    if (!drag || drag.id !== event.pointerId) return;
+    const wasMoved = drag.moved;
+    drag = null;
+    overlay.classList.remove('is-dragging');
+    if (wasMoved) {
+      suppressClickUntil = Date.now() + 250;
+      const rect = overlay.getBoundingClientRect();
+      writeSavedMiniPos({ left: Math.round(rect.left), top: Math.round(rect.top) });
+    }
+  };
+  overlay.addEventListener('pointerup', finishDrag);
+  overlay.addEventListener('pointercancel', finishDrag);
+  overlay.addEventListener('click', (event) => {
+    if (!callMinimized || Date.now() >= suppressClickUntil) return;
+    if (event.target.closest('button')) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
+  overlay.addEventListener('dblclick', (event) => {
+    if (!callMinimized) return;
+    if (event.target.closest('button, select, input, label, a')) return;
+    setCallMinimized(false);
+  });
+}
+
 function wireSelfPreview(overlay) {
   const stage = overlay.querySelector('.chat-call-stage');
   const tile = overlay.querySelector('#chatCallLocalTile');
@@ -196,7 +388,7 @@ function wireSelfPreview(overlay) {
     tile.style.bottom = 'auto';
   };
   tile.addEventListener('pointerdown', (event) => {
-    if (event.target.closest('button')) return;
+    if (callMinimized || event.target.closest('button')) return;
     const rect = tile.getBoundingClientRect();
     const bounds = stage.getBoundingClientRect();
     drag = {
@@ -222,19 +414,23 @@ function wireSelfPreview(overlay) {
 
 function ensureOverlay() {
   const existing = document.getElementById('chatCallOverlay');
-  if (existing && existing.dataset.version === '13') return existing;
+  if (existing && existing.dataset.version === '14') return existing;
   existing?.remove();
   const el = document.createElement('div');
   el.id = 'chatCallOverlay';
   el.className = 'chat-call-overlay hidden';
   el.innerHTML = `
     <header class="chat-call-top">
+      <span class="chat-call-mini-lead" aria-hidden="true">
+        <span class="chat-call-mini-grip">${GRIP_ICON}</span>
+        <span class="chat-call-minimized-pulse"></span>
+      </span>
       <p id="chatCallStatus" class="chat-call-status">Connecting…</p>
       <div class="chat-call-top-actions">
         <button type="button" id="chatCallDevicesBtn" class="chat-call-iconbtn" aria-label="Microphone, speaker, and camera">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
         </button>
-        <button type="button" id="chatCallMinimizeBtn" class="chat-call-iconbtn" aria-label="Minimize"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+        <button type="button" id="chatCallMinimizeBtn" class="chat-call-iconbtn" title="Minimize call (drag to move)" aria-label="Minimize"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/></svg></button>
       </div>
     </header>
     <div id="chatCallDeviceMenu" class="chat-call-device-menu hidden">
@@ -272,13 +468,16 @@ function ensureOverlay() {
         ${callCtrlButton('chatCallModeBtn', 'Video', VIDEO_MODE_ICON, '', 'aria-label="Video"')}
         ${callCtrlButton('chatCallCamBtn', 'Camera', CAM_ICON, 'hidden', 'aria-label="Camera"')}
         ${callCtrlButton('chatCallHearBtn', 'Sound', SPEAKER_ICON, 'hidden', 'aria-label="Speaker"')}
+        ${callCtrlButton('chatCallExpandBtn', 'Open', OPEN_ICON, '', 'title="Expand call" aria-label="Expand call"')}
       </div>
       ${callCtrlButton('chatCallHangupBtn', 'End', HANGUP_ICON, 'chat-call-ctrl--danger', 'aria-label="End call"')}
     </div>`;
-  el.dataset.version = '13';
+  el.dataset.version = '14';
   document.body.appendChild(el);
   el.querySelector('#chatCallHangupBtn')?.addEventListener('click', () => { void hangUp(); });
   wireSelfPreview(el);
+  wireMinimizedOverlayDrag(el);
+  bindMiniResizeWatch();
   el.querySelector('#chatCallMinimizeBtn')?.addEventListener('click', () => {
     closeDeviceMenu();
     if (window.AndroidHost && typeof window.AndroidHost.enterPipMode === 'function') {
@@ -286,6 +485,10 @@ function ensureOverlay() {
       return;
     }
     setCallMinimized(true);
+  });
+  el.querySelector('#chatCallExpandBtn')?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    setCallMinimized(false);
   });
   el.querySelector('.chat-call-pipmin')?.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -345,79 +548,66 @@ function toggleDeviceMenu() {
   if (open) void refreshDeviceSelectors();
 }
 
-function ensureMinimizedBar() {
-  let el = document.getElementById('chatCallMinimized');
-  if (el?.dataset.version === '1') return el;
-  const hidden = !el || el.classList.contains('hidden');
-  el?.remove();
-  el = document.createElement('div');
-  el.id = 'chatCallMinimized';
-  el.dataset.version = '1';
-  el.className = hidden ? 'chat-call-minimized hidden' : 'chat-call-minimized';
-  el.setAttribute('role', 'button');
-  el.setAttribute('tabindex', '0');
-  el.setAttribute('aria-label', 'Return to call');
-  el.innerHTML = `
-    <span class="chat-call-minimized-pulse" aria-hidden="true"></span>
-    <span id="chatCallMinimizedLabel" class="chat-call-minimized-label">On a call</span>
-    <span class="chat-call-minimized-actions">
-      ${callCtrlButton('chatCallMiniExpand', 'Open', OPEN_ICON, '', 'aria-label="Open call"')}
-      ${callCtrlButton('chatCallMiniEnd', 'End', HANGUP_ICON, 'chat-call-ctrl--danger', 'aria-label="End call"')}
-    </span>`;
-  document.body.appendChild(el);
-  el.addEventListener('click', (event) => {
-    if (event.target.closest('#chatCallMiniEnd')) return;
-    setCallMinimized(false);
-  });
-  el.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      setCallMinimized(false);
-    }
-  });
-  el.querySelector('#chatCallMiniExpand')?.addEventListener('click', (event) => {
-    event.stopPropagation();
-    setCallMinimized(false);
-  });
-  el.querySelector('#chatCallMiniEnd')?.addEventListener('click', (event) => {
-    event.stopPropagation();
-    void hangUp();
-  });
-  return el;
+function canMinimizeCall() {
+  return Boolean(room || phase === 'outgoing' || phase === 'joining' || phase === 'live');
 }
 
-function updateMinimizedBar() {
-  const bar = document.getElementById('chatCallMinimized');
-  const label = document.getElementById('chatCallMinimizedLabel');
-  if (!bar || !label) return;
-  const status = document.getElementById('chatCallStatus')?.textContent?.trim();
+function renderCallStatus() {
+  const el = document.getElementById('chatCallStatus');
+  if (!el) return;
+  if (!callMinimized) {
+    el.textContent = rawCallStatus;
+    return;
+  }
   const peer = otherLabel();
-  const kind = activeMode === 'video' ? 'Video' : 'Voice';
-  label.textContent = status && status !== 'Connecting…' ? `${kind} · ${peer}` : `${kind} call · ${peer}`;
+  if (rawCallStatus === 'Video call') el.textContent = `Video · ${peer}`;
+  else if (rawCallStatus === 'Voice call') el.textContent = `Voice · ${peer}`;
+  else el.textContent = `${rawCallStatus || 'On a call'} · ${peer}`;
+}
+
+function updateMinimizedState() {
+  const overlay = document.getElementById('chatCallOverlay');
+  if (!overlay) return;
+  if (!callMinimized) {
+    overlay.classList.remove('is-minimized', 'is-video-mini', 'is-audio-mini', 'is-live', 'is-dragging');
+    overlay.style.removeProperty('left');
+    overlay.style.removeProperty('top');
+    renderCallStatus();
+    return;
+  }
+  const video = activeMode === 'video';
+  overlay.classList.add('is-minimized');
+  overlay.classList.toggle('is-video-mini', video);
+  overlay.classList.toggle('is-audio-mini', !video);
   const live = Boolean(
     document.getElementById('chatCallLocalTile')?.classList.contains('is-speaking')
-    || document.getElementById('chatCallRemoteTile')?.classList.contains('is-speaking'),
+    || document.querySelector('#chatCallRemoteGrid .chat-call-tile.is-speaking'),
   );
-  bar.classList.toggle('is-live', live);
+  overlay.classList.toggle('is-live', live);
+  renderCallStatus();
 }
 
 function setCallMinimized(minimized) {
   const overlay = ensureOverlay();
-  const mini = ensureMinimizedBar();
-  if (!room && minimized) {
+  if (!canMinimizeCall() && minimized) {
     callMinimized = false;
-    mini.classList.add('hidden');
-    overlay.classList.remove('hidden');
+    updateMinimizedState();
     return;
   }
-  callMinimized = Boolean(minimized && room);
+  callMinimized = Boolean(minimized && canMinimizeCall());
+  closeDeviceMenu();
+  overlay.classList.remove('hidden');
+  updateMinimizedState();
   if (callMinimized) {
-    overlay.classList.add('hidden');
-    mini.classList.remove('hidden');
-    updateMinimizedBar();
+    placeMinimizedOverlay(overlay);
+    requestAnimationFrame(() => {
+      placeMinimizedOverlay(overlay);
+      overlay.querySelectorAll('video').forEach(layoutFittedVideo);
+    });
   } else {
-    mini.classList.add('hidden');
-    overlay.classList.remove('hidden');
+    requestAnimationFrame(() => {
+      overlay.querySelectorAll('video').forEach(layoutFittedVideo);
+    });
   }
 }
 
@@ -765,6 +955,11 @@ function syncCallModeUi() {
     camBtn.setAttribute('aria-label', on ? 'Camera off' : 'Camera on');
   }
   if (!waitingForAnswer) setStatus(video ? 'Video call' : 'Voice call');
+  if (callMinimized) {
+    updateMinimizedState();
+    const overlay = document.getElementById('chatCallOverlay');
+    if (overlay) placeMinimizedOverlay(overlay);
+  }
   try { globalThis.AndroidHost?.setInVideoCall?.(video); } catch { /* host missing */ }
 }
 
@@ -1181,7 +1376,11 @@ function identityBase(value) {
 }
 
 function threadPeerName() {
-  const title = document.querySelector('.chat-thread-title');
+  if (activeCallConvId && ctx?.getConvPeerName) {
+    const named = String(ctx.getConvPeerName(activeCallConvId) || '').trim();
+    if (named) return named;
+  }
+  const title = document.querySelector('.chat-thread-title, .chat-dock-peer-title');
   return (title?.textContent || '').replace('🔒', '').trim();
 }
 
@@ -1214,6 +1413,7 @@ function paintPeopleNames() {
   if (localName) localName.textContent = 'You';
   if (remoteFace) remoteFace.textContent = peer;
   if (remoteName) remoteName.textContent = peer;
+  if (callMinimized) renderCallStatus();
 }
 
 function participantMuted(participant) {
@@ -1258,7 +1458,7 @@ function stopMeters() {
 function paintMeters() {
   paintPeopleNames();
   paintSpeaking();
-  if (callMinimized) updateMinimizedBar();
+  if (callMinimized) updateMinimizedState();
   meterRaf = requestAnimationFrame(paintMeters);
 }
 
@@ -1477,30 +1677,27 @@ async function loadLiveKit() {
 }
 
 function setStatus(text) {
-  const el = document.querySelector('#chatCallStatus');
-  if (el) el.textContent = text;
-  if (callMinimized) updateMinimizedBar();
+  rawCallStatus = String(text || '');
+  renderCallStatus();
 }
 
 function showOverlay(show) {
   const overlay = ensureOverlay();
-  const mini = ensureMinimizedBar();
   if (!show) {
     callMinimized = false;
     closeDeviceMenu();
+    updateMinimizedState();
     overlay.classList.add('hidden');
-    mini.classList.add('hidden');
     return;
   }
-  if (callMinimized && room) {
-    overlay.classList.add('hidden');
-    mini.classList.remove('hidden');
-    updateMinimizedBar();
+  overlay.classList.remove('hidden');
+  if (callMinimized && canMinimizeCall()) {
+    updateMinimizedState();
+    placeMinimizedOverlay(overlay);
     return;
   }
   callMinimized = false;
-  mini.classList.add('hidden');
-  overlay.classList.remove('hidden');
+  updateMinimizedState();
   syncHearButton();
   paintRouteButton();
 }
@@ -1656,7 +1853,7 @@ async function joinSession(session, opts = {}) {
   }
   clearVideos();
   clearRemoteAudio();
-  callMinimized = false;
+  if (!keepRing) callMinimized = false;
   showOverlay(true);
   if (!keepRing) setStatus('Joining…');
   paintPeopleNames();
@@ -1773,12 +1970,13 @@ async function joinSession(session, opts = {}) {
   syncCallModeUi();
 }
 
-async function startCall(mode, permission, targets) {
+async function startCall(mode, permission, targets, explicitConvId = '') {
   if (phase === 'outgoing' || phase === 'joining' || phase === 'live') return;
-  const convId = ctx?.getActiveConvId?.();
+  const convId = explicitConvId || ctx?.getActiveConvId?.();
   if (!convId || !ctx?.api) return;
   if (phase === 'incoming') declineIncoming();
   phase = 'outgoing';
+  callMinimized = false;
   activeCallConvId = convId;
   activeMode = mode === 'video' ? 'video' : 'audio';
   notifyAndroidCall(true, activeMode);
@@ -1966,7 +2164,7 @@ function showIncoming(payload) {
     convId && convId !== cur
     && document.visibilityState === 'visible'
     && ctx?.openConversation
-    && location.pathname === '/chat'
+    && (location.pathname === '/chat' || globalThis.AirdChatDock?.canUseDock?.())
   ) {
     void ctx.openConversation(convId);
   }
@@ -1982,6 +2180,7 @@ async function acceptIncoming(permission) {
   const convId = payload.conversation_id;
   const mode = payload.mode === 'video' ? 'video' : 'audio';
   phase = 'joining';
+  callMinimized = false;
   activeCallConvId = convId;
   activeMode = mode;
   callId = payload.call_id || callId;
@@ -2000,7 +2199,11 @@ async function acceptIncoming(permission) {
     await (permission || ensureMediaPermission(mode));
     if (phase !== 'joining') return;
     const cur = ctx?.getActiveConvId?.();
-    if (ctx.openConversation && location.pathname === '/chat' && cur !== convId) {
+    if (
+      ctx.openConversation
+      && cur !== convId
+      && (location.pathname === '/chat' || globalThis.AirdChatDock?.canUseDock?.())
+    ) {
       await ctx.openConversation(convId);
     }
     const data = await ctx.api(`/api/chat/conversations/${convId}/call`, {
@@ -2138,8 +2341,24 @@ function takeUrlCallAction() {
   return { action, payload };
 }
 
+export function isCallMinimized() {
+  return callMinimized;
+}
+
+export { setCallMinimized };
+
 export function initCalls(options) {
   ctx = { ...ctx, ...options };
+  globalThis.AirdChatCalls = {
+    ...(globalThis.AirdChatCalls || {}),
+    initCalls,
+    joinStandaloneCall,
+    startGroupCall,
+    startConversationCall,
+    headerCallButtonsHtml,
+    setCallMinimized,
+    isCallMinimized,
+  };
   globalThis.__AIRD_SHOW_CALL__ = showIncoming;
   globalThis.__AIRD_ACCEPT_CALL__ = (payload) => {
     if (payload?.call_id) globalThis.__AIRD_SILENCE_CALL__ = String(payload.call_id);
@@ -2213,6 +2432,20 @@ export function startGroupCall(mode) {
   if (!targets.length) return;
   const permission = beginMediaPermission(mode === 'video' ? 'video' : 'audio');
   startCall(mode === 'video' ? 'video' : 'audio', permission, targets).catch((err) => reportCallError(err));
+}
+
+export function startConversationCall(convId, mode = 'audio') {
+  const targetConv = String(convId || '').trim();
+  if (!targetConv) return;
+  if (phase === 'outgoing' || phase === 'joining' || phase === 'live') {
+    if (activeCallConvId === targetConv && callMinimized) setCallMinimized(false);
+    return;
+  }
+  primeAudio();
+  unlockCallAudio();
+  const callMode = mode === 'video' ? 'video' : 'audio';
+  const permission = beginMediaPermission(callMode);
+  startCall(callMode, permission, undefined, targetConv).catch((err) => reportCallError(err));
 }
 
 export function headerCallButtonsHtml() {
