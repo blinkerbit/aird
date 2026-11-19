@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 from aird.plugins.chat.e2e import _MAX_ENHANCED_CT_CHARS, parse_e2e_payload, validate_public_jwk
 
-_GRACE_SEC = 20
+_GRACE_SEC = 120
 _WAIT_SEC = 15 * 60
 
 

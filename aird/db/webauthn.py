@@ -15,13 +15,40 @@ PRF_SALT_ATTR = "webauthn_prf_salt"
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat() + "Z"
+    # Aware isoformat() already ends in +00:00. Appending Z made +00:00Z, which
+    # fromisoformat rejects, so every challenge looked expired.
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _parse_created_at(value: str) -> datetime:
+    text = (value or "").strip()
+    if text.endswith("Z") and "+" in text:
+        text = text[:-1]
+    elif text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def _purge_expired_challenges(conn: sqlite3.Connection) -> None:
-    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=CHALLENGE_TTL_SECONDS)).isoformat() + "Z"
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=CHALLENGE_TTL_SECONDS)
     try:
-        conn.execute("DELETE FROM webauthn_challenges WHERE created_at < ?", (cutoff,))
+        rows = conn.execute("SELECT challenge, created_at FROM webauthn_challenges").fetchall()
+        stale = []
+        for challenge, created_at in rows:
+            try:
+                if _parse_created_at(created_at) < cutoff:
+                    stale.append(challenge)
+            except ValueError:
+                stale.append(challenge)
+        if stale:
+            conn.executemany(
+                "DELETE FROM webauthn_challenges WHERE challenge = ?",
+                [(item,) for item in stale],
+            )
+            conn.commit()
     except sqlite3.Error:
         logger.debug("purge webauthn challenges failed", exc_info=True)
 
@@ -65,7 +92,7 @@ def consume_challenge(
         ).fetchone()
         if not row:
             return None
-        created_at = datetime.fromisoformat(row[1].replace("Z", "+00:00"))
+        created_at = _parse_created_at(row[1])
         if datetime.now(timezone.utc) - created_at > timedelta(seconds=CHALLENGE_TTL_SECONDS):
             conn.execute("DELETE FROM webauthn_challenges WHERE challenge = ?", (challenge_b64,))
             return None

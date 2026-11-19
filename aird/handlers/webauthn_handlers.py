@@ -399,6 +399,36 @@ class WebAuthnAuthVerifyHandler(BaseHandler):
         _write_json(self, {"ok": True, "redirect": next_url})
 
 
+class WebAuthnCredentialListHandler(BaseHandler):
+    """Passkeys registered to the signed-in account. Public ids only."""
+
+    @tornado.web.authenticated
+    @_require_webauthn
+    def get(self):
+        user = self.current_user
+        if not isinstance(user, dict) or not user.get("username"):
+            _write_json_error(self, 403, "Forbidden")
+            return
+        username = user["username"]
+        db_conn = _require_db_conn(self)
+        if not db_conn:
+            return
+        rp_id, _, _ = resolve_webauthn_config(self)
+        user_id = base64.urlsafe_b64encode(username.encode("utf-8")).decode("ascii").rstrip("=")
+        credentials = []
+        for item in webauthn_db.list_credentials(db_conn, username):
+            credentials.append(
+                {
+                    "id": item["id"],
+                    "credentialId": item["credential_id"],
+                    "nickname": item.get("nickname") or "Passkey",
+                    "createdAt": item.get("created_at") or "",
+                    "lastUsedAt": item.get("last_used_at") or "",
+                }
+            )
+        _write_json(self, {"rpId": rp_id, "userId": user_id, "credentials": credentials})
+
+
 class WebAuthnCredentialDeleteHandler(BaseHandler):
     @tornado.web.authenticated
     @_require_webauthn
@@ -465,3 +495,4 @@ def _pad_b64(value: str) -> str:
     s = value.replace("-", "+").replace("_", "/")
     pad = (4 - len(s) % 4) % 4
     return s + ("=" * pad)
+

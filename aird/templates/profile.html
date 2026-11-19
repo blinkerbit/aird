@@ -280,7 +280,7 @@
         <div id="passkey-card" class="card bg-base-100 shadow-sm border border-base-300 hidden">
           <div class="card-body">
             <h3 class="font-semibold">Passkeys</h3>
-            <p class="text-sm text-base-content/60 mt-1">Optional sign-in with fingerprint, face, or security key. Password login still works.</p>
+            <p class="text-sm text-base-content/60 mt-1">Optional sign-in with fingerprint, face, or security key. Password login still works. Remove a passkey here if that phone or computer is lost — it can no longer sign in.</p>
             <div id="passkey-list" class="space-y-2 mt-3">
               {% for pk in passkeys %}
               <div class="flex items-center justify-between gap-3 rounded-lg border border-base-300 px-3 py-2 text-sm" data-passkey-id="{{ pk['id'] }}">
@@ -783,3 +783,4 @@
   </script>
 </body>
 </html>
+

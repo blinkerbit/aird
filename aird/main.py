@@ -128,6 +128,7 @@ from aird.handlers.webauthn_handlers import (
     WebAuthnAuthOptionsHandler,
     WebAuthnAuthVerifyHandler,
     WebAuthnCredentialDeleteHandler,
+    WebAuthnCredentialListHandler,
     WebAuthnRegisterOptionsHandler,
     WebAuthnRegisterVerifyHandler,
     WebAuthnStatusHandler,
@@ -285,6 +286,7 @@ def make_app(
         (r"/api/webauthn/register/verify", WebAuthnRegisterVerifyHandler),
         (r"/api/webauthn/auth/options", WebAuthnAuthOptionsHandler),
         (r"/api/webauthn/auth/verify", WebAuthnAuthVerifyHandler),
+        (r"/api/webauthn/credentials", WebAuthnCredentialListHandler),
         (r"/api/webauthn/credentials/([0-9]+)", WebAuthnCredentialDeleteHandler),
         (r"/tagged/([^/]+)", TaggedFilesHandler),
         (r"/admin/login", AdminLoginHandler),
@@ -940,3 +942,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
