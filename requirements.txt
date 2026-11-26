@@ -6,10 +6,10 @@ argon2-cffi==25.1.0
 argon2-cffi-bindings==26.2.0
 attrs==26.1.0
 cbor2==6.3.0
-certifi==2026.10.23
+certifi==2026.11.20
 cffi==2.1.1
 chardet==7.7.0
-charset-normalizer==3.5.2
+charset-normalizer==3.5.3
 cryptography==50.0.2
 frozenlist==1.8.0
 http-ece==1.2.1
