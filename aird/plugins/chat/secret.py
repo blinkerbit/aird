@@ -17,8 +17,11 @@ from dataclasses import dataclass, field
 
 from aird.plugins.chat.e2e import _MAX_ENHANCED_CT_CHARS, parse_e2e_payload, validate_public_jwk
 
-_GRACE_SEC = 120
+# PWA/mobile often background the tab for several minutes with a half-open socket.
+# Keep rooms alive long enough for wake + rejoin before tearing them down.
+_GRACE_SEC = 600
 _WAIT_SEC = 15 * 60
+_PRESENCE_WINDOW = 60.0
 
 
 @dataclass
@@ -183,7 +186,7 @@ class EnhancedSecureHub:
             )
             db.commit()
 
-    def recently_online(self, username: str, window: float = 12.0) -> bool:
+    def recently_online(self, username: str, window: float = _PRESENCE_WINDOW) -> bool:
         if not self._db_path or not username:
             return False
         with self._lock:

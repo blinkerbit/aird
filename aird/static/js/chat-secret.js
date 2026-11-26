@@ -304,9 +304,38 @@ import { escapeHtml as esc } from './core/dom-safe.js';
     return draft;
   }
 
+  async function ensureWs() {
+    if (global.AirdChatWS?.isOpen()) return true;
+    if (typeof global.AirdChatWS?.whenOpen === 'function') {
+      return global.AirdChatWS.whenOpen(12000);
+    }
+    global.AirdChatWS?.connect();
+    return false;
+  }
+
+  async function ensureE2e() {
+    const e2e = global.AirdChatE2E;
+    if (!e2e) throw new Error('Encryption keys are not ready');
+    if (e2e.ready?.()) return;
+    const me = global.__AIRD_CHAT_USER__ || '';
+    if (!me || typeof e2e.init !== 'function') throw new Error('Encryption keys are not ready');
+    await e2e.init(me);
+    if (!e2e.ready?.()) throw new Error('Encryption keys are not ready');
+  }
+
   async function start(peer) {
     const name = String(peer || '').trim();
     if (!name) return;
+    if (!await ensureWs()) {
+      status('Chat connection is not open');
+      return;
+    }
+    try {
+      await ensureE2e();
+    } catch (err) {
+      status(err.message || 'Encryption keys are not ready');
+      return;
+    }
     const existing = [...rooms.values()].find((room) => room.peer === name);
     if (existing) {
       if (!existing.requested && !await sendJoin(existing)) {
@@ -335,6 +364,16 @@ import { escapeHtml as esc } from './core/dom-safe.js';
   async function accept(roomId) {
     const room = rooms.get(roomId);
     if (!room?.requested) return;
+    if (!await ensureWs()) {
+      status('Chat connection is not open');
+      return;
+    }
+    try {
+      await ensureE2e();
+    } catch (err) {
+      status(err.message || 'Encryption keys are not ready');
+      return;
+    }
     const keys = await freshKey();
     room.publicJwk = keys.publicJwk;
     room.privateJwk = keys.privateJwk;
@@ -366,6 +405,7 @@ import { escapeHtml as esc } from './core/dom-safe.js';
       room.aes,
       new TextEncoder().encode(plain),
     );
+    if (!await ensureWs()) throw new Error('Chat connection is not open');
     if (!global.AirdChatWS?.send({
       type: 'enhanced_msg',
       room_id: room.roomId,
@@ -453,6 +493,8 @@ import { escapeHtml as esc } from './core/dom-safe.js';
   }
 
   async function sendJoin(room) {
+    if (!await ensureWs()) return false;
+    await ensureE2e();
     const sig = await signEpk(room.roomId, room.publicJwk);
     return !!global.AirdChatWS?.send({
       type: 'enhanced_join',

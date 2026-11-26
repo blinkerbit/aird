@@ -2600,6 +2600,9 @@ import {
       setPollEnabled(!!activeConvId);
       if (activeConvId) syncNewMessages().catch((err) => { console.debug('chat resync failed', err); });
     },
+    chat_wake: () => {
+      if (activeConvId) syncNewMessages().catch((err) => { console.debug('chat wake sync failed', err); });
+    },
     chat_typing: onWsTyping,
     collab_update: (data) => {
       import('../collab-ui.js')
@@ -4587,7 +4590,11 @@ import {
     await openConversation(id);
   }
 
-  document.addEventListener('visibilitychange', markLatestVisibleRead);
+  document.addEventListener('visibilitychange', () => {
+    markLatestVisibleRead();
+    if (document.visibilityState !== 'visible' || !activeConvId) return;
+    syncNewMessages().catch((err) => { console.debug('chat visibility sync failed', err); });
+  });
 
   function boot() {
     qs('#chatRequestAccept')?.addEventListener('click', () => {

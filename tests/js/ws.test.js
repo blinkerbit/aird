@@ -91,6 +91,21 @@ describe('createReconnectingSocket', () => {
     vi.advanceTimersByTime(3000);
     expect(FakeSocket.instances).toHaveLength(1);
   });
+
+  it('reconnect() opens a fresh socket without waiting for delay', () => {
+    FakeSocket.instances = [];
+    vi.stubGlobal('WebSocket', FakeSocket);
+    const live = createReconnectingSocket({
+      url: '/ws/chat',
+      delayMs: 3000,
+    });
+    live.connect();
+    const first = FakeSocket.instances[0];
+    first.readyState = FakeSocket.OPEN;
+    live.reconnect();
+    expect(FakeSocket.instances).toHaveLength(2);
+    expect(first.readyState).toBe(FakeSocket.CLOSED);
+  });
 });
 
 describe('saveBlob', () => {

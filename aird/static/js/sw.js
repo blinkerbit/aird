@@ -305,6 +305,17 @@ async function handlePush(event) {
 
   const windows = await globalThis.clients.matchAll({ type: 'window', includeUncontrolled: true });
   const onThisChat = !isCall && windows.some((client) => clientIsWatching(client, convId));
+  if (!isCall && convId) {
+    for (const client of windows) {
+      try {
+        client.postMessage({
+          type: 'aird-chat-push',
+          conversation_id: convId,
+          message_id: data.message_id || '',
+        });
+      } catch { /* closed */ }
+    }
+  }
   if (isCall && data.call_id && convId) {
     const invitePayload = {
       type: 'call_invite',

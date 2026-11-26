@@ -111,6 +111,19 @@ export function createReconnectingSocket(options = {}) {
     current.close(code, reason);
   }
 
+  /** Drop a half-open socket and open a fresh one (PWA/background resume). */
+  function reconnect() {
+    if (stopped) return;
+    generation += 1;
+    clearTimer();
+    const current = socket;
+    socket = null;
+    if (current && current.readyState !== WebSocket.CLOSED) {
+      try { current.close(1000, 'reconnect'); } catch { /* already gone */ }
+    }
+    connect();
+  }
+
   function send(data) {
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
     socket.send(typeof data === 'string' ? data : JSON.stringify(data));
@@ -120,6 +133,7 @@ export function createReconnectingSocket(options = {}) {
   return {
     connect,
     close,
+    reconnect,
     send,
     isOpen() {
       return Boolean(socket && socket.readyState === WebSocket.OPEN);

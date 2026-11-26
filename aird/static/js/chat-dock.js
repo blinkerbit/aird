@@ -570,6 +570,8 @@ function onWs(data) {
     })();
   } else if (data.type === 'chat_message_deleted' && data.conversation_id && isOpen(data.conversation_id)) {
     void loadThread(data.conversation_id);
+  } else if ((data.type === 'chat_wake' || data.type === 'chat_ws_open') && windows.length) {
+    windows.filter((w) => !w.collapsed).forEach((w) => void loadThread(w.id));
   }
 }
 

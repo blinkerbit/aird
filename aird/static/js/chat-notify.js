@@ -320,6 +320,8 @@ import { setAppIconBadge } from './core/app-badge.js';
       });
     } else if (data.type === 'chat_message' || data.type === 'chat_message_deleted') {
       void refreshUnread();
+    } else if (data.type === 'chat_wake' || data.type === 'chat_ws_open') {
+      void refreshUnread();
     } else if (data.type === 'call_invite' || data.type === 'call_accept' || data.type === 'call_end' || data.type === 'call_decline' || data.type === 'call_missed' || data.type === 'call_answered') {
       if (data.type === 'call_invite' && data.conversation_id) {
         globalThis.__AIRD_PENDING_CALL__ = data;
@@ -393,7 +395,7 @@ import { setAppIconBadge } from './core/app-badge.js';
     WS.connect();
     WS.subscribe((data) => {
       onChatEvent(data);
-      if (data?.type === 'chat_ws_open') void pullRing();
+      if (data?.type === 'chat_ws_open' || data?.type === 'chat_wake') void pullRing();
     });
     void ensureCallsListener();
     const askRing = () => navigator.serviceWorker?.controller?.postMessage({ type: 'aird-call-peek' });
