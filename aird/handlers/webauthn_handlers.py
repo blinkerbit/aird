@@ -284,6 +284,10 @@ class WebAuthnRegisterVerifyHandler(BaseHandler):
 
 
 class WebAuthnAuthOptionsHandler(BaseHandler):
+    def check_xsrf_cookie(self):
+        # Same as password login: the phone has no session cookie yet.
+        return
+
     @_require_webauthn
     async def post(self):
         db_conn = _require_db_conn(self)
@@ -324,6 +328,9 @@ class WebAuthnAuthOptionsHandler(BaseHandler):
 
 
 class WebAuthnAuthVerifyHandler(BaseHandler):
+    def check_xsrf_cookie(self):
+        return
+
     @_require_webauthn
     async def post(self):
 
